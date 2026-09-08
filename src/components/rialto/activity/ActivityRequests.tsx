@@ -2,7 +2,7 @@
  * Activity › Requests — one row per upstream call.
  *
  * Where Sessions groups calls, this is the raw log. The three columns that
- * did not exist in the old UI are `Requested → Sent`, `Rule` and `Lane`:
+ * did not exist in the old UI are `Requested` / `Sent`, `Rule` and `Lane`:
  * the routing decision was written to the request log all along but was
  * only readable by grepping pino output.
  */
