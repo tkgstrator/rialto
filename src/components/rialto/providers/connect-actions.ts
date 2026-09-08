@@ -13,7 +13,7 @@ import type { CatalogEntry, OAuthInitiateResponse, OAuthSubmitResponse, Provider
 
 // react-i18next's t(), trimmed to the shape these fallbacks call. Taking it
 // as a parameter keeps this module free of React, the way form-logic.ts is.
-type Translate = (key: string) => string
+type Translate = (key: string, options?: Record<string, unknown>) => string
 
 /**
  * Which token exchange the server can run for a vendor.
@@ -99,7 +99,7 @@ async function parseJsonFile(file: File): Promise<unknown> {
 
 export async function importCredentials(kind: OAuthKind, file: File, t: Translate): Promise<void> {
   const parsed = await parseJsonFile(file)
-  if (parsed === undefined) throw new Error(`${file.name} is not valid JSON.`)
+  if (parsed === undefined) throw new Error(t('providers.connect.errorNotJson', { name: file.name }))
   const res = await api.post<OAuthSubmitResponse>('/oauth/import-credentials', { provider: kind, credentials: parsed })
   if (!res.success) throw new Error(res.error === undefined ? t('providers.connect.errorCredentials') : res.error)
 }

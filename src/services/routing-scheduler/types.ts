@@ -105,8 +105,12 @@ export type WeightReason =
 
 export interface WeightEntry {
   target: string
-  weight: number // 0..1, normalised across enabled candidates
-  healthiness: number // raw score before normalisation
+  // 0..1 for this candidate alone — NOT a share of the chain, so a
+  // column of these does not sum to anything. 0 means the selector will
+  // skip it; that zero-ness is the only thing the request path reads.
+  weight: number
+  // The same score before the probe floor / damper / hold guard.
+  healthiness: number
   remainingBudgetPct: number | null // 0..100; null = unknown
   earliestResetAt: number | null
   reasons: readonly WeightReason[]

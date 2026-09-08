@@ -77,33 +77,10 @@ export function StatTile({
 }) {
   return (
     <div className='border-l-2 border-l-border px-4 py-3 transition-colors hover:border-l-foreground/30 hover:bg-muted/50'>
-      <div className='text-[11px] uppercase tracking-wider text-muted-foreground'>{label}</div>
+      <div className='text-[12px] uppercase tracking-wider text-muted-foreground'>{label}</div>
       <div className={cn('mt-1 font-mono tabular-nums', size === 'lg' ? 'text-lg' : 'text-base')}>{value}</div>
-      <div className='text-[11px] text-muted-foreground'>{sub}</div>
+      <div className='text-[12px] text-muted-foreground'>{sub}</div>
     </div>
-  )
-}
-
-/**
- * Inline volume trend. A 40px sparkline needs no chart library, and one
- * with a flat maximum would be a decoration rather than a reading.
- */
-export function Sparkline({ points, label }: { points: number[]; label: string }) {
-  const max = Math.max(...points)
-  if (points.length < 2 || max <= 0) return null
-  const d = points.map((p, i) => `${(i / (points.length - 1)) * 60},${16 - (p / max) * 14}`).join(' ')
-  return (
-    <svg viewBox='0 0 60 16' className='h-4 w-16 overflow-visible' preserveAspectRatio='none' role='img'>
-      <title>{label}</title>
-      <polyline
-        points={d}
-        fill='none'
-        stroke='currentColor'
-        strokeWidth='1'
-        className='text-muted-foreground/60'
-        vectorEffect='non-scaling-stroke'
-      />
-    </svg>
   )
 }
 
@@ -126,7 +103,7 @@ export function SurfaceCell({ path }: { path: string | null }) {
 /** The dashed explanatory block the mocks close their tables with. */
 export function NoteBox({ children }: { children: ReactNode }) {
   return (
-    <div className='rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground'>
+    <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
       <i className='ri-information-line mr-1 align-[-1px]' />
       {children}
     </div>

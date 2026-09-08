@@ -57,7 +57,7 @@ const isSet = (when: Predicate, field: Field): boolean => when[field] !== undefi
 const clear = (when: Predicate, field: Field): Predicate => ({ ...when, [field]: undefined })
 
 const BOX = 'flex h-8 flex-1 items-center gap-1.5 rounded-md border border-border px-3 font-mono text-xs'
-const CHIP = 'rounded px-1.5 py-0.5 text-[11px] transition-colors'
+const CHIP = 'rounded px-1.5 py-0.5 text-[12px] transition-colors'
 
 function MultiChips<T extends string>({
   options,
@@ -207,7 +207,7 @@ function AddCondition({ available, onAdd }: { available: readonly Field[]; onAdd
       <PopoverTrigger asChild>
         <button
           type='button'
-          className='flex items-center gap-2 rounded-md border border-dashed border-border px-3 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/50'
+          className='flex items-center gap-2 rounded-md border border-dashed border-border px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:bg-muted/50'
         >
           <i className='ri-add-line' /> {t('routing.rules.predicate.addCondition')}{' '}
           <span className='opacity-60'>{t('routing.rules.predicate.allMustMatch')}</span>
@@ -240,7 +240,7 @@ export function PredicateEditor({ when, onChange }: { when: Predicate; onChange:
   return (
     <div className='space-y-2 px-6'>
       {active.length === 0 ? (
-        <p className='text-[11px] text-muted-foreground'>{t('routing.rules.predicate.noConditions')}</p>
+        <p className='text-[12px] text-muted-foreground'>{t('routing.rules.predicate.noConditions')}</p>
       ) : null}
       {active.map((field) => (
         <div key={field} className='flex items-center gap-2'>

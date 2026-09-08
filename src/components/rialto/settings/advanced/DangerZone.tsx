@@ -31,7 +31,7 @@ function DangerRow({
     <div className='grid grid-cols-[1fr_auto] items-center gap-6 border-t border-border/60 px-6 py-4'>
       <div>
         <div className='text-xs font-medium'>{label}</div>
-        <div className='mt-0.5 text-[11px] leading-snug text-muted-foreground'>{hint}</div>
+        <div className='mt-0.5 text-[12px] leading-snug text-muted-foreground'>{hint}</div>
       </div>
       <button
         type='button'

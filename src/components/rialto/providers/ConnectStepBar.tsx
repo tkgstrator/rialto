@@ -22,7 +22,7 @@ function Step({ n, label, state }: { n: number; label: string; state: StepState 
   return (
     <div className='flex items-center gap-2'>
       <span
-        className={cn('flex size-5 items-center justify-center rounded-full text-[10px] font-medium', STEP_TONE[state])}
+        className={cn('flex size-5 items-center justify-center rounded-full text-[11px] font-medium', STEP_TONE[state])}
       >
         {state === 'done' ? <i className='ri-check-line text-xs' /> : n}
       </span>

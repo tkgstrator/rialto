@@ -10,7 +10,6 @@
  * sessions endpoint counts in hours and the cost endpoint in days, and
  * that mismatch is easier to get wrong than to read.
  */
-import { type ActivityRequestLog, callTimesBySession, trendBuckets } from '@/components/rialto/activity/data'
 import type { FilterOption } from '@/components/rialto/activity/shared'
 import type { SessionSummary } from '@/lib/api'
 
@@ -43,43 +42,30 @@ export const ALL = 'all'
 export interface Enriched {
   session: SessionSummary
   surfacePath: string | null
-  trend: number[] | null
   model: string | null
 }
 
-export function enrich(
-  sessions: SessionSummary[],
-  logs: ActivityRequestLog[],
-  pathOf: (id: string | null) => string | null
-): Enriched[] {
-  const byTimes = callTimesBySession(logs)
-  return sessions.map((session) => {
-    const times = byTimes.get(session.sessionId)
-    return {
-      session,
-      surfacePath: pathOf(session.surface),
-      trend: times === undefined ? null : trendBuckets(times, Date.parse(session.firstAt), Date.parse(session.lastAt)),
-      model: session.models.length === 0 ? null : session.models[0]
-    }
-  })
+export function enrich(sessions: SessionSummary[], pathOf: (id: string | null) => string | null): Enriched[] {
+  return sessions.map((session) => ({
+    session,
+    surfacePath: pathOf(session.surface),
+    model: session.models.length === 0 ? null : session.models[0]
+  }))
 }
 
-function matchesQuery(row: Enriched, query: string): boolean {
-  if (query === '') return true
-  const preview = row.session.preview
-  const haystack = preview === null ? row.session.sessionId : `${row.session.sessionId} ${preview}`
-  return haystack.toLowerCase().includes(query.toLowerCase())
-}
-
+// No text filter. The three selects narrow by things the row actually
+// shows; a free-text box could only match the session id and the prompt
+// preview, neither of which is on the table any more, so it was a field
+// that answered every query with "no rows" unless the operator already
+// knew the id.
 export function applyFilters(
   rows: Enriched[],
-  filters: { surface: string; provider: string; model: string; query: string }
+  filters: { surface: string; provider: string; model: string }
 ): Enriched[] {
   return rows.filter((row) => {
     if (filters.surface !== ALL && row.surfacePath !== filters.surface) return false
     if (filters.provider !== ALL && !row.session.providers.includes(filters.provider)) return false
-    if (filters.model !== ALL && !row.session.models.includes(filters.model)) return false
-    return matchesQuery(row, filters.query)
+    return filters.model === ALL || row.session.models.includes(filters.model)
   })
 }
 

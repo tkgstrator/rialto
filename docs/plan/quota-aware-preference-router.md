@@ -50,8 +50,8 @@ DB の Router 設定（preference リスト）は「静的な意図」であり�
 | **target** | `"providerName,modelName"` 形式のモデル参照。RouterSlot / fallbacks と同一の内部表現 |
 | **kind** | subscription の系統。`'claude'`（anthropic.com）/ `'codex'`（chatgpt.com）。`subscriptionKindOf()` が判定 |
 | **窓 (window)** | rate limit の観測単位。Claude: `five_hour` / `seven_day` / `seven_day_opus` / `weekly_scoped.<model>`、Codex: `primary` / `secondary` |
-| **healthiness** | preference 順位 × 残枠 × エラー率 × リセット近接補正 から成るモデル別スコア（§8.2） |
-| **weight** | healthiness を候補間で正規化した 0..1 の値。UI 表示と probe 判定に使う |
+| **healthiness** | 残枠 × エラー率 × リセット近接補正 から成るモデル別スコア（§8.2）。**実装では preference 順位を掛けない**（下記の注記を参照） |
+| **weight** | healthiness にガードを適用した 0..1 の値。**候補間での正規化はしない** — 各行がそのターゲット単体の健全度（下記の注記を参照）。UI 表示と probe 判定に使う |
 | **tick** | スケジューラの 1 周期（既定 **5min**、上限 1h）。quota 更新 → computeWeights → snapshot 差し替え |
 | **snapshot** | tick が publish する不変オブジェクト。セレクタ / API / UI はこれだけを読む |
 
@@ -658,17 +658,34 @@ resetPenalty(m)     = resetSoonFactor(0.25)
                       // 「リセット間近 & ほぼ枯渇」は落とすが 0 にはしない —
                       // リセット後に即復帰させるための soft down
 
-healthiness(m)      = preferenceWeight(m) × budget(m) × (1 - err(m)) × resetPenalty(m)
-weight(m)           = healthiness(m) / Σ healthiness   // enabled 候補で正規化
+healthiness(m)      = budget(m) × (1 - err(m)) × resetPenalty(m)
+weight(m)           = healthiness(m)                   // 0..1 にクランプするだけ
 ```
 
-**正規化後のガード**（適用順）:
+> **実装との差分（この計画からの意図的な逸脱）**
+>
+> 当初の式は `preferenceWeight(m) = (N - rank(m)) / N` で始まり
+> `healthiness(m) / Σ healthiness` で終わっていた。どちらも削除済み。
+>
+> weight ベクトルは結局トラフィックの配分としては消費されていない
+> ——セレクタは preference チェーンを順に歩き、`weight <= 0`（=skip）
+> しか見ない（`llms/quota-router/runtime.ts`）。にもかかわらず正規化と
+> 順位補正が入っていたため、公開される数値が (a) その候補の順位と
+> (b) 他に何個ターゲットがあるか に依存していた。tick は**全シナリオの
+> チェーンを 1 本に合併**して計算するので、別シナリオにターゲットを
+> 足すと無関係な行の数値まで動き、Chain 画面の Weight 列は合計しても
+> 1 にも 100 にもならなかった。
+>
+> 現在は 1 行 = そのターゲット単体の健全度（`1.00` = 万全、`0.00` =
+> 選ばれない）。承認済みモック `mocks/routing.html` の見え方と一致する。
 
-1. **probe floor**: enabled かつ healthiness > 0 の候補は `weight >= minWeightPct/100`（既定 1%）に底上げし、残りを比例で再正規化。reason `'probe_floor'`。回復中アカウントに探索トラフィックを流し続けるため。
-2. **oscillation damper**: `|weight - previous| > maxDeltaPerTick`（既定 0.2）の候補は previous ± maxDeltaPerTick にクランプして再正規化。L3 ガードレール 1（変化率制限）の継承。**tick 間隔 5min 以上ならこのガードはほぼ発火しない**（真の変化速度がガード閾値を下回る）が、shadow/staging 向けの 60s tick や運用側の設定ミスで tick が短くなったケースの保険として残す。tick 間隔 >= 300s のときは damper を off (`maxDeltaPerTick = 1.0` 相当) にする constraint オプションも用意（§6.3 に `dampenerEnabled` を追加）。
+**ガード**（適用順）:
+
+1. **probe floor**: enabled かつ healthiness > 0 の候補は `weight >= minWeightPct/100`（既定 1%）に底上げする。reason `'probe_floor'`。回復中アカウントに探索トラフィックを流し続けるため。（正規化を廃止したので「残りを比例で再正規化」も不要になった）
+2. **oscillation damper**: `|weight - previous| > maxDeltaPerTick`（既定 0.2）の候補は previous ± maxDeltaPerTick にクランプする。L3 ガードレール 1（変化率制限）の継承。**tick 間隔 5min 以上ならこのガードはほぼ発火しない**（真の変化速度がガード閾値を下回る）が、shadow/staging 向けの 60s tick や運用側の設定ミスで tick が短くなったケースの保険として残す。tick 間隔 >= 300s のときは damper を off (`maxDeltaPerTick = 1.0` 相当) にする constraint オプションも用意（§6.3 に `dampenerEnabled` を追加）。
 3. **hold guard（fake weight bug protection）**: rank 0（preference 先頭）の候補について、`budget >= 0.10` なのに新 weight が `minWeightPct/100` 未満へ落ちる場合、**前回ベクトル全体を維持**して `held=true` を返す。tick 側は error レベルでログし、`consecutiveHolds` が 5 を超えたら snapshot に `degraded=true` を立てる（§13-4）。計算バグや入力欠損で「予算のある primary が 0 になる」事故を封じる。
 
-`changes` は正規化・ガード適用後の最終値と previous の差分（`|Δ| >= 0.01` のみ）で作る。
+`changes` はガード適用後の最終値と previous の差分（`|Δ| >= 0.01` のみ）で作る。
 
 ### 8.3 snapshot store（`state.ts`）
 

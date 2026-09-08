@@ -37,7 +37,7 @@ export function SurfaceTabs({
             <span className={cn('font-mono text-xs', on ? 'text-foreground' : 'text-muted-foreground')}>
               {surface.path}
             </span>
-            <span className='flex items-center gap-1.5 text-[11px] text-muted-foreground'>
+            <span className='flex items-center gap-1.5 text-[12px] text-muted-foreground'>
               {`${surface.client} · `}
               {surface.routingMode === 'routed' ? (
                 <span className='text-emerald-600 dark:text-emerald-400'>{t('routing.common.modeRouted')}</span>

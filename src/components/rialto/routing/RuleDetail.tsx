@@ -16,7 +16,7 @@ import { RuleTester } from './RuleTester'
 import type { ScopedRule } from './rules'
 import type { EnabledTarget } from './types'
 
-const HEADING = 'text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'
+const HEADING = 'text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'
 const PICKER =
   'inline-flex h-8 items-center gap-2 rounded-md border border-border px-3 text-xs transition-colors hover:bg-muted/60'
 
@@ -153,7 +153,7 @@ export function RuleDetail({
               onChange={(next) => onChange({ ...rule, target: next })}
             />
           ) : (
-            <div className='flex h-8 flex-1 items-center rounded-md border border-dashed border-border px-3 text-[11px] text-muted-foreground'>
+            <div className='flex h-8 flex-1 items-center rounded-md border border-dashed border-border px-3 text-[12px] text-muted-foreground'>
               {t('routing.rules.detail.noRewriteHint')}
             </div>
           )}
@@ -176,7 +176,7 @@ export function RuleDetail({
             }
           />
         ))}
-        <span className='self-center text-[11px] text-muted-foreground'>
+        <span className='self-center text-[12px] text-muted-foreground'>
           {t('routing.rules.detail.onlyRoutedMatch')}
         </span>
       </div>

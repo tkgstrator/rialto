@@ -102,10 +102,8 @@ node_modules/remixicon/
 | `settings-logging.html` | Logging | SettingsPage の一部 |
 | `settings-personas.html` | Personas | Personas / PersonaView / PersonaEdit |
 | `settings-statusline.html` | Status line | StatusLineConfigDialog + 6コンポーネント |
-| `settings-presets.html` | Presets | Presets + 6ダイアログ |
 | `settings-advanced.html` | Advanced | DebugPage / JsonEditor |
 | `settings-advanced-health.html` | Advanced — Health | HealthPanel |
-| `settings-advanced-scratchpad.html` | Advanced — Scratchpad | ScratchpadPanel |
 
 ### Navigation（提案・未採用）
 

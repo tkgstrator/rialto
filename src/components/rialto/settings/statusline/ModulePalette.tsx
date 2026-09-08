@@ -13,7 +13,7 @@ export function ModulePalette({ onAdd }: { onAdd: (type: string) => void }) {
   return (
     <aside className='min-w-0 overflow-y-auto border-r border-border'>
       <div className='px-4 pt-5 pb-2'>
-        <h2 className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>
+        <h2 className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>
           {t('settings.statusline.addModule')}
         </h2>
       </div>
@@ -25,7 +25,7 @@ export function ModulePalette({ onAdd }: { onAdd: (type: string) => void }) {
           className='flex w-full items-center gap-2.5 border-l-2 border-l-transparent px-4 py-2 text-left text-xs transition-colors hover:border-l-border hover:bg-muted/50'
         >
           <i className={`${meta.icon} text-sm leading-none text-muted-foreground`} />
-          {meta.label}
+          {t(meta.labelKey)}
           <i className='ri-add-line ml-auto text-sm text-muted-foreground/40' />
         </button>
       ))}

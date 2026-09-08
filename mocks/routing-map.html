@@ -116,9 +116,9 @@ document.getElementById('root').innerHTML = `
       <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i>
     </button>
     ${pill('unsaved changes', 'warn')}
-    <span class="text-[11px] text-muted-foreground">4 surfaces · 5 scenarios · 6 targets</span>
+    <span class="text-[12px] text-muted-foreground">4 surfaces · 5 scenarios · 6 targets</span>
     <div class="ml-auto flex gap-2">
-      ${btn('Save as preset', 'outline', 'ri-bookmark-line', 'settings-presets.html')}
+      ${btn('Save as preset', 'outline', 'ri-bookmark-line')}
       ${btn('Save', 'primary', 'ri-check-line')}
     </div>
   </div>
@@ -131,16 +131,16 @@ document.getElementById('root').innerHTML = `
       <button class="border-t border-border px-2 py-1.5 text-muted-foreground hover:bg-muted/60"><i class="ri-focus-3-line text-sm"></i></button>
     </div>
     <div class="absolute bottom-4 right-4 z-10 flex items-center gap-3 rounded-md border border-border bg-background px-3 py-1.5">
-      <span class="flex items-center gap-1.5 text-[11px] text-muted-foreground"><span class="size-1.5 rounded-full bg-emerald-500"></span>ready</span>
-      <span class="flex items-center gap-1.5 text-[11px] text-muted-foreground"><span class="size-1.5 rounded-full bg-amber-500"></span>throttled</span>
-      <span class="flex items-center gap-1.5 text-[11px] text-muted-foreground"><span class="size-1.5 rounded-full bg-destructive"></span>exhausted</span>
-      <span class="ml-1 border-l border-border pl-3 text-[11px] text-muted-foreground">┄ passthrough</span>
+      <span class="flex items-center gap-1.5 text-[12px] text-muted-foreground"><span class="size-1.5 rounded-full bg-emerald-500"></span>ready</span>
+      <span class="flex items-center gap-1.5 text-[12px] text-muted-foreground"><span class="size-1.5 rounded-full bg-amber-500"></span>throttled</span>
+      <span class="flex items-center gap-1.5 text-[12px] text-muted-foreground"><span class="size-1.5 rounded-full bg-destructive"></span>exhausted</span>
+      <span class="ml-1 border-l border-border pl-3 text-[12px] text-muted-foreground">┄ passthrough</span>
     </div>
     ${canvas}
   </div>
 
   <div class="px-6 py-4">
-    <div class="rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
+    <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
       <i class="ri-information-line mr-1 align-[-1px]"></i>
       Dashed edges bypass the router entirely — that surface is in passthrough and jumps straight to
       whatever target the caller named. Drag a surface onto a scenario to switch it to routed.
@@ -154,7 +154,7 @@ renderShell({
   crumbs: ['Map'],
   subtitle: 'live · 4 surfaces · 5 scenarios · 6 targets',
   actions:
-    btn('Presets', 'outline', 'ri-archive-drawer-line', 'settings-presets.html') +
+    btn('Presets', 'outline', 'ri-archive-drawer-line') +
     btn('Simulate', 'ghost', 'ri-play-line', 'routing-rules.html')
 })
 </script>

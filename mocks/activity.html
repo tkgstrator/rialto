@@ -27,46 +27,41 @@ const filter = (label, value) => `
     <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i>
   </button>`
 
-// Sparkline as inline SVG — no chart library needed for a 40px trend.
-const spark = (points) => {
-  const max = Math.max(...points)
-  const d = points.map((p, i) => `${(i / (points.length - 1)) * 60},${16 - (p / max) * 14}`).join(' ')
-  return `<svg viewBox="0 0 60 16" class="h-4 w-16 overflow-visible" preserveAspectRatio="none">
-    <polyline points="${d}" fill="none" stroke="currentColor" stroke-width="1" class="text-muted-foreground/60" vector-effect="non-scaling-stroke"/>
-  </svg>`
-}
-
 const SESSIONS = [
-  { id: 'ses_9fa2…c41', title: 'Refactor the inbound surface registry', surface: '/v1/messages',  model: 'claude-opus-4-8',   turns: 42, inTok: '284k', outTok: '34.1k', cache: '78%', cost: '$1.24', ago: '2m',  trend: [2,4,3,6,8,7,9] },
-  { id: 'ses_71bd…08e', title: 'Codex: migrate prisma schema',           surface: '/v1/responses', model: 'gpt-5.5',           turns: 17, inTok: '88.4k', outTok: '7.80k', cache: '41%', cost: '$0.412', ago: '19m', trend: [1,1,2,3,2,4,3] },
-  { id: 'ses_04c7…9aa', title: 'Gemini CLI scratch',                     surface: '/v1beta/models/*',    model: 'gemini-3.1-pro',    turns: 8,  inTok: '38.2k', outTok: '3.50k', cache: '0%',  cost: '$0.0930', ago: '1h',  trend: [1,2,1,1,2,1,1] },
-  { id: 'ses_ba51…2f0', title: 'Long: UI mock diff skill',               surface: '/v1/messages',  model: 'claude-sonnet-4-6', turns: 91, inTok: '641k', outTok: '61.4k', cache: '85%', cost: '$2.06', ago: '3h',  trend: [3,5,8,6,9,11,8] },
-  { id: 'ses_3d90…7bc', title: 'OpenAI SDK smoke test',                  surface: '/v1/chat/completions',      model: 'gpt-5.4-mini',      turns: 4,  inTok: '9.10k', outTok: '1.20k', cache: '0%',  cost: '$0.00610', ago: '5h', trend: [1,1,1,2,1,1,1] },
-  { id: 'ses_c18e…44d', title: 'Zod schema layering spike',              surface: '/v1/messages',  model: 'claude-fable-5',    turns: 63, inTok: '412k', outTok: '48.9k', cache: '81%', cost: '$1.71', ago: '8h',  trend: [4,6,5,7,6,8,7] }
+  { id: 'ses_9fa2…c41', surface: '/v1/messages',  model: 'claude-opus-4-8',   turns: 42, inTok: '284k', outTok: '34.1k', cache: '78%', cost: '$1.24' },
+  { id: 'ses_71bd…08e', surface: '/v1/responses', model: 'gpt-5.5',           turns: 17, inTok: '88.4k', outTok: '7.80k', cache: '41%', cost: '$0.412' },
+  { id: 'ses_04c7…9aa', surface: '/v1beta/models/*',    model: 'gemini-3.1-pro',    turns: 8,  inTok: '38.2k', outTok: '3.50k', cache: '0%',  cost: '$0.0930' },
+  { id: 'ses_ba51…2f0', surface: '/v1/messages',  model: 'claude-sonnet-4-6', turns: 91, inTok: '641k', outTok: '61.4k', cache: '85%', cost: '$2.06' },
+  { id: 'ses_3d90…7bc', surface: '/v1/chat/completions',      model: 'gpt-5.4-mini',      turns: 4,  inTok: '9.10k', outTok: '1.20k', cache: '0%',  cost: '$0.00610' },
+  { id: 'ses_c18e…44d', surface: '/v1/messages',  model: 'claude-fable-5',    turns: 63, inTok: '412k', outTok: '48.9k', cache: '81%', cost: '$1.71' }
 ]
 
 const sessionRow = (s) => `
   <tr ${navTo('activity-session.html')} class="border-t border-border/60 transition-colors hover:bg-muted/50">
+    <!-- A short form of the session id, and nothing else. The full uuid
+         was 36 characters that no eye can tell apart, and the opening
+         turn of the conversation is the operator's own prompt text —
+         readable over someone's shoulder, and not what this row is for.
+         Both are on the session's own screen, which is one click away
+         and is where you go to read the conversation. -->
     <td class="py-3 pl-6 pr-3">
-      <div class="truncate text-xs font-medium">${s.title}</div>
-      <div class="font-mono text-[11px] text-muted-foreground">${s.id}</div>
+      <div class="truncate font-mono text-xs">${s.id}</div>
     </td>
     <td class="px-3">${surfacePill(s.surface)}</td>
-    <td class="px-3 font-mono text-[11px] text-muted-foreground">${s.model}</td>
+    <td class="px-3 font-mono text-[12px] text-muted-foreground">${s.model}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${s.turns}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${s.inTok}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${s.outTok}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums text-muted-foreground">${s.cache}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${s.cost}</td>
-    <td class="px-3">${spark(s.trend)}</td>
-    <td class="py-3 pl-3 pr-6 text-right text-[11px] text-muted-foreground">${s.ago}</td>
+
   </tr>`
 
 const table = `
   <table class="w-full table-fixed">
-    <colgroup><col><col class="w-40"><col class="w-36"><col class="w-16"><col class="w-20"><col class="w-20"><col class="w-16"><col class="w-24"><col class="w-20"><col class="w-16"></colgroup>
+    <colgroup><col class="w-44"><col class="w-40"><col><col class="w-16"><col class="w-20"><col class="w-20"><col class="w-16"><col class="w-24"></colgroup>
     <thead>
-      <tr class="text-[11px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2">
+      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         ${sortTh('Session', 'pl-6 pr-3')}
         ${sortTh('Endpoint', 'px-3')}
         ${sortTh('Model', 'px-3')}
@@ -74,19 +69,35 @@ const table = `
         ${sortTh('Input', 'px-3', 'right')}
         ${sortTh('Output', 'px-3', 'right')}
         ${sortTh('Cache', 'px-3', 'right')}
-        ${sortTh('Cost', 'px-3', 'right')}
-        <th class="px-3 text-left font-medium">Trend</th>
-        ${sortTh('Last', 'pl-3 pr-6', 'right', true, 'desc')}
+        ${sortTh('Cost', 'pl-3 pr-6', 'right', true, 'desc')}
+
       </tr>
     </thead>
     <tbody>${SESSIONS.map(sessionRow).join('')}</tbody>
-  </table>`
+  </table>
+
+  <!-- Paging, because the list is unbounded and the screen was showing
+       whatever the first fetch happened to return. The range is spelled
+       out rather than a page number: "26–50 of 128" answers both "where
+       am I" and "how much is there", and a page number answers neither
+       without knowing the page size. -->
+  <div class="flex items-center gap-3 border-t border-border px-6 py-3">
+    <span class="text-[12px] text-muted-foreground">1–25 of 128</span>
+    <div class="ml-auto flex items-center gap-2">
+      <button class="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium text-muted-foreground opacity-50" disabled>
+        <i class="ri-arrow-left-s-line text-sm leading-none"></i>Previous
+      </button>
+      <button class="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium hover:bg-muted/60">
+        Next<i class="ri-arrow-right-s-line text-sm leading-none"></i>
+      </button>
+    </div>
+  </div>`
 
 const stat = (label, value, sub, href) => `
   <div ${navTo(href)} class="border-l-2 border-l-border px-4 py-3 transition-colors hover:border-l-foreground/30 hover:bg-muted/50">
-    <div class="text-[11px] uppercase tracking-wider text-muted-foreground">${label}</div>
+    <div class="text-[12px] uppercase tracking-wider text-muted-foreground">${label}</div>
     <div class="mt-1 font-mono text-lg tabular-nums">${value}</div>
-    <div class="text-[11px] text-muted-foreground">${sub}</div>
+    <div class="text-[12px] text-muted-foreground">${sub}</div>
   </div>`
 
 document.getElementById('root').innerHTML = `
@@ -96,12 +107,10 @@ document.getElementById('root').innerHTML = `
     ${filter('Provider', 'All')}
     ${filter('Model', 'All')}
     ${filter('Range', 'Last 7 days')}
-    <div class="ml-auto flex items-center gap-2">
-      <div class="flex h-7 w-56 items-center gap-2 rounded-md border border-border px-2.5 text-xs text-muted-foreground">
-        <i class="ri-search-line text-sm"></i> Search sessions
-      </div>
-      ${btn('Export', 'ghost', 'ri-download-line')}
-    </div>
+    <!-- No search box and no Export. The rows are named by a short id
+         now, so there is nothing on this screen worth typing at; finding
+         a session is what the filters and ⌘K are for. Export stays on
+         Requests, where a row is a measurement someone takes away. -->
   </div>
 
   <div class="grid grid-cols-4 gap-px border-b border-border px-6 py-4">
@@ -119,8 +128,7 @@ renderShell({
   navMode: 'cloudflare',
   sub: 'sessions',
   crumbs: ['Sessions'],
-  subtitle: '128 sessions · 18.7k requests · last 7 days',
-  actions:
+  subactions:
     btn('Live tail', 'outline', 'ri-broadcast-line', 'activity-requests.html') +
     btn('Archive', 'ghost', 'ri-archive-line')
 })

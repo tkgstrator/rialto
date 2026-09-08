@@ -16,23 +16,31 @@ import { moveModule } from '@/lib/rialto/settings-content/statusline'
 import { createModuleForType, getCurrentModules, removeModuleAt, withCurrentModules } from '@/lib/statusline/modules'
 import type { Config, StatusLineConfig, StatusLineModuleConfig } from '@/types'
 import { createDefaultStatusLineConfig } from '@/utils/statusline'
+import { NotYetAvailable } from './notice'
 import { SettingsLayout } from './SettingsLayout'
 import { LineColumn } from './statusline/LineColumn'
 import { LinePreview } from './statusline/LinePreview'
 import { ModulePalette } from './statusline/ModulePalette'
 import { ModuleProperties } from './statusline/ModuleProperties'
+import { useUnsavedGuard } from './use-unsaved-guard'
 
+/**
+ * This panel used to hand out a `~/.claude/settings.json` snippet whose
+ * command was `rialto statusline`. There is no CLI in this build —
+ * package.json declares no `bin`, and nothing outside the schema reads
+ * `StatusLine` — so an operator who followed it got "command not found"
+ * on every turn. It names the missing piece instead.
+ */
 function WireUpNote() {
+  const { t } = useTranslation()
   return (
     <div className='px-6 py-5'>
-      <div className='rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground'>
-        <i className='ri-terminal-line mr-1 align-[-1px]' />
-        <Trans
-          i18nKey='settings.statusline.wireUp'
-          values={{ snippet: '"statusLine": { "type": "command", "command": "rialto statusline" }' }}
-          components={{ mono: <span className='font-mono' /> }}
-        />
-      </div>
+      <NotYetAvailable
+        what={t('settings.statusline.renderingTitle')}
+        needs={
+          <Trans i18nKey='settings.statusline.renderingNeeds' components={{ mono: <span className='font-mono' /> }} />
+        }
+      />
     </div>
   )
 }
@@ -112,6 +120,7 @@ function StatuslineEditor({ config }: { config: Config }) {
   }, [config, draft, reloadConfig, t])
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(persisted)
+  useUnsavedGuard(dirty)
 
   return (
     <SettingsLayout

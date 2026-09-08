@@ -9,7 +9,9 @@
     "continue": "Continue",
     "copy": "Copy",
     "discard": "Discard",
-    "done": "Done"
+    "done": "Done",
+    "previous": "Previous",
+    "copied": "Copied"
   },
   "activity": {
     "common": {
@@ -22,7 +24,7 @@
     },
     "requests": {
       "title": "Requests",
-      "subtitle": "{{logged}} requests · {{failovers}} failovers · newest {{newest}}",
+      "subtitle": "{{shown}} of {{logged}} requests · {{range}}",
       "liveTail": "Live tail",
       "live": "live",
       "export": "Export",
@@ -31,7 +33,7 @@
       "filterSurface": "Surface",
       "filterStatus": "Status",
       "filterToken": "Token",
-      "filterRule": "Rule",
+      "filterRule": "Scenario",
       "filterRange": "Range",
       "range1h": "Last 1h",
       "range24h": "Last 24h",
@@ -44,8 +46,7 @@
       "colStatus": "Status",
       "colEndpoint": "Endpoint",
       "colModels": "Requested → Sent",
-      "colRule": "Rule",
-      "colLane": "Lane",
+      "colRule": "Scenario",
       "colToken": "Token",
       "colInput": "Input",
       "colOutput": "Output",
@@ -54,17 +55,16 @@
       "laneAgent": "agent",
       "laneSubagent": "subagent",
       "laneUntracked": "untracked",
-      "note": "A <mono>429</mono> row is not an error the client saw — it is a failover step. The row that follows it serves the same turn from the next target in the chain. Subscription rows have no cost: the plan is already paid for."
+      "note": "A <mono>429</mono> row is not an error the client saw — it is a failover step, and the row after it serves the same turn from the next target in the chain. <strong>Failed upstream attempts are not recorded yet</strong>, though: the pipeline throws before the usage capture runs, so a count of 0 here does not mean no failover happened. Subscription rows are priced at list price — the plan is already paid for.",
+      "captureOff": "No requests recorded — request capture is switched off. Turn it on under <settings>Settings → Logging</settings>."
     },
     "sessions": {
       "title": "Activity",
       "subtitle": "{{sessions}} sessions · {{requests}} requests · {{range}}",
       "liveTail": "Live tail",
       "archive": "Archive",
-      "archiveConfirm": "Archive every session older than the selected range? Their request logs stay, but the sessions disappear from this list.",
-      "export": "Export",
+      "archiveConfirm": "Archive ALL active sessions? This ignores the range filter above — every session disappears from this list, including todays. Their request logs stay.",
       "empty": "No sessions match these filters.",
-      "searchPlaceholder": "Search sessions…",
       "filterSurface": "Surface",
       "filterProvider": "Provider",
       "filterModel": "Model",
@@ -88,9 +88,9 @@
       "colOutput": "Output",
       "colCache": "Cache",
       "colCost": "Cost",
-      "colTrend": "Trend",
       "colLast": "Last",
-      "trendLabel": "Volume over {{calls}} calls"
+      "range": "{{first}}–{{last}} of {{total}}",
+      "rangeUnknownTotal": "{{first}}–{{last}}"
     },
     "session": {
       "title": "Session",
@@ -98,8 +98,6 @@
       "backToActivity": "Back to Activity",
       "previous": "Previous",
       "rawJson": "Raw JSON",
-      "archive": "Archive",
-      "archiveDisabled": "A session still receiving calls cannot be archived.",
       "loadOlder": "Load older turns",
       "summary": "Summary",
       "inbound": "Inbound",
@@ -107,14 +105,16 @@
       "upstreamCalls": "Upstream calls",
       "inputTokens": "Input tokens",
       "outputTokens": "Output tokens",
-      "cacheRead": "Cache read",
+      "cacheRead": "of which cache read",
       "cacheHit": "Cache hit",
       "cost": "Cost",
       "duration": "Duration",
       "cacheEfficiency": "Cache efficiency",
       "routingTrace": "Routing trace",
       "showAllCalls": "Show all {{calls}} calls",
-      "showFewer": "Show fewer"
+      "showFewer": "Show fewer",
+      "chars": "{{n}} chars",
+      "codePlain": "code"
     },
     "logs": {
       "title": "Logs",
@@ -169,9 +169,11 @@
       "presets": "Presets",
       "apply": "Apply",
       "simulate": "Simulate",
+      "presetUnresolved": "{{name}} has no enabled model at any of its tiers — connect a provider first.",
       "noSnapshots": "No snapshots saved yet.",
       "notConfigured": "not configured",
       "presetApplied": "Applied preset “{{name}}”.",
+      "presetAppliedWithWarnings": "Applied preset “{{name}}” — {{count}} target(s) were dropped as unknown.",
       "modeRouted": "routed",
       "modePassthrough": "passthrough",
       "laneAgent": "Agent",
@@ -213,15 +215,13 @@
       "noTargetsLeft": "Every target is already in this chain.",
       "disabledCount": "{{n}} disabled",
       "emptyLane": "This lane has no targets yet.",
-      "colWeight": "Weight",
-      "colQuota": "Quota",
-      "colHealth": "Health",
+      "colShare": "Share",
       "colOn": "On",
       "rowActions": "Row actions",
       "moveUp": "Move up",
       "moveDown": "Move down",
       "enableTarget": "Enable {{target}}",
-      "note": "Order is preference, top first. A target is skipped when it is disabled, exhausted, or its scheduler weight is <mono>0.00</mono>. Weights are published by the routing scheduler every tick — edit the chain, not the weights.",
+      "note": "Order is preference, top first: the router walks the chain and sends the request to the first target it can use, so <mono>Share</mono> is each target's slice of this lane's scheduler weight — not the fraction of traffic it will see. A target is skipped when it is disabled, exhausted, or its share is <mono>0%</mono>. The weights are published by the routing scheduler every tick — edit the chain, not the numbers.",
       "unconfiguredProfile": "Profile <mono>{{profile}}</mono> has no entries, so requests on <mono>{{path}}</mono> fall through to the scenario router. Add a target to take the decision here instead.",
       "constraints": "Constraints",
       "noLaneRules": "No rules apply to this lane.",
@@ -248,7 +248,8 @@
       "liveMap": "Live map",
       "passthroughNote": "Switch this surface to <mono>Routed</mono> to give {{client}} the same quota-aware failover Claude Code gets. Callers keep sending their own model string — it becomes the <mono>requestedModel</mono> that rules match on, rather than the final target.",
       "schedulerIdle": "The <mono>Rules</mono> selector is active, so this chain is not evaluated and every target below reads <mono>unknown</mono>. Switch the selector above to <mono>Chain</mono> to let it decide; the states fill in on the scheduler’s next tick.",
-      "schedulerNoChain": "The routing scheduler is running but has no preference chain to score, so every target below reads <mono>unknown</mono>. Add entries to this surface’s routing profile to see live states."
+      "schedulerNoChain": "The routing scheduler is running but has no preference chain to score, so every target below reads <mono>unknown</mono>. Add entries to this surface’s routing profile to see live states.",
+      "schedulerNotTicked": "The routing scheduler has not published a snapshot yet, so every target below reads <mono>unknown</mono>. States fill in on its first tick — by default within five minutes of the server starting."
     },
     "map": {
       "title": "Routing map",
@@ -345,7 +346,6 @@
     "apply": "Apply",
     "hex_input_help": "Enter hex color value (e.g.: #FF0000)"
   },
-  "presets": {},
   "providers": {
     "screen": {
       "title": "Providers",
@@ -375,7 +375,8 @@
       "modelsSynced": "Models synced",
       "routable": "Routable",
       "toggleProvider": "Toggle {{provider}}",
-      "routableNeedsCredential": "Needs a working credential before it can take traffic"
+      "routableNeedsCredential": "Needs a working credential before it can take traffic",
+      "removeConfirm": "Remove {{name}}? This deletes its {{models}} models and the stored credential, and clears {{bindings}} routing slot(s) that point at it. There is no undo."
     },
     "credentials": {
       "title": "Credentials",
@@ -393,7 +394,8 @@
       "active": "active",
       "auth": "auth {{status}}",
       "weekly": "weekly",
-      "resetsIn": "{{window}} resets in {{until}}"
+      "resetsIn": "{{window}} resets in {{until}}",
+      "resetsDue": "{{window}} resetting — waiting for the next poll"
     },
     "shape": {
       "title": "Request shape",
@@ -403,7 +405,8 @@
       "endpoint": "Endpoint",
       "derived": "Derived from the API style — not configurable.",
       "derivedWithOverrides": "Derived from the API style — not configurable. Per-model overrides live in the model row below.",
-      "overrideNote": "Some models here override to <mono>{{styles}}</mono>; see the Shape column."
+      "overrideNote": "Some models here override to <mono>{{styles}}</mono>; see the Shape column.",
+      "authSubscription": "subscription (OAuth)"
     },
     "models": {
       "title": "Models",
@@ -476,7 +479,8 @@
       "errorRequest": "Request failed",
       "errorStartOauth": "Failed to start the OAuth flow.",
       "errorRedirect": "The redirect URL was rejected.",
-      "errorCredentials": "The credentials were rejected."
+      "errorCredentials": "The credentials were rejected.",
+      "errorNotJson": "{{name}} is not valid JSON."
     },
     "vendorHint": {
       "claudeCode": "Pro / Max via Claude CLI OAuth",
@@ -494,7 +498,8 @@
     "common": {
       "title": "Settings",
       "notYetAvailable": "not yet available",
-      "saveFailed": "Save failed: {{message}}"
+      "saveFailed": "Save failed: {{message}}",
+      "unsavedConfirm": "You have unsaved changes on this screen. Leave and discard them?"
     },
     "rail": {
       "server": "Server",
@@ -502,15 +507,11 @@
       "logging": "Logging",
       "personas": "Personas",
       "statusline": "Status line",
-      "presets": "Presets",
       "advanced": "Advanced"
     },
     "server": {
       "subtitle": "Rialto v{{version}} · config envelope on disk",
-      "headerNote": "Boot-time values. A change needs a restart.",
-      "restart": "Restart",
-      "restartRequested": "Restart requested.",
-      "restartFailed": "Restart failed: {{message}}",
+      "headerNote": "Boot-time values. A change takes effect when the server restarts — `docker compose restart`, or restart the process.",
       "numbersRequired": "Port and request timeout must be whole numbers.",
       "host": "Host",
       "hostHint": "Bind address. Put Cloudflare Access in front before exposing beyond loopback.",
@@ -546,7 +547,10 @@
       "versionUnknown": "unknown",
       "versionAvailable": "v{{version}} available",
       "upToDate": "up to date",
-      "checkNow": "Check now"
+      "checkNow": "Check now",
+      "checkingNow": "Checking…",
+      "versionCheckFailed": "check failed",
+      "releaseNotes": "Release notes"
     },
     "logging": {
       "subtitle": "level {{level}} · {{captured}} captured",
@@ -588,24 +592,22 @@
       "colStore": "Store",
       "colRows": "Rows",
       "colSize": "Size",
-      "colPruneOlderThan": "Prune older than",
+      "colKeep": "Keep",
       "unbounded": "unbounded",
       "pruneNow": "Prune now",
       "pruneOlderThanLabel": "Prune {{store}} older than",
-      "days": "{{n}} days"
+      "days": "{{n}} days",
+      "serverLog": "Server log"
     },
     "advanced": {
-      "subtitle": "config document · scratchpad · health",
+      "subtitle": "config document · health",
       "tabConfig": "Config document",
-      "tabScratch": "Request scratchpad",
       "tabHealth": "Health",
-      "scratchTitle": "Request scratchpad",
-      "notRebuilt": "not rebuilt yet",
-      "scratchWhat": "Scratchpad in this shell",
-      "scratchNeeds": "The HTTP scratchpad still runs on its own route at <mono>/debug</mono> — a working screen, but one the Rialto mocks never designed, so it has not been folded in here. Rebuilding it inside this tab needs a design pass before an implementation pass.",
-      "healthTitle": "Health",
+      "healthTitle": "Checks",
       "healthMeta": "GET /health · unauthenticated",
       "refresh": "Refresh",
+      "rawJson": "Raw JSON",
+      "recheck": "Re-check",
       "status": "Status",
       "statusHint": "Degraded means the server answered but a dependency check failed. Unreachable means it did not answer at all.",
       "unreachable": "unreachable",
@@ -633,11 +635,11 @@
       "cannotSave": "Cannot save: the document does not parse.",
       "valid": "valid",
       "invalid": "invalid",
-      "backupsKept": "3 backups kept",
+      "backupsKept": "no backups — this is the only copy",
       "reload": "Reload",
       "format": "Format",
       "configDocument": "Config document",
-      "configNote": "<mono>$VAR</mono> is interpolated at boot, so a key can live in the environment rather than this file, and the last three versions are kept as backups beside it. The file on disk is JSON5 and keeps its comments; this view is the composed document the API returns, so saving from here rewrites it as plain JSON. Boot scalars need a restart — the screens above apply live."
+      "configNote": "<mono>$VAR</mono> is interpolated at boot, so a key can live in the environment rather than this file. Saving overwrites the file in place and there is no backup to roll back to — take your own copy first if the change is large. The file on disk is JSON5 and keeps its comments; this view is the composed document the API returns, so saving from here rewrites it as plain JSON. Boot scalars need a restart — the screens above apply live."
     },
     "access": {
       "subtitleConfigured": "Cloudflare Access on /api · scoped tokens on /v1",
@@ -645,6 +647,7 @@
       "badgeConfigured": "Cloudflare Access",
       "badgeUnconfigured": "No Access in front",
       "openZeroTrust": "Open Zero Trust",
+      "auditLog": "Audit log",
       "checking": "Checking…",
       "signedInAs": "Signed in as",
       "signedInAsHint": "The caller Rialto verified for this request.",
@@ -681,7 +684,7 @@
       "bootstrapTitle": "Bootstrap token",
       "envelope": "envelope",
       "bootstrapMeta": "break-glass admin credential",
-      "apikey": "APIKEY",
+      "apikey": "Bootstrap token (APIKEY)",
       "apikeyHint": "Stored in the on-disk envelope and mirrored onto process.env. Accepted on /api/* only — the recovery path when Access or the database is down. The proxy refuses it.",
       "tokenCopied": "Bootstrap token copied.",
       "clipboardRefused": "Clipboard write was refused by the browser.",
@@ -751,7 +754,13 @@
       "revoke": "Revoke",
       "delete": "Delete",
       "tokenCopiedShort": "Copied",
-      "costNote": "The <strong>Cost</strong> column prices the last 30 days of retained request logs — a rate, not the lifetime total the counter beside it shows. A dash means nothing priced: no traffic in the window, capture off, or a subscription model, which has no per-request price."
+      "costNote": "The <strong>Cost</strong> column prices the last 30 days of retained request logs — a rate, not the lifetime total the counter beside it shows. A dash means nothing priced: no traffic in the window, capture off, or a subscription model, which has no per-request price.",
+      "expiryNever": "No expiry",
+      "expiry30d": "30 days",
+      "expiry90d": "90 days",
+      "expiry365d": "1 year",
+      "closedNotice": "<strong>Remote admin access is closed</strong> — no bootstrap token is set and Cloudflare Access is not configured, so only a browser on this machine can reach <mono>/api/*</mono>. Set a team domain and AUD below to open it to a verified identity.",
+      "adminAccess": "Admin access"
     },
     "personas": {
       "subtitle": "{{count}} personas · {{active}}",
@@ -787,18 +796,20 @@
       "previewNote": "The persona goes first so the client's own prompt can still override it. Both blocks are marked cacheable, so the cost is paid once per session."
     },
     "statusline": {
-      "subtitle": "{{count}} modules · rialto statusline",
+      "subtitle": "{{count}} modules · preview only",
       "saved": "Status line saved",
-      "wireUp": "Wire it up in <mono>~/.claude/settings.json</mono>: <mono>{{snippet}}</mono>",
       "addModule": "Add module",
       "line": "Line",
       "removeModule": "Remove {{module}}",
-      "lineNote": "Order is left to right. Claude Code pipes session JSON to <mono>rialto statusline</mono> on every turn.",
+      "lineNote": "Order is left to right. The renderer that turns this into a status line does not ship yet, so what you build here is saved but not drawn anywhere outside this preview.",
       "preview": "Preview",
-      "live": "live",
+      "live": "preview",
       "emptyLine": "The line is empty — add a module.",
       "styleDefault": "Default",
       "stylePowerline": "Powerline",
+      "backdropDark": "Dark terminal",
+      "backdropLight": "Light terminal",
+      "backdropMono": "No color",
       "selectModule": "Select a module in the line to edit its icon, colour and format.",
       "moduleTitle": "{{module}} module",
       "selected": "selected",
@@ -813,48 +824,16 @@
       "hexColour": "Hex colour",
       "script": "Script",
       "scriptHint": "Executed each turn; its stdout replaces the module text.",
-      "scriptPath": "Script path"
-    },
-    "presets": {
-      "subtitle": "{{count}} installed",
-      "subtitleSelected": "{{count}} installed · {{name}} selected",
-      "selectOne": "Select a preset to see what applying it would change.",
-      "revertLast": "Revert last apply",
-      "revertUnavailable": "No revert endpoint yet — save your routing from Routing → Library before applying.",
-      "installed": "Preset installed",
-      "installFailed": "Install failed: {{message}}",
-      "fillMissing": "Fill in {{fields}} before applying.",
-      "applied": "{{name}} applied",
-      "applyFailed": "Apply failed: {{message}}",
-      "deleted": "{{name}} deleted",
-      "deleteFailed": "Delete failed: {{message}}",
-      "marketFailed": "Could not read the preset market: {{message}}",
-      "tabInstalled": "Installed",
-      "tabBrowse": "Browse",
-      "installFromGithub": "Install from GitHub",
-      "repoPlaceholder": "owner/repo",
-      "repoLabel": "GitHub repository",
-      "install": "Install",
-      "installing": "Installing…",
-      "exportCurrent": "Export current",
-      "exportUnavailable": "Exporting a preset is a CLI command: rialto preset export",
-      "libraryNote": "A preset is a snapshot of providers, models and routing with secrets stripped — the shareable half of a configuration.",
-      "pillInstalled": "installed",
-      "pillNotInstalled": "not installed",
-      "authorUnknown": "author unknown",
-      "byAuthor": "by {{author}}",
-      "reapply": "Re-apply",
-      "warnTitle": "Applying replaces your default route",
-      "warnBody": "There is no automatic snapshot yet — save your current routing from Routing → Library first if you want a way back. Subscription providers and their accounts are never touched by a preset.",
-      "whatItChanges": "What it changes",
-      "diffAgainst": "diff against your current config",
-      "diffEmpty": "Nothing — this preset matches your current config.",
-      "requiredInputs": "Required inputs",
-      "complete": "complete",
-      "missingCount": "{{n}} missing",
-      "required": "required",
-      "secretHint": "Stored on this machine only. Never written into the preset.",
-      "stored": "stored"
+      "scriptPath": "Script path",
+      "renderingTitle": "Status line rendering",
+      "renderingNeeds": "Needs a <mono>rialto statusline</mono> command for Claude Code to pipe session JSON to. This build ships no CLI, so the layout below is stored and nothing reads it yet.",
+      "moduleModel": "Model",
+      "moduleUsage": "Tokens",
+      "moduleSpeed": "Speed",
+      "moduleGitBranch": "Git branch",
+      "moduleWorkDir": "Directory",
+      "moduleScript": "Script",
+      "moduleFallback": "Module"
     }
   },
   "shell": {
@@ -868,6 +847,8 @@
     "searchEmpty": "Nothing matches.",
     "expandSection": "Expand {{section}}",
     "collapseSection": "Collapse {{section}}",
+    "expandSidebar": "Expand sidebar",
+    "collapseSidebar": "Collapse sidebar",
     "theme": "Theme",
     "serving": "Serving",
     "degraded": "Degraded",
@@ -895,7 +876,29 @@
     "failoverActivity": "Failover activity",
     "noFailover": "No failover events in this window.",
     "recentSessions": "Recent sessions",
-    "noSessions": "No sessions in this window."
+    "noSessions": "No sessions in this window.",
+    "resetsDue": "resetting — waiting for the next poll",
+    "modeRoutedHint": "Routed: Rialto picks the model from this surface's chain, rules and quota.",
+    "modePassthroughHint": "Passthrough: the caller's own model name goes straight upstream and the chain is not consulted. Turn routing on under Routing.",
+    "spendDeltaHint": "Change against the previous period of the same length.",
+    "failoverWeightLabel": "weight",
+    "failoverRateLimited": "{{account}} was rate limited",
+    "failoverRetryAfter": "the vendor asked for {{secs}}s before the next try",
+    "failoverNoRetryAfter": "no Retry-After on the response",
+    "failoverWeight": "{{target}} scored {{from}} → {{to}}",
+    "weightReason": {
+      "quota_drop": "its quota is running out, so the scheduler is steering traffic away",
+      "quota_recovered": "its quota recovered, so it is taking traffic again",
+      "error_rate": "it started returning errors",
+      "reset_soon": "its window resets soon, so the score is held back",
+      "probe_floor": "kept just above zero so the scheduler can retest it",
+      "hold_guard": "held steady to stop the score oscillating",
+      "stale_quota": "its quota reading is too old to trust",
+      "unknown_budget": "no budget is known for this target",
+      "no_quota_kind": "this target reports no quota window",
+      "unknown": "reason not recorded"
+    },
+    "lastDays": "last {{days}}d"
   },
   "system": {
     "notFound": {
@@ -922,7 +925,8 @@
       "title": "Cannot reach the Rialto API",
       "retrying": "retrying",
       "body": "The UI is loaded but <mono>/api/config</mono> is not answering. The proxy at <mono>/v1/*</mono> may still be serving requests from its cached configuration — check before restarting.",
-      "proxy": "Proxy"
+      "proxy": "Proxy",
+      "retryNow": "Retry now"
     },
     "crash": {
       "title": "This screen failed to render",

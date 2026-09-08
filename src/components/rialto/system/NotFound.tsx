@@ -25,9 +25,12 @@ const MERGED_INTO: Record<string, string> = {
   '/cost': 'shell.navActivity',
   '/logs': 'shell.navActivity',
   '/personas': 'shell.navSettings',
-  '/presets': 'shell.navSettings',
-  '/json': 'shell.navSettings',
-  '/debug': 'shell.navSettings'
+  '/json': 'shell.navSettings'
+  // `/presets` and `/debug` are deliberately absent. Both were removed
+  // rather than merged (the presets screen in c0b0742, the Advanced
+  // scratchpad tab in ebf10bd), so "moved into Settings" sent operators
+  // looking for a screen that is not there. They fall through to the
+  // plain not-a-page sentence instead.
 }
 
 type Translate = (key: string, options?: Record<string, unknown>) => string
@@ -49,7 +52,7 @@ export function NotFound({ pathname }: { pathname: string }) {
     <div className='w-full max-w-xs text-center'>
       <div className='font-mono text-2xl tabular-nums text-muted-foreground/40'>404</div>
       <h3 className='mt-2 text-sm font-semibold'>{t('system.notFound.title')}</h3>
-      <p className='mt-1.5 text-[11px] leading-relaxed text-muted-foreground'>
+      <p className='mt-1.5 text-[12px] leading-relaxed text-muted-foreground'>
         <span className='font-mono'>{pathname}</span> {explain(pathname, t)}
       </p>
       <RButton variant='outline' icon='ri-arrow-left-line' className='mt-4' onClick={() => navigate('/overview')}>

@@ -7,13 +7,18 @@
  * there because lib/api.ts is owned elsewhere during the migration.
  */
 
+import type { ModelTier } from '@/shared/data'
+
 export const SCENARIOS = ['default', 'think', 'longContext', 'webSearch', 'image'] as const
 export type ScenarioKey = (typeof SCENARIOS)[number]
 
 export const LANES = ['agent', 'subagent'] as const
 export type Lane = (typeof LANES)[number]
 
-export type Tier = 'fable' | 'opus' | 'sonnet' | 'haiku'
+// One definition, in shared, because the built-in presets are written in
+// tiers and are bundled for the browser from there. A second copy here
+// would be free to drift from the one the presets are validated against.
+export type Tier = ModelTier
 
 export interface PreferenceEntry {
   priority: number

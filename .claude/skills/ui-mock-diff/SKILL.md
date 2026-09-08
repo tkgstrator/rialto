@@ -62,6 +62,9 @@ bun run mocks:shoot -- --screen routing --theme dark
 ```
 
 - 1440×900 at `deviceScaleFactor: 2` → 2880×1800 PNGs.
+- If it dies on a missing chromium, playwright is looking for its own pinned
+  build. Point it at the one this machine has with
+  `RIALTO_CHROMIUM_PATH=<path to chrome>` (the E2E suite reads the same var).
 - Transitions, animations and the caret are frozen; webfonts are awaited.
 - Output: `mocks/.shots/<screen>.<theme>.<side>.png`.
 - Theme is deterministic: each theme gets a fresh browser context (empty

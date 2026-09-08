@@ -6,10 +6,29 @@
  * can be reasoned about (and unit-tested) without React.
  */
 import type { CatalogEntry, CatalogModel } from '@/schemas/api/catalog'
+import type { RouterConfig } from '@/schemas/domain/router'
 import { transformerChain } from '@/shared/transformer-chain'
 import type { ApiStyle, Provider, ReasoningEffort, SubscriptionWire, TestStatus, Tier, TransformerWire } from './types'
 
 export type ProviderState = 'off' | 'live' | 'invalid' | 'unknown'
+
+/**
+ * How many router bindings would be cleared by deleting this provider.
+ *
+ * Removing a provider cascades to its models and nulls every RouterSlot
+ * that pointed at one, which the server reports only as a warning after
+ * the fact. Counting them first is what lets the confirm say how much
+ * routing the operator is about to lose.
+ */
+export function routerBindingsFor(router: RouterConfig | undefined, providerName: string): number {
+  if (router === undefined) return 0
+  const prefix = `${providerName},`
+  const scenarios = [router.default, router.think, router.longContext, router.webSearch, router.image]
+  return scenarios
+    .flatMap((scenario) => [scenario.agent, scenario.subagent])
+    .flatMap((lane) => [lane.primary, ...lane.fallbacks])
+    .filter((target) => typeof target === 'string' && target.startsWith(prefix)).length
+}
 
 /** Models the operator has switched off. Mirrors the DB's Model.enabled. */
 export function disabledModelsOf(p: Provider): string[] {
@@ -200,8 +219,16 @@ export function pipelineOf(p: Provider): string[] {
   return chain === null ? [] : chain
 }
 
-export function authLabelOf(p: Provider): string {
-  if (p.auth_mode === 'subscription') return 'subscription (OAuth)'
+/**
+ * The credential an outbound request carries.
+ *
+ * Returns null for subscription providers rather than a phrase: the
+ * api_key answers are header names ('x-api-key', 'Bearer') that are the
+ * same in every language, while "subscription (OAuth)" is prose and was
+ * reaching the JA build untranslated. The caller supplies that half.
+ */
+export function authLabelOf(p: Provider): string | null {
+  if (p.auth_mode === 'subscription') return null
   const style = apiStyleOf(p)
   return style === null ? '—' : API_KEY_AUTH[style]
 }

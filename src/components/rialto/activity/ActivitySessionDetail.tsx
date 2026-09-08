@@ -9,6 +9,7 @@ import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
+import { CodeBlock } from '@/components/rialto/activity/CodeBlock'
 import { type ActivityRequestLog, downloadText, fetchSessionRequestLogs } from '@/components/rialto/activity/data'
 import { LANE_KEYS, lane as laneOf } from '@/components/rialto/activity/requests-rows'
 import { DASH, ScreenMessage, StatusPill } from '@/components/rialto/activity/shared'
@@ -18,6 +19,7 @@ import { Screen } from '@/components/rialto/Screen'
 import { api, type SessionMessageItem, type SessionSummary } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
 import { fmtAgo, fmtRate } from '@/lib/rialto/format'
+import { splitTurn } from '@/lib/sessions/code'
 import { fmtChars, fmtCost } from '@/lib/sessions/format'
 import { normaliseContent } from '@/lib/sessions/message-content'
 import { cn } from '@/lib/utils'
@@ -66,6 +68,7 @@ function toTurn(message: SessionMessageItem): Turn {
 }
 
 function TurnRow({ turn }: { turn: Turn }) {
+  const { t } = useTranslation()
   const isUser = turn.role === 'user'
   return (
     <div
@@ -77,7 +80,7 @@ function TurnRow({ turn }: { turn: Turn }) {
       <div className='flex items-baseline gap-2'>
         <span
           className={cn(
-            'text-[11px] font-medium uppercase tracking-wider',
+            'text-[12px] font-medium uppercase tracking-wider',
             isUser ? 'text-foreground' : 'text-muted-foreground'
           )}
         >
@@ -88,9 +91,25 @@ function TurnRow({ turn }: { turn: Turn }) {
             {tool}
           </Pill>
         ))}
-        <span className='ml-auto font-mono text-[11px] tabular-nums text-muted-foreground'>{fmtChars(turn.chars)}</span>
+        <span className='ml-auto font-mono text-[12px] tabular-nums text-muted-foreground'>
+          {t('activity.session.chars', { n: fmtChars(turn.chars) })}
+        </span>
       </div>
-      {turn.text === '' ? null : <p className='mt-1.5 whitespace-pre-wrap text-xs leading-relaxed'>{turn.text}</p>}
+      {/* Prose and fenced code are rendered apart. As one paragraph the
+          code wrapped with the sentences around it, which is unreadable
+          exactly where it matters — the code is usually why the session
+          was opened. */}
+      {splitTurn(turn.text).map((segment, index) =>
+        segment.kind === 'text' ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: segments are an ordered split of one string
+          <p key={`text-${index}`} className='mt-1.5 whitespace-pre-wrap text-xs leading-relaxed'>
+            {segment.text}
+          </p>
+        ) : (
+          // biome-ignore lint/suspicious/noArrayIndexKey: segments are an ordered split of one string
+          <CodeBlock key={`code-${index}`} lang={segment.lang} body={segment.body} />
+        )
+      )}
     </div>
   )
 }
@@ -98,8 +117,8 @@ function TurnRow({ turn }: { turn: Turn }) {
 function Kv({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className='flex items-baseline gap-3 px-4 py-1.5'>
-      <span className='text-[11px] text-muted-foreground'>{label}</span>
-      <span className='ml-auto font-mono text-[11px] tabular-nums'>{value}</span>
+      <span className='text-[12px] text-muted-foreground'>{label}</span>
+      <span className='ml-auto font-mono text-[12px] tabular-nums'>{value}</span>
     </div>
   )
 }
@@ -110,15 +129,15 @@ function CallRow({ call }: { call: ActivityRequestLog }) {
   return (
     <div className='border-t border-border/60 px-4 py-2.5 transition-colors hover:bg-muted/50'>
       <div className='flex items-baseline gap-2'>
-        <span className='font-mono text-[11px] tabular-nums text-muted-foreground'>
+        <span className='font-mono text-[12px] tabular-nums text-muted-foreground'>
           {dayjs(call.createdAt).format('HH:mm:ss')}
         </span>
         <StatusPill status={call.status} />
-        <span className='ml-auto font-mono text-[11px] tabular-nums text-muted-foreground'>
+        <span className='ml-auto font-mono text-[12px] tabular-nums text-muted-foreground'>
           {call.durationMs === 0 ? DASH : call.durationMs.toLocaleString()} ms
         </span>
       </div>
-      <div className='mt-1.5 flex items-center gap-1.5 font-mono text-[11px]'>
+      <div className='mt-1.5 flex items-center gap-1.5 font-mono text-[12px]'>
         <span className='text-muted-foreground'>{requested}</span>
         <i className='ri-arrow-right-line text-xs text-muted-foreground/50' />
         <span>{`${call.provider},${call.model}`}</span>
@@ -147,7 +166,7 @@ function SummaryPane({
   return (
     <>
       <div className='px-4 pt-5 pb-2'>
-        <h2 className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>
+        <h2 className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>
           {t('activity.session.summary')}
         </h2>
       </div>
@@ -166,8 +185,8 @@ function SummaryPane({
 
       <div className='px-4 pb-3 pt-3'>
         <div className='mb-1.5 flex items-baseline'>
-          <span className='text-[11px] text-muted-foreground'>{t('activity.session.cacheEfficiency')}</span>
-          <span className='ml-auto font-mono text-[11px] tabular-nums'>{cachePct}%</span>
+          <span className='text-[12px] text-muted-foreground'>{t('activity.session.cacheEfficiency')}</span>
+          <span className='ml-auto font-mono text-[12px] tabular-nums'>{cachePct}%</span>
         </div>
         {/* Explicit `ok`: a high cache hit is the good end of the scale, the
             inverse of the utilization meters the auto tone is built for. */}
@@ -184,7 +203,7 @@ function TracePane({ calls }: { calls: ActivityRequestLog[] }) {
   return (
     <>
       <div className='border-t border-border px-4 pt-5 pb-2'>
-        <h2 className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>
+        <h2 className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>
           {t('activity.session.routingTrace')}
         </h2>
       </div>
@@ -196,7 +215,7 @@ function TracePane({ calls }: { calls: ActivityRequestLog[] }) {
           <button
             type='button'
             onClick={() => setExpanded((v) => !v)}
-            className='w-full rounded-md border border-dashed border-border py-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted/50'
+            className='w-full rounded-md border border-dashed border-border py-2 text-[12px] text-muted-foreground transition-colors hover:bg-muted/50'
           >
             {expanded ? t('activity.session.showFewer') : t('activity.session.showAllCalls', { calls: calls.length })}
           </button>
@@ -336,15 +355,17 @@ export function ActivitySessionDetail() {
               </Link>
               <div className='min-w-0'>
                 <div className='truncate text-xs font-medium'>{title}</div>
-                <div className='font-mono text-[11px] text-muted-foreground'>{sessionId}</div>
+                <div className='font-mono text-[12px] text-muted-foreground'>{sessionId}</div>
               </div>
               <div className='ml-auto flex gap-2'>
                 <RButton variant='ghost' icon='ri-code-line' onClick={downloadRaw}>
                   {t('activity.session.rawJson')}
                 </RButton>
-                <RButton variant='ghost' icon='ri-archive-line' disabled title={t('activity.session.archiveDisabled')}>
-                  {t('activity.session.archive')}
-                </RButton>
+                {/* No Archive button: there is no per-session archive route
+                    (only POST /request-logs/sessions/archive, which takes all
+                    of them), so this was permanently disabled behind a tooltip
+                    blaming the session for "still receiving calls" — shown
+                    just the same on one last seen three days ago. */}
               </div>
             </div>
             {data.nextCursor === null ? null : (
@@ -352,7 +373,7 @@ export function ActivitySessionDetail() {
                 <button
                   type='button'
                   onClick={loadOlder}
-                  className='w-full rounded-md border border-dashed border-border py-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted/50'
+                  className='w-full rounded-md border border-dashed border-border py-2 text-[12px] text-muted-foreground transition-colors hover:bg-muted/50'
                 >
                   {t('activity.session.loadOlder')}
                 </button>

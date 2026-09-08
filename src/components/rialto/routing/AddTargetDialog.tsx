@@ -50,12 +50,18 @@ export function AddTargetDialog({
                       setOpen(false)
                     }}
                   >
-                    <span className='truncate font-mono'>{option.target}</span>
-                    {option.tier === null ? null : (
-                      <Pill tone='mute' className='ml-auto'>
-                        {option.tier}
-                      </Pill>
-                    )}
+                    <span className='min-w-0 flex-1 truncate font-mono'>{option.target}</span>
+                    {/* A fixed slot, and the name grows to fill the rest.
+                        Two things were ragged: `ml-auto` on the pill lined
+                        up the right edges of 4-6 character words (haiku /
+                        opus / sonnet / fable) and left the LEFT edges — the
+                        one the eye reads down — uneven, and without
+                        `flex-1` on the name the slot floated with the
+                        content instead of holding a column. Matches the
+                        chain table, where Tier is a fixed column. */}
+                    <span className='flex w-16 shrink-0 items-center'>
+                      {option.tier === null ? null : <Pill tone='mute'>{option.tier}</Pill>}
+                    </span>
                   </CommandItem>
                 ))}
               </CommandGroup>

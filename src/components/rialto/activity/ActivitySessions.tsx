@@ -12,14 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import {
-  type ActivityRequestLog,
-  downloadCsv,
-  fetchRequestLogs,
-  fetchUsageCost,
-  summariseUsageCost,
-  type WindowTotals
-} from '@/components/rialto/activity/data'
+import { fetchUsageCost, summariseUsageCost, type WindowTotals } from '@/components/rialto/activity/data'
 import { SessionsTable } from '@/components/rialto/activity/SessionsTable'
 import {
   ALL,
@@ -40,12 +33,16 @@ import { api, type SessionSummary } from '@/lib/api'
 import { fmtCount, fmtRate } from '@/lib/rialto/format'
 import { fmtCost, fmtTokens } from '@/lib/sessions/format'
 
-// Newest calls joined onto the session rows for the trend column alone.
-// The session aggregate carries no time series; everything else on the
-// row, `surface` included, comes from the aggregate itself.
-const JOIN_LOG_LIMIT = 500
+// The screen used to join the newest 500 request-log rows onto the
+// session list. That join existed for the trend sparkline and nothing
+// else — every other cell, `surface` included, comes from the session
+// aggregate — so with the column gone the fetch went with it, and a page
+// of 25 sessions costs one query instead of three.
 
-const SESSION_PAGE = 100
+// One screenful. The endpoint pages server-side (`limit` / `offset` and a
+// `total`), so this is the page size rather than a ceiling on what the
+// screen can ever show — which is what 100 was.
+const SESSION_PAGE = 25
 
 function StatsRow({ totals, rangeLabel }: { totals: WindowTotals | null; rangeLabel: string }) {
   const { t } = useTranslation()
@@ -75,43 +72,85 @@ function StatsRow({ totals, rangeLabel }: { totals: WindowTotals | null; rangeLa
   )
 }
 
+/**
+ * Server-side paging over the session list.
+ *
+ * The range reads "26–50 of 128" rather than a page number: a page
+ * number only means something once you know the page size, and the two
+ * questions an operator has here are where they are and how much is
+ * left. `total` is the count for the whole time window, so it stays
+ * honest while the filters below narrow what is on screen.
+ *
+ * The column sort applies to the page, not the window — the endpoint
+ * orders by recency and takes no sort parameter. That is why paging
+ * exists rather than a bigger fetch: 100 rows sorted client-side was
+ * still an arbitrary 100.
+ */
+function Pager({
+  page,
+  pageSize,
+  loaded,
+  total,
+  onPage
+}: {
+  page: number
+  pageSize: number
+  loaded: number
+  total: number | undefined
+  onPage: (next: number) => void
+}) {
+  const { t } = useTranslation()
+  const first = page * pageSize + 1
+  const last = page * pageSize + loaded
+  const hasNext = total === undefined ? loaded === pageSize : last < total
+  if (page === 0 && !hasNext) return null
+  return (
+    <div className='flex items-center gap-3 border-t border-border px-6 py-3'>
+      <span className='text-[12px] text-muted-foreground'>
+        {total === undefined
+          ? t('activity.sessions.rangeUnknownTotal', { first, last })
+          : t('activity.sessions.range', { first, last, total })}
+      </span>
+      <div className='ml-auto flex items-center gap-2'>
+        <RButton variant='ghost' icon='ri-arrow-left-s-line' disabled={page === 0} onClick={() => onPage(page - 1)}>
+          {t('common.previous')}
+        </RButton>
+        <RButton variant='ghost' disabled={!hasNext} onClick={() => onPage(page + 1)}>
+          {t('common.next')}
+        </RButton>
+      </div>
+    </div>
+  )
+}
+
 export function ActivitySessions() {
   const { t } = useTranslation()
   const [range, setRange] = useState<RangeId>('7d')
   const [sessions, setSessions] = useState<SessionSummary[] | null>(null)
-  const [logs, setLogs] = useState<ActivityRequestLog[]>([])
   const [totals, setTotals] = useState<WindowTotals | null>(null)
   const [totalSessions, setTotalSessions] = useState<number | undefined>(undefined)
-  const [_totalRequests, setTotalRequests] = useState<number | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
-  // Frozen per load so every "last seen" label on the page is measured
-  // from the instant the data describes.
-  const [now, setNow] = useState(Date.now())
   const [surfaceFilter, setSurfaceFilter] = useState<string>(ALL)
   const [providerFilter, setProviderFilter] = useState<string>(ALL)
   const [modelFilter, setModelFilter] = useState<string>(ALL)
-  const [query, setQuery] = useState('')
+  const [page, setPage] = useState(0)
   const [live, setLive] = useState(false)
   const surfaces = useSurfaces()
 
   const load = useCallback(() => {
     const spec = rangeSpec(range)
     Promise.all([
-      api.getRequestLogSessions({ limit: SESSION_PAGE, sinceHours: spec.hours }),
-      fetchUsageCost(spec.days),
-      fetchRequestLogs(JOIN_LOG_LIMIT)
+      api.getRequestLogSessions({ limit: SESSION_PAGE, offset: page * SESSION_PAGE, sinceHours: spec.hours }),
+      fetchUsageCost(spec.days)
     ])
-      .then(([sessionRes, costRes, logRes]) => {
+      .then(([sessionRes, costRes]) => {
         setSessions(sessionRes.sessions)
         setTotalSessions(sessionRes.total)
         setTotals(summariseUsageCost(costRes))
-        setLogs(logRes.items)
-        setTotalRequests(logRes.total)
-        setNow(Date.now())
         setError(null)
       })
       .catch((e: Error) => setError(e.message))
-  }, [range])
+  }, [range, page])
 
   useEffect(load, [load])
 
@@ -146,13 +185,10 @@ export function ActivitySessions() {
     return () => es.close()
   }, [live])
 
-  const rows = useMemo(
-    () => (sessions === null ? [] : enrich(sessions, logs, surfaces.pathOf)),
-    [sessions, logs, surfaces.pathOf]
-  )
+  const rows = useMemo(() => (sessions === null ? [] : enrich(sessions, surfaces.pathOf)), [sessions, surfaces.pathOf])
   const visible = useMemo(
-    () => applyFilters(rows, { surface: surfaceFilter, provider: providerFilter, model: modelFilter, query }),
-    [rows, surfaceFilter, providerFilter, modelFilter, query]
+    () => applyFilters(rows, { surface: surfaceFilter, provider: providerFilter, model: modelFilter }),
+    [rows, surfaceFilter, providerFilter, modelFilter]
   )
 
   const spec = rangeSpec(range)
@@ -175,23 +211,6 @@ export function ActivitySessions() {
       .archiveAllSessions()
       .then(load)
       .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
-  }
-
-  const exportCsv = () => {
-    downloadCsv('rialto-sessions.csv', [
-      ['session', 'endpoint', 'model', 'calls', 'input', 'output', 'cachePct', 'costUsd', 'lastAt'],
-      ...visible.map((r) => [
-        r.session.sessionId,
-        r.surfacePath === null ? '' : r.surfacePath,
-        r.model === null ? '' : r.model,
-        String(r.session.requestCount),
-        String(r.session.totalInputTokens),
-        String(r.session.totalOutputTokens),
-        String(r.session.avgCacheHitPct),
-        r.session.totalCostUsd === null ? '' : String(r.session.totalCostUsd),
-        r.session.lastAt
-      ])
-    ])
   }
 
   return (
@@ -248,20 +267,11 @@ export function ActivitySessions() {
           options={RANGES.map((r) => ({ id: r.id, label: t(r.labelKey) }))}
           onChange={setRange}
         />
-        <div className='ml-auto flex items-center gap-2'>
-          <div className='flex h-7 w-56 items-center gap-2 rounded-md border border-border px-2.5 text-xs text-muted-foreground'>
-            <i className='ri-search-line text-sm' />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t('activity.sessions.searchPlaceholder')}
-              className='min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground'
-            />
-          </div>
-          <RButton variant='ghost' icon='ri-download-line' onClick={exportCsv} disabled={visible.length === 0}>
-            {t('activity.sessions.export')}
-          </RButton>
-        </div>
+        {/* No search box and no Export. A text field here could only match
+            the session id and the prompt preview, and neither is on the
+            table any more; the three selects narrow by what the rows
+            actually show. Export stays on Requests, where a row is a
+            measurement someone takes away. */}
       </div>
 
       <StatsRow totals={totals} rangeLabel={rangeLabel} />
@@ -273,7 +283,10 @@ export function ActivitySessions() {
       ) : visible.length === 0 ? (
         <ScreenMessage>{t('activity.sessions.empty')}</ScreenMessage>
       ) : (
-        <SessionsTable rows={visible} now={now} />
+        <>
+          <SessionsTable rows={visible} />
+          <Pager page={page} pageSize={SESSION_PAGE} loaded={sessions.length} total={totalSessions} onPage={setPage} />
+        </>
       )}
       <div className='h-10' />
     </Screen>

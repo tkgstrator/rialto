@@ -9,7 +9,9 @@
     "continue": "次へ進む",
     "copy": "コピー",
     "discard": "破棄",
-    "done": "完了"
+    "done": "完了",
+    "previous": "前へ",
+    "copied": "コピーしました"
   },
   "activity": {
     "common": {
@@ -22,7 +24,7 @@
     },
     "requests": {
       "title": "リクエスト",
-      "subtitle": "{{logged}} 件のリクエスト · {{failovers}} 件のフェイルオーバー · 直近 {{newest}} 件",
+      "subtitle": "{{logged}} 件中 {{shown}} 件のリクエスト · {{range}}",
       "liveTail": "ライブ追従",
       "live": "ライブ",
       "export": "エクスポート",
@@ -31,7 +33,7 @@
       "filterSurface": "サーフェス",
       "filterStatus": "ステータス",
       "filterToken": "トークン",
-      "filterRule": "ルール",
+      "filterRule": "シナリオ",
       "filterRange": "期間",
       "range1h": "直近 1 時間",
       "range24h": "直近 24 時間",
@@ -44,8 +46,7 @@
       "colStatus": "ステータス",
       "colEndpoint": "エンドポイント",
       "colModels": "要求 → 送信",
-      "colRule": "ルール",
-      "colLane": "レーン",
+      "colRule": "シナリオ",
       "colToken": "トークン",
       "colInput": "入力",
       "colOutput": "出力",
@@ -54,17 +55,16 @@
       "laneAgent": "agent",
       "laneSubagent": "subagent",
       "laneUntracked": "未記録",
-      "note": "<mono>429</mono> の行はクライアントに返ったエラーではなく、フェイルオーバーの一段階です。直後の行がチェーンの次のターゲットで同じターンを処理しています。サブスクリプション経由の行にコストが付かないのは、料金が定額で支払い済みだからです。"
+      "note": "<mono>429</mono> の行はクライアントが受け取ったエラーではなく、フェイルオーバーの 1 ステップです。直後の行が同じターンをチェーンの次の送信先で処理しています。ただし<strong>上流での失敗はまだ記録されません</strong> — 使用状況の記録より先にパイプラインが例外を投げるため、ここが 0 でもフェイルオーバーが起きていないことを意味しません。サブスクリプションの行は定価で計算されています（プランの料金は別途支払い済みです）。",
+      "captureOff": "リクエストが記録されていません — リクエストのキャプチャが無効になっています。<settings>設定 → ログ</settings>で有効にしてください。"
     },
     "sessions": {
       "title": "アクティビティ",
       "subtitle": "{{sessions}} セッション · {{requests}} リクエスト · {{range}}",
       "liveTail": "ライブ追従",
       "archive": "アーカイブ",
-      "archiveConfirm": "選択中の期間より古いセッションをすべてアーカイブしますか？ リクエストログは残りますが、セッションはこの一覧から消えます。",
-      "export": "エクスポート",
+      "archiveConfirm": "アクティブなセッションを「すべて」アーカイブしますか？上の期間フィルターは適用されません — 本日分も含め、すべてのセッションがこの一覧から消えます。リクエストログは残ります。",
       "empty": "この条件に一致するセッションはありません。",
-      "searchPlaceholder": "セッションを検索…",
       "filterSurface": "サーフェス",
       "filterProvider": "プロバイダー",
       "filterModel": "モデル",
@@ -88,9 +88,9 @@
       "colOutput": "出力",
       "colCache": "キャッシュ",
       "colCost": "コスト",
-      "colTrend": "推移",
       "colLast": "最終",
-      "trendLabel": "{{calls}} 回の呼び出しの推移"
+      "range": "{{total}} 件中 {{first}}–{{last}}",
+      "rangeUnknownTotal": "{{first}}–{{last}} 件目"
     },
     "session": {
       "title": "セッション",
@@ -98,8 +98,6 @@
       "backToActivity": "アクティビティに戻る",
       "previous": "前へ",
       "rawJson": "生 JSON",
-      "archive": "アーカイブ",
-      "archiveDisabled": "呼び出しが続いているセッションはアーカイブできません。",
       "loadOlder": "以前のターンを読み込む",
       "summary": "サマリー",
       "inbound": "受信サーフェス",
@@ -107,14 +105,16 @@
       "upstreamCalls": "上流への呼び出し",
       "inputTokens": "入力トークン",
       "outputTokens": "出力トークン",
-      "cacheRead": "キャッシュ読み取り",
+      "cacheRead": "うちキャッシュ読み取り",
       "cacheHit": "キャッシュヒット",
       "cost": "コスト",
       "duration": "所要時間",
       "cacheEfficiency": "キャッシュ効率",
       "routingTrace": "ルーティングの経路",
       "showAllCalls": "{{calls}} 件すべてを表示",
-      "showFewer": "表示を減らす"
+      "showFewer": "表示を減らす",
+      "chars": "{{n}} 文字",
+      "codePlain": "コード"
     },
     "logs": {
       "title": "ログ",
@@ -169,9 +169,11 @@
       "presets": "プリセット",
       "apply": "適用",
       "simulate": "シミュレート",
+      "presetUnresolved": "{{name}} のどのティアにも有効なモデルがありません。先にプロバイダーを接続してください。",
       "noSnapshots": "保存済みのスナップショットはありません。",
       "notConfigured": "未設定",
       "presetApplied": "プリセット「{{name}}」を適用しました。",
+      "presetAppliedWithWarnings": "プリセット「{{name}}」を適用しました（{{count}} 件のターゲットは未知のため除外）。",
       "modeRouted": "routed",
       "modePassthrough": "passthrough",
       "laneAgent": "Agent",
@@ -213,15 +215,13 @@
       "noTargetsLeft": "すべてのターゲットが既にこのチェーンにあります。",
       "disabledCount": "{{n}} 件が無効",
       "emptyLane": "このレーンにはまだターゲットがありません。",
-      "colWeight": "重み",
-      "colQuota": "クォータ",
-      "colHealth": "健全性",
+      "colShare": "シェア",
       "colOn": "有効",
       "rowActions": "行の操作",
       "moveUp": "上へ移動",
       "moveDown": "下へ移動",
       "enableTarget": "{{target}} を有効にする",
-      "note": "並び順がそのまま優先順位で、上が先です。無効・上限到達・スケジューラーの重みが <mono>0.00</mono> のターゲットはスキップされます。重みはルーティングスケジューラーが毎ティック publish するので、編集するのは重みではなくチェーンです。",
+      "note": "並び順がそのまま優先順位で、上が先です。ルーターはチェーンを上から歩いて最初に使えるターゲットに送るので、<mono>シェア</mono> はこのレーンのスケジューラー重みの取り分であって、流れるトラフィックの割合ではありません。無効・上限到達・シェアが <mono>0%</mono> のターゲットはスキップされます。重みはルーティングスケジューラーが毎ティック publish するので、編集するのは数値ではなくチェーンです。",
       "unconfiguredProfile": "プロファイル <mono>{{profile}}</mono> にエントリーがないため、<mono>{{path}}</mono> のリクエストはシナリオルーターに委ねられます。ここで決めたい場合はターゲットを追加してください。",
       "constraints": "制約",
       "noLaneRules": "このレーンに適用されるルールはありません。",
@@ -248,7 +248,8 @@
       "liveMap": "ライブマップ",
       "passthroughNote": "このサーフェスを <mono>Routed</mono> に切り替えると、Claude Code と同じクォータ考慮のフェイルオーバーを {{client}} にも適用できます。呼び出し元は今までどおり自分のモデル名を送れます。それが最終ターゲットではなく、ルールの照合対象となる <mono>requestedModel</mono> として扱われるようになります。",
       "schedulerIdle": "<mono>ルール</mono> セレクタが有効なため、このチェーンは評価されず、以下の State もすべて <mono>unknown</mono> のままです。上のセレクタを <mono>チェーン</mono> に切り替えるとこのチェーンが決めるようになり、State はスケジューラの次のティックで埋まります。",
-      "schedulerNoChain": "ルーティングスケジューラは動いていますが、採点する優先チェーンがないため、以下の State はすべて <mono>unknown</mono> になります。実際の状態を出すには、この面のルーティングプロファイルにエントリを追加してください。"
+      "schedulerNoChain": "ルーティングスケジューラは動いていますが、採点する優先チェーンがないため、以下の State はすべて <mono>unknown</mono> になります。実際の状態を出すには、この面のルーティングプロファイルにエントリを追加してください。",
+      "schedulerNotTicked": "ルーティングスケジューラーはまだスナップショットを発行していないため、下の対象はすべて <mono>unknown</mono> と表示されます。最初のティックで状態が入ります — 既定ではサーバー起動から 5 分以内です。"
     },
     "map": {
       "title": "ルーティングマップ",
@@ -345,7 +346,6 @@
     "apply": "適用",
     "hex_input_help": "16 進数のカラー値を入力 (例: #FF0000)"
   },
-  "presets": {},
   "providers": {
     "screen": {
       "title": "プロバイダー",
@@ -375,7 +375,8 @@
       "modelsSynced": "モデルを同期しました",
       "routable": "振り分け対象",
       "toggleProvider": "{{provider}} の振り分け対象を切り替え",
-      "routableNeedsCredential": "資格情報が無いため振り分け対象にできません"
+      "routableNeedsCredential": "資格情報が無いため振り分け対象にできません",
+      "removeConfirm": "{{name}} を削除しますか？モデル {{models}} 件と保存された認証情報が削除され、これを参照しているルーティング枠 {{bindings}} 件がクリアされます。元に戻せません。"
     },
     "credentials": {
       "title": "認証情報",
@@ -393,7 +394,8 @@
       "active": "使用中",
       "auth": "認証 {{status}}",
       "weekly": "週次",
-      "resetsIn": "{{window}} の枠は {{until}} でリセット"
+      "resetsIn": "{{window}} の枠は {{until}} でリセット",
+      "resetsDue": "{{window}} リセット中 — 次回の取得待ち"
     },
     "shape": {
       "title": "リクエスト形式",
@@ -403,7 +405,8 @@
       "endpoint": "エンドポイント",
       "derived": "API スタイルから導出される値で、設定はできません。",
       "derivedWithOverrides": "API スタイルから導出される値で、設定はできません。モデル単位の上書きは下のモデル行にあります。",
-      "overrideNote": "一部のモデルは <mono>{{styles}}</mono> に上書きしています。形状 列を参照してください。"
+      "overrideNote": "一部のモデルは <mono>{{styles}}</mono> に上書きしています。形状 列を参照してください。",
+      "authSubscription": "サブスクリプション (OAuth)"
     },
     "models": {
       "title": "モデル",
@@ -476,7 +479,8 @@
       "errorRequest": "リクエストに失敗しました",
       "errorStartOauth": "OAuth フローを開始できませんでした。",
       "errorRedirect": "リダイレクト URL が拒否されました。",
-      "errorCredentials": "認証情報が拒否されました。"
+      "errorCredentials": "認証情報が拒否されました。",
+      "errorNotJson": "{{name}} は正しい JSON ではありません。"
     },
     "vendorHint": {
       "claudeCode": "Claude CLI の OAuth 経由で Pro / Max",
@@ -494,7 +498,8 @@
     "common": {
       "title": "設定",
       "notYetAvailable": "未実装",
-      "saveFailed": "保存に失敗しました: {{message}}"
+      "saveFailed": "保存に失敗しました: {{message}}",
+      "unsavedConfirm": "この画面に保存していない変更があります。破棄して移動しますか？"
     },
     "rail": {
       "server": "サーバー",
@@ -502,15 +507,11 @@
       "logging": "ログ",
       "personas": "ペルソナ",
       "statusline": "ステータスライン",
-      "presets": "プリセット",
       "advanced": "詳細設定"
     },
     "server": {
       "subtitle": "Rialto v{{version}} · ディスク上の設定エンベロープ",
-      "headerNote": "起動時に読み込まれる値です。変更後は再起動が必要です。",
-      "restart": "再起動",
-      "restartRequested": "再起動を要求しました。",
-      "restartFailed": "再起動に失敗しました: {{message}}",
+      "headerNote": "起動時に読み込まれる値です。変更はサーバーの再起動後に反映されます（`docker compose restart`、またはプロセスの再起動）。",
       "numbersRequired": "ポートとリクエストタイムアウトは整数で入力してください。",
       "host": "ホスト",
       "hostHint": "バインドアドレス。ループバック以外に公開する前に Cloudflare Access を前段に置いてください。",
@@ -546,7 +547,10 @@
       "versionUnknown": "不明",
       "versionAvailable": "v{{version}} が利用可能",
       "upToDate": "最新",
-      "checkNow": "今すぐ確認"
+      "checkNow": "今すぐ確認",
+      "checkingNow": "確認中…",
+      "versionCheckFailed": "確認できません",
+      "releaseNotes": "リリースノート"
     },
     "logging": {
       "subtitle": "レベル {{level}} · {{captured}} 記録済み",
@@ -588,24 +592,22 @@
       "colStore": "ストア",
       "colRows": "行数",
       "colSize": "サイズ",
-      "colPruneOlderThan": "削除する古さ",
+      "colKeep": "保持",
       "unbounded": "無制限",
       "pruneNow": "今すぐ削除",
       "pruneOlderThanLabel": "{{store}} で削除する古さ",
-      "days": "{{n}} 日"
+      "days": "{{n}} 日",
+      "serverLog": "サーバーログ"
     },
     "advanced": {
-      "subtitle": "設定ドキュメント · スクラッチパッド · ヘルス",
+      "subtitle": "設定ドキュメント · ヘルス",
       "tabConfig": "設定ドキュメント",
-      "tabScratch": "リクエストスクラッチパッド",
       "tabHealth": "ヘルス",
-      "scratchTitle": "リクエストスクラッチパッド",
-      "notRebuilt": "未移植",
-      "scratchWhat": "この画面上のスクラッチパッド",
-      "scratchNeeds": "HTTP スクラッチパッドは今も <mono>/debug</mono> という独自のルートで動いています。画面としては機能していますが Rialto のモックには存在しないため、ここには取り込んでいません。このタブに作り直すには、実装より先にデザインの検討が必要です。",
-      "healthTitle": "ヘルス",
+      "healthTitle": "チェック",
       "healthMeta": "GET /health · 認証なし",
       "refresh": "更新",
+      "rawJson": "生 JSON",
+      "recheck": "再チェック",
       "status": "ステータス",
       "statusHint": "degraded はサーバーは応答したが依存チェックが失敗した状態、unreachable はそもそも応答がない状態です。",
       "unreachable": "到達不可",
@@ -633,11 +635,11 @@
       "cannotSave": "保存できません。ドキュメントが構文解析できません。",
       "valid": "正常",
       "invalid": "不正",
-      "backupsKept": "バックアップ 3 世代を保持",
+      "backupsKept": "バックアップなし — これが唯一のコピーです",
       "reload": "再読み込み",
       "format": "整形",
       "configDocument": "設定ドキュメント",
-      "configNote": "<mono>$VAR</mono> は起動時に展開されるため、キーをこのファイルではなく環境変数に置けます。直近 3 世代はこのファイルの隣にバックアップとして残ります。ディスク上のファイルは JSON5 でコメントも保持されますが、この画面が表示しているのは API が返す合成済みドキュメントなので、ここから保存すると素の JSON として書き戻されます。起動時スカラーの反映には再起動が必要で、上の各画面の設定は即時反映されます。"
+      "configNote": "<mono>$VAR</mono> は起動時に展開されるため、キーをこのファイルではなく環境変数に置くこともできます。保存するとファイルはその場で上書きされ、戻せるバックアップはありません — 大きな変更の前には自分でコピーを取ってください。ディスク上のファイルは JSON5 でコメントも保持されますが、この画面は API が返す合成済みドキュメントなので、ここから保存すると通常の JSON として書き直されます。起動時スカラーは再起動が必要です — 上の画面の項目は即時反映されます。"
     },
     "access": {
       "subtitleConfigured": "/api は Cloudflare Access · /v1 はスコープ付きトークン",
@@ -645,6 +647,7 @@
       "badgeConfigured": "Cloudflare Access",
       "badgeUnconfigured": "前段に Access なし",
       "openZeroTrust": "Zero Trust を開く",
+      "auditLog": "監査ログ",
       "checking": "確認中…",
       "signedInAs": "サインイン中",
       "signedInAsHint": "このリクエストについて Rialto が検証した呼び出し元です。",
@@ -681,7 +684,7 @@
       "bootstrapTitle": "ブートストラップトークン",
       "envelope": "エンベロープ",
       "bootstrapMeta": "非常用の管理者資格情報",
-      "apikey": "APIKEY",
+      "apikey": "ブートストラップトークン (APIKEY)",
       "apikeyHint": "ディスク上のエンベロープに保存され、process.env にも反映されます。受理されるのは /api/* のみで、Access やデータベースが落ちたときの復旧経路です。プロキシはこれを拒否します。",
       "tokenCopied": "ブートストラップトークンをコピーしました。",
       "clipboardRefused": "ブラウザーがクリップボードへの書き込みを拒否しました。",
@@ -751,7 +754,13 @@
       "revoke": "失効",
       "delete": "削除",
       "tokenCopiedShort": "コピー済み",
-      "costNote": "<strong>費用</strong>の列は、直近 30 日分の残っているリクエストログから算出しています。隣のリクエスト数が通算なのに対し、こちらはレートです。ダッシュは値段が付かなかったことを意味します（期間内にトラフィックが無い / リクエスト記録が off / リクエスト単価を持たないサブスクリプションのモデル）。"
+      "costNote": "<strong>費用</strong>の列は、直近 30 日分の残っているリクエストログから算出しています。隣のリクエスト数が通算なのに対し、こちらはレートです。ダッシュは値段が付かなかったことを意味します（期間内にトラフィックが無い / リクエスト記録が off / リクエスト単価を持たないサブスクリプションのモデル）。",
+      "expiryNever": "無期限",
+      "expiry30d": "30 日",
+      "expiry90d": "90 日",
+      "expiry365d": "1 年",
+      "closedNotice": "<strong>リモートからの管理アクセスは閉じています</strong> — ブートストラップトークンが未設定で Cloudflare Access も構成されていないため、<mono>/api/*</mono> にアクセスできるのはこのマシン上のブラウザだけです。検証済み ID に対して開くには、下でチームドメインと AUD を設定してください。",
+      "adminAccess": "管理アクセス"
     },
     "personas": {
       "subtitle": "ペルソナ {{count}} 件 · {{active}}",
@@ -787,18 +796,20 @@
       "previewNote": "ペルソナを先頭に置くことで、クライアント自身のプロンプトで上書きできるようにしています。両ブロックともキャッシュ対象なので、コストはセッションごとに一度だけです。"
     },
     "statusline": {
-      "subtitle": "モジュール {{count}} 個 · rialto statusline",
+      "subtitle": "{{count}} 個のモジュール · プレビューのみ",
       "saved": "ステータスラインを保存しました",
-      "wireUp": "<mono>~/.claude/settings.json</mono> に次のように設定します: <mono>{{snippet}}</mono>",
       "addModule": "モジュールを追加",
       "line": "ライン",
       "removeModule": "{{module}} を削除",
-      "lineNote": "並び順は左から右です。Claude Code は毎ターン、セッションの JSON を <mono>rialto statusline</mono> にパイプします。",
+      "lineNote": "並び順は左から右です。これをステータスラインとして描画する仕組みはまだ提供されていないため、ここで作った内容は保存されますが、このプレビュー以外には表示されません。",
       "preview": "プレビュー",
-      "live": "ライブ",
+      "live": "プレビュー",
       "emptyLine": "ラインが空です。モジュールを追加してください。",
       "styleDefault": "デフォルト",
       "stylePowerline": "Powerline",
+      "backdropDark": "暗い端末",
+      "backdropLight": "明るい端末",
+      "backdropMono": "色なし",
       "selectModule": "ラインからモジュールを選ぶと、アイコン・色・フォーマットを編集できます。",
       "moduleTitle": "{{module}} モジュール",
       "selected": "選択中",
@@ -813,48 +824,16 @@
       "hexColour": "16 進数の色",
       "script": "スクリプト",
       "scriptHint": "毎ターン実行され、その標準出力がモジュールのテキストになります。",
-      "scriptPath": "スクリプトのパス"
-    },
-    "presets": {
-      "subtitle": "インストール済み {{count}} 件",
-      "subtitleSelected": "インストール済み {{count}} 件 · {{name}} を選択中",
-      "selectOne": "プリセットを選ぶと、適用した場合の変更内容が表示されます。",
-      "revertLast": "直前の適用を取り消す",
-      "revertUnavailable": "取り消し用のエンドポイントがまだありません。適用前に ルーティング → ライブラリ で現在のルーティングを保存してください。",
-      "installed": "プリセットをインストールしました",
-      "installFailed": "インストールに失敗しました: {{message}}",
-      "fillMissing": "適用する前に {{fields}} を入力してください。",
-      "applied": "{{name}} を適用しました",
-      "applyFailed": "適用に失敗しました: {{message}}",
-      "deleted": "{{name}} を削除しました",
-      "deleteFailed": "削除に失敗しました: {{message}}",
-      "marketFailed": "プリセットマーケットを読み込めませんでした: {{message}}",
-      "tabInstalled": "インストール済み",
-      "tabBrowse": "探す",
-      "installFromGithub": "GitHub からインストール",
-      "repoPlaceholder": "owner/repo",
-      "repoLabel": "GitHub リポジトリ",
-      "install": "インストール",
-      "installing": "インストール中…",
-      "exportCurrent": "現在の設定を書き出す",
-      "exportUnavailable": "プリセットの書き出しは CLI コマンドです: rialto preset export",
-      "libraryNote": "プリセットはプロバイダー・モデル・ルーティングのスナップショットから秘密情報を取り除いたもので、設定のうち共有できる側です。",
-      "pillInstalled": "インストール済み",
-      "pillNotInstalled": "未インストール",
-      "authorUnknown": "作者不明",
-      "byAuthor": "作者: {{author}}",
-      "reapply": "再適用",
-      "warnTitle": "適用するとデフォルトのルートが置き換わります",
-      "warnBody": "自動スナップショットはまだありません。戻せるようにしておきたい場合は、先に ルーティング → ライブラリ で現在のルーティングを保存してください。サブスクリプションのプロバイダーとそのアカウントがプリセットで変更されることはありません。",
-      "whatItChanges": "変更される内容",
-      "diffAgainst": "現在の設定との差分",
-      "diffEmpty": "変更なし — このプリセットは現在の設定と一致しています。",
-      "requiredInputs": "必要な入力",
-      "complete": "入力済み",
-      "missingCount": "未入力 {{n}} 件",
-      "required": "必須",
-      "secretHint": "このマシンにのみ保存されます。プリセットには書き込まれません。",
-      "stored": "保存済み"
+      "scriptPath": "スクリプトのパス",
+      "renderingTitle": "ステータスライン描画",
+      "renderingNeeds": "Claude Code がセッション JSON を渡す <mono>rialto statusline</mono> コマンドが必要です。このビルドには CLI が含まれていないため、下のレイアウトは保存されますが、まだどこからも読まれません。",
+      "moduleModel": "モデル",
+      "moduleUsage": "トークン",
+      "moduleSpeed": "速度",
+      "moduleGitBranch": "Git ブランチ",
+      "moduleWorkDir": "ディレクトリ",
+      "moduleScript": "スクリプト",
+      "moduleFallback": "モジュール"
     }
   },
   "shell": {
@@ -868,6 +847,8 @@
     "searchEmpty": "一致するものがありません。",
     "expandSection": "{{section}} を開く",
     "collapseSection": "{{section}} を閉じる",
+    "expandSidebar": "サイドバーを開く",
+    "collapseSidebar": "サイドバーを閉じる",
     "theme": "テーマ",
     "serving": "稼働中",
     "degraded": "一部異常",
@@ -895,7 +876,29 @@
     "failoverActivity": "フェイルオーバーの状況",
     "noFailover": "この期間にフェイルオーバーはありませんでした。",
     "recentSessions": "最近のセッション",
-    "noSessions": "この期間にセッションはありません。"
+    "noSessions": "この期間にセッションはありません。",
+    "resetsDue": "リセット中 — 次回の取得待ち",
+    "modeRoutedHint": "ルーティング有効: このサーフェスのチェーン・ルール・クォータに基づいて Rialto がモデルを選びます。",
+    "modePassthroughHint": "パススルー: 呼び出し側が指定したモデル名がそのまま上流に渡され、チェーンは参照されません。ルーティングを有効にするには Routing 画面で切り替えてください。",
+    "spendDeltaHint": "同じ長さの前の期間との比較です。",
+    "failoverWeightLabel": "スコア",
+    "failoverRateLimited": "{{account}} がレート制限を受けました",
+    "failoverRetryAfter": "次の試行まで {{secs}} 秒待つよう指示されました",
+    "failoverNoRetryAfter": "レスポンスに Retry-After はありませんでした",
+    "failoverWeight": "{{target}} のスコアが {{from}} → {{to}} に変化",
+    "weightReason": {
+      "quota_drop": "クォータが減ってきたため、送信先を切り替えています",
+      "quota_recovered": "クォータが回復したため、再び振り分け対象になりました",
+      "error_rate": "エラーを返し始めました",
+      "reset_soon": "まもなく枠がリセットされるため、スコアを抑えています",
+      "probe_floor": "再検査できるようゼロより少しだけ高く保っています",
+      "hold_guard": "スコアの振動を抑えるため据え置いています",
+      "stale_quota": "クォータの取得が古く、信頼できません",
+      "unknown_budget": "この送信先の予算が不明です",
+      "no_quota_kind": "この送信先はクォータ枠を報告しません",
+      "unknown": "理由は記録されていません"
+    },
+    "lastDays": "直近 {{days}} 日"
   },
   "system": {
     "notFound": {
@@ -922,7 +925,8 @@
       "title": "Rialto の API に接続できません",
       "retrying": "再試行中",
       "body": "UI は読み込まれていますが <mono>/api/config</mono> が応答しません。<mono>/v1/*</mono> のプロキシはキャッシュ済みの設定でまだリクエストを処理している可能性があります。再起動する前に確認してください。",
-      "proxy": "プロキシ"
+      "proxy": "プロキシ",
+      "retryNow": "今すぐ再試行"
     },
     "crash": {
       "title": "この画面の描画に失敗しました",

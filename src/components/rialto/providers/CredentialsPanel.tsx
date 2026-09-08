@@ -42,7 +42,7 @@ export function CredentialsPanel({
       </div>
       <div className='space-y-3 px-6 pb-5'>
         <div>
-          <div className='mb-1 text-[11px] text-muted-foreground'>{t('providers.credentials.apiKey')}</div>
+          <div className='mb-1 text-[12px] text-muted-foreground'>{t('providers.credentials.apiKey')}</div>
           <div className='flex items-center gap-2'>
             {revealed ? (
               <input
@@ -72,7 +72,7 @@ export function CredentialsPanel({
           </div>
         </div>
         <div>
-          <div className='mb-1 text-[11px] text-muted-foreground'>{t('providers.credentials.baseUrl')}</div>
+          <div className='mb-1 text-[12px] text-muted-foreground'>{t('providers.credentials.baseUrl')}</div>
           {/* A long base URL must not wrap out of the h-8 box or widen the
               column: clip it and keep the whole value on hover. */}
           <div className='flex h-8 min-w-0 items-center rounded-md border border-border px-3 font-mono text-xs'>
@@ -81,13 +81,13 @@ export function CredentialsPanel({
             </span>
           </div>
         </div>
-        <p className='text-[11px] leading-relaxed text-muted-foreground'>
+        <p className='text-[12px] leading-relaxed text-muted-foreground'>
           <Trans
             i18nKey='providers.credentials.interpolationNote'
             components={{ mono: <span className='font-mono' /> }}
           />
         </p>
-        <p className='text-[11px] leading-relaxed text-muted-foreground'>
+        <p className='text-[12px] leading-relaxed text-muted-foreground'>
           <Trans
             i18nKey='providers.credentials.outboundNote'
             values={{ label }}

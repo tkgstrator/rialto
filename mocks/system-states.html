@@ -26,8 +26,8 @@ const { pill, navTo } = window.Shell
 const frame = (label, note, body) => `
   <div>
     <div class="mb-2 flex items-baseline gap-2">
-      <h2 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">${label}</h2>
-      <span class="text-[11px] text-muted-foreground/70">${note}</span>
+      <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">${label}</h2>
+      <span class="text-[12px] text-muted-foreground/70">${note}</span>
     </div>
     <div class="overflow-hidden rounded-lg border border-border">
       <div class="flex items-center gap-1.5 border-b border-border bg-muted/40 px-3 py-1.5">
@@ -45,7 +45,7 @@ const oauthOk = `
       <i class="ri-check-line text-lg text-emerald-600 dark:text-emerald-400"></i>
     </div>
     <h3 class="mt-3 text-sm font-semibold">Gemini CLI connected</h3>
-    <p class="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+    <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
       Tokens stored encrypted. You can close this tab — the Providers screen has already updated.
     </p>
     <button ${navTo('providers.html')} class="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-xs transition-colors hover:bg-muted/60">
@@ -62,14 +62,14 @@ const accessRejected = `
       <i class="ri-shield-cross-line text-base text-destructive"></i>
       <h3 class="text-sm font-semibold">Access token not accepted</h3>
     </div>
-    <p class="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+    <p class="mt-2 text-[12px] leading-relaxed text-muted-foreground">
       A <span class="font-mono">Cf-Access-Jwt-Assertion</span> header arrived but failed
       verification. Rialto will not serve <span class="font-mono">/api/*</span> until it does.
     </p>
-    <div class="mt-3 rounded-md bg-muted/60 px-3 py-2 font-mono text-[11px] leading-relaxed">
+    <div class="mt-3 rounded-md bg-muted/60 px-3 py-2 font-mono text-[12px] leading-relaxed">
       aud mismatch<br>expected 97e2aa…913a<br>got&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;4b10cc…77de
     </div>
-    <p class="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+    <p class="mt-3 text-[12px] leading-relaxed text-muted-foreground">
       Set <span class="font-mono">ACCESS_AUD</span> to this application's AUD tag from Zero Trust,
       or reach the origin through the tunnel rather than directly.
     </p>
@@ -81,10 +81,10 @@ const oauthErr = `
       <i class="ri-close-line text-lg text-destructive"></i>
     </div>
     <h3 class="mt-3 text-sm font-semibold">Could not complete sign-in</h3>
-    <p class="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+    <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
       The provider returned an error before Rialto could exchange the code. Nothing was stored.
     </p>
-    <div class="mt-3 rounded-md bg-muted/60 px-3 py-2 text-left font-mono text-[11px] leading-relaxed">
+    <div class="mt-3 rounded-md bg-muted/60 px-3 py-2 text-left font-mono text-[12px] leading-relaxed">
       error=access_denied<br>state=8f21c4…
     </div>
     <div class="mt-4 flex justify-center gap-2">
@@ -99,7 +99,7 @@ const notFound = `
   <div class="w-full max-w-xs text-center">
     <div class="font-mono text-2xl tabular-nums text-muted-foreground/40">404</div>
     <h3 class="mt-2 text-sm font-semibold">No such page</h3>
-    <p class="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+    <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
       <span class="font-mono">/router-tiers</span> moved into Routing when the screens were merged.
     </p>
     <button ${navTo('overview.html')} class="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-xs transition-colors hover:bg-muted/60">
@@ -116,7 +116,7 @@ const backendDown = `
       <h3 class="text-sm font-semibold">Cannot reach the Rialto API</h3>
       ${pill('retrying', 'warn')}
     </div>
-    <p class="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+    <p class="mt-2 text-[12px] leading-relaxed text-muted-foreground">
       The UI is loaded but <span class="font-mono">/api/config</span> is not answering. The proxy at
       <span class="font-mono">/v1/*</span> may still be serving requests from its cached
       configuration — check before restarting.
@@ -124,21 +124,21 @@ const backendDown = `
     <div class="mt-3 space-y-1.5">
       <div class="flex items-center gap-2 rounded-md border border-border px-3 py-1.5">
         <span class="size-1.5 rounded-full bg-emerald-500"></span>
-        <span class="text-[11px]">Proxy</span>
-        <span class="ml-auto font-mono text-[11px] text-muted-foreground">200 · /health</span>
+        <span class="text-[12px]">Proxy</span>
+        <span class="ml-auto font-mono text-[12px] text-muted-foreground">200 · /health</span>
       </div>
       <div class="flex items-center gap-2 rounded-md border border-border px-3 py-1.5">
         <span class="size-1.5 rounded-full bg-destructive"></span>
-        <span class="text-[11px]">Database</span>
-        <span class="ml-auto font-mono text-[11px] text-muted-foreground">ECONNREFUSED :5432</span>
+        <span class="text-[12px]">Database</span>
+        <span class="ml-auto font-mono text-[12px] text-muted-foreground">ECONNREFUSED :5432</span>
       </div>
       <div class="flex items-center gap-2 rounded-md border border-border px-3 py-1.5">
         <span class="size-1.5 rounded-full bg-amber-500"></span>
-        <span class="text-[11px]">Redis</span>
-        <span class="ml-auto font-mono text-[11px] text-muted-foreground">degraded</span>
+        <span class="text-[12px]">Redis</span>
+        <span class="ml-auto font-mono text-[12px] text-muted-foreground">degraded</span>
       </div>
     </div>
-    <div class="mt-3 rounded-md bg-muted/60 px-3 py-2 font-mono text-[11px]">docker compose up -d postgres</div>
+    <div class="mt-3 rounded-md bg-muted/60 px-3 py-2 font-mono text-[12px]">docker compose up -d postgres</div>
   </div>`
 
 // Two transient states that were missing from the set entirely. They are
@@ -168,13 +168,13 @@ const failedSave = `
       <i class="ri-close-circle-line mt-px text-base leading-none text-destructive"></i>
       <div class="min-w-0 flex-1">
         <div class="text-xs font-medium">Could not save the chain</div>
-        <div class="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+        <div class="mt-0.5 text-[12px] leading-snug text-muted-foreground">
           claude-code,claude-opus-4-8 is no longer enabled on its provider — remove it from the chain
           or turn the model back on.
         </div>
       </div>
     </div>
-    <p class="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+    <p class="mt-3 text-[12px] leading-relaxed text-muted-foreground">
       The rule the whole toast channel is held to: name the thing that failed and the two ways out.
       "Save failed" with a status code sends the operator to the logs for something the UI already
       knew.
@@ -188,7 +188,7 @@ document.getElementById('root').innerHTML = `
       <i class="ri-route-line text-base leading-none"></i>
     </div>
     <h1 class="text-base font-semibold tracking-tight">System states</h1>
-    <span class="ml-auto font-mono text-[11px] text-muted-foreground">7 states</span>
+    <span class="ml-auto font-mono text-[12px] text-muted-foreground">7 states</span>
   </div>
   <p class="mt-3 max-w-2xl text-xs leading-relaxed text-muted-foreground">
     Full-page states with no app shell, plus the two transient ones that have a screen behind them. Grouped here for review; each is its own route or

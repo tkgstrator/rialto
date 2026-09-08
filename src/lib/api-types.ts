@@ -29,6 +29,10 @@ export interface RequestLogItem {
   // slug). Finer than inboundType: /v1/chat/completions and
   // /v1/responses are both 'openai'. Null on pre-migration rows.
   surface: string | null
+  // Which issued AccessToken presented itself. The server has always sent
+  // this; the type omitted it, so the Token column fell back to the
+  // surface's client label and every /v1/messages row read "Claude Code".
+  accessTokenId: string | null
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number
@@ -111,6 +115,27 @@ export interface HealthResponse {
   checks: Record<string, 'ok' | 'fail' | 'skip'>
 }
 
+/**
+ * `GET /api/update/check`. Mirrors `UpdateCheckResponseSchema`.
+ *
+ * `status` is what makes the answer readable: `hasUpdate: false` alone
+ * cannot say whether this install is current or whether the check never
+ * got an answer, and the screen has to draw those differently.
+ */
+export interface UpdateCheckResponse {
+  status: 'ok' | 'error'
+  /** The version the server process is running, not the bundle's. */
+  currentVersion: string
+  latestVersion: string | null
+  hasUpdate: boolean
+  changelog: string | null
+  releaseUrl: string | null
+  publishedAt: string | null
+  checkedAt: string
+  /** Why the check failed. Null when `status` is 'ok'. */
+  message: string | null
+}
+
 export type SurfaceId = 'anthropic-messages' | 'openai-chat' | 'openai-responses' | 'gemini-generate'
 export type RoutingMode = 'routed' | 'passthrough'
 
@@ -180,13 +205,19 @@ export interface OverviewQuotaRow {
   resetAt: string | null
 }
 
+/** Fields, not prose — the sentence is composed and translated by the
+ *  Overview screen. See FailoverRow in services/overview-service.ts. */
 export interface OverviewFailoverRow {
   kind: 'rate_limit' | 'weight'
-  tone: 'bad' | 'warn'
-  label: string
-  headline: string
-  detail: string
+  tone: 'bad' | 'warn' | 'mute'
   at: string
+  account: string | null
+  status: number | null
+  retryAfterSec: number | null
+  target: string | null
+  fromWeight: number | null
+  toWeight: number | null
+  reason: string | null
 }
 
 export interface OverviewRecentSession {

@@ -24,6 +24,7 @@ import {
 } from '@/components/rialto/settings/logging/RetentionTable'
 import { WarnNotice } from '@/components/rialto/settings/notice'
 import { SettingsLayout } from '@/components/rialto/settings/SettingsLayout'
+import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
 import { api } from '@/lib/api'
 import {
   captureSettings,
@@ -151,7 +152,7 @@ function RetentionSection({ stats, reload }: { stats: StorageStats | null; reloa
           pruning={pruning}
         />
       )}
-      <div className='px-6 py-4 text-[11px] leading-relaxed text-muted-foreground'>
+      <div className='px-6 py-4 text-[12px] leading-relaxed text-muted-foreground'>
         {t('settings.logging.retentionNote')}
       </div>
     </>
@@ -192,6 +193,7 @@ export function SettingsLogging() {
     () => wire !== null && draft !== null && JSON.stringify(draft) !== JSON.stringify(toDraft(wire)),
     [draft, wire]
   )
+  useUnsavedGuard(dirty)
 
   const save = () => {
     if (draft === null) return
@@ -229,6 +231,7 @@ export function SettingsLogging() {
   return (
     <SettingsLayout
       active='logging'
+      heading={t('settings.logging.serverLog')}
       subtitle={t('settings.logging.subtitle', { level, captured })}
       headerNote={t('settings.logging.headerNote')}
       headerActions={

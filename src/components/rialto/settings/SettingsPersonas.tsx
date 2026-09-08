@@ -18,6 +18,7 @@ import type { Config } from '@/types'
 import { PersonaDetail } from './personas/PersonaDetail'
 import { PersonaList } from './personas/PersonaList'
 import { SettingsLayout } from './SettingsLayout'
+import { useUnsavedGuard } from './use-unsaved-guard'
 
 const activeFromConfig = (config: Config): string | null =>
   typeof config.Router.persona === 'string' && config.Router.persona !== '' ? config.Router.persona : null
@@ -108,6 +109,7 @@ function PersonasEditor({ config }: { config: Config }) {
   }, [config, drafts, activeId, reloadConfig, t])
 
   const dirty = activeId !== persistedActive || JSON.stringify(drafts) !== JSON.stringify(persisted)
+  useUnsavedGuard(dirty)
   const activeCount = activeId === null ? 0 : 1
 
   return (

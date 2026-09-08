@@ -19,15 +19,22 @@ const { renderShell, pill, btn, surfacePill, navTo, sortTh } = window.Shell
 // The columns that did not exist before are `Requested → Sent`, `Rule`
 // and `Token` — the three answers to "why did this go there, and who
 // asked for it".
+//
+// The middle column is `Scenario`, not `Rule`. It was drawn as a rule name
+// ("Haiku passthrough"), but no rule name is persisted — RequestLog has no
+// matchedRule column and model-selection.ts only logs the match — so the
+// build could fill it with nothing but the ScenarioKey. Calling it Rule made
+// "think" read as a rule someone had written. Restore the rule name here
+// once a matchedRule column exists to stamp it into.
 const REQS = [
-  { t: '14:05:47', status: 200, requested: 'claude-haiku-4-5',  sent: 'claude-code,claude-haiku-4-5',  surface: '/v1/messages',  rule: 'Haiku passthrough', lane: 'subagent', token: 'MacBook — Claude Code', inTok: '3.10k', outTok: '412',  ms: '812',   cost: '$0.00412' },
+  { t: '14:05:47', status: 200, requested: 'claude-haiku-4-5',  sent: 'claude-code,claude-haiku-4-5',  surface: '/v1/messages',  rule: 'default', lane: 'subagent', token: 'MacBook — Claude Code', inTok: '3.10k', outTok: '412',  ms: '812',   cost: '$0.00412' },
   { t: '14:03:02', status: 200, requested: 'claude-sonnet-4-5', sent: 'claude-code,claude-fable-5',    surface: '/v1/messages',  rule: '—', lane: 'agent',    token: 'MacBook — Claude Code', inTok: '48.2k', outTok: '2.10k', ms: '4,411', cost: '$0.0891' },
   { t: '14:03:02', status: 429, requested: 'claude-sonnet-4-5', sent: 'codex,gpt-5.5',                 surface: '/v1/messages',  rule: '—', lane: 'agent',    token: 'MacBook — Claude Code', inTok: '—',     outTok: '—',     ms: '—',     cost: '—' },
   { t: '14:02:33', status: 200, requested: 'claude-sonnet-4-5', sent: 'claude-code,claude-opus-4-8',   surface: '/v1/messages',  rule: '—', lane: 'agent',    token: 'MacBook — Claude Code', inTok: '46.1k', outTok: '1.84k', ms: '3,806', cost: '$0.121' },
   { t: '13:58:10', status: 200, requested: 'gpt-5.5',           sent: 'codex,gpt-5.5',                 surface: '/v1/responses', rule: '—', lane: 'agent',    token: 'MacBook — Codex',       inTok: '12.4k', outTok: '940',   ms: '2,140', cost: '—' },
   { t: '13:51:04', status: 200, requested: 'gemini-3.1-pro',    sent: 'gemini-cli,gemini-3.1-pro',     surface: '/v1beta/models/*',    rule: '—', lane: 'agent',    token: 'Gemini CLI',            inTok: '8.20k', outTok: '610',   ms: '1,104', cost: '—' },
-  { t: '13:40:22', status: 400, requested: 'gpt-5.4-mini',      sent: 'openai,gpt-5.4-mini',           surface: '/v1/chat/completions',      rule: 'CI cost cap', lane: 'agent', token: 'CI — nightly evals', inTok: '—', outTok: '—',  ms: '188',   cost: '—' },
-  { t: '13:38:57', status: 200, requested: 'gpt-5.4-mini',      sent: 'openai,gpt-5.4-mini',           surface: '/v1/chat/completions',      rule: 'CI cost cap', lane: 'agent', token: 'CI — nightly evals', inTok: '2.30k', outTok: '301', ms: '640', cost: '$0.00118' }
+  { t: '13:40:22', status: 400, requested: 'gpt-5.4-mini',      sent: 'openai,gpt-5.4-mini',           surface: '/v1/chat/completions',      rule: 'longContext', lane: 'agent', token: 'CI — nightly evals', inTok: '—', outTok: '—',  ms: '188',   cost: '—' },
+  { t: '13:38:57', status: 200, requested: 'gpt-5.4-mini',      sent: 'openai,gpt-5.4-mini',           surface: '/v1/chat/completions',      rule: 'longContext', lane: 'agent', token: 'CI — nightly evals', inTok: '2.30k', outTok: '301', ms: '640', cost: '$0.00118' }
 ]
 
 const statusPill = (s) => (s === 200 ? pill('200', 'ok') : s === 429 ? pill('429', 'warn') : pill(String(s), 'bad'))
@@ -38,23 +45,31 @@ const statusPill = (s) => (s === 200 ? pill('200', 'ok') : s === 429 ? pill('429
 // the rest of the row still opens the log group.
 const linked = (text, href) => '<span ' + navTo(href) + '>' + text + '</span>'
 
+// The row leads to its SESSION, not to the log group: a request's log
+// lines are split across several reqIds today (the access line, the
+// routing decision and each upstream attempt each mint their own), so a
+// link to Logs lands on a fragment of the story. The session is the
+// whole conversation the request belongs to, and its id is on every row.
 const row = (r) => `
-  <tr ${navTo('activity-logs.html')} class="border-t border-border/60 transition-colors hover:bg-muted/50">
-    <td class="py-2.5 pl-6 pr-2 font-mono text-[11px] tabular-nums text-muted-foreground">${r.t}</td>
+  <tr ${navTo('activity-session.html')} class="border-t border-border/60 transition-colors hover:bg-muted/50">
+    <td class="py-2.5 pl-6 pr-2 font-mono text-[12px] tabular-nums text-muted-foreground">${r.t}</td>
     <td class="px-2">${statusPill(r.status)}</td>
     <td class="px-2">${surfacePill(r.surface)}</td>
     <td class="px-2">
-      <div class="flex items-center gap-1.5 font-mono text-[11px]">
+      <div class="flex items-center gap-1.5 font-mono text-[12px]">
         <span class="truncate text-muted-foreground">${r.requested}</span>
         <i class="ri-arrow-right-line shrink-0 text-xs text-muted-foreground/50"></i>
         <span class="truncate">${r.sent}</span>
       </div>
     </td>
-    <td class="px-2 text-[11px] ${r.rule === '—' ? 'text-muted-foreground/50' : ''}">${
+    <!-- The lane rides with the scenario instead of holding a column: it
+         is a qualifier of it (there is no lane without a scenario), it is
+         "agent" on almost every row, and the column it cost belonged to
+         Requested → Sent, which was truncating both of its halves. -->
+    <td class="px-2 text-[12px] ${r.rule === '—' ? 'text-muted-foreground/50' : ''}">${
       r.rule === '—' ? r.rule : linked(r.rule, 'routing-rules.html')
-    }</td>
-    <td class="px-2">${pill(r.lane, 'mute')}</td>
-    <td class="px-2 truncate text-[11px] text-muted-foreground">${linked(r.token, 'settings-access.html')}</td>
+    }${r.lane === 'agent' ? '' : `<span class="ml-1.5 text-muted-foreground">· ${r.lane}</span>`}</td>
+    <td class="px-2 truncate text-[12px] text-muted-foreground">${linked(r.token, 'settings-access.html')}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums">${r.inTok}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums">${r.outTok}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${r.ms}</td>
@@ -73,10 +88,10 @@ document.getElementById('root').innerHTML = `
     ${filter('Surface', 'All')}
     ${filter('Status', 'All')}
     ${filter('Token', 'All')}
-    ${filter('Rule', 'All')}
+    ${filter('Scenario', 'All')}
     ${filter('Range', 'Last 24h')}
     <div class="ml-auto flex items-center gap-2">
-      <span class="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <span class="flex items-center gap-1.5 text-[12px] text-muted-foreground">
         <span class="size-1.5 animate-pulse rounded-full bg-emerald-500"></span> live
       </span>
       ${btn('Export', 'ghost', 'ri-download-line')}
@@ -92,22 +107,25 @@ document.getElementById('root').innerHTML = `
       ['p50 / p95', '1.9s / 8.4s', 'end to end']
     ].map(([l, v, s]) => `
       <div class="border-l-2 border-l-border px-4 py-3 transition-colors hover:border-l-foreground/30 hover:bg-muted/50">
-        <div class="text-[11px] uppercase tracking-wider text-muted-foreground">${l}</div>
+        <div class="text-[12px] uppercase tracking-wider text-muted-foreground">${l}</div>
         <div class="mt-1 font-mono text-base tabular-nums">${v}</div>
-        <div class="text-[11px] text-muted-foreground">${s}</div>
+        <div class="text-[12px] text-muted-foreground">${s}</div>
       </div>`).join('')}
   </div>
 
   <table class="w-full table-fixed">
-    <colgroup><col class="w-20"><col class="w-16"><col class="w-40"><col><col class="w-32"><col class="w-20"><col class="w-40"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-24"></colgroup>
+    <!-- Requested → Sent is the auto column: it is the point of the screen,
+     so the fixed ones have to leave it room. Scenario now carries the
+     lane ("think · subagent") instead of a column of its own, and Token
+     is a short name rather than 10rem of empty. -->
+<colgroup><col class="w-20"><col class="w-16"><col class="w-40"><col><col class="w-32"><col class="w-28"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-24"></colgroup>
     <thead>
-      <tr class="text-[11px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2">
+      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         ${sortTh('Time', 'pl-6 pr-2', 'left', true, 'desc')}
         ${sortTh('Status', 'px-2')}
         ${sortTh('Endpoint', 'px-2')}
         <th class="px-2 text-left font-medium">Requested → Sent</th>
-        ${sortTh('Rule', 'px-2')}
-        ${sortTh('Lane', 'px-2')}
+        ${sortTh('Scenario', 'px-2')}
         ${sortTh('Token', 'px-2')}
         ${sortTh('Input', 'px-2', 'right')}
         ${sortTh('Output', 'px-2', 'right')}
@@ -119,7 +137,7 @@ document.getElementById('root').innerHTML = `
   </table>
 
   <div class="px-6 py-4">
-    <div class="rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
+    <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
       <i class="ri-information-line mr-1 align-[-1px]"></i>
       A <span class="font-mono">429</span> row is not an error the client saw — it is a failover
       step. The 14:03:02 pair shows Codex refusing and Fable serving the same turn 0ms later.
@@ -133,7 +151,11 @@ renderShell({
   navMode: 'cloudflare',
   sub: 'requests',
   crumbs: ['Requests'],
-  subtitle: '18.7k requests · 104 failovers · last 24h',
+  // Every number here describes ONE scope, and says which. The build that
+  // followed this line drifted into mixing three: an all-time total, a
+  // failover count taken from the filtered rows, and the page cap — three
+  // scopes in one sentence, none of them labelled.
+  subtitle: '184 of 18.7k requests · last 24h',
   actions:
     btn('Live tail', 'outline', 'ri-broadcast-line', 'activity-logs.html') +
     btn('Columns', 'ghost', 'ri-layout-column-line')

@@ -20,15 +20,15 @@ export function AccessRejected({ detail }: { detail: string | null }) {
         <i className='ri-shield-cross-line text-base text-destructive' />
         <h3 className='text-sm font-semibold'>{t('system.accessRejected.title')}</h3>
       </div>
-      <p className='mt-2 text-[11px] leading-relaxed text-muted-foreground'>
+      <p className='mt-2 text-[12px] leading-relaxed text-muted-foreground'>
         <Trans i18nKey='system.accessRejected.body' components={{ mono: <span className='font-mono' /> }} />
       </p>
       {detail === null ? null : (
-        <div className='mt-3 rounded-md bg-muted/60 px-3 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap'>
+        <div className='mt-3 rounded-md bg-muted/60 px-3 py-2 font-mono text-[12px] leading-relaxed whitespace-pre-wrap'>
           {detail}
         </div>
       )}
-      <p className='mt-3 text-[11px] leading-relaxed text-muted-foreground'>
+      <p className='mt-3 text-[12px] leading-relaxed text-muted-foreground'>
         <Trans i18nKey='system.accessRejected.remedy' components={{ mono: <span className='font-mono' /> }} />
       </p>
     </div>

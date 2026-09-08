@@ -29,7 +29,7 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
       ) : (
         <div>
           <div className='text-xs'>{label}</div>
-          <div className='mt-0.5 text-[11px] text-muted-foreground'>{hint}</div>
+          <div className='mt-0.5 text-[12px] text-muted-foreground'>{hint}</div>
         </div>
       )}
       <div>{children}</div>
@@ -69,7 +69,7 @@ function ColorField({
         onChange={(e) => onChange(e.target.value)}
         placeholder='#38bdf8'
         aria-label={t('settings.statusline.hexColour')}
-        className={cn(FIELD_CLASS, 'ml-2 w-24 px-2.5 text-[11px]')}
+        className={cn(FIELD_CLASS, 'ml-2 w-24 px-2.5 text-[12px]')}
       />
     </div>
   )
@@ -90,7 +90,7 @@ export function ModuleProperties({
   return (
     <>
       <div className='flex items-center gap-2 px-6 pt-5 pb-3'>
-        <h3 className='text-sm font-semibold'>{t('settings.statusline.moduleTitle', { module: meta.label })}</h3>
+        <h3 className='text-sm font-semibold'>{t('settings.statusline.moduleTitle', { module: t(meta.labelKey) })}</h3>
         <Pill tone='info'>{t('settings.statusline.selected')}</Pill>
       </div>
 

@@ -42,7 +42,7 @@ const checkRow = (c) => `
   <div class="flex items-baseline gap-3 border-t border-border/60 px-6 py-2.5 transition-colors hover:bg-muted/50">
     <span class="w-32 shrink-0 font-mono text-xs">${c.id}</span>
     <span class="shrink-0">${pill(c.state, TONES[c.state])}</span>
-    <span class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">${c.detail}</span>
+    <span class="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">${c.detail}</span>
   </div>`
 
 const kv = (k, v) => `
@@ -56,15 +56,14 @@ document.getElementById('root').innerHTML = `
     <div class="flex items-center gap-1 border-b border-border px-6">
       ${tabs([
         { id: 'config', label: 'Config document', href: 'settings-advanced.html' },
-        { id: 'scratch', label: 'Request scratchpad', href: 'settings-advanced-scratchpad.html' },
         { id: 'health', label: 'Health' }
       ], 'health')}
     </div>
 
     <div class="flex items-center gap-3 border-b border-border px-6 py-3">
-      <span class="font-mono text-[11px] text-muted-foreground">GET /health</span>
+      <span class="font-mono text-[12px] text-muted-foreground">GET /health</span>
       ${pill('degraded', 'warn')}
-      <span class="text-[11px] text-muted-foreground">5 of 6 checks passing</span>
+      <span class="text-[12px] text-muted-foreground">5 of 6 checks passing</span>
       <div class="ml-auto flex gap-2">
         ${btn('Raw JSON', 'ghost', 'ri-code-line')}
         ${btn('Re-check', 'outline', 'ri-refresh-line')}
@@ -81,7 +80,7 @@ document.getElementById('root').innerHTML = `
     ${CHECKS.map(checkRow).join('')}
 
     <div class="px-6 py-4">
-      <div class="rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
+      <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
         <i class="ri-information-line mr-1 align-[-1px]"></i>
         <span class="font-mono">skip</span> is not a failure — it is a check for something this
         install has not configured, and colouring it red would cost the one badge that has to mean
@@ -94,20 +93,22 @@ document.getElementById('root').innerHTML = `
     <div class="flex items-center gap-3 border-t border-border px-6 pt-5 pb-3">
       <h2 class="text-sm font-semibold">Danger zone</h2>
     </div>
-    ${[
-      ['Reset routing', 'Clears every chain, rule and profile back to the seeded defaults. Providers and accounts are kept.'],
-      ['Re-seed model catalog', 'Drops scraped models and prices, then re-runs the seed. Enabled flags are lost.'],
-      ['Purge captured data', 'Deletes every session, message and request log. Usage history and cost totals go with it.']
-    ].map(([label, hint]) => `
-      <div class="grid grid-cols-[1fr_auto] items-center gap-6 border-t border-border/60 px-6 py-4">
-        <div>
-          <div class="text-xs font-medium">${label}</div>
-          <div class="mt-0.5 text-[11px] leading-snug text-muted-foreground">${hint}</div>
+    <!-- Same rows as the config tab, and for the same reason: three
+         destructive operations with no route behind them, so the panel
+         names the gap instead of drawing buttons that cannot run. -->
+    <div class="px-6 py-4">
+      <div class="rounded-md border border-dashed border-border px-4 py-4">
+        <div class="flex items-center gap-2">
+          <i class="ri-tools-line text-sm text-muted-foreground"></i>
+          <span class="text-xs font-medium">Reset routing · re-seed catalog · purge captured data</span>
+          ${pill('not yet available', 'mute')}
         </div>
-        <button class="inline-flex h-8 items-center rounded-md border border-destructive/40 px-3 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10">
-          ${label.split(' ')[0]}
-        </button>
-      </div>`).join('')}
+        <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
+          All three are destructive operations with no route behind them. They need server-side
+          handlers that can do the work inside one transaction.
+        </p>
+      </div>
+    </div>
     <div class="h-10"></div>
   </div>`
 
@@ -117,7 +118,9 @@ renderShell({
   sub: 'advanced',
   crumbs: ['Advanced'],
   subtitle: 'GET /health · degraded',
-  actions: btn('Backups', 'ghost', 'ri-history-line') + btn('Save', 'primary', 'ri-check-line')
+  // The health tab reads a probe; it has nothing to save, and the
+  // Backups button next to it opened nothing (no endpoint lists them).
+  actions: ''
 })
 </script>
 </body>

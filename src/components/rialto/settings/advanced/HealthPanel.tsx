@@ -20,6 +20,7 @@ export function HealthPanel() {
   const { t } = useTranslation()
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [reachable, setReachable] = useState(true)
+  const [raw, setRaw] = useState(false)
 
   const load = useCallback(() => {
     api
@@ -39,9 +40,20 @@ export function HealthPanel() {
         title={t('settings.advanced.healthTitle')}
         meta={t('settings.advanced.healthMeta')}
         actions={
-          <RButton variant='ghost' icon='ri-refresh-line' onClick={load}>
-            {t('settings.advanced.refresh')}
-          </RButton>
+          <div className='flex items-center gap-2'>
+            {/* The parsed rows above are a reading of the probe; this is
+                the probe. `/health` is the contract an uptime monitor
+                consumes, so being able to see exactly what it returned —
+                including a check this screen has no row for yet — is the
+                difference between diagnosing the server and diagnosing
+                this panel. */}
+            <RButton variant='ghost' icon='ri-code-line' onClick={() => setRaw((prev) => !prev)}>
+              {t('settings.advanced.rawJson')}
+            </RButton>
+            <RButton variant='outline' icon='ri-refresh-line' onClick={load}>
+              {t('settings.advanced.recheck')}
+            </RButton>
+          </div>
         }
       />
       <SettingsField label={t('settings.advanced.status')} hint={t('settings.advanced.statusHint')}>
@@ -63,7 +75,7 @@ export function HealthPanel() {
       </SettingsField>
       <SettingsField label={t('settings.advanced.dependencyChecks')} hint={t('settings.advanced.dependencyChecksHint')}>
         {health === null ? (
-          <span className='text-[11px] text-muted-foreground'>{t('settings.advanced.nothingReported')}</span>
+          <span className='text-[12px] text-muted-foreground'>{t('settings.advanced.nothingReported')}</span>
         ) : (
           <div className='flex flex-wrap items-center gap-2'>
             {Object.entries(health.checks).map(([name, state]) => (
@@ -74,6 +86,13 @@ export function HealthPanel() {
           </div>
         )}
       </SettingsField>
+      {raw ? (
+        <div className='px-6 pb-4'>
+          <pre className='overflow-x-auto rounded-md border border-border bg-muted/40 px-4 py-3 font-mono text-[12px] leading-relaxed'>
+            {health === null ? t('settings.advanced.nothingReported') : JSON.stringify(health, null, 2)}
+          </pre>
+        </div>
+      ) : null}
     </>
   )
 }

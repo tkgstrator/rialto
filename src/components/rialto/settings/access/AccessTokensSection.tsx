@@ -31,7 +31,7 @@ interface Revealed {
 
 const expiryLabel = (choiceId: string, t: Translate): string => {
   const choice = EXPIRY_CHOICES.find((c) => c.id === choiceId)
-  return choice === undefined ? t('settings.access.noExpiry') : choice.label
+  return choice === undefined ? t('settings.access.noExpiry') : t(choice.labelKey)
 }
 
 const summary = (counts: { active: number; expired: number; revoked: number }, t: Translate): string => {
@@ -169,7 +169,7 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
       ) : (
         <>
           <div className='px-6 pb-4'>
-            <div className='rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground'>
+            <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
               <i className='ri-information-line mr-1 align-[-1px]' />
               <Trans
                 i18nKey='settings.access.tokensNote'

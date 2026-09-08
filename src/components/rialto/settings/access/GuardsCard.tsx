@@ -54,15 +54,15 @@ export function GuardsCard() {
   const { t } = useTranslation()
   return (
     <div className='rounded-md border border-border px-4 py-3'>
-      <div className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>
+      <div className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>
         {t('settings.access.whoGuardsWhat')}
       </div>
       <div className='mt-2 grid grid-cols-3 gap-4'>
         {GUARDS.map((g) => (
           <div key={g.id} className={`border-l-2 ${g.accent} pl-3`}>
             <div className='text-xs font-medium'>{t(g.titleKey)}</div>
-            <div className='mt-1 text-[11px] leading-relaxed text-muted-foreground'>{g.body}</div>
-            <div className='mt-1.5 font-mono text-[10px] text-muted-foreground'>{g.flow}</div>
+            <div className='mt-1 text-[12px] leading-relaxed text-muted-foreground'>{g.body}</div>
+            <div className='mt-1.5 font-mono text-[11px] text-muted-foreground'>{g.flow}</div>
           </div>
         ))}
       </div>

@@ -9,7 +9,7 @@ const route = createRoute({
   path: '/api/update/perform',
   responses: {
     200: {
-      description: 'Result of the npm update command',
+      description: 'Result of the self-update attempt. Always refuses: the deployment is an immutable image.',
       content: { 'application/json': { schema: UpdatePerformResponseSchema } }
     }
   }

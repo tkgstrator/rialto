@@ -11,21 +11,25 @@ import { COLOR_HEX_MAP } from '@/utils/statusline'
 
 export interface ModuleTypeMeta {
   type: string
-  label: string
+  labelKey: string
   icon: string
 }
 
 /** Every module type the renderer understands, in palette order. */
 export const MODULE_TYPES: ModuleTypeMeta[] = [
-  { type: 'model', label: 'Model', icon: 'ri-cpu-line' },
-  { type: 'usage', label: 'Tokens', icon: 'ri-hashtag' },
-  { type: 'speed', label: 'Speed', icon: 'ri-speed-line' },
-  { type: 'gitBranch', label: 'Git branch', icon: 'ri-git-branch-line' },
-  { type: 'workDir', label: 'Directory', icon: 'ri-folder-line' },
-  { type: 'script', label: 'Script', icon: 'ri-terminal-box-line' }
+  { type: 'model', labelKey: 'settings.statusline.moduleModel', icon: 'ri-cpu-line' },
+  { type: 'usage', labelKey: 'settings.statusline.moduleUsage', icon: 'ri-hashtag' },
+  { type: 'speed', labelKey: 'settings.statusline.moduleSpeed', icon: 'ri-speed-line' },
+  { type: 'gitBranch', labelKey: 'settings.statusline.moduleGitBranch', icon: 'ri-git-branch-line' },
+  { type: 'workDir', labelKey: 'settings.statusline.moduleWorkDir', icon: 'ri-folder-line' },
+  { type: 'script', labelKey: 'settings.statusline.moduleScript', icon: 'ri-terminal-box-line' }
 ]
 
-const FALLBACK_META: ModuleTypeMeta = { type: '', label: 'Module', icon: 'ri-shapes-line' }
+const FALLBACK_META: ModuleTypeMeta = {
+  type: '',
+  labelKey: 'settings.statusline.moduleFallback',
+  icon: 'ri-shapes-line'
+}
 
 /**
  * Presentation for a module type. A config written by hand can name a

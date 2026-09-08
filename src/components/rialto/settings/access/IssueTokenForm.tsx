@@ -112,14 +112,14 @@ export function IssueTokenForm({
         <Picker label={t('settings.access.issueExpires')} value={draft.expiry} onChange={(v) => set('expiry', v)}>
           {EXPIRY_CHOICES.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.label}
+              {t(c.labelKey)}
             </option>
           ))}
         </Picker>
       </SettingsField>
 
       <div className='flex items-center gap-2 border-t border-border/60 px-6 py-4'>
-        <span className='text-[11px] text-muted-foreground'>{t('settings.access.issueOnceNote')}</span>
+        <span className='text-[12px] text-muted-foreground'>{t('settings.access.issueOnceNote')}</span>
         <div className='ml-auto flex gap-2'>
           <RButton variant='ghost' onClick={onCancel}>
             {t('common.cancel')}

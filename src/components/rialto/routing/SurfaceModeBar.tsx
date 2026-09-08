@@ -31,7 +31,7 @@ export function Segmented<T extends string>({
           type='button'
           onClick={() => onChange(option.value)}
           className={cn(
-            'rounded px-2.5 py-1 text-[11px]',
+            'rounded px-2.5 py-1 text-[12px]',
             option.value === value
               ? 'bg-foreground font-medium text-background'
               : 'text-muted-foreground hover:text-foreground'
@@ -91,11 +91,11 @@ function ProfilePicker({
                 {/* An unconfigured profile is a real choice with a real
                   consequence, so it says so rather than showing a bare 0. */}
                 {profile.entryCount === 0 ? (
-                  <span className='ml-auto shrink-0 text-[10px] text-muted-foreground'>
+                  <span className='ml-auto shrink-0 text-[11px] text-muted-foreground'>
                     {t('routing.common.notConfigured')}
                   </span>
                 ) : (
-                  <span className='ml-auto shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground'>
+                  <span className='ml-auto shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground'>
                     {profile.entryCount}
                   </span>
                 )}
@@ -140,7 +140,7 @@ export function SurfaceModeBar({
       {surface.routingMode === 'routed' ? (
         <ProfilePicker current={surface.profileKey} profiles={profiles} onSelect={onProfile} />
       ) : null}
-      <p className='ml-auto max-w-md text-right text-[11px] leading-snug text-muted-foreground'>
+      <p className='ml-auto max-w-md text-right text-[12px] leading-snug text-muted-foreground'>
         <Trans i18nKey={EXPLAINER_KEY[surface.routingMode]} components={{ mono: <span className='font-mono' /> }} />
       </p>
     </div>

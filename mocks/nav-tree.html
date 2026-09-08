@@ -45,21 +45,21 @@ const linked = (text, href) => '<span ' + navTo(href) + '>' + text + '</span>'
 
 const row = (r) => `
   <tr ${navTo('activity-logs.html')} class="border-t border-border/60 transition-colors hover:bg-muted/50">
-    <td class="py-2.5 pl-6 pr-2 font-mono text-[11px] tabular-nums text-muted-foreground">${r.t}</td>
+    <td class="py-2.5 pl-6 pr-2 font-mono text-[12px] tabular-nums text-muted-foreground">${r.t}</td>
     <td class="px-2">${statusPill(r.status)}</td>
     <td class="px-2">${surfacePill(r.surface)}</td>
     <td class="px-2">
-      <div class="flex items-center gap-1.5 font-mono text-[11px]">
+      <div class="flex items-center gap-1.5 font-mono text-[12px]">
         <span class="truncate text-muted-foreground">${r.requested}</span>
         <i class="ri-arrow-right-line shrink-0 text-xs text-muted-foreground/50"></i>
         <span class="truncate">${r.sent}</span>
       </div>
     </td>
-    <td class="px-2 text-[11px] ${r.rule === '—' ? 'text-muted-foreground/50' : ''}">${
+    <td class="px-2 text-[12px] ${r.rule === '—' ? 'text-muted-foreground/50' : ''}">${
       r.rule === '—' ? r.rule : linked(r.rule, 'routing-rules.html')
     }</td>
     <td class="px-2">${pill(r.lane, 'mute')}</td>
-    <td class="px-2 truncate text-[11px] text-muted-foreground">${linked(r.token, 'settings-access.html')}</td>
+    <td class="px-2 truncate text-[12px] text-muted-foreground">${linked(r.token, 'settings-access.html')}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums">${r.inTok}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums">${r.outTok}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${r.ms}</td>
@@ -82,7 +82,7 @@ document.getElementById('root').innerHTML = `
     ${filter('Rule', 'All')}
     ${filter('Range', 'Last 24h')}
     <div class="ml-auto flex items-center gap-2">
-      <span class="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <span class="flex items-center gap-1.5 text-[12px] text-muted-foreground">
         <span class="size-1.5 animate-pulse rounded-full bg-emerald-500"></span> live
       </span>
       ${btn('Export', 'ghost', 'ri-download-line')}
@@ -98,16 +98,16 @@ document.getElementById('root').innerHTML = `
       ['p50 / p95', '1.9s / 8.4s', 'end to end']
     ].map(([l, v, s]) => `
       <div class="border-l-2 border-l-border px-4 py-3 transition-colors hover:border-l-foreground/30 hover:bg-muted/50">
-        <div class="text-[11px] uppercase tracking-wider text-muted-foreground">${l}</div>
+        <div class="text-[12px] uppercase tracking-wider text-muted-foreground">${l}</div>
         <div class="mt-1 font-mono text-base tabular-nums">${v}</div>
-        <div class="text-[11px] text-muted-foreground">${s}</div>
+        <div class="text-[12px] text-muted-foreground">${s}</div>
       </div>`).join('')}
   </div>
 
   <table class="w-full table-fixed">
     <colgroup><col class="w-20"><col class="w-16"><col class="w-40"><col><col class="w-32"><col class="w-20"><col class="w-40"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-24"></colgroup>
     <thead>
-      <tr class="text-[11px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2">
+      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         <th class="pl-6 pr-2 text-left font-medium">Time</th>
         <th class="px-2 text-left font-medium">Status</th>
         <th class="px-2 text-left font-medium">Endpoint</th>
@@ -125,7 +125,7 @@ document.getElementById('root').innerHTML = `
   </table>
 
   <div class="px-6 py-5">
-    <div class="rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
+    <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
       <i class="ri-compasses-2-line mr-1 align-[-1px]"></i>
       <span class="font-medium text-foreground">Proposal C — one tree.</span>
       Sidebar is the only navigation; the tab strip that used to sit above this table is gone, and

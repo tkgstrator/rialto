@@ -39,7 +39,7 @@ const surfaceTab = (s) => {
       on ? 'border-b-foreground' : 'border-b-transparent hover:bg-muted/50'
     }">
       <span class="font-mono text-xs ${on ? 'text-foreground' : 'text-muted-foreground'}">${s.label}</span>
-      <span class="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <span class="flex items-center gap-1.5 text-[12px] text-muted-foreground">
         ${s.hint} · ${s.mode === 'routed' ? '<span class="text-emerald-600 dark:text-emerald-400">routed</span>' : 'passthrough'}
       </span>
     </button>`
@@ -57,29 +57,43 @@ const ACTIVE_SCENARIO = 'default'
 const scenarioTab = (s) => {
   const on = s.id === ACTIVE_SCENARIO
   return `
-    <button class="flex items-center gap-2 border-b-2 px-3 py-2 text-xs transition-colors ${
+    <!-- py-3, not py-2: the strip is the one place a scenario is
+         switched, and at 8px of padding it read as a caption over the
+         table rather than a control you aim at. -->
+    <button class="flex items-center gap-2 border-b-2 px-3 py-3 text-xs transition-colors ${
       on ? 'border-b-foreground font-medium' : 'border-b-transparent text-muted-foreground hover:text-foreground'
     }">
-      ${s.label}<span class="font-mono text-[11px] tabular-nums text-muted-foreground">${s.count}</span>
+      ${s.label}<span class="font-mono text-[12px] tabular-nums text-muted-foreground">${s.count}</span>
     </button>`
 }
 
 // ─── Preference chain ─────────────────────────────────────────────────
 // Priority order is the whole point, so the row leads with the ordinal
-// and a drag handle. Quota / health / weight are separate columns —
-// never packed into one cell.
+// and a drag handle. Share is each enabled target's slice of this lane's
+// scheduler weight, apportioned so the column adds up to exactly 100%.
+// A row switched off, or one the scheduler has not scored, takes no
+// slice and reads `–` instead of 0% — it is not competing for the lane.
 const CHAIN = [
-  { n: 1, target: 'claude-code,claude-opus-4-8',  tier: 'opus',   weight: '0.60', quota: 71, health: '99.8%', state: 'throttled', on: true },
-  { n: 2, target: 'claude-code,claude-fable-5',   tier: 'fable',  weight: '1.00', quota: 34, health: '99.9%', state: 'ready',     on: true },
-  { n: 3, target: 'codex,gpt-5.5',                tier: 'opus',   weight: '0.00', quota: 88, health: '98.1%', state: 'exhausted', on: true },
+  // Shares are apportioned from the weights 0.60 / 1.00 / 0.00 / 1.00
+  // (total 2.60) by largest remainder, which is what makes 23+39+0+38
+  // land on 100 instead of the 99 that plain rounding gives.
+  { n: 1, target: 'claude-code,claude-opus-4-8',  tier: 'opus',   share: '23%',  state: 'throttled', on: true },
+  { n: 2, target: 'claude-code,claude-fable-5',   tier: 'fable',  share: '39%',  state: 'ready',     on: true },
+  { n: 3, target: 'codex,gpt-5.5',                tier: 'opus',   share: '0%',   state: 'exhausted', on: true },
   // Tier null on purpose: no Gemini name says a Claude family, so the
   // router cannot classify it and nobody has set a manualTier in
   // Providers. It is the row the tier-respect floor below cannot hold.
-  { n: 4, target: 'gemini-cli,gemini-3.1-pro',    tier: null,     weight: '1.00', quota: 12, health: '96.4%', state: 'ready',     on: true },
-  { n: 5, target: 'claude-code,claude-sonnet-4-6',tier: 'sonnet', weight: '1.00', quota: 71, health: '99.9%', state: 'ready',     on: false }
+  // State `unknown`, but it still takes a share: no quota window means
+  // the scheduler has no reading to publish, not that the target is out
+  // of the running. The pill says the number behind it is a policy
+  // default rather than a measurement.
+  { n: 4, target: 'gemini-cli,gemini-3.1-pro',    tier: null,     share: '38%',  state: 'unknown',   on: true },
+  // Switched off: it takes no share of the lane, so the cell is a dash
+  // rather than a 0% that would read as "lost the apportionment".
+  { n: 5, target: 'claude-code,claude-sonnet-4-6',tier: 'sonnet', share: null,   state: 'ready',     on: false }
 ]
 
-const stateTone = { ready: 'ok', throttled: 'warn', exhausted: 'bad' }
+const stateTone = { ready: 'ok', throttled: 'warn', exhausted: 'bad', unknown: 'mute' }
 
 // A chain entry names "provider,model", and the provider is where its
 // credentials, accounts and model list live. The mock set has one detail
@@ -87,6 +101,14 @@ const stateTone = { ready: 'ok', throttled: 'warn', exhausted: 'bad' }
 const SUBSCRIPTION_PROVIDERS = ['claude-code', 'codex', 'gemini-cli']
 const providerHref = (t) =>
   SUBSCRIPTION_PROVIDERS.includes(t.split(',')[0]) ? 'providers.html' : 'providers-apikey.html'
+
+// The model half of "provider,model", unless another row in the lane
+// carries the same model under a different provider.
+const modelOf = (t) => t.slice(t.indexOf(',') + 1)
+const ambiguous = new Set(
+  CHAIN.map((e) => modelOf(e.target)).filter((m, i, all) => all.indexOf(m) !== i)
+)
+const label = (t) => (ambiguous.has(modelOf(t)) ? t : modelOf(t))
 
 const chainRow = (e) => `
   <tr ${navTo(providerHref(e.target))} class="border-t border-border/60 transition-colors hover:bg-muted/50 ${e.on ? '' : 'opacity-45'}">
@@ -96,19 +118,18 @@ const chainRow = (e) => `
         <span class="font-mono text-xs tabular-nums text-muted-foreground">${e.n}</span>
       </div>
     </td>
-    <td class="px-2 font-mono text-xs">${e.target}</td>
+    <!-- Model name only. The provider half repeats down the column and
+         is one click away on the row itself; it comes back only when two
+         rows in the same lane would otherwise read identically (the same
+         model served by a subscription and by an api_key provider). -->
+    <td class="px-2 font-mono text-xs">${label(e.target)}</td>
     <td class="px-2">${
-      e.tier === null ? '<span class="text-[11px] text-muted-foreground/50">—</span>' : pill(e.tier, 'mute')
+      e.tier === null ? '<span class="text-[12px] text-muted-foreground/50">—</span>' : pill(e.tier, 'mute')
     }</td>
     <td class="px-2">${pill(e.state, stateTone[e.state])}</td>
-    <td class="px-2 text-right font-mono text-xs tabular-nums">${e.weight}</td>
-    <td class="px-2">
-      <div class="flex items-center gap-2">
-        <div class="w-16">${meter(e.quota)}</div>
-        <span class="font-mono text-[11px] tabular-nums text-muted-foreground">${e.quota}%</span>
-      </div>
-    </td>
-    <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${e.health}</td>
+    <td class="px-2 text-right font-mono text-xs tabular-nums ${e.share === null ? 'text-muted-foreground' : ''}">${
+      e.share === null ? '–' : e.share
+    }</td>
     <td class="py-2.5 pl-2 pr-6">
       <div class="flex items-center justify-end gap-1">
         <span class="inline-flex h-4 w-7 items-center rounded-full ${e.on ? 'bg-foreground' : 'bg-muted-foreground/30'} px-0.5">
@@ -121,16 +142,14 @@ const chainRow = (e) => `
 
 const chain = `
   <table class="w-full table-fixed">
-    <colgroup><col class="w-16"><col><col class="w-20"><col class="w-24"><col class="w-20"><col class="w-32"><col class="w-20"><col class="w-24"></colgroup>
+    <colgroup><col class="w-16"><col><col class="w-20"><col class="w-24"><col class="w-20"><col class="w-24"></colgroup>
     <thead>
-      <tr class="text-[11px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2">
+      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         <th class="pl-6 pr-2 text-left font-medium">#</th>
         <th class="px-2 text-left font-medium">Target</th>
         <th class="px-2 text-left font-medium">Tier</th>
         <th class="px-2 text-left font-medium">State</th>
-        <th class="px-2 text-right font-medium">Weight</th>
-        <th class="px-2 text-left font-medium">Quota</th>
-        <th class="px-2 text-right font-medium">Health</th>
+        <th class="px-2 text-right font-medium">Share</th>
         <th class="pl-2 pr-6 text-right font-medium">On</th>
       </tr>
     </thead>
@@ -144,7 +163,7 @@ const constraint = (label, value, hint) => `
       <span class="text-xs">${label}</span>
       <span class="ml-auto font-mono text-xs">${value}</span>
     </div>
-    <div class="mt-0.5 text-[11px] text-muted-foreground">${hint}</div>
+    <div class="mt-0.5 text-[12px] text-muted-foreground">${hint}</div>
   </div>`
 
 const RULES = [
@@ -155,9 +174,9 @@ const RULES = [
 
 const rule = (r) => `
   <div ${navTo('routing-rules.html')} class="border-l-2 border-l-transparent px-4 py-3 transition-colors hover:border-l-border hover:bg-muted/50">
-    <div class="text-[11px] uppercase tracking-wider text-muted-foreground">when</div>
+    <div class="text-[12px] uppercase tracking-wider text-muted-foreground">when</div>
     <div class="mt-0.5 text-xs">${r.when}</div>
-    <div class="mt-2 text-[11px] uppercase tracking-wider text-muted-foreground">then</div>
+    <div class="mt-2 text-[12px] uppercase tracking-wider text-muted-foreground">then</div>
     <div class="mt-0.5 font-mono text-xs">${r.then}</div>
   </div>`
 
@@ -174,8 +193,8 @@ document.getElementById('root').innerHTML = `
     <div class="flex items-center gap-2">
       <span class="text-xs text-muted-foreground">Routing</span>
       <div class="flex rounded-md border border-border p-0.5">
-        <button class="rounded bg-foreground px-2.5 py-1 text-[11px] font-medium text-background">Routed</button>
-        <button ${navTo('routing-passthrough.html')} class="rounded px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground">Passthrough</button>
+        <button class="rounded bg-foreground px-2.5 py-1 text-[12px] font-medium text-background">Routed</button>
+        <button ${navTo('routing-passthrough.html')} class="rounded px-2.5 py-1 text-[12px] text-muted-foreground hover:text-foreground">Passthrough</button>
       </div>
     </div>
     <div class="flex items-center gap-2">
@@ -184,7 +203,7 @@ document.getElementById('root').innerHTML = `
         live <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i>
       </button>
     </div>
-    <p class="ml-auto max-w-md text-right text-[11px] leading-snug text-muted-foreground">
+    <p class="ml-auto max-w-md text-right text-[12px] leading-snug text-muted-foreground">
       Passthrough sends the caller's <span class="font-mono">provider,model</span> straight upstream.
       Routed applies scenarios, rules and quota-aware failover.
     </p>
@@ -198,10 +217,10 @@ document.getElementById('root').innerHTML = `
 
       <div class="flex items-center gap-3 px-6 py-3">
         <div class="flex rounded-md border border-border p-0.5">
-          <button class="rounded bg-foreground px-2.5 py-1 text-[11px] font-medium text-background">Agent</button>
-          <button class="rounded px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground">Subagent</button>
+          <button class="rounded bg-foreground px-2.5 py-1 text-[12px] font-medium text-background">Agent</button>
+          <button class="rounded px-2.5 py-1 text-[12px] text-muted-foreground hover:text-foreground">Subagent</button>
         </div>
-        <span class="text-[11px] text-muted-foreground">5 targets · 1 disabled</span>
+        <span class="text-[12px] text-muted-foreground">5 targets · 1 disabled</span>
         <div class="ml-auto flex gap-2">
           ${btn('Add target', 'outline', 'ri-add-line')}
           ${btn('Save', 'primary', 'ri-check-line')}
@@ -211,18 +230,20 @@ document.getElementById('root').innerHTML = `
       ${chain}
 
       <div class="px-6 py-4">
-        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
+        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
           <i class="ri-information-line mr-1 align-[-1px]"></i>
-          Order is preference, top first. A target is skipped when it is disabled, exhausted,
-          or its scheduler weight is <span class="font-mono">0.00</span>. Weights are published by the routing
-          scheduler every tick — edit the chain, not the weights.
+          Order is preference, top first: the router walks the chain from the top and sends the request to
+          the first target it can use, so <span class="font-mono">Share</span> is each target's slice of this
+          lane's scheduler weight — not the fraction of traffic it will see. A target is skipped when it is
+          disabled, exhausted, or its share is <span class="font-mono">0%</span>. The weights are published
+          by the routing scheduler every tick — edit the chain, not the numbers.
         </div>
       </div>
     </div>
 
     <aside class="min-w-0">
       <div class="px-4 pt-5 pb-2">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Constraints</h2>
+        <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Constraints</h2>
       </div>
       ${constraint(
         'Tier respect',
@@ -234,23 +255,39 @@ document.getElementById('root').innerHTML = `
       ${constraint('Cross-provider', 'on', 'allow different auth modes')}
 
       <div class="border-t border-border px-4 pt-5 pb-2">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Rules</h2>
+        <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Rules</h2>
       </div>
       ${RULES.map(rule).join('')}
 
       <div class="border-t border-border px-4 pt-5 pb-2">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Presets</h2>
+        <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Presets</h2>
       </div>
       <div class="px-4 pb-6">
-        <div ${navTo('settings-presets.html')} class="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
-          <i class="ri-bookmark-line text-sm text-muted-foreground"></i>
-          <span>Cost-first</span>
-          <span class="ml-auto text-[11px] text-muted-foreground">Apply</span>
+        <!-- Two kinds of row, and the difference is worth showing rather
+             than labelling: a built-in is a chain of TIERS, resolved
+             against whatever models this install has enabled at the
+             moment you apply it, so its second line is the chain itself.
+             A saved snapshot already names models and needs no gloss. -->
+        <div class="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
+          <i class="ri-stack-line text-sm text-muted-foreground"></i>
+          <div class="min-w-0">
+            <div class="truncate">Max quality</div>
+            <div class="truncate font-mono text-[11px] text-muted-foreground">fable → opus → sonnet</div>
+          </div>
+          <span class="ml-auto shrink-0 text-[12px] text-muted-foreground">Apply</span>
         </div>
-        <div ${navTo('settings-presets.html')} class="mt-2 flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
+        <div class="mt-2 flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
+          <i class="ri-stack-line text-sm text-muted-foreground"></i>
+          <div class="min-w-0">
+            <div class="truncate">Cost saver</div>
+            <div class="truncate font-mono text-[11px] text-muted-foreground">haiku → sonnet</div>
+          </div>
+          <span class="ml-auto shrink-0 text-[12px] text-muted-foreground">Apply</span>
+        </div>
+        <div class="mt-2 flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
           <i class="ri-bookmark-line text-sm text-muted-foreground"></i>
-          <span>Max quality</span>
-          <span class="ml-auto text-[11px] text-muted-foreground">Apply</span>
+          <span class="truncate">Subscription first</span>
+          <span class="ml-auto shrink-0 text-[12px] text-muted-foreground">Apply</span>
         </div>
       </div>
     </aside>

@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next'
 export function PromptEditor({ value, onChange }: { value: string; onChange: (next: string) => void }) {
   const { t } = useTranslation()
   return (
-    <div className='grid px-6 pb-6 font-mono text-[11px] leading-relaxed'>
+    <div className='grid px-6 pb-6 font-mono text-[12px] leading-relaxed'>
       <div aria-hidden='true' className='invisible whitespace-pre-wrap break-words [grid-area:1/1]'>
         {`${value}\n`}
       </div>

@@ -18,11 +18,18 @@ import { useTranslation } from 'react-i18next'
 import { useConfig } from '@/components/ConfigProvider'
 import { api, type RoutingPresetItem } from '@/lib/api'
 import { applyPresetToLive } from '@/lib/routing-map/apply-to-live'
-import type { RouteRule } from '@/schemas/domain/router'
+import { resolveBuiltinPreset, resolvesToNothing } from '@/lib/routing-map/builtin-presets'
+import { cn } from '@/lib/utils'
+import type { RouteRule, RouterConfig } from '@/schemas/domain/router'
+import { BUILTIN_ROUTING_PRESETS, type BuiltinRoutingPreset } from '@/shared/data'
+import { useEnabledTargets } from './data'
 import { summarizePredicate, summarizeTarget } from './rules'
+import type { PreferenceProfile } from './types'
 
 const ROW = 'border-l-2 border-l-transparent px-4 py-3 transition-colors hover:border-l-border hover:bg-muted/50'
-const HEADING = 'text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'
+const HEADING = 'text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'
+const PRESET_ROW =
+  'flex w-full items-center gap-2 rounded-md border border-border px-3 py-2 text-xs transition-colors hover:bg-muted/50 disabled:opacity-50'
 
 const readBool = (raw: Record<string, unknown> | null, key: string, fallback: boolean): boolean => {
   const value = raw === null ? undefined : raw[key]
@@ -50,7 +57,7 @@ function ConstraintRow({ label, value, hint }: { label: string; value: string; h
         <span className='text-xs'>{label}</span>
         <span className='ml-auto font-mono text-xs'>{value}</span>
       </div>
-      <div className='mt-0.5 text-[11px] text-muted-foreground'>{hint}</div>
+      <div className='mt-0.5 text-[12px] text-muted-foreground'>{hint}</div>
     </div>
   )
 }
@@ -90,64 +97,122 @@ function RuleSummary({ rule }: { rule: RouteRule }) {
   const { t } = useTranslation()
   return (
     <div className={ROW}>
-      <div className='text-[11px] uppercase tracking-wider text-muted-foreground'>{t('routing.chain.when')}</div>
+      <div className='text-[12px] uppercase tracking-wider text-muted-foreground'>{t('routing.chain.when')}</div>
       <div className='mt-0.5 text-xs'>{summarizePredicate(rule, t)}</div>
-      <div className='mt-2 text-[11px] uppercase tracking-wider text-muted-foreground'>{t('routing.chain.then')}</div>
+      <div className='mt-2 text-[12px] uppercase tracking-wider text-muted-foreground'>{t('routing.chain.then')}</div>
       <div className='mt-0.5 font-mono text-xs'>{summarizeTarget(rule, t)}</div>
     </div>
   )
 }
 
-function Presets({ onNotify }: { onNotify: (message: string, ok: boolean) => void }) {
+/**
+ * Saved snapshots, plus the two presets that ship with every install.
+ *
+ * The built-ins are stored as tier chains rather than as models (see
+ * `shared/data/routing-presets.ts`), so they are resolved against the
+ * models this install has enabled at the moment they are applied. That
+ * is also why their row shows the chain: "fable → opus → sonnet" is the
+ * whole content of the preset, and it says what a name cannot — which
+ * link will be dropped on an install that has no fable-class model.
+ */
+function Presets({
+  profileKey,
+  constraints,
+  onApplied,
+  onNotify
+}: {
+  profileKey: string | null
+  constraints: Record<string, unknown> | null
+  onApplied: (profile: PreferenceProfile) => void
+  onNotify: (message: string, ok: boolean) => void
+}) {
   const { t } = useTranslation()
   const { config, setConfig } = useConfig()
-  const [presets, setPresets] = useState<RoutingPresetItem[]>([])
+  const targets = useEnabledTargets()
+  const [saved, setSaved] = useState<RoutingPresetItem[]>([])
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     api
       .listRoutingPresets()
-      .then((res) => setPresets(res.presets))
+      .then((res) => setSaved(res.presets))
       .catch(() => {
-        // An empty rail is the correct rendering when no snapshot store
-        // answers; the chain itself does not depend on it.
+        // The built-ins still render: they are code, not rows, so a
+        // snapshot store that does not answer costs the operator the
+        // saved list and nothing else.
       })
   }, [])
 
-  const apply = useCallback(
-    async (preset: RoutingPresetItem) => {
+  const applyConfig = useCallback(
+    async (router: RouterConfig, name: string) => {
       if (config === null) return
       setBusy(true)
-      const result = await applyPresetToLive(config, preset.config, preset.name)
+      const result = await applyPresetToLive(config, router, name, { profileKey, constraints })
       setBusy(false)
-      if (result.ok) {
-        setConfig(result.updatedConfig)
-        onNotify(t('routing.common.presetApplied', { name: preset.name }), true)
-      } else {
+      if (!result.ok) {
         onNotify(result.message, false)
+        return
       }
+      setConfig(result.updatedConfig)
+      // Push the chain that was just written into the editor's draft, so
+      // the table shows the preset instead of waiting for a refetch that
+      // nothing triggers.
+      if (result.profile !== null) onApplied(result.profile)
+      onNotify(
+        result.warnings.length === 0
+          ? t('routing.common.presetApplied', { name })
+          : t('routing.common.presetAppliedWithWarnings', { name, count: result.warnings.length }),
+        true
+      )
     },
-    [config, setConfig, onNotify, t]
+    [config, setConfig, onNotify, onApplied, profileKey, constraints, t]
   )
 
-  if (presets.length === 0) {
-    return <div className='px-4 pb-6 text-[11px] text-muted-foreground'>{t('routing.common.noSnapshots')}</div>
-  }
+  const applyBuiltin = useCallback(
+    (preset: BuiltinRoutingPreset) => {
+      const resolved = resolveBuiltinPreset(preset, targets)
+      // Applying a chain of nulls is not "the preset did not fit", it is
+      // an outage — say so instead of saving it.
+      if (resolvesToNothing(resolved)) {
+        onNotify(t('routing.common.presetUnresolved', { name: preset.name }), false)
+        return
+      }
+      void applyConfig(resolved, preset.name)
+    },
+    [targets, applyConfig, onNotify, t]
+  )
+
   return (
     <div className='px-4 pb-6'>
-      {presets.map((preset, index) => (
+      {BUILTIN_ROUTING_PRESETS.map((preset, index) => (
         <button
           key={preset.id}
           type='button'
           disabled={busy}
-          onClick={() => void apply(preset)}
-          className={`flex w-full items-center gap-2 rounded-md border border-border px-3 py-2 text-xs ${
-            index === 0 ? '' : 'mt-2'
-          }`}
+          onClick={() => applyBuiltin(preset)}
+          className={cn(PRESET_ROW, index === 0 ? '' : 'mt-2')}
+        >
+          <i className='ri-stack-line text-sm text-muted-foreground' />
+          <span className='min-w-0 text-left'>
+            <span className='block truncate'>{preset.name}</span>
+            <span className='block truncate font-mono text-[11px] text-muted-foreground'>
+              {preset.chains.agent.join(' → ')}
+            </span>
+          </span>
+          <span className='ml-auto shrink-0 text-[12px] text-muted-foreground'>{t('routing.common.apply')}</span>
+        </button>
+      ))}
+      {saved.map((preset) => (
+        <button
+          key={preset.id}
+          type='button'
+          disabled={busy}
+          onClick={() => void applyConfig(preset.config, preset.name)}
+          className={cn(PRESET_ROW, 'mt-2')}
         >
           <i className='ri-bookmark-line text-sm text-muted-foreground' />
           <span className='truncate'>{preset.name}</span>
-          <span className='ml-auto shrink-0 text-[11px] text-muted-foreground'>{t('routing.common.apply')}</span>
+          <span className='ml-auto shrink-0 text-[12px] text-muted-foreground'>{t('routing.common.apply')}</span>
         </button>
       ))}
     </div>
@@ -156,9 +221,13 @@ function Presets({ onNotify }: { onNotify: (message: string, ok: boolean) => voi
 
 export function ChainRail({
   constraints,
+  profileKey,
+  onApplied,
   rules,
   onNotify
 }: {
+  profileKey: string | null
+  onApplied: (profile: PreferenceProfile) => void
   constraints: Record<string, unknown> | null
   rules: readonly RouteRule[]
   onNotify: (message: string, ok: boolean) => void
@@ -175,7 +244,7 @@ export function ChainRail({
         <h2 className={HEADING}>{t('routing.common.rules')}</h2>
       </div>
       {rules.length === 0 ? (
-        <div className='px-4 pb-2 text-[11px] text-muted-foreground'>{t('routing.chain.noLaneRules')}</div>
+        <div className='px-4 pb-2 text-[12px] text-muted-foreground'>{t('routing.chain.noLaneRules')}</div>
       ) : (
         rules.map((rule, index) => (
           // Rules are order-defined and unnamed by default, so position is
@@ -188,7 +257,7 @@ export function ChainRail({
       <div className='border-t border-border px-4 pt-5 pb-2'>
         <h2 className={HEADING}>{t('routing.common.presets')}</h2>
       </div>
-      <Presets onNotify={onNotify} />
+      <Presets profileKey={profileKey} constraints={constraints} onApplied={onApplied} onNotify={onNotify} />
     </aside>
   )
 }
