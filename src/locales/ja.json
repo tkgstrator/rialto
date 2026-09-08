@@ -596,13 +596,14 @@
       "unbounded": "無制限",
       "pruneNow": "今すぐ削除",
       "pruneOlderThanLabel": "{{store}} で削除する古さ",
-      "days": "{{n}} 日"
+      "days": "{{n}} 日",
+      "serverLog": "サーバーログ"
     },
     "advanced": {
       "subtitle": "設定ドキュメント · ヘルス",
       "tabConfig": "設定ドキュメント",
       "tabHealth": "ヘルス",
-      "healthTitle": "ヘルス",
+      "healthTitle": "チェック",
       "healthMeta": "GET /health · 認証なし",
       "refresh": "更新",
       "rawJson": "生 JSON",
@@ -758,7 +759,8 @@
       "expiry30d": "30 日",
       "expiry90d": "90 日",
       "expiry365d": "1 年",
-      "closedNotice": "<strong>リモートからの管理アクセスは閉じています</strong> — ブートストラップトークンが未設定で Cloudflare Access も構成されていないため、<mono>/api/*</mono> にアクセスできるのはこのマシン上のブラウザだけです。検証済み ID に対して開くには、下でチームドメインと AUD を設定してください。"
+      "closedNotice": "<strong>リモートからの管理アクセスは閉じています</strong> — ブートストラップトークンが未設定で Cloudflare Access も構成されていないため、<mono>/api/*</mono> にアクセスできるのはこのマシン上のブラウザだけです。検証済み ID に対して開くには、下でチームドメインと AUD を設定してください。",
+      "adminAccess": "管理アクセス"
     },
     "personas": {
       "subtitle": "ペルソナ {{count}} 件 · {{active}}",

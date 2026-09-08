@@ -596,13 +596,14 @@
       "unbounded": "unbounded",
       "pruneNow": "Prune now",
       "pruneOlderThanLabel": "Prune {{store}} older than",
-      "days": "{{n}} days"
+      "days": "{{n}} days",
+      "serverLog": "Server log"
     },
     "advanced": {
       "subtitle": "config document · health",
       "tabConfig": "Config document",
       "tabHealth": "Health",
-      "healthTitle": "Health",
+      "healthTitle": "Checks",
       "healthMeta": "GET /health · unauthenticated",
       "refresh": "Refresh",
       "rawJson": "Raw JSON",
@@ -758,7 +759,8 @@
       "expiry30d": "30 days",
       "expiry90d": "90 days",
       "expiry365d": "1 year",
-      "closedNotice": "<strong>Remote admin access is closed</strong> — no bootstrap token is set and Cloudflare Access is not configured, so only a browser on this machine can reach <mono>/api/*</mono>. Set a team domain and AUD below to open it to a verified identity."
+      "closedNotice": "<strong>Remote admin access is closed</strong> — no bootstrap token is set and Cloudflare Access is not configured, so only a browser on this machine can reach <mono>/api/*</mono>. Set a team domain and AUD below to open it to a verified identity.",
+      "adminAccess": "Admin access"
     },
     "personas": {
       "subtitle": "{{count}} personas · {{active}}",

@@ -596,13 +596,14 @@
       "unbounded": "无上限",
       "pruneNow": "立即清理",
       "pruneOlderThanLabel": "清理 {{store}} 中早于",
-      "days": "{{n}} 天"
+      "days": "{{n}} 天",
+      "serverLog": "服务器日志"
     },
     "advanced": {
       "subtitle": "配置文档 · 健康检查",
       "tabConfig": "配置文档",
       "tabHealth": "健康",
-      "healthTitle": "健康",
+      "healthTitle": "检查项",
       "healthMeta": "GET /health · 无需认证",
       "refresh": "刷新",
       "rawJson": "原始 JSON",
@@ -758,7 +759,8 @@
       "expiry30d": "30 天",
       "expiry90d": "90 天",
       "expiry365d": "1 年",
-      "closedNotice": "<strong>远程管理访问已关闭</strong> — 未设置引导令牌，也未配置 Cloudflare Access，因此只有本机上的浏览器可以访问 <mono>/api/*</mono>。若要向已验证的身份开放，请在下方设置团队域名和 AUD。"
+      "closedNotice": "<strong>远程管理访问已关闭</strong> — 未设置引导令牌，也未配置 Cloudflare Access，因此只有本机上的浏览器可以访问 <mono>/api/*</mono>。若要向已验证的身份开放，请在下方设置团队域名和 AUD。",
+      "adminAccess": "管理访问"
     },
     "personas": {
       "subtitle": "{{count}} 个人格 · {{active}}",

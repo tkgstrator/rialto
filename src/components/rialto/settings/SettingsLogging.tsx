@@ -231,6 +231,7 @@ export function SettingsLogging() {
   return (
     <SettingsLayout
       active='logging'
+      heading={t('settings.logging.serverLog')}
       subtitle={t('settings.logging.subtitle', { level, captured })}
       headerNote={t('settings.logging.headerNote')}
       headerActions={

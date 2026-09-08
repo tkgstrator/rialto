@@ -290,6 +290,7 @@ export function SettingsAccess() {
   return (
     <SettingsLayout
       active='access'
+      heading={t('settings.access.adminAccess')}
       subtitle={subtitle}
       headerBadge={
         configured ? (
