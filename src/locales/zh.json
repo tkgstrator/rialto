@@ -442,8 +442,7 @@
       "show": "显示",
       "showPriced": "已启用 + 有价格",
       "showEnabled": "仅已启用",
-      "showAll": "全部模型",
-      "showMore": "再显示 {{n}} 个模型"
+      "showAll": "全部模型"
     },
     "connect": {
       "title": "添加 provider",

@@ -13,7 +13,7 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, btn, providerRail, tierCell, effortCell, sortTh } = window.Shell
+const { renderShell, pill, btn, providerRail, tierCell, effortCell, sortTh, pager } = window.Shell
 
 // The api_key half of Providers. Differs from the subscription detail in
 // three ways that matter: a key field instead of accounts, real prices
@@ -198,11 +198,11 @@ document.getElementById('root').innerHTML = `
           </span>
         </div>
       </div>
-      <div class="px-6 py-4">
-        <button class="w-full rounded-md border border-dashed border-border py-2 text-[12px] text-muted-foreground transition-colors hover:bg-muted/50">
-          Show 10 more models
-        </button>
-      </div>
+      <!-- Paged like every other long list, rather than a "show 10 more"
+           that only ever grows. Revealing in steps means a 61-model
+           vendor ends as one 61-row table with no way back up, and the
+           button can never say where you are — this footer does both. -->
+      ${pager({ first: 1, last: 8, total: 18, hasPrev: false })}
       <div class="h-6"></div>
     </div>
 

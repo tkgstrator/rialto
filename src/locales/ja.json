@@ -442,8 +442,7 @@
       "show": "表示",
       "showPriced": "有効 + 価格あり",
       "showEnabled": "有効なもののみ",
-      "showAll": "すべてのモデル",
-      "showMore": "さらに {{n}} 件のモデルを表示"
+      "showAll": "すべてのモデル"
     },
     "connect": {
       "title": "プロバイダーを追加",

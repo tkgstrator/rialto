@@ -442,8 +442,7 @@
       "show": "Show",
       "showPriced": "Enabled + priced",
       "showEnabled": "Enabled only",
-      "showAll": "All models",
-      "showMore": "Show {{n}} more models"
+      "showAll": "All models"
     },
     "connect": {
       "title": "Add provider",
