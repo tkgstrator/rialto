@@ -101,10 +101,14 @@ const QUOTA = [
   { account: 'Gemini AI Pro', windows: [{ window: 'daily', pct: 12, resets: '9h 22m' }] }
 ]
 
+// The meter is capped rather than stretched. Full width it ran the
+// length of the pane, which makes a 63% bar and a 65% bar impossible to
+// tell apart and puts the number that matters a screen away from the
+// label it belongs to.
 const windowLine = (w) => `
   <div class="flex items-baseline gap-3 pt-2 first:pt-0">
     <span class="w-28 shrink-0 font-mono text-[12px] text-muted-foreground">${w.window}</span>
-    <div class="min-w-0 flex-1">${meter(w.pct)}</div>
+    <div class="w-64 shrink-0">${meter(w.pct)}</div>
     <span class="w-10 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${w.pct}%</span>
     <span class="w-20 shrink-0 text-right text-[12px] text-muted-foreground">${w.resets}</span>
   </div>`
@@ -180,12 +184,14 @@ const sessions = `
 document.getElementById('root').innerHTML = `
   ${section('Spend', `<div class="grid grid-cols-4 gap-px px-6 pb-6">${SPEND.map(spendTile).join('')}</div>`)}
   ${section('Inbound surfaces', surfaces, 'last 24h')}
-  <div class="grid grid-cols-2 border-t border-border">
-    <div class="border-r border-border">
-      ${section('Subscription quota', QUOTA.map(quotaRow).join(''), 'every window · worst shown per account')}
-    </div>
-    <div>
-      ${section('Failover activity', `
+  <!-- Stacked, not side by side. The two-column split was fine when a
+       quota row was one line per account; an account now lists every
+       window it has, so the left column wrapped while the right one sat
+       half empty. Both are lists that grow downwards — putting them in
+       one column lets each use the full width and keeps the page a single
+       reading order. -->
+  ${section('Subscription quota', QUOTA.map(quotaRow).join(''), 'every window · worst shown per account')}
+  ${section('Failover activity', `
         <div class="space-y-0">
           <div ${navTo('activity-requests.html')} class="border-t border-border/60 px-6 py-3 transition-colors hover:bg-muted/50">
             <div class="flex items-baseline gap-2">
@@ -212,8 +218,6 @@ document.getElementById('root').innerHTML = `
             <div class="mt-1 text-[12px] text-muted-foreground">refresh token rejected by Code Assist</div>
           </div>
         </div>`)}
-    </div>
-  </div>
   ${section('Recent sessions', sessions)}
   <div class="h-10"></div>`
 
