@@ -595,12 +595,7 @@
     "advanced": {
       "subtitle": "配置文档 · 草稿板 · 健康",
       "tabConfig": "配置文档",
-      "tabScratch": "请求草稿板",
       "tabHealth": "健康",
-      "scratchTitle": "请求草稿板",
-      "notRebuilt": "尚未迁移",
-      "scratchWhat": "此界面中的草稿板",
-      "scratchNeeds": "HTTP 草稿板仍运行在它自己的路由 <mono>/debug</mono> 上——它是可用的界面，但 Rialto 的设计稿从未为它出过设计，所以没有并入这里。要在这个标签页里重建它，需要先做一轮设计，再做实现。",
       "healthTitle": "健康",
       "healthMeta": "GET /health · 无需认证",
       "refresh": "刷新",

@@ -595,12 +595,7 @@
     "advanced": {
       "subtitle": "config document · scratchpad · health",
       "tabConfig": "Config document",
-      "tabScratch": "Request scratchpad",
       "tabHealth": "Health",
-      "scratchTitle": "Request scratchpad",
-      "notRebuilt": "not rebuilt yet",
-      "scratchWhat": "Scratchpad in this shell",
-      "scratchNeeds": "The HTTP scratchpad still runs on its own route at <mono>/debug</mono> — a working screen, but one the Rialto mocks never designed, so it has not been folded in here. Rebuilding it inside this tab needs a design pass before an implementation pass.",
       "healthTitle": "Health",
       "healthMeta": "GET /health · unauthenticated",
       "refresh": "Refresh",

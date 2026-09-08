@@ -104,7 +104,6 @@ node_modules/remixicon/
 | `settings-statusline.html` | Status line | StatusLineConfigDialog + 6コンポーネント |
 | `settings-advanced.html` | Advanced | DebugPage / JsonEditor |
 | `settings-advanced-health.html` | Advanced — Health | HealthPanel |
-| `settings-advanced-scratchpad.html` | Advanced — Scratchpad | ScratchpadPanel |
 
 ### Navigation（提案・未採用）
 

@@ -16,6 +16,12 @@
 const { renderShell, pill, btn, tabs } = window.Shell
 
 // Absorbs DebugPage + JsonEditor + the debug/ sub-components. Two things
+// live here: the raw config document and the health probe. A request
+// scratchpad tab used to sit between them; it was designed but never
+// built, and the copy inside it pointed at /debug, a route that no
+// longer exists. A tab whose only content is "not built, go here" —
+// where "here" is a 404 — is worse than no tab.
+// (original note kept below for the record)
 // live here: the raw config document, and a request scratchpad for
 // reproducing a routing decision without a client.
 const CONFIG = `{
@@ -54,7 +60,6 @@ document.getElementById('root').innerHTML = `
       <div class="flex items-center gap-1 border-b border-border px-6">
         ${tabs([
           { id: 'config', label: 'Config document' },
-          { id: 'scratch', label: 'Request scratchpad', href: 'settings-advanced-scratchpad.html' },
           { id: 'health', label: 'Health', href: 'settings-advanced-health.html' }
         ], 'config')}
       </div>

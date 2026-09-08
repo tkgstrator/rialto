@@ -595,12 +595,7 @@
     "advanced": {
       "subtitle": "設定ドキュメント · スクラッチパッド · ヘルス",
       "tabConfig": "設定ドキュメント",
-      "tabScratch": "リクエストスクラッチパッド",
       "tabHealth": "ヘルス",
-      "scratchTitle": "リクエストスクラッチパッド",
-      "notRebuilt": "未移植",
-      "scratchWhat": "この画面上のスクラッチパッド",
-      "scratchNeeds": "HTTP スクラッチパッドは今も <mono>/debug</mono> という独自のルートで動いています。画面としては機能していますが Rialto のモックには存在しないため、ここには取り込んでいません。このタブに作り直すには、実装より先にデザインの検討が必要です。",
       "healthTitle": "ヘルス",
       "healthMeta": "GET /health · 認証なし",
       "refresh": "更新",

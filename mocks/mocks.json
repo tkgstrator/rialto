@@ -160,13 +160,6 @@
       "note": "The Advanced screen's Health tab (GET /health, at the root so uptime checks need no token). The mock had the tab and nothing behind it. `skip` is a first-class result, not a failure."
     },
     {
-      "name": "settings-advanced-scratchpad",
-      "mock": "settings-advanced-scratchpad.html",
-      "route": "/settings/advanced?tab=scratch",
-      "group": "Settings",
-      "note": "The Advanced screen's third tab. Draws the honest not-yet-available state the implementation ships, so an empty pane cannot be mistaken for a bug."
-    },
-    {
       "name": "nav-accordion",
       "mock": "nav-accordion.html",
       "route": null,
