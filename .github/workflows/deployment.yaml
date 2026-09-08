@@ -19,12 +19,11 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    # actions:write is needed for type=gha BuildKit cache-to;
-    # contents:read for checkout. Docker Hub login uses username/password
-    # secrets, so packages:write and id-token:write are not required.
+    # contents:read for checkout is all this needs. Docker Hub login uses
+    # username/password secrets, so packages:write and id-token:write are not
+    # required, and actions:write went away with the BuildKit cache below.
     permissions:
       contents: read
-      actions: write
 
     steps:
       - name: Checkout repository
@@ -50,6 +49,9 @@ jobs:
             type=raw,value=develop
             type=sha,prefix=develop-,format=short
 
+      # No BuildKit cache — see docker-publish.yml. Warm develop scope still
+      # only landed 2 CACHED layers while spending 152s exporting the cache,
+      # so it cost more than it saved here too.
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
         with:
@@ -59,8 +61,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Image digest
         run: echo ${{ steps.meta.outputs.digest }}

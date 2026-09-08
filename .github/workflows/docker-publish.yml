@@ -55,6 +55,11 @@ jobs:
             type=raw,value=latest
             type=sha
 
+      # No BuildKit cache on purpose. GitHub Actions Cache is scoped per ref,
+      # so a `refs/tags/vX.Y.Z` build can read neither the previous tag's cache
+      # nor develop's: measured on v2.77.1, the import produced 0 CACHED steps
+      # while `cache-to: mode=max` spent 691s of the 843s build writing a cache
+      # no later run can read. The build itself is ~150s; the cache was the job.
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
         with:
@@ -64,8 +69,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Image digest
         run: echo ${{ steps.meta.outputs.digest }}
