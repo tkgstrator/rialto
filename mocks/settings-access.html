@@ -116,7 +116,7 @@ const tokens = `
         <th class="pl-3 pr-6"></th>
       </tr>
     </thead>
-    <tbody>${TOKENS.map(tokenRow).join('')}</tbody>
+    <tbody>${TOKENS.filter((t) => !t.revoked).map(tokenRow).join('')}</tbody>
   </table>`
 
 document.getElementById('root').innerHTML = `
@@ -231,7 +231,15 @@ document.getElementById('root').innerHTML = `
 
       <div class="flex items-center gap-3 border-t border-border px-6 pt-6 pb-3">
         <h2 class="text-sm font-semibold">Access tokens</h2>
-        <span class="text-[12px] text-muted-foreground">4 active · 1 revoked · all <span class="font-mono">/v1/*</span></span>
+        <!-- Revoked rows are folded away, not deleted. They are the only
+             thing keeping past RequestLog entries attributable to a
+             client, so they have to exist — but the table answers "what
+             can reach the proxy right now", and a dead row is never that.
+             The count stays a control rather than a label: without it the
+             only way to Delete one would be to remember its URL. -->
+        <span class="text-[12px] text-muted-foreground">4 active ·
+          <button class="underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground">1 revoked</button>
+          · all <span class="font-mono">/v1/*</span></span>
         <div class="ml-auto">${btn('Issue token', 'primary', 'ri-add-line')}</div>
       </div>
 

@@ -705,7 +705,6 @@
       "guardProviderTitle": "provider API key",
       "guardProviderBody": "<strong>出站方向。</strong> 由 Rialto 出示给厂商。它配置在<providers>provider</providers>页面的 provider 上。",
       "tokensTitle": "访问令牌",
-      "tokensMeta": "{{summary}} · 全部作用于 <mono>/v1/*</mono>",
       "tokensNote": "服务端只保存 SHA-256 摘要，因此明文只在签发时显示一次。<mono>/v1/*</mono> 只接受这类凭据；绑定端点与配置即可让每个客户端拥有各自的路由。<strong>点开某一行</strong>即可轮换它——在同一行换新密钥，保留名称、范围与历史——或将其吊销。",
       "countActive": "{{n}} 个有效",
       "countExpired": "{{n}} 个已过期",
@@ -793,7 +792,9 @@
       "detailRevoked": "吊销 {{date}}",
       "scopeSaved": "已更新“{{name}}”。下一次请求起生效。",
       "scopeEditNote": "保存 <strong>{{name}}</strong> 的端点与配置，自下一次请求起生效。令牌本身不会改变。",
-      "tokenSubtitle": "轮换、重设范围或吊销某个客户端的凭据"
+      "tokenSubtitle": "轮换、重设范围或吊销某个客户端的凭据",
+      "hideRevoked": "隐藏 {{n}} 个已吊销",
+      "tokensScope": "全部位于 <mono>/v1/*</mono>"
     },
     "personas": {
       "subtitle": "{{count}} 个人格 · {{active}}",

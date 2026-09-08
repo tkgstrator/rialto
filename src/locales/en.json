@@ -705,7 +705,6 @@
       "guardProviderTitle": "Provider API key",
       "guardProviderBody": "<strong>Outbound.</strong> Rialto presents it to a vendor. Lives on the provider in <providers>Providers</providers>.",
       "tokensTitle": "Access tokens",
-      "tokensMeta": "{{summary}} · all on <mono>/v1/*</mono>",
       "tokensNote": "Only the SHA-256 digest is stored, so the plaintext is shown once, at issue. These are the only credentials <mono>/v1/*</mono> accepts. Scoping to an endpoint and a profile gives one client its own routing. <strong>Open a row</strong> to rotate it — a new secret on the same row, keeping its name, scope and history — or to revoke it.",
       "countActive": "{{n}} active",
       "countExpired": "{{n}} expired",
@@ -793,7 +792,9 @@
       "detailRevoked": "Revoked {{date}}",
       "scopeSaved": "Updated “{{name}}”. The change applies to its next request.",
       "scopeEditNote": "Saves the endpoint and profile of <strong>{{name}}</strong>, from its next request. The token value itself does not change.",
-      "tokenSubtitle": "Rotate, re-scope or revoke one client’s credential"
+      "tokenSubtitle": "Rotate, re-scope or revoke one client’s credential",
+      "hideRevoked": "hide {{n}} revoked",
+      "tokensScope": "all on <mono>/v1/*</mono>"
     },
     "personas": {
       "subtitle": "{{count}} personas · {{active}}",

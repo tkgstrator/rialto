@@ -10,6 +10,13 @@
  * Rotate, revoke and delete are not here. They live on a token's own
  * page (TokenDetail), reached by clicking its row — a destructive action
  * repeated once per row is an action aimed at the wrong row eventually.
+ *
+ * Revoked rows are folded away rather than dropped. They are the only
+ * thing keeping past RequestLog entries attributable to a client, so they
+ * have to exist; but this table answers "what can reach the proxy right
+ * now", and a dead row is never that. The count in the heading opens
+ * them, because without a way back the Delete on a revoked token's page
+ * would be reachable only by remembering its URL.
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
@@ -21,7 +28,13 @@ import { ANY } from '@/components/rialto/settings/access/pickers'
 import { TokenTable } from '@/components/rialto/settings/access/TokenTable'
 import { SectionHead } from '@/components/rialto/settings/fields'
 import { type AccessTokenWire, api, type InboundSurfaceWire } from '@/lib/api'
-import { countTokens, EXPIRY_CHOICES, expiryToIso } from '@/lib/rialto/settings/access-tokens'
+import {
+  countTokens,
+  EXPIRY_CHOICES,
+  expiryToIso,
+  type TokenCounts,
+  tokenState
+} from '@/lib/rialto/settings/access-tokens'
 
 // react-i18next's t(), trimmed to what these two helpers call.
 type Translate = (key: string, options?: Record<string, unknown>) => string
@@ -39,11 +52,42 @@ const expiryLabel = (choiceId: string, t: Translate): string => {
   return choice === undefined ? t('settings.access.noExpiry') : t(choice.labelKey)
 }
 
-const summary = (counts: { active: number; expired: number; revoked: number }, t: Translate): string => {
-  const parts = [t('settings.access.countActive', { n: counts.active })]
-  if (counts.expired > 0) parts.push(t('settings.access.countExpired', { n: counts.expired }))
-  if (counts.revoked > 0) parts.push(t('settings.access.countRevoked', { n: counts.revoked }))
-  return parts.join(' · ')
+/**
+ * "4 active · 1 revoked · all on /v1/*", where the revoked count is the
+ * control that unfolds those rows. A plain label there would leave them
+ * unreachable, and a separate toggle would spend a control on a state
+ * most installs never look at.
+ */
+function Summary({
+  counts,
+  showRevoked,
+  onToggleRevoked
+}: {
+  counts: TokenCounts
+  showRevoked: boolean
+  onToggleRevoked: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <>
+      {t('settings.access.countActive', { n: counts.active })}
+      {counts.expired > 0 ? ` · ${t('settings.access.countExpired', { n: counts.expired })}` : ''}
+      {counts.revoked > 0 ? (
+        <>
+          {' · '}
+          <button
+            type='button'
+            onClick={onToggleRevoked}
+            className='underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground'
+          >
+            {t(showRevoked ? 'settings.access.hideRevoked' : 'settings.access.countRevoked', { n: counts.revoked })}
+          </button>
+        </>
+      ) : null}
+      {' · '}
+      <Trans i18nKey='settings.access.tokensScope' components={{ mono: <span className='font-mono' /> }} />
+    </>
+  )
 }
 
 export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire[] }) {
@@ -53,6 +97,7 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
   const [draft, setDraft] = useState<IssueDraft | null>(null)
   const [revealed, setRevealed] = useState<Revealed | null>(null)
   const [issuing, setIssuing] = useState(false)
+  const [showRevoked, setShowRevoked] = useState(false)
   // Pinned per load so every relative label on the page measures from
   // the same instant, and so an expiry cannot flip mid-render.
   const [now, setNow] = useState(Date.now())
@@ -112,17 +157,14 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
   }
 
   const counts = countTokens(tokens, now)
+  const listed = showRevoked ? tokens : tokens.filter((token) => tokenState(token, now) !== 'revoked')
 
   return (
     <>
       <SectionHead
         title={t('settings.access.tokensTitle')}
         meta={
-          <Trans
-            i18nKey='settings.access.tokensMeta'
-            values={{ summary: summary(counts, t) }}
-            components={{ mono: <span className='font-mono' /> }}
-          />
+          <Summary counts={counts} showRevoked={showRevoked} onToggleRevoked={() => setShowRevoked(!showRevoked)} />
         }
         actions={
           draft === null && revealed === null ? (
@@ -170,7 +212,7 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
               </p>
             </div>
           </div>
-          <TokenTable tokens={tokens} surfaces={surfaces} now={now} />
+          <TokenTable tokens={listed} surfaces={surfaces} now={now} />
         </>
       )}
     </>
