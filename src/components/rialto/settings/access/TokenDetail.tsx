@@ -165,10 +165,11 @@ export function TokenDetail() {
             {/* Rotate first and revoke second: rotating is the answer to
                 almost every reason for being on this page, and revoking
                 is the one that takes a client offline.
-                Absent rather than disabled on a dead token — RButton
-                paints no disabled state, so a greyed-out Rotate would be
-                indistinguishable from a live one, and the server refuses
-                the call anyway. */}
+                Absent rather than disabled on a dead token: a new secret
+                on a revoked or expired row would not authenticate, so the
+                server refuses the call outright — there is no state in
+                which this control could become live, and a permanently
+                greyed-out button is clutter rather than information. */}
             {state === 'active' ? (
               <RButton variant='outline' icon='ri-refresh-line' onClick={rotate} disabled={busy}>
                 {t('settings.access.rotate')}

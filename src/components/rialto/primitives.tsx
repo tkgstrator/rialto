@@ -124,6 +124,15 @@ export type ButtonVariant = keyof typeof BUTTON_VARIANTS
  *
  * shadcn's `Button` is 36px tall with different padding, so matching the
  * mock through it would mean overriding every class that defines it.
+ *
+ * `disabled` paints, which it did not used to. A disabled button that
+ * looks exactly like a live one is worse than no button: Save on an
+ * unchanged form, Previous on the first page and Rotate on a revoked
+ * token all invited a click and answered with nothing, and the operator
+ * has no way to tell that from a control that is broken. The mocks are
+ * static HTML with no disabled state to draw, so this is expected to
+ * read as a small mock diff on the screens that rest with a disabled
+ * control — state the mock cannot express, not a design difference.
  */
 export function RButton({
   variant = 'ghost',
@@ -141,6 +150,7 @@ export function RButton({
       type='button'
       className={cn(
         'inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors',
+        'disabled:pointer-events-none disabled:opacity-50',
         BUTTON_VARIANTS[variant],
         className
       )}

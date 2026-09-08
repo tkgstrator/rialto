@@ -88,16 +88,7 @@ export function ReplaceKeyDialog({
           <RButton variant='ghost' onClick={close}>
             {t('common.cancel')}
           </RButton>
-          {/* RButton paints no disabled state, so the dim is spelled out
-              here — an empty field otherwise leaves a control that looks
-              live and does nothing when clicked. */}
-          <RButton
-            variant='primary'
-            icon='ri-refresh-line'
-            onClick={submit}
-            disabled={draft.trim().length === 0}
-            className='disabled:pointer-events-none disabled:opacity-50'
-          >
+          <RButton variant='primary' icon='ri-refresh-line' onClick={submit} disabled={draft.trim().length === 0}>
             {t('providers.credentials.replaceSubmit')}
           </RButton>
         </div>
