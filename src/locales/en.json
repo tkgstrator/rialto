@@ -791,7 +791,8 @@
       "detailNoExpiry": "No expiry",
       "detailRotated": "Rotated {{date}}",
       "detailRevoked": "Revoked {{date}}",
-      "scopeSaved": "Updated “{{name}}”. The change applies to its next request."
+      "scopeSaved": "Updated “{{name}}”. The change applies to its next request.",
+      "scopeEditNote": "Saves the endpoint and profile of <strong>{{name}}</strong>, from its next request. The token value itself does not change."
     },
     "personas": {
       "subtitle": "{{count}} personas · {{active}}",

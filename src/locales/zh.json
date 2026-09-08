@@ -791,7 +791,8 @@
       "detailNoExpiry": "永不过期",
       "detailRotated": "轮换 {{date}}",
       "detailRevoked": "吊销 {{date}}",
-      "scopeSaved": "已更新“{{name}}”。下一次请求起生效。"
+      "scopeSaved": "已更新“{{name}}”。下一次请求起生效。",
+      "scopeEditNote": "保存 <strong>{{name}}</strong> 的端点与配置，自下一次请求起生效。令牌本身不会改变。"
     },
     "personas": {
       "subtitle": "{{count}} 个人格 · {{active}}",

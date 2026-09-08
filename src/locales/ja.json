@@ -791,7 +791,8 @@
       "detailNoExpiry": "無期限",
       "detailRotated": "ローテート {{date}}",
       "detailRevoked": "失効 {{date}}",
-      "scopeSaved": "「{{name}}」を更新しました。次のリクエストから反映されます。"
+      "scopeSaved": "「{{name}}」を更新しました。次のリクエストから反映されます。",
+      "scopeEditNote": "<strong>{{name}}</strong> のエンドポイントとプロファイルを保存します（次のリクエストから反映）。トークンの値自体は変わりません。"
     },
     "personas": {
       "subtitle": "ペルソナ {{count}} 件 · {{active}}",
