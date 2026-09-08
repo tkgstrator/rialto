@@ -33,6 +33,7 @@ is not a dependency either; that code was absorbed into `src/llms/`.
 | `src/shared/` | Code shared by the server and the browser bundle — must not import server-only modules |
 | `src/prisma/schema.prisma` | Prisma schema. The column comments are the real documentation for the data model |
 | `src/generated/prisma/` | Generated Prisma client. Never edit, never grep (it inlines the whole schema as one string) |
+| `public/` | Copied to `dist/` untouched: the PWA manifest, service worker and icons. Referenced by absolute path, never imported — see `docs/guides/pwa.md` |
 | `__tests__/` | Mirrors the `src/` tree |
 | `mocks/` | Human-approved static HTML mocks. These are the implementation target for the UI, not throwaway sketches |
 | `docs/plan/rialto/master-plan.md` | The refactor plan and its phase-by-phase tracking table |
@@ -274,6 +275,7 @@ Database tooling (`bun run`, from the repo root — there is no `packages/`):
 - `db:migrate:test` — apply them to `rialto_test`. **Separate database; CI fails without it.**
 - `db:reset` — drop and recreate the schema (destructive).
 - `db:seed` — `src/prisma/seed.ts`; idempotent, creates the RouterSlot rows and the preference profile. No placeholder Providers.
+- `db:seed:demo` — `scripts/seed-demo-data.ts`; dev-only demo data for all five screens (traffic, chains, presets, quota, tokens). Rows it owns carry a `demo-` id and `-- --clean` removes them; live config (RouterSlot, the `live` chain, surface modes, an account's quota) is written only while unset. Never wired into `db:seed`. See `docs/guides/demo-data.md`.
 - `db:studio` — open Prisma Studio.
 
 Never edit DDL directly; always go through Prisma migrations.
@@ -442,4 +444,5 @@ There is no dependency graph to learn — this is one package. Two rules matter:
 - Custom router example: `custom-router.example.js` — note that `CUSTOM_ROUTER_PATH`
   currently has no runtime reader (see Routing System above)
 - Migration off the pre-rename build: `docs/guides/migration-v3.md`
+- Installed-app / PWA behaviour (display mode, service worker, icons): `docs/guides/pwa.md`
 - Public deployment behind Cloudflare Access: `docs/guides/public-deployment.md`

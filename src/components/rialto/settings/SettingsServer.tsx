@@ -4,8 +4,13 @@
  * Absorbs the old `SettingsPage`: every scalar here is written to the
  * on-disk config envelope and mirrored onto `process.env`, so a change
  * lands immediately but most of it only takes effect on the next boot —
- * hence the Restart affordance in the heading row rather than a modal
- * after every save.
+ * hence the note in the heading row rather than a modal after every save.
+ *
+ * There is no Restart button. `POST /api/restart` does not exist and
+ * could not: the deployment is an immutable image the operator restarts
+ * with `docker compose restart`, or a local process they own. The button
+ * that used to sit here 404'd on every click, so the note says how to
+ * restart instead of offering a control that cannot.
  */
 import type { TFunction } from 'i18next'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -296,23 +301,11 @@ export function SettingsServer() {
       .finally(() => setSaving(false))
   }
 
-  const restart = () => {
-    api
-      .restartService()
-      .then(() => toast.success(t('settings.server.restartRequested')))
-      .catch((e: Error) => toast.error(t('settings.server.restartFailed', { message: e.message })))
-  }
-
   return (
     <SettingsLayout
       active='server'
       subtitle={t('settings.server.subtitle', { version })}
       headerNote={t('settings.server.headerNote')}
-      headerActions={
-        <RButton variant='outline' icon='ri-restart-line' onClick={restart}>
-          {t('settings.server.restart')}
-        </RButton>
-      }
       actions={
         <>
           <RButton

@@ -167,6 +167,23 @@
     @apply bg-background text-foreground;
   }
 
+  /*
+   * Keep content clear of the notch and the home indicator.
+   *
+   * Only the installed app needs this: a browser tab has chrome above and
+   * below that already does the job, and every desktop engine resolves
+   * these insets to 0 — so the class is inert everywhere except a
+   * standalone / fullscreen window on a device with cutouts. It pairs
+   * with viewport-fit=cover in index.html, which is what makes the insets
+   * non-zero in the first place.
+   */
+  .safe-area-inset {
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+  }
+
   /* 美化滚动条 - WebKit浏览器 (Chrome, Safari, Edge) */
   ::-webkit-scrollbar {
     width: 8px;

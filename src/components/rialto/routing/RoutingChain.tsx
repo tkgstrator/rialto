@@ -203,6 +203,8 @@ function RoutedBody(props: RoutedBodyProps) {
       </div>
       <ChainRail
         constraints={props.profile.constraints}
+        profileKey={props.surface.profileKey}
+        onApplied={props.setProfile}
         rules={config === null ? [] : config.Router[props.scenario][props.lane].rules}
         onNotify={props.onNotify}
       />

@@ -472,7 +472,6 @@ const SETTINGS_RAIL = [
   { id: 'logging', label: 'Logging', icon: 'ri-file-list-2-line', href: 'settings-logging.html' },
   { id: 'personas', label: 'Personas', icon: 'ri-user-voice-line', href: 'settings-personas.html' },
   { id: 'statusline', label: 'Status line', icon: 'ri-layout-bottom-line', href: 'settings-statusline.html' },
-  { id: 'presets', label: 'Presets', icon: 'ri-archive-drawer-line', href: 'settings-presets.html' },
   { id: 'advanced', label: 'Advanced', icon: 'ri-terminal-box-line', href: 'settings-advanced.html' }
 ]
 

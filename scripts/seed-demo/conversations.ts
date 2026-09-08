@@ -1,23 +1,14 @@
-#!/usr/bin/env bun
 /**
- * Dev-only: load a small set of demo Session / Message / RequestLog rows
- * so the History and Chat views have visible content on a freshly reset
- * database. Idempotent — re-running deletes and re-inserts the demo
- * rows keyed by their fixed Session ids.
+ * Curated chat content for the demo sessions.
  *
- * NOT wired into `prisma db seed` — running that in production must
- * stay side-effect free. Invoke explicitly:
- *
- *   bun run db:seed:demo
- *
- * Sessions land timestamped relative to "now" so they show up in the
- * default 6-hour History window without extra fiddling.
+ * Kept as real prose rather than lorem ipsum because the Activity chat
+ * view renders markdown and code blocks — placeholder text would hide
+ * exactly the layout problems that view has. These three conversations
+ * predate the wider demo seed (they were `scripts/seed-demo-sessions.ts`)
+ * and are carried over verbatim.
  */
 
-import 'dotenv/config'
-import { getPrismaClient } from '../src/db/client'
-
-type DemoTurn = {
+export interface DemoTurn {
   user: string
   assistant: string
   inputTokens: number
@@ -25,13 +16,14 @@ type DemoTurn = {
   durationMs: number
 }
 
-type DemoSession = {
+export interface DemoConversation {
+  /** Bare uuid; the seed prefixes it to mark the row as demo-owned. */
   id: string
   requestedModel: string
   turns: DemoTurn[]
 }
 
-const DEMO_SESSIONS: DemoSession[] = [
+export const CURATED_CONVERSATIONS: DemoConversation[] = [
   {
     id: '338183cb-dfba-445b-9133-63f5b1f29317',
     requestedModel: 'claude-sonnet-5',
@@ -99,70 +91,47 @@ const DEMO_SESSIONS: DemoSession[] = [
   }
 ]
 
-// Anchor the whole demo to "now" so the sessions land in the default
-// 6-hour History window. Turns are spaced apart so the list order and
-// the chat view timestamps stay realistic.
-const NOW = Date.now()
-const SESSION_STEP_MS = 30_000
-const TURN_STEP_MS = 5_000
-
-async function main(): Promise<void> {
-  const prisma = getPrismaClient()
-  const sessionIds = DEMO_SESSIONS.map((s) => s.id)
-
-  await prisma.$transaction([
-    prisma.message.deleteMany({ where: { sessionId: { in: sessionIds } } }),
-    prisma.requestLog.deleteMany({ where: { sessionId: { in: sessionIds } } }),
-    prisma.session.deleteMany({ where: { id: { in: sessionIds } } })
-  ])
-
-  for (const [sessionIdx, session] of DEMO_SESSIONS.entries()) {
-    const sessionStart = new Date(NOW - (DEMO_SESSIONS.length - sessionIdx) * SESSION_STEP_MS)
-    const sessionEnd = new Date(sessionStart.getTime() + session.turns.length * TURN_STEP_MS)
-
-    await prisma.session.create({
-      data: { id: session.id, createdAt: sessionStart, updatedAt: sessionEnd, archivedAt: null }
-    })
-
-    for (const [turnIdx, turn] of session.turns.entries()) {
-      const turnAt = new Date(sessionStart.getTime() + turnIdx * TURN_STEP_MS)
-      const assistantAt = new Date(turnAt.getTime() + Math.max(1, turn.durationMs))
-
-      await prisma.message.create({
-        data: { sessionId: session.id, role: 'user', content: turn.user, createdAt: turnAt }
-      })
-      await prisma.message.create({
-        data: {
-          sessionId: session.id,
-          role: 'assistant',
-          content: [{ type: 'text', text: turn.assistant }],
-          createdAt: assistantAt
-        }
-      })
-      await prisma.requestLog.create({
-        data: {
-          sessionId: session.id,
-          provider: 'codex',
-          model: 'gpt-5.6-terra',
-          requestedModel: session.requestedModel,
-          scenario: 'default',
-          isSubagent: false,
-          inputTokens: turn.inputTokens,
-          outputTokens: turn.outputTokens,
-          cacheReadTokens: 0,
-          cacheWriteTokens: 0,
-          totalInputTokens: turn.inputTokens,
-          cacheHitPct: 0,
-          durationMs: turn.durationMs,
-          status: 200,
-          createdAt: assistantAt
-        }
-      })
-    }
+/**
+ * Short turn pairs the generated sessions draw from.
+ *
+ * Deliberately varied in length: the chat view has to survive a one-line
+ * answer and a fenced code block in the same list, and a pool of
+ * same-shaped strings would never show that.
+ */
+export const FILLER_TURNS: Array<{ user: string; assistant: string }> = [
+  {
+    user: 'このリポジトリのテストだけ先に流したいんだけど、どのコマンド？',
+    assistant:
+      '`bun test` が全部で、`bun run test` は `__tests__/lib` `__tests__/db` `__tests__/preset` だけの部分実行だよ〜。名前が似てるけど別物なので注意！'
+  },
+  {
+    user: 'Postgres の接続が Prisma から切れる。まず何を見る？',
+    assistant:
+      'まずは `DATABASE_URL` の向き先と、コンテナ側の `postgres` が生きてるかだね。\n\n```bash\ndocker compose ps postgres\n```\n\nそのあと `prisma migrate status` で DDL のズレを確認するのが早いよ。'
+  },
+  { user: 'ありがとう、助かった！', assistant: 'どういたしまして〜！またいつでもどうぞ。' },
+  {
+    user: 'Summarize what changed in this diff in two sentences.',
+    assistant:
+      'The router now picks its aggregator from the surface descriptor instead of branching on the transformer name, so adding a surface no longer means editing the SSE path. The old branch is deleted rather than deprecated, which is why the diff is net-negative.'
+  },
+  {
+    user: 'React の再レンダリングが多い気がする。計測から始めたい',
+    assistant:
+      'Profiler の記録を取ってからにしよう〜。当てずっぽうで `memo` を撒くと、コストだけ増えて効果が見えないことが多いのです。\n\n1. React DevTools の Profiler で 1 操作分を記録\n2. commit の多いコンポーネントを特定\n3. その親の state 更新頻度を見る\n\nここまでで原因が絞れることがほとんどだよ！'
+  },
+  {
+    user: 'この関数、エラー処理が抜けてない？',
+    assistant:
+      'うん、`JSON.parse` が投げるケースが素通りになってるね。呼び出し側で握りつぶすより、ここで `safeParse` して失敗を値で返したほうが上位が扱いやすいと思う〜。'
+  },
+  {
+    user: 'git で直前のコミットメッセージだけ直したい',
+    assistant: '`git commit --amend` でメッセージだけ書き換えられるよ。push 済みなら履歴が変わる点だけ気をつけてね！'
+  },
+  {
+    user: 'CI が Type Check だけ落ちる。ローカルでは通ってる',
+    assistant:
+      'ローカルの `tsconfig.tsbuildinfo` が効いてる可能性が高いよ〜。`bunx tsc --noEmit` をキャッシュなしで流すか、生成物を消してから再実行してみて！'
   }
-
-  console.error(`seeded ${DEMO_SESSIONS.length} demo sessions`)
-  await prisma.$disconnect()
-}
-
-await main()
+]

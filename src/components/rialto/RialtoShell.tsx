@@ -96,7 +96,6 @@ const NAV: readonly NavEntry[] = [
         icon: 'ri-layout-bottom-line',
         href: '/settings/statusline'
       },
-      { id: 'presets', labelKey: 'settings.rail.presets', icon: 'ri-archive-drawer-line', href: '/settings/presets' },
       { id: 'advanced', labelKey: 'settings.rail.advanced', icon: 'ri-terminal-box-line', href: '/settings/advanced' }
     ]
   }
@@ -128,6 +127,14 @@ export function childOf(pathname: string): NavChild | undefined {
  */
 const RAIL_WIDTH = 'w-14'
 const RAIL_ITEM = 'flex h-9 items-center justify-center rounded-md transition-colors'
+
+/** Whether the keystroke belongs to a field the operator is editing. */
+function isTyping(target: EventTarget | null): boolean {
+  if (target === null || !(target instanceof HTMLElement)) return false
+  if (target.isContentEditable) return true
+  const tag = target.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+}
 
 /** Below this the sidebar collapses itself; see `RialtoShell`. */
 const NARROW_QUERY = '(max-width: 1023px)'
@@ -496,7 +503,12 @@ export function RialtoShell() {
         event.preventDefault()
         setSearchOpen((prev) => !prev)
       }
-      if (event.key === 'b' && (event.metaKey || event.ctrlKey)) {
+      // Not while the operator is typing. ⌘B/Ctrl+B is a text binding in
+      // its own right (bold, and back-a-character on a Mac), and a
+      // sidebar that folds mid-sentence reads as the app losing the
+      // keystroke. ⌘K above is deliberately left as it was — a
+      // pre-existing binding people already use from anywhere.
+      if (event.key === 'b' && (event.metaKey || event.ctrlKey) && !isTyping(event.target)) {
         event.preventDefault()
         setCollapsed((prev) => !prev)
       }
@@ -532,7 +544,10 @@ export function RialtoShell() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className='flex h-screen w-full overflow-hidden bg-background text-foreground'>
+      {/* h-dvh, not h-screen: on mobile 100vh is the height the viewport
+          would have with the browser chrome hidden, so the last row of any
+          screen sits under the address bar until you scroll. */}
+      <div className='safe-area-inset flex h-dvh w-full overflow-hidden bg-background text-foreground'>
         <aside
           className={cn(
             'flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200',

@@ -118,7 +118,7 @@ document.getElementById('root').innerHTML = `
     ${pill('unsaved changes', 'warn')}
     <span class="text-[12px] text-muted-foreground">4 surfaces · 5 scenarios · 6 targets</span>
     <div class="ml-auto flex gap-2">
-      ${btn('Save as preset', 'outline', 'ri-bookmark-line', 'settings-presets.html')}
+      ${btn('Save as preset', 'outline', 'ri-bookmark-line')}
       ${btn('Save', 'primary', 'ri-check-line')}
     </div>
   </div>
@@ -154,7 +154,7 @@ renderShell({
   crumbs: ['Map'],
   subtitle: 'live · 4 surfaces · 5 scenarios · 6 targets',
   actions:
-    btn('Presets', 'outline', 'ri-archive-drawer-line', 'settings-presets.html') +
+    btn('Presets', 'outline', 'ri-archive-drawer-line') +
     btn('Simulate', 'ghost', 'ri-play-line', 'routing-rules.html')
 })
 </script>

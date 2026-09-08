@@ -125,22 +125,11 @@ class ApiClient {
     return this.post<Config>('/config', config)
   }
 
-  // Service control
-  async restartService(): Promise<unknown> {
-    return this.post<void>('/restart', {})
-  }
-
   // `force` is the operator pressing "Check now". Without it the server
   // may answer from its short cache, which is what keeps a screen that
   // re-mounts from burning the anonymous GitHub rate limit.
   async checkForUpdates(force = false): Promise<UpdateCheckResponse> {
     return this.get<UpdateCheckResponse>(`/update/check?force=${force ? 'true' : 'false'}`)
-  }
-
-  async performUpdate(): Promise<{ success: boolean; message: string }> {
-    // Bare path: `baseUrl` is already '/api', so the '/api' prefix every
-    // other method omits would have produced /api/api/update/perform.
-    return this.post<{ success: boolean; message: string }>('/update/perform', {})
   }
 
   // Logs
@@ -154,31 +143,6 @@ class ApiClient {
 
   async clearLogs(filePath: string): Promise<void> {
     return this.deleteRequest<void>(`/logs?file=${encodeURIComponent(filePath)}`)
-  }
-
-  // Presets
-  async getPresets(): Promise<{ presets: Array<any> }> {
-    return this.get<{ presets: Array<any> }>('/presets')
-  }
-
-  async getPreset(name: string): Promise<any> {
-    return this.get<any>(`/presets/${encodeURIComponent(name)}`)
-  }
-
-  async applyPreset(name: string, secrets: Record<string, string>): Promise<any> {
-    return this.post<any>(`/presets/${encodeURIComponent(name)}/apply`, { secrets })
-  }
-
-  async deletePreset(name: string): Promise<any> {
-    return this.deleteRequest<any>(`/presets/${encodeURIComponent(name)}`)
-  }
-
-  async getMarketPresets(): Promise<{ presets: Array<any> }> {
-    return this.get<{ presets: Array<any> }>('/presets/market')
-  }
-
-  async installPresetFromGitHub(repo: string, name?: string): Promise<any> {
-    return this.post<any>('/presets/install/github', { repo, name })
   }
 
   // Request logs

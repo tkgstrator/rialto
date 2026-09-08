@@ -8,6 +8,7 @@
     "release": "bun run build && bash scripts/release.sh docker",
     "release:docker": "bash scripts/release.sh docker",
     "dev:ui": "vite",
+    "pwa:icons": "bun run scripts/build-pwa-icons.ts",
     "mocks:css": "bun run scripts/build-mock-css.ts",
     "mocks:serve": "bun run scripts/serve-mocks.ts",
     "mocks:shoot": "bun run .claude/skills/ui-mock-diff/scripts/shoot.ts",
@@ -28,7 +29,7 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:reset": "prisma migrate reset --force",
     "db:seed": "prisma db seed",
-    "db:seed:demo": "bun run scripts/seed-demo-sessions.ts",
+    "db:seed:demo": "bun run scripts/seed-demo-data.ts",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate",
     "knip": "knip"

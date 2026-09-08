@@ -30,7 +30,7 @@
       "mock": "routing-passthrough.html",
       "route": "/routing?surface=openai-responses",
       "group": "Routing",
-      "note": "The passthrough half \u2014 today's hardcoded behaviour for chat/completions and responses, made visible and reversible."
+      "note": "The passthrough half — today's hardcoded behaviour for chat/completions and responses, made visible and reversible."
     },
     {
       "name": "routing-map",
@@ -58,7 +58,7 @@
       "mock": "providers-apikey.html",
       "route": "/providers/openai",
       "group": "Providers",
-      "note": "API-key provider detail \u2014 key field, real prices, per-model apiStyle override."
+      "note": "API-key provider detail — key field, real prices, per-model apiStyle override."
     },
     {
       "name": "providers-connect",
@@ -87,14 +87,14 @@
       "mock": "activity-requests.html",
       "route": "/activity/requests",
       "group": "Activity",
-      "note": "Per-request log with Requested \u2192 Sent, matched rule and token attribution."
+      "note": "Per-request log with Requested → Sent, matched rule and token attribution."
     },
     {
       "name": "activity-usage",
       "mock": "activity-usage.html",
       "route": "/activity/usage",
       "group": "Activity",
-      "note": "Usage tab. Subscription windows including the per-model weekly ones Overview drops, utilization over time, and per-token spend \u2014 previously visible only inside Settings -> Access. Reads /api/usage and /api/usage/history, neither of which had a UI reader before this. KNOWN DIFF ~5% light / ~6% dark: the mock draws two subscription accounts (six windows); a one-account install renders three, and the missing rows shift every section below them. Data, not design \u2014 the section order, heads and column layout line up."
+      "note": "Usage tab. Subscription windows including the per-model weekly ones Overview drops, utilization over time, and per-token spend — previously visible only inside Settings -> Access. Reads /api/usage and /api/usage/history, neither of which had a UI reader before this. KNOWN DIFF ~5% light / ~6% dark: the mock draws two subscription accounts (six windows); a one-account install renders three, and the missing rows shift every section below them. Data, not design — the section order, heads and column layout line up."
     },
     {
       "name": "activity-session",
@@ -122,7 +122,7 @@
       "mock": "settings-access.html",
       "route": "/settings/access",
       "group": "Settings",
-      "note": "Access tokens (Phase 3.5). KNOWN DIFF ~12%: the mock depicts an install with Cloudflare Access configured (signed-in email, populated policy rows); an install without it correctly renders the other state, including an exposure warning the mock is never in a position to show. State, not design \u2014 trimming copy does not move it."
+      "note": "Access tokens (Phase 3.5). KNOWN DIFF ~12%: the mock depicts an install with Cloudflare Access configured (signed-in email, populated policy rows); an install without it correctly renders the other state, including an exposure warning the mock is never in a position to show. State, not design — trimming copy does not move it."
     },
     {
       "name": "settings-logging",
@@ -136,7 +136,7 @@
       "mock": "settings-personas.html",
       "route": "/settings/personas",
       "group": "Settings",
-      "note": "Absorbs Personas + PersonaView + PersonaEdit \u2014 three routes for one object."
+      "note": "Absorbs Personas + PersonaView + PersonaEdit — three routes for one object."
     },
     {
       "name": "settings-statusline",
@@ -144,13 +144,6 @@
       "route": "/settings/statusline",
       "group": "Settings",
       "note": "Absorbs StatusLineConfigDialog + its six sub-components. Modal becomes a three-pane editor."
-    },
-    {
-      "name": "settings-presets",
-      "mock": "settings-presets.html",
-      "route": "/settings/presets",
-      "group": "Settings",
-      "note": "Absorbs Presets + its six dialogs. Install inputs render inline, with an apply diff."
     },
     {
       "name": "settings-advanced",

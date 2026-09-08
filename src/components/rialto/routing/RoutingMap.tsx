@@ -133,7 +133,15 @@ function ProfileButton({
   )
 }
 
-function PresetsMenu({ onNotify }: { onNotify: (text: string, ok: boolean) => void }) {
+function PresetsMenu({
+  profileKey,
+  constraints,
+  onNotify
+}: {
+  profileKey: string | null
+  constraints: Record<string, unknown> | null
+  onNotify: (text: string, ok: boolean) => void
+}) {
   const { t } = useTranslation()
   const { config, setConfig } = useConfig()
   // What the built-ins' tier chains resolve against.
@@ -156,16 +164,21 @@ function PresetsMenu({ onNotify }: { onNotify: (text: string, ok: boolean) => vo
   const applyConfig = useCallback(
     async (router: RouterConfig, name: string) => {
       if (config === null) return
-      const result = await applyPresetToLive(config, router, name)
+      const result = await applyPresetToLive(config, router, name, { profileKey, constraints })
       if (result.ok) {
         setConfig(result.updatedConfig)
-        onNotify(t('routing.common.presetApplied', { name }), true)
+        onNotify(
+          result.warnings.length === 0
+            ? t('routing.common.presetApplied', { name })
+            : t('routing.common.presetAppliedWithWarnings', { name, count: result.warnings.length }),
+          true
+        )
       } else {
         onNotify(result.message, false)
       }
       setOpen(false)
     },
-    [config, setConfig, onNotify, t]
+    [config, setConfig, onNotify, profileKey, constraints, t]
   )
 
   const applyBuiltin = useCallback(
@@ -318,7 +331,7 @@ export function RoutingMap() {
       subtitle={`${profileKey} · ${counts}`}
       actions={
         <>
-          <PresetsMenu onNotify={notify} />
+          <PresetsMenu profileKey={profileKey} constraints={profile.constraints} onNotify={notify} />
           <RButton variant='ghost' icon='ri-play-line' onClick={() => navigate('/routing/rules')}>
             {t('routing.common.simulate')}
           </RButton>

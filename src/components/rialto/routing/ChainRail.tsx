@@ -24,6 +24,7 @@ import type { RouteRule, RouterConfig } from '@/schemas/domain/router'
 import { BUILTIN_ROUTING_PRESETS, type BuiltinRoutingPreset } from '@/shared/data'
 import { useEnabledTargets } from './data'
 import { summarizePredicate, summarizeTarget } from './rules'
+import type { PreferenceProfile } from './types'
 
 const ROW = 'border-l-2 border-l-transparent px-4 py-3 transition-colors hover:border-l-border hover:bg-muted/50'
 const HEADING = 'text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'
@@ -114,7 +115,17 @@ function RuleSummary({ rule }: { rule: RouteRule }) {
  * whole content of the preset, and it says what a name cannot — which
  * link will be dropped on an install that has no fable-class model.
  */
-function Presets({ onNotify }: { onNotify: (message: string, ok: boolean) => void }) {
+function Presets({
+  profileKey,
+  constraints,
+  onApplied,
+  onNotify
+}: {
+  profileKey: string | null
+  constraints: Record<string, unknown> | null
+  onApplied: (profile: PreferenceProfile) => void
+  onNotify: (message: string, ok: boolean) => void
+}) {
   const { t } = useTranslation()
   const { config, setConfig } = useConfig()
   const targets = useEnabledTargets()
@@ -136,16 +147,25 @@ function Presets({ onNotify }: { onNotify: (message: string, ok: boolean) => voi
     async (router: RouterConfig, name: string) => {
       if (config === null) return
       setBusy(true)
-      const result = await applyPresetToLive(config, router, name)
+      const result = await applyPresetToLive(config, router, name, { profileKey, constraints })
       setBusy(false)
-      if (result.ok) {
-        setConfig(result.updatedConfig)
-        onNotify(t('routing.common.presetApplied', { name }), true)
-      } else {
+      if (!result.ok) {
         onNotify(result.message, false)
+        return
       }
+      setConfig(result.updatedConfig)
+      // Push the chain that was just written into the editor's draft, so
+      // the table shows the preset instead of waiting for a refetch that
+      // nothing triggers.
+      if (result.profile !== null) onApplied(result.profile)
+      onNotify(
+        result.warnings.length === 0
+          ? t('routing.common.presetApplied', { name })
+          : t('routing.common.presetAppliedWithWarnings', { name, count: result.warnings.length }),
+        true
+      )
     },
-    [config, setConfig, onNotify, t]
+    [config, setConfig, onNotify, onApplied, profileKey, constraints, t]
   )
 
   const applyBuiltin = useCallback(
@@ -201,9 +221,13 @@ function Presets({ onNotify }: { onNotify: (message: string, ok: boolean) => voi
 
 export function ChainRail({
   constraints,
+  profileKey,
+  onApplied,
   rules,
   onNotify
 }: {
+  profileKey: string | null
+  onApplied: (profile: PreferenceProfile) => void
   constraints: Record<string, unknown> | null
   rules: readonly RouteRule[]
   onNotify: (message: string, ok: boolean) => void
@@ -233,7 +257,7 @@ export function ChainRail({
       <div className='border-t border-border px-4 pt-5 pb-2'>
         <h2 className={HEADING}>{t('routing.common.presets')}</h2>
       </div>
-      <Presets onNotify={onNotify} />
+      <Presets profileKey={profileKey} constraints={constraints} onApplied={onApplied} onNotify={onNotify} />
     </aside>
   )
 }

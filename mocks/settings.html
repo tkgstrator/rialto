@@ -47,8 +47,11 @@ document.getElementById('root').innerHTML = `
     <div class="min-w-0 overflow-y-auto">
       <div class="flex items-center gap-3 px-6 pt-6 pb-3">
         <h2 class="text-sm font-semibold">Server</h2>
-        <span class="text-[12px] text-muted-foreground">Boot-time values. A change needs a restart.</span>
-        <div class="ml-auto">${btn('Restart', 'outline', 'ri-restart-line')}</div>
+        <!-- No Restart button: there is no endpoint that could serve one.
+             The deployment is an immutable image (docker compose restart)
+             or a local process the operator owns, so the header says how
+             to restart rather than offering a control that cannot. -->
+        <span class="text-[12px] text-muted-foreground">Boot-time values. A change takes effect when the server restarts — <span class="font-mono">docker compose restart</span>, or restart the process.</span>
       </div>
 
       ${field('Host', '0.0.0.0', 'Bind address. Put Cloudflare Access in front before exposing beyond loopback.')}

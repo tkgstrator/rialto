@@ -17,7 +17,6 @@ import { SettingsAccess } from '@/components/rialto/settings/SettingsAccess'
 import { SettingsAdvanced } from '@/components/rialto/settings/SettingsAdvanced'
 import { SettingsLogging } from '@/components/rialto/settings/SettingsLogging'
 import { SettingsPersonas } from '@/components/rialto/settings/SettingsPersonas'
-import { SettingsPresets } from '@/components/rialto/settings/SettingsPresets'
 import { SettingsServer } from '@/components/rialto/settings/SettingsServer'
 import { SettingsStatusline } from '@/components/rialto/settings/SettingsStatusline'
 import { AccessRejectedScreen } from '@/components/rialto/system/AccessRejected'
@@ -71,7 +70,6 @@ export const router = createBrowserRouter([
           { path: '/settings/logging', element: <SettingsLogging /> },
           { path: '/settings/personas', element: <SettingsPersonas /> },
           { path: '/settings/statusline', element: <SettingsStatusline /> },
-          { path: '/settings/presets', element: <SettingsPresets /> },
           { path: '/settings/advanced', element: <SettingsAdvanced /> }
         ]
       },
