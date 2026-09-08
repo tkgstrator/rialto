@@ -13,6 +13,7 @@ import { RouteError } from '@/components/rialto/RouteError'
 import { RoutingChain } from '@/components/rialto/routing/RoutingChain'
 import { RoutingMap } from '@/components/rialto/routing/RoutingMap'
 import { RoutingRules } from '@/components/rialto/routing/RoutingRules'
+import { TokenDetail } from '@/components/rialto/settings/access/TokenDetail'
 import { SettingsAccess } from '@/components/rialto/settings/SettingsAccess'
 import { SettingsAdvanced } from '@/components/rialto/settings/SettingsAdvanced'
 import { SettingsLogging } from '@/components/rialto/settings/SettingsLogging'
@@ -67,6 +68,9 @@ export const router = createBrowserRouter([
           { path: '/activity/logs', element: <ActivityLogs /> },
           { path: '/settings', element: <SettingsServer /> },
           { path: '/settings/access', element: <SettingsAccess /> },
+          // A token's own page: where rotate, revoke and delete live, so
+          // none of them is a row action on a table of live credentials.
+          { path: '/settings/access/tokens/:id', element: <TokenDetail /> },
           { path: '/settings/logging', element: <SettingsLogging /> },
           { path: '/settings/personas', element: <SettingsPersonas /> },
           { path: '/settings/statusline', element: <SettingsStatusline /> },

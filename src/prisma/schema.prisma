@@ -515,6 +515,12 @@ model AccessToken {
   profileKey   String?
   lastUsedAt   DateTime?
   requestCount Int       @default(0)
+  // When the secret behind this row was last replaced. Null means it is
+  // still the one issued at createdAt. Rotation keeps the row — the id,
+  // the name, the scope and every RequestLog pointing at it — and swaps
+  // only tokenHash/prefix, so createdAt stops being the age of the
+  // current credential and this becomes the field that answers it.
+  rotatedAt    DateTime?
   expiresAt    DateTime?
   // Set rather than deleted, so a revoked token's RequestLog rows keep
   // pointing at something that says who they belonged to.

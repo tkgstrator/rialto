@@ -1,16 +1,22 @@
 /**
  * Outbound credentials for an api_key provider.
  *
- * The field is masked until the operator asks for it and only becomes
- * editable once revealed — a screenshot of this page should never carry a
- * working key, and an accidental keystroke should never silently replace
- * one either.
+ * Read-only, which is the whole design: a screenshot of this page should
+ * never carry a working key, and no keystroke landing on this screen
+ * should ever replace one. Reveal shows the value and nothing more.
+ *
+ * The field used to turn into an editable input the moment it was
+ * revealed, so "let me check which key is configured" and "let me change
+ * the key" were the same control one keystroke apart. Changing a key is
+ * rare and consequential — it now goes through ReplaceKeyDialog, which
+ * cannot be entered by accident and states what it is about to do.
  */
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { RButton } from '@/components/rialto/primitives'
 import { maskKey } from './derive'
+import { ReplaceKeyDialog } from './ReplaceKeyDialog'
 import type { Provider } from './types'
 
 export function CredentialsPanel({
@@ -25,16 +31,18 @@ export function CredentialsPanel({
   const { t } = useTranslation()
   const stored = provider.api_key === null ? '' : provider.api_key
   const [revealed, setRevealed] = useState(false)
-  const [draft, setDraft] = useState(stored)
+  const [replacing, setReplacing] = useState(false)
 
-  // Switching providers must not carry the previous provider's key (or a
-  // half-typed edit) into the new field.
-  useEffect(() => {
+  // Re-mask after a replacement: whatever the operator was looking at is
+  // not the stored key any more, and leaving the box open would show the
+  // new one without anybody asking for it. Switching providers is
+  // already covered upstream — ProviderDetail keys this component on the
+  // provider name, so a different provider is a different mount.
+  const replace = (key: string) => {
     setRevealed(false)
-    setDraft(stored)
-  }, [stored])
+    onSave(key)
+  }
 
-  const dirty = draft !== stored
   return (
     <div className='min-w-0 border-r border-border'>
       <div className='px-6 pt-5 pb-2'>
@@ -44,31 +52,22 @@ export function CredentialsPanel({
         <div>
           <div className='mb-1 text-[12px] text-muted-foreground'>{t('providers.credentials.apiKey')}</div>
           <div className='flex items-center gap-2'>
-            {revealed ? (
-              <input
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                spellCheck={false}
-                autoComplete='off'
-                className='h-8 w-full min-w-0 flex-1 rounded-md border border-border bg-transparent px-3 font-mono text-xs outline-none focus:border-foreground/40'
-              />
-            ) : (
-              <div className='flex h-8 min-w-0 flex-1 items-center rounded-md border border-border px-3 font-mono text-xs'>
-                <span className='truncate'>{stored === '' ? t('providers.credentials.notSet') : maskKey(stored)}</span>
-              </div>
-            )}
+            <div className='flex h-8 min-w-0 flex-1 items-center rounded-md border border-border px-3 font-mono text-xs'>
+              <span className='truncate'>
+                {stored === '' ? t('providers.credentials.notSet') : revealed ? stored : maskKey(stored)}
+              </span>
+            </div>
             <RButton
               variant='ghost'
               icon={revealed ? 'ri-eye-off-line' : 'ri-eye-line'}
               onClick={() => setRevealed(!revealed)}
+              disabled={stored === ''}
             >
               {revealed ? t('providers.credentials.hide') : t('providers.credentials.reveal')}
             </RButton>
-            {dirty ? (
-              <RButton variant='primary' icon='ri-check-line' onClick={() => onSave(draft)}>
-                {t('common.save')}
-              </RButton>
-            ) : null}
+            <RButton variant='outline' icon='ri-refresh-line' onClick={() => setReplacing(true)}>
+              {stored === '' ? t('providers.credentials.setKey') : t('providers.credentials.replace')}
+            </RButton>
           </div>
         </div>
         <div>
@@ -98,6 +97,7 @@ export function CredentialsPanel({
           />
         </p>
       </div>
+      <ReplaceKeyDialog open={replacing} current={stored} onOpenChange={setReplacing} onReplace={replace} />
     </div>
   )
 }

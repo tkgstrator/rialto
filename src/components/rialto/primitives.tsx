@@ -109,7 +109,12 @@ export function Meter({ pct, tone = 'auto' }: { pct: number; tone?: 'auto' | 'ok
 const BUTTON_VARIANTS = {
   primary: 'bg-primary text-primary-foreground hover:bg-primary/90',
   outline: 'border border-border hover:bg-muted/60',
-  ghost: 'hover:bg-muted/60 text-muted-foreground hover:text-foreground'
+  ghost: 'hover:bg-muted/60 text-muted-foreground hover:text-foreground',
+  // Outlined rather than filled: a solid red button is the loudest thing
+  // on any screen it lands on, and revoke sits beside actions the
+  // operator reaches for far more often. It reads destructive on
+  // approach without owning the page at rest.
+  danger: 'border border-destructive/30 text-destructive hover:border-destructive/50 hover:bg-destructive/10'
 } as const
 
 export type ButtonVariant = keyof typeof BUTTON_VARIANTS

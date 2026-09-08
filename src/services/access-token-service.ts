@@ -40,6 +40,10 @@ export interface AccessTokenRow {
   costUsd: number | null
   expiresAt: string | null
   revokedAt: string | null
+  // When the current secret was minted, if it is not the original one.
+  // Rotation preserves the row, so `createdAt` is the age of the client
+  // binding and this is the age of the credential it presents.
+  rotatedAt: string | null
   createdAt: string
 }
 
@@ -94,6 +98,7 @@ const toWire = (
     requestCount: number
     expiresAt: Date | null
     revokedAt: Date | null
+    rotatedAt: Date | null
     createdAt: Date
   },
   costUsd: number | null = null
@@ -108,6 +113,7 @@ const toWire = (
   costUsd,
   expiresAt: row.expiresAt === null ? null : row.expiresAt.toISOString(),
   revokedAt: row.revokedAt === null ? null : row.revokedAt.toISOString(),
+  rotatedAt: row.rotatedAt === null ? null : row.rotatedAt.toISOString(),
   createdAt: row.createdAt.toISOString()
 })
 
@@ -157,11 +163,18 @@ export function sumSpendByToken(
 // Per-token spend over the trailing window. Two queries regardless of
 // how many tokens exist: one grouped scan of the window, one price
 // lookup for the distinct models it touched.
-async function spendByToken(): Promise<Map<string, number>> {
+//
+// `onlyId` narrows the scan to one token for the detail screen. The
+// grouping and the pricing are otherwise identical, so a token's cost
+// cannot read one way in the table and another on its own page.
+async function spendByToken(onlyId?: string): Promise<Map<string, number>> {
   const since = dayjs().subtract(SPEND_WINDOW_DAYS, 'day').toDate()
   const groups = await getPrismaClient().requestLog.groupBy({
     by: ['accessTokenId', 'provider', 'model'],
-    where: { accessTokenId: { not: null }, createdAt: { gte: since } },
+    where: {
+      accessTokenId: onlyId === undefined ? { not: null } : onlyId,
+      createdAt: { gte: since }
+    },
     _sum: { inputTokens: true, outputTokens: true, cacheReadTokens: true, cacheWriteTokens: true }
   })
   if (groups.length === 0) return new Map()
@@ -189,6 +202,17 @@ export async function listAccessTokens(): Promise<AccessTokenRow[]> {
   })
 }
 
+/** One token by id, priced the same way the list prices it. */
+export async function getAccessToken(id: string): Promise<AccessTokenRow | null> {
+  const row = await getPrismaClient()
+    .accessToken.findUnique({ where: { id } })
+    .catch(() => null)
+  if (row === null) return null
+  const spend = await spendByToken(id)
+  const cost = spend.get(id)
+  return toWire(row, cost === undefined ? null : cost)
+}
+
 export interface IssueInput {
   name: string
   surface?: string | null
@@ -196,14 +220,31 @@ export interface IssueInput {
   expiresAt?: string | null
 }
 
-export async function issueAccessToken(input: IssueInput): Promise<IssuedToken> {
+/**
+ * A fresh secret and the two derived columns stored beside it.
+ *
+ * Shared by issue and rotate so a rotated token is indistinguishable
+ * from a newly issued one — same entropy, same prefix rule. Anything
+ * that made rotation cheaper than issuing would make rotation the weaker
+ * credential, which is backwards.
+ */
+function mintSecret(): { plaintext: string; tokenHash: string; prefix: string } {
   const plaintext = `${PREFIX}${randomBytes(TOKEN_BYTES).toString('hex')}`
+  return {
+    plaintext,
+    tokenHash: sha256(plaintext),
+    // Enough to tell two tokens apart in a list, not enough to use.
+    prefix: plaintext.slice(0, PREFIX.length + 6)
+  }
+}
+
+export async function issueAccessToken(input: IssueInput): Promise<IssuedToken> {
+  const { plaintext, tokenHash, prefix } = mintSecret()
   const row = await getPrismaClient().accessToken.create({
     data: {
       name: input.name,
-      tokenHash: sha256(plaintext),
-      // Enough to tell two tokens apart in a list, not enough to use.
-      prefix: plaintext.slice(0, PREFIX.length + 6),
+      tokenHash,
+      prefix,
       surface: input.surface === undefined ? null : input.surface,
       profileKey: input.profileKey === undefined ? null : input.profileKey,
       expiresAt: input.expiresAt === undefined || input.expiresAt === null ? null : new Date(input.expiresAt)
@@ -211,6 +252,48 @@ export async function issueAccessToken(input: IssueInput): Promise<IssuedToken> 
   })
   invalidateTokenCache()
   return { token: toWire(row), plaintext }
+}
+
+/**
+ * Why a rotation was refused. Rotation replaces the secret in place, so
+ * the only sensible answers for a token that cannot authenticate anyway
+ * are "no" and a reason — minting a new secret onto a revoked or expired
+ * row would hand back a credential that is dead the moment it is copied.
+ */
+export type RotateRefusal = 'not-found' | 'revoked' | 'expired'
+
+export type RotateResult = { ok: true; issued: IssuedToken } | { ok: false; reason: RotateRefusal }
+
+/**
+ * Replace a token's secret, keeping the row.
+ *
+ * The id, name, scope, expiry, request count and every RequestLog row
+ * pointing at this token survive — which is the point. Re-issuing splits
+ * one client's history across two rows and leaves the operator to
+ * remember that "CI (old)" and "CI" were the same machine; rotating
+ * keeps the identity and changes only what the client presents.
+ *
+ * The previous secret stops working immediately: its hash is gone from
+ * the row, and the resolver cache is cleared so an in-flight positive
+ * result cannot outlive it by up to CACHE_TTL_MS.
+ */
+export async function rotateAccessToken(id: string): Promise<RotateResult> {
+  const existing = await getPrismaClient()
+    .accessToken.findUnique({ where: { id } })
+    .catch(() => null)
+  if (existing === null) return { ok: false, reason: 'not-found' }
+  if (existing.revokedAt !== null) return { ok: false, reason: 'revoked' }
+  if (existing.expiresAt !== null && existing.expiresAt.getTime() <= Date.now()) {
+    return { ok: false, reason: 'expired' }
+  }
+
+  const { plaintext, tokenHash, prefix } = mintSecret()
+  const row = await getPrismaClient().accessToken.update({
+    where: { id },
+    data: { tokenHash, prefix, rotatedAt: dayjs().toDate() }
+  })
+  invalidateTokenCache()
+  return { ok: true, issued: { token: toWire(row), plaintext } }
 }
 
 /**

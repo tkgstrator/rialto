@@ -9,13 +9,16 @@
  */
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import { getPrismaClient } from '../../src/db/client'
+import dayjs from '../../src/lib/dayjs'
 import {
   deleteAccessToken,
+  getAccessToken,
   invalidateTokenCache,
   issueAccessToken,
   listAccessTokens,
   resolveAccessToken,
   revokeAccessToken,
+  rotateAccessToken,
   SPEND_WINDOW_DAYS,
   sumSpendByToken,
   type TokenSpendGroup
@@ -213,5 +216,73 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
     expect(await deleteAccessToken(token.id)).toBe(true)
     expect(await resolveAccessToken(plaintext)).toBeNull()
     expect(await listAccessTokens()).toHaveLength(0)
+  })
+
+  test('getAccessToken reads one row, and null for an id that is not one', async () => {
+    const { token } = await issueAccessToken({ name: 'ci' })
+    expect((await getAccessToken(token.id))?.name).toBe('ci')
+    expect(await getAccessToken('no-such-id')).toBeNull()
+  })
+
+  test('rotation swaps the secret and keeps everything else about the row', async () => {
+    const { token, plaintext } = await issueAccessToken({
+      name: 'ci',
+      surface: 'anthropic-messages',
+      profileKey: 'cost-first'
+    })
+    // A request against the original, so the row carries history worth
+    // preserving across the rotation.
+    await getPrismaClient().accessToken.update({
+      where: { id: token.id },
+      data: { requestCount: 41, lastUsedAt: dayjs('2026-01-02T03:04:05Z').toDate() }
+    })
+    invalidateTokenCache()
+
+    const result = await rotateAccessToken(token.id)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    // Same row: the id is what every RequestLog points at, so losing it
+    // would take the attribution with it.
+    expect(result.issued.token.id).toBe(token.id)
+    expect(result.issued.token.name).toBe('ci')
+    expect(result.issued.token.surface).toBe('anthropic-messages')
+    expect(result.issued.token.profileKey).toBe('cost-first')
+    expect(result.issued.token.requestCount).toBe(41)
+    expect(result.issued.token.createdAt).toBe(token.createdAt)
+    expect(result.issued.token.rotatedAt).not.toBeNull()
+
+    // New secret, and only one row.
+    expect(result.issued.plaintext).not.toBe(plaintext)
+    expect(result.issued.token.prefix).not.toBe(token.prefix)
+    expect(await listAccessTokens()).toHaveLength(1)
+  })
+
+  test('the previous secret stops working the moment it is rotated', async () => {
+    const { token, plaintext } = await issueAccessToken({ name: 'ci' })
+    // Prime the hot-path cache the way a real request would, so this
+    // also covers the invalidation and not just the stored hash.
+    expect(await resolveAccessToken(plaintext)).not.toBeNull()
+
+    const result = await rotateAccessToken(token.id)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(await resolveAccessToken(plaintext)).toBeNull()
+    expect((await resolveAccessToken(result.issued.plaintext))?.id).toBe(token.id)
+  })
+
+  test('a revoked or expired token is refused rather than handed a dead secret', async () => {
+    const revoked = await issueAccessToken({ name: 'revoked' })
+    await revokeAccessToken(revoked.token.id)
+    expect(await rotateAccessToken(revoked.token.id)).toEqual({ ok: false, reason: 'revoked' })
+
+    const expired = await issueAccessToken({
+      name: 'expired',
+      expiresAt: dayjs().subtract(1, 'minute').toISOString()
+    })
+    expect(await rotateAccessToken(expired.token.id)).toEqual({ ok: false, reason: 'expired' })
+
+    expect(await rotateAccessToken('no-such-id')).toEqual({ ok: false, reason: 'not-found' })
   })
 })

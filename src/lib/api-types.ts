@@ -170,6 +170,13 @@ export interface AccessTokenWire {
   costUsd: number | null
   expiresAt: string | null
   revokedAt: string | null
+  /**
+   * When the secret was last replaced, or null while the row still
+   * carries the one it was issued with. Rotation keeps the row, so
+   * `createdAt` is how long this client has existed and this is how old
+   * the credential it presents actually is.
+   */
+  rotatedAt: string | null
   createdAt: string
 }
 

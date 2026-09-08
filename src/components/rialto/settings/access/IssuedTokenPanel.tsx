@@ -19,6 +19,8 @@ export function IssuedTokenPanel({
   scope,
   profile,
   expiry,
+  titleKey = 'settings.access.issuedTitle',
+  bodyKey = 'settings.access.issuedBody',
   onDone
 }: {
   plaintext: string
@@ -26,6 +28,15 @@ export function IssuedTokenPanel({
   scope: string
   profile: string
   expiry: string
+  /**
+   * Rotation reveals a secret under exactly these rules, so it reuses
+   * this panel and only renames what happened — a token that was
+   * replaced is not one that was just issued, and the copy has to say
+   * which, or the operator cannot tell whether the old value still
+   * works.
+   */
+  titleKey?: string
+  bodyKey?: string
   onDone: () => void
 }) {
   const { t } = useTranslation()
@@ -52,10 +63,10 @@ export function IssuedTokenPanel({
     <div className='px-6 py-8'>
       <div className='mx-auto max-w-lg rounded-lg border border-border bg-popover p-5 shadow-sm'>
         <div className='flex items-center gap-2'>
-          <h3 className='text-sm font-semibold'>{t('settings.access.issuedTitle')}</h3>
+          <h3 className='text-sm font-semibold'>{t(titleKey)}</h3>
           <Pill tone='warn'>{t('settings.access.issuedCopyNow')}</Pill>
         </div>
-        <p className='mt-1.5 text-[12px] leading-relaxed text-muted-foreground'>{t('settings.access.issuedBody')}</p>
+        <p className='mt-1.5 text-[12px] leading-relaxed text-muted-foreground'>{t(bodyKey)}</p>
         <div className='mt-3 flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2'>
           <span className='flex-1 truncate font-mono text-xs'>{plaintext}</span>
           <button

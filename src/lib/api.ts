@@ -313,6 +313,25 @@ class ApiClient {
     return this.post<{ token: AccessTokenWire; plaintext: string }>('/access-tokens', body)
   }
 
+  async getAccessToken(id: string): Promise<AccessTokenWire> {
+    return this.get<AccessTokenWire>(`/access-tokens/${encodeURIComponent(id)}`)
+  }
+
+  /**
+   * Replace a token's secret in place.
+   *
+   * Same row, same statistics, same attribution on every request it has
+   * already served — only the credential changes, and the old one stops
+   * working the moment this resolves. Rejects with `revoked` / `expired`
+   * for a row that could not authenticate anyway.
+   */
+  async rotateAccessToken(id: string): Promise<{ token: AccessTokenWire; plaintext: string }> {
+    return this.post<{ token: AccessTokenWire; plaintext: string }>(
+      `/access-tokens/${encodeURIComponent(id)}/rotate`,
+      {}
+    )
+  }
+
   async revokeAccessToken(id: string): Promise<AccessTokenWire> {
     return this.post<AccessTokenWire>(`/access-tokens/${encodeURIComponent(id)}/revoke`, {})
   }

@@ -1,11 +1,15 @@
 /**
- * Access tokens — issue, list, revoke, delete.
+ * Access tokens — issue and list.
  *
  * Owns the one-time plaintext: it is held in component state only for as
  * long as the reveal panel is open, and is never written anywhere it
- * could be read back. The list refreshes after every mutation rather
- * than being patched locally, so `lastUsedAt` and `requestCount` cannot
- * drift from what the gate actually recorded.
+ * could be read back. The list refreshes after issuing rather than being
+ * patched locally, so `lastUsedAt` and `requestCount` cannot drift from
+ * what the gate actually recorded.
+ *
+ * Rotate, revoke and delete are not here. They live on a token's own
+ * page (TokenDetail), reached by clicking its row — a destructive action
+ * repeated once per row is an action aimed at the wrong row eventually.
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
@@ -47,7 +51,6 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
   const [profiles, setProfiles] = useState<{ key: string }[]>([])
   const [draft, setDraft] = useState<IssueDraft | null>(null)
   const [revealed, setRevealed] = useState<Revealed | null>(null)
-  const [busyId, setBusyId] = useState<string | null>(null)
   const [issuing, setIssuing] = useState(false)
   // Pinned per load so every relative label on the page measures from
   // the same instant, and so an expiry cannot flip mid-render.
@@ -102,34 +105,6 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
       })
       .catch((e: Error) => toast.error(t('settings.access.issueFailed', { message: e.message })))
       .finally(() => setIssuing(false))
-  }
-
-  const revoke = (token: AccessTokenWire) => {
-    if (!window.confirm(t('settings.access.revokeConfirm', { name: token.name }))) return
-    setBusyId(token.id)
-    api
-      .revokeAccessToken(token.id)
-      .then(() => {
-        toast.success(t('settings.access.revoked', { name: token.name }))
-        load()
-      })
-      .catch((e: Error) => toast.error(t('settings.access.revokeFailed', { message: e.message })))
-      .finally(() => setBusyId(null))
-  }
-
-  const remove = (token: AccessTokenWire) => {
-    if (!window.confirm(t('settings.access.deleteConfirm', { name: token.name }))) {
-      return
-    }
-    setBusyId(token.id)
-    api
-      .deleteAccessToken(token.id)
-      .then(() => {
-        toast.success(t('settings.access.deleted', { name: token.name }))
-        load()
-      })
-      .catch((e: Error) => toast.error(t('settings.access.deleteFailed', { message: e.message })))
-      .finally(() => setBusyId(null))
   }
 
   const counts = countTokens(tokens, now)
@@ -191,14 +166,7 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
               </p>
             </div>
           </div>
-          <TokenTable
-            tokens={tokens}
-            surfaces={surfaces}
-            now={now}
-            busyId={busyId}
-            onRevoke={revoke}
-            onDelete={remove}
-          />
+          <TokenTable tokens={tokens} surfaces={surfaces} now={now} />
         </>
       )}
     </>
