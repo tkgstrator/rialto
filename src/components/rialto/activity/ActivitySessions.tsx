@@ -45,7 +45,10 @@ import { fmtCost, fmtTokens } from '@/lib/sessions/format'
 // row, `surface` included, comes from the aggregate itself.
 const JOIN_LOG_LIMIT = 500
 
-const SESSION_PAGE = 100
+// One screenful. The endpoint pages server-side (`limit` / `offset` and a
+// `total`), so this is the page size rather than a ceiling on what the
+// screen can ever show — which is what 100 was.
+const SESSION_PAGE = 25
 
 function StatsRow({ totals, rangeLabel }: { totals: WindowTotals | null; rangeLabel: string }) {
   const { t } = useTranslation()
@@ -75,6 +78,57 @@ function StatsRow({ totals, rangeLabel }: { totals: WindowTotals | null; rangeLa
   )
 }
 
+/**
+ * Server-side paging over the session list.
+ *
+ * The range reads "26–50 of 128" rather than a page number: a page
+ * number only means something once you know the page size, and the two
+ * questions an operator has here are where they are and how much is
+ * left. `total` is the count for the whole time window, so it stays
+ * honest while the filters below narrow what is on screen.
+ *
+ * The column sort applies to the page, not the window — the endpoint
+ * orders by recency and takes no sort parameter. That is why paging
+ * exists rather than a bigger fetch: 100 rows sorted client-side was
+ * still an arbitrary 100.
+ */
+function Pager({
+  page,
+  pageSize,
+  loaded,
+  total,
+  onPage
+}: {
+  page: number
+  pageSize: number
+  loaded: number
+  total: number | undefined
+  onPage: (next: number) => void
+}) {
+  const { t } = useTranslation()
+  const first = page * pageSize + 1
+  const last = page * pageSize + loaded
+  const hasNext = total === undefined ? loaded === pageSize : last < total
+  if (page === 0 && !hasNext) return null
+  return (
+    <div className='flex items-center gap-3 border-t border-border px-6 py-3'>
+      <span className='text-[12px] text-muted-foreground'>
+        {total === undefined
+          ? t('activity.sessions.rangeUnknownTotal', { first, last })
+          : t('activity.sessions.range', { first, last, total })}
+      </span>
+      <div className='ml-auto flex items-center gap-2'>
+        <RButton variant='ghost' icon='ri-arrow-left-s-line' disabled={page === 0} onClick={() => onPage(page - 1)}>
+          {t('common.previous')}
+        </RButton>
+        <RButton variant='ghost' disabled={!hasNext} onClick={() => onPage(page + 1)}>
+          {t('common.next')}
+        </RButton>
+      </div>
+    </div>
+  )
+}
+
 export function ActivitySessions() {
   const { t } = useTranslation()
   const [range, setRange] = useState<RangeId>('7d')
@@ -91,13 +145,14 @@ export function ActivitySessions() {
   const [providerFilter, setProviderFilter] = useState<string>(ALL)
   const [modelFilter, setModelFilter] = useState<string>(ALL)
   const [query, setQuery] = useState('')
+  const [page, setPage] = useState(0)
   const [live, setLive] = useState(false)
   const surfaces = useSurfaces()
 
   const load = useCallback(() => {
     const spec = rangeSpec(range)
     Promise.all([
-      api.getRequestLogSessions({ limit: SESSION_PAGE, sinceHours: spec.hours }),
+      api.getRequestLogSessions({ limit: SESSION_PAGE, offset: page * SESSION_PAGE, sinceHours: spec.hours }),
       fetchUsageCost(spec.days),
       fetchRequestLogs(JOIN_LOG_LIMIT)
     ])
@@ -111,7 +166,7 @@ export function ActivitySessions() {
         setError(null)
       })
       .catch((e: Error) => setError(e.message))
-  }, [range])
+  }, [range, page])
 
   useEffect(load, [load])
 
@@ -273,7 +328,10 @@ export function ActivitySessions() {
       ) : visible.length === 0 ? (
         <ScreenMessage>{t('activity.sessions.empty')}</ScreenMessage>
       ) : (
-        <SessionsTable rows={visible} now={now} />
+        <>
+          <SessionsTable rows={visible} now={now} />
+          <Pager page={page} pageSize={SESSION_PAGE} loaded={sessions.length} total={totalSessions} onPage={setPage} />
+        </>
       )}
       <div className='h-10' />
     </Screen>

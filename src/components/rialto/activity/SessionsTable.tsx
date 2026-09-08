@@ -13,13 +13,22 @@ import type { Enriched } from '@/components/rialto/activity/sessions-derive'
 import { Sparkline, SurfaceCell } from '@/components/rialto/activity/shared'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
 import type { SessionSummary } from '@/lib/api'
-import { fmtAgo } from '@/lib/rialto/format'
+import { fmtAgo, shortId } from '@/lib/rialto/format'
 import { fmtCost, fmtTokens } from '@/lib/sessions/format'
 
 // What the first cell prints as its heading line. Shared with the sort so
-// the column cannot order by the preview while the row shows the id.
+// the column cannot order by the preview while the row shows something
+// else.
+//
+// The raw session id used to sit under it on every row. It is a 36-char
+// uuid that identifies the row to the API, not to a person — two of them
+// differ somewhere in the middle and the eye cannot tell them apart — so
+// the row now shows only what an operator recognises: the opening turn.
+// The id stays in the row's link and on the detail screen, which is where
+// it gets copied. A session whose first turn was never captured falls
+// back to a short form of the id, because a row still has to be nameable.
 const titleOf = (session: SessionSummary): string =>
-  session.preview === null || session.preview === '' ? session.sessionId : session.preview
+  session.preview === null || session.preview === '' ? shortId(session.sessionId) : session.preview
 
 // The trend column is deliberately absent: a sparkline is a shape, and
 // ordering it would mean inventing a scalar (slope? peak?) that no cell
@@ -54,7 +63,6 @@ function SessionRow({ row, now }: { row: Enriched; now: number }) {
       <td className='py-3 pl-6 pr-3'>
         <Link to={`/activity/sessions/${encodeURIComponent(session.sessionId)}`} className='block'>
           <div className='truncate text-xs font-medium'>{title}</div>
-          <div className='font-mono text-[12px] text-muted-foreground'>{session.sessionId}</div>
         </Link>
       </td>
       <td className='px-3'>

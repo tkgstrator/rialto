@@ -9,7 +9,8 @@
     "continue": "次へ進む",
     "copy": "コピー",
     "discard": "破棄",
-    "done": "完了"
+    "done": "完了",
+    "previous": "前へ"
   },
   "activity": {
     "common": {
@@ -31,7 +32,7 @@
       "filterSurface": "サーフェス",
       "filterStatus": "ステータス",
       "filterToken": "トークン",
-      "filterRule": "ルール",
+      "filterRule": "シナリオ",
       "filterRange": "期間",
       "range1h": "直近 1 時間",
       "range24h": "直近 24 時間",
@@ -44,7 +45,7 @@
       "colStatus": "ステータス",
       "colEndpoint": "エンドポイント",
       "colModels": "要求 → 送信",
-      "colRule": "ルール",
+      "colRule": "シナリオ",
       "colLane": "レーン",
       "colToken": "トークン",
       "colInput": "入力",
@@ -61,7 +62,7 @@
       "subtitle": "{{sessions}} セッション · {{requests}} リクエスト · {{range}}",
       "liveTail": "ライブ追従",
       "archive": "アーカイブ",
-      "archiveConfirm": "選択中の期間より古いセッションをすべてアーカイブしますか？ リクエストログは残りますが、セッションはこの一覧から消えます。",
+      "archiveConfirm": "アクティブなセッションを「すべて」アーカイブしますか？上の期間フィルターは適用されません — 本日分も含め、すべてのセッションがこの一覧から消えます。リクエストログは残ります。",
       "export": "エクスポート",
       "empty": "この条件に一致するセッションはありません。",
       "searchPlaceholder": "セッションを検索…",
@@ -90,7 +91,9 @@
       "colCost": "コスト",
       "colTrend": "推移",
       "colLast": "最終",
-      "trendLabel": "{{calls}} 回の呼び出しの推移"
+      "trendLabel": "{{calls}} 回の呼び出しの推移",
+      "range": "{{total}} 件中 {{first}}–{{last}}",
+      "rangeUnknownTotal": "{{first}}–{{last}} 件目"
     },
     "session": {
       "title": "セッション",
@@ -98,8 +101,6 @@
       "backToActivity": "アクティビティに戻る",
       "previous": "前へ",
       "rawJson": "生 JSON",
-      "archive": "アーカイブ",
-      "archiveDisabled": "呼び出しが続いているセッションはアーカイブできません。",
       "loadOlder": "以前のターンを読み込む",
       "summary": "サマリー",
       "inbound": "受信サーフェス",

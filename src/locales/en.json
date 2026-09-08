@@ -9,7 +9,8 @@
     "continue": "Continue",
     "copy": "Copy",
     "discard": "Discard",
-    "done": "Done"
+    "done": "Done",
+    "previous": "Previous"
   },
   "activity": {
     "common": {
@@ -31,7 +32,7 @@
       "filterSurface": "Surface",
       "filterStatus": "Status",
       "filterToken": "Token",
-      "filterRule": "Rule",
+      "filterRule": "Scenario",
       "filterRange": "Range",
       "range1h": "Last 1h",
       "range24h": "Last 24h",
@@ -44,7 +45,7 @@
       "colStatus": "Status",
       "colEndpoint": "Endpoint",
       "colModels": "Requested → Sent",
-      "colRule": "Rule",
+      "colRule": "Scenario",
       "colLane": "Lane",
       "colToken": "Token",
       "colInput": "Input",
@@ -61,7 +62,7 @@
       "subtitle": "{{sessions}} sessions · {{requests}} requests · {{range}}",
       "liveTail": "Live tail",
       "archive": "Archive",
-      "archiveConfirm": "Archive every session older than the selected range? Their request logs stay, but the sessions disappear from this list.",
+      "archiveConfirm": "Archive ALL active sessions? This ignores the range filter above — every session disappears from this list, including todays. Their request logs stay.",
       "export": "Export",
       "empty": "No sessions match these filters.",
       "searchPlaceholder": "Search sessions…",
@@ -90,7 +91,9 @@
       "colCost": "Cost",
       "colTrend": "Trend",
       "colLast": "Last",
-      "trendLabel": "Volume over {{calls}} calls"
+      "trendLabel": "Volume over {{calls}} calls",
+      "range": "{{first}}–{{last}} of {{total}}",
+      "rangeUnknownTotal": "{{first}}–{{last}}"
     },
     "session": {
       "title": "Session",
@@ -98,8 +101,6 @@
       "backToActivity": "Back to Activity",
       "previous": "Previous",
       "rawJson": "Raw JSON",
-      "archive": "Archive",
-      "archiveDisabled": "A session still receiving calls cannot be archived.",
       "loadOlder": "Load older turns",
       "summary": "Summary",
       "inbound": "Inbound",

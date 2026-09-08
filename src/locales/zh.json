@@ -9,7 +9,8 @@
     "continue": "继续",
     "copy": "复制",
     "discard": "放弃",
-    "done": "完成"
+    "done": "完成",
+    "previous": "上一页"
   },
   "activity": {
     "common": {
@@ -31,7 +32,7 @@
       "filterSurface": "入口",
       "filterStatus": "状态",
       "filterToken": "令牌",
-      "filterRule": "规则",
+      "filterRule": "场景",
       "filterRange": "时间范围",
       "range1h": "最近 1 小时",
       "range24h": "最近 24 小时",
@@ -44,7 +45,7 @@
       "colStatus": "状态",
       "colEndpoint": "端点",
       "colModels": "请求 → 发送",
-      "colRule": "规则",
+      "colRule": "场景",
       "colLane": "通道",
       "colToken": "令牌",
       "colInput": "输入",
@@ -61,7 +62,7 @@
       "subtitle": "{{sessions}} 个会话 · {{requests}} 个请求 · {{range}}",
       "liveTail": "实时跟踪",
       "archive": "归档",
-      "archiveConfirm": "归档所选时间范围之前的所有会话吗？请求日志会保留，但这些会话将从列表中消失。",
+      "archiveConfirm": "要归档「所有」活动会话吗？这会忽略上方的时间范围筛选 — 包括今天在内的所有会话都会从此列表消失。请求日志会保留。",
       "export": "导出",
       "empty": "没有符合当前筛选条件的会话。",
       "searchPlaceholder": "搜索会话…",
@@ -90,7 +91,9 @@
       "colCost": "费用",
       "colTrend": "趋势",
       "colLast": "最近",
-      "trendLabel": "{{calls}} 次调用的流量趋势"
+      "trendLabel": "{{calls}} 次调用的流量趋势",
+      "range": "第 {{first}}–{{last}} 条，共 {{total}} 条",
+      "rangeUnknownTotal": "第 {{first}}–{{last}} 条"
     },
     "session": {
       "title": "会话",
@@ -98,8 +101,6 @@
       "backToActivity": "返回活动",
       "previous": "上一个",
       "rawJson": "原始 JSON",
-      "archive": "归档",
-      "archiveDisabled": "仍在接收调用的会话无法归档。",
       "loadOlder": "加载更早的轮次",
       "summary": "概要",
       "inbound": "入口",

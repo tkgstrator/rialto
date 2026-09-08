@@ -47,9 +47,15 @@ const SESSIONS = [
 
 const sessionRow = (s) => `
   <tr ${navTo('activity-session.html')} class="border-t border-border/60 transition-colors hover:bg-muted/50">
+    <!-- No session id line. It is a 36-character uuid that identifies the
+         row to the API, not to a person: two of them differ in the middle
+         and the eye cannot tell them apart, and the first line — the
+         opening turn of the conversation — is what an operator recognises.
+         The id is still in the URL of the row and on the detail screen,
+         where it is the thing you copy. A session with no captured turn
+         falls back to a short form of the id so the row is still nameable. -->
     <td class="py-3 pl-6 pr-3">
       <div class="truncate text-xs font-medium">${s.title}</div>
-      <div class="font-mono text-[12px] text-muted-foreground">${s.id}</div>
     </td>
     <td class="px-3">${surfacePill(s.surface)}</td>
     <td class="px-3 font-mono text-[12px] text-muted-foreground">${s.model}</td>
@@ -80,7 +86,24 @@ const table = `
       </tr>
     </thead>
     <tbody>${SESSIONS.map(sessionRow).join('')}</tbody>
-  </table>`
+  </table>
+
+  <!-- Paging, because the list is unbounded and the screen was showing
+       whatever the first fetch happened to return. The range is spelled
+       out rather than a page number: "26–50 of 128" answers both "where
+       am I" and "how much is there", and a page number answers neither
+       without knowing the page size. -->
+  <div class="flex items-center gap-3 border-t border-border px-6 py-3">
+    <span class="text-[12px] text-muted-foreground">1–25 of 128</span>
+    <div class="ml-auto flex items-center gap-2">
+      <button class="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium text-muted-foreground opacity-50" disabled>
+        <i class="ri-arrow-left-s-line text-sm leading-none"></i>Previous
+      </button>
+      <button class="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium hover:bg-muted/60">
+        Next<i class="ri-arrow-right-s-line text-sm leading-none"></i>
+      </button>
+    </div>
+  </div>`
 
 const stat = (label, value, sub, href) => `
   <div ${navTo(href)} class="border-l-2 border-l-border px-4 py-3 transition-colors hover:border-l-foreground/30 hover:bg-muted/50">
