@@ -13,7 +13,7 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, mono, meter, btn, navTo, selectorBar } = window.Shell
+const { renderShell, pill, mono, meter, btn, navTo } = window.Shell
 
 // ─── The fix for "every routing setting is messages-only" ─────────────
 // The old build hard-coded a router bypass for /v1/chat/completions and
@@ -156,7 +156,7 @@ const chain = `
     <tbody>${CHAIN.map(chainRow).join('')}</tbody>
   </table>`
 
-// ─── Right rail: constraints + rules ──────────────────────────────────
+// ─── Right rail: constraints + presets ────────────────────────────────
 const constraint = (label, value, hint) => `
   <div class="border-l-2 border-l-transparent px-4 py-3 transition-colors hover:border-l-border hover:bg-muted/50">
     <div class="flex items-baseline gap-2">
@@ -166,22 +166,9 @@ const constraint = (label, value, hint) => `
     <div class="mt-0.5 text-[12px] text-muted-foreground">${hint}</div>
   </div>`
 
-const RULES = [
-  { when: 'requestedModel matches <span class="font-mono">*haiku*</span>', then: 'claude-code,claude-haiku-4-5' },
-  { when: 'tokens &gt; <span class="font-mono">60,000</span>', then: 'longContext chain' },
-  { when: 'has <span class="font-mono">&lt;RIALTO-SUBAGENT-MODEL&gt;</span>', then: 'subagent lane' }
-]
 
-const rule = (r) => `
-  <div ${navTo('routing-rules.html')} class="border-l-2 border-l-transparent px-4 py-3 transition-colors hover:border-l-border hover:bg-muted/50">
-    <div class="text-[12px] uppercase tracking-wider text-muted-foreground">when</div>
-    <div class="mt-0.5 text-xs">${r.when}</div>
-    <div class="mt-2 text-[12px] uppercase tracking-wider text-muted-foreground">then</div>
-    <div class="mt-0.5 font-mono text-xs">${r.then}</div>
-  </div>`
 
 document.getElementById('root').innerHTML = `
-  ${selectorBar('chain')}
 
   <!-- Surface selector: the outermost axis of the whole screen -->
   <div class="flex items-stretch gap-0 border-b border-border px-2">
@@ -205,7 +192,7 @@ document.getElementById('root').innerHTML = `
     </div>
     <p class="ml-auto max-w-md text-right text-[12px] leading-snug text-muted-foreground">
       Passthrough sends the caller's <span class="font-mono">provider,model</span> straight upstream.
-      Routed applies scenarios, rules and quota-aware failover.
+      Routed walks the chain for this scenario and fails over on quota.
     </p>
   </div>
 
@@ -254,10 +241,6 @@ document.getElementById('root').innerHTML = `
       ${constraint('When exhausted', 'next', 'next / wait / error')}
       ${constraint('Cross-provider', 'on', 'allow different auth modes')}
 
-      <div class="border-t border-border px-4 pt-5 pb-2">
-        <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Rules</h2>
-      </div>
-      ${RULES.map(rule).join('')}
 
       <div class="border-t border-border px-4 pt-5 pb-2">
         <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Presets</h2>
@@ -298,11 +281,8 @@ renderShell({
   navMode: 'cloudflare',
   crumbs: ['Chain'],
   subtitle: 'Per inbound surface · scenario · lane',
-  // The only doors to Map and Rules now that the sidebar lists Routing
-  // alone, so they name the destination rather than what you do there.
   actions:
-    btn('Map', 'ghost', 'ri-node-tree', 'routing-map.html') +
-    btn('Rules', 'ghost', 'ri-filter-3-line', 'routing-rules.html')
+    btn('Presets', 'ghost', 'ri-stack-line')
 })
 </script>
 </body>

@@ -29,9 +29,8 @@ import type { RouterPreferenceProfile } from '@/schemas/domain'
 import type { FlatRouter } from '@/schemas/domain/router'
 import { isRoutedPath, resolveSurfaceForPath } from '../services/inbound-surface-service'
 import { loadRouterPreferences, PASSTHROUGH_PROFILE_KEY } from '../services/router-preference-service'
-import { isSessionInRollout } from '../services/routing-scheduler/rollout'
 import { getRoutingSnapshot } from '../services/routing-scheduler/state'
-import { chainRoutingOf, logShadowDivergence, resolveQuotaAwareSelection } from './quota-router/runtime'
+import { chainRoutingOf, resolveQuotaAwareSelection } from './quota-router/runtime'
 import { applyProactiveFailover } from './scenario-router/failover'
 import type { ChainRouting } from './scenario-router/model-selection'
 import { selectModel } from './scenario-router/model-selection'
@@ -48,25 +47,6 @@ import type {
 } from './scenario-router/types'
 import type { TokenizeRequest } from './tokenizers/base'
 
-// Read the runtime mode + rollout knobs from process.env once per
-// routeScenario call. The values are safe to re-read every request
-// because applyUiConfig writes them via applyEnvelopeToEnv (a hot
-// reload without a server restart already updates process.env).
-const readRouterMode = (): 'scenario' | 'preference' | 'quota-aware' => {
-  const raw = process.env.ROUTER_MODE ?? 'quota-aware'
-  return raw === 'preference' || raw === 'scenario' ? raw : 'quota-aware'
-}
-const readRouterShadow = (): 'off' | 'preference' | 'quota-aware' => {
-  const raw = process.env.ROUTER_SHADOW ?? 'off'
-  return raw === 'preference' || raw === 'quota-aware' ? raw : 'off'
-}
-const readRolloutPct = (): number => {
-  const raw = Number.parseInt(process.env.ROUTER_ROLLOUT_PCT ?? '100', 10)
-  if (!Number.isFinite(raw)) return 100
-  if (raw < 0) return 0
-  if (raw > 100) return 100
-  return raw
-}
 const readCrossProviderFallback = (): boolean => process.env.CROSS_PROVIDER_FALLBACK === 'true'
 
 // Route resolver-side view of the quota-aware scheduler's published
@@ -184,10 +164,6 @@ export async function routeScenario(req: RouterRequest, ctx: RouterContext): Pro
     // when no per-project file applies.
     const router: RouterConfig | undefined = project !== undefined ? project : globalRouter
 
-    const mode = readRouterMode()
-    const shadow = readRouterShadow()
-    const inRollout = isSessionInRollout(req.sessionId ?? null, readRolloutPct())
-
     // Which preference profile this request routes through. The token
     // that authenticated the call wins when it names one — that is what
     // makes per-client routing possible — otherwise the inbound
@@ -198,17 +174,17 @@ export async function routeScenario(req: RouterRequest, ctx: RouterContext): Pro
     const surfaceProfile = surface === undefined ? undefined : surface.profileKey
     const profileKey = req.profileKeyOverride !== undefined ? req.profileKeyOverride : surfaceProfile
 
-    // Quota-aware primary path: only when the mode is set AND the
-    // session falls into the rollout bucket. Outside the bucket
-    // (or when preferences resolve to nothing) we fall back to the
-    // scenario router's output so behaviour degrades gracefully.
+    // The chain is the selector. It used to be one of two, chosen by
+    // ROUTER_MODE with a rollout percentage in front of it; there is no
+    // second selector to roll out to any more, so the chain loads
+    // unconditionally.
     //
     // The profile is loaded here rather than inside the selector because
     // classification needs it first: a scenario only wins when something
-    // is configured to serve it, and under this mode the chain is that
-    // something. Loading it once serves both — the selector takes the
-    // same object back below.
-    const chain = await loadChainRouting(mode === 'quota-aware' && inRollout, profileKey, ctx, req.log)
+    // is configured to serve it, and the chain is that something.
+    // Loading it once serves both — the selector takes the same object
+    // back below.
+    const chain = await loadChainRouting(true, profileKey, ctx, req.log)
 
     const scenarioResult = selectModel(req, tokenCount, router, ctx.config, chain?.routing)
 
@@ -249,37 +225,9 @@ export async function routeScenario(req: RouterRequest, ctx: RouterContext): Pro
       }
     }
 
-    // Shadow path: run the quota-aware selector alongside the primary
-    // path and log divergence without affecting routing. Skipped when
-    // the primary path already IS the quota-aware selector.
-    //
-    // The scenario it asks for is the one the RULES path classified —
-    // the shadow must not widen the gate above, or observing would start
-    // changing what routes. On an install that has configured a chain
-    // lane the slots leave empty, the preview is therefore conservative:
-    // it reports what the chain would answer for the scenario the rules
-    // reached, not for the one the chain would have reached.
-    if (shadow === 'quota-aware' && chain === null) {
-      const requestedModel = typeof req.body.model === 'string' ? req.body.model : undefined
-      const quotaAware = await resolveQuotaAwareSelection({
-        requestedModel,
-        isSubagent: scenarioResult.isSubagent,
-        scenario: scenarioResult.scenarioType,
-        requestTokenCount: tokenCount,
-        profileKey
-      }).catch((err) => {
-        req.log.warn({ err }, '[routing-shadow] resolveQuotaAwareSelection threw — dropping shadow log')
-        return null
-      })
-      if (quotaAware !== null) {
-        logShadowDivergence({
-          scenarioPrimary: model,
-          shadow: quotaAware.selection,
-          requestedModel,
-          isSubagent: scenarioResult.isSubagent
-        })
-      }
-    }
+    // No shadow path. It existed to run the chain alongside the rules
+    // selector and log where the two disagreed, which is a question with
+    // one selector left to ask it of.
 
     // Cross-provider peer expansion runs BEFORE proactive failover so
     // both the pre-send walker and the reactive chain walker see the

@@ -33,20 +33,6 @@
       "note": "The passthrough half — today's hardcoded behaviour for chat/completions and responses, made visible and reversible."
     },
     {
-      "name": "routing-map",
-      "mock": "routing-map.html",
-      "route": "/routing/map",
-      "group": "Routing",
-      "note": "Graph editor. Absorbs RoutingLibrary + RoutingLiveEditor + RoutingPresetEditor. Adds the inbound-surface column."
-    },
-    {
-      "name": "routing-rules",
-      "mock": "routing-rules.html",
-      "route": "/routing/rules",
-      "group": "Routing",
-      "note": "Rule editor + tester. Replaces routing-map/RuleEditor.tsx."
-    },
-    {
       "name": "providers",
       "mock": "providers.html",
       "route": "/providers/claude-code",

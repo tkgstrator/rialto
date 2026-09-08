@@ -67,7 +67,7 @@ function PersonaHeader({
       <div className='ml-auto flex items-center gap-2'>
         <ActiveSwitch on={active} onToggle={onToggleActive} />
         <RButton variant='ghost' icon='ri-file-copy-line' onClick={onDuplicate}>
-          {t('routing.rules.detail.duplicate')}
+          {t('settings.personas.duplicate')}
         </RButton>
         <RButton variant='ghost' icon='ri-delete-bin-line' onClick={onDelete}>
           {t('settings.access.delete')}

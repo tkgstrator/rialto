@@ -11,8 +11,6 @@ import { ProvidersScreen } from '@/components/rialto/providers/ProvidersScreen'
 import { RialtoShell } from '@/components/rialto/RialtoShell'
 import { RouteError } from '@/components/rialto/RouteError'
 import { RoutingChain } from '@/components/rialto/routing/RoutingChain'
-import { RoutingMap } from '@/components/rialto/routing/RoutingMap'
-import { RoutingRules } from '@/components/rialto/routing/RoutingRules'
 import { TokenDetail } from '@/components/rialto/settings/access/TokenDetail'
 import { SettingsAccess } from '@/components/rialto/settings/SettingsAccess'
 import { SettingsAdvanced } from '@/components/rialto/settings/SettingsAdvanced'
@@ -58,9 +56,11 @@ export const router = createBrowserRouter([
           // rather than a provider literally named "connect".
           { path: '/providers/connect', element: <AddProviderScreen /> },
           { path: '/providers/:name', element: <ProvidersScreen /> },
+          // The chain is the whole of Routing. The map and the rule
+          // editor described the scenario router, which no longer decides
+          // anything, and a screen that edits a selector nothing runs is
+          // worse than no screen.
           { path: '/routing', element: <RoutingChain /> },
-          { path: '/routing/map', element: <RoutingMap /> },
-          { path: '/routing/rules', element: <RoutingRules /> },
           { path: '/activity', element: <ActivitySessions /> },
           { path: '/activity/requests', element: <ActivityRequests /> },
           { path: '/activity/sessions/:sessionId', element: <ActivitySessionDetail /> },

@@ -723,27 +723,7 @@ const activityTabs = (active) =>
  *
  * One stored value, so all four Routing mocks show the same one.
  */
-const SELECTOR_HINT = {
-  rules: 'Rules and the scenario map decide. The chain is not evaluated at all in this mode.',
-  chain: 'The chain decides. A rule applies only where its scenario’s chain is empty.'
-}
 
-const selectorBar = (active) => {
-  const seg = (id, label) =>
-    `<button class="rounded px-2.5 py-1 text-[12px] ${
-      id === active ? 'bg-foreground font-medium text-background' : 'text-muted-foreground hover:text-foreground'
-    }">${label}</button>`
-  return `
-  <div class="flex items-center gap-4 border-b border-border px-6 py-3">
-    <div class="flex items-center gap-2">
-      <span class="text-xs text-muted-foreground">Selector</span>
-      <div class="flex rounded-md border border-border p-0.5">
-        ${seg('rules', 'Rules')}${seg('chain', 'Chain')}
-      </div>
-    </div>
-    <p class="ml-auto max-w-lg text-right text-[12px] leading-snug text-muted-foreground">${SELECTOR_HINT[active]}</p>
-  </div>`
-}
 
 /**
  * Providers master rail, shared by both detail mocks.
@@ -852,7 +832,7 @@ const providerRail = (activeId) => `
   global.Shell = {
     renderShell, ROW, section, pill, mono, meter, btn, pager,
     tabs, railItem, SETTINGS_RAIL,
-    navTo, activityTabs, selectorBar, providerRail, tierCell, effortCell, sortTh, toast,
+    navTo, activityTabs, providerRail, tierCell, effortCell, sortTh, toast,
     SURFACES, surfacePill, surfaceChip,
     toggleTheme, currentTheme
   }

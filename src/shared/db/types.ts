@@ -45,15 +45,10 @@ export const ENVELOPE_ENV_KEYS = [
   'API_TIMEOUT_MS',
   'CLAUDE_PATH',
   'NON_INTERACTIVE_MODE',
-  // Quota-aware router knobs. Mirrored onto process.env so the router
-  // reads the fresh value on the next request without a full restart —
-  // the scenario/preference/quota-aware selector all call getenv on
-  // each request, so a UI-driven mode swap propagates in-process even
-  // though we still show the "restart to fully apply" note (the
-  // scheduler tick loop reads its interval once at boot).
-  'ROUTER_MODE',
-  'ROUTER_SHADOW',
-  'ROUTER_ROLLOUT_PCT',
+  // Mirrored onto process.env so the router reads the fresh value on the
+  // next request without a full restart. ROUTER_MODE / ROUTER_SHADOW /
+  // ROUTER_ROLLOUT_PCT sat here for the same reason and went with the
+  // selector they switched between.
   'CROSS_PROVIDER_FALLBACK',
   // Archive capture switches. Mirrored onto process.env for the same
   // reason as the router knobs: the request-log writer reads them per
