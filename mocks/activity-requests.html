@@ -16,7 +16,7 @@
 const { renderShell, pill, btn, surfacePill, navTo, sortTh } = window.Shell
 
 // One row per upstream call (RequestLog), vs Sessions which groups them.
-// The columns that did not exist before are `Requested → Sent`, `Rule`
+// The columns that did not exist before are `Requested` / `Sent`, `Rule`
 // and `Token` — the three answers to "why did this go there, and who
 // asked for it".
 //
@@ -55,17 +55,16 @@ const row = (r) => `
     <td class="py-2.5 pl-6 pr-2 font-mono text-[12px] tabular-nums text-muted-foreground">${r.t}</td>
     <td class="px-2">${statusPill(r.status)}</td>
     <td class="px-2">${surfacePill(r.surface)}</td>
-    <td class="px-2">
-      <div class="flex items-center gap-1.5 font-mono text-[12px]">
-        <span class="truncate text-muted-foreground">${r.requested}</span>
-        <i class="ri-arrow-right-line shrink-0 text-xs text-muted-foreground/50"></i>
-        <span class="truncate">${r.sent}</span>
-      </div>
-    </td>
+    <!-- Two columns, not one cell with an arrow between them. Sharing a
+         column meant both halves truncated to "claude… → claude-code…"
+         at 1440px — the one thing this screen exists to show, unreadable
+         — because the pair needs 318px and the column had 272. -->
+    <td class="px-2 font-mono text-[12px] text-muted-foreground">${r.requested}</td>
+    <td class="px-2 font-mono text-[12px]">${r.sent}</td>
     <!-- The lane rides with the scenario instead of holding a column: it
          is a qualifier of it (there is no lane without a scenario), it is
          "agent" on almost every row, and the column it cost belonged to
-         Requested → Sent, which was truncating both of its halves. -->
+         the model pair, which was truncating both of its halves. -->
     <td class="px-2 text-[12px] ${r.rule === '—' ? 'text-muted-foreground/50' : ''}">${
       r.rule === '—' ? r.rule : linked(r.rule, 'routing-rules.html')
     }${r.lane === 'agent' ? '' : `<span class="ml-1.5 text-muted-foreground">· ${r.lane}</span>`}</td>
@@ -113,18 +112,22 @@ document.getElementById('root').innerHTML = `
       </div>`).join('')}
   </div>
 
-  <table class="w-full table-fixed">
-    <!-- Requested → Sent is the auto column: it is the point of the screen,
-     so the fixed ones have to leave it room. Scenario now carries the
-     lane ("think · subagent") instead of a column of its own, and Token
-     is a short name rather than 10rem of empty. -->
-<colgroup><col class="w-20"><col class="w-16"><col class="w-40"><col><col class="w-32"><col class="w-28"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-24"></colgroup>
+  <!-- Eleven columns need 1360px and a 1440px window has 1184 for them, so
+       the table keeps its own width and scrolls rather than paying for the
+       gap in ellipses. Every fixed width below is the widest value that
+       column actually renders plus its padding — measured, not guessed —
+       and Sent is the auto column, so a wide window spends its slack on
+       the longest value on the screen instead of on empty gutters. -->
+  <div class="overflow-x-auto">
+  <table class="w-full min-w-[1360px] table-fixed">
+<colgroup><col class="w-28"><col class="w-16"><col class="w-44"><col class="w-36"><col><col class="w-36"><col class="w-36"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-28"></colgroup>
     <thead>
       <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         ${sortTh('Time', 'pl-6 pr-2', 'left', true, 'desc')}
         ${sortTh('Status', 'px-2')}
         ${sortTh('Endpoint', 'px-2')}
-        <th class="px-2 text-left font-medium">Requested → Sent</th>
+        ${sortTh('Requested', 'px-2')}
+        ${sortTh('Sent', 'px-2')}
         ${sortTh('Scenario', 'px-2')}
         ${sortTh('Token', 'px-2')}
         ${sortTh('Input', 'px-2', 'right')}
@@ -135,6 +138,7 @@ document.getElementById('root').innerHTML = `
     </thead>
     <tbody>${REQS.map(row).join('')}</tbody>
   </table>
+  </div>
 
   <div class="px-6 py-4">
     <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
