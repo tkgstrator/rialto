@@ -85,7 +85,14 @@ const models = `
         ${sortTh('On', 'pl-2 pr-6', 'right')}
       </tr>
     </thead>
-    <tbody>${MODELS.map(modelRow).join('')}</tbody>
+    <!-- Legacy rows are filtered out here, not styled down. They are
+         still priced, so "Enabled + priced" kept every one of them — rows
+         of vendor history above the models anyone actually routes to, and
+         a decision already made. All models is where they live now. A
+         legacy model that is switched ON stays, because that is a live
+         routing target and a list that hides one cannot be trusted to say
+         what this provider serves. -->
+    <tbody>${MODELS.filter((m) => !m.legacy || m.on).map(modelRow).join('')}</tbody>
   </table>`
 
 document.getElementById('root').innerHTML = `
@@ -196,7 +203,7 @@ document.getElementById('root').innerHTML = `
            that only ever grows. Revealing in steps means a 61-model
            vendor ends as one 61-row table with no way back up, and the
            button can never say where you are — this footer does both. -->
-      ${pager({ first: 1, last: 8, total: 18, hasPrev: false })}
+      ${pager({ first: 1, last: 8, total: 16, hasPrev: false })}
       <div class="h-6"></div>
   </div>`
 

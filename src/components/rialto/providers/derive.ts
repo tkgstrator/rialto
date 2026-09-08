@@ -336,6 +336,34 @@ export function buildModelRows(p: Provider, catalogEntry: CatalogEntry | undefin
   })
 }
 
+/**
+ * Which slice of a long model list to show. The default hides rows that
+ * are neither switched on nor priced — on an 18-model vendor those are
+ * the ones an operator has already decided against.
+ */
+export type ShowMode = 'priced' | 'enabled' | 'all'
+
+/**
+ * A legacy row worth folding away.
+ *
+ * Legacy models are still priced, so "Enabled + priced" kept every one of
+ * them — rows of vendor history above the models anyone actually routes
+ * to, and a decision the operator already made.
+ *
+ * Unless one is switched on. A legacy model that is enabled is a live
+ * routing target, and a list that hides a live target cannot be trusted
+ * to say what this provider serves.
+ */
+export const hidesAsLegacy = (row: ModelRow): boolean => row.legacy && !row.enabled
+
+/** The api_key side's Show control. Legacy rows survive only under "all". */
+export const passesShow = (row: ModelRow, mode: ShowMode): boolean => {
+  if (mode === 'all') return true
+  if (hidesAsLegacy(row)) return false
+  if (mode === 'enabled') return row.enabled
+  return row.enabled || row.inputPer1M !== null || row.outputPer1M !== null
+}
+
 export interface AccountQuota {
   /** '5h' or '7d' — the window the percentage and reset belong to. */
   window: string

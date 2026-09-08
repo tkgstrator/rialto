@@ -16,9 +16,15 @@
  * With one tree the rule has no exceptions — sidebar navigates, the
  * content area holds nothing but content.
  *
- * Providers is deliberately childless. Its rail is a list of objects with
- * quota meters and live/invalid state, which makes it data; folding it in
- * here would turn the menu into a dashboard.
+ * Providers' children are the two auth modes, not the providers. That
+ * distinction is the whole reason it has children now: the rail this
+ * replaces was a list of objects with quota meters and live/invalid
+ * state — data, which would have turned the menu into a dashboard — but
+ * it grouped that data under two fixed headings, and those are
+ * destinations like any other. Keeping the rail cost 288px beside a
+ * 256px sidebar, so the screen it introduced spent 34rem on navigation
+ * before any content began, which is the same arithmetic the paragraph
+ * above rejects.
  */
 import { useTheme } from 'next-themes'
 import {
@@ -71,7 +77,27 @@ const NAV: readonly NavEntry[] = [
   // Routing has no children: the chain IS the screen, and it is the only
   // selector.
   { id: 'routing', labelKey: 'shell.navRouting', icon: 'ri-git-branch-line', href: '/routing', children: [] },
-  { id: 'providers', labelKey: 'shell.navProviders', icon: 'ri-plug-line', href: '/providers', children: [] },
+  // Neither child is href '/providers' — the section root redirects to
+  // the first instead. Activity and Settings can let their first child
+  // hold the section's own path because `childOf` matches by prefix and
+  // every deeper route of theirs belongs to that child. Here it does
+  // not: `/providers/openai` is an api_key provider, and a Subscriptions
+  // child at '/providers' would light up on it.
+  {
+    id: 'providers',
+    labelKey: 'shell.navProviders',
+    icon: 'ri-plug-line',
+    href: '/providers',
+    children: [
+      {
+        id: 'subscriptions',
+        labelKey: 'providers.rail.subscriptions',
+        icon: 'ri-shield-user-line',
+        href: '/providers/subscriptions'
+      },
+      { id: 'api-keys', labelKey: 'providers.rail.apiKeys', icon: 'ri-key-line', href: '/providers/api-keys' }
+    ]
+  },
   // Next to Providers because it is the same question pointed the other
   // way: Providers is outbound (who Rialto sends to), this is inbound
   // (who may send to Rialto). It lived under Settings, where a list

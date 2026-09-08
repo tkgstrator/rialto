@@ -277,7 +277,9 @@
       "routable": "Routable",
       "toggleProvider": "Toggle {{provider}}",
       "routableNeedsCredential": "Needs a working credential before it can take traffic",
-      "removeConfirm": "Remove {{name}}? This deletes its {{models}} models and the stored credential, and clears {{bindings}} routing slot(s) that point at it. There is no undo."
+      "removeConfirm": "Remove {{name}}? This deletes its {{models}} models and the stored credential, and clears {{bindings}} routing slot(s) that point at it. There is no undo.",
+      "notFound": "Provider not found",
+      "notFoundBody": "No provider named “{{name}}” is configured. It may have been removed."
     },
     "credentials": {
       "title": "Credentials",
@@ -342,7 +344,8 @@
       "show": "Show",
       "showPriced": "Enabled + priced",
       "showEnabled": "Enabled only",
-      "showAll": "All models"
+      "showAll": "All models",
+      "legacyHidden": "{{n}} legacy hidden"
     },
     "connect": {
       "title": "Add provider",
@@ -400,6 +403,25 @@
       "custom": "Any OpenAI / Anthropic / Gemini-shaped endpoint",
       "browserOauth": "Subscription via browser OAuth",
       "cliOauth": "Subscription via {{cli}} OAuth"
+    },
+    "list": {
+      "colProvider": "Provider",
+      "colPlan": "Plan",
+      "colAccounts": "Accounts",
+      "colQuota": "Quota",
+      "colKey": "Key",
+      "colModels": "Models",
+      "colState": "State",
+      "noKey": "not set",
+      "subscriptionsSubtitle": "Providers reached through a plan",
+      "apiKeysSubtitle": "Providers billed per request",
+      "subscriptionsSummary": "{{accounts}} accounts across {{providers}} providers · {{enabled}} of {{models}} models enabled",
+      "apiKeysSummary": "{{providers}} providers · {{enabled}} of {{models}} models enabled · {{keyless}} without a key",
+      "subscriptionsNote": "A subscription authenticates with OAuth and serves whatever the plan allows — there is no per-request price, which is why these rows carry a quota instead of a cost. <strong>Open a row</strong> to manage its accounts and pick which models it may serve. Routing skips an account the moment its window is spent, and comes back when the window rolls.",
+      "apiKeysNote": "These providers bill per request, so their models carry real prices — Routing's cost ordering reads them. <strong>Open a row</strong> to replace its key, sync its catalogue, or choose which models it may serve. A key is shown masked and never becomes an editable field by accident.",
+      "addSubscription": "Add subscription",
+      "subscriptionsEmpty": "No subscriptions connected yet. Use Add subscription to sign in to one.",
+      "apiKeysEmpty": "No API-key providers configured yet. Use Add provider to connect one."
     }
   },
   "settings": {

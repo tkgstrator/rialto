@@ -16,21 +16,17 @@ import {
   buildModelRows,
   enabledCountOf,
   hasCredential,
+  hidesAsLegacy,
   listedModelsOf,
   type ModelRow,
   type ProviderState,
-  type QuotaIndex
+  passesShow,
+  type QuotaIndex,
+  type ShowMode
 } from './derive'
 import { ModelsTable } from './ModelsTable'
 import { ApiKeyRequestShape, SubscriptionRequestShape } from './RequestShape'
 import type { CatalogEntry, Provider, ReasoningEffort, SubscriptionWire, Tier, TransformerWire } from './types'
-
-/**
- * Which slice of a long model list to show. The default hides rows that
- * are neither switched on nor priced — on an 18-model vendor those are
- * the ones an operator has already decided against.
- */
-type ShowMode = 'priced' | 'enabled' | 'all'
 
 const SHOW_LABEL_KEYS: Record<ShowMode, string> = {
   priced: 'providers.models.showPriced',
@@ -46,12 +42,6 @@ const STATE_LABEL_KEYS: Record<ProviderState, string> = {
 }
 
 const NEXT_SHOW: Record<ShowMode, ShowMode> = { priced: 'enabled', enabled: 'all', all: 'priced' }
-
-const passesShow = (row: ModelRow, mode: ShowMode): boolean => {
-  if (mode === 'all') return true
-  if (mode === 'enabled') return row.enabled
-  return row.enabled || row.inputPer1M !== null || row.outputPer1M !== null
-}
 
 /** Models per page on the api_key side. */
 const PAGE = 8
@@ -177,10 +167,19 @@ function ModelsSection({
   const [query, setQuery] = useState('')
   const [show, setShow] = useState<ShowMode>('priced')
   const [page, setPage] = useState(0)
+  // Subscription side only. The api_key side reveals legacy rows through
+  // its Show control; this side has none, and hiding a row with no way
+  // back would make a legacy model impossible to switch on again.
+  const [showLegacy, setShowLegacy] = useState(false)
   const isApiKey = provider.auth_mode !== 'subscription'
 
+  const hidesLegacy = !isApiKey && !showLegacy
+  const legacyHidden = hidesLegacy ? rows.filter(hidesAsLegacy).length : 0
   const needle = query.trim().toLowerCase()
-  const filtered = rows.filter((r) => r.name.toLowerCase().includes(needle) && (!isApiKey || passesShow(r, show)))
+  const filtered = rows.filter(
+    (r) =>
+      r.name.toLowerCase().includes(needle) && (!isApiKey || passesShow(r, show)) && (!hidesLegacy || !hidesAsLegacy(r))
+  )
   // Subscription providers list a curated handful; only the api_key side
   // is long enough that paging earns its footer row.
   //
@@ -206,6 +205,19 @@ function ModelsSection({
             total: listedModelsOf(provider).length
           })}
         </span>
+        {/* The count is the control that unfolds them, the way the
+            revoked count is on Access tokens. A plain label would leave
+            the rows unreachable and a separate switch would spend a
+            control on a state most installs never look at. */}
+        {legacyHidden === 0 ? null : (
+          <button
+            type='button'
+            onClick={() => setShowLegacy(true)}
+            className='text-[12px] text-muted-foreground underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground'
+          >
+            {t('providers.models.legacyHidden', { n: legacyHidden })}
+          </button>
+        )}
         <div className='ml-auto flex items-center gap-2'>
           {isApiKey ? (
             <button

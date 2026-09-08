@@ -1,181 +1,121 @@
 /**
- * Providers — "where requests can go", as one master-detail screen.
+ * One of the two provider lists — Subscriptions or API keys.
  *
- * Absorbs Providers + Subscriptions + ModelsDashboard + the transformer
- * editor. Those were four top-level entries for one decision, which is why
- * an operator had to visit three of them to answer "can this vendor serve
- * this model right now".
+ * Providers used to be a single master-detail screen: an 18rem rail of
+ * every provider, grouped under those two headings, beside the detail it
+ * selected into. Three columns of chrome left the detail 896px at 1440,
+ * which is why its account emails truncated and its six price columns
+ * rendered as six dashes. The rail's headings are now the sidebar's two
+ * sub-entries and each is a list of its own; the detail is
+ * ProviderDetailScreen, at full width.
+ *
+ * The screen still reads the whole catalogue rather than one kind of it.
+ * `/api/providers` returns every provider in one response and the
+ * subtitle counts across both lists on purpose — "4 of 7 providers are
+ * live" is an install-wide fact, and fetching half of it twice would
+ * make the two lists disagree while one of them was stale.
  */
 import type { TFunction } from 'i18next'
 import { useCallback, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Trans, useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import { useConfig } from '@/components/ConfigProvider'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
-import type { RouterConfig } from '@/schemas/domain/router'
-import {
-  refreshPrices,
-  removeProvider,
-  saveApiKey,
-  setModelEffort,
-  setModelTier,
-  syncModels,
-  testModels,
-  toggleModel,
-  toggleProvider
-} from './actions'
+import { SectionHead } from '@/components/rialto/settings/fields'
+import { refreshPrices } from './actions'
 import { BusyOverlay } from './BusyOverlay'
-import { disabledModelsOf, enabledCountOf, listedModelsOf, providerState, routerBindingsFor } from './derive'
-import { ProviderDetail } from './ProviderDetail'
-import { ProviderRail, type RailProvider } from './ProviderRail'
-import type { CatalogEntry, Provider } from './types'
+import { enabledCountOf, listedModelsOf, providerState } from './derive'
+import { type ListedProvider, ProviderTable } from './ProviderTable'
 import { type ProvidersData, useProvidersData } from './useProvidersData'
 import { vendorBrand, vendorLabel } from './vendor-labels'
 
-const findCatalog = (catalog: CatalogEntry[], name: string): CatalogEntry | undefined =>
-  catalog.find((e) => e.name === name)
+type Kind = 'subscription' | 'api_key'
 
-const labelFor = (entry: CatalogEntry | undefined, name: string): string =>
-  entry === undefined ? name : vendorLabel(entry.name, entry.displayName)
-
-/** A provider with no catalog entry is a hand-added one — name the host it calls. */
-const vendorFor = (entry: CatalogEntry | undefined, p: Provider): string =>
-  entry === undefined ? new URL(p.api_base_url).hostname : vendorBrand(entry.name, entry.vendor)
-
-function buildRail(data: ProvidersData): RailProvider[] {
-  return data.providers.map((provider) => {
-    const entry = findCatalog(data.catalog, provider.name)
-    const subscription = data.subscriptions.get(provider.name)
-    return {
-      provider,
-      label: labelFor(entry, provider.name),
-      vendor: vendorFor(entry, provider),
-      state: providerState(provider, subscription),
-      subscription
-    }
-  })
+const COPY: Record<Kind, { subtitle: string; note: string; add: string; empty: string }> = {
+  subscription: {
+    subtitle: 'providers.list.subscriptionsSubtitle',
+    note: 'providers.list.subscriptionsNote',
+    add: 'providers.list.addSubscription',
+    empty: 'providers.list.subscriptionsEmpty'
+  },
+  api_key: {
+    subtitle: 'providers.list.apiKeysSubtitle',
+    note: 'providers.list.apiKeysNote',
+    add: 'providers.screen.addProvider',
+    empty: 'providers.list.apiKeysEmpty'
+  }
 }
 
-function summarySubtitle(data: ProvidersData, t: TFunction): string {
-  const providers = data.counts === null ? data.providers.length : data.counts.providers
-  const models =
-    data.counts === null ? data.providers.reduce((sum, p) => sum + enabledCountOf(p), 0) : data.counts.enabledModels
-  const accounts = [...data.subscriptions.values()].reduce((sum, s) => sum + s.accounts.length, 0)
-  return t('providers.screen.summarySubtitle', { providers, models, accounts })
+function listOf(data: ProvidersData, kind: Kind): ListedProvider[] {
+  return data.providers
+    .filter((provider) => (kind === 'subscription') === (provider.auth_mode === 'subscription'))
+    .map((provider) => {
+      const entry = data.catalog.find((e) => e.name === provider.name)
+      const subscription = data.subscriptions.get(provider.name)
+      return {
+        provider,
+        label: entry === undefined ? provider.name : vendorLabel(entry.name, entry.displayName),
+        // A provider with no catalog entry is a hand-added one — name the
+        // host it calls.
+        vendor: entry === undefined ? new URL(provider.api_base_url).hostname : vendorBrand(entry.name, entry.vendor),
+        state: providerState(provider, subscription),
+        subscription
+      }
+    })
 }
 
-/** The header line: a per-provider count for api_key providers, the
- *  install-wide summary otherwise. */
-function subtitleFor(data: ProvidersData | null, selected: RailProvider | undefined, t: TFunction): string | undefined {
-  if (data === null) return undefined
-  if (selected === undefined) return summarySubtitle(data, t)
-  const p = selected.provider
-  if (p.auth_mode === 'subscription') return summarySubtitle(data, t)
-  return t('providers.screen.apiKeySubtitle', {
-    label: selected.label,
-    enabled: enabledCountOf(p),
-    total: listedModelsOf(p).length
-  })
+/** "3 accounts across 3 providers · 10 of 16 models enabled". */
+function summary(entries: ListedProvider[], kind: Kind, t: TFunction): string {
+  const enabled = entries.reduce((sum, e) => sum + enabledCountOf(e.provider), 0)
+  const models = entries.reduce((sum, e) => sum + listedModelsOf(e.provider).length, 0)
+  if (kind === 'subscription') {
+    const accounts = entries.reduce(
+      (sum, e) => sum + (e.subscription === undefined ? 0 : e.subscription.accounts.length),
+      0
+    )
+    return t('providers.list.subscriptionsSummary', { accounts, providers: entries.length, enabled, models })
+  }
+  const keyless = entries.filter((e) => e.provider.api_key === null || e.provider.api_key === '').length
+  return t('providers.list.apiKeysSummary', { providers: entries.length, enabled, models, keyless })
 }
 
-/**
- * What deleting this provider costs, as a sentence to confirm.
- *
- * Removal cascades to every model, the stored key or OAuth account, and
- * any router slot pointing at one of them — the server reports the
- * cleared slots only as an after-the-fact warning. Revoking an access
- * token already asks first, and this is the more destructive of the two.
- */
-function removeConfirmMessage(entry: RailProvider, router: RouterConfig | undefined, t: TFunction): string {
-  return t('providers.detail.removeConfirm', {
-    name: entry.label,
-    models: listedModelsOf(entry.provider).length,
-    bindings: routerBindingsFor(router, entry.provider.name)
-  })
-}
-
-export function ProvidersScreen() {
+export function ProvidersScreen({ kind }: { kind: Kind }) {
   const { t } = useTranslation()
-  const { name } = useParams<{ name?: string }>()
   const navigate = useNavigate()
-  // Only for the removal confirm's blast radius — the screen's own data
-  // comes from useProvidersData.
-  const { config } = useConfig()
   const { data, error, loading, reload } = useProvidersData()
-  const [busy, setBusy] = useState(false)
-  // Label of the action currently running, or null when nothing needs a
-  // backdrop. Deliberately not derived from `busy`: `busy` gates every
-  // button, including the per-row writes that finish in milliseconds, and
-  // dimming the screen for those would flicker. Only the callers that
-  // pass a label get an overlay — see BusyOverlay for which and why.
   const [pending, setPending] = useState<string | null>(null)
 
-  // Every mutation is a write-then-reread: the server derives model rows,
-  // prices and test status, so the response body is never the whole truth
-  // about what changed.
-  //
-  // The catch is not optional. Without it a failed action rejects into
-  // nothing — the spinner stops, the screen re-reads unchanged data, and a
-  // refresh that never reached the vendor looks exactly like one that did.
-  // Several of these actions (price scrape, model sync) also produce no
-  // visible change on a install with no providers even when they succeed,
-  // so silence cannot be read as success here.
-  const run = useCallback(
-    async (work: () => Promise<void>, notice?: { pending: string; done: string }) => {
-      setBusy(true)
-      if (notice !== undefined) setPending(notice.pending)
-      try {
-        await work()
-        await reload()
-        // Only the narrated actions confirm themselves, for the reason
-        // given above: a scrape that changed nothing looks identical to
-        // one that never ran. The per-row writes are exempt because the
-        // row they changed is the confirmation.
-        if (notice !== undefined) toast.success(notice.done)
-      } catch (err: unknown) {
-        toast.error(err instanceof Error ? err.message : String(err))
-      } finally {
-        setBusy(false)
-        setPending(null)
-      }
-    },
-    [reload]
-  )
-
-  const rail = data === null ? [] : buildRail(data)
-  const selected = name === undefined ? rail[0] : rail.find((e) => e.provider.name === name)
+  const copy = COPY[kind]
   const goAdd = useCallback(() => navigate('/providers/connect'), [navigate])
 
-  // Hoisted out of the JSX: the removal confirm needs the router to count
-  // the slots it would clear.
-  const router = config === null ? undefined : config.Router
-  const subtitle = subtitleFor(data, selected, t)
+  // A price scrape produces no visible change on an install with no
+  // api_key providers even when it succeeds, so silence cannot be read as
+  // success here — it narrates itself either way.
+  const refresh = useCallback(() => {
+    setPending(t('providers.screen.refreshingPrices'))
+    refreshPrices()
+      .then(reload)
+      .then(() => toast.success(t('providers.screen.pricesRefreshed')))
+      .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
+      .finally(() => setPending(null))
+  }, [reload, t])
+
+  const entries = data === null ? [] : listOf(data, kind)
 
   return (
     <Screen
-      // The route can name the section but not which provider is open,
-      // so the leaf is the only crumb this screen passes.
-      crumbs={selected === undefined ? [] : [{ label: selected.label }]}
-      subtitle={subtitle}
+      // No crumbs: this route IS a sidebar child, so Screen already
+      // renders "Providers / Subscriptions" from the nav tree. Naming it
+      // again here spelled the leaf twice.
+      subtitle={t(copy.subtitle)}
       actions={
         <>
-          <RButton
-            variant='ghost'
-            icon='ri-price-tag-3-line'
-            onClick={() =>
-              run(refreshPrices, {
-                pending: t('providers.screen.refreshingPrices'),
-                done: t('providers.screen.pricesRefreshed')
-              })
-            }
-            disabled={busy || loading}
-          >
+          <RButton variant='ghost' icon='ri-price-tag-3-line' onClick={refresh} disabled={pending !== null || loading}>
             {t('providers.screen.refreshPrices')}
           </RButton>
           <RButton variant='primary' icon='ri-add-line' onClick={goAdd}>
-            {t('providers.screen.addProvider')}
+            {t(copy.add)}
           </RButton>
         </>
       }
@@ -185,51 +125,30 @@ export function ProvidersScreen() {
       ) : data === null ? (
         <div className='px-6 py-6 text-xs text-muted-foreground'>{t('common.loading')}</div>
       ) : (
-        <div className='relative grid h-full grid-cols-[18rem_1fr]'>
-          <ProviderRail
-            entries={rail}
-            activeName={selected === undefined ? null : selected.provider.name}
-            quota={data.quota}
-            onAdd={goAdd}
-          />
-          {selected === undefined ? (
-            <div className='px-6 py-6 text-xs text-muted-foreground'>{t('providers.screen.emptyRail')}</div>
+        <div className='relative min-w-0'>
+          {/* No title: the breadcrumb and the sidebar both say
+              "Subscriptions" already. */}
+          <SectionHead meta={summary(entries, kind, t)} />
+
+          <div className='px-6 pb-4'>
+            <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
+              <i className='ri-information-line mr-1 align-[-1px]' />
+              <Trans
+                i18nKey={copy.note}
+                components={{
+                  mono: <span className='font-mono' />,
+                  strong: <span className='font-medium text-foreground' />
+                }}
+              />
+            </div>
+          </div>
+
+          {entries.length === 0 ? (
+            <div className='px-6 py-6 text-xs text-muted-foreground'>{t(copy.empty)}</div>
           ) : (
-            <ProviderDetail
-              provider={selected.provider}
-              label={selected.label}
-              state={selected.state}
-              subscription={selected.subscription}
-              catalogEntry={findCatalog(data.catalog, selected.provider.name)}
-              transformers={data.transformers}
-              quota={data.quota}
-              now={data.now}
-              busy={busy}
-              onToggleModel={(model, next) => run(() => toggleModel(selected.provider, model, next))}
-              onModelTier={(model, next) => run(() => setModelTier(selected.provider, model, next))}
-              onModelEffort={(model, next) => run(() => setModelEffort(selected.provider, model, next))}
-              onToggleProvider={(next) => run(() => toggleProvider(selected.provider, next))}
-              onSaveKey={(key) => run(() => saveApiKey(selected.provider, key))}
-              onTestAll={() => {
-                const off = new Set(disabledModelsOf(selected.provider))
-                const enabled = listedModelsOf(selected.provider).filter((m) => !off.has(m))
-                run(() => testModels(selected.provider.name, enabled))
-              }}
-              onSync={() =>
-                run(syncModels, {
-                  pending: t('providers.detail.syncingModels'),
-                  done: t('providers.detail.modelsSynced')
-                })
-              }
-              removeConfirm={removeConfirmMessage(selected, router, t)}
-              onRemove={() =>
-                run(async () => {
-                  await removeProvider(selected.provider.name)
-                  navigate('/providers')
-                })
-              }
-            />
+            <ProviderTable entries={entries} kind={kind} quota={data.quota} />
           )}
+
           {pending === null ? null : <BusyOverlay label={pending} />}
         </div>
       )}

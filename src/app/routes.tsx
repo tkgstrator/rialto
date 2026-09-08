@@ -8,6 +8,7 @@ import { ActivitySessions } from '@/components/rialto/activity/ActivitySessions'
 import { ActivityUsage } from '@/components/rialto/activity/ActivityUsage'
 import { Overview } from '@/components/rialto/Overview'
 import { AddProviderScreen } from '@/components/rialto/providers/AddProviderScreen'
+import { ProviderDetailScreen } from '@/components/rialto/providers/ProviderDetailScreen'
 import { ProvidersScreen } from '@/components/rialto/providers/ProvidersScreen'
 import { RialtoShell } from '@/components/rialto/RialtoShell'
 import { RouteError } from '@/components/rialto/RouteError'
@@ -52,11 +53,22 @@ export const router = createBrowserRouter([
         ),
         children: [
           { path: '/overview', element: <Overview /> },
-          { path: '/providers', element: <ProvidersScreen /> },
-          // Static before dynamic so /providers/connect is the add flow
-          // rather than a provider literally named "connect".
+          // Providers is two lists and a detail, not one master-detail
+          // screen. The rail that used to hold the master half grouped it
+          // under these same two headings, and cost the detail half 288px
+          // beside an already-256px sidebar.
+          //
+          // The section root redirects rather than rendering, because a
+          // path that shows one of two peers without saying which is a
+          // path the sidebar cannot highlight.
+          { path: '/providers', element: <Navigate to='/providers/subscriptions' replace /> },
+          // Static before dynamic so these three are what they say rather
+          // than providers literally named "subscriptions", "api-keys" or
+          // "connect".
+          { path: '/providers/subscriptions', element: <ProvidersScreen kind='subscription' /> },
+          { path: '/providers/api-keys', element: <ProvidersScreen kind='api_key' /> },
           { path: '/providers/connect', element: <AddProviderScreen /> },
-          { path: '/providers/:name', element: <ProvidersScreen /> },
+          { path: '/providers/:name', element: <ProviderDetailScreen /> },
           // The chain is the whole of Routing. The map and the rule
           // editor described the scenario router, which no longer decides
           // anything, and a screen that edits a selector nothing runs is

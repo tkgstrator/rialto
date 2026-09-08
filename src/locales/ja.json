@@ -277,7 +277,9 @@
       "routable": "振り分け対象",
       "toggleProvider": "{{provider}} の振り分け対象を切り替え",
       "routableNeedsCredential": "資格情報が無いため振り分け対象にできません",
-      "removeConfirm": "{{name}} を削除しますか？モデル {{models}} 件と保存された認証情報が削除され、これを参照しているルーティング枠 {{bindings}} 件がクリアされます。元に戻せません。"
+      "removeConfirm": "{{name}} を削除しますか？モデル {{models}} 件と保存された認証情報が削除され、これを参照しているルーティング枠 {{bindings}} 件がクリアされます。元に戻せません。",
+      "notFound": "プロバイダが見つかりません",
+      "notFoundBody": "「{{name}}」という名前のプロバイダはありません。削除された可能性があります。"
     },
     "credentials": {
       "title": "認証情報",
@@ -342,7 +344,8 @@
       "show": "表示",
       "showPriced": "有効 + 価格あり",
       "showEnabled": "有効なもののみ",
-      "showAll": "すべてのモデル"
+      "showAll": "すべてのモデル",
+      "legacyHidden": "レガシー {{n}} 件を非表示"
     },
     "connect": {
       "title": "プロバイダーを追加",
@@ -400,6 +403,25 @@
       "custom": "OpenAI / Anthropic / Gemini 形式の任意のエンドポイント",
       "browserOauth": "ブラウザー OAuth によるサブスクリプション",
       "cliOauth": "{{cli}} の OAuth によるサブスクリプション"
+    },
+    "list": {
+      "colProvider": "プロバイダ",
+      "colPlan": "プラン",
+      "colAccounts": "アカウント",
+      "colQuota": "クォータ",
+      "colKey": "キー",
+      "colModels": "モデル",
+      "colState": "状態",
+      "noKey": "未設定",
+      "subscriptionsSubtitle": "プランを通して使うプロバイダ",
+      "apiKeysSubtitle": "リクエストごとに課金されるプロバイダ",
+      "subscriptionsSummary": "{{providers}} プロバイダに {{accounts}} アカウント · {{models}} 中 {{enabled}} モデル有効",
+      "apiKeysSummary": "{{providers}} プロバイダ · {{models}} 中 {{enabled}} モデル有効 · キー未設定 {{keyless}}",
+      "subscriptionsNote": "サブスクリプションは OAuth で認証し、プランが許す範囲を提供します。リクエスト単価が無いので、コストではなくクォータを表示しています。<strong>行を開く</strong>とアカウントの管理と、提供するモデルの選択ができます。ウィンドウを使い切ったアカウントはルーティングが即座に飛ばし、ウィンドウが繰り上がると戻します。",
+      "apiKeysNote": "これらはリクエストごとに課金されるため、モデルに実価格が付きます。ルーティングのコスト順はこれを読みます。<strong>行を開く</strong>とキーの差し替え、カタログの同期、提供するモデルの選択ができます。キーは常にマスク表示で、うっかり編集可能な入力欄になることはありません。",
+      "addSubscription": "サブスクリプションを追加",
+      "subscriptionsEmpty": "サブスクリプションがまだありません。「サブスクリプションを追加」からサインインしてください。",
+      "apiKeysEmpty": "API キーのプロバイダがまだありません。「プロバイダを追加」から接続してください。"
     }
   },
   "settings": {

@@ -277,7 +277,9 @@
       "routable": "可路由",
       "toggleProvider": "切换 {{provider}}",
       "routableNeedsCredential": "需要可用的凭据才能接收流量",
-      "removeConfirm": "要删除 {{name}} 吗？这会删除它的 {{models}} 个模型和已保存的凭据，并清空指向它的 {{bindings}} 个路由槽位。此操作无法撤销。"
+      "removeConfirm": "要删除 {{name}} 吗？这会删除它的 {{models}} 个模型和已保存的凭据，并清空指向它的 {{bindings}} 个路由槽位。此操作无法撤销。",
+      "notFound": "未找到提供方",
+      "notFoundBody": "没有名为“{{name}}”的提供方，可能已被删除。"
     },
     "credentials": {
       "title": "凭据",
@@ -342,7 +344,8 @@
       "show": "显示",
       "showPriced": "已启用 + 有价格",
       "showEnabled": "仅已启用",
-      "showAll": "全部模型"
+      "showAll": "全部模型",
+      "legacyHidden": "已隐藏 {{n}} 个旧版模型"
     },
     "connect": {
       "title": "添加 provider",
@@ -400,6 +403,25 @@
       "custom": "任意 OpenAI / Anthropic / Gemini 形态的端点",
       "browserOauth": "通过浏览器 OAuth 的订阅",
       "cliOauth": "通过 {{cli}} OAuth 的订阅"
+    },
+    "list": {
+      "colProvider": "提供方",
+      "colPlan": "套餐",
+      "colAccounts": "账户",
+      "colQuota": "配额",
+      "colKey": "密钥",
+      "colModels": "模型",
+      "colState": "状态",
+      "noKey": "未设置",
+      "subscriptionsSubtitle": "通过套餐访问的提供方",
+      "apiKeysSubtitle": "按请求计费的提供方",
+      "subscriptionsSummary": "{{providers}} 个提供方共 {{accounts}} 个账户 · {{models}} 个模型中已启用 {{enabled}} 个",
+      "apiKeysSummary": "{{providers}} 个提供方 · {{models}} 个模型中已启用 {{enabled}} 个 · {{keyless}} 个未设密钥",
+      "subscriptionsNote": "订阅通过 OAuth 认证，提供套餐允许的范围。没有按请求的单价，因此这些行显示配额而非费用。<strong>打开一行</strong>可管理其账户并选择它可提供的模型。账户额度用尽时路由会立即跳过，窗口滚动后再恢复。",
+      "apiKeysNote": "这些提供方按请求计费，模型带有真实价格，路由的成本排序会读取它们。<strong>打开一行</strong>可替换密钥、同步目录或选择可提供的模型。密钥始终以掩码显示，不会意外变成可编辑输入框。",
+      "addSubscription": "添加订阅",
+      "subscriptionsEmpty": "尚未连接订阅。请使用「添加订阅」登录。",
+      "apiKeysEmpty": "尚未配置 API 密钥提供方。请使用「添加提供方」连接。"
     }
   },
   "settings": {

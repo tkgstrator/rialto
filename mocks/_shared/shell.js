@@ -885,13 +885,32 @@ const PROVIDER_ROWS = [
   { id: 'claude-code', label: 'Claude Code', vendor: 'Anthropic', auth: 'subscription', plan: 'Max',    accounts: 2, key: null, models: '6 / 7',  quota: 71, state: 'live' },
   { id: 'codex',       label: 'Codex',       vendor: 'OpenAI',    auth: 'subscription', plan: 'Pro',    accounts: 1, key: null, models: '1 / 4',  quota: 88, state: 'live' },
   { id: 'gemini-cli',  label: 'Gemini CLI',  vendor: 'Google',    auth: 'subscription', plan: 'AI Pro', accounts: 1, key: null, models: '3 / 5',  quota: 12, state: 'invalid' },
-  { id: 'anthropic',   label: 'Anthropic',   vendor: 'Anthropic', auth: 'api_key', host: 'api.anthropic.com', plan: null, accounts: 0, key: 'sk-ant-··········a91f', models: '4 / 12', quota: null, state: 'live' },
-  { id: 'openai',      label: 'OpenAI',      vendor: 'OpenAI',    auth: 'api_key', host: 'api.openai.com', plan: null, accounts: 0, key: 'sk-proj-··········7c02', models: '5 / 18', quota: null, state: 'live' },
-  { id: 'google',      label: 'Google',      vendor: 'Google',    auth: 'api_key', host: 'generativelanguage.googleapis.com', plan: null, accounts: 0, key: 'AIza··········be44', models: '4 / 9',  quota: null, state: 'live' },
+  { id: 'anthropic',   label: 'Anthropic',   vendor: 'Anthropic', auth: 'api_key', host: 'api.anthropic.com', plan: null, accounts: 0, key: { head: 'sk-ant-', bullets: '••••••••••••••••', tail: 'a91f' }, models: '4 / 12', quota: null, state: 'live' },
+  { id: 'openai',      label: 'OpenAI',      vendor: 'OpenAI',    auth: 'api_key', host: 'api.openai.com', plan: null, accounts: 0, key: { head: 'sk-proj-', bullets: '••••••••••••••••', tail: '7c02' }, models: '5 / 18', quota: null, state: 'live' },
+  { id: 'google',      label: 'Google',      vendor: 'Google',    auth: 'api_key', host: 'generativelanguage.googleapis.com', plan: null, accounts: 0, key: { head: 'AIz', bullets: '••••••••••••••••', tail: 'be44' }, models: '4 / 9',  quota: null, state: 'live' },
   { id: 'deepseek',    label: 'DeepSeek',    vendor: 'DeepSeek',  auth: 'api_key', host: 'api.deepseek.com', plan: null, accounts: 0, key: 'not set', models: '0 / 3',  quota: null, state: 'unknown' }
 ]
 
 const PROVIDER_STATE_TONE = { live: 'ok', invalid: 'bad', unknown: 'mute' }
+
+/**
+ * A masked key in a fixed-width cell.
+ *
+ * The bullets are the only part that carries nothing, so they are the
+ * only part allowed to disappear: a cell narrow enough to clip
+ * "sk-proj-••••••••••••N44A" clips the tail, which is the half that says
+ * which of two OpenAI keys is configured. The impl splits the same three
+ * parts with maskKeyParts.
+ */
+const keyCell = (key) => {
+  if (key.head === undefined) return key
+  return `
+    <span class="flex min-w-0 items-baseline">
+      <span class="shrink-0">${key.head}</span>
+      <span class="min-w-0 truncate">${key.bullets}</span>
+      <span class="shrink-0">${key.tail}</span>
+    </span>`
+}
 
 const providerTable = (auth) => {
   const rows = PROVIDER_ROWS.filter((p) => p.auth === auth)
@@ -929,7 +948,7 @@ const providerTable = (auth) => {
           <span class="shrink-0 font-mono text-[12px] tabular-nums text-muted-foreground">${p.quota}%</span>
         </div>
       </td>`
-          : `<td class="px-3 font-mono text-[12px] text-muted-foreground">${p.key}</td>`
+          : `<td class="px-3 font-mono text-[12px] text-muted-foreground">${keyCell(p.key)}</td>`
       }
       <td class="px-3 text-right font-mono text-xs tabular-nums">${p.models}</td>
       <td class="px-3 text-right">${pill(p.state, PROVIDER_STATE_TONE[p.state])}</td>
