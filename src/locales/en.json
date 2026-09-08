@@ -930,7 +930,7 @@
       "unknown": "reason not recorded"
     },
     "lastDays": "last {{days}}d",
-    "quotaMeta": "every window · worst shown per account",
+    "quotaMeta": "every window",
     "failoverMeta": "what moved, and to what",
     "quotaLimitCount_one": "{{count}} limit",
     "quotaLimitCount_other": "{{count}} limits",

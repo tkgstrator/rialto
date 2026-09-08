@@ -85,13 +85,16 @@ const ROW_LINK = 'transition-colors hover:bg-muted/50 cursor-pointer'
  * is neither "highest percent" nor "one per group". A badge nobody can
  * explain is worse than no badge.
  *
- * The order is ours and is explainable — shortest window first, per-model
- * rows under the 7d they belong to — and the account line carries the
- * worst percentage, which is a fact rather than an interpretation.
+ * The order is ours and is explainable: shortest window first, per-model
+ * rows under the 7d they belong to.
+ *
+ * The account line carries no percentage. It used to show the worst
+ * window's, which nothing on the row said — beside a list where every
+ * line already shows its own, an unlabelled number in the corner is a
+ * question rather than an answer.
  */
 function QuotaAccount({ row, now }: { row: OverviewQuotaRow; now: number }) {
   const { t } = useTranslation()
-  const worst = row.windows.reduce((a, b) => (b.pct > a.pct ? b : a))
   return (
     <Link to='/activity/usage' className={cn('block border-t border-border/60 px-6 py-3', ROW_LINK)}>
       <div className='flex items-baseline gap-2'>
@@ -104,7 +107,6 @@ function QuotaAccount({ row, now }: { row: OverviewQuotaRow; now: number }) {
         <span className='text-[12px] text-muted-foreground/70'>
           {t('overview.quotaLimitCount', { count: row.windows.length })}
         </span>
-        <span className='ml-auto font-mono text-xs tabular-nums'>{worst.pct}%</span>
       </div>
       <div className='mt-2'>
         {row.windows.map((w) => (
@@ -126,7 +128,7 @@ function QuotaAccount({ row, now }: { row: OverviewQuotaRow; now: number }) {
                 sentence wrapped to four lines in a 5rem cell, so the
                 column says "due" and the title carries the rest. */}
             <span
-              className='w-20 shrink-0 truncate text-right text-[12px] text-muted-foreground'
+              className='w-20 shrink-0 truncate text-right font-mono text-[12px] tabular-nums text-muted-foreground'
               title={fmtUntil(w.resetAt, now) === null ? t('overview.resetsDue') : undefined}
             >
               {fmtUntil(w.resetAt, now) === null ? t('overview.resetsDueShort') : fmtUntil(w.resetAt, now)}
@@ -179,7 +181,10 @@ function FailoverEntry({ row, now }: { row: OverviewFailoverRow; now: number }) 
             </span>
           )}
         </span>
-        <span className='w-16 shrink-0 text-right text-[12px] text-muted-foreground'>
+        {/* A duration is a number: mono and tabular like every other
+            figure here. In the proportional face "1h ago" and "46m ago"
+            are different widths, so a column of them does not line up. */}
+        <span className='w-16 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
           {row.at === '' ? '' : t('settings.access.lastUsedAgo', { ago: fmtAgo(row.at, now) })}
         </span>
       </div>
@@ -306,7 +311,9 @@ function SessionTable({ data, now }: { data: OverviewResponse; now: number }) {
               <td className='px-3 text-right font-mono text-xs tabular-nums'>{s.turns}</td>
               <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtTokens(s.tokens)}</td>
               <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCost(s.costUsd)}</td>
-              <td className='py-2.5 pl-3 pr-6 text-right text-[12px] text-muted-foreground'>{fmtAgo(s.lastAt, now)}</td>
+              <td className='py-2.5 pl-3 pr-6 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
+                {fmtAgo(s.lastAt, now)}
+              </td>
             </tr>
           )
         })}

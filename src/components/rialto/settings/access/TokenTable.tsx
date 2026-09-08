@@ -87,12 +87,15 @@ function Row({ row, now, onOpen }: { row: TokenRow; now: number; onOpen: () => v
       </td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCount(token.requestCount)}</td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCost(token.costUsd)}</td>
-      <td className='px-3 text-right text-[12px] text-muted-foreground'>
+      {/* Dates and durations are numbers: mono and tabular so the column
+          lines up. In the proportional face "3h ago" and "41d ago" are
+          different widths and cannot be compared down the column. */}
+      <td className='px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
         {token.lastUsedAt === null
           ? t('settings.access.never')
           : t('settings.access.lastUsedAgo', { ago: fmtAgo(token.lastUsedAt, now) })}
       </td>
-      <td className='px-3 text-right text-[12px] text-muted-foreground'>
+      <td className='px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
         {token.expiresAt === null ? t('settings.access.never') : token.expiresAt.slice(0, 10)}
       </td>
       {/* Where revoke used to sit. A chevron says the row leads

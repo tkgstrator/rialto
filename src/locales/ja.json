@@ -930,7 +930,7 @@
       "unknown": "理由は記録されていません"
     },
     "lastDays": "直近 {{days}} 日",
-    "quotaMeta": "全ウィンドウ · アカウントごとの最大値を表示",
+    "quotaMeta": "全ウィンドウ",
     "failoverMeta": "何がどこへ動いたか",
     "quotaLimitCount_one": "制限 {{count}} 件",
     "quotaLimitCount_other": "制限 {{count}} 件",

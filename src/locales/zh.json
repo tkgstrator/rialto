@@ -930,7 +930,7 @@
       "unknown": "未记录原因"
     },
     "lastDays": "最近 {{days}} 天",
-    "quotaMeta": "全部窗口 · 每个账户显示最高值",
+    "quotaMeta": "全部窗口",
     "failoverMeta": "什么发生了变化，变成了什么",
     "quotaLimitCount_one": "{{count}} 个限制",
     "quotaLimitCount_other": "{{count}} 个限制",
