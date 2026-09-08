@@ -111,7 +111,7 @@ export function CredentialsPanel({
             values={{ label }}
             components={{
               strong: <span className='font-medium text-foreground' />,
-              tokens: <Link to='/settings/access' className='underline underline-offset-2' />
+              tokens: <Link to='/access-tokens' className='underline underline-offset-2' />
             }}
           />
         </p>

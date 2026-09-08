@@ -199,7 +199,7 @@ export function TokenTable({
             key={row.token.id}
             row={row}
             now={now}
-            onOpen={() => navigate(`/settings/access/tokens/${encodeURIComponent(row.token.id)}`)}
+            onOpen={() => navigate(`/access-tokens/${encodeURIComponent(row.token.id)}`)}
           />
         ))}
       </tbody>

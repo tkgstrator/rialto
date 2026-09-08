@@ -27,7 +27,7 @@ is not a dependency either; that code was absorbed into `src/llms/`.
 | `src/services/` | config, OAuth, usage, routing-scheduler, access tokens, model tests |
 | `src/vendors/` | Per-vendor catalog + pricing adapters (`VendorProvider`): fetch a vendor's live model list, scrape its published prices, read per-model context windows. Read by `model-sync-service` / `catalog-service`, **never on the request path**. Named `vendors` and not `providers` because `src/llms/registry/provider.ts` is a different thing — see below |
 | `src/schemas/` | Zod, split into four layers — `primitives / wire / domain / api`. There is **no** global `@/schemas` barrel; import from the layer. `wire` / `domain` / `api` each expose one; `primitives` has no barrel because nothing composes the layer as a whole — import `primitives/record` and friends by name |
-| `src/components/rialto/` | The UI — five screens (Overview / Routing / Providers / Activity / Settings) |
+| `src/components/rialto/` | The UI — six screens (Overview / Routing / Providers / Access tokens / Activity / Settings). Access tokens is top level, beside Providers: Providers is outbound, it is the same question inbound. Settings → Access keeps only admin access |
 | `src/components/ui/` | shadcn components. Never edit (see Rules) |
 | `src/app/` | React entry point and the `react-router-dom` route table |
 | `src/shared/` | Code shared by the server and the browser bundle — must not import server-only modules |
@@ -291,7 +291,7 @@ Database tooling (`bun run`, from the repo root — there is no `packages/`):
 - `db:migrate:test` — apply them to `rialto_test`. **Separate database; CI fails without it.**
 - `db:reset` — drop and recreate the schema (destructive).
 - `db:seed` — `src/prisma/seed.ts`; idempotent, creates the RouterSlot rows and the preference profile. No placeholder Providers.
-- `db:seed:demo` — `scripts/seed-demo-data.ts`; dev-only demo data for all five screens (traffic, chains, presets, quota, tokens). Rows it owns carry a `demo-` id and `-- --clean` removes them; live config (RouterSlot, the `live` chain, surface modes, an account's quota) is written only while unset. Never wired into `db:seed`. See `docs/guides/demo-data.md`.
+- `db:seed:demo` — `scripts/seed-demo-data.ts`; dev-only demo data for every screen (traffic, chains, presets, quota, tokens). Rows it owns carry a `demo-` id and `-- --clean` removes them; live config (RouterSlot, the `live` chain, surface modes, an account's quota) is written only while unset. Never wired into `db:seed`. See `docs/guides/demo-data.md`.
 - `db:studio` — open Prisma Studio.
 
 Never edit DDL directly; always go through Prisma migrations.

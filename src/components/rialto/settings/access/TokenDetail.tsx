@@ -39,7 +39,7 @@ import { fmtAgo, fmtCount } from '@/lib/rialto/format'
 import { TOKEN_STATE_PILL, type TokenState, tokenState } from '@/lib/rialto/settings/access-tokens'
 import { fmtCost } from '@/lib/sessions/format'
 
-const BACK = '/settings/access'
+const BACK = '/access-tokens'
 
 /**
  * The server answers a refused rotation with the reason as its error

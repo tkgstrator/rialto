@@ -693,7 +693,8 @@
       "scopeEditNote": "保存 <strong>{{name}}</strong> 的端点与配置，自下一次请求起生效。令牌本身不会改变。",
       "tokenSubtitle": "轮换、重设范围或吊销某个客户端的凭据",
       "hideRevoked": "隐藏 {{n}} 个已吊销",
-      "tokensScope": "全部位于 <mono>/v1/*</mono>"
+      "tokensScope": "全部位于 <mono>/v1/*</mono>",
+      "tokensSubtitle": "面向各客户端的 /v1/* 凭据"
     },
     "personas": {
       "subtitle": "{{count}} 个人格 · {{active}}",
@@ -789,7 +790,8 @@
     "unreachable": "不可达",
     "identityAccess": "Access",
     "identityLocal": "本地",
-    "identityToken": "令牌"
+    "identityToken": "令牌",
+    "navAccessTokens": "访问令牌"
   },
   "overview": {
     "subtitle": "{{surfaces}} 个入口 · {{providers}} 个 provider · {{models}} 个模型已启用",

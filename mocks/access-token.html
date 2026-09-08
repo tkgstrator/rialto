@@ -56,7 +56,7 @@ document.getElementById('root').innerHTML = `
          disabled — a new secret on a revoked row would not authenticate,
          so there is no state in which the control could become live. -->
     <div class="flex items-center gap-3 px-6 pt-6 pb-3">
-      <span ${navTo('settings-access.html')} class="text-muted-foreground hover:text-foreground">
+      <span ${navTo('access-tokens.html')} class="text-muted-foreground hover:text-foreground">
         <i class="ri-arrow-left-line text-base"></i>
       </span>
       <div class="min-w-0">
@@ -148,10 +148,9 @@ document.getElementById('root').innerHTML = `
   </div>`
 
 renderShell({
-  active: 'settings',
+  active: 'access-tokens',
   navMode: 'cloudflare',
-  sub: 'auth',
-  crumbs: [{ label: 'Access', href: 'settings-access.html' }, 'MacBook — Codex'],
+  crumbs: [{ label: 'Access tokens', href: 'access-tokens.html' }, 'MacBook — Codex'],
   subtitle: 'Rotate, re-scope or revoke one client’s credential'
 })
 </script>

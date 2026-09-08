@@ -161,8 +161,10 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
 
   return (
     <>
+      {/* No title: the breadcrumb and the sidebar both say "Access
+          tokens" already, and this is the whole screen rather than a
+          section of one. */}
       <SectionHead
-        title={t('settings.access.tokensTitle')}
         meta={
           <Summary counts={counts} showRevoked={showRevoked} onToggleRevoked={() => setShowRevoked(!showRevoked)} />
         }

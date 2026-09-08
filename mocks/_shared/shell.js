@@ -94,6 +94,13 @@ const NAV = [
   { id: 'overview', label: 'Overview', icon: 'ri-dashboard-3-line', href: 'overview.html' },
   { id: 'routing', label: 'Routing', icon: 'ri-git-branch-line', href: 'routing.html' },
   { id: 'providers', label: 'Providers', icon: 'ri-plug-line', href: 'providers.html' },
+  // Next to Providers because it is the same question pointed the other
+  // way: Providers is outbound (who Rialto sends to), this is inbound
+  // (who may send to Rialto). It lived under Settings, where a list with
+  // per-token spend, rotation and revocation does not belong — that is
+  // operations, not configuration. Settings -> Access keeps the half
+  // that really is configuration: who may administer the install.
+  { id: 'access-tokens', label: 'Access tokens', icon: 'ri-key-2-line', href: 'access-tokens.html' },
   { id: 'activity', label: 'Activity', icon: 'ri-pulse-line', href: 'activity.html' },
   { id: 'settings', label: 'Settings', icon: 'ri-settings-3-line', href: 'settings.html' }
 ]

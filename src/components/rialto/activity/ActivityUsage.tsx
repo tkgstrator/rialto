@@ -402,7 +402,7 @@ export function ActivityUsage() {
         title={t('activity.usage.tokensTitle')}
         meta={t('activity.usage.tokensMeta')}
         action={
-          <RButton variant='ghost' icon='ri-key-2-line' onClick={() => navigate('/settings/access')}>
+          <RButton variant='ghost' icon='ri-key-2-line' onClick={() => navigate('/access-tokens')}>
             {t('activity.usage.manageTokens')}
           </RButton>
         }

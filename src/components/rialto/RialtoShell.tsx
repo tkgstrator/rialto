@@ -68,14 +68,23 @@ interface NavEntry extends NavChild {
  */
 const NAV: readonly NavEntry[] = [
   { id: 'overview', labelKey: 'shell.navOverview', icon: 'ri-dashboard-3-line', href: '/overview', children: [] },
-  // Routing has no children: the chain IS the screen. Map and Rules are
-  // the views around it — Map answers "which surfaces reach the router at
-  // all", Rules holds the exceptions that apply where a scenario's chain
-  // is empty — and both are reached from the chain's own header. Listing
-  // three siblings implied three equal ways to route, which stopped being
-  // true when the chain became the default selector.
+  // Routing has no children: the chain IS the screen, and it is the only
+  // selector.
   { id: 'routing', labelKey: 'shell.navRouting', icon: 'ri-git-branch-line', href: '/routing', children: [] },
   { id: 'providers', labelKey: 'shell.navProviders', icon: 'ri-plug-line', href: '/providers', children: [] },
+  // Next to Providers because it is the same question pointed the other
+  // way: Providers is outbound (who Rialto sends to), this is inbound
+  // (who may send to Rialto). It lived under Settings, where a list
+  // carrying per-token spend, rotation and revocation does not belong —
+  // that is operations, not configuration. Settings → Access keeps the
+  // half that really is configuration: who may administer the install.
+  {
+    id: 'access-tokens',
+    labelKey: 'shell.navAccessTokens',
+    icon: 'ri-key-2-line',
+    href: '/access-tokens',
+    children: []
+  },
   {
     id: 'activity',
     labelKey: 'shell.navActivity',

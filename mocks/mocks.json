@@ -62,6 +62,20 @@
       "$comment": "Reuses the provider detail model table on purpose: same decision, made before the provider takes traffic."
     },
     {
+      "name": "access-tokens",
+      "mock": "access-tokens.html",
+      "route": "/access-tokens",
+      "group": "Access tokens",
+      "note": "Per-client credentials for /v1/*. Top level rather than under Settings: Providers is outbound, this is the same question inbound, and a list carrying per-token spend, rotation and revocation is operations rather than configuration. KNOWN DIFF ~6%: the mock draws the issue form open so a reviewer can judge it without clicking; the route opens with it closed. State, not design — the table columns and the note below it line up."
+    },
+    {
+      "name": "access-token",
+      "mock": "access-token.html",
+      "route": "/access-tokens/demo-token-00002",
+      "group": "Access tokens",
+      "note": "One token's own page: rotate, re-scope, revoke. Reached by clicking a row, which is where those actions used to live — as row actions they sat one mis-aimed click from every row of a table of live credentials. Route needs `bun run db:seed:demo`, whose token ids are deterministic; without it the capture lands on the not-found state."
+    },
+    {
       "name": "activity",
       "mock": "activity.html",
       "route": "/activity",
@@ -108,14 +122,7 @@
       "mock": "settings-access.html",
       "route": "/settings/access",
       "group": "Settings",
-      "note": "Access tokens (Phase 3.5). KNOWN DIFF ~12%: the mock depicts an install with Cloudflare Access configured (signed-in email, populated policy rows); an install without it correctly renders the other state, including an exposure warning the mock is never in a position to show. State, not design — trimming copy does not move it."
-    },
-    {
-      "name": "settings-access-token",
-      "mock": "settings-access-token.html",
-      "route": "/settings/access/tokens/demo-token-00002",
-      "group": "Settings",
-      "note": "One token's own page: rotate, re-scope, revoke. Reached by clicking a row in Settings -> Access, which is where those actions used to live — as row actions they sat one mis-aimed click from every row of a table of live credentials. Route needs `bun run db:seed:demo`, whose token ids are deterministic; without it the capture lands on the not-found state."
+      "note": "Admin access: Cloudflare Access and the bootstrap token. The per-client /v1 tokens moved to their own top-level section. KNOWN DIFF: the mock depicts an install with Cloudflare Access configured (signed-in email, populated policy rows); an install without it correctly renders the other state, including an exposure warning the mock is never in a position to show."
     },
     {
       "name": "settings-logging",

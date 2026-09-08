@@ -693,7 +693,8 @@
       "scopeEditNote": "Saves the endpoint and profile of <strong>{{name}}</strong>, from its next request. The token value itself does not change.",
       "tokenSubtitle": "Rotate, re-scope or revoke one client’s credential",
       "hideRevoked": "hide {{n}} revoked",
-      "tokensScope": "all on <mono>/v1/*</mono>"
+      "tokensScope": "all on <mono>/v1/*</mono>",
+      "tokensSubtitle": "Per-client credentials for /v1/*"
     },
     "personas": {
       "subtitle": "{{count}} personas · {{active}}",
@@ -789,7 +790,8 @@
     "unreachable": "Unreachable",
     "identityAccess": "Access",
     "identityLocal": "local",
-    "identityToken": "token"
+    "identityToken": "token",
+    "navAccessTokens": "Access tokens"
   },
   "overview": {
     "subtitle": "{{surfaces}} inbound surfaces · {{providers}} providers · {{models}} models enabled",

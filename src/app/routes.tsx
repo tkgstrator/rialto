@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom'
 import ProtectedRoute from '@/components/ProtectedRoute'
+import { AccessTokens } from '@/components/rialto/AccessTokens'
 import { ActivityLogs } from '@/components/rialto/activity/ActivityLogs'
 import { ActivityRequests } from '@/components/rialto/activity/ActivityRequests'
 import { ActivitySessionDetail } from '@/components/rialto/activity/ActivitySessionDetail'
@@ -61,6 +62,11 @@ export const router = createBrowserRouter([
           // anything, and a screen that edits a selector nothing runs is
           // worse than no screen.
           { path: '/routing', element: <RoutingChain /> },
+          // Top level, beside Providers: outbound and inbound at the same
+          // depth. These were /settings/access and
+          // /settings/access/tokens/:id.
+          { path: '/access-tokens', element: <AccessTokens /> },
+          { path: '/access-tokens/:id', element: <TokenDetail /> },
           { path: '/activity', element: <ActivitySessions /> },
           { path: '/activity/requests', element: <ActivityRequests /> },
           { path: '/activity/sessions/:sessionId', element: <ActivitySessionDetail /> },
@@ -68,9 +74,6 @@ export const router = createBrowserRouter([
           { path: '/activity/logs', element: <ActivityLogs /> },
           { path: '/settings', element: <SettingsServer /> },
           { path: '/settings/access', element: <SettingsAccess /> },
-          // A token's own page: where rotate, revoke and delete live, so
-          // none of them is a row action on a table of live credentials.
-          { path: '/settings/access/tokens/:id', element: <TokenDetail /> },
           { path: '/settings/logging', element: <SettingsLogging /> },
           { path: '/settings/personas', element: <SettingsPersonas /> },
           { path: '/settings/statusline', element: <SettingsStatusline /> },
