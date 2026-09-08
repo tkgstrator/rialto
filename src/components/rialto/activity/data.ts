@@ -113,37 +113,6 @@ export function percentile(ascending: number[], p: number): number | null {
 
 export const TREND_BUCKETS = 7
 
-/**
- * Request timestamps folded into fixed buckets across `from`..`to`, which
- * is what the session row's sparkline draws — the only thing the joined
- * log page is still needed for. Null when the page covered none of this
- * session's calls: an empty cell is honest, a flat line would not be.
- */
-export function trendBuckets(times: number[], from: number, to: number): number[] | null {
-  if (times.length === 0) return null
-  const span = Math.max(1, to - from)
-  const out = new Array<number>(TREND_BUCKETS).fill(0)
-  for (const t of times) {
-    const raw = Math.floor(((t - from) / span) * TREND_BUCKETS)
-    const idx = Math.min(TREND_BUCKETS - 1, Math.max(0, raw))
-    out[idx] += 1
-  }
-  return out
-}
-
-/** sessionId → the createdAt epochs of its calls found in the joined page. */
-export function callTimesBySession(logs: ActivityRequestLog[]): Map<string, number[]> {
-  const map = new Map<string, number[]>()
-  for (const log of logs) {
-    const at = Date.parse(log.createdAt)
-    if (Number.isNaN(at)) continue
-    const existing = map.get(log.sessionId)
-    if (existing === undefined) map.set(log.sessionId, [at])
-    else existing.push(at)
-  }
-  return map
-}
-
 function csvCell(value: string): string {
   return /[",\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value
 }

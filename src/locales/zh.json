@@ -46,7 +46,6 @@
       "colEndpoint": "端点",
       "colModels": "请求 → 发送",
       "colRule": "场景",
-      "colLane": "通道",
       "colToken": "令牌",
       "colInput": "输入",
       "colOutput": "输出",
@@ -90,9 +89,7 @@
       "colOutput": "输出",
       "colCache": "缓存",
       "colCost": "费用",
-      "colTrend": "趋势",
       "colLast": "最近",
-      "trendLabel": "{{calls}} 次调用的流量趋势",
       "range": "第 {{first}}–{{last}} 条，共 {{total}} 条",
       "rangeUnknownTotal": "第 {{first}}–{{last}} 条"
     },

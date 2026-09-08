@@ -21,18 +21,7 @@ import dayjs from '@/lib/dayjs'
 import { fmtCost, fmtTokens } from '@/lib/sessions/format'
 import { cn } from '@/lib/utils'
 
-export type ColumnId =
-  | 'time'
-  | 'status'
-  | 'endpoint'
-  | 'models'
-  | 'rule'
-  | 'lane'
-  | 'token'
-  | 'input'
-  | 'output'
-  | 'ms'
-  | 'cost'
+export type ColumnId = 'time' | 'status' | 'endpoint' | 'models' | 'rule' | 'token' | 'input' | 'output' | 'ms' | 'cost'
 
 export interface ColumnDef {
   id: ColumnId
@@ -152,28 +141,28 @@ export const COLUMNS: readonly ColumnDef[] = [
     sortValue: (row) => `${row.log.provider},${row.log.model}`
   },
   {
+    // The lane rides with the rule rather than holding a column of its
+    // own. It qualifies the routing decision (there is no lane without
+    // one), it reads `agent` on almost every row, and the column it cost
+    // belonged to Requested → Sent — which was truncating both halves of
+    // the one thing this screen exists to show.
     id: 'rule',
     labelKey: 'activity.requests.colRule',
     width: 'w-32',
     align: 'left',
     cellClass: 'text-[12px]',
-    render: (row) =>
-      row.rule === null ? <span className='text-muted-foreground/50'>{DASH}</span> : <span>{row.rule}</span>,
+    render: (row, t) => (
+      <span className='flex items-baseline gap-1.5'>
+        {row.rule === null ? <span className='text-muted-foreground/50'>{DASH}</span> : <span>{row.rule}</span>}
+        {row.lane === 'agent' ? null : <span className='text-muted-foreground'>· {t(LANE_KEYS[row.lane])}</span>}
+      </span>
+    ),
     sortValue: (row) => row.rule
-  },
-  {
-    id: 'lane',
-    labelKey: 'activity.requests.colLane',
-    width: 'w-20',
-    align: 'left',
-    cellClass: '',
-    render: (row, t) => <Pill tone='mute'>{t(LANE_KEYS[row.lane])}</Pill>,
-    sortValue: (row, t) => t(LANE_KEYS[row.lane])
   },
   {
     id: 'token',
     labelKey: 'activity.requests.colToken',
-    width: 'w-40',
+    width: 'w-28',
     align: 'left',
     cellClass: 'truncate text-[12px] text-muted-foreground',
     render: (row, t) => (row.client === null ? t('activity.common.untracked') : row.client),

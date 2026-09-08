@@ -40,10 +40,11 @@ import { api, type SessionSummary } from '@/lib/api'
 import { fmtCount, fmtRate } from '@/lib/rialto/format'
 import { fmtCost, fmtTokens } from '@/lib/sessions/format'
 
-// Newest calls joined onto the session rows for the trend column alone.
-// The session aggregate carries no time series; everything else on the
-// row, `surface` included, comes from the aggregate itself.
-const JOIN_LOG_LIMIT = 500
+// The screen used to join the newest 500 request-log rows onto the
+// session list. That join existed for the trend sparkline and nothing
+// else — every other cell, `surface` included, comes from the session
+// aggregate — so with the column gone the fetch went with it, and a page
+// of 25 sessions costs one query instead of three.
 
 // One screenful. The endpoint pages server-side (`limit` / `offset` and a
 // `total`), so this is the page size rather than a ceiling on what the
@@ -133,10 +134,8 @@ export function ActivitySessions() {
   const { t } = useTranslation()
   const [range, setRange] = useState<RangeId>('7d')
   const [sessions, setSessions] = useState<SessionSummary[] | null>(null)
-  const [logs, setLogs] = useState<ActivityRequestLog[]>([])
   const [totals, setTotals] = useState<WindowTotals | null>(null)
   const [totalSessions, setTotalSessions] = useState<number | undefined>(undefined)
-  const [_totalRequests, setTotalRequests] = useState<number | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
   // Frozen per load so every "last seen" label on the page is measured
   // from the instant the data describes.
@@ -153,15 +152,12 @@ export function ActivitySessions() {
     const spec = rangeSpec(range)
     Promise.all([
       api.getRequestLogSessions({ limit: SESSION_PAGE, offset: page * SESSION_PAGE, sinceHours: spec.hours }),
-      fetchUsageCost(spec.days),
-      fetchRequestLogs(JOIN_LOG_LIMIT)
+      fetchUsageCost(spec.days)
     ])
-      .then(([sessionRes, costRes, logRes]) => {
+      .then(([sessionRes, costRes]) => {
         setSessions(sessionRes.sessions)
         setTotalSessions(sessionRes.total)
         setTotals(summariseUsageCost(costRes))
-        setLogs(logRes.items)
-        setTotalRequests(logRes.total)
         setNow(Date.now())
         setError(null)
       })
@@ -201,10 +197,7 @@ export function ActivitySessions() {
     return () => es.close()
   }, [live])
 
-  const rows = useMemo(
-    () => (sessions === null ? [] : enrich(sessions, logs, surfaces.pathOf)),
-    [sessions, logs, surfaces.pathOf]
-  )
+  const rows = useMemo(() => (sessions === null ? [] : enrich(sessions, surfaces.pathOf)), [sessions, surfaces.pathOf])
   const visible = useMemo(
     () => applyFilters(rows, { surface: surfaceFilter, provider: providerFilter, model: modelFilter, query }),
     [rows, surfaceFilter, providerFilter, modelFilter, query]
@@ -329,7 +322,7 @@ export function ActivitySessions() {
         <ScreenMessage>{t('activity.sessions.empty')}</ScreenMessage>
       ) : (
         <>
-          <SessionsTable rows={visible} now={now} />
+          <SessionsTable rows={visible} />
           <Pager page={page} pageSize={SESSION_PAGE} loaded={sessions.length} total={totalSessions} onPage={setPage} />
         </>
       )}

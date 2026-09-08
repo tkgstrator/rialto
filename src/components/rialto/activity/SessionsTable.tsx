@@ -10,7 +10,7 @@ import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import type { Enriched } from '@/components/rialto/activity/sessions-derive'
-import { Sparkline, SurfaceCell } from '@/components/rialto/activity/shared'
+import { SurfaceCell } from '@/components/rialto/activity/shared'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
 import type { SessionSummary } from '@/lib/api'
 import { fmtAgo, shortId } from '@/lib/rialto/format'
@@ -30,17 +30,15 @@ import { fmtCost, fmtTokens } from '@/lib/sessions/format'
 const titleOf = (session: SessionSummary): string =>
   session.preview === null || session.preview === '' ? shortId(session.sessionId) : session.preview
 
-// The trend column is deliberately absent: a sparkline is a shape, and
-// ordering it would mean inventing a scalar (slope? peak?) that no cell
-// on the screen shows.
-type SessionSortKey = 'session' | 'endpoint' | 'model' | 'turns' | 'input' | 'output' | 'cache' | 'cost' | 'last'
+// Trend and Last are gone. The sparkline was a shape nobody could order
+// or read a number off — seven points at 40px wide, in a table whose
+// other nine columns are exact figures — and the age column repeated
+// what the default ordering already says, since the list arrives newest
+// first. Both are still on the session's own screen, where there is room
+// to mean something.
+type SessionSortKey = 'session' | 'endpoint' | 'model' | 'turns' | 'input' | 'output' | 'cache' | 'cost'
 
-/**
- * `now` is the same instant the rows render against, because the last-seen
- * cell shows an age rather than a timestamp. Sorting on `lastAt` itself
- * would run the visible numbers backwards under an ascending caret.
- */
-const sessionSortValue = (row: Enriched, key: SessionSortKey, now: number): SortValue => {
+const sessionSortValue = (row: Enriched, key: SessionSortKey): SortValue => {
   const { session } = row
   if (key === 'session') return titleOf(session)
   if (key === 'endpoint') return row.surfacePath
@@ -49,9 +47,7 @@ const sessionSortValue = (row: Enriched, key: SessionSortKey, now: number): Sort
   if (key === 'input') return session.totalInputTokens
   if (key === 'output') return session.totalOutputTokens
   if (key === 'cache') return cacheHitPct(session)
-  if (key === 'cost') return session.totalCostUsd
-  const then = Date.parse(session.lastAt)
-  return Number.isNaN(then) ? null : now - then
+  return session.totalCostUsd
 }
 
 /**
@@ -66,7 +62,7 @@ const sessionSortValue = (row: Enriched, key: SessionSortKey, now: number): Sort
 const cacheHitPct = (session: SessionSummary): number =>
   session.totalInputTokens === 0 ? 0 : Math.round((session.totalCacheReadTokens / session.totalInputTokens) * 100)
 
-function SessionRow({ row, now }: { row: Enriched; now: number }) {
+function SessionRow({ row }: { row: Enriched }) {
   const { t } = useTranslation()
   const { session } = row
   const title = titleOf(session)
@@ -85,23 +81,14 @@ function SessionRow({ row, now }: { row: Enriched; now: number }) {
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtTokens(session.totalInputTokens)}</td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtTokens(session.totalOutputTokens)}</td>
       <td className='px-3 text-right font-mono text-xs tabular-nums text-muted-foreground'>{cacheHitPct(session)}%</td>
-      <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCost(session.totalCostUsd)}</td>
-      <td className='px-3'>
-        {row.trend === null ? null : (
-          <Sparkline points={row.trend} label={t('activity.sessions.trendLabel', { calls: session.requestCount })} />
-        )}
-      </td>
-      <td className='py-3 pl-3 pr-6 text-right text-[12px] text-muted-foreground'>{fmtAgo(session.lastAt, now)}</td>
+      <td className='py-3 pl-3 pr-6 text-right font-mono text-xs tabular-nums'>{fmtCost(session.totalCostUsd)}</td>
     </tr>
   )
 }
 
-export function SessionsTable({ rows, now }: { rows: Enriched[]; now: number }) {
+export function SessionsTable({ rows }: { rows: Enriched[] }) {
   const { t } = useTranslation()
-  const sortValue = useCallback(
-    (row: Enriched, key: SessionSortKey): SortValue => sessionSortValue(row, key, now),
-    [now]
-  )
+  const sortValue = useCallback((row: Enriched, key: SessionSortKey): SortValue => sessionSortValue(row, key), [])
   const sort = useTableSort<Enriched, SessionSortKey>(rows, sortValue)
   return (
     <table className='w-full table-fixed'>
@@ -114,8 +101,6 @@ export function SessionsTable({ rows, now }: { rows: Enriched[]; now: number }) 
         <col className='w-20' />
         <col className='w-16' />
         <col className='w-24' />
-        <col className='w-20' />
-        <col className='w-16' />
       </colgroup>
       <thead>
         <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2'>
@@ -140,18 +125,14 @@ export function SessionsTable({ rows, now }: { rows: Enriched[]; now: number }) 
           <SortTh sortKey='cache' sort={sort} className='px-3 text-right font-medium' align='right'>
             {t('activity.sessions.colCache')}
           </SortTh>
-          <SortTh sortKey='cost' sort={sort} className='px-3 text-right font-medium' align='right'>
+          <SortTh sortKey='cost' sort={sort} className='pl-3 pr-6 text-right font-medium' align='right'>
             {t('activity.sessions.colCost')}
-          </SortTh>
-          <th className='px-3 text-left font-medium'>{t('activity.sessions.colTrend')}</th>
-          <SortTh sortKey='last' sort={sort} className='pl-3 pr-6 text-right font-medium' align='right'>
-            {t('activity.sessions.colLast')}
           </SortTh>
         </tr>
       </thead>
       <tbody>
         {sort.sorted.map((row) => (
-          <SessionRow key={row.session.sessionId} row={row} now={now} />
+          <SessionRow key={row.session.sessionId} row={row} />
         ))}
       </tbody>
     </table>

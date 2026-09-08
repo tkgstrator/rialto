@@ -46,7 +46,6 @@
       "colEndpoint": "エンドポイント",
       "colModels": "要求 → 送信",
       "colRule": "シナリオ",
-      "colLane": "レーン",
       "colToken": "トークン",
       "colInput": "入力",
       "colOutput": "出力",
@@ -90,9 +89,7 @@
       "colOutput": "出力",
       "colCache": "キャッシュ",
       "colCost": "コスト",
-      "colTrend": "推移",
       "colLast": "最終",
-      "trendLabel": "{{calls}} 回の呼び出しの推移",
       "range": "{{total}} 件中 {{first}}–{{last}}",
       "rangeUnknownTotal": "{{first}}–{{last}} 件目"
     },

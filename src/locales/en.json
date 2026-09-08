@@ -46,7 +46,6 @@
       "colEndpoint": "Endpoint",
       "colModels": "Requested → Sent",
       "colRule": "Scenario",
-      "colLane": "Lane",
       "colToken": "Token",
       "colInput": "Input",
       "colOutput": "Output",
@@ -90,9 +89,7 @@
       "colOutput": "Output",
       "colCache": "Cache",
       "colCost": "Cost",
-      "colTrend": "Trend",
       "colLast": "Last",
-      "trendLabel": "Volume over {{calls}} calls",
       "range": "{{first}}–{{last}} of {{total}}",
       "rangeUnknownTotal": "{{first}}–{{last}}"
     },

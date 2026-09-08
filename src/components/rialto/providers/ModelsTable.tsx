@@ -103,9 +103,13 @@ const HEAD_CELL = 'px-2 text-right font-medium'
 
 function Head({
   withOverride,
+  hasCached,
+  hasShape,
   sort
 }: {
   withOverride: boolean
+  hasCached: boolean
+  hasShape: boolean
   sort: ReturnType<typeof useTableSort<ModelRow, ModelSortKey>>
 }) {
   const { t } = useTranslation()
@@ -124,15 +128,19 @@ function Head({
         <SortTh sortKey='inputPer1M' sort={sort} className={HEAD_CELL} align='right'>
           {t('providers.models.colIn')}
         </SortTh>
-        <SortTh sortKey='cachedInputPer1M' sort={sort} className={HEAD_CELL} align='right'>
-          {t('providers.models.colCached')}
-        </SortTh>
+        {hasCached ? (
+          <SortTh sortKey='cachedInputPer1M' sort={sort} className={HEAD_CELL} align='right'>
+            {t('providers.models.colCached')}
+          </SortTh>
+        ) : null}
         <SortTh sortKey='outputPer1M' sort={sort} className={HEAD_CELL} align='right'>
           {t('providers.models.colOut')}
         </SortTh>
         {/* The two override pickers are controls, not values the operator
             scans down a column, so they stay unsorted. */}
-        {withOverride ? <th className='px-2 text-left font-medium'>{t('providers.models.colShape')}</th> : null}
+        {withOverride && hasShape ? (
+          <th className='px-2 text-left font-medium'>{t('providers.models.colShape')}</th>
+        ) : null}
         {withOverride ? <th className='px-2 text-left font-medium'>{t('providers.models.colEffort')}</th> : null}
         <SortTh sortKey='test' sort={sort} className='px-2 text-center' align='center'>
           {t('providers.models.colTest')}
@@ -164,12 +172,16 @@ const toEffort = (value: string): ReasoningEffort | null => {
 function Row({
   row,
   withOverride,
+  hasCached,
+  hasShape,
   onToggle,
   onTier,
   onEffort
 }: {
   row: ModelRow
   withOverride: boolean
+  hasCached: boolean
+  hasShape: boolean
   onToggle: (model: string, next: boolean) => void
   onTier: (model: string, next: Tier | null) => void
   onEffort: (model: string, next: ReasoningEffort | null) => void
@@ -202,9 +214,9 @@ function Row({
       </td>
       <td className={cn(NUM_CELL, 'text-muted-foreground')}>{fmtContext(row.contextWindow)}</td>
       <td className={cn(NUM_CELL, priceTone)}>{fmtCost(row.inputPer1M)}</td>
-      <td className={cn(NUM_CELL, 'text-muted-foreground')}>{fmtCost(row.cachedInputPer1M)}</td>
+      {hasCached ? <td className={cn(NUM_CELL, 'text-muted-foreground')}>{fmtCost(row.cachedInputPer1M)}</td> : null}
       <td className={cn(NUM_CELL, priceTone)}>{fmtCost(row.outputPer1M)}</td>
-      {withOverride ? (
+      {withOverride && hasShape ? (
         <td className='px-2 font-mono text-[12px] text-muted-foreground'>
           {row.apiStyleOverride === null ? DASH : row.apiStyleOverride}
         </td>
@@ -259,6 +271,14 @@ export function ModelsTable({
   // Hooks run before the empty-state return: an early return above a hook
   // changes the hook order between renders.
   const sort = useTableSort<ModelRow, ModelSortKey>(rows, modelSortValue)
+  // A column of nothing but dashes still costs its width, and on a
+  // provider whose models carry neither a cached price nor a per-model
+  // api-style override that width came out of the model name — which was
+  // wrapping to three lines while four columns held `–`. An absent column
+  // says the same thing the dashes did, in no space at all.
+  const hasCached = rows.some((row) => row.cachedInputPer1M !== null)
+  const hasShape = rows.some((row) => row.apiStyleOverride !== null)
+
   if (rows.length === 0) {
     return <div className='px-6 pb-6 text-xs text-muted-foreground'>{t('providers.models.empty')}</div>
   }
@@ -269,20 +289,22 @@ export function ModelsTable({
         <col className='w-20' />
         <col className='w-20' />
         <col className='w-20' />
+        {hasCached ? <col className='w-20' /> : null}
         <col className='w-20' />
-        <col className='w-20' />
-        {withOverride ? <col className='w-24' /> : null}
+        {withOverride && hasShape ? <col className='w-24' /> : null}
         {withOverride ? <col className='w-24' /> : null}
         <col className={withOverride ? 'w-14' : 'w-16'} />
         <col className={withOverride ? 'w-16' : 'w-20'} />
       </colgroup>
-      <Head withOverride={withOverride} sort={sort} />
+      <Head withOverride={withOverride} hasCached={hasCached} hasShape={hasShape} sort={sort} />
       <tbody>
         {(limit === undefined ? sort.sorted : sort.sorted.slice(0, limit)).map((row) => (
           <Row
             key={row.name}
             row={row}
             withOverride={withOverride}
+            hasCached={hasCached}
+            hasShape={hasShape}
             onToggle={onToggle}
             onTier={onTier}
             onEffort={onEffort}

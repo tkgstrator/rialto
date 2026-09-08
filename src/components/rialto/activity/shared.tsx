@@ -85,29 +85,6 @@ export function StatTile({
 }
 
 /**
- * Inline volume trend. A 40px sparkline needs no chart library, and one
- * with a flat maximum would be a decoration rather than a reading.
- */
-export function Sparkline({ points, label }: { points: number[]; label: string }) {
-  const max = Math.max(...points)
-  if (points.length < 2 || max <= 0) return null
-  const d = points.map((p, i) => `${(i / (points.length - 1)) * 60},${16 - (p / max) * 14}`).join(' ')
-  return (
-    <svg viewBox='0 0 60 16' className='h-4 w-16 overflow-visible' preserveAspectRatio='none' role='img'>
-      <title>{label}</title>
-      <polyline
-        points={d}
-        fill='none'
-        stroke='currentColor'
-        strokeWidth='1'
-        className='text-muted-foreground/60'
-        vectorEffect='non-scaling-stroke'
-      />
-    </svg>
-  )
-}
-
-/**
  * A 429 is a failover step, not an error the caller saw, so it is warned
  * rather than damned.
  */
