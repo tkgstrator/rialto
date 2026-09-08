@@ -126,6 +126,80 @@ const quotaRow = (q) => {
   </div>`
 }
 
+// ─── Failover activity ────────────────────────────────────────────────
+//
+// The panel exists to answer "what changed", so the change is a column,
+// not a phrase at the end of a sentence. `RoutingWeightChange` stores
+// fromWeight and toWeight; putting them in a fixed slot lets several
+// moves be compared down the page instead of read one at a time, and the
+// destination value carries the weight because that is the number in
+// force now.
+//
+// A 429 has no transition — the row carries account, status and
+// Retry-After and nothing else. Earlier drafts of this mock wrote "fell
+// through to openai,gpt-5.5" under one, which is a sentence with no data
+// behind it: nothing records which target picked the traffic up. Rather
+// than invent it, the 429 row shows what it does have, and Retry-After
+// is the value worth reading there.
+const FAILOVER = [
+  {
+    kind: 'weight',
+    tone: 'warn',
+    target: 'claude-code,claude-opus-5',
+    from: '1.00',
+    to: '0.60',
+    reason: 'quota_drop',
+    at: '1h ago',
+    href: 'routing.html'
+  },
+  {
+    kind: 'weight',
+    tone: 'mute',
+    target: 'claude-code,claude-sonnet-5',
+    from: '0.38',
+    to: '0.37',
+    reason: 'reset_soon',
+    at: '2h ago',
+    href: 'routing.html'
+  },
+  {
+    kind: '429',
+    tone: 'bad',
+    target: 'codex:demo',
+    detail: 'retry after 11m',
+    at: '46m ago',
+    href: 'activity-requests.html'
+  },
+  {
+    kind: 'auth',
+    tone: 'bad',
+    target: 'Gemini AI Pro',
+    detail: 'refresh token rejected by Code Assist',
+    at: '5h ago',
+    href: 'providers.html'
+  }
+]
+
+/** from → to, aligned so a column of moves reads as a column. */
+const transition = (from, to) => `
+  <span class="inline-flex items-baseline gap-1.5 font-mono text-xs tabular-nums">
+    <span class="text-muted-foreground/70">${from}</span>
+    <i class="ri-arrow-right-line text-[11px] text-muted-foreground/50"></i>
+    <span class="font-medium text-foreground">${to}</span>
+  </span>`
+
+const failoverRow = (f) => `
+  <div ${navTo(f.href)} class="border-t border-border/60 px-6 py-3 transition-colors hover:bg-muted/50">
+    <div class="flex items-baseline gap-3">
+      <span class="w-14 shrink-0">${pill(f.kind, f.tone)}</span>
+      <span class="min-w-0 flex-1 truncate font-mono text-xs">${f.target}</span>
+      <span class="w-32 shrink-0 text-right">${f.from ? transition(f.from, f.to) : ''}</span>
+      <span class="w-28 shrink-0 text-right font-mono text-[12px] text-muted-foreground">${f.reason ?? ''}</span>
+      <span class="w-16 shrink-0 text-right text-[12px] text-muted-foreground">${f.at}</span>
+    </div>
+    ${f.detail ? `<div class="mt-1 pl-[4.25rem] text-[12px] text-muted-foreground">${f.detail}</div>` : ''}
+  </div>`
+
 // ─── Spend ────────────────────────────────────────────────────────────
 // Money is always 3 significant figures — same rule the React side uses
 // via fmtCost(). Never re-derive a formatter in a component.
@@ -191,33 +265,7 @@ document.getElementById('root').innerHTML = `
        one column lets each use the full width and keeps the page a single
        reading order. -->
   ${section('Subscription quota', QUOTA.map(quotaRow).join(''), 'every window · worst shown per account')}
-  ${section('Failover activity', `
-        <div class="space-y-0">
-          <div ${navTo('activity-requests.html')} class="border-t border-border/60 px-6 py-3 transition-colors hover:bg-muted/50">
-            <div class="flex items-baseline gap-2">
-              ${pill('429', 'bad')}
-              <span class="text-xs">Codex Pro exhausted on <span class="font-mono">primary</span></span>
-              <span class="ml-auto text-[12px] text-muted-foreground">46m ago</span>
-            </div>
-            <div class="mt-1 text-[12px] text-muted-foreground">fell through to <span class="font-mono">openai,gpt-5.5</span></div>
-          </div>
-          <div ${navTo('routing.html')} class="border-t border-border/60 px-6 py-3 transition-colors hover:bg-muted/50">
-            <div class="flex items-baseline gap-2">
-              ${pill('weight', 'warn')}
-              <span class="text-xs"><span class="font-mono">claude-code,claude-opus-4-8</span> 1.00 → 0.60</span>
-              <span class="ml-auto text-[12px] text-muted-foreground">1h ago</span>
-            </div>
-            <div class="mt-1 text-[12px] text-muted-foreground">reason: <span class="font-mono">quota_drop</span></div>
-          </div>
-          <div ${navTo('providers.html')} class="border-t border-border/60 px-6 py-3 transition-colors hover:bg-muted/50">
-            <div class="flex items-baseline gap-2">
-              ${pill('auth', 'bad')}
-              <span class="text-xs">Gemini AI Pro needs re-authentication</span>
-              <span class="ml-auto text-[12px] text-muted-foreground">5h ago</span>
-            </div>
-            <div class="mt-1 text-[12px] text-muted-foreground">refresh token rejected by Code Assist</div>
-          </div>
-        </div>`)}
+  ${section('Failover activity', FAILOVER.map(failoverRow).join(''), 'what moved, and to what')}
   ${section('Recent sessions', sessions)}
   <div class="h-10"></div>`
 
