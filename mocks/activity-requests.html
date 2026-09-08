@@ -13,7 +13,7 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, btn, surfacePill, navTo, sortTh } = window.Shell
+const { renderShell, pill, btn, surfacePill, navTo, sortTh, pager } = window.Shell
 
 // One row per upstream call (RequestLog), vs Sessions which groups them.
 // The columns that did not exist before are `Requested` / `Sent`, `Rule`
@@ -140,6 +140,9 @@ document.getElementById('root').innerHTML = `
   </table>
   </div>
 
+  <!-- Paged like Sessions. The subtitle already admitted the problem —
+       "184 of 18.7k requests" — by naming a cap with no way past it. -->
+  ${pager({ first: 1, last: 25, total: '18.7k', hasPrev: false })}
   <div class="px-6 py-4">
     <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
       <i class="ri-information-line mr-1 align-[-1px]"></i>
@@ -159,7 +162,7 @@ renderShell({
   // followed this line drifted into mixing three: an all-time total, a
   // failover count taken from the filtered rows, and the page cap — three
   // scopes in one sentence, none of them labelled.
-  subtitle: '184 of 18.7k requests · last 24h',
+  subtitle: 'last 24h',
   actions:
     btn('Live tail', 'outline', 'ri-broadcast-line', 'activity-logs.html') +
     btn('Columns', 'ghost', 'ri-layout-column-line')

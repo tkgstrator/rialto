@@ -20,8 +20,8 @@ export interface RequestLogPage {
 }
 
 /** Newest-first page of upstream calls. The endpoint has no time filter. */
-export function fetchRequestLogs(limit: number): Promise<RequestLogPage> {
-  return api.get<RequestLogPage>(`/request-logs?limit=${limit}`)
+export function fetchRequestLogs(limit: number, offset = 0): Promise<RequestLogPage> {
+  return api.get<RequestLogPage>(`/request-logs?limit=${limit}&offset=${offset}`)
 }
 
 export function fetchSessionRequestLogs(sessionId: string): Promise<{ items: ActivityRequestLog[] }> {

@@ -788,6 +788,52 @@ const providerRow = (p, activeId) => {
   </button>`
 }
 
+/**
+ * Range footer for any unbounded list.
+ *
+ * Lived inline on Activity -> Sessions, which is how Requests and Logs
+ * ended up rendering whatever the first fetch returned with no way to
+ * reach the rest. One definition so the three cannot disagree.
+ *
+ * The range is spelled out rather than a page number: "26-50 of 128"
+ * answers both "where am I" and "how much is there", and a page number
+ * answers neither without knowing the page size. `total` is optional
+ * because a count is not always cheap — without it the footer says
+ * "26-50" and lets Next decide whether there is more.
+ */
+const pager = ({ first, last, total, hasPrev = true, hasNext = true, compact = false }) => {
+  const range = `${first}-${last}${total === undefined ? '' : ` of ${total}`}`
+  if (compact) {
+    const arrow = (icon, on) =>
+      `<button class="inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+        on ? 'text-muted-foreground hover:bg-muted/60 hover:text-foreground' : 'text-muted-foreground opacity-40'
+      }" ${on ? '' : 'disabled'}><i class="${icon} text-sm"></i></button>`
+    return `
+  <div class="flex items-center gap-1 border-t border-border px-4 py-2">
+    <span class="text-[12px] text-muted-foreground">${range}</span>
+    <div class="ml-auto flex items-center">
+      ${arrow('ri-arrow-left-s-line', hasPrev)}${arrow('ri-arrow-right-s-line', hasNext)}
+    </div>
+  </div>`
+  }
+  const ctl = (on) =>
+    `inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors ${
+      on ? 'hover:bg-muted/60' : 'text-muted-foreground opacity-50'
+    }`
+  return `
+  <div class="flex items-center gap-3 border-t border-border px-6 py-3">
+    <span class="text-[12px] text-muted-foreground">${range}</span>
+    <div class="ml-auto flex items-center gap-2">
+      <button class="${ctl(hasPrev)}" ${hasPrev ? '' : 'disabled'}>
+        <i class="ri-arrow-left-s-line text-sm leading-none"></i>Previous
+      </button>
+      <button class="${ctl(hasNext)}" ${hasNext ? '' : 'disabled'}>
+        Next<i class="ri-arrow-right-s-line text-sm leading-none"></i>
+      </button>
+    </div>
+  </div>`
+}
+
 const providerRail = (activeId) => `
   <div class="flex items-center gap-2 px-4 pt-5 pb-2">
     <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Subscriptions</h2>
@@ -804,7 +850,7 @@ const providerRail = (activeId) => `
   <div class="p-4">${btn('Add provider', 'outline', 'ri-add-line', 'providers-connect.html')}</div>`
 
   global.Shell = {
-    renderShell, ROW, section, pill, mono, meter, btn,
+    renderShell, ROW, section, pill, mono, meter, btn, pager,
     tabs, railItem, SETTINGS_RAIL,
     navTo, activityTabs, selectorBar, providerRail, tierCell, effortCell, sortTh, toast,
     SURFACES, surfacePill, surfaceChip,
