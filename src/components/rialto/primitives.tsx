@@ -258,11 +258,14 @@ export function SurfaceChip({
   path,
   on,
   onClick,
+  disabled,
   readOnlyHint
 }: {
   path: string
   on: boolean
   onClick?: () => void
+  /** Operable in principle, but not right now — greyed rather than inert. */
+  disabled?: boolean
   /** Tooltip for the read-only form: why this is showing, not settable. */
   readOnlyHint?: string
 }) {
@@ -286,7 +289,12 @@ export function SurfaceChip({
   }
 
   return (
-    <button type='button' onClick={onClick} className={cn(base, on ? '' : 'hover:bg-muted/50')}>
+    <button
+      type='button'
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(base, on ? '' : 'hover:bg-muted/50', 'disabled:pointer-events-none disabled:opacity-50')}
+    >
       {content}
     </button>
   )

@@ -792,7 +792,8 @@
       "detailRotated": "ローテート {{date}}",
       "detailRevoked": "失効 {{date}}",
       "scopeSaved": "「{{name}}」を更新しました。次のリクエストから反映されます。",
-      "scopeEditNote": "<strong>{{name}}</strong> のエンドポイントとプロファイルを保存します（次のリクエストから反映）。トークンの値自体は変わりません。"
+      "scopeEditNote": "<strong>{{name}}</strong> のエンドポイントとプロファイルを保存します（次のリクエストから反映）。トークンの値自体は変わりません。",
+      "tokenSubtitle": "1 つのクライアントの資格情報をローテート・再スコープ・失効させます"
     },
     "personas": {
       "subtitle": "ペルソナ {{count}} 件 · {{active}}",

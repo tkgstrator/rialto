@@ -125,6 +125,13 @@
       "note": "Access tokens (Phase 3.5). KNOWN DIFF ~12%: the mock depicts an install with Cloudflare Access configured (signed-in email, populated policy rows); an install without it correctly renders the other state, including an exposure warning the mock is never in a position to show. State, not design — trimming copy does not move it."
     },
     {
+      "name": "settings-access-token",
+      "mock": "settings-access-token.html",
+      "route": "/settings/access/tokens/demo-token-00002",
+      "group": "Settings",
+      "note": "One token's own page: rotate, re-scope, revoke. Reached by clicking a row in Settings -> Access, which is where those actions used to live — as row actions they sat one mis-aimed click from every row of a table of live credentials. Route needs `bun run db:seed:demo`, whose token ids are deterministic; without it the capture lands on the not-found state."
+    },
+    {
       "name": "settings-logging",
       "mock": "settings-logging.html",
       "route": "/settings/logging",

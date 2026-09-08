@@ -277,7 +277,7 @@ export function TokenDetail() {
   const editable = state === 'active'
 
   return (
-    <Screen crumbs={[{ label: token.name }]}>
+    <Screen crumbs={[{ label: token.name }]} subtitle={t('settings.access.tokenSubtitle')}>
       <div className='min-w-0'>
         <DetailHeader token={token} state={state} busy={busy} onRotate={rotate} onRevoke={revoke} onDelete={remove} />
 
@@ -323,38 +323,6 @@ export function TokenDetail() {
           </Picker>
         </SettingsField>
 
-        {/* Directly under the fields it writes, not in the app title
-            bar. Up there it sat beside the breadcrumbs, said nothing
-            about which of the page's controls it applied to, and put the
-            page's actions in two places at once — Rotate and Revoke are
-            already in the header, and they are not part of this form.
-            Always present rather than appearing on the first edit: a bar
-            that materialises mid-page moves everything under it, and the
-            disabled pair states the rule (there is a Save, and nothing
-            to save yet) before the operator touches anything. */}
-        <div className='flex items-center gap-2 border-t border-border/60 px-6 py-4'>
-          {/* Names the token. The page can be reached from a table of
-              several, and a bare "Save" in a bar says which controls it
-              applies to but not which row — the one thing an operator
-              about to change what a live client may reach needs to be
-              sure of. */}
-          <span className='text-[12px] text-muted-foreground'>
-            <Trans
-              i18nKey='settings.access.scopeEditNote'
-              values={{ name: token.name }}
-              components={{ strong: <span className='font-medium text-foreground' /> }}
-            />
-          </span>
-          <div className='ml-auto flex gap-2'>
-            <RButton variant='ghost' onClick={discard} disabled={!dirty || busy}>
-              {t('common.discard')}
-            </RButton>
-            <RButton variant='primary' icon='ri-check-line' onClick={save} disabled={!dirty || busy}>
-              {t('common.save')}
-            </RButton>
-          </div>
-        </div>
-
         <SettingsField label={t('settings.access.detailUsage')} hint={t('settings.access.detailUsageHint')}>
           <div className='flex items-center gap-4 font-mono text-xs tabular-nums'>
             <span>{t('settings.access.detailRequests', { n: fmtCount(token.requestCount) })}</span>
@@ -399,6 +367,39 @@ export function TokenDetail() {
               i18nKey='settings.access.rotateNote'
               components={{ strong: <span className='font-medium text-foreground' /> }}
             />
+          </div>
+        </div>
+        {/* Last thing on the page, which is where a form's own actions
+            belong. It started in the app title bar, where it sat beside
+            the breadcrumbs and said nothing about which of the page's
+            controls it applied to; moving it up against the two editable
+            fields fixed that and introduced a worse problem — a bar
+            across the middle of a page reads as the end of the page, and
+            the rows below it looked like a separate screen.
+            Always present rather than appearing on the first edit: a bar
+            that materialises moves everything around it, and the
+            disabled pair states the rule (there is a Save, and nothing
+            to save yet) before the operator touches anything. */}
+        <div className='flex items-center gap-2 border-t border-border/60 px-6 py-4'>
+          {/* Names the token. The page can be reached from a table of
+              several, and a bare "Save" in a bar says which controls it
+              applies to but not which row — the one thing an operator
+              about to change what a live client may reach needs to be
+              sure of. */}
+          <span className='text-[12px] text-muted-foreground'>
+            <Trans
+              i18nKey='settings.access.scopeEditNote'
+              values={{ name: token.name }}
+              components={{ strong: <span className='font-medium text-foreground' /> }}
+            />
+          </span>
+          <div className='ml-auto flex gap-2'>
+            <RButton variant='ghost' onClick={discard} disabled={!dirty || busy}>
+              {t('common.discard')}
+            </RButton>
+            <RButton variant='primary' icon='ri-check-line' onClick={save} disabled={!dirty || busy}>
+              {t('common.save')}
+            </RButton>
           </div>
         </div>
         <div className='h-8' />

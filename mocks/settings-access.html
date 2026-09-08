@@ -13,7 +13,7 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, btn, surfacePill, navTo, sortTh } = window.Shell
+const { renderShell, pill, btn, surfacePill, navTo, sortTh, SURFACES, surfaceChip } = window.Shell
 
 
 // Only the sha256 is stored; `prefix` is a separate column purely so a
@@ -24,20 +24,45 @@ const { renderShell, pill, btn, surfacePill, navTo, sortTh } = window.Shell
 // to an inbound surface and a routing profile turns "issue another key"
 // into per-client routing, without inventing a second config axis.
 const TOKENS = [
-  { name: 'MacBook — Claude Code', prefix: 'rlt_a91f…', scope: 'proxy', surface: '/v1/messages', profile: 'live',       used: '2m ago',  reqs: '12.4k', created: '2026-06-04' },
-  { name: 'MacBook — Codex',       prefix: 'rlt_7c02…', scope: 'proxy', surface: '/v1/responses', profile: 'live',      used: '19m ago', reqs: '2.71k', created: '2026-06-04' },
-  { name: 'Gemini CLI',            prefix: 'rlt_be44…', scope: 'proxy', surface: '/v1beta/models/*',   profile: 'live',       used: '1h ago',  reqs: '486',   created: '2026-08-11' },
-  { name: 'CI — nightly evals',    prefix: 'rlt_0d18…', scope: 'proxy', surface: '/v1/chat/completions',     profile: 'cost-first', used: '6h ago',  reqs: '3.10k', created: '2026-07-22' },
-  { name: 'Old laptop',            prefix: 'rlt_2b90…', scope: 'proxy', surface: '/v1/messages', profile: 'live',       used: '41d ago', reqs: '88.1k', created: '2026-03-02', revoked: true }
+  { name: 'MacBook — Claude Code', prefix: 'rlt_a91f…', scope: 'proxy', surfaces: ['/v1/messages'], profile: 'live',       used: '2m ago',  reqs: '12.4k', created: '2026-06-04' },
+  // Two surfaces on one row. Codex speaks /v1/responses and
+  // /v1/chat/completions, so a single-surface pin could only be
+  // expressed by giving it no scope at all.
+  { name: 'MacBook — Codex',       prefix: 'rlt_7c02…', scope: 'proxy', surfaces: ['/v1/responses', '/v1/chat/completions'], profile: 'live', used: '19m ago', reqs: '2.71k', created: '2026-06-04' },
+  { name: 'Gemini CLI',            prefix: 'rlt_be44…', scope: 'proxy', surfaces: ['/v1beta/models/*'],   profile: 'live',       used: '1h ago',  reqs: '486',   created: '2026-08-11' },
+  { name: 'CI — nightly evals',    prefix: 'rlt_0d18…', scope: 'proxy', surfaces: [],     profile: 'cost-first', used: '6h ago',  reqs: '3.10k', created: '2026-07-22' },
+  { name: 'Old laptop',            prefix: 'rlt_2b90…', scope: 'proxy', surfaces: ['/v1/messages'], profile: 'live',       used: '41d ago', reqs: '88.1k', created: '2026-03-02', revoked: true }
 ]
+
+/**
+ * The endpoint cell.
+ *
+ * One pill and a count, not every path: the column is 12rem and four
+ * paths would take the row to two lines. The whole list is a hover away.
+ */
+const scopeCell = (paths) => {
+  if (paths.length === 0) return '<span class="text-[12px] text-muted-foreground/50">all</span>'
+  const rest = paths.length - 1
+  return `<span class="inline-flex items-center gap-1" title="${paths.join(' · ')}">${surfacePill(paths[0])}${
+    rest > 0 ? `<span class="shrink-0 font-mono text-[12px] text-muted-foreground/70">+${rest}</span>` : ''
+  }</span>`
+}
 
 const scopeTone = { proxy: 'info' }
 
 // The requests and last-used columns are decision support for Revoke; the
 // full picture behind them is Activity → Usage, which breaks spend down by
 // exactly these rows.
+//
+// The row leads to the token's own page. Rotate and Revoke live there and
+// nowhere else — as row actions they sat one mis-aimed click from every
+// row of a table of live credentials, and the cost of that click is a CLI
+// failing with a 401 nobody can trace from the client end. Profile is off
+// this table for the same reason it is not a column here: it is a routing
+// detail, and the row exists to say which credentials are live and what
+// they cost.
 const tokenRow = (t) => `
-  <tr ${navTo('activity-usage.html')} class="border-t border-border/60 transition-colors hover:bg-muted/50 ${t.revoked ? 'opacity-45' : ''}">
+  <tr ${navTo('settings-access-token.html')} class="cursor-pointer border-t border-border/60 transition-colors hover:bg-muted/50 ${t.revoked ? 'opacity-45' : ''}">
     <td class="py-2.5 pl-6 pr-3">
       <div class="flex items-center gap-2">
         <span class="text-xs font-medium">${t.name}</span>
@@ -46,13 +71,12 @@ const tokenRow = (t) => `
       <div class="font-mono text-[12px] text-muted-foreground">${t.prefix}</div>
     </td>
     <td class="px-3">${pill(t.scope, scopeTone[t.scope])}</td>
-    <td class="px-3">${t.surface ? surfacePill(t.surface) : '<span class="text-[12px] text-muted-foreground/50">all</span>'}</td>
-    <td class="px-3 font-mono text-[12px] text-muted-foreground"><span ${navTo('routing.html')}>${t.profile ?? '—'}</span></td>
+    <td class="px-3">${scopeCell(t.surfaces)}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${t.reqs}</td>
     <td class="px-3 text-right text-[12px] text-muted-foreground">${t.used}</td>
     <td class="px-3 text-right text-[12px] text-muted-foreground">${t.created}</td>
-    <td class="py-2.5 pl-3 pr-6 text-right">
-      <button class="text-muted-foreground/60 hover:text-foreground"><i class="ri-more-2-fill text-sm"></i></button>
+    <td class="py-2.5 pl-3 pr-6">
+      <div class="flex justify-end text-muted-foreground/50"><i class="ri-arrow-right-s-line text-base"></i></div>
     </td>
   </tr>`
 
@@ -80,13 +104,12 @@ const issueField = (label, hint, value, kind) => `
 
 const tokens = `
   <table class="w-full table-fixed">
-    <colgroup><col><col class="w-20"><col class="w-40"><col class="w-24"><col class="w-20"><col class="w-20"><col class="w-24"><col class="w-12"></colgroup>
+    <colgroup><col><col class="w-20"><col class="w-48"><col class="w-20"><col class="w-20"><col class="w-24"><col class="w-10"></colgroup>
     <thead>
       <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         ${sortTh('Token', 'pl-6 pr-3')}
         ${sortTh('Scope', 'px-3')}
         ${sortTh('Endpoint', 'px-3')}
-        ${sortTh('Profile', 'px-3')}
         ${sortTh('Requests', 'px-3', 'right')}
         ${sortTh('Last used', 'px-3', 'right', true, 'desc')}
         ${sortTh('Created', 'px-3', 'right')}
@@ -216,9 +239,11 @@ document.getElementById('root').innerHTML = `
         <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
           <i class="ri-information-line mr-1 align-[-1px]"></i>
           Only a SHA-256 digest is stored — the plaintext is shown once, when the token is issued.
-          Scoping a token to an endpoint and a routing profile is how a client gets its own routing:
+          Scoping a token to endpoints and a routing profile is how a client gets its own routing:
           the CI token below is pinned to <span class="font-mono">cost-first</span> without touching
           anyone else's chain.
+          <span class="font-medium text-foreground">Open a row</span> to rotate it — a new secret on
+          the same row, keeping its name, scope and history — or to revoke it.
         </div>
       </div>
 
@@ -230,7 +255,26 @@ document.getElementById('root').innerHTML = `
            of it is hardcoded. -->
       <div class="border-t border-border">
         ${issueField('Name', 'How this client is identified in the list and in Activity.', 'MacBook — Claude Code', 'placeholder')}
-        ${issueField('Endpoint', 'Restrict the token to one inbound surface. Unset lets it call all of them.', '/v1/messages', 'select')}
+        <!-- Chips, not a select: the question is "which of these four",
+             not "which one", and the same control already asks it in
+             Routing -> Rules and in Personas. "All endpoints" is an
+             explicit chip rather than the absence of a choice, because
+             leaving a row blank to mean the broadest possible scope is
+             the kind of default nobody reads. -->
+        <div class="grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4">
+          <div>
+            <div class="text-xs font-medium">Endpoint</div>
+            <div class="mt-0.5 text-[12px] leading-snug text-muted-foreground">
+              Pick the endpoints this token may call. Choose several when one client speaks more than
+              one — Codex uses both <span class="font-mono">/v1/responses</span> and
+              <span class="font-mono">/v1/chat/completions</span>. All endpoints leaves it unrestricted.
+            </div>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            ${surfaceChip('all endpoints', false)}
+            ${SURFACES.map((s, i) => surfaceChip(s.path, i === 1 || i === 2)).join('')}
+          </div>
+        </div>
         ${issueField('Routing profile', 'Route this client’s traffic through a named profile. Unset follows the endpoint’s own routing.', 'follow the endpoint', 'select')}
         ${issueField('Expires', 'A bounded token limits the damage if it leaks. Revoke works either way.', '90 days', 'select')}
         <div class="flex items-center gap-2 border-t border-border/60 px-6 py-4">

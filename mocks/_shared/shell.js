@@ -682,7 +682,11 @@ const btn = (label, variant = 'ghost', icon = '', href = '') => {
   const variants = {
     primary: 'bg-primary text-primary-foreground hover:bg-primary/90',
     outline: 'border border-border hover:bg-muted/60',
-    ghost: 'hover:bg-muted/60 text-muted-foreground hover:text-foreground'
+    ghost: 'hover:bg-muted/60 text-muted-foreground hover:text-foreground',
+    // Outlined rather than filled: a solid red button is the loudest
+    // thing on any screen it lands on, and Revoke sits beside actions
+    // reached for far more often.
+    danger: 'border border-destructive/30 text-destructive hover:border-destructive/50 hover:bg-destructive/10'
   }
   const cls = `inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors ${variants[variant]}`
   const body = `${icon ? `<i class="${icon} text-sm leading-none"></i>` : ''}${label}`
