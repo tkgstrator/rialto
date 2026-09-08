@@ -12,14 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import {
-  type ActivityRequestLog,
-  downloadCsv,
-  fetchRequestLogs,
-  fetchUsageCost,
-  summariseUsageCost,
-  type WindowTotals
-} from '@/components/rialto/activity/data'
+import { fetchUsageCost, summariseUsageCost, type WindowTotals } from '@/components/rialto/activity/data'
 import { SessionsTable } from '@/components/rialto/activity/SessionsTable'
 import {
   ALL,
@@ -137,13 +130,9 @@ export function ActivitySessions() {
   const [totals, setTotals] = useState<WindowTotals | null>(null)
   const [totalSessions, setTotalSessions] = useState<number | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
-  // Frozen per load so every "last seen" label on the page is measured
-  // from the instant the data describes.
-  const [now, setNow] = useState(Date.now())
   const [surfaceFilter, setSurfaceFilter] = useState<string>(ALL)
   const [providerFilter, setProviderFilter] = useState<string>(ALL)
   const [modelFilter, setModelFilter] = useState<string>(ALL)
-  const [query, setQuery] = useState('')
   const [page, setPage] = useState(0)
   const [live, setLive] = useState(false)
   const surfaces = useSurfaces()
@@ -158,7 +147,6 @@ export function ActivitySessions() {
         setSessions(sessionRes.sessions)
         setTotalSessions(sessionRes.total)
         setTotals(summariseUsageCost(costRes))
-        setNow(Date.now())
         setError(null)
       })
       .catch((e: Error) => setError(e.message))
@@ -199,8 +187,8 @@ export function ActivitySessions() {
 
   const rows = useMemo(() => (sessions === null ? [] : enrich(sessions, surfaces.pathOf)), [sessions, surfaces.pathOf])
   const visible = useMemo(
-    () => applyFilters(rows, { surface: surfaceFilter, provider: providerFilter, model: modelFilter, query }),
-    [rows, surfaceFilter, providerFilter, modelFilter, query]
+    () => applyFilters(rows, { surface: surfaceFilter, provider: providerFilter, model: modelFilter }),
+    [rows, surfaceFilter, providerFilter, modelFilter]
   )
 
   const spec = rangeSpec(range)
@@ -223,23 +211,6 @@ export function ActivitySessions() {
       .archiveAllSessions()
       .then(load)
       .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
-  }
-
-  const exportCsv = () => {
-    downloadCsv('rialto-sessions.csv', [
-      ['session', 'endpoint', 'model', 'calls', 'input', 'output', 'cachePct', 'costUsd', 'lastAt'],
-      ...visible.map((r) => [
-        r.session.sessionId,
-        r.surfacePath === null ? '' : r.surfacePath,
-        r.model === null ? '' : r.model,
-        String(r.session.requestCount),
-        String(r.session.totalInputTokens),
-        String(r.session.totalOutputTokens),
-        String(r.session.avgCacheHitPct),
-        r.session.totalCostUsd === null ? '' : String(r.session.totalCostUsd),
-        r.session.lastAt
-      ])
-    ])
   }
 
   return (
@@ -296,20 +267,11 @@ export function ActivitySessions() {
           options={RANGES.map((r) => ({ id: r.id, label: t(r.labelKey) }))}
           onChange={setRange}
         />
-        <div className='ml-auto flex items-center gap-2'>
-          <div className='flex h-7 w-56 items-center gap-2 rounded-md border border-border px-2.5 text-xs text-muted-foreground'>
-            <i className='ri-search-line text-sm' />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t('activity.sessions.searchPlaceholder')}
-              className='min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground'
-            />
-          </div>
-          <RButton variant='ghost' icon='ri-download-line' onClick={exportCsv} disabled={visible.length === 0}>
-            {t('activity.sessions.export')}
-          </RButton>
-        </div>
+        {/* No search box and no Export. A text field here could only match
+            the session id and the prompt preview, and neither is on the
+            table any more; the three selects narrow by what the rows
+            actually show. Export stays on Requests, where a row is a
+            measurement someone takes away. */}
       </div>
 
       <StatsRow totals={totals} rangeLabel={rangeLabel} />

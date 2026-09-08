@@ -53,22 +53,19 @@ export function enrich(sessions: SessionSummary[], pathOf: (id: string | null) =
   }))
 }
 
-function matchesQuery(row: Enriched, query: string): boolean {
-  if (query === '') return true
-  const preview = row.session.preview
-  const haystack = preview === null ? row.session.sessionId : `${row.session.sessionId} ${preview}`
-  return haystack.toLowerCase().includes(query.toLowerCase())
-}
-
+// No text filter. The three selects narrow by things the row actually
+// shows; a free-text box could only match the session id and the prompt
+// preview, neither of which is on the table any more, so it was a field
+// that answered every query with "no rows" unless the operator already
+// knew the id.
 export function applyFilters(
   rows: Enriched[],
-  filters: { surface: string; provider: string; model: string; query: string }
+  filters: { surface: string; provider: string; model: string }
 ): Enriched[] {
   return rows.filter((row) => {
     if (filters.surface !== ALL && row.surfacePath !== filters.surface) return false
     if (filters.provider !== ALL && !row.session.providers.includes(filters.provider)) return false
-    if (filters.model !== ALL && !row.session.models.includes(filters.model)) return false
-    return matchesQuery(row, filters.query)
+    return filters.model === ALL || row.session.models.includes(filters.model)
   })
 }
 
