@@ -217,7 +217,7 @@ export function ChainTable({
         <col className='w-24' />
       </colgroup>
       <thead>
-        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
+        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2'>
           <th className='pl-6 pr-2 text-left font-medium'>#</th>
           <th className='px-2 text-left font-medium'>{t('routing.common.colTarget')}</th>
           <th className='px-2 text-left font-medium'>{t('routing.common.colTier')}</th>

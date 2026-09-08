@@ -55,7 +55,8 @@
       "laneAgent": "agent",
       "laneSubagent": "subagent",
       "laneUntracked": "untracked",
-      "note": "A <mono>429</mono> row is not an error the client saw — it is a failover step. The row that follows it serves the same turn from the next target in the chain. Subscription rows have no cost: the plan is already paid for."
+      "note": "A <mono>429</mono> row is not an error the client saw — it is a failover step, and the row after it serves the same turn from the next target in the chain. <strong>Failed upstream attempts are not recorded yet</strong>, though: the pipeline throws before the usage capture runs, so a count of 0 here does not mean no failover happened. Subscription rows are priced at list price — the plan is already paid for.",
+      "captureOff": "No requests recorded — request capture is switched off. Turn it on under <settings>Settings → Logging</settings>."
     },
     "sessions": {
       "title": "Activity",
@@ -108,14 +109,15 @@
       "upstreamCalls": "Upstream calls",
       "inputTokens": "Input tokens",
       "outputTokens": "Output tokens",
-      "cacheRead": "Cache read",
+      "cacheRead": "of which cache read",
       "cacheHit": "Cache hit",
       "cost": "Cost",
       "duration": "Duration",
       "cacheEfficiency": "Cache efficiency",
       "routingTrace": "Routing trace",
       "showAllCalls": "Show all {{calls}} calls",
-      "showFewer": "Show fewer"
+      "showFewer": "Show fewer",
+      "chars": "{{n}} chars"
     },
     "logs": {
       "title": "Logs",
@@ -593,7 +595,7 @@
       "colStore": "Store",
       "colRows": "Rows",
       "colSize": "Size",
-      "colPruneOlderThan": "Prune older than",
+      "colKeep": "Keep",
       "unbounded": "unbounded",
       "pruneNow": "Prune now",
       "pruneOlderThanLabel": "Prune {{store}} older than",

@@ -55,7 +55,8 @@
       "laneAgent": "agent",
       "laneSubagent": "subagent",
       "laneUntracked": "未记录",
-      "note": "<mono>429</mono> 行并不是客户端看到的错误，而是一次故障转移。紧随其后的那一行由链路中的下一个 target 处理同一轮对话。订阅制的行没有费用，因为套餐已经付过了。"
+      "note": "<mono>429</mono> 行不是客户端看到的错误，而是一次故障转移步骤，紧随其后的行会用链路中的下一个目标处理同一轮请求。但是<strong>上游失败尚未被记录</strong> — 管道在用量采集之前就抛出异常，因此这里为 0 并不代表没有发生故障转移。订阅行按目录价计算 — 套餐费用已另行支付。",
+      "captureOff": "没有记录任何请求 — 请求采集已关闭。请在<settings>设置 → 日志</settings>中开启。"
     },
     "sessions": {
       "title": "活动",
@@ -108,14 +109,15 @@
       "upstreamCalls": "上游调用",
       "inputTokens": "输入 token",
       "outputTokens": "输出 token",
-      "cacheRead": "缓存读取",
+      "cacheRead": "其中缓存读取",
       "cacheHit": "缓存命中",
       "cost": "费用",
       "duration": "时长",
       "cacheEfficiency": "缓存效率",
       "routingTrace": "路由轨迹",
       "showAllCalls": "显示全部 {{calls}} 次调用",
-      "showFewer": "收起"
+      "showFewer": "收起",
+      "chars": "{{n}} 字符"
     },
     "logs": {
       "title": "日志",
@@ -593,7 +595,7 @@
       "colStore": "存储",
       "colRows": "行数",
       "colSize": "大小",
-      "colPruneOlderThan": "清理早于",
+      "colKeep": "保留",
       "unbounded": "无上限",
       "pruneNow": "立即清理",
       "pruneOlderThanLabel": "清理 {{store}} 中早于",

@@ -55,7 +55,8 @@
       "laneAgent": "agent",
       "laneSubagent": "subagent",
       "laneUntracked": "未記録",
-      "note": "<mono>429</mono> の行はクライアントに返ったエラーではなく、フェイルオーバーの一段階です。直後の行がチェーンの次のターゲットで同じターンを処理しています。サブスクリプション経由の行にコストが付かないのは、料金が定額で支払い済みだからです。"
+      "note": "<mono>429</mono> の行はクライアントが受け取ったエラーではなく、フェイルオーバーの 1 ステップです。直後の行が同じターンをチェーンの次の送信先で処理しています。ただし<strong>上流での失敗はまだ記録されません</strong> — 使用状況の記録より先にパイプラインが例外を投げるため、ここが 0 でもフェイルオーバーが起きていないことを意味しません。サブスクリプションの行は定価で計算されています（プランの料金は別途支払い済みです）。",
+      "captureOff": "リクエストが記録されていません — リクエストのキャプチャが無効になっています。<settings>設定 → ログ</settings>で有効にしてください。"
     },
     "sessions": {
       "title": "アクティビティ",
@@ -108,14 +109,15 @@
       "upstreamCalls": "上流への呼び出し",
       "inputTokens": "入力トークン",
       "outputTokens": "出力トークン",
-      "cacheRead": "キャッシュ読み取り",
+      "cacheRead": "うちキャッシュ読み取り",
       "cacheHit": "キャッシュヒット",
       "cost": "コスト",
       "duration": "所要時間",
       "cacheEfficiency": "キャッシュ効率",
       "routingTrace": "ルーティングの経路",
       "showAllCalls": "{{calls}} 件すべてを表示",
-      "showFewer": "表示を減らす"
+      "showFewer": "表示を減らす",
+      "chars": "{{n}} 文字"
     },
     "logs": {
       "title": "ログ",
@@ -593,7 +595,7 @@
       "colStore": "ストア",
       "colRows": "行数",
       "colSize": "サイズ",
-      "colPruneOlderThan": "削除する古さ",
+      "colKeep": "保持",
       "unbounded": "無制限",
       "pruneNow": "今すぐ削除",
       "pruneOlderThanLabel": "{{store}} で削除する古さ",

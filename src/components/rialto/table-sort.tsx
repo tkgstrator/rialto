@@ -136,10 +136,14 @@ export function SortTh<K extends string>({
   // right-aligned column pushed the label inward by the caret's width
   // while the cell below stayed flush, which reads as the header being
   // misaligned with its own column.
+  // `leading-none` on both the caret and the button: the icon font's line
+  // box is taller than the 12px label's, so a sortable header grew 18px
+  // past a plain one — three different header heights across the app for
+  // markup that was otherwise identical.
   const caret = (
     <i
       className={cn(
-        'text-[11px]',
+        'text-[11px] leading-none',
         active ? (sort.dir === 'asc' ? 'ri-arrow-up-s-fill' : 'ri-arrow-down-s-fill') : 'ri-arrow-up-s-fill opacity-0'
       )}
     />
@@ -150,7 +154,7 @@ export function SortTh<K extends string>({
         type='button'
         onClick={() => sort.toggle(sortKey)}
         className={cn(
-          'inline-flex w-full items-center gap-1 font-medium uppercase tracking-wider transition-colors hover:text-foreground',
+          'inline-flex w-full items-center gap-1 font-medium uppercase leading-none tracking-wider transition-colors hover:text-foreground',
           justify,
           active ? 'text-foreground' : ''
         )}

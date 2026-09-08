@@ -111,7 +111,7 @@ function Head({
   const { t } = useTranslation()
   return (
     <thead>
-      <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
+      <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2'>
         <SortTh sortKey='name' sort={sort} className='pl-6 pr-2 text-left'>
           {t('providers.models.colModel')}
         </SortTh>

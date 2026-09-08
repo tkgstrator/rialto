@@ -29,6 +29,10 @@ export interface RequestLogItem {
   // slug). Finer than inboundType: /v1/chat/completions and
   // /v1/responses are both 'openai'. Null on pre-migration rows.
   surface: string | null
+  // Which issued AccessToken presented itself. The server has always sent
+  // this; the type omitted it, so the Token column fell back to the
+  // surface's client label and every /v1/messages row read "Claude Code".
+  accessTokenId: string | null
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number

@@ -48,11 +48,23 @@ const sessionSortValue = (row: Enriched, key: SessionSortKey, now: number): Sort
   if (key === 'turns') return session.requestCount
   if (key === 'input') return session.totalInputTokens
   if (key === 'output') return session.totalOutputTokens
-  if (key === 'cache') return session.avgCacheHitPct
+  if (key === 'cache') return cacheHitPct(session)
   if (key === 'cost') return session.totalCostUsd
   const then = Date.parse(session.lastAt)
   return Number.isNaN(then) ? null : now - then
 }
+
+/**
+ * Share of this session's input tokens that came from cache.
+ *
+ * Token-weighted, matching the session detail. The server also ships
+ * `avgCacheHitPct`, an unweighted mean of the per-request percentages —
+ * that let a handful of tiny calls outvote the large ones, so the same
+ * session read 45% in this table and 65% on its own page, with nothing
+ * saying which was wrong.
+ */
+const cacheHitPct = (session: SessionSummary): number =>
+  session.totalInputTokens === 0 ? 0 : Math.round((session.totalCacheReadTokens / session.totalInputTokens) * 100)
 
 function SessionRow({ row, now }: { row: Enriched; now: number }) {
   const { t } = useTranslation()
@@ -72,9 +84,7 @@ function SessionRow({ row, now }: { row: Enriched; now: number }) {
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{session.requestCount}</td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtTokens(session.totalInputTokens)}</td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtTokens(session.totalOutputTokens)}</td>
-      <td className='px-3 text-right font-mono text-xs tabular-nums text-muted-foreground'>
-        {session.avgCacheHitPct}%
-      </td>
+      <td className='px-3 text-right font-mono text-xs tabular-nums text-muted-foreground'>{cacheHitPct(session)}%</td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCost(session.totalCostUsd)}</td>
       <td className='px-3'>
         {row.trend === null ? null : (
@@ -108,7 +118,7 @@ export function SessionsTable({ rows, now }: { rows: Enriched[]; now: number }) 
         <col className='w-16' />
       </colgroup>
       <thead>
-        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
+        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2'>
           <SortTh sortKey='session' sort={sort} className='pl-6 pr-3 text-left font-medium'>
             {t('activity.sessions.colSession')}
           </SortTh>

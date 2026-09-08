@@ -66,6 +66,7 @@ function toTurn(message: SessionMessageItem): Turn {
 }
 
 function TurnRow({ turn }: { turn: Turn }) {
+  const { t } = useTranslation()
   const isUser = turn.role === 'user'
   return (
     <div
@@ -88,7 +89,9 @@ function TurnRow({ turn }: { turn: Turn }) {
             {tool}
           </Pill>
         ))}
-        <span className='ml-auto font-mono text-[12px] tabular-nums text-muted-foreground'>{fmtChars(turn.chars)}</span>
+        <span className='ml-auto font-mono text-[12px] tabular-nums text-muted-foreground'>
+          {t('activity.session.chars', { n: fmtChars(turn.chars) })}
+        </span>
       </div>
       {turn.text === '' ? null : <p className='mt-1.5 whitespace-pre-wrap text-xs leading-relaxed'>{turn.text}</p>}
     </div>
@@ -342,9 +345,11 @@ export function ActivitySessionDetail() {
                 <RButton variant='ghost' icon='ri-code-line' onClick={downloadRaw}>
                   {t('activity.session.rawJson')}
                 </RButton>
-                <RButton variant='ghost' icon='ri-archive-line' disabled title={t('activity.session.archiveDisabled')}>
-                  {t('activity.session.archive')}
-                </RButton>
+                {/* No Archive button: there is no per-session archive route
+                    (only POST /request-logs/sessions/archive, which takes all
+                    of them), so this was permanently disabled behind a tooltip
+                    blaming the session for "still receiving calls" — shown
+                    just the same on one last seen three days ago. */}
               </div>
             </div>
             {data.nextCursor === null ? null : (

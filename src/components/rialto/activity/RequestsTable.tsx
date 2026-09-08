@@ -11,6 +11,7 @@
 import type { TFunction } from 'i18next'
 import { type ReactNode, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { LANE_KEYS, type Row } from '@/components/rialto/activity/requests-rows'
 import { DASH, StatusPill, SurfaceCell } from '@/components/rialto/activity/shared'
 import { Pill } from '@/components/rialto/primitives'
@@ -87,14 +88,32 @@ function ModelsCell({ row }: { row: Row }) {
   )
 }
 
+/**
+ * Arrival time, dated only when it needs to be.
+ *
+ * A bare HH:mm:ss is unambiguous while the range is an hour and useless
+ * once it is seven days — two rows both reading 14:03:02 gave no way to
+ * tell today from Tuesday. The date appears only when the row is not
+ * from today, and the full local instant with its UTC offset lives in
+ * the tooltip, because a time pasted into a thread with someone in
+ * another timezone needs to carry one.
+ */
+function TimeCell({ iso }: { iso: string }) {
+  const at = dayjs(iso)
+  const sameDay = at.isSame(dayjs(), 'day')
+  return <span title={at.format('YYYY-MM-DD HH:mm:ss Z')}>{at.format(sameDay ? 'HH:mm:ss' : 'MM-DD HH:mm')}</span>
+}
+
 export const COLUMNS: readonly ColumnDef[] = [
   {
     id: 'time',
     labelKey: 'activity.requests.colTime',
-    width: 'w-20',
+    // Wide enough for the dated form ("09-07 06:43") on one line; at w-20
+    // it wrapped and every row in a multi-day range grew a second line.
+    width: 'w-28',
     align: 'left',
-    cellClass: 'font-mono text-[12px] tabular-nums text-muted-foreground',
-    render: (row) => dayjs(row.log.createdAt).format('HH:mm:ss'),
+    cellClass: 'whitespace-nowrap font-mono text-[12px] tabular-nums text-muted-foreground',
+    render: (row) => <TimeCell iso={row.log.createdAt} />,
     // The cell abbreviates the arrival instant to a clock, but the column
     // means the instant: over a 7d window, ordering the printed HH:mm:ss
     // would interleave the days.
@@ -219,8 +238,15 @@ const edgeClass = (index: number, count: number, cell: boolean): string => {
 
 function RequestRow({ row, columns }: { row: Row; columns: readonly ColumnDef[] }) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
+  // "This request cost $0.13 — which conversation was that?" had no answer
+  // from here: the session id is on every row and was rendered nowhere, so
+  // there was not even a value to paste into the Sessions search.
   return (
-    <tr className='border-t border-border/60 transition-colors hover:bg-muted/50'>
+    <tr
+      className='cursor-pointer border-t border-border/60 transition-colors hover:bg-muted/50'
+      onClick={() => navigate(`/activity/sessions/${encodeURIComponent(row.log.sessionId)}`)}
+    >
       {columns.map((col, i) => (
         <td
           key={col.id}
@@ -258,7 +284,7 @@ export function RequestsTable({ rows, columns }: { rows: Row[]; columns: readonl
         ))}
       </colgroup>
       <thead>
-        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
+        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2'>
           {columns.map((col, i) => {
             const className = cn(
               edgeClass(i, columns.length, false),

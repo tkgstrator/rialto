@@ -116,7 +116,7 @@ function SurfaceTable({ data }: { data: OverviewResponse }) {
         <col className='w-24' />
       </colgroup>
       <thead>
-        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
+        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2'>
           <th className='pl-6 pr-3 text-left font-medium'>{t('overview.colSurface')}</th>
           <th className='px-3 text-left font-medium'>{t('overview.colRouting')}</th>
           <th className='px-3 text-right font-medium'>{t('overview.colRequests')}</th>
@@ -190,7 +190,7 @@ function SessionTable({ data, now }: { data: OverviewResponse; now: number }) {
         <col className='w-16' />
       </colgroup>
       <thead>
-        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
+        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2'>
           <th className='pl-6 pr-3 text-left font-medium'>{t('activity.sessions.colSession')}</th>
           <th className='px-3 text-left font-medium'>{t('activity.sessions.colEndpoint')}</th>
           <th className='px-3 text-left font-medium'>{t('activity.sessions.colModel')}</th>

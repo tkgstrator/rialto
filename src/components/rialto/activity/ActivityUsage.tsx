@@ -417,7 +417,7 @@ export function ActivityUsage() {
             <col className='w-28' />
           </colgroup>
           <thead>
-            <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
+            <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2'>
               <th className='pl-6 pr-3 text-left font-medium'>{t('settings.access.colToken')}</th>
               <th className='px-3 text-left font-medium'>{t('settings.access.colEndpoint')}</th>
               <th className='px-3 text-right font-medium'>{t('settings.access.colRequests')}</th>

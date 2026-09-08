@@ -204,7 +204,7 @@ export function TokenTable({
         <col className='w-28' />
       </colgroup>
       <thead>
-        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
+        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2'>
           <SortTh sortKey='name' sort={sort} className='pl-6 pr-3 text-left'>
             {t('settings.access.colToken')}
           </SortTh>

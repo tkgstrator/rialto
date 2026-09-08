@@ -8,6 +8,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
+import { useConfig } from '@/components/ConfigProvider'
 import { type ActivityRequestLog, downloadCsv, fetchRequestLogs, percentile } from '@/components/rialto/activity/data'
 import { COLUMNS, type ColumnId, ColumnMenu, RequestsTable } from '@/components/rialto/activity/RequestsTable'
 import {
@@ -24,11 +26,20 @@ import { useActivityCounts } from '@/components/rialto/activity/use-activity-cou
 import { useSurfaces } from '@/components/rialto/activity/use-surfaces'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
+import { api } from '@/lib/api'
 import { fmtCount, fmtLatency, fmtRate } from '@/lib/rialto/format'
 
 // The endpoint has no time filter, so the page is the newest N calls and
 // every number on the screen describes that page.
 const PAGE_SIZE = 200
+
+/** The caller's name: the issued token when the row names one, else the
+ *  surface's client label. */
+const tokenNameOf = (id: string | null, names: Map<string, string>, fallback: string | null): string | null => {
+  if (id === null) return fallback
+  const name = names.get(id)
+  return name === undefined ? fallback : name
+}
 
 // One refetch per burst: a busy stream fires an event per completed call.
 const LIVE_REFRESH_MS = 2000
@@ -103,6 +114,26 @@ export function ActivityRequests() {
   })
   const throttle = useRef<ReturnType<typeof setTimeout> | null>(null)
   const surfaces = useSurfaces()
+  // Whether the archive this screen reads is even being written.
+  const { config } = useConfig()
+  const captureOff = config !== null && config.CAPTURE_REQUESTS === false
+  // id -> name for the issued tokens, fetched once. A revoked or deleted
+  // token leaves rows behind, so a missing id falls back rather than
+  // blanking the column.
+  const [tokenNames, setTokenNames] = useState<Map<string, string>>(new Map())
+
+  useEffect(() => {
+    let mounted = true
+    api
+      .getAccessTokens()
+      .then((res) => {
+        if (mounted) setTokenNames(new Map(res.tokens.map((tk) => [tk.id, tk.name])))
+      })
+      .catch(() => {})
+    return () => {
+      mounted = false
+    }
+  }, [])
   const _tabCounts = useActivityCounts()
 
   const load = useCallback(() => {
@@ -149,13 +180,18 @@ export function ActivityRequests() {
     return page.items.map((log) => ({
       log,
       surfacePath: surfaces.pathOf(log.surface),
-      client: surfaces.clientOf(log.surface),
+      // The issued token that actually made the call, when the row names
+      // one. Falling straight through to the surface's client label made
+      // this column a copy of Surface — every /v1/messages row read
+      // "Claude Code" — so "which of my three tokens is spending this?"
+      // could not be asked, although the row had the answer all along.
+      client: tokenNameOf(log.accessTokenId, tokenNames, surfaces.clientOf(log.surface)),
       lane: lane(log.isSubagent),
       // No Rule entity exists yet; the scenario IS the routing decision
       // that matched, so it fills this column until rules are persisted.
       rule: log.scenario
     }))
-  }, [page, surfaces.pathOf, surfaces.clientOf])
+  }, [page, surfaces.pathOf, surfaces.clientOf, tokenNames])
 
   const visible = useMemo(() => applyFilters(rows, filters, now), [rows, filters, now])
   const counts = useMemo(() => summarise(visible), [visible])
@@ -268,14 +304,28 @@ export function ActivityRequests() {
       ) : page === null ? (
         <ScreenMessage>{t('common.loading')}</ScreenMessage>
       ) : visible.length === 0 ? (
-        <ScreenMessage>{t('activity.requests.empty')}</ScreenMessage>
+        <ScreenMessage>
+          {/* An empty table because capture is switched off looks exactly
+              like a broken screen. Name the switch and link to it. */}
+          {captureOff ? (
+            <Trans
+              i18nKey='activity.requests.captureOff'
+              components={{ settings: <Link to='/settings/logging' className='underline' /> }}
+            />
+          ) : (
+            t('activity.requests.empty')
+          )}
+        </ScreenMessage>
       ) : (
         <RequestsTable rows={visible} columns={columns} />
       )}
 
       <div className='px-6 py-4'>
         <NoteBox>
-          <Trans i18nKey='activity.requests.note' components={{ mono: <span className='font-mono' /> }} />
+          <Trans
+            i18nKey='activity.requests.note'
+            components={{ mono: <span className='font-mono' />, strong: <span className='font-medium' /> }}
+          />
         </NoteBox>
       </div>
       <div className='h-6' />
