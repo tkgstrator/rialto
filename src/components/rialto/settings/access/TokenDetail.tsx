@@ -30,7 +30,7 @@ import { toast } from 'sonner'
 import { useSurfaces } from '@/components/rialto/activity/use-surfaces'
 import { Pill, RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
-import { IssuedTokenPanel } from '@/components/rialto/settings/access/IssuedTokenPanel'
+import { IssuedTokenDialog } from '@/components/rialto/settings/access/IssuedTokenDialog'
 import { ANY, Picker, SurfacePicker, sameScope } from '@/components/rialto/settings/access/pickers'
 import { SettingsField } from '@/components/rialto/settings/SettingsLayout'
 import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
@@ -281,19 +281,6 @@ export function TokenDetail() {
       <div className='min-w-0'>
         <DetailHeader token={token} state={state} busy={busy} onRotate={rotate} onRevoke={revoke} onDelete={remove} />
 
-        {revealed === null ? null : (
-          <IssuedTokenPanel
-            plaintext={revealed.plaintext}
-            name={token.name}
-            scope={revealed.scope}
-            profile={revealed.profile}
-            expiry={revealed.expiry}
-            titleKey='settings.access.rotatedTitle'
-            bodyKey='settings.access.rotatedBody'
-            onDone={() => setRevealed(null)}
-          />
-        )}
-
         {/* Editable only while the token can actually be used: changing
             the scope of a revoked or expired row alters nothing about
             what reaches the proxy, so the controls would be theatre. */}
@@ -403,6 +390,24 @@ export function TokenDetail() {
           </div>
         </div>
         <div className='h-8' />
+
+        {/* A modal over this page, not a panel inserted into it: the
+            rotated secret is shown once, and a panel that pushes the
+            page down can be scrolled past. It is the same dialog the
+            issue flow ends on — the rules are identical, only the copy
+            says "rotated" rather than "issued". */}
+        {revealed === null ? null : (
+          <IssuedTokenDialog
+            plaintext={revealed.plaintext}
+            name={token.name}
+            scope={revealed.scope}
+            profile={revealed.profile}
+            expiry={revealed.expiry}
+            titleKey='settings.access.rotatedTitle'
+            bodyKey='settings.access.rotatedBody'
+            onDone={() => setRevealed(null)}
+          />
+        )}
       </div>
     </Screen>
   )

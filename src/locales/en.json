@@ -612,6 +612,7 @@
       "listFailed": "Could not list access tokens: {{message}}",
       "issueFailed": "Could not issue the token: {{message}}",
       "issueToken": "Issue token",
+      "issueTitle": "Issue access token",
       "issueName": "Name",
       "issueNameHint": "How this client is identified in the list and in Activity.",
       "issueNamePlaceholder": "MacBook — Claude Code",

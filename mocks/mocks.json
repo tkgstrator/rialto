@@ -66,7 +66,7 @@
       "mock": "access-tokens.html",
       "route": "/access-tokens",
       "group": "Access tokens",
-      "note": "Per-client credentials for /v1/*. Top level rather than under Settings: Providers is outbound, this is the same question inbound, and a list carrying per-token spend, rotation and revocation is operations rather than configuration. The issue form and the one-time reveal are in access-token-issue.html."
+      "note": "Per-client credentials for /v1/*. Top level rather than under Settings: Providers is outbound, this is the same question inbound, and a list carrying per-token spend, rotation and revocation is operations rather than configuration. Issuing happens in a dialog over this list — access-token-issue.html and access-token-issued.html are its two steps."
     },
     {
       "name": "access-token",
@@ -80,7 +80,14 @@
       "mock": "access-token-issue.html",
       "route": null,
       "group": "Access tokens",
-      "note": "The two states of issuing: the form, and the one-time reveal that replaces it. Route is null because both are states of /access-tokens rather than paths of their own — the screen opens on the list, and drawing the form there put a creation form in front of anyone who came to read the list."
+      "note": "Step 1 of issuing: the form, in a dialog over the list. A dialog rather than an inline panel because naming a token is decided against the ones that already exist, and the inline form pushed that list off the page to ask. Route is null because it is a state of /access-tokens rather than a path of its own."
+    },
+    {
+      "name": "access-token-issued",
+      "mock": "access-token-issued.html",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Step 2 of issuing: the one-time reveal, in the same dialog. The panel swaps its contents rather than opening a second one — closing it is the last chance to copy the plaintext, so it happens where the operator is already looking. Route is null for the same reason as step 1."
     },
     {
       "name": "activity",

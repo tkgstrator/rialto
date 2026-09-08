@@ -612,6 +612,7 @@
       "listFailed": "无法列出访问令牌：{{message}}",
       "issueFailed": "无法签发令牌：{{message}}",
       "issueToken": "签发令牌",
+      "issueTitle": "签发访问令牌",
       "issueName": "名称",
       "issueNameHint": "该客户端在列表和活动中的标识。",
       "issueNamePlaceholder": "MacBook — Claude Code",

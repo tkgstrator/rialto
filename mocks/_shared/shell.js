@@ -258,6 +258,38 @@ const section = (title, body, meta = '') => `
     ${body}
   </section>`
 
+/**
+ * Modal over the screen, mirroring `components/ui/dialog.tsx`.
+ *
+ * Every class here is copied from DialogOverlay / DialogContent /
+ * DialogHeader so the mock and the shadcn dialog it stands for cannot
+ * drift: a `bg-black/10` backdrop-blurred overlay, and a `sm:max-w-md`
+ * popover panel with `rounded-xl`, `p-6`, `gap-6`, a ring rather than a
+ * border, and the ghost `icon-sm` close button at `top-4 right-4`.
+ *
+ * `fixed`, not `absolute`, because the real one portals to the body: the
+ * overlay covers the sidebar too. Asking a question over the whole app is
+ * the point — it is what says the rest of the screen is not what you are
+ * answering right now.
+ *
+ * A dialog is right when the task is discrete, cancellable, and decided
+ * against what is already on screen. Naming a token is exactly that:
+ * "MacBook — Claude Code" being taken is the thing you need to see while
+ * typing, and an inline form pushed the list that says so off the page.
+ */
+const dialog = (title, body, footer = '') => `
+  <div class="fixed inset-0 isolate z-50 bg-black/10 supports-backdrop-filter:backdrop-blur-xs"></div>
+  <div class="fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100vh-4rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-6 overflow-y-auto rounded-xl bg-popover p-6 text-sm text-popover-foreground ring-1 ring-foreground/10 sm:max-w-md">
+    <div class="flex flex-col gap-2">
+      <h2 class="font-heading text-sm font-medium leading-none">${title}</h2>
+    </div>
+    ${body}
+    ${footer ? `<div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">${footer}</div>` : ''}
+    <button class="absolute top-4 right-4 inline-flex size-8 shrink-0 items-center justify-center rounded-[min(var(--radius-md),10px)] border border-transparent text-sm transition-all hover:bg-muted hover:text-foreground">
+      <i class="ri-close-line text-base leading-none"></i>
+    </button>
+  </div>`
+
 /** Small status pill. tone: ok | warn | bad | mute | info */
 const pill = (text, tone = 'mute') => {
   const tones = {
@@ -325,6 +357,101 @@ const surfaceChip = (path, on) => `
   }">
     ${on ? '<i class="ri-check-line text-xs"></i>' : ''}${path}
   </button>`
+
+// ─── Access tokens ────────────────────────────────────────────────────
+// Shared because three screens draw this same list: the list itself, and
+// the two states of issuing, both of which keep the table on screen
+// behind a dialog. Three copies of a table is three chances for them to
+// disagree about what a token row says.
+
+/**
+ * Only the sha256 is stored; `prefix` is a separate column purely so a
+ * row is identifiable in the list. The plaintext is shown once, at
+ * creation, and never again.
+ *
+ * Endpoint is the interesting column: scoping a token to the inbound
+ * surfaces it may call turns "issue another key" into per-client routing,
+ * without inventing a second config axis.
+ *
+ * Cost and Expires rather than Scope and Created. Scope was a `proxy`
+ * pill on every row — a column that can only say one thing. Created is
+ * not a decision; Expires is, and Cost 30d is the number an operator
+ * opens this screen for.
+ */
+const ACCESS_TOKENS = [
+  { name: 'MacBook — Claude Code', prefix: 'rialto_a91f4c', surfaces: ['/v1/messages'], used: '2m ago', reqs: '12.4k', cost: '$41.2', expires: 'never' },
+  // Two surfaces on one row. Codex speaks /v1/responses and
+  // /v1/chat/completions, so a single-surface pin could only be expressed
+  // by giving it no scope at all.
+  { name: 'MacBook — Codex', prefix: 'rialto_7c02b8', surfaces: ['/v1/responses', '/v1/chat/completions'], used: '19m ago', reqs: '2.71k', cost: '$18.6', expires: 'never' },
+  { name: 'Gemini CLI', prefix: 'rialto_be44d1', surfaces: ['/v1beta/models/*'], used: '1h ago', reqs: '486', cost: '–', expires: '2026-12-01' },
+  { name: 'CI — nightly evals', prefix: 'rialto_0d18e9', surfaces: [], used: '6h ago', reqs: '3.10k', cost: '$9.14', expires: '2026-10-08' },
+  { name: 'Old laptop', prefix: 'rialto_2b9047', surfaces: ['/v1/messages'], used: '41d ago', reqs: '88.1k', cost: '–', expires: 'never', revoked: true }
+]
+
+/**
+ * The endpoint cell.
+ *
+ * One pill and a count, not every path: the column is 12rem and four
+ * paths would take the row to two lines. The whole list is a hover away.
+ */
+const tokenScopeCell = (paths) => {
+  if (paths.length === 0) return '<span class="text-[12px] text-muted-foreground/50">all</span>'
+  const rest = paths.length - 1
+  return `<span class="inline-flex items-center gap-1" title="${paths.join(' · ')}">${surfacePill(paths[0])}${
+    rest > 0 ? `<span class="shrink-0 font-mono text-[12px] text-muted-foreground/70">+${rest}</span>` : ''
+  }</span>`
+}
+
+/**
+ * One token row. The requests and last-used columns are decision support
+ * for Revoke; the full picture behind them is Activity → Usage, which
+ * breaks spend down by exactly these rows.
+ *
+ * The row leads to the token's own page. Rotate and Revoke live there and
+ * nowhere else — as row actions they sat one mis-aimed click from every
+ * row of a table of live credentials, and the cost of that click is a CLI
+ * failing with a 401 nobody can trace from the client end. Profile is off
+ * this table for the same reason it is not a column here: it is a routing
+ * detail, and the row exists to say which credentials are live and what
+ * they cost.
+ */
+const tokenRow = (t) => `
+  <tr ${navTo('access-token.html')} class="cursor-pointer border-t border-border/60 transition-colors hover:bg-muted/50 ${t.revoked ? 'opacity-45' : ''}">
+    <td class="py-2.5 pl-6 pr-3">
+      <div class="flex items-center gap-2">
+        <span class="text-xs font-medium">${t.name}</span>
+        ${t.revoked ? pill('revoked', 'bad') : ''}
+      </div>
+      <div class="font-mono text-[12px] text-muted-foreground">${t.prefix}</div>
+    </td>
+    <td class="px-3">${tokenScopeCell(t.surfaces)}</td>
+    <td class="px-3 text-right font-mono text-xs tabular-nums">${t.reqs}</td>
+    <td class="px-3 text-right font-mono text-xs tabular-nums">${t.cost}</td>
+    <td class="px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${t.used}</td>
+    <td class="px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${t.expires}</td>
+    <td class="py-2.5 pl-3 pr-6">
+      <div class="flex justify-end text-muted-foreground/50"><i class="ri-arrow-right-s-line text-base"></i></div>
+    </td>
+  </tr>`
+
+/** The live tokens, as the list screen and both issuing states draw them. */
+const tokenTable = () => `
+  <table class="w-full table-fixed">
+    <colgroup><col><col class="w-48"><col class="w-20"><col class="w-28"><col class="w-28"><col class="w-24"><col class="w-10"></colgroup>
+    <thead>
+      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
+        ${sortTh('Token', 'pl-6 pr-3')}
+        ${sortTh('Endpoint', 'px-3')}
+        ${sortTh('Requests', 'px-3', 'right')}
+        ${sortTh('Cost 30d', 'px-3', 'right')}
+        ${sortTh('Last used', 'px-3', 'right', true, 'desc')}
+        ${sortTh('Expires', 'px-3', 'right')}
+        <th class="pl-3 pr-6"></th>
+      </tr>
+    </thead>
+    <tbody>${ACCESS_TOKENS.filter((t) => !t.revoked).map(tokenRow).join('')}</tbody>
+  </table>`
 
 /**
  * Tier cell for the model tables — editable, not a label.
@@ -837,10 +964,10 @@ const providerRail = (activeId) => `
   <div class="p-4">${btn('Add provider', 'outline', 'ri-add-line', 'providers-connect.html')}</div>`
 
   global.Shell = {
-    renderShell, ROW, section, pill, mono, meter, btn, pager,
+    renderShell, ROW, section, dialog, pill, mono, meter, btn, pager,
     tabs, railItem, SETTINGS_RAIL,
     navTo, activityTabs, providerRail, tierCell, effortCell, sortTh, toast,
-    SURFACES, surfacePill, surfaceChip,
+    SURFACES, surfacePill, surfaceChip, ACCESS_TOKENS, tokenTable,
     toggleTheme, currentTheme
   }
 })(window)

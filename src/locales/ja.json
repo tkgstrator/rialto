@@ -612,6 +612,7 @@
       "listFailed": "アクセストークンを一覧できませんでした: {{message}}",
       "issueFailed": "トークンを発行できませんでした: {{message}}",
       "issueToken": "トークンを発行",
+      "issueTitle": "アクセストークンを発行",
       "issueName": "名前",
       "issueNameHint": "一覧とアクティビティでこのクライアントを識別する名前です。",
       "issueNamePlaceholder": "MacBook — Claude Code",

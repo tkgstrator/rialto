@@ -13,98 +13,14 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, btn, surfacePill, navTo, sortTh } = window.Shell
+const { renderShell, btn, tokenTable } = window.Shell
 
+// The list is `tokenTable()` in _shared/shell.js, because the two states
+// of issuing draw it too — behind a dialog, unchanged. The issue form and
+// the one-time reveal live in access-token-issue.html and
+// access-token-issued.html; they are states this screen enters, not what
+// it opens on.
 
-// Only the sha256 is stored; `prefix` is a separate column purely so a
-// row is identifiable in the list. The plaintext is shown once, at
-// creation, and never again.
-//
-// Endpoint is the interesting column: scoping a token to the inbound
-// surfaces it may call turns "issue another key" into per-client
-// routing, without inventing a second config axis.
-//
-// Cost and Expires rather than Scope and Created. Scope was a `proxy`
-// pill on every row — a column that can only say one thing. Created is
-// not a decision; Expires is, and Cost 30d is the number an operator
-// opens this screen for.
-const TOKENS = [
-  { name: 'MacBook — Claude Code', prefix: 'rlt_a91f…', surfaces: ['/v1/messages'], used: '2m ago',  reqs: '12.4k', cost: '$41.2', expires: 'never' },
-  // Two surfaces on one row. Codex speaks /v1/responses and
-  // /v1/chat/completions, so a single-surface pin could only be
-  // expressed by giving it no scope at all.
-  { name: 'MacBook — Codex',       prefix: 'rlt_7c02…', surfaces: ['/v1/responses', '/v1/chat/completions'], used: '19m ago', reqs: '2.71k', cost: '$18.6', expires: 'never' },
-  { name: 'Gemini CLI',            prefix: 'rlt_be44…', surfaces: ['/v1beta/models/*'], used: '1h ago',  reqs: '486',   cost: '–',     expires: '2026-12-01' },
-  { name: 'CI — nightly evals',    prefix: 'rlt_0d18…', surfaces: [],                   used: '6h ago',  reqs: '3.10k', cost: '$9.14', expires: '2026-10-08' },
-  { name: 'Old laptop',            prefix: 'rlt_2b90…', surfaces: ['/v1/messages'],     used: '41d ago', reqs: '88.1k', cost: '–',     expires: 'never', revoked: true }
-]
-
-/**
- * The endpoint cell.
- *
- * One pill and a count, not every path: the column is 12rem and four
- * paths would take the row to two lines. The whole list is a hover away.
- */
-const scopeCell = (paths) => {
-  if (paths.length === 0) return '<span class="text-[12px] text-muted-foreground/50">all</span>'
-  const rest = paths.length - 1
-  return `<span class="inline-flex items-center gap-1" title="${paths.join(' · ')}">${surfacePill(paths[0])}${
-    rest > 0 ? `<span class="shrink-0 font-mono text-[12px] text-muted-foreground/70">+${rest}</span>` : ''
-  }</span>`
-}
-
-
-// The requests and last-used columns are decision support for Revoke; the
-// full picture behind them is Activity → Usage, which breaks spend down by
-// exactly these rows.
-//
-// The row leads to the token's own page. Rotate and Revoke live there and
-// nowhere else — as row actions they sat one mis-aimed click from every
-// row of a table of live credentials, and the cost of that click is a CLI
-// failing with a 401 nobody can trace from the client end. Profile is off
-// this table for the same reason it is not a column here: it is a routing
-// detail, and the row exists to say which credentials are live and what
-// they cost.
-const tokenRow = (t) => `
-  <tr ${navTo('access-token.html')} class="cursor-pointer border-t border-border/60 transition-colors hover:bg-muted/50 ${t.revoked ? 'opacity-45' : ''}">
-    <td class="py-2.5 pl-6 pr-3">
-      <div class="flex items-center gap-2">
-        <span class="text-xs font-medium">${t.name}</span>
-        ${t.revoked ? pill('revoked', 'bad') : ''}
-      </div>
-      <div class="font-mono text-[12px] text-muted-foreground">${t.prefix}</div>
-    </td>
-    <td class="px-3">${scopeCell(t.surfaces)}</td>
-    <td class="px-3 text-right font-mono text-xs tabular-nums">${t.reqs}</td>
-    <td class="px-3 text-right font-mono text-xs tabular-nums">${t.cost}</td>
-    <td class="px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${t.used}</td>
-    <td class="px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${t.expires}</td>
-    <td class="py-2.5 pl-3 pr-6">
-      <div class="flex justify-end text-muted-foreground/50"><i class="ri-arrow-right-s-line text-base"></i></div>
-    </td>
-  </tr>`
-
-// The issue form and the one-time reveal live in access-token-issue.html.
-// They are states this screen enters, not what it opens on — drawn here
-// they put a creation form in front of a reviewer who asked for a list,
-// and put a second "Issue token" on screen beside the real one.
-
-const tokens = `
-  <table class="w-full table-fixed">
-    <colgroup><col><col class="w-48"><col class="w-20"><col class="w-28"><col class="w-28"><col class="w-24"><col class="w-10"></colgroup>
-    <thead>
-      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
-        ${sortTh('Token', 'pl-6 pr-3')}
-        ${sortTh('Endpoint', 'px-3')}
-        ${sortTh('Requests', 'px-3', 'right')}
-        ${sortTh('Cost 30d', 'px-3', 'right')}
-        ${sortTh('Last used', 'px-3', 'right', true, 'desc')}
-        ${sortTh('Expires', 'px-3', 'right')}
-        <th class="pl-3 pr-6"></th>
-      </tr>
-    </thead>
-    <tbody>${TOKENS.filter((t) => !t.revoked).map(tokenRow).join('')}</tbody>
-  </table>`
 document.getElementById('root').innerHTML = `
   <div class="min-w-0">
       <!-- No "Access tokens" heading: the breadcrumb and the sidebar
@@ -122,7 +38,7 @@ document.getElementById('root').innerHTML = `
           · all <span class="font-mono">/v1/*</span></span>
         <!-- Beside the list it acts on, not in the app title bar. There
              was one in each and the screen read as offering two. -->
-        <div class="ml-auto">${btn('Issue token', 'primary', 'ri-add-line')}</div>
+        <div class="ml-auto">${btn('Issue token', 'primary', 'ri-add-line', 'access-token-issue.html')}</div>
       </div>
 
       <div class="px-6 pb-4">
@@ -137,11 +53,7 @@ document.getElementById('root').innerHTML = `
         </div>
       </div>
 
-      <!-- The issue form, drawn open. It was missing entirely: the mock
-           jumped from the button to the issued panel, so the two fields
-           that are the whole reason per-client tokens exist — endpoint and
-           one-time-reveal moment without clicking. -->
-
+      ${tokenTable()}
   </div>`
 
 renderShell({

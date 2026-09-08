@@ -2,10 +2,13 @@
  * Access tokens — issue and list.
  *
  * Owns the one-time plaintext: it is held in component state only for as
- * long as the reveal panel is open, and is never written anywhere it
+ * long as the reveal dialog is open, and is never written anywhere it
  * could be read back. The list refreshes after issuing rather than being
  * patched locally, so `lastUsedAt` and `requestCount` cannot drift from
  * what the gate actually recorded.
+ *
+ * Issuing happens in a dialog over this list, in two steps — the form,
+ * then the reveal. The table never moves for either.
  *
  * Rotate, revoke and delete are not here. They live on a token's own
  * page (TokenDetail), reached by clicking its row — a destructive action
@@ -22,8 +25,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { RButton } from '@/components/rialto/primitives'
-import { IssuedTokenPanel } from '@/components/rialto/settings/access/IssuedTokenPanel'
-import { emptyDraft, type IssueDraft, IssueTokenForm } from '@/components/rialto/settings/access/IssueTokenForm'
+import { IssuedTokenDialog } from '@/components/rialto/settings/access/IssuedTokenDialog'
+import { emptyDraft, type IssueDraft, IssueTokenDialog } from '@/components/rialto/settings/access/IssueTokenDialog'
 import { ANY } from '@/components/rialto/settings/access/pickers'
 import { TokenTable } from '@/components/rialto/settings/access/TokenTable'
 import { SectionHead } from '@/components/rialto/settings/fields'
@@ -169,23 +172,48 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
           <Summary counts={counts} showRevoked={showRevoked} onToggleRevoked={() => setShowRevoked(!showRevoked)} />
         }
         actions={
-          draft === null && revealed === null ? (
-            <RButton variant='primary' icon='ri-add-line' onClick={() => setDraft(emptyDraft())}>
-              {t('settings.access.issueToken')}
-            </RButton>
-          ) : null
+          <RButton variant='primary' icon='ri-add-line' onClick={() => setDraft(emptyDraft())}>
+            {t('settings.access.issueToken')}
+          </RButton>
         }
       />
 
-      {/* The panel replaces the FORM, never the list. Naming a token is
-          a decision made against the ones that already exist — "MacBook
-          — Claude Code" being taken is exactly what you need to see —
-          and after issuing, the new row is the answer to "where did it
-          go". Replacing the table took both away. */}
+      <div className='px-6 pb-4'>
+        <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
+          <i className='ri-information-line mr-1 align-[-1px]' />
+          <Trans
+            i18nKey='settings.access.tokensNote'
+            components={{
+              mono: <span className='font-mono' />,
+              strong: <span className='font-medium text-foreground' />
+            }}
+          />
+          {/* Second paragraph rather than a second banner: the Cost
+              column reads as broken on a subscription-only install
+              (every row a dash) unless something says why, and one more
+              box above the table would cost more attention than the
+              answer is worth. */}
+          <p className='mt-2'>
+            <Trans
+              i18nKey='settings.access.costNote'
+              components={{ strong: <span className='font-medium text-foreground' /> }}
+            />
+          </p>
+        </div>
+      </div>
+
+      <TokenTable tokens={listed} surfaces={surfaces} now={now} />
+
+      {/* Both steps of issuing are modals over that table, and nothing
+          above moves to make room for them. Naming a token is decided
+          against the ones that already exist, and after issuing, the new
+          row is the answer to "where did it go" — a panel that replaced
+          the list took both away, and one that pushed it down asked the
+          question with the answer scrolled off the page. */}
       {revealed !== null ? (
-        <IssuedTokenPanel {...revealed} onDone={() => setRevealed(null)} />
+        <IssuedTokenDialog {...revealed} onDone={() => setRevealed(null)} />
       ) : draft !== null ? (
-        <IssueTokenForm
+        <IssueTokenDialog
           draft={draft}
           surfaces={surfaces}
           profiles={profiles}
@@ -195,38 +223,6 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
           onCancel={() => setDraft(null)}
         />
       ) : null}
-
-      <>
-        {draft === null && revealed === null ? (
-          <div className='px-6 pb-4'>
-            <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
-              <i className='ri-information-line mr-1 align-[-1px]' />
-              <Trans
-                i18nKey='settings.access.tokensNote'
-                components={{
-                  mono: <span className='font-mono' />,
-                  strong: <span className='font-medium text-foreground' />
-                }}
-              />
-              {/* Second paragraph rather than a second banner: the Cost
-                  column reads as broken on a subscription-only install
-                  (every row a dash) unless something says why, and one
-                  more box above the table would cost more attention than
-                  the answer is worth. */}
-              <p className='mt-2'>
-                <Trans
-                  i18nKey='settings.access.costNote'
-                  components={{ strong: <span className='font-medium text-foreground' /> }}
-                />
-              </p>
-            </div>
-          </div>
-        ) : null}
-        {/* The note is hidden while a panel is open — it explains the
-            table to someone reading it, and there is a form in the way —
-            but the table itself stays. */}
-        <TokenTable tokens={listed} surfaces={surfaces} now={now} />
-      </>
     </>
   )
 }
