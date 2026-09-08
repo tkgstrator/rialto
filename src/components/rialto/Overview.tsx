@@ -13,7 +13,13 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Meter, Mono, Pill, RButton, Section, SurfacePill } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { api, type OverviewFailoverRow, type OverviewResponse, type OverviewSpendRow } from '@/lib/api'
+import {
+  api,
+  type OverviewFailoverRow,
+  type OverviewQuotaRow,
+  type OverviewResponse,
+  type OverviewSpendRow
+} from '@/lib/api'
 import { fmtAgo, fmtCount, fmtLatency, fmtRate, fmtUntil, shortId } from '@/lib/rialto/format'
 import { fmtCost, fmtTokens } from '@/lib/sessions/format'
 import { cn } from '@/lib/utils'
@@ -69,20 +75,88 @@ const ROW_LINK = 'transition-colors hover:bg-muted/50 cursor-pointer'
  * install read this panel in Japanese, and what turns the scheduler's
  * `reason` slug into something an operator can act on.
  */
+/**
+ * One subscription account and every limit it is under.
+ *
+ * Nothing is marked as "the one that matters". Anthropic's `limits[]`
+ * rows carry an `is_active` flag and it is tempting to badge, but its
+ * meaning is not documented and a live sample cannot settle it: session
+ * 25% inactive, weekly_all 63% active, weekly_scoped 8% inactive, which
+ * is neither "highest percent" nor "one per group". A badge nobody can
+ * explain is worse than no badge.
+ *
+ * The order is ours and is explainable — shortest window first, per-model
+ * rows under the 7d they belong to — and the account line carries the
+ * worst percentage, which is a fact rather than an interpretation.
+ */
+function QuotaAccount({ row, now }: { row: OverviewQuotaRow; now: number }) {
+  const { t } = useTranslation()
+  const worst = row.windows.reduce((a, b) => (b.pct > a.pct ? b : a))
+  return (
+    <Link to='/activity/usage' className={cn('block border-t border-border/60 px-6 py-3', ROW_LINK)}>
+      <div className='flex items-baseline gap-2'>
+        <span className='text-xs font-medium'>{row.account}</span>
+        {/* `count` rather than the `{{n}}` the neighbouring counters use:
+            "1 limits" is wrong, and this one really can be 1. i18next
+            reads the _one/_other pair; the plain key is there because the
+            locale-parity test scans for the literal string in the source
+            and cannot know about plural suffixes. */}
+        <span className='text-[12px] text-muted-foreground/70'>
+          {t('overview.quotaLimitCount', { count: row.windows.length })}
+        </span>
+        <span className='ml-auto font-mono text-xs tabular-nums'>{worst.pct}%</span>
+      </div>
+      <div className='mt-2'>
+        {row.windows.map((w) => (
+          <div key={`${w.window}-${w.scope}`} className='flex items-baseline gap-3 pt-2 first:pt-0'>
+            <span className='w-28 shrink-0 font-mono text-[12px] text-muted-foreground'>
+              {w.scope === null ? w.window : `${w.window} · ${w.scope}`}
+            </span>
+            {/* Capped, not stretched: full width, a 63% bar and a 65% bar
+                are impossible to tell apart and the number that matters
+                ends up a pane away from its label. */}
+            <div className='w-64 shrink-0'>
+              <Meter pct={w.pct} />
+            </div>
+            <span className='w-10 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
+              {w.pct}%
+            </span>
+            {/* A window whose reset time has passed is waiting on the
+                next poll, not resetting "in" anything — but the full
+                sentence wrapped to four lines in a 5rem cell, so the
+                column says "due" and the title carries the rest. */}
+            <span
+              className='w-20 shrink-0 truncate text-right text-[12px] text-muted-foreground'
+              title={fmtUntil(w.resetAt, now) === null ? t('overview.resetsDue') : undefined}
+            >
+              {fmtUntil(w.resetAt, now) === null ? t('overview.resetsDueShort') : fmtUntil(w.resetAt, now)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </Link>
+  )
+}
+
 function FailoverEntry({ row, now }: { row: OverviewFailoverRow; now: number }) {
   const { t } = useTranslation()
   const rateLimited = row.kind === 'rate_limit'
 
   const label = rateLimited ? (row.status === null ? '429' : String(row.status)) : t('overview.failoverWeightLabel')
 
-  const headline = rateLimited
-    ? t('overview.failoverRateLimited', { account: row.account })
-    : t('overview.failoverWeight', {
-        target: row.target,
-        from: row.fromWeight === null ? '' : row.fromWeight.toFixed(2),
-        to: row.toWeight === null ? '' : row.toWeight.toFixed(2)
-      })
+  // What moved. The target on its own line, the values in a fixed slot so
+  // a column of moves can be compared instead of read one at a time.
+  const subject = rateLimited ? row.account : row.target
 
+  // A 429 has no transition: the row carries account, status and
+  // Retry-After and nothing else. Nothing records which target picked the
+  // traffic up, so this says what it has rather than inventing a
+  // destination.
+  // Why, in words, on its own line. The mock drew the scheduler's slug in
+  // a narrow column; the schema calls `reason` a "machine slug, i18n-able
+  // on the UI side" and the translation is a sentence, so a 7rem column
+  // truncated it to "its quota is r…". The transition is what earns a
+  // column here — the reason is what earns a line.
   const detail = rateLimited
     ? row.retryAfterSec === null
       ? t('overview.failoverNoRetryAfter')
@@ -91,14 +165,25 @@ function FailoverEntry({ row, now }: { row: OverviewFailoverRow; now: number }) 
 
   return (
     <Link to={failoverHref(row)} className={cn('block border-t border-border/60 px-6 py-3', ROW_LINK)}>
-      <div className='flex items-baseline gap-2'>
-        <Pill tone={row.tone}>{label}</Pill>
-        <span className='text-xs'>{headline}</span>
-        <span className='ml-auto text-[12px] text-muted-foreground'>
+      <div className='flex items-baseline gap-3'>
+        <span className='w-14 shrink-0'>
+          <Pill tone={row.tone}>{label}</Pill>
+        </span>
+        <span className='min-w-0 flex-1 truncate font-mono text-xs'>{subject}</span>
+        <span className='w-32 shrink-0 text-right'>
+          {row.fromWeight === null || row.toWeight === null ? null : (
+            <span className='inline-flex items-baseline gap-1.5 font-mono text-xs tabular-nums'>
+              <span className='text-muted-foreground/70'>{row.fromWeight.toFixed(2)}</span>
+              <i className='ri-arrow-right-line text-[11px] text-muted-foreground/50' />
+              <span className='font-medium text-foreground'>{row.toWeight.toFixed(2)}</span>
+            </span>
+          )}
+        </span>
+        <span className='w-16 shrink-0 text-right text-[12px] text-muted-foreground'>
           {row.at === '' ? '' : t('settings.access.lastUsedAgo', { ago: fmtAgo(row.at, now) })}
         </span>
       </div>
-      <div className='mt-1 text-[12px] text-muted-foreground'>{detail}</div>
+      {detail === null ? null : <div className='mt-1 pl-[4.25rem] text-[12px] text-muted-foreground'>{detail}</div>}
     </Link>
   )
 }
@@ -310,18 +395,6 @@ export function Overview() {
         <div className='px-6 py-6 text-xs text-muted-foreground'>{t('common.loading')}</div>
       ) : (
         <>
-          <Section
-            title={t('overview.inboundSurfaces')}
-            meta={
-              // "last 168h" is arithmetic, not a period anyone thinks in.
-              data.windowHours >= 24 && data.windowHours % 24 === 0
-                ? t('overview.lastDays', { days: data.windowHours / 24 })
-                : t('overview.lastHours', { hours: data.windowHours })
-            }
-          >
-            <SurfaceTable data={data} />
-          </Section>
-
           <Section title={t('overview.spend')}>
             <div className='grid grid-cols-4 gap-px px-6 pb-6'>
               {data.spend.map((s) => (
@@ -349,52 +422,39 @@ export function Overview() {
             </div>
           </Section>
 
-          <div className='grid grid-cols-2 border-t border-border'>
-            <div className='border-r border-border'>
-              <Section title={t('overview.subscriptionQuota')}>
-                {data.quota.length === 0 ? (
-                  <div className='px-6 pb-6 text-xs text-muted-foreground'>{t('overview.noQuota')}</div>
-                ) : (
-                  data.quota.map((q) => (
-                    <Link
-                      key={`${q.subAccountId}-${q.window}`}
-                      to='/activity/usage'
-                      className={cn('block border-t border-border/60 px-6 py-3', ROW_LINK)}
-                    >
-                      <div className='flex items-baseline gap-2'>
-                        <span className='text-xs font-medium'>{q.account}</span>
-                        <Mono>{q.window}</Mono>
-                        <span className='ml-auto font-mono text-xs tabular-nums'>{q.pct}%</span>
-                      </div>
-                      <div className='mt-2'>
-                        <Meter pct={q.pct} />
-                      </div>
-                      <div className='mt-1.5 text-[12px] text-muted-foreground'>
-                        {/* A window whose reset time has passed is waiting on
-                            the next poll, not resetting "in" anything. */}
-                        {fmtUntil(q.resetAt, now) === null
-                          ? t('overview.resetsDue')
-                          : t('overview.resetsIn', { until: fmtUntil(q.resetAt, now) })}
-                      </div>
-                    </Link>
-                  ))
-                )}
-              </Section>
-            </div>
-            <div>
-              <Section title={t('overview.failoverActivity')}>
-                {data.failover.length === 0 ? (
-                  <div className='px-6 pb-6 text-xs text-muted-foreground'>{t('overview.noFailover')}</div>
-                ) : (
-                  <div className='space-y-0'>
-                    {data.failover.map((f) => (
-                      <FailoverEntry key={`${f.kind}-${f.at}-${f.target}-${f.account}`} row={f} now={now} />
-                    ))}
-                  </div>
-                )}
-              </Section>
-            </div>
-          </div>
+          <Section
+            title={t('overview.inboundSurfaces')}
+            meta={
+              // "last 168h" is arithmetic, not a period anyone thinks in.
+              data.windowHours >= 24 && data.windowHours % 24 === 0
+                ? t('overview.lastDays', { days: data.windowHours / 24 })
+                : t('overview.lastHours', { hours: data.windowHours })
+            }
+          >
+            <SurfaceTable data={data} />
+          </Section>
+
+          {/* Stacked, not side by side. The two-column split was fine when
+              a quota row was one line per account; an account now lists
+              every window it has, so the left column wrapped while the
+              right sat half empty. */}
+          <Section title={t('overview.subscriptionQuota')} meta={t('overview.quotaMeta')}>
+            {data.quota.length === 0 ? (
+              <div className='px-6 pb-6 text-xs text-muted-foreground'>{t('overview.noQuota')}</div>
+            ) : (
+              data.quota.map((q) => <QuotaAccount key={q.subAccountId} row={q} now={now} />)
+            )}
+          </Section>
+
+          <Section title={t('overview.failoverActivity')} meta={t('overview.failoverMeta')}>
+            {data.failover.length === 0 ? (
+              <div className='px-6 pb-6 text-xs text-muted-foreground'>{t('overview.noFailover')}</div>
+            ) : (
+              data.failover.map((f) => (
+                <FailoverEntry key={`${f.kind}-${f.at}-${f.target}-${f.account}`} row={f} now={now} />
+              ))
+            )}
+          </Section>
 
           <Section title={t('overview.recentSessions')}>
             <SessionTable data={data} now={now} />

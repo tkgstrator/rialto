@@ -37,12 +37,29 @@ export interface SpendRow {
   deltaRatio: number | null
 }
 
+export interface QuotaWindowRow {
+  /** The window's own length: '5h' or '7d'. */
+  window: string
+  /** Model name for a per-model weekly row, null for an account-wide one. */
+  scope: string | null
+  pct: number
+  resetAt: string | null
+}
+
+/**
+ * One subscription account and every limit it is under.
+ *
+ * Grouped rather than a flat (account, window) list because an account
+ * has several limits and any one of them hitting 100% stops it: a flat
+ * list repeated the account name down the column and read as several
+ * unrelated accounts. The per-model weekly rows were dropped entirely,
+ * so a Claude account showed two of its three limits and no indication
+ * that a third existed.
+ */
 export interface QuotaRow {
   subAccountId: string
   account: string
-  window: string
-  pct: number
-  resetAt: string | null
+  windows: QuotaWindowRow[]
 }
 
 /**
@@ -323,8 +340,41 @@ function buildSpend(buckets: SpendBucket[], priceMap: Map<string, PriceEntry>): 
 const accountLabel = (q: QuotaRecord): string =>
   q.subAccount.label !== null ? q.subAccount.label : q.subAccount.provider.name
 
+/**
+ * Per-model weekly windows out of the `scopedWindows` JSONB.
+ *
+ * The collector writes `{ <modelSlug>: { used, limit, resetAt } }`, where
+ * the slug is the model's display name lowercased. Title-cased back
+ * rather than looked up in a table: a table would need extending for
+ * every model Anthropic adds, and a stale one renders a blank label.
+ *
+ * Anything malformed is skipped rather than thrown on — one corrupt key
+ * must not cost the operator the whole panel.
+ */
+function scopedWindows(raw: unknown): QuotaWindowRow[] {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return []
+  const out: QuotaWindowRow[] = []
+  for (const [slug, value] of Object.entries(raw)) {
+    if (value === null || typeof value !== 'object') continue
+    const rec: Record<string, unknown> = value
+    const percent = pct(
+      typeof rec.used === 'number' ? rec.used : null,
+      typeof rec.limit === 'number' ? rec.limit : null
+    )
+    if (percent === null) continue
+    const resetAt = typeof rec.resetAt === 'string' && rec.resetAt.length > 0 ? rec.resetAt : null
+    out.push({
+      window: '7d',
+      scope: slug.replace(/_/g, ' ').replace(/\b[a-z]/g, (c) => c.toUpperCase()),
+      pct: percent,
+      resetAt
+    })
+  }
+  return out
+}
+
 function buildQuota(quotas: QuotaRecord[]): QuotaRow[] {
-  const windows: Array<{
+  const flat: Array<{
     window: string
     used: (q: QuotaRecord) => number | null
     limit: (q: QuotaRecord) => number | null
@@ -335,18 +385,24 @@ function buildQuota(quotas: QuotaRecord[]): QuotaRow[] {
   ]
   const out: QuotaRow[] = []
   for (const q of quotas) {
-    for (const w of windows) {
+    const windows: QuotaWindowRow[] = []
+    // Shortest window first, then the per-model weekly rows under the 7d
+    // they belong to. An order the UI can explain, rather than one that
+    // implies a ranking the data does not carry.
+    for (const w of flat) {
       const percent = pct(w.used(q), w.limit(q))
       if (percent === null) continue
       const resetAt = w.resetAt(q)
-      out.push({
-        subAccountId: q.subAccountId,
-        account: accountLabel(q),
+      windows.push({
         window: w.window,
+        scope: null,
         pct: percent,
         resetAt: resetAt === null ? null : resetAt.toISOString()
       })
     }
+    windows.push(...scopedWindows(q.scopedWindows))
+    if (windows.length === 0) continue
+    out.push({ subAccountId: q.subAccountId, account: accountLabel(q), windows })
   }
   return out
 }

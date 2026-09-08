@@ -210,12 +210,20 @@ export interface OverviewSpendRow {
   deltaRatio: number | null
 }
 
+export interface OverviewQuotaWindow {
+  /** '5h' or '7d'. The per-model rows are also '7d'; `scope` separates them. */
+  window: string
+  /** Model name for a per-model weekly row, null for an account-wide one. */
+  scope: string | null
+  pct: number
+  resetAt: string | null
+}
+
+/** One subscription account and every limit it is under, shortest first. */
 export interface OverviewQuotaRow {
   subAccountId: string
   account: string
-  window: string
-  pct: number
-  resetAt: string | null
+  windows: OverviewQuotaWindow[]
 }
 
 /** Fields, not prose — the sentence is composed and translated by the

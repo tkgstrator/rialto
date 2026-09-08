@@ -357,13 +357,20 @@ export function quotaForAccount(index: QuotaIndex, accountId: string): AccountQu
   return weekly === undefined ? mine[0] : weekly
 }
 
-export function indexQuota(rows: ReadonlyArray<{ subAccountId: string } & AccountQuota>): QuotaIndex {
+export function indexQuota(
+  rows: ReadonlyArray<{ subAccountId: string; windows: readonly AccountQuota[] }>
+): QuotaIndex {
   const out: QuotaIndex = new Map()
-  for (const row of rows) {
-    const bucket = out.get(row.subAccountId)
-    const entry = { window: row.window, pct: row.pct, resetAt: row.resetAt }
-    if (bucket === undefined) out.set(row.subAccountId, [entry])
-    else bucket.push(entry)
+  // Flattened back out: this screen wants one window per account, and
+  // `quotaForAccount` below picks which. Overview groups because it shows
+  // them all; the provider rail shows one.
+  for (const account of rows) {
+    for (const row of account.windows) {
+      const bucket = out.get(account.subAccountId)
+      const entry = { window: row.window, pct: row.pct, resetAt: row.resetAt }
+      if (bucket === undefined) out.set(account.subAccountId, [entry])
+      else bucket.push(entry)
+    }
   }
   return out
 }

@@ -915,10 +915,8 @@
     "modePassthroughHint": "透传：调用方指定的模型名直接发往上游，不会参考链路。请在 Routing 页面开启路由。",
     "spendDeltaHint": "与前一个等长周期相比的变化。",
     "failoverWeightLabel": "权重",
-    "failoverRateLimited": "{{account}} 触发了限流",
     "failoverRetryAfter": "厂商要求等待 {{secs}} 秒后重试",
     "failoverNoRetryAfter": "响应中没有 Retry-After",
-    "failoverWeight": "{{target}} 的权重从 {{from}} 变为 {{to}}",
     "weightReason": {
       "quota_drop": "配额即将耗尽，调度器正在把流量引开",
       "quota_recovered": "配额已恢复，重新开始分配流量",
@@ -931,7 +929,13 @@
       "no_quota_kind": "该目标未上报配额窗口",
       "unknown": "未记录原因"
     },
-    "lastDays": "最近 {{days}} 天"
+    "lastDays": "最近 {{days}} 天",
+    "quotaMeta": "全部窗口 · 每个账户显示最高值",
+    "failoverMeta": "什么发生了变化，变成了什么",
+    "quotaLimitCount_one": "{{count}} 个限制",
+    "quotaLimitCount_other": "{{count}} 个限制",
+    "resetsDueShort": "待刷新",
+    "quotaLimitCount": "{{count}} 个限制"
   },
   "system": {
     "notFound": {

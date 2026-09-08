@@ -915,10 +915,8 @@
     "modePassthroughHint": "パススルー: 呼び出し側が指定したモデル名がそのまま上流に渡され、チェーンは参照されません。ルーティングを有効にするには Routing 画面で切り替えてください。",
     "spendDeltaHint": "同じ長さの前の期間との比較です。",
     "failoverWeightLabel": "スコア",
-    "failoverRateLimited": "{{account}} がレート制限を受けました",
     "failoverRetryAfter": "次の試行まで {{secs}} 秒待つよう指示されました",
     "failoverNoRetryAfter": "レスポンスに Retry-After はありませんでした",
-    "failoverWeight": "{{target}} のスコアが {{from}} → {{to}} に変化",
     "weightReason": {
       "quota_drop": "クォータが減ってきたため、送信先を切り替えています",
       "quota_recovered": "クォータが回復したため、再び振り分け対象になりました",
@@ -931,7 +929,13 @@
       "no_quota_kind": "この送信先はクォータ枠を報告しません",
       "unknown": "理由は記録されていません"
     },
-    "lastDays": "直近 {{days}} 日"
+    "lastDays": "直近 {{days}} 日",
+    "quotaMeta": "全ウィンドウ · アカウントごとの最大値を表示",
+    "failoverMeta": "何がどこへ動いたか",
+    "quotaLimitCount_one": "制限 {{count}} 件",
+    "quotaLimitCount_other": "制限 {{count}} 件",
+    "resetsDueShort": "更新待ち",
+    "quotaLimitCount": "制限 {{count}} 件"
   },
   "system": {
     "notFound": {

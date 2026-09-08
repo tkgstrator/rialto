@@ -915,10 +915,8 @@
     "modePassthroughHint": "Passthrough: the caller's own model name goes straight upstream and the chain is not consulted. Turn routing on under Routing.",
     "spendDeltaHint": "Change against the previous period of the same length.",
     "failoverWeightLabel": "weight",
-    "failoverRateLimited": "{{account}} was rate limited",
     "failoverRetryAfter": "the vendor asked for {{secs}}s before the next try",
     "failoverNoRetryAfter": "no Retry-After on the response",
-    "failoverWeight": "{{target}} scored {{from}} → {{to}}",
     "weightReason": {
       "quota_drop": "its quota is running out, so the scheduler is steering traffic away",
       "quota_recovered": "its quota recovered, so it is taking traffic again",
@@ -931,7 +929,13 @@
       "no_quota_kind": "this target reports no quota window",
       "unknown": "reason not recorded"
     },
-    "lastDays": "last {{days}}d"
+    "lastDays": "last {{days}}d",
+    "quotaMeta": "every window · worst shown per account",
+    "failoverMeta": "what moved, and to what",
+    "quotaLimitCount_one": "{{count}} limit",
+    "quotaLimitCount_other": "{{count}} limits",
+    "resetsDueShort": "due",
+    "quotaLimitCount": "{{count}} limits"
   },
   "system": {
     "notFound": {
