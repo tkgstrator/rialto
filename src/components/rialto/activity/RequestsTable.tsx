@@ -93,9 +93,12 @@ const instant = (iso: string): SortValue => {
  * title stays for the install whose identifiers are longer than the
  * measurements these widths came from.
  */
-function ModelCell({ value, muted = false }: { value: string; muted?: boolean }) {
+function ModelCell({ value, title, muted = false }: { value: string; title?: string; muted?: boolean }) {
   return (
-    <span className={cn('block truncate font-mono text-[12px]', muted ? 'text-muted-foreground' : '')} title={value}>
+    <span
+      className={cn('block truncate font-mono text-[12px]', muted ? 'text-muted-foreground' : '')}
+      title={title === undefined ? value : title}
+    >
       {value}
     </span>
   )
@@ -176,9 +179,12 @@ export const COLUMNS: readonly ColumnDef[] = [
     width: 0,
     align: 'left',
     cellClass: '',
-    render: (row) => <ModelCell value={`${row.log.provider},${row.log.model}`} />,
-    // The only way to group the log by the upstream that served it, since
-    // this screen has no model filter.
+    // The model, not "provider,model". The pair truncated on any
+    // realistic window and the half that got cut was the model — the one
+    // thing this column exists to show. The provider is the hover, and it
+    // still leads the sort, so the log can be grouped by the upstream
+    // that served it on a screen with no model filter.
+    render: (row) => <ModelCell value={row.log.model} title={`${row.log.provider},${row.log.model}`} />,
     sortValue: (row) => `${row.log.provider},${row.log.model}`
   },
   {
