@@ -51,6 +51,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `persona-clear.test.ts` | 「ペルソナ無し」への戻し方（null / 空文字 / 欠落） |
 | `preference-router-schema.test.ts` | 選好ルーターのスキーマ契約 |
 | `thinking-signature-filter.test.ts` | `rialto_` プレフィクスの thinking signature 濾過 |
+| `update-check.test.ts` | 更新チェック: バージョン比較（`v` 付きタグ・prerelease・読めないタグ）と、取得失敗を「最新です」に畳まないこと、成功だけをキャッシュすること |
 | `preset-form-logic.test.ts` | `src/lib/presets/form-logic.ts` の `evaluateCondition` とフィールドバリデータ（Presets 画面の required-input フォームを駆動する） |
 | `rialto/format.test.ts` | 表示フォーマッタ（金額の有効数字など） |
 | `rialto/redact-tool-arguments.test.ts` | `REDACT_TOOL_ARGUMENTS` の除去処理 |
@@ -77,7 +78,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 
 | ファイル | 担保しているもの |
 |---|---|
-| `health.test.ts` | `/health` が APIKEY ゲートの外にあること |
+| `health.test.ts` | `/health` が APIKEY ゲートの外にあること、db / redis の両チェックを報告すること、`summarizeHealth` の切り分け（必須依存の失敗だけが 503。redis 落ちは degraded だが 200）、Redis プローブが未設定なら `skip`・到達不能なら hang せず `fail` |
 | `local-access.test.ts` | ローカルブラウザ免除の判定（トンネル背後で常に loopback に見える問題込み） |
 | `openai-bearer-auth.test.ts` | OpenAI 面が Bearer のみを受けること |
 | `google-surface-auth.test.ts` | Gemini 面の `x-goog-api-key` / `?key=` |

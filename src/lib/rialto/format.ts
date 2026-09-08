@@ -30,12 +30,21 @@ export function fmtAgo(iso: string, now: number): string {
  * `2h 11m`, `3d 04h`, `46m`. Returns 'now' once the instant has passed —
  * a reset that is due reads better than a negative duration.
  */
-export function fmtUntil(iso: string | null, now: number): string {
+/**
+ * Time left until `iso`, or `null` when it has already passed.
+ *
+ * The elapsed case returns null rather than a word: it used to return
+ * the literal `'now'`, which every caller then interpolated into
+ * "resets in {{until}}" — reading "resets in now" in English and
+ * leaving an untranslated "now" in the JA and ZH builds. Wording that
+ * case is the caller's job because only the caller has the sentence.
+ */
+export function fmtUntil(iso: string | null, now: number): string | null {
   if (iso === null) return '–'
   const target = Date.parse(iso)
   if (Number.isNaN(target)) return '–'
   const secs = Math.round((target - now) / 1000)
-  if (secs <= 0) return 'now'
+  if (secs <= 0) return null
   if (secs < HOUR) return `${Math.ceil(secs / MINUTE)}m`
   if (secs < DAY) {
     const h = Math.floor(secs / HOUR)

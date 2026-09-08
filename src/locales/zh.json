@@ -9,7 +9,9 @@
     "continue": "继续",
     "copy": "复制",
     "discard": "放弃",
-    "done": "完成"
+    "done": "完成",
+    "previous": "上一页",
+    "copied": "已复制"
   },
   "activity": {
     "common": {
@@ -22,7 +24,7 @@
     },
     "requests": {
       "title": "请求",
-      "subtitle": "{{logged}} 个请求 · {{failovers}} 次故障转移 · 最新 {{newest}} 条",
+      "subtitle": "{{logged}} 条请求中的 {{shown}} 条 · {{range}}",
       "liveTail": "实时跟踪",
       "live": "实时",
       "export": "导出",
@@ -31,7 +33,7 @@
       "filterSurface": "入口",
       "filterStatus": "状态",
       "filterToken": "令牌",
-      "filterRule": "规则",
+      "filterRule": "场景",
       "filterRange": "时间范围",
       "range1h": "最近 1 小时",
       "range24h": "最近 24 小时",
@@ -44,8 +46,7 @@
       "colStatus": "状态",
       "colEndpoint": "端点",
       "colModels": "请求 → 发送",
-      "colRule": "规则",
-      "colLane": "通道",
+      "colRule": "场景",
       "colToken": "令牌",
       "colInput": "输入",
       "colOutput": "输出",
@@ -54,17 +55,16 @@
       "laneAgent": "agent",
       "laneSubagent": "subagent",
       "laneUntracked": "未记录",
-      "note": "<mono>429</mono> 行并不是客户端看到的错误，而是一次故障转移。紧随其后的那一行由链路中的下一个 target 处理同一轮对话。订阅制的行没有费用，因为套餐已经付过了。"
+      "note": "<mono>429</mono> 行不是客户端看到的错误，而是一次故障转移步骤，紧随其后的行会用链路中的下一个目标处理同一轮请求。但是<strong>上游失败尚未被记录</strong> — 管道在用量采集之前就抛出异常，因此这里为 0 并不代表没有发生故障转移。订阅行按目录价计算 — 套餐费用已另行支付。",
+      "captureOff": "没有记录任何请求 — 请求采集已关闭。请在<settings>设置 → 日志</settings>中开启。"
     },
     "sessions": {
       "title": "活动",
       "subtitle": "{{sessions}} 个会话 · {{requests}} 个请求 · {{range}}",
       "liveTail": "实时跟踪",
       "archive": "归档",
-      "archiveConfirm": "归档所选时间范围之前的所有会话吗？请求日志会保留，但这些会话将从列表中消失。",
-      "export": "导出",
+      "archiveConfirm": "要归档「所有」活动会话吗？这会忽略上方的时间范围筛选 — 包括今天在内的所有会话都会从此列表消失。请求日志会保留。",
       "empty": "没有符合当前筛选条件的会话。",
-      "searchPlaceholder": "搜索会话…",
       "filterSurface": "入口",
       "filterProvider": "provider",
       "filterModel": "模型",
@@ -88,9 +88,9 @@
       "colOutput": "输出",
       "colCache": "缓存",
       "colCost": "费用",
-      "colTrend": "趋势",
       "colLast": "最近",
-      "trendLabel": "{{calls}} 次调用的流量趋势"
+      "range": "第 {{first}}–{{last}} 条，共 {{total}} 条",
+      "rangeUnknownTotal": "第 {{first}}–{{last}} 条"
     },
     "session": {
       "title": "会话",
@@ -98,8 +98,6 @@
       "backToActivity": "返回活动",
       "previous": "上一个",
       "rawJson": "原始 JSON",
-      "archive": "归档",
-      "archiveDisabled": "仍在接收调用的会话无法归档。",
       "loadOlder": "加载更早的轮次",
       "summary": "概要",
       "inbound": "入口",
@@ -107,14 +105,16 @@
       "upstreamCalls": "上游调用",
       "inputTokens": "输入 token",
       "outputTokens": "输出 token",
-      "cacheRead": "缓存读取",
+      "cacheRead": "其中缓存读取",
       "cacheHit": "缓存命中",
       "cost": "费用",
       "duration": "时长",
       "cacheEfficiency": "缓存效率",
       "routingTrace": "路由轨迹",
       "showAllCalls": "显示全部 {{calls}} 次调用",
-      "showFewer": "收起"
+      "showFewer": "收起",
+      "chars": "{{n}} 字符",
+      "codePlain": "代码"
     },
     "logs": {
       "title": "日志",
@@ -169,9 +169,11 @@
       "presets": "预设",
       "apply": "应用",
       "simulate": "模拟",
+      "presetUnresolved": "{{name}} 的所有 tier 都没有已启用的模型，请先连接 provider。",
       "noSnapshots": "尚未保存任何快照。",
       "notConfigured": "未配置",
       "presetApplied": "已应用预设“{{name}}”。",
+      "presetAppliedWithWarnings": "已应用预设「{{name}}」（{{count}} 个 target 因未知被忽略）。",
       "modeRouted": "routed",
       "modePassthrough": "passthrough",
       "laneAgent": "Agent",
@@ -213,15 +215,13 @@
       "noTargetsLeft": "所有 target 都已在这条链路中。",
       "disabledCount": "{{n}} 个已停用",
       "emptyLane": "该通道还没有 target。",
-      "colWeight": "权重",
-      "colQuota": "配额",
-      "colHealth": "健康度",
+      "colShare": "占比",
       "colOn": "启用",
       "rowActions": "行操作",
       "moveUp": "上移",
       "moveDown": "下移",
       "enableTarget": "启用 {{target}}",
-      "note": "顺序即优先级，越靠上越优先。target 被停用、配额耗尽，或调度器权重为 <mono>0.00</mono> 时会被跳过。权重由路由调度器每个 tick 发布，要改的是链路而不是权重。",
+      "note": "顺序即优先级，越靠上越优先：路由器沿链路自上而下，把请求发给第一个可用的 target，所以<mono>占比</mono>是该 target 在本 lane 调度权重中的份额，并不是它将收到的流量比例。target 被停用、配额耗尽，或占比为 <mono>0%</mono> 时会被跳过。权重由路由调度器每个 tick 发布，要改的是链路而不是数字。",
       "unconfiguredProfile": "配置档 <mono>{{profile}}</mono> 没有任何条目，因此 <mono>{{path}}</mono> 上的请求会交给场景路由器处理。若想在这里决定，请添加一个 target。",
       "constraints": "约束",
       "noLaneRules": "没有规则作用于该通道。",
@@ -248,7 +248,8 @@
       "liveMap": "实时路由图",
       "passthroughNote": "把该入口切换为 <mono>Routed</mono>，即可让 {{client}} 获得与 Claude Code 相同的配额感知故障转移。调用方仍然照常发送自己的模型名，只是它会作为规则匹配用的 <mono>requestedModel</mono>，而不再直接当作最终 target。",
       "schedulerIdle": "<mono>规则</mono> 选择器正在生效，因此该链路不会被评估，下方每个目标的状态也始终显示为 <mono>unknown</mono>。将上方的选择器切换为 <mono>链路</mono> 后由它决定，状态会在调度器下一个 tick 填充。",
-      "schedulerNoChain": "路由调度器正在运行，但没有可评分的优先级链，因此下方每个目标的状态都显示为 <mono>unknown</mono>。请在该端点的路由配置中添加条目以查看实时状态。"
+      "schedulerNoChain": "路由调度器正在运行，但没有可评分的优先级链，因此下方每个目标的状态都显示为 <mono>unknown</mono>。请在该端点的路由配置中添加条目以查看实时状态。",
+      "schedulerNotTicked": "路由调度器尚未发布快照，因此下方每个目标都显示为 <mono>unknown</mono>。状态会在第一次调度后填充 — 默认在服务器启动后五分钟内。"
     },
     "map": {
       "title": "路由图",
@@ -345,7 +346,6 @@
     "apply": "应用",
     "hex_input_help": "输入十六进制颜色值 (例如: #FF0000)"
   },
-  "presets": {},
   "providers": {
     "screen": {
       "title": "provider",
@@ -375,7 +375,8 @@
       "modelsSynced": "模型已同步",
       "routable": "可路由",
       "toggleProvider": "切换 {{provider}}",
-      "routableNeedsCredential": "需要可用的凭据才能接收流量"
+      "routableNeedsCredential": "需要可用的凭据才能接收流量",
+      "removeConfirm": "要删除 {{name}} 吗？这会删除它的 {{models}} 个模型和已保存的凭据，并清空指向它的 {{bindings}} 个路由槽位。此操作无法撤销。"
     },
     "credentials": {
       "title": "凭据",
@@ -393,7 +394,8 @@
       "active": "使用中",
       "auth": "认证 {{status}}",
       "weekly": "每周",
-      "resetsIn": "{{window}} 额度将在 {{until}} 后重置"
+      "resetsIn": "{{window}} 额度将在 {{until}} 后重置",
+      "resetsDue": "{{window}} 正在重置 — 等待下次轮询"
     },
     "shape": {
       "title": "请求形态",
@@ -403,7 +405,8 @@
       "endpoint": "端点",
       "derived": "由 API 风格推导得出，不可配置。",
       "derivedWithOverrides": "由 API 风格推导得出，不可配置。按模型的覆盖设置见下方的模型行。",
-      "overrideNote": "这里有部分模型覆盖为 <mono>{{styles}}</mono>；请参见“形状”列。"
+      "overrideNote": "这里有部分模型覆盖为 <mono>{{styles}}</mono>；请参见“形状”列。",
+      "authSubscription": "订阅 (OAuth)"
     },
     "models": {
       "title": "模型",
@@ -476,7 +479,8 @@
       "errorRequest": "请求失败",
       "errorStartOauth": "无法启动 OAuth 流程。",
       "errorRedirect": "重定向 URL 被拒绝。",
-      "errorCredentials": "凭据被拒绝。"
+      "errorCredentials": "凭据被拒绝。",
+      "errorNotJson": "{{name}} 不是有效的 JSON。"
     },
     "vendorHint": {
       "claudeCode": "通过 Claude CLI OAuth 使用 Pro / Max",
@@ -494,7 +498,8 @@
     "common": {
       "title": "设置",
       "notYetAvailable": "尚未提供",
-      "saveFailed": "保存失败：{{message}}"
+      "saveFailed": "保存失败：{{message}}",
+      "unsavedConfirm": "此页面有未保存的更改。要放弃并离开吗？"
     },
     "rail": {
       "server": "服务器",
@@ -502,15 +507,11 @@
       "logging": "日志",
       "personas": "人格",
       "statusline": "状态栏",
-      "presets": "预设",
       "advanced": "高级"
     },
     "server": {
       "subtitle": "Rialto v{{version}} · 磁盘上的配置封套",
-      "headerNote": "启动时读取的值。修改后需要重启。",
-      "restart": "重启",
-      "restartRequested": "已请求重启。",
-      "restartFailed": "重启失败：{{message}}",
+      "headerNote": "启动时读取的值。修改在服务器重启后生效（`docker compose restart`，或重启进程）。",
       "numbersRequired": "端口和请求超时必须是整数。",
       "host": "主机",
       "hostHint": "绑定地址。在暴露到 loopback 之外前，请先在前面加上 Cloudflare Access。",
@@ -546,7 +547,10 @@
       "versionUnknown": "未知",
       "versionAvailable": "有新版本 v{{version}}",
       "upToDate": "已是最新",
-      "checkNow": "立即检查"
+      "checkNow": "立即检查",
+      "checkingNow": "检查中…",
+      "versionCheckFailed": "检查失败",
+      "releaseNotes": "发行说明"
     },
     "logging": {
       "subtitle": "级别 {{level}} · 已记录 {{captured}}",
@@ -588,24 +592,22 @@
       "colStore": "存储",
       "colRows": "行数",
       "colSize": "大小",
-      "colPruneOlderThan": "清理早于",
+      "colKeep": "保留",
       "unbounded": "无上限",
       "pruneNow": "立即清理",
       "pruneOlderThanLabel": "清理 {{store}} 中早于",
-      "days": "{{n}} 天"
+      "days": "{{n}} 天",
+      "serverLog": "服务器日志"
     },
     "advanced": {
-      "subtitle": "配置文档 · 草稿板 · 健康",
+      "subtitle": "配置文档 · 健康检查",
       "tabConfig": "配置文档",
-      "tabScratch": "请求草稿板",
       "tabHealth": "健康",
-      "scratchTitle": "请求草稿板",
-      "notRebuilt": "尚未迁移",
-      "scratchWhat": "此界面中的草稿板",
-      "scratchNeeds": "HTTP 草稿板仍运行在它自己的路由 <mono>/debug</mono> 上——它是可用的界面，但 Rialto 的设计稿从未为它出过设计，所以没有并入这里。要在这个标签页里重建它，需要先做一轮设计，再做实现。",
-      "healthTitle": "健康",
+      "healthTitle": "检查项",
       "healthMeta": "GET /health · 无需认证",
       "refresh": "刷新",
+      "rawJson": "原始 JSON",
+      "recheck": "重新检查",
       "status": "状态",
       "statusHint": "degraded 表示服务器有响应但某项依赖检查失败；unreachable 表示它根本没有响应。",
       "unreachable": "不可达",
@@ -633,11 +635,11 @@
       "cannotSave": "无法保存：文档无法解析。",
       "valid": "有效",
       "invalid": "无效",
-      "backupsKept": "保留 3 份备份",
+      "backupsKept": "没有备份 — 这是唯一的副本",
       "reload": "重新加载",
       "format": "格式化",
       "configDocument": "配置文档",
-      "configNote": "<mono>$VAR</mono> 会在启动时插值，因此密钥可以放在环境变量里而不是这个文件中，并且最近三个版本会作为备份保存在它旁边。磁盘上的文件是 JSON5 且保留注释；此处显示的是 API 返回的合成文档，所以从这里保存会把它重写为纯 JSON。启动期标量需要重启才生效，上面各屏的设置则是实时生效的。"
+      "configNote": "<mono>$VAR</mono> 在启动时展开，因此键可以放在环境变量而不是本文件中。保存会就地覆盖文件，且没有可回滚的备份 — 改动较大时请先自行备份。磁盘上的文件是 JSON5 并保留注释；此视图是 API 返回的合成文档，从这里保存会将其重写为普通 JSON。启动标量需要重启 — 上面各屏的项目即时生效。"
     },
     "access": {
       "subtitleConfigured": "/api 由 Cloudflare Access 保护 · /v1 使用带范围的令牌",
@@ -645,6 +647,7 @@
       "badgeConfigured": "Cloudflare Access",
       "badgeUnconfigured": "前面没有 Access",
       "openZeroTrust": "打开 Zero Trust",
+      "auditLog": "审计日志",
       "checking": "检查中…",
       "signedInAs": "当前身份",
       "signedInAsHint": "Rialto 针对本次请求验证出的调用方。",
@@ -681,7 +684,7 @@
       "bootstrapTitle": "引导令牌",
       "envelope": "封套",
       "bootstrapMeta": "应急管理员凭据",
-      "apikey": "APIKEY",
+      "apikey": "引导令牌 (APIKEY)",
       "apikeyHint": "保存在磁盘上的封套中并映射到 process.env。仅在 /api/* 上被接受，是 Access 或数据库故障时的恢复通道。代理会拒绝它。",
       "tokenCopied": "已复制引导令牌。",
       "clipboardRefused": "浏览器拒绝了写入剪贴板。",
@@ -751,7 +754,13 @@
       "revoke": "吊销",
       "delete": "删除",
       "tokenCopiedShort": "已复制",
-      "costNote": "<strong>费用</strong>列按最近 30 天保留的请求日志计价 —— 它是速率，而不是旁边计数器那样的累计值。短横线表示无法计价：窗口内没有流量、请求记录已关闭，或是没有按请求单价的订阅制模型。"
+      "costNote": "<strong>费用</strong>列按最近 30 天保留的请求日志计价 —— 它是速率，而不是旁边计数器那样的累计值。短横线表示无法计价：窗口内没有流量、请求记录已关闭，或是没有按请求单价的订阅制模型。",
+      "expiryNever": "永不过期",
+      "expiry30d": "30 天",
+      "expiry90d": "90 天",
+      "expiry365d": "1 年",
+      "closedNotice": "<strong>远程管理访问已关闭</strong> — 未设置引导令牌，也未配置 Cloudflare Access，因此只有本机上的浏览器可以访问 <mono>/api/*</mono>。若要向已验证的身份开放，请在下方设置团队域名和 AUD。",
+      "adminAccess": "管理访问"
     },
     "personas": {
       "subtitle": "{{count}} 个人格 · {{active}}",
@@ -787,18 +796,20 @@
       "previewNote": "人格放在最前面，这样客户端自己的提示词仍然可以覆盖它。两个块都标记为可缓存，因此每个会话只需付一次成本。"
     },
     "statusline": {
-      "subtitle": "{{count}} 个模块 · rialto statusline",
+      "subtitle": "{{count}} 个模块 · 仅预览",
       "saved": "已保存状态栏",
-      "wireUp": "在 <mono>~/.claude/settings.json</mono> 中这样接入：<mono>{{snippet}}</mono>",
       "addModule": "添加模块",
       "line": "状态栏",
       "removeModule": "移除 {{module}}",
-      "lineNote": "顺序是从左到右。Claude Code 每一轮都会把会话 JSON 通过管道传给 <mono>rialto statusline</mono>。",
+      "lineNote": "顺序从左到右。把它渲染成状态栏的程序尚未提供，因此这里构建的内容会被保存，但除本预览外不会显示在任何地方。",
       "preview": "预览",
-      "live": "实时",
+      "live": "预览",
       "emptyLine": "状态栏为空——请添加一个模块。",
       "styleDefault": "默认",
       "stylePowerline": "Powerline",
+      "backdropDark": "深色终端",
+      "backdropLight": "浅色终端",
+      "backdropMono": "无颜色",
       "selectModule": "在状态栏中选择一个模块，即可编辑它的图标、颜色和格式。",
       "moduleTitle": "{{module}} 模块",
       "selected": "已选中",
@@ -813,48 +824,16 @@
       "hexColour": "十六进制颜色",
       "script": "脚本",
       "scriptHint": "每轮执行一次，其标准输出会替换模块文本。",
-      "scriptPath": "脚本路径"
-    },
-    "presets": {
-      "subtitle": "已安装 {{count}} 个",
-      "subtitleSelected": "已安装 {{count}} 个 · 已选中 {{name}}",
-      "selectOne": "选择一个预设，查看应用它会改变什么。",
-      "revertLast": "撤销上次应用",
-      "revertUnavailable": "还没有撤销接口——请在应用前从 路由 → 库 保存你的路由。",
-      "installed": "预设已安装",
-      "installFailed": "安装失败：{{message}}",
-      "fillMissing": "请先填写 {{fields}} 再应用。",
-      "applied": "已应用 {{name}}",
-      "applyFailed": "应用失败：{{message}}",
-      "deleted": "已删除 {{name}}",
-      "deleteFailed": "删除失败：{{message}}",
-      "marketFailed": "无法读取预设市场：{{message}}",
-      "tabInstalled": "已安装",
-      "tabBrowse": "浏览",
-      "installFromGithub": "从 GitHub 安装",
-      "repoPlaceholder": "owner/repo",
-      "repoLabel": "GitHub 仓库",
-      "install": "安装",
-      "installing": "安装中…",
-      "exportCurrent": "导出当前配置",
-      "exportUnavailable": "导出预设是一条 CLI 命令：rialto preset export",
-      "libraryNote": "预设是 provider、模型和路由的快照，去掉了其中的密钥——也就是配置中可以分享的那一半。",
-      "pillInstalled": "已安装",
-      "pillNotInstalled": "未安装",
-      "authorUnknown": "作者未知",
-      "byAuthor": "作者：{{author}}",
-      "reapply": "重新应用",
-      "warnTitle": "应用会替换你的默认路由",
-      "warnBody": "目前还没有自动快照——如果想留一条退路，请先从 路由 → 库 保存当前的路由。预设永远不会改动订阅型 provider 及其账号。",
-      "whatItChanges": "会改变什么",
-      "diffAgainst": "与当前配置的差异",
-      "diffEmpty": "没有变化——该预设与你当前的配置一致。",
-      "requiredInputs": "必填项",
-      "complete": "已完成",
-      "missingCount": "缺少 {{n}} 项",
-      "required": "必填",
-      "secretHint": "仅保存在本机，绝不会写入预设。",
-      "stored": "已保存"
+      "scriptPath": "脚本路径",
+      "renderingTitle": "状态栏渲染",
+      "renderingNeeds": "需要一个 <mono>rialto statusline</mono> 命令供 Claude Code 传入会话 JSON。此版本不包含 CLI，因此下面的布局会被保存，但暂时没有任何程序读取它。",
+      "moduleModel": "模型",
+      "moduleUsage": "令牌",
+      "moduleSpeed": "速度",
+      "moduleGitBranch": "Git 分支",
+      "moduleWorkDir": "目录",
+      "moduleScript": "脚本",
+      "moduleFallback": "模块"
     }
   },
   "shell": {
@@ -868,6 +847,8 @@
     "searchEmpty": "没有匹配项。",
     "expandSection": "展开 {{section}}",
     "collapseSection": "折叠 {{section}}",
+    "expandSidebar": "展开侧边栏",
+    "collapseSidebar": "折叠侧边栏",
     "theme": "主题",
     "serving": "运行中",
     "degraded": "部分异常",
@@ -895,7 +876,29 @@
     "failoverActivity": "故障转移情况",
     "noFailover": "该时间段内没有故障转移事件。",
     "recentSessions": "最近的会话",
-    "noSessions": "该时间段内没有会话。"
+    "noSessions": "该时间段内没有会话。",
+    "resetsDue": "正在重置 — 等待下次轮询",
+    "modeRoutedHint": "已路由：Rialto 依据该入口的链路、规则与配额选择模型。",
+    "modePassthroughHint": "透传：调用方指定的模型名直接发往上游，不会参考链路。请在 Routing 页面开启路由。",
+    "spendDeltaHint": "与前一个等长周期相比的变化。",
+    "failoverWeightLabel": "权重",
+    "failoverRateLimited": "{{account}} 触发了限流",
+    "failoverRetryAfter": "厂商要求等待 {{secs}} 秒后重试",
+    "failoverNoRetryAfter": "响应中没有 Retry-After",
+    "failoverWeight": "{{target}} 的权重从 {{from}} 变为 {{to}}",
+    "weightReason": {
+      "quota_drop": "配额即将耗尽，调度器正在把流量引开",
+      "quota_recovered": "配额已恢复，重新开始分配流量",
+      "error_rate": "开始返回错误",
+      "reset_soon": "窗口即将重置，因此暂时压低权重",
+      "probe_floor": "保持在零以上，以便调度器重新探测",
+      "hold_guard": "保持不变以避免权重来回摆动",
+      "stale_quota": "配额读数过旧，不可信",
+      "unknown_budget": "该目标的预算未知",
+      "no_quota_kind": "该目标未上报配额窗口",
+      "unknown": "未记录原因"
+    },
+    "lastDays": "最近 {{days}} 天"
   },
   "system": {
     "notFound": {
@@ -922,7 +925,8 @@
       "title": "无法访问 Rialto API",
       "retrying": "重试中",
       "body": "UI 已加载，但 <mono>/api/config</mono> 没有响应。<mono>/v1/*</mono> 上的代理可能仍在用缓存的配置处理请求——重启之前请先确认。",
-      "proxy": "代理"
+      "proxy": "代理",
+      "retryNow": "立即重试"
     },
     "crash": {
       "title": "该页面渲染失败",

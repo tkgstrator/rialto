@@ -34,7 +34,11 @@ describe('fmtUntil', () => {
   })
 
   test('reports an elapsed or missing reset without a negative duration', () => {
-    expect(fmtUntil(at(-60), NOW)).toBe('now')
+    // Null, not a word: an elapsed window has no duration left to name, and
+    // the caller owns the wording so it can be translated. Returning 'now'
+    // put "resets in now" on screen in English and an untranslated "now" in
+    // the JA and ZH builds.
+    expect(fmtUntil(at(-60), NOW)).toBeNull()
     expect(fmtUntil(null, NOW)).toBe('–')
   })
 })

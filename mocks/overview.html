@@ -35,7 +35,7 @@ const surfaceRow = (s) => `
   <tr ${navTo(s.mode === 'routed' ? 'routing.html' : 'routing-passthrough.html')} class="border-t border-border/60 transition-colors hover:bg-muted/50">
     <td class="py-2.5 pl-6 pr-3">
       <div class="font-mono text-xs">${s.path}</div>
-      <div class="text-[11px] text-muted-foreground">${s.client}</div>
+      <div class="text-[12px] text-muted-foreground">${s.client}</div>
     </td>
     <td class="px-3">${s.mode === 'routed' ? pill('routed', 'ok') : pill('passthrough', 'mute')}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${s.reqs}</td>
@@ -47,7 +47,7 @@ const surfaces = `
   <table class="w-full table-fixed">
     <colgroup><col><col class="w-32"><col class="w-28"><col class="w-20"><col class="w-24"></colgroup>
     <thead>
-      <tr class="text-[11px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2">
+      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         <th class="pl-6 pr-3 text-left font-medium">Surface</th>
         <th class="px-3 text-left font-medium">Routing</th>
         <th class="px-3 text-right font-medium">Requests</th>
@@ -74,7 +74,7 @@ const quotaRow = (q) => `
       <span class="ml-auto font-mono text-xs tabular-nums">${q.pct}%</span>
     </div>
     <div class="mt-2">${meter(q.pct)}</div>
-    <div class="mt-1.5 text-[11px] text-muted-foreground">resets in ${q.resets}</div>
+    <div class="mt-1.5 text-[12px] text-muted-foreground">resets in ${q.resets}</div>
   </div>`
 
 // ─── Spend ────────────────────────────────────────────────────────────
@@ -89,7 +89,7 @@ const SPEND = [
 
 const spendTile = (s) => `
   <div ${navTo('activity-usage.html')} class="border-l-2 border-l-border px-4 py-3 transition-colors hover:bg-muted/50 hover:border-l-foreground/30">
-    <div class="text-[11px] uppercase tracking-wider text-muted-foreground">${s.label}</div>
+    <div class="text-[12px] uppercase tracking-wider text-muted-foreground">${s.label}</div>
     <div class="mt-1 flex items-baseline gap-2">
       <span class="font-mono text-xl tabular-nums">${s.value}</span>
       ${s.delta ? pill(s.delta, s.tone) : ''}
@@ -112,14 +112,14 @@ const sessionRow = (s) => `
     <td class="px-3 text-right font-mono text-xs tabular-nums">${s.turns}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${s.tokens}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${s.cost}</td>
-    <td class="py-2.5 pl-3 pr-6 text-right text-[11px] text-muted-foreground">${s.ago}</td>
+    <td class="py-2.5 pl-3 pr-6 text-right text-[12px] text-muted-foreground">${s.ago}</td>
   </tr>`
 
 const sessions = `
   <table class="w-full table-fixed">
     <colgroup><col class="w-40"><col class="w-40"><col><col class="w-16"><col class="w-20"><col class="w-24"><col class="w-16"></colgroup>
     <thead>
-      <tr class="text-[11px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2">
+      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         <th class="pl-6 pr-3 text-left font-medium">Session</th>
         <th class="px-3 text-left font-medium">Endpoint</th>
         <th class="px-3 text-left font-medium">Model</th>
@@ -146,25 +146,25 @@ document.getElementById('root').innerHTML = `
             <div class="flex items-baseline gap-2">
               ${pill('429', 'bad')}
               <span class="text-xs">Codex Pro exhausted on <span class="font-mono">primary</span></span>
-              <span class="ml-auto text-[11px] text-muted-foreground">46m ago</span>
+              <span class="ml-auto text-[12px] text-muted-foreground">46m ago</span>
             </div>
-            <div class="mt-1 text-[11px] text-muted-foreground">fell through to <span class="font-mono">openai,gpt-5.5</span></div>
+            <div class="mt-1 text-[12px] text-muted-foreground">fell through to <span class="font-mono">openai,gpt-5.5</span></div>
           </div>
           <div ${navTo('routing.html')} class="border-t border-border/60 px-6 py-3 transition-colors hover:bg-muted/50">
             <div class="flex items-baseline gap-2">
               ${pill('weight', 'warn')}
               <span class="text-xs"><span class="font-mono">claude-code,claude-opus-4-8</span> 1.00 → 0.60</span>
-              <span class="ml-auto text-[11px] text-muted-foreground">1h ago</span>
+              <span class="ml-auto text-[12px] text-muted-foreground">1h ago</span>
             </div>
-            <div class="mt-1 text-[11px] text-muted-foreground">reason: <span class="font-mono">quota_drop</span></div>
+            <div class="mt-1 text-[12px] text-muted-foreground">reason: <span class="font-mono">quota_drop</span></div>
           </div>
           <div ${navTo('providers.html')} class="border-t border-border/60 px-6 py-3 transition-colors hover:bg-muted/50">
             <div class="flex items-baseline gap-2">
               ${pill('auth', 'bad')}
               <span class="text-xs">Gemini AI Pro needs re-authentication</span>
-              <span class="ml-auto text-[11px] text-muted-foreground">5h ago</span>
+              <span class="ml-auto text-[12px] text-muted-foreground">5h ago</span>
             </div>
-            <div class="mt-1 text-[11px] text-muted-foreground">refresh token rejected by Code Assist</div>
+            <div class="mt-1 text-[12px] text-muted-foreground">refresh token rejected by Code Assist</div>
           </div>
         </div>`)}
     </div>

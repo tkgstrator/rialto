@@ -22,6 +22,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Pill, RButton } from '@/components/rialto/primitives'
 import { AccessConfigSection } from '@/components/rialto/settings/access/AccessConfigSection'
@@ -29,6 +30,7 @@ import { AccessTokensSection } from '@/components/rialto/settings/access/AccessT
 import { GuardsCard } from '@/components/rialto/settings/access/GuardsCard'
 import { SectionHead } from '@/components/rialto/settings/fields'
 import { SettingsField, SettingsLayout } from '@/components/rialto/settings/SettingsLayout'
+import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
 import { api, type IdentityResponse, type InboundSurfaceWire } from '@/lib/api'
 import {
   type AccessCheckResponse,
@@ -68,7 +70,7 @@ const VIA = {
 function SignedInAs({ identity }: { identity: IdentityResponse | null }) {
   const { t } = useTranslation()
   if (identity === null)
-    return <span className='text-[11px] text-muted-foreground'>{t('settings.access.checking')}</span>
+    return <span className='text-[12px] text-muted-foreground'>{t('settings.access.checking')}</span>
 
   const via = VIA[identity.mode]
   return (
@@ -88,15 +90,33 @@ function SignedInAs({ identity }: { identity: IdentityResponse | null }) {
  * "anyone holding it has full administrative control" — what that covers
  * is spelled out in the guards card below.
  */
-function ExposureNotice({ identity }: { identity: IdentityResponse }) {
+function ExposureNotice({ identity, apiKey }: { identity: IdentityResponse; apiKey: string }) {
   if (identity.accessConfigured) return null
+  // Which sentence is true depends on whether a bootstrap token exists.
+  // With none — the fresh-install default, since createDefaultConfig
+  // stopped minting one — warning that "the bootstrap token alone gates
+  // /api/*" describes a credential that is not there, and points the
+  // operator at Cloudflare setup when nothing is actually exposed.
+  const exposed = apiKey.length > 0
   return (
     <div className='px-6 pt-1 pb-3'>
-      <div className='flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-2 text-[11px] leading-relaxed'>
-        <i className='ri-alert-line shrink-0 text-sm text-amber-600 dark:text-amber-400' />
+      <div
+        className={
+          exposed
+            ? 'flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-2 text-[12px] leading-relaxed'
+            : 'flex items-center gap-2 rounded-md border border-border px-4 py-2 text-[12px] leading-relaxed text-muted-foreground'
+        }
+      >
+        <i
+          className={
+            exposed
+              ? 'ri-alert-line shrink-0 text-sm text-amber-600 dark:text-amber-400'
+              : 'ri-lock-line shrink-0 text-sm'
+          }
+        />
         <span>
           <Trans
-            i18nKey='settings.access.exposureNotice'
+            i18nKey={exposed ? 'settings.access.exposureNotice' : 'settings.access.closedNotice'}
             components={{ strong: <span className='font-medium' />, mono: <span className='font-mono' /> }}
           />
         </span>
@@ -151,11 +171,11 @@ function PolicyCoverage() {
   return (
     <SettingsField label={t('settings.access.policyCoverage')} hint={t('settings.access.policyCoverageHint')}>
       <div className='space-y-2'>
-        <div className='rounded-md border border-dashed border-border px-3 py-1.5 text-[11px] text-muted-foreground'>
+        <div className='rounded-md border border-dashed border-border px-3 py-1.5 text-[12px] text-muted-foreground'>
           <i className='ri-tools-line mr-1 align-[-1px]' />
           {t('settings.access.policyListingUnavailable')}
         </div>
-        <p className='text-[11px] leading-relaxed text-muted-foreground'>
+        <p className='text-[12px] leading-relaxed text-muted-foreground'>
           <Trans
             i18nKey='settings.access.bypassNote'
             components={{
@@ -171,6 +191,7 @@ function PolicyCoverage() {
 
 export function SettingsAccess() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [identity, setIdentity] = useState<IdentityResponse | null>(null)
   const [apiKey, setApiKey] = useState('')
   const [surfaces, setSurfaces] = useState<InboundSurfaceWire[]>([])
@@ -223,6 +244,7 @@ export function SettingsAccess() {
   const gate = accessSaveGate(normalized, check, checkedFor)
   const stale = checkedFor !== null && !sameAccessInput(normalized, checkedFor)
   const dirty = saved !== null && !sameAccessInput(normalized, normalizeAccessInput(saved))
+  useUnsavedGuard(dirty)
 
   const runCheck = () => {
     setChecking(true)
@@ -268,6 +290,7 @@ export function SettingsAccess() {
   return (
     <SettingsLayout
       active='access'
+      heading={t('settings.access.adminAccess')}
       subtitle={subtitle}
       headerBadge={
         configured ? (
@@ -294,16 +317,25 @@ export function SettingsAccess() {
         </>
       }
       headerActions={
-        <RButton
-          variant='outline'
-          icon='ri-external-link-line'
-          onClick={() => window.open(ZERO_TRUST_URL, '_blank', 'noopener,noreferrer')}
-        >
-          {t('settings.access.openZeroTrust')}
-        </RButton>
+        <div className='flex items-center gap-2'>
+          {/* Who reached this install, and how, is a log question — the
+              mock puts the shortcut here because Access is where the
+              question occurs to you. Goes to the screen that already
+              exists rather than to a second log reader. */}
+          <RButton variant='ghost' icon='ri-history-line' onClick={() => navigate('/activity/logs')}>
+            {t('settings.access.auditLog')}
+          </RButton>
+          <RButton
+            variant='outline'
+            icon='ri-external-link-line'
+            onClick={() => window.open(ZERO_TRUST_URL, '_blank', 'noopener,noreferrer')}
+          >
+            {t('settings.access.openZeroTrust')}
+          </RButton>
+        </div>
       }
     >
-      {identity === null ? null : <ExposureNotice identity={identity} />}
+      {identity === null ? null : <ExposureNotice identity={identity} apiKey={apiKey} />}
 
       <SettingsField label={t('settings.access.signedInAs')} hint={t('settings.access.signedInAsHint')}>
         <SignedInAs identity={identity} />
@@ -318,10 +350,10 @@ export function SettingsAccess() {
         stale={stale}
       />
       {dirty && !gate.allowed ? (
-        <div className='px-6 pb-4 text-[11px] leading-relaxed text-amber-600 dark:text-amber-400'>{gate.reason}</div>
+        <div className='px-6 pb-4 text-[12px] leading-relaxed text-amber-600 dark:text-amber-400'>{gate.reason}</div>
       ) : null}
       {dirty && gate.allowed && gate.caveat !== null ? (
-        <div className='px-6 pb-4 text-[11px] leading-relaxed text-muted-foreground'>{gate.caveat}</div>
+        <div className='px-6 pb-4 text-[12px] leading-relaxed text-muted-foreground'>{gate.caveat}</div>
       ) : null}
 
       <PolicyCoverage />

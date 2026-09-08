@@ -52,7 +52,15 @@ const stateOf = (
   ...overrides
 })
 
-test('healthy accounts yield preference-weighted distribution', () => {
+/**
+ * The regression this pins: a weight is the candidate's own 0..1 health,
+ * not a share of the chain. The formula used to open with
+ * `(N - rank)/N` and close with `/ Σ healthiness`, which published 2/3
+ * and 1/3 for two identically healthy candidates — numbers that changed
+ * when an unrelated scenario's chain gained a target, and that summed to
+ * neither 1 nor 100 on the Chain screen.
+ */
+test('two equally healthy candidates publish the same weight, whatever their rank', () => {
   const result = computeWeights(
     stateOf(
       [{ target: 'claude-code,fable-5' }, { target: 'claude-code,opus-5' }],
@@ -70,12 +78,12 @@ test('healthy accounts yield preference-weighted distribution', () => {
       ]
     )
   )
-  // rank 0 preferenceWeight = 1, rank 1 = 0.5. Both have equal 0.9 budget →
-  // healthiness ratio 1 * 0.9 = 0.9 vs 0.5 * 0.9 = 0.45 → 2/3 vs 1/3.
+  // Both sit on the same account at 10/100 used → budget 0.9, no errors,
+  // no reset penalty. Rank 0 and rank 1 alike publish 0.9.
   const fable = result.weights.find((w) => w.target === 'claude-code,fable-5')
   const opus = result.weights.find((w) => w.target === 'claude-code,opus-5')
-  expect(fable?.weight).toBeCloseTo(2 / 3, 2)
-  expect(opus?.weight).toBeCloseTo(1 / 3, 2)
+  expect(fable?.weight).toBeCloseTo(0.9, 2)
+  expect(opus?.weight).toBeCloseTo(0.9, 2)
   expect(result.held).toBe(false)
 })
 
@@ -99,10 +107,78 @@ test('exhausted account demotes the candidate to zero-healthiness', () => {
   )
   const fable = result.weights.find((w) => w.target === 'claude-code,fable-5')
   const opus = result.weights.find((w) => w.target === 'claude-code,opus-5')
-  // fable is fully exhausted → healthiness 0, but probe floor pushes
-  // it back to minWeightPct/100 = 0.01 with the remainder scaled.
+  // The probe floor only lifts candidates with healthiness > 0, so a
+  // fully exhausted one stays at exactly 0 — which is the single fact
+  // the request path reads off a weight.
   expect(fable?.remainingBudgetPct).toBe(0)
-  expect(opus?.weight).toBeGreaterThan(0.9)
+  expect(fable?.weight).toBe(0)
+  // Its healthy peer keeps its own budget (20/100 used → 0.8). It does
+  // not inherit the exhausted candidate's share, because there are no
+  // shares any more.
+  expect(opus?.weight).toBeCloseTo(0.8, 2)
+})
+
+/**
+ * The tick unions every scenario's chain into ONE vector (see
+ * `runSchedulerTickForTest`), so under the old normalisation a target
+ * added to the `think` chain quietly shrank every row the `default`
+ * chain was showing. A weight has to describe its own candidate.
+ */
+test("a candidate's weight does not move when unrelated targets join the vector", () => {
+  const healthy = (target: string) =>
+    candidate(target, {
+      accounts: [
+        account(`${target}-1`, target.split(',')[0], {
+          fiveHour: { used: 10, limit: 100, resetAt: null, windowLengthMs: null }
+        })
+      ]
+    })
+  const alone = computeWeights(stateOf([{ target: 'a,x' }], [healthy('a,x')]))
+  const crowded = computeWeights(
+    stateOf([{ target: 'a,x' }, { target: 'b,y' }, { target: 'c,z' }], [healthy('a,x'), healthy('b,y'), healthy('c,z')])
+  )
+  const before = alone.weights.find((w) => w.target === 'a,x')?.weight
+  const after = crowded.weights.find((w) => w.target === 'a,x')?.weight
+  expect(after).toBeCloseTo(before ?? -1, 5)
+})
+
+/**
+ * The damper must not brake a stop.
+ *
+ * This only became reachable when weights stopped being normalised: on
+ * the old scale an 8-target chain put every row near 0.12, so a drop to
+ * zero fitted inside one 0.2 step. At 1.00 the same drop takes five
+ * ticks — 25 minutes at the default interval — during which
+ * `weight <= 0` still reads as usable and the selector keeps sending
+ * traffic to an exhausted account.
+ */
+test('an exhausted candidate reaches zero in one tick, damper or not', () => {
+  const state = stateOf(
+    [{ target: 'a,x' }],
+    [
+      candidate('a,x', {
+        accounts: [account('a1', 'a', { fiveHour: { used: 100, limit: 100, resetAt: null, windowLengthMs: null } })]
+      })
+    ],
+    { previousWeights: new Map([['a,x', 1]]) }
+  )
+  const result = computeWeights(state)
+  expect(result.weights.find((w) => w.target === 'a,x')?.weight).toBe(0)
+})
+
+/** The other direction still ramps: recovery is what the damper is for. */
+test('a recovering candidate climbs no faster than maxDeltaPerTick', () => {
+  const state = stateOf(
+    [{ target: 'a,x' }],
+    [
+      candidate('a,x', {
+        accounts: [account('a1', 'a', { fiveHour: { used: 0, limit: 100, resetAt: null, windowLengthMs: null } })]
+      })
+    ],
+    { previousWeights: new Map([['a,x', 0]]) }
+  )
+  const result = computeWeights(state)
+  expect(result.weights.find((w) => w.target === 'a,x')?.weight).toBeCloseTo(0.2, 2)
 })
 
 test('probe floor keeps a recovering account at min weight', () => {
@@ -140,7 +216,8 @@ test('disabled entry contributes zero weight', () => {
   const a = result.weights.find((w) => w.target === 'a,x')
   const b = result.weights.find((w) => w.target === 'b,y')
   expect(a?.weight).toBe(0)
-  expect(b?.weight).toBeCloseTo(1)
+  // b is unaffected by a being switched off: 10/100 used → 0.9.
+  expect(b?.weight).toBeCloseTo(0.9, 2)
 })
 
 test('unknown budget with default policy (allow) treats candidate as full budget', () => {

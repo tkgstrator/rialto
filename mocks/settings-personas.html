@@ -32,9 +32,9 @@ const personaRow = (p) => `
     <div class="flex items-center gap-2">
       <span class="text-xs font-medium">${p.name}</span>
       ${p.on ? '' : pill('off', 'mute')}
-      <span class="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground">${p.words}w</span>
+      <span class="ml-auto font-mono text-[12px] tabular-nums text-muted-foreground">${p.words}w</span>
     </div>
-    <div class="mt-0.5 text-[11px] text-muted-foreground">${p.applied}</div>
+    <div class="mt-0.5 text-[12px] text-muted-foreground">${p.applied}</div>
   </button>`
 
 const PROMPT = `You are Yachiyo, the operator's pair for this repository.
@@ -58,13 +58,13 @@ document.getElementById('root').innerHTML = `
 
     <aside class="min-w-0 overflow-y-auto border-r border-border">
       <div class="flex items-center gap-2 px-4 pt-5 pb-2">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Personas</h2>
-        <span class="ml-auto font-mono text-[11px] text-muted-foreground">4</span>
+        <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Personas</h2>
+        <span class="ml-auto font-mono text-[12px] text-muted-foreground">4</span>
       </div>
       ${PERSONAS.map(personaRow).join('')}
       <div class="p-4">${btn('New persona', 'outline', 'ri-add-line')}</div>
       <div class="border-t border-border px-4 py-4">
-        <p class="text-[11px] leading-relaxed text-muted-foreground">
+        <p class="text-[12px] leading-relaxed text-muted-foreground">
           A persona is prepended to the system prompt of every request on the surfaces it applies to.
           It costs input tokens on each turn — cached after the first, so keep it stable.
         </p>
@@ -85,11 +85,11 @@ document.getElementById('root').innerHTML = `
       </div>
 
       <div class="flex items-center gap-2 border-b border-border px-6 py-2.5">
-        <span class="text-[11px] text-muted-foreground">Applies to</span>
+        <span class="text-[12px] text-muted-foreground">Applies to</span>
         ${SURFACES.map((s, i) => surfaceChip(s.path, i === 0)).join('')}
         <span class="mx-1 h-4 w-px bg-border"></span>
-        <span class="text-[11px] text-muted-foreground">Lane</span>
-        <button class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] hover:bg-muted/60">
+        <span class="text-[12px] text-muted-foreground">Lane</span>
+        <button class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] hover:bg-muted/60">
           both <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i>
         </button>
       </div>
@@ -98,32 +98,32 @@ document.getElementById('root').innerHTML = `
         <div class="border-r border-border">
           <div class="flex items-center gap-2 px-6 pt-4 pb-2">
             <h3 class="text-sm font-semibold">Prompt</h3>
-            <span class="ml-auto text-[11px] text-muted-foreground">Markdown</span>
+            <span class="ml-auto text-[12px] text-muted-foreground">Markdown</span>
           </div>
-          <pre class="px-6 pb-6 font-mono text-[11px] leading-relaxed whitespace-pre-wrap">${PROMPT}</pre>
+          <pre class="px-6 pb-6 font-mono text-[12px] leading-relaxed whitespace-pre-wrap">${PROMPT}</pre>
         </div>
         <div>
           <div class="flex items-center gap-2 px-6 pt-4 pb-2">
             <h3 class="text-sm font-semibold">Preview</h3>
-            <span class="ml-auto text-[11px] text-muted-foreground">as sent</span>
+            <span class="ml-auto text-[12px] text-muted-foreground">as sent</span>
           </div>
           <div class="px-6 pb-6">
             <div class="rounded-md border border-border">
               <div class="border-b border-border px-3 py-1.5">
-                <span class="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">system</span>
+                <span class="font-mono text-[12px] uppercase tracking-wider text-muted-foreground">system</span>
               </div>
-              <div class="space-y-2 px-3 py-2.5 text-[11px] leading-relaxed">
+              <div class="space-y-2 px-3 py-2.5 text-[12px] leading-relaxed">
                 <div class="rounded bg-muted/60 px-2 py-1.5">
-                  <span class="font-mono text-[11px] text-muted-foreground">persona: yachiyo</span>
+                  <span class="font-mono text-[12px] text-muted-foreground">persona: yachiyo</span>
                   <p class="mt-1">You are Yachiyo, the operator's pair for this repository. Voice — direct…</p>
                 </div>
                 <div class="rounded border border-dashed border-border px-2 py-1.5 text-muted-foreground">
-                  <span class="font-mono text-[11px]">client system prompt</span>
+                  <span class="font-mono text-[12px]">client system prompt</span>
                   <p class="mt-1">…whatever Claude Code sends, appended unchanged.</p>
                 </div>
               </div>
             </div>
-            <p class="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+            <p class="mt-3 text-[12px] leading-relaxed text-muted-foreground">
               The persona goes first so the client's own prompt can still override it. Both blocks
               are marked cacheable, so the cost is paid once per session.
             </p>

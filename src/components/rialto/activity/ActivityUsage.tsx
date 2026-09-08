@@ -118,17 +118,20 @@ function SectionHead({ title, meta, action }: { title: string; meta: string; act
 // accounts is the common shape, and three lines each pushed the two
 // panels below it off the first screen.
 function WindowLine({ row, now }: { row: WindowRow; now: number }) {
+  const { t } = useTranslation()
   return (
     <div className='flex items-center gap-3 border-t border-border/60 px-6 py-2.5 transition-colors hover:bg-muted/50'>
       <span className='w-24 shrink-0 truncate text-xs'>{row.label}</span>
-      <span className='w-12 shrink-0 font-mono text-[11px] text-muted-foreground'>
+      <span className='w-12 shrink-0 font-mono text-[12px] text-muted-foreground'>
         {row.scope === null ? '' : row.scope}
       </span>
       <div className='min-w-0 flex-1'>
         <Meter pct={row.pct} />
       </div>
       <span className='w-10 shrink-0 text-right font-mono text-xs tabular-nums'>{`${Math.round(row.pct)}%`}</span>
-      <span className='w-20 shrink-0 text-right text-[11px] text-muted-foreground'>{fmtUntil(row.resetsAt, now)}</span>
+      <span className='w-20 shrink-0 text-right text-[12px] text-muted-foreground'>
+        {fmtUntil(row.resetsAt, now) === null ? t('overview.resetsDue') : fmtUntil(row.resetsAt, now)}
+      </span>
     </div>
   )
 }
@@ -148,7 +151,7 @@ function ChartTooltip({
   if (active !== true || payload === undefined || payload.length === 0) return null
   return (
     <div className='w-44 rounded-md border border-border bg-background px-3 py-2 shadow-sm'>
-      <div className='text-[11px] text-muted-foreground'>
+      <div className='text-[12px] text-muted-foreground'>
         {typeof label === 'number' ? dayjs(label).format('ddd HH:mm') : ''}
       </div>
       {series.map((s, index) => {
@@ -157,13 +160,13 @@ function ChartTooltip({
         return (
           <div key={s.metric} className='mt-1 flex items-center gap-2'>
             <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass(index)}`} />
-            <span className='text-[11px]'>{s.label}</span>
-            <span className='ml-auto font-mono text-[11px] tabular-nums'>{`${Math.round(entry.value)}%`}</span>
+            <span className='text-[12px]'>{s.label}</span>
+            <span className='ml-auto font-mono text-[12px] tabular-nums'>{`${Math.round(entry.value)}%`}</span>
           </div>
         )
       })}
       {payload.length === 0 ? (
-        <div className='mt-1 text-[11px] text-muted-foreground'>{t('common.loading')}</div>
+        <div className='mt-1 text-[12px] text-muted-foreground'>{t('common.loading')}</div>
       ) : null}
     </div>
   )
@@ -178,12 +181,12 @@ function UtilizationChart({ points, series }: { points: ChartPoint[]; series: re
           series, and four or fewer are the case this screen has. */}
       <div className='flex items-center gap-4 px-6 pb-3'>
         {series.map((s, index) => (
-          <span key={s.metric} className='flex items-center gap-1.5 text-[11px] text-muted-foreground'>
+          <span key={s.metric} className='flex items-center gap-1.5 text-[12px] text-muted-foreground'>
             <span className={`h-1.5 w-4 rounded-full ${dotClass(index)}`} />
             {s.label}
           </span>
         ))}
-        <span className='ml-auto text-[11px] text-muted-foreground/70'>{t('activity.usage.chartNote')}</span>
+        <span className='ml-auto text-[12px] text-muted-foreground/70'>{t('activity.usage.chartNote')}</span>
       </div>
       <div className='px-6 pb-5' style={{ height: 200 }}>
         <ResponsiveContainer width='100%' height='100%'>
@@ -249,11 +252,11 @@ function TokenRow({
     <tr className='border-t border-border/60 transition-colors hover:bg-muted/50'>
       <td className='py-2.5 pl-6 pr-3'>
         <div className='truncate text-xs font-medium'>{row.name}</div>
-        <div className='font-mono text-[11px] text-muted-foreground'>{row.prefix}</div>
+        <div className='font-mono text-[12px] text-muted-foreground'>{row.prefix}</div>
       </td>
       <td className='px-3'>
         {path === undefined ? (
-          <span className='text-[11px] text-muted-foreground/50'>{t('settings.access.scopeAll')}</span>
+          <span className='text-[12px] text-muted-foreground/50'>{t('settings.access.scopeAll')}</span>
         ) : (
           <SurfacePill path={path} />
         )}
@@ -263,12 +266,12 @@ function TokenRow({
       <td className='px-3'>
         <div className='flex items-center gap-2'>
           <Meter pct={row.sharePct === null ? 0 : row.sharePct} tone='mute' />
-          <span className='w-8 shrink-0 text-right font-mono text-[11px] tabular-nums text-muted-foreground'>
+          <span className='w-8 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
             {row.sharePct === null ? '–' : `${row.sharePct}%`}
           </span>
         </div>
       </td>
-      <td className='py-2.5 pl-3 pr-6 text-right text-[11px] text-muted-foreground'>
+      <td className='py-2.5 pl-3 pr-6 text-right text-[12px] text-muted-foreground'>
         {row.lastUsedAt === null ? t('settings.access.never') : fmtAgo(row.lastUsedAt, now)}
       </td>
     </tr>
@@ -345,7 +348,7 @@ export function ActivityUsage() {
           options={RANGE_DAYS.map((n) => ({ id: String(n), label: t('activity.usage.rangeDays', { n }) }))}
           onChange={(id) => setDays(Number.parseInt(id, 10))}
         />
-        <p className='ml-auto max-w-md text-right text-[11px] leading-snug text-muted-foreground'>
+        <p className='ml-auto max-w-md text-right text-[12px] leading-snug text-muted-foreground'>
           {t('activity.usage.explainer')}
         </p>
       </div>
@@ -362,7 +365,7 @@ export function ActivityUsage() {
               <div className='flex items-baseline gap-2 px-6 pb-1'>
                 <span className='truncate text-xs font-medium'>{account.account}</span>
                 {account.plan === null ? null : <Pill tone='mute'>{account.plan}</Pill>}
-                <span className='ml-auto text-[11px] text-muted-foreground/70'>{t('activity.usage.resetsIn')}</span>
+                <span className='ml-auto text-[12px] text-muted-foreground/70'>{t('activity.usage.resetsIn')}</span>
               </div>
               {account.windows.map((row) => (
                 <WindowLine key={`${row.label}-${row.scope}`} row={row} now={now} />
@@ -414,7 +417,7 @@ export function ActivityUsage() {
             <col className='w-28' />
           </colgroup>
           <thead>
-            <tr className='text-[11px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
+            <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2'>
               <th className='pl-6 pr-3 text-left font-medium'>{t('settings.access.colToken')}</th>
               <th className='px-3 text-left font-medium'>{t('settings.access.colEndpoint')}</th>
               <th className='px-3 text-right font-medium'>{t('settings.access.colRequests')}</th>

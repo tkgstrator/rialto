@@ -2,19 +2,23 @@
  * The preference chain for one (surface profile, scenario, lane).
  *
  * Priority order is the entire point of the object, so the row leads with
- * the ordinal and a drag handle. Weight, quota and health are the
- * scheduler's live numbers for that target and each gets its own
- * right-aligned column — packing "0.60 / 71%" into one cell would make the
- * three unsortable and unscannable.
+ * the ordinal and a drag handle. The scheduler's factor is the only live
+ * number left, shown as Health because that is what it now measures:
+ * since it stopped being a share of the chain it IS the target's spent-ness
+ * (budget × error rate × reset penalty), which made the other two columns
+ * restatements of it — `healthiness` is the same score before the guards,
+ * and quota-used is the largest term inside it. Both are still on the
+ * snapshot for anyone debugging the scheduler, and the quota percentage is
+ * still a column on the screens where an account, not a chain entry, is
+ * the subject: Providers and Overview.
  */
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Meter, Pill } from '@/components/rialto/primitives'
+import { Pill } from '@/components/rialto/primitives'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { RoutingSchedulerWeightEntry } from '@/lib/api'
-import { fmtRate } from '@/lib/rialto/format'
 import { cn } from '@/lib/utils'
-import { inferTier, quotaUsedPct, STATE_LABEL_KEYS, STATE_TONE, splitTarget, targetState } from './derive'
+import { chainShares, inferTier, STATE_LABEL_KEYS, STATE_TONE, splitTarget, targetLabels, targetState } from './derive'
 import type { PreferenceEntry } from './types'
 
 export interface ChainRowActions {
@@ -67,16 +71,28 @@ function RowMenu({ index, count, actions }: { index: number; count: number; acti
   )
 }
 
-function QuotaCell({ pct }: { pct: number | null }) {
-  if (pct === null) return <span className='font-mono text-[11px] tabular-nums text-muted-foreground'>–</span>
-  return (
-    <div className='flex items-center gap-2'>
-      <div className='w-16'>
-        <Meter pct={pct} />
-      </div>
-      <span className='font-mono text-[11px] tabular-nums text-muted-foreground'>{pct}%</span>
-    </div>
-  )
+/**
+ * A row's slice of the lane, or a dash when it has none.
+ *
+ * No `<1%` case: shares are apportioned to whole percents that must add
+ * to 100, so a 0% on an enabled target is honest — it lost the
+ * apportionment, and the State pill says whether the router can still
+ * reach it.
+ */
+function shareLabel(share: number | null): string {
+  return share === null ? '–' : `${share}%`
+}
+
+/** A target the label map did not name falls back to the raw pair. */
+const labelOf = (labels: Map<string, string>, target: string): string => {
+  const value = labels.get(target)
+  return value === undefined ? target : value
+}
+
+/** A target the apportionment did not name has no share, same as null. */
+const shareOf = (shares: Map<string, number | null>, target: string): number | null => {
+  const value = shares.get(target)
+  return value === undefined ? null : value
 }
 
 function ChainRow({
@@ -84,6 +100,8 @@ function ChainRow({
   index,
   count,
   live,
+  share,
+  label,
   actions,
   onDragStart,
   onDragOver,
@@ -93,6 +111,9 @@ function ChainRow({
   index: number
   count: number
   live: RoutingSchedulerWeightEntry | undefined
+  share: number | null
+  /** Model name, or the full pair when the lane needs it — see targetLabels. */
+  label: string
   actions: ChainRowActions
   onDragStart: () => void
   onDragOver: (event: React.DragEvent) => void
@@ -116,19 +137,15 @@ function ChainRow({
           <span className='font-mono text-xs tabular-nums text-muted-foreground'>{index + 1}</span>
         </div>
       </td>
-      <td className='px-2 font-mono text-xs'>{entry.target}</td>
+      <td className='px-2 truncate font-mono text-xs'>{label}</td>
       <td className='px-2'>{tier === null ? null : <Pill tone='mute'>{tier}</Pill>}</td>
       <td className='px-2'>
         <Pill tone={STATE_TONE[state]}>{t(STATE_LABEL_KEYS[state])}</Pill>
       </td>
-      <td className='px-2 text-right font-mono text-xs tabular-nums'>
-        {live === undefined ? '–' : live.weight.toFixed(2)}
-      </td>
-      <td className='px-2'>
-        <QuotaCell pct={quotaUsedPct(live)} />
-      </td>
-      <td className='px-2 text-right font-mono text-xs tabular-nums text-muted-foreground'>
-        {live === undefined ? '–' : fmtRate(live.healthiness)}
+      <td
+        className={cn('px-2 text-right font-mono text-xs tabular-nums', share === null ? 'text-muted-foreground' : '')}
+      >
+        {shareLabel(share)}
       </td>
       <td className='py-2.5 pl-2 pr-6'>
         <div className='flex items-center justify-end gap-1'>
@@ -167,6 +184,23 @@ export function ChainTable({
   // trip (which Safari only populates on drop).
   const [dragging, setDragging] = useState<number | null>(null)
 
+  // Apportioned across the whole lane, so it has to be computed for the
+  // table rather than per row: a share only means anything relative to
+  // the other rows on screen.
+  const shares = useMemo(
+    () =>
+      chainShares(
+        entries.map((entry) => ({
+          target: entry.target,
+          enabled: entry.enabled,
+          weight: weights.get(entry.target)?.weight
+        }))
+      ),
+    [entries, weights]
+  )
+
+  const labels = useMemo(() => targetLabels(entries.map((entry) => entry.target)), [entries])
+
   const drop = (to: number) => () => {
     if (dragging !== null && dragging !== to) actions.onMove(dragging, to)
     setDragging(null)
@@ -180,19 +214,15 @@ export function ChainTable({
         <col className='w-20' />
         <col className='w-24' />
         <col className='w-20' />
-        <col className='w-32' />
-        <col className='w-20' />
         <col className='w-24' />
       </colgroup>
       <thead>
-        <tr className='text-[11px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
+        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2'>
           <th className='pl-6 pr-2 text-left font-medium'>#</th>
           <th className='px-2 text-left font-medium'>{t('routing.common.colTarget')}</th>
           <th className='px-2 text-left font-medium'>{t('routing.common.colTier')}</th>
           <th className='px-2 text-left font-medium'>{t('routing.common.colState')}</th>
-          <th className='px-2 text-right font-medium'>{t('routing.chain.colWeight')}</th>
-          <th className='px-2 text-left font-medium'>{t('routing.chain.colQuota')}</th>
-          <th className='px-2 text-right font-medium'>{t('routing.chain.colHealth')}</th>
+          <th className='px-2 text-right font-medium'>{t('routing.chain.colShare')}</th>
           <th className='pl-2 pr-6 text-right font-medium'>{t('routing.chain.colOn')}</th>
         </tr>
       </thead>
@@ -204,6 +234,8 @@ export function ChainTable({
             index={index}
             count={entries.length}
             live={weights.get(entry.target)}
+            share={shareOf(shares, entry.target)}
+            label={labelOf(labels, entry.target)}
             actions={actions}
             onDragStart={() => setDragging(index)}
             onDragOver={(event) => event.preventDefault()}

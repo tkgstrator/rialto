@@ -51,7 +51,7 @@ interface TokenRow {
  * error state rather than a list of working credentials.
  */
 const ROW_ACTION =
-  'inline-flex h-7 items-center rounded-md border border-border px-2.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive disabled:pointer-events-none disabled:opacity-50'
+  'inline-flex h-7 items-center rounded-md border border-border px-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive disabled:pointer-events-none disabled:opacity-50'
 
 type TokenSortKey = 'name' | 'surface' | 'profile' | 'requests' | 'cost' | 'lastUsed' | 'expires'
 
@@ -104,26 +104,26 @@ function Row({
           <span className='text-xs font-medium'>{token.name}</span>
           {dead ? <Pill tone={STATE_PILL[state].tone}>{t(STATE_PILL[state].labelKey)}</Pill> : null}
         </div>
-        <div className='font-mono text-[11px] text-muted-foreground'>{token.prefix}</div>
+        <div className='font-mono text-[12px] text-muted-foreground'>{token.prefix}</div>
       </td>
       <td className='px-3'>
         {surfacePath === undefined ? (
-          <span className='text-[11px] text-muted-foreground/50'>{t('settings.access.scopeAll')}</span>
+          <span className='text-[12px] text-muted-foreground/50'>{t('settings.access.scopeAll')}</span>
         ) : (
           <SurfacePill path={surfacePath} />
         )}
       </td>
-      <td className='px-3 font-mono text-[11px] text-muted-foreground'>
+      <td className='px-3 font-mono text-[12px] text-muted-foreground'>
         {token.profileKey === null ? '—' : token.profileKey}
       </td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCount(token.requestCount)}</td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCost(token.costUsd)}</td>
-      <td className='px-3 text-right text-[11px] text-muted-foreground'>
+      <td className='px-3 text-right text-[12px] text-muted-foreground'>
         {token.lastUsedAt === null
           ? t('settings.access.never')
           : t('settings.access.lastUsedAgo', { ago: fmtAgo(token.lastUsedAt, now) })}
       </td>
-      <td className='px-3 text-right text-[11px] text-muted-foreground'>
+      <td className='px-3 text-right text-[12px] text-muted-foreground'>
         {token.expiresAt === null ? t('settings.access.never') : token.expiresAt.slice(0, 10)}
       </td>
       <td className='py-2.5 pl-3 pr-6'>
@@ -204,7 +204,7 @@ export function TokenTable({
         <col className='w-28' />
       </colgroup>
       <thead>
-        <tr className='text-[11px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
+        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2'>
           <SortTh sortKey='name' sort={sort} className='pl-6 pr-3 text-left'>
             {t('settings.access.colToken')}
           </SortTh>

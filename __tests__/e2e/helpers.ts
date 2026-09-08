@@ -37,9 +37,22 @@ async function serverUp(): Promise<boolean> {
   }
 }
 
+/**
+ * Playwright resolves its bundled chromium by build number, so a machine
+ * that has a *different* build installed — a devcontainer image that
+ * pinned one, a shared cache — owns a working browser this suite cannot
+ * see, and skips everything. `RIALTO_CHROMIUM_PATH` points it at that
+ * binary instead — the same knob `mocks:shoot` reads.
+ */
+function launchOptions(): { headless: true; executablePath?: string } {
+  const path = process.env.RIALTO_CHROMIUM_PATH
+  if (path === undefined || path.length === 0) return { headless: true }
+  return { headless: true, executablePath: path }
+}
+
 async function browserUsable(): Promise<boolean> {
   try {
-    const browser = await chromium.launch({ headless: true })
+    const browser = await chromium.launch(launchOptions())
     await browser.close()
     return true
   } catch {
@@ -55,5 +68,5 @@ async function browserUsable(): Promise<boolean> {
 export const HAS_E2E = (await serverUp()) && (await browserUsable())
 
 export function launchBrowser(): Promise<Browser> {
-  return chromium.launch({ headless: true })
+  return chromium.launch(launchOptions())
 }

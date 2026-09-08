@@ -22,15 +22,15 @@ function LogRow({ line }: { line: LogLine }) {
   return (
     <div className='group flex gap-0 hover:bg-muted/50'>
       <span className={cn('w-0.5 shrink-0', GUTTER[chip])} />
-      <span className='w-28 shrink-0 py-1 pl-3 font-mono text-[11px] tabular-nums text-muted-foreground'>
+      <span className='w-28 shrink-0 py-1 pl-3 font-mono text-[12px] tabular-nums text-muted-foreground'>
         {line.time === 0 ? '' : dayjs(line.time).format('HH:mm:ss.SSS')}
       </span>
-      <span className={cn('w-16 shrink-0 py-1 pl-2 font-mono text-[10px] uppercase', LEVEL_TEXT[chip])}>
+      <span className={cn('w-16 shrink-0 py-1 pl-2 font-mono text-[11px] uppercase', LEVEL_TEXT[chip])}>
         {line.level}
       </span>
       <span className='min-w-0 flex-1 py-1 pr-4'>
-        <span className='font-mono text-[11px]'>{line.msg}</span>
-        {detail === '' ? null : <span className='ml-2 font-mono text-[11px] text-muted-foreground'>{detail}</span>}
+        <span className='font-mono text-[12px]'>{line.msg}</span>
+        {detail === '' ? null : <span className='ml-2 font-mono text-[12px] text-muted-foreground'>{detail}</span>}
       </span>
     </div>
   )
@@ -66,9 +66,9 @@ export function LogBody({
   return (
     <div className='min-w-0 overflow-y-auto'>
       <div className='flex items-center gap-2 border-b border-border px-4 py-2.5'>
-        <span className='font-mono text-[11px] text-muted-foreground'>{fileName}</span>
+        <span className='font-mono text-[12px] text-muted-foreground'>{fileName}</span>
         <i className='ri-arrow-right-s-line text-sm text-muted-foreground/50' />
-        <span className='font-mono text-[11px]'>{group === null ? '—' : shortReqId(group.id)}</span>
+        <span className='font-mono text-[12px]'>{group === null ? '—' : shortReqId(group.id)}</span>
         {group === null ? null : <Pill tone={LEVEL_TONE[chipFor(group.level)]}>{chipFor(group.level)}</Pill>}
         <div className='ml-auto flex items-center gap-2'>
           <div className='flex h-7 w-44 items-center gap-2 rounded-md border border-border px-2.5 text-xs text-muted-foreground'>
@@ -89,7 +89,7 @@ export function LogBody({
         </div>
       </div>
       {raw ? (
-        <pre className='overflow-x-auto px-4 py-2 font-mono text-[11px] leading-relaxed'>
+        <pre className='overflow-x-auto px-4 py-2 font-mono text-[12px] leading-relaxed'>
           {shown.map((l) => l.raw).join('\n')}
         </pre>
       ) : (

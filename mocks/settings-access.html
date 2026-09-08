@@ -43,14 +43,14 @@ const tokenRow = (t) => `
         <span class="text-xs font-medium">${t.name}</span>
         ${t.revoked ? pill('revoked', 'bad') : ''}
       </div>
-      <div class="font-mono text-[11px] text-muted-foreground">${t.prefix}</div>
+      <div class="font-mono text-[12px] text-muted-foreground">${t.prefix}</div>
     </td>
     <td class="px-3">${pill(t.scope, scopeTone[t.scope])}</td>
-    <td class="px-3">${t.surface ? surfacePill(t.surface) : '<span class="text-[11px] text-muted-foreground/50">all</span>'}</td>
-    <td class="px-3 font-mono text-[11px] text-muted-foreground"><span ${navTo('routing.html')}>${t.profile ?? '—'}</span></td>
+    <td class="px-3">${t.surface ? surfacePill(t.surface) : '<span class="text-[12px] text-muted-foreground/50">all</span>'}</td>
+    <td class="px-3 font-mono text-[12px] text-muted-foreground"><span ${navTo('routing.html')}>${t.profile ?? '—'}</span></td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${t.reqs}</td>
-    <td class="px-3 text-right text-[11px] text-muted-foreground">${t.used}</td>
-    <td class="px-3 text-right text-[11px] text-muted-foreground">${t.created}</td>
+    <td class="px-3 text-right text-[12px] text-muted-foreground">${t.used}</td>
+    <td class="px-3 text-right text-[12px] text-muted-foreground">${t.created}</td>
     <td class="py-2.5 pl-3 pr-6 text-right">
       <button class="text-muted-foreground/60 hover:text-foreground"><i class="ri-more-2-fill text-sm"></i></button>
     </td>
@@ -64,7 +64,7 @@ const issueField = (label, hint, value, kind) => `
   <div class="grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4">
     <div>
       <div class="text-xs font-medium">${label}</div>
-      <div class="mt-0.5 text-[11px] leading-snug text-muted-foreground">${hint}</div>
+      <div class="mt-0.5 text-[12px] leading-snug text-muted-foreground">${hint}</div>
     </div>
     <div class="relative inline-flex w-full max-w-md">
       <div class="flex h-8 w-full items-center rounded-md border border-border pl-3 pr-8 font-mono text-xs ${
@@ -82,7 +82,7 @@ const tokens = `
   <table class="w-full table-fixed">
     <colgroup><col><col class="w-20"><col class="w-40"><col class="w-24"><col class="w-20"><col class="w-20"><col class="w-24"><col class="w-12"></colgroup>
     <thead>
-      <tr class="text-[11px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2">
+      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         ${sortTh('Token', 'pl-6 pr-3')}
         ${sortTh('Scope', 'px-3')}
         ${sortTh('Endpoint', 'px-3')}
@@ -107,13 +107,13 @@ document.getElementById('root').innerHTML = `
       <div class="flex items-center gap-3 px-6 pt-6 pb-3">
         <h2 class="text-sm font-semibold">Admin access</h2>
         ${pill('Cloudflare Access', 'ok')}
-        <span class="text-[11px] text-muted-foreground">rialto.example.com</span>
+        <span class="text-[12px] text-muted-foreground">rialto.example.com</span>
         <div class="ml-auto">${btn('Open Zero Trust', 'outline', 'ri-external-link-line')}</div>
       </div>
       <div class="grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4">
         <div>
           <div class="text-xs font-medium">Signed in as</div>
-          <div class="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+          <div class="mt-0.5 text-[12px] leading-snug text-muted-foreground">
             From the <span class="font-mono">Cf-Access-Jwt-Assertion</span> header, verified against
             your team's JWKS on every request.
           </div>
@@ -124,26 +124,26 @@ document.getElementById('root').innerHTML = `
             <span class="font-mono text-xs">tkgstrator@example.com</span>
             ${pill('valid', 'ok')}
           </div>
-          <div class="font-mono text-[11px] text-muted-foreground">aud 97e2aa…913a · exp in 21h</div>
+          <div class="font-mono text-[12px] text-muted-foreground">aud 97e2aa…913a · exp in 21h</div>
         </div>
       </div>
       <div class="grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4">
         <div>
           <div class="text-xs font-medium">Policy coverage</div>
-          <div class="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+          <div class="mt-0.5 text-[12px] leading-snug text-muted-foreground">
             Read from the Access apps on this hostname.
           </div>
         </div>
         <div class="space-y-1.5">
           <div class="flex items-center gap-2 rounded-md border border-border px-3 py-1.5">
-            <span class="font-mono text-[11px]">/</span>
-            <span class="ml-auto text-[11px] text-muted-foreground">Allow · 1 email rule</span>
+            <span class="font-mono text-[12px]">/</span>
+            <span class="ml-auto text-[12px] text-muted-foreground">Allow · 1 email rule</span>
           </div>
           <div class="flex items-center gap-2 rounded-md border border-border px-3 py-1.5">
-            <span class="font-mono text-[11px]">/v1</span>
-            <span class="ml-auto text-[11px] text-muted-foreground">Bypass · Everyone</span>
+            <span class="font-mono text-[12px]">/v1</span>
+            <span class="ml-auto text-[12px] text-muted-foreground">Bypass · Everyone</span>
           </div>
-          <p class="text-[11px] leading-relaxed text-muted-foreground">
+          <p class="text-[12px] leading-relaxed text-muted-foreground">
             <span class="font-mono">/v1</span> must bypass Access: Claude Code, Codex and Gemini CLI
             cannot complete an interactive login and do not send service-token headers. The access
             tokens below are that path's only gate.
@@ -154,12 +154,12 @@ document.getElementById('root').innerHTML = `
       <div class="flex items-center gap-3 border-t border-border px-6 pt-6 pb-3">
         <h2 class="text-sm font-semibold">Bootstrap token</h2>
         ${pill('envelope', 'mute')}
-        <span class="text-[11px] text-muted-foreground">fallback when Access is not in front</span>
+        <span class="text-[12px] text-muted-foreground">fallback when Access is not in front</span>
       </div>
       <div class="grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4">
         <div>
           <div class="text-xs font-medium">RIALTO_TOKEN</div>
-          <div class="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+          <div class="mt-0.5 text-[12px] leading-snug text-muted-foreground">
             Optional, and absent unless you set one. Accepted on
             <span class="font-mono">/api/*</span> when no valid Access JWT is present — the way back
             in if Access itself breaks. A browser on this machine is already exempt, and the proxy
@@ -175,32 +175,32 @@ document.getElementById('root').innerHTML = `
 
       <div class="px-6 pb-2">
         <div class="rounded-md border border-border px-4 py-3">
-          <div class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Who guards what</div>
+          <div class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Who guards what</div>
           <div class="mt-2 grid grid-cols-3 gap-4">
             <div class="border-l-2 border-l-emerald-500/60 pl-3">
               <div class="text-xs font-medium">Cloudflare Access</div>
-              <div class="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+              <div class="mt-1 text-[12px] leading-relaxed text-muted-foreground">
                 Guards this UI and <span class="font-mono">/api/*</span>. Browser logs in at the edge;
                 Rialto only validates the signed JWT.
               </div>
-              <div class="mt-1.5 font-mono text-[11px] text-muted-foreground">you → Access → Rialto</div>
+              <div class="mt-1.5 font-mono text-[12px] text-muted-foreground">you → Access → Rialto</div>
             </div>
             <div class="border-l-2 border-l-foreground/40 pl-3">
               <div class="text-xs font-medium">Access token</div>
-              <div class="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+              <div class="mt-1 text-[12px] leading-relaxed text-muted-foreground">
                 Guards <span class="font-mono">/v1/*</span>. CLI clients cannot do an interactive
                 Access login, so that path is a Bypass app and these tokens are its gate.
               </div>
-              <div class="mt-1.5 font-mono text-[11px] text-muted-foreground">Claude Code → Rialto</div>
+              <div class="mt-1.5 font-mono text-[12px] text-muted-foreground">Claude Code → Rialto</div>
             </div>
             <div class="border-l-2 border-l-border pl-3">
               <div class="text-xs font-medium">Provider API key</div>
-              <div class="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+              <div class="mt-1 text-[12px] leading-relaxed text-muted-foreground">
                 <span class="font-medium text-foreground">Outbound.</span> Rialto presents it to a
                 vendor. Lives on the provider in
                 <a href="providers-apikey.html" class="underline underline-offset-2">Providers</a>.
               </div>
-              <div class="mt-1.5 font-mono text-[11px] text-muted-foreground">Rialto → OpenAI</div>
+              <div class="mt-1.5 font-mono text-[12px] text-muted-foreground">Rialto → OpenAI</div>
             </div>
           </div>
         </div>
@@ -208,12 +208,12 @@ document.getElementById('root').innerHTML = `
 
       <div class="flex items-center gap-3 border-t border-border px-6 pt-6 pb-3">
         <h2 class="text-sm font-semibold">Access tokens</h2>
-        <span class="text-[11px] text-muted-foreground">4 active · 1 revoked · all <span class="font-mono">/v1/*</span></span>
+        <span class="text-[12px] text-muted-foreground">4 active · 1 revoked · all <span class="font-mono">/v1/*</span></span>
         <div class="ml-auto">${btn('Issue token', 'primary', 'ri-add-line')}</div>
       </div>
 
       <div class="px-6 pb-4">
-        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
+        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
           <i class="ri-information-line mr-1 align-[-1px]"></i>
           Only a SHA-256 digest is stored — the plaintext is shown once, when the token is issued.
           Scoping a token to an endpoint and a routing profile is how a client gets its own routing:
@@ -236,7 +236,7 @@ document.getElementById('root').innerHTML = `
         <div class="flex items-center gap-2 border-t border-border/60 px-6 py-4">
           ${btn('Issue token', 'primary', 'ri-add-line')}
           ${btn('Cancel', 'ghost', '')}
-          <span class="ml-3 text-[11px] text-muted-foreground">
+          <span class="ml-3 text-[12px] text-muted-foreground">
             The token is shown once, immediately after issuing, and never again.
           </span>
         </div>
@@ -252,7 +252,7 @@ document.getElementById('root').innerHTML = `
             <h3 class="text-sm font-semibold">Token issued</h3>
             ${pill('copy it now', 'warn')}
           </div>
-          <p class="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+          <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
             This is the only time the full token is shown. Rialto stores a digest, so it cannot be
             recovered — only replaced.
           </p>
@@ -262,16 +262,16 @@ document.getElementById('root').innerHTML = `
           </div>
           <div class="mt-4 space-y-2">
             <div class="flex items-baseline gap-3">
-              <span class="text-[11px] text-muted-foreground">Scope</span>
-              <span class="ml-auto font-mono text-[11px]">proxy</span>
+              <span class="text-[12px] text-muted-foreground">Scope</span>
+              <span class="ml-auto font-mono text-[12px]">proxy</span>
             </div>
             <div class="flex items-baseline gap-3">
-              <span class="text-[11px] text-muted-foreground">Endpoint</span>
-              <span class="ml-auto font-mono text-[11px]">/v1/messages</span>
+              <span class="text-[12px] text-muted-foreground">Endpoint</span>
+              <span class="ml-auto font-mono text-[12px]">/v1/messages</span>
             </div>
             <div class="flex items-baseline gap-3">
-              <span class="text-[11px] text-muted-foreground">Routing profile</span>
-              <span class="ml-auto font-mono text-[11px]">live</span>
+              <span class="text-[12px] text-muted-foreground">Routing profile</span>
+              <span class="ml-auto font-mono text-[12px]">live</span>
             </div>
           </div>
           <div class="mt-4 flex justify-end gap-2">

@@ -45,13 +45,51 @@ export interface QuotaRow {
   resetAt: string | null
 }
 
+/**
+ * One entry in the failover feed, carried as fields rather than as a
+ * finished sentence.
+ *
+ * The server used to compose the prose here (`"<account> rate limited"`,
+ * `` `reason: ${reason}` ``), which put untranslated English on the
+ * landing page of a JA install and printed the scheduler's own slug at
+ * the operator. `RoutingWeightChange.reason` is documented in the schema
+ * as "machine slug, i18n-able on the UI side" — this is the shape that
+ * lets the UI honour that.
+ */
 export interface FailoverRow {
   kind: 'rate_limit' | 'weight'
-  tone: 'bad' | 'warn'
-  label: string
-  headline: string
-  detail: string
+  tone: 'bad' | 'warn' | 'mute'
   at: string
+  // rate_limit
+  account: string | null
+  status: number | null
+  retryAfterSec: number | null
+  // weight
+  target: string | null
+  fromWeight: number | null
+  toWeight: number | null
+  reason: string | null
+}
+
+/**
+ * How much of a concern a weight move is.
+ *
+ * `ok` never reaches the feed: the scheduler emits it on every routine
+ * recompute, so six of them buried the 429s that the panel exists to
+ * surface. The rest are graded rather than all amber, because "the
+ * window resets soon" is information and "the error rate rose" is not
+ * the same news.
+ */
+const WEIGHT_TONE: Record<string, 'warn' | 'mute'> = {
+  quota_drop: 'warn',
+  error_rate: 'warn',
+  stale_quota: 'warn',
+  unknown_budget: 'warn',
+  no_quota_kind: 'warn',
+  hold_guard: 'mute',
+  probe_floor: 'mute',
+  reset_soon: 'mute',
+  quota_recovered: 'mute'
 }
 
 export interface RecentSessionRow {
@@ -320,23 +358,33 @@ function buildFailover(quotas: QuotaRecord[], weightChanges: WeightChange[]): Fa
       (q): FailoverRow => ({
         kind: 'rate_limit',
         tone: 'bad',
-        label: q.lastRateLimitStatus === null ? '429' : String(q.lastRateLimitStatus),
-        headline: `${accountLabel(q)} rate limited`,
-        detail: q.lastRetryAfterSec === null ? 'no Retry-After on the response' : `Retry-After ${q.lastRetryAfterSec}s`,
-        at: q.lastRateLimitedAt === null ? '' : q.lastRateLimitedAt.toISOString()
+        at: q.lastRateLimitedAt === null ? '' : q.lastRateLimitedAt.toISOString(),
+        account: accountLabel(q),
+        status: q.lastRateLimitStatus,
+        retryAfterSec: q.lastRetryAfterSec,
+        target: null,
+        fromWeight: null,
+        toWeight: null,
+        reason: null
       })
     )
 
-  const weights = weightChanges.map(
-    (w): FailoverRow => ({
-      kind: 'weight',
-      tone: 'warn',
-      label: 'weight',
-      headline: `${w.target} ${w.fromWeight.toFixed(2)} → ${w.toWeight.toFixed(2)}`,
-      detail: `reason: ${w.reason}`,
-      at: w.createdAt.toISOString()
-    })
-  )
+  const weights = weightChanges
+    .filter((w) => w.reason !== 'ok')
+    .map(
+      (w): FailoverRow => ({
+        kind: 'weight',
+        tone: WEIGHT_TONE[w.reason] === undefined ? 'warn' : WEIGHT_TONE[w.reason],
+        at: w.createdAt.toISOString(),
+        account: null,
+        status: null,
+        retryAfterSec: null,
+        target: w.target,
+        fromWeight: w.fromWeight,
+        toWeight: w.toWeight,
+        reason: w.reason
+      })
+    )
 
   return [...rateLimited, ...weights].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 6)
 }

@@ -28,8 +28,11 @@ export function fmtMs(ms: number): string {
   return `${ms}ms`
 }
 
+/** Abridged character count WITHOUT its unit — "chars" is a word, and
+ *  baking it in here put English in the JA and ZH builds. The caller
+ *  supplies the noun through `activity.session.chars`. */
 export function fmtChars(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M chars`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k chars`
-  return `${n} chars`
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
+  return `${n}`
 }

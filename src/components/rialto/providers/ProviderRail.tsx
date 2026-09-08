@@ -50,11 +50,11 @@ function ProviderRow({ entry, active, quota }: { entry: RailProvider; active: bo
       <div className='flex items-center gap-2'>
         <span className='text-xs font-medium'>{entry.label}</span>
         {plan === null ? null : <Pill tone='info'>{plan}</Pill>}
-        <span className='ml-auto font-mono text-[11px] tabular-nums text-muted-foreground'>
+        <span className='ml-auto font-mono text-[12px] tabular-nums text-muted-foreground'>
           {enabledCountOf(provider)} / {listedModelsOf(provider).length}
         </span>
       </div>
-      <div className='mt-1 flex items-center gap-2 text-[11px] text-muted-foreground'>
+      <div className='mt-1 flex items-center gap-2 text-[12px] text-muted-foreground'>
         <span>{provider.auth_mode === 'subscription' ? t('providers.rail.oauth') : t('providers.rail.apiKey')}</span>
         <span className='opacity-40'>·</span>
         <span>{entry.vendor}</span>
@@ -87,8 +87,8 @@ function RailGroup({
   return (
     <>
       <div className={className}>
-        <h2 className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>{title}</h2>
-        <span className='ml-auto font-mono text-[10px] text-muted-foreground'>{entries.length}</span>
+        <h2 className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>{title}</h2>
+        <span className='ml-auto font-mono text-[11px] text-muted-foreground'>{entries.length}</span>
       </div>
       {entries.map((entry) => (
         <ProviderRow

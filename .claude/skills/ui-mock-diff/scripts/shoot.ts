@@ -90,7 +90,14 @@ const main = async (): Promise<void> => {
     console.warn(`[shoot] ${config.baseUrl} not reachable — impl side skipped (start the dev server yourself)`)
   }
 
-  const browser = await chromium.launch()
+  // Playwright resolves its bundled chromium by build number, so a machine
+  // holding a different build — a devcontainer image that pinned one, a
+  // shared cache — has a working browser this script cannot see.
+  // RIALTO_CHROMIUM_PATH points it at that binary.
+  const chromiumPath = process.env.RIALTO_CHROMIUM_PATH
+  const browser = await chromium.launch(
+    chromiumPath === undefined || chromiumPath.length === 0 ? {} : { executablePath: chromiumPath }
+  )
   const written: string[] = []
 
   try {

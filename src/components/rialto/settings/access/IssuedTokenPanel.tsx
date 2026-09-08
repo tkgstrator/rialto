@@ -55,7 +55,7 @@ export function IssuedTokenPanel({
           <h3 className='text-sm font-semibold'>{t('settings.access.issuedTitle')}</h3>
           <Pill tone='warn'>{t('settings.access.issuedCopyNow')}</Pill>
         </div>
-        <p className='mt-1.5 text-[11px] leading-relaxed text-muted-foreground'>{t('settings.access.issuedBody')}</p>
+        <p className='mt-1.5 text-[12px] leading-relaxed text-muted-foreground'>{t('settings.access.issuedBody')}</p>
         <div className='mt-3 flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2'>
           <span className='flex-1 truncate font-mono text-xs'>{plaintext}</span>
           <button
@@ -75,14 +75,14 @@ export function IssuedTokenPanel({
             ['settings.access.issuedExpires', expiry]
           ].map(([label, value]) => (
             <div key={label} className='flex items-baseline gap-3'>
-              <span className='text-[11px] text-muted-foreground'>{t(label)}</span>
-              <span className='ml-auto font-mono text-[11px]'>{value}</span>
+              <span className='text-[12px] text-muted-foreground'>{t(label)}</span>
+              <span className='ml-auto font-mono text-[12px]'>{value}</span>
             </div>
           ))}
         </div>
         <div className='mt-4 flex items-center justify-end gap-2'>
           {copied ? null : (
-            <span className='mr-auto text-[11px] text-amber-600 dark:text-amber-400'>
+            <span className='mr-auto text-[12px] text-amber-600 dark:text-amber-400'>
               {t('settings.access.issuedNotCopied')}
             </span>
           )}

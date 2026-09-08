@@ -67,6 +67,94 @@ export function weightIndex(state: RoutingSchedulerStateResponse | null): Map<st
 }
 
 /**
+ * How a chain row names its target.
+ *
+ * "provider,model" repeats the provider down the whole column — in a
+ * lane that is usually one subscription, every row starts with the same
+ * eleven characters before it says anything. The model name is the part
+ * that differs, and the provider is one click away on the row itself.
+ *
+ * The exception is the case that makes the short form a lie: the same
+ * model reached through two providers (a Claude subscription and an
+ * api_key Anthropic account, say), which is an ordinary failover chain
+ * and would otherwise render as two identical rows. Those keep the full
+ * pair — both of them, so the column does not silently use two
+ * conventions for what looks like the same thing.
+ */
+export function targetLabels(targets: readonly string[]): Map<string, string> {
+  const seen = new Map<string, number>()
+  for (const target of targets) {
+    const { model } = splitTarget(target)
+    const count = seen.get(model)
+    seen.set(model, count === undefined ? 1 : count + 1)
+  }
+  const out = new Map<string, string>()
+  for (const target of targets) {
+    const { model } = splitTarget(target)
+    out.set(target, seen.get(model) === 1 ? model : target)
+  }
+  return out
+}
+
+export interface ShareRow {
+  target: string
+  enabled: boolean
+  weight: number | undefined
+}
+
+/**
+ * Each enabled target's slice of the lane's published weight, as whole
+ * percents that add up to exactly 100.
+ *
+ * Apportioned by largest remainder rather than rounded independently:
+ * three equal targets round to 33/33/33 and the column visibly fails to
+ * add up, which is the entire thing this is here to avoid.
+ *
+ * A row that is switched off, or that the scheduler has not scored, maps
+ * to null — it is not competing for the lane, so it takes no slice and
+ * shows a dash rather than a 0% that would read as "came last".
+ */
+export function chainShares(rows: readonly ShareRow[]): Map<string, number | null> {
+  const out = new Map<string, number | null>()
+  for (const row of rows) out.set(row.target, row.enabled && row.weight !== undefined ? 0 : null)
+
+  const eligible = rows.filter((row) => row.enabled && row.weight !== undefined && row.weight > 0)
+  const total = eligible.reduce((sum, row) => sum + (row.weight === undefined ? 0 : row.weight), 0)
+  if (total <= 0) return out
+
+  const exact = eligible.map((row) => {
+    const value = ((row.weight === undefined ? 0 : row.weight) / total) * 100
+    const floor = Math.floor(value)
+    return { target: row.target, floor, remainder: value - floor }
+  })
+  const assigned = exact.reduce((sum, entry) => sum + entry.floor, 0)
+  // Ties broken by the order the chain is already in, which is the
+  // operator's own priority order — the only tiebreak that is not
+  // arbitrary from where they are sitting.
+  const ranked = [...exact].sort((a, b) => b.remainder - a.remainder)
+  for (const [index, entry] of ranked.entries()) {
+    out.set(entry.target, entry.floor + (index < 100 - assigned ? 1 : 0))
+  }
+  return out
+}
+
+/**
+ * Whether the scheduler actually measured this target.
+ *
+ * `remainingBudgetPct` is null whenever no quota window could be read —
+ * an api_key provider (which has no such window at all), an account
+ * whose poll is stale, a model the scheduler no longer recognises. The
+ * scheduler still has to publish *some* weight for those, and its policy
+ * is to treat them as usable, so the factor comes out at 1.0. That is a
+ * decision, not a reading, and the two must not share a column: a
+ * measured 73% next to a policy 100% invites a comparison neither number
+ * supports.
+ */
+export function hasBudgetReading(entry: RoutingSchedulerWeightEntry | undefined): boolean {
+  return entry !== undefined && entry.remainingBudgetPct !== null
+}
+
+/**
  * Classify a target from its published weight.
  *
  * A zero weight means the selector will never pick it — that is exhaustion
@@ -74,10 +162,16 @@ export function weightIndex(state: RoutingSchedulerStateResponse | null): Map<st
  * reason other than `ok` is degraded but still reachable. No snapshot at
  * all (cold boot, or a target the scheduler has not scored) stays
  * `unknown` rather than being flattered into `ready`.
+ *
+ * A target with no budget reading is `unknown` too, and for the same
+ * reason it shows no percentage: it used to render as `throttled`
+ * forever, which said the router was holding back traffic when in truth
+ * nothing was being measured.
  */
 export function targetState(entry: RoutingSchedulerWeightEntry | undefined): TargetState {
   if (entry === undefined) return 'unknown'
   if (entry.weight === 0) return 'exhausted'
+  if (!hasBudgetReading(entry)) return 'unknown'
   return entry.reasons.every((r) => r === 'ok') ? 'ready' : 'throttled'
 }
 
@@ -134,13 +228,18 @@ export function schedulerScoredNothing(state: RoutingSchedulerStateResponse | nu
 }
 
 /**
- * Consumed share of the binding quota window. The scheduler publishes what
- * is LEFT; the meter reads as "how full is this account", so it is
- * inverted here once instead of at every call site.
+ * The scheduler is armed but has not produced a snapshot yet.
+ *
+ * The third way a State column fills with `unknown`, and the one that
+ * had no note. `schedulerScoredNothing` deliberately waits for a first
+ * tick, and `schedulerIdle` only covers the Rules selector — so between
+ * boot and the first tick (the interval defaults to five minutes) every
+ * target reads `unknown` with nothing on screen saying why, which is
+ * indistinguishable from a fleet of dead targets.
  */
-export function quotaUsedPct(entry: RoutingSchedulerWeightEntry | undefined): number | null {
-  if (entry === undefined || entry.remainingBudgetPct === null) return null
-  return Math.round(100 - entry.remainingBudgetPct)
+export function schedulerNotTickedYet(state: RoutingSchedulerStateResponse | null): boolean {
+  if (state === null) return false
+  return state.tickAt === null
 }
 
 export const STATE_TONE = {

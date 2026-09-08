@@ -42,9 +42,9 @@ export function RouteError() {
       <div className='w-full max-w-sm text-center'>
         <div className='font-mono text-2xl tabular-nums text-muted-foreground/40'>!</div>
         <h3 className='mt-2 text-sm font-semibold'>{t('system.crash.title')}</h3>
-        <p className='mt-1.5 text-[11px] leading-relaxed text-muted-foreground'>{t('system.crash.body')}</p>
+        <p className='mt-1.5 text-[12px] leading-relaxed text-muted-foreground'>{t('system.crash.body')}</p>
         {message === null ? null : (
-          <div className='mt-3 overflow-x-auto rounded-md border border-border px-3 py-2 text-left font-mono text-[11px] text-muted-foreground'>
+          <div className='mt-3 overflow-x-auto rounded-md border border-border px-3 py-2 text-left font-mono text-[12px] text-muted-foreground'>
             {message}
           </div>
         )}

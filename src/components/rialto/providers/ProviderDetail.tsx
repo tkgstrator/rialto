@@ -64,6 +64,7 @@ function DetailHeader({
   onTestAll,
   onSync,
   onRemove,
+  removeConfirm,
   onToggleProvider
 }: {
   provider: Provider
@@ -74,6 +75,9 @@ function DetailHeader({
   onTestAll: () => void
   onSync: () => void
   onRemove: () => void
+  /** Blast radius, stated before the click. Built by the screen, which
+   *  is the one that can count the router slots pointing here. */
+  removeConfirm: string
   onToggleProvider: (next: boolean) => void
 }) {
   const { t } = useTranslation()
@@ -92,7 +96,7 @@ function DetailHeader({
           )}
           <Pill tone={stateTone}>{t(STATE_LABEL_KEYS[state])}</Pill>
         </div>
-        <p className='mt-0.5 truncate font-mono text-[11px] text-muted-foreground' title={provider.api_base_url}>
+        <p className='mt-0.5 truncate font-mono text-[12px] text-muted-foreground' title={provider.api_base_url}>
           {provider.api_base_url}
         </p>
       </div>
@@ -105,7 +109,7 @@ function DetailHeader({
             Locked with no credential, because `getEnabledModels` drops
             such a provider regardless of the flag — an operator turning
             it on there would be setting something nothing reads. */}
-        <span className='flex items-center gap-1.5 pr-1 text-[11px] text-muted-foreground'>
+        <span className='flex items-center gap-1.5 pr-1 text-[12px] text-muted-foreground'>
           {t('providers.detail.routable')}
           <Toggle
             on={enabled}
@@ -122,7 +126,14 @@ function DetailHeader({
           {t('providers.detail.syncModels')}
         </RButton>
         {subscription ? null : (
-          <RButton variant='ghost' icon='ri-delete-bin-line' onClick={onRemove} disabled={busy}>
+          <RButton
+            variant='ghost'
+            icon='ri-delete-bin-line'
+            onClick={() => {
+              if (window.confirm(removeConfirm)) onRemove()
+            }}
+            disabled={busy}
+          >
             {t('common.remove')}
           </RButton>
         )}
@@ -170,15 +181,16 @@ function ModelsSection({
   const needle = query.trim().toLowerCase()
   const filtered = rows.filter((r) => r.name.toLowerCase().includes(needle) && (!isApiKey || passesShow(r, show)))
   // Subscription providers list a curated handful; only the api_key side
-  // is long enough that paging earns its footer row.
-  const visible = isApiKey ? filtered.slice(0, limit) : filtered
-  const hidden = filtered.length - visible.length
+  // is long enough that paging earns its footer row. The table does the
+  // slicing so it can sort the whole filtered list first.
+  const pageLimit = isApiKey ? limit : undefined
+  const hidden = isApiKey ? Math.max(0, filtered.length - limit) : 0
 
   return (
     <>
       <div className='flex items-center gap-3 px-6 pt-5 pb-3'>
         <h3 className='text-sm font-semibold'>{t('providers.models.title')}</h3>
-        <span className='text-[11px] text-muted-foreground'>
+        <span className='text-[12px] text-muted-foreground'>
           {t('providers.models.enabledCount', {
             enabled: enabledCountOf(provider),
             total: listedModelsOf(provider).length
@@ -198,13 +210,20 @@ function ModelsSection({
           <FilterBox value={query} onChange={setQuery} wide={isApiKey} />
         </div>
       </div>
-      <ModelsTable rows={visible} withOverride={isApiKey} onToggle={onToggle} onTier={onTier} onEffort={onEffort} />
+      <ModelsTable
+        rows={filtered}
+        limit={pageLimit}
+        withOverride={isApiKey}
+        onToggle={onToggle}
+        onTier={onTier}
+        onEffort={onEffort}
+      />
       {hidden > 0 ? (
         <div className='px-6 py-4'>
           <button
             type='button'
             onClick={() => setLimit(limit + PAGE)}
-            className='w-full rounded-md border border-dashed border-border py-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted/50'
+            className='w-full rounded-md border border-dashed border-border py-2 text-[12px] text-muted-foreground transition-colors hover:bg-muted/50'
           >
             {t('providers.models.showMore', { n: hidden })}
           </button>
@@ -235,6 +254,7 @@ export interface ProviderDetailProps {
   onTestAll: () => void
   onSync: () => void
   onRemove: () => void
+  removeConfirm: string
   onToggleProvider: (next: boolean) => void
 }
 
@@ -253,6 +273,7 @@ export function ProviderDetail(props: ProviderDetailProps) {
         onTestAll={props.onTestAll}
         onSync={props.onSync}
         onRemove={props.onRemove}
+        removeConfirm={props.removeConfirm}
         onToggleProvider={props.onToggleProvider}
       />
       <div className='grid grid-cols-2 border-b border-border'>

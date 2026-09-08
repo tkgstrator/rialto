@@ -34,7 +34,7 @@ export function FileRail({
   return (
     <aside className='min-w-0 overflow-y-auto border-r border-border'>
       <div className='flex items-center gap-2 px-4 pt-5 pb-2'>
-        <h2 className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>
+        <h2 className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>
           {t('activity.logs.railFiles')}
         </h2>
       </div>
@@ -51,14 +51,14 @@ export function FileRail({
           )}
         >
           <i className='ri-file-text-line text-sm text-muted-foreground' />
-          <span className='truncate font-mono text-[11px]'>{file.name}</span>
-          <span className='ml-auto shrink-0 font-mono text-[10px] text-muted-foreground'>
+          <span className='truncate font-mono text-[12px]'>{file.name}</span>
+          <span className='ml-auto shrink-0 font-mono text-[11px] text-muted-foreground'>
             {formatFileSize(file.size)}
           </span>
         </button>
       ))}
       <div className='border-t border-border px-4 py-3'>
-        <div className='text-[11px] text-muted-foreground'>{t('activity.logs.railLevel')}</div>
+        <div className='text-[12px] text-muted-foreground'>{t('activity.logs.railLevel')}</div>
         <div className='mt-1.5 flex flex-wrap gap-1'>
           {LEVEL_CHIPS.map((level) => (
             <button
@@ -66,7 +66,7 @@ export function FileRail({
               type='button'
               onClick={() => onToggleLevel(level)}
               className={cn(
-                'rounded border px-1.5 py-0.5 text-[10px] transition-colors',
+                'rounded border px-1.5 py-0.5 text-[11px] transition-colors',
                 levels.has(level)
                   ? 'border-foreground/40 bg-muted/60'
                   : 'border-border text-muted-foreground hover:bg-muted/50'
@@ -94,10 +94,10 @@ export function GroupRail({
   return (
     <aside className='min-w-0 overflow-y-auto border-r border-border'>
       <div className='flex items-center gap-2 px-4 pt-5 pb-2'>
-        <h2 className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>
+        <h2 className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>
           {t('activity.logs.railRequests')}
         </h2>
-        <span className='ml-auto font-mono text-[10px] text-muted-foreground'>{groups.length}</span>
+        <span className='ml-auto font-mono text-[11px] text-muted-foreground'>{groups.length}</span>
       </div>
       {groups.map((group) => {
         const chip = chipFor(group.level)
@@ -114,16 +114,16 @@ export function GroupRail({
             )}
           >
             <div className='flex items-center gap-2'>
-              <span className='font-mono text-[11px] tabular-nums text-muted-foreground'>
+              <span className='font-mono text-[12px] tabular-nums text-muted-foreground'>
                 {group.firstTime === 0 ? '--:--:--' : dayjs(group.firstTime).format('HH:mm:ss')}
               </span>
               <Pill tone={LEVEL_TONE[chip]}>{chip}</Pill>
-              <span className='ml-auto font-mono text-[10px] text-muted-foreground'>
+              <span className='ml-auto font-mono text-[11px] text-muted-foreground'>
                 {t('activity.logs.lineCount', { n: group.lines.length })}
               </span>
             </div>
-            <div className='mt-1 truncate text-[11px]'>{group.summary}</div>
-            <div className='mt-0.5 font-mono text-[10px] text-muted-foreground'>{shortReqId(group.id)}</div>
+            <div className='mt-1 truncate text-[12px]'>{group.summary}</div>
+            <div className='mt-0.5 font-mono text-[11px] text-muted-foreground'>{shortReqId(group.id)}</div>
           </button>
         )
       })}

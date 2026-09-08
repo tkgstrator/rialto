@@ -4,20 +4,26 @@
  * Absorbs the old `SettingsPage`: every scalar here is written to the
  * on-disk config envelope and mirrored onto `process.env`, so a change
  * lands immediately but most of it only takes effect on the next boot —
- * hence the Restart affordance in the heading row rather than a modal
- * after every save.
+ * hence the note in the heading row rather than a modal after every save.
+ *
+ * There is no Restart button. `POST /api/restart` does not exist and
+ * could not: the deployment is an immutable image the operator restarts
+ * with `docker compose restart`, or a local process they own. The button
+ * that used to sit here 404'd on every click, so the note says how to
+ * restart instead of offering a control that cannot.
  */
+import type { TFunction } from 'i18next'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Pill, RButton } from '@/components/rialto/primitives'
 import { SectionHead, StaticField, TextField, ToggleField } from '@/components/rialto/settings/fields'
 import { SettingsField, SettingsLayout } from '@/components/rialto/settings/SettingsLayout'
-import { api, type HealthResponse } from '@/lib/api'
-import dayjs from '@/lib/dayjs'
+import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
+import { useAppVersion } from '@/hooks/use-app-version'
+import { api, type HealthResponse, type UpdateCheckResponse } from '@/lib/api'
 import { fmtAgo } from '@/lib/rialto/format'
 import { type EnvelopeWire, maskSecret, parseCount } from '@/lib/rialto/settings/envelope'
-import { APP_VERSION } from '@/version'
 
 /** Every editable scalar as text, so a half-typed number never becomes NaN. */
 interface ServerDraft {
@@ -36,52 +42,93 @@ const toDraft = (w: EnvelopeWire): ServerDraft => ({
   NON_INTERACTIVE_MODE: w.NON_INTERACTIVE_MODE === true
 })
 
-interface UpdateState {
-  hasUpdate: boolean
-  latestVersion?: string
+/**
+ * The one pill that has to say four different things: not asked yet,
+ * asked and current, asked and behind, and asked but unanswered. The
+ * endpoint used to fold the last into the second, so an install with no
+ * egress showed the green pill without ever having reached the feed.
+ */
+function UpdatePill({ state, checking }: { state: UpdateCheckResponse | null; checking: boolean }) {
+  const { t } = useTranslation()
+  if (state === null) {
+    return <Pill tone='mute'>{checking ? t('settings.server.checkingNow') : t('settings.server.versionUnknown')}</Pill>
+  }
+  if (state.status === 'error') return <Pill tone='bad'>{t('settings.server.versionCheckFailed')}</Pill>
+  if (state.hasUpdate) {
+    return <Pill tone='warn'>{t('settings.server.versionAvailable', { version: state.latestVersion })}</Pill>
+  }
+  return <Pill tone='ok'>{t('settings.server.upToDate')}</Pill>
 }
 
+/** When the answer is from, or why there isn't one. */
+function updateHint(state: UpdateCheckResponse | null, checking: boolean, now: number, t: TFunction): string {
+  if (state === null) return checking ? t('settings.server.checkingNow') : t('settings.server.notCheckedYet')
+  if (state.status === 'error') {
+    // The server's reason is English-only; it goes inside the localised
+    // sentence rather than replacing it.
+    const message = state.message === null ? t('settings.server.checkNotReported') : state.message
+    return t('settings.server.updateCheckFailed', { message })
+  }
+  // `checkedAt` is the server's, so a cached answer says how old it is
+  // instead of claiming it was just fetched.
+  return t('settings.server.checkedAgo', { ago: fmtAgo(state.checkedAt, now) })
+}
+
+/**
+ * Update.
+ *
+ * Reports the version the server process is running — not the one
+ * compiled into this bundle — and what the release feed said about it.
+ */
 function UpdateSection() {
   const { t } = useTranslation()
-  const [state, setState] = useState<UpdateState | null>(null)
-  const [checkedAt, setCheckedAt] = useState<string | null>(null)
+  const buildVersion = useAppVersion()
+  const [state, setState] = useState<UpdateCheckResponse | null>(null)
   const [now, setNow] = useState(Date.now())
   const [checking, setChecking] = useState(false)
 
-  const check = useCallback(() => {
-    setChecking(true)
-    api
-      .checkForUpdates()
-      .then((res) => {
-        setState(res)
-        setCheckedAt(dayjs().toISOString())
-        setNow(Date.now())
-      })
-      .catch((e: Error) => toast.error(t('settings.server.updateCheckFailed', { message: e.message })))
-      .finally(() => setChecking(false))
-  }, [t])
+  const check = useCallback(
+    (force: boolean) => {
+      setChecking(true)
+      api
+        .checkForUpdates(force)
+        .then((res) => {
+          setState(res)
+          setNow(Date.now())
+        })
+        .catch((e: Error) => toast.error(t('settings.server.updateCheckFailed', { message: e.message })))
+        .finally(() => setChecking(false))
+    },
+    [t]
+  )
 
-  useEffect(check, [check])
+  // Mount reads whatever the server already has; only the button forces
+  // a fresh call, because GitHub's anonymous limit is 60/hour and this
+  // screen re-mounts on every visit.
+  useEffect(() => {
+    check(false)
+  }, [check])
 
-  const hint =
-    checkedAt === null
-      ? t('settings.server.notCheckedYet')
-      : t('settings.server.checkedAgo', { ago: fmtAgo(checkedAt, now) })
+  const releaseUrl = state?.hasUpdate === true ? state.releaseUrl : null
 
   return (
     <>
       <SectionHead title={t('settings.server.updateTitle')} />
-      <SettingsField label={t('settings.server.version')} hint={hint}>
+      <SettingsField label={t('settings.server.version')} hint={updateHint(state, checking, now, t)}>
         <div className='flex items-center gap-3'>
-          <span className='font-mono text-xs'>v{APP_VERSION}</span>
-          {state === null ? (
-            <Pill tone='mute'>{t('settings.server.versionUnknown')}</Pill>
-          ) : state.hasUpdate ? (
-            <Pill tone='warn'>{t('settings.server.versionAvailable', { version: state.latestVersion })}</Pill>
-          ) : (
-            <Pill tone='ok'>{t('settings.server.upToDate')}</Pill>
+          <span className='font-mono text-xs'>v{state === null ? buildVersion : state.currentVersion}</span>
+          <UpdatePill state={state} checking={checking} />
+          {releaseUrl === null ? null : (
+            <a
+              href={releaseUrl}
+              target='_blank'
+              rel='noreferrer'
+              className='text-xs text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground'
+            >
+              {t('settings.server.releaseNotes')}
+            </a>
           )}
-          <RButton variant='ghost' icon='ri-refresh-line' onClick={check} disabled={checking}>
+          <RButton variant='ghost' icon='ri-refresh-line' onClick={() => check(true)} disabled={checking}>
             {t('settings.server.checkNow')}
           </RButton>
         </div>
@@ -178,7 +225,13 @@ function ServerFields({
       <StaticField
         label={t('settings.server.bootstrapToken')}
         hint={t('settings.server.bootstrapTokenHint')}
-        value={maskSecret(wire.APIKEY)}
+        // maskSecret's own fallback is the English literal 'not set';
+        // the Access screen already has a translated key for the same word.
+        value={
+          typeof wire.APIKEY === 'string' && wire.APIKEY.length > 0
+            ? maskSecret(wire.APIKEY)
+            : t('providers.credentials.notSet')
+        }
       />
       <TextField
         label={t('settings.server.requestTimeout')}
@@ -206,6 +259,7 @@ function ServerFields({
 
 export function SettingsServer() {
   const { t } = useTranslation()
+  const version = useAppVersion()
   const [wire, setWire] = useState<EnvelopeWire | null>(null)
   const [draft, setDraft] = useState<ServerDraft | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -228,6 +282,7 @@ export function SettingsServer() {
     () => wire !== null && draft !== null && JSON.stringify(draft) !== JSON.stringify(toDraft(wire)),
     [draft, wire]
   )
+  useUnsavedGuard(dirty)
 
   const save = () => {
     if (draft === null) return
@@ -254,23 +309,11 @@ export function SettingsServer() {
       .finally(() => setSaving(false))
   }
 
-  const restart = () => {
-    api
-      .restartService()
-      .then(() => toast.success(t('settings.server.restartRequested')))
-      .catch((e: Error) => toast.error(t('settings.server.restartFailed', { message: e.message })))
-  }
-
   return (
     <SettingsLayout
       active='server'
-      subtitle={t('settings.server.subtitle', { version: APP_VERSION })}
+      subtitle={t('settings.server.subtitle', { version })}
       headerNote={t('settings.server.headerNote')}
-      headerActions={
-        <RButton variant='outline' icon='ri-restart-line' onClick={restart}>
-          {t('settings.server.restart')}
-        </RButton>
-      }
       actions={
         <>
           <RButton

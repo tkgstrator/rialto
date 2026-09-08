@@ -8,19 +8,26 @@
  *
  * The score formula (plan doc §8.2) is:
  *
- *   preferenceWeight(m) = (N - rank(m)) / N        // 1.0 at rank 0
  *   budget(m)           = max over usable accounts of (1 - used/limit)
  *   err(m)              = errorRate5min (already 0..1 on input)
  *   resetPenalty(m)     = resetSoonFactor when timeToReset<threshold
  *                         AND budget<threshold, else 1.0
  *
- *   healthiness(m)      = preferenceWeight × budget × (1-err) × resetPenalty
- *   weight(m)           = healthiness / Σ healthiness
+ *   healthiness(m)      = budget × (1-err) × resetPenalty
+ *   weight(m)           = healthiness, clamped to 0..1
+ *
+ * The plan's formula opened with `preferenceWeight = (N - rank)/N` and
+ * closed with `healthiness / Σ healthiness`. Both are gone: the vector
+ * was never consumed as a distribution (the selector walks the chain in
+ * order and only tests `weight <= 0`), and between them they made a
+ * healthy candidate's published number depend on its position and on how
+ * many unrelated targets existed. A weight now says one thing about one
+ * candidate — see `shaping.ts`.
  *
  * Then three guards apply (in order):
  *
  *   1. probe floor    — enabled candidates with healthiness > 0 keep at
- *                       least `minWeightPct/100`, remainder normalised.
+ *                       least `minWeightPct/100`.
  *   2. oscillation    — `|w-previous| > maxDeltaPerTick` clamped to
  *                       previous±maxDeltaPerTick. Off by default when
  *                       `dampenerEnabled = false`.
@@ -34,35 +41,15 @@
 // per-candidate ratios, `score` applies the formula above, `shaping`
 // applies the three guards, and this file is the order they run in.
 import { type RawScore, scoreCandidate } from './score'
-import { applyDamper, applyProbeFloor, holdGuardFires, normalize } from './shaping'
+import { applyDamper, applyProbeFloor, baseWeights, holdGuardFires } from './shaping'
 import type { ComputeResult, SchedulerInputState, WeightChange, WeightEntry } from './types'
 
 export function computeWeights(state: SchedulerInputState): ComputeResult {
-  // Rank is a position among enabled entries — disabled entries do
-  // not consume a rank slot. This keeps preferenceWeight = 1 for the
-  // top enabled entry regardless of how many disabled ones sit above
-  // it (a common "temporarily drop Fable" ordering).
-  const enabledIndex = new Map<string, number>()
-  let enabledCounter = 0
-  for (const entry of state.preferences) {
-    if (entry.enabled) {
-      enabledIndex.set(entry.target, enabledCounter)
-      enabledCounter += 1
-    }
-  }
-  const totalRanks = enabledCounter
   const raws: RawScore[] = state.preferences.map((entry) =>
-    scoreCandidate(
-      entry.target,
-      enabledIndex.get(entry.target) ?? 0,
-      totalRanks,
-      state.candidates.get(entry.target),
-      state,
-      entry.enabled
-    )
+    scoreCandidate(entry.target, state.candidates.get(entry.target), state, entry.enabled)
   )
 
-  const initial = normalize(raws)
+  const initial = baseWeights(raws)
   const floored = applyProbeFloor(raws, initial, state.constraints.minWeightPct)
   const damped = state.constraints.dampenerEnabled
     ? applyDamper(floored, state.previousWeights, state.constraints.maxDeltaPerTick)

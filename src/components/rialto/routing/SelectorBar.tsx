@@ -63,7 +63,7 @@ export function SelectorBar() {
           onChange={onSelect}
         />
       </div>
-      <p className='ml-auto max-w-lg text-right text-[11px] leading-snug text-muted-foreground'>
+      <p className='ml-auto max-w-lg text-right text-[12px] leading-snug text-muted-foreground'>
         <Trans i18nKey={EXPLAINER_KEY[selector]} components={{ mono: <span className='font-mono' /> }} />
       </p>
     </div>

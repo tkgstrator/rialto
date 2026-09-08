@@ -207,46 +207,7 @@ function renderShell(opts) {
   root.innerHTML = `
 <div class="flex h-screen w-full overflow-hidden bg-background text-foreground">
 
-  <aside class="flex ${opts.navMode === 'cloudflare' ? 'w-64' : 'w-56'} shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
-    <div class="flex h-14 items-center gap-2 border-b border-sidebar-border px-4">
-      <div class="flex size-6 items-center justify-center rounded bg-foreground text-background">
-        <i class="ri-route-line text-sm leading-none"></i>
-      </div>
-      <span class="text-sm font-semibold tracking-tight">Rialto</span>
-      <span class="ml-auto font-mono text-[11px] text-muted-foreground">v3.0.0</span>
-    </div>
-
-    <nav class="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
-      ${navBody(opts.navMode ?? 'flat', opts.active, opts.sub, opts.alsoOpen ?? [])}
-    </nav>
-
-    <!-- Same row geometry as the nav above: 16px icon slot, gap-2.5,
-         px-2.5 py-1.5, 14px label. These three rows had grown three
-         different indents (a 6px dot, a 14px icon and a 16px icon, with
-         two different gaps), so the labels started at 24 / 34 / 36px
-         while the nav started at 44. The status dot now sits centred in
-         the same 16px slot the icons use, which is the only way a dot and
-         a glyph can share a column. -->
-    <div class="border-t border-sidebar-border p-2">
-      <div ${navTo('settings.html')} class="flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors hover:bg-sidebar-accent/60">
-        <span class="flex w-4 shrink-0 items-center justify-center">
-          <span class="size-1.5 rounded-full bg-emerald-500"></span>
-        </span>
-        <span class="text-sidebar-foreground/70">Serving</span>
-        <span class="ml-auto font-mono text-[11px] text-muted-foreground">:3456</span>
-      </div>
-      <div ${navTo('settings-access.html')} class="flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors hover:bg-sidebar-accent/60">
-        <i class="ri-shield-check-line w-4 shrink-0 text-base leading-none text-emerald-500"></i>
-        <span class="truncate text-sidebar-foreground/70">tkgstrator@…</span>
-        <span class="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">Access</span>
-      </div>
-      <button id="mock-theme-toggle" class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60">
-        <i class="ri-contrast-2-line w-4 shrink-0 text-base leading-none opacity-80"></i>
-        <span>Theme</span>
-        <span id="mock-theme-label" class="ml-auto font-mono text-[11px] text-muted-foreground"></span>
-      </button>
-    </div>
-  </aside>
+  ${opts.navMode === 'collapsed' ? collapsedAside(opts) : expandedAside(opts)}
 
   <div class="flex min-w-0 flex-1 flex-col">
     <header class="flex h-14 shrink-0 items-center gap-4 border-b border-border px-6">
@@ -299,7 +260,7 @@ const pill = (text, tone = 'mute') => {
     info: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
     mute: 'bg-muted text-muted-foreground'
   }
-  return `<span class="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium ${tones[tone]}">${text}</span>`
+  return `<span class="inline-flex items-center rounded px-1.5 py-0.5 text-[12px] font-medium ${tones[tone]}">${text}</span>`
 }
 
 /**
@@ -324,13 +285,13 @@ const toast = (text, tone = 'ok', detail = '') => `
       <i class="${TOAST_ICON[tone]} mt-px text-base leading-none"></i>
       <div class="min-w-0 flex-1">
         <div class="text-xs font-medium">${text}</div>
-        ${detail ? `<div class="mt-0.5 text-[11px] leading-snug text-muted-foreground">${detail}</div>` : ''}
+        ${detail ? `<div class="mt-0.5 text-[12px] leading-snug text-muted-foreground">${detail}</div>` : ''}
       </div>
     </div>
   </div>`
 
 /** Inline monospace token — model ids, paths, keys. */
-const mono = (text) => `<span class="font-mono text-[11px] text-muted-foreground">${text}</span>`
+const mono = (text) => `<span class="font-mono text-[12px] text-muted-foreground">${text}</span>`
 
 /**
  * The four inbound surfaces, named by the raw endpoint a client actually
@@ -348,11 +309,11 @@ const SURFACES = [
 
 /** Surface label for a table cell. Monospace so paths align down a column. */
 const surfacePill = (path) =>
-  `<span class="inline-flex items-center rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">${path}</span>`
+  `<span class="inline-flex items-center rounded bg-muted px-1.5 py-0.5 font-mono text-[12px] text-muted-foreground">${path}</span>`
 
 /** Toggle chip for "which surfaces does this apply to" pickers. */
 const surfaceChip = (path, on) => `
-  <button class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 font-mono text-[11px] transition-colors ${
+  <button class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 font-mono text-[12px] transition-colors ${
     on ? 'border-foreground/40 bg-muted/60 text-foreground' : 'border-border text-muted-foreground hover:bg-muted/50'
   }">
     ${on ? '<i class="ri-check-line text-xs"></i>' : ''}${path}
@@ -382,7 +343,7 @@ const CELL_TONE = {
 
 /** Inline editable table cell: the value, plus a disclosure chevron. */
 const selectCell = (label, source) => `
-  <button class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition-colors hover:bg-muted/60 ${CELL_TONE[source]}">
+  <button class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] transition-colors hover:bg-muted/60 ${CELL_TONE[source]}">
     ${label}<i class="ri-arrow-down-s-line text-xs opacity-60"></i>
   </button>`
 
@@ -427,10 +388,10 @@ const tabs = (items, activeId) =>
       const count =
         t.count === undefined || t.count === ''
           ? ''
-          : `<span class="font-mono text-[11px] tabular-nums text-muted-foreground">${t.count}</span>`
+          : `<span class="font-mono text-[12px] tabular-nums text-muted-foreground">${t.count}</span>`
       const tag = t.href ? 'a' : 'button'
       const href = t.href ? ` href="${t.href}"` : ''
-      return `<${tag}${href} class="flex items-center gap-2 border-b-2 px-3 py-2 text-xs transition-colors ${cls}">${t.label}${count}</${tag}>`
+      return `<${tag}${href} class="flex items-center gap-2 border-b-2 px-3 py-3 text-xs transition-colors ${cls}">${t.label}${count}</${tag}>`
     })
     .join('')
 
@@ -447,7 +408,7 @@ const tabs = (items, activeId) =>
  */
 const sortTh = (label, cls, align = 'left', active = false, dir = 'desc') => {
   const justify = align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : 'justify-start'
-  const caret = `<i class="text-[10px] ${
+  const caret = `<i class="text-[11px] ${
     active ? (dir === 'asc' ? 'ri-arrow-up-s-fill' : 'ri-arrow-down-s-fill') : 'ri-arrow-up-s-fill opacity-0'
   }"></i>`
   return `<th class="${cls} text-${align}"><button class="inline-flex w-full items-center gap-1 font-medium uppercase tracking-wider transition-colors hover:text-foreground ${justify} ${
@@ -472,7 +433,6 @@ const SETTINGS_RAIL = [
   { id: 'logging', label: 'Logging', icon: 'ri-file-list-2-line', href: 'settings-logging.html' },
   { id: 'personas', label: 'Personas', icon: 'ri-user-voice-line', href: 'settings-personas.html' },
   { id: 'statusline', label: 'Status line', icon: 'ri-layout-bottom-line', href: 'settings-statusline.html' },
-  { id: 'presets', label: 'Presets', icon: 'ri-archive-drawer-line', href: 'settings-presets.html' },
   { id: 'advanced', label: 'Advanced', icon: 'ri-terminal-box-line', href: 'settings-advanced.html' }
 ]
 
@@ -544,7 +504,7 @@ const navSearch = `
     <div class="flex h-9 items-center gap-2 rounded-md border border-sidebar-border px-2.5 text-sm text-muted-foreground">
       <i class="ri-search-line text-base leading-none"></i>
       <span>Search…</span>
-      <span class="ml-auto font-mono text-[11px] opacity-60">⌘K</span>
+      <span class="ml-auto font-mono text-[12px] opacity-60">⌘K</span>
     </div>
   </div>`
 
@@ -577,6 +537,146 @@ const navBody = (mode, active, sub, alsoOpen = []) => {
   }).join('')
   return mode === 'cloudflare' ? navSearch + rows : rows
 }
+
+/**
+ * Collapsed rail row: one section, one 36px square, no label.
+ *
+ * `w-14` is the narrowest column that still centres a 16px icon inside
+ * the same 36px hit target the expanded rows use, so folding the sidebar
+ * changes what a row says and not how big it is.
+ */
+const railRow = (item, active, hasKids) => {
+  const on = item.id === active
+  const state = on
+    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+    : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground'
+  return `
+    <a href="${item.href}" class="relative flex h-9 items-center justify-center rounded-md transition-colors ${state}">
+      <i class="${item.icon} text-base leading-none opacity-80"></i>
+      ${
+        hasKids
+          ? // A section with a second level says so, or the rail looks like
+            // five destinations and the six Settings screens look deleted.
+            // 3px of chevron at the edge of the square is the smallest mark
+            // that reads as "there is more this way" without becoming a
+            // glyph competing with the icon.
+            '<i class="ri-arrow-right-s-line absolute right-0 text-[10px] leading-none text-muted-foreground/70"></i>'
+          : ''
+      }
+    </a>`
+}
+
+/**
+ * The second level of a collapsed section, as a flyout beside the rail.
+ *
+ * Collapsing must not delete destinations. Below 1024px the sidebar folds
+ * itself, so on a phone Activity's four views and Settings' six sections
+ * were reachable only through the command palette — a keyboard affordance
+ * on a device with no keyboard, and the sidebar is the app's ONLY
+ * navigation now that the tab strips are gone.
+ *
+ * It is the same rows the expanded tree draws, in the same colours, on the
+ * same surface: the rail is the sidebar folded, not a second menu with its
+ * own manners. The section keeps the first row because the icon can no
+ * longer both open the panel and be the way into the section itself.
+ */
+const railFlyout = (item, sub) => {
+  const kids = SUBNAV[item.id] ?? []
+  return `
+    <div class="absolute top-0 left-full z-50 ml-1 w-52 rounded-lg border border-sidebar-border bg-sidebar p-1 shadow-lg">
+      <a href="${item.href}" class="flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-sidebar-accent/60">
+        <i class="${item.icon} text-base leading-none opacity-80"></i>
+        <span>${item.label}</span>
+      </a>
+      <div class="my-1 border-t border-sidebar-border"></div>
+      ${kids.map((c) => subNavItem(c, sub)).join('')}
+    </div>`
+}
+
+/** The five sections at rail width, with one flyout drawn open. */
+const railBody = (active, sub, flyout) =>
+  NAV.map((item) => {
+    const kids = SUBNAV[item.id] ?? []
+    const body = railRow(item, active, kids.length > 0) + (flyout === item.id ? railFlyout(item, sub) : '')
+    return `<div class="relative">${body}</div>`
+  }).join('')
+
+/** Footer row at rail width: the icon column and nothing else. */
+const railFooterRow = (inner) => `
+  <div class="flex w-full items-center justify-center rounded-md py-1.5 text-sm transition-colors hover:bg-sidebar-accent/60">${inner}</div>`
+
+/**
+ * The sidebar folded to its icons.
+ *
+ * `flyout` names the section whose panel is drawn open — a static mock's
+ * way of showing what hover, focus and a tap all open in the app.
+ */
+const collapsedAside = (opts) => `
+  <aside class="flex w-14 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
+    <div class="flex h-14 items-center justify-center border-b border-sidebar-border">
+      <button class="flex size-9 items-center justify-center rounded-md transition-colors hover:bg-sidebar-accent/60">
+        <span class="flex size-6 items-center justify-center rounded bg-foreground text-background">
+          <i class="ri-route-line text-sm leading-none"></i>
+        </span>
+      </button>
+    </div>
+    <nav class="flex flex-1 flex-col gap-0.5 p-2">
+      <div class="pb-2">
+        <button class="flex h-9 w-full items-center justify-center rounded-md border border-sidebar-border text-muted-foreground transition-colors hover:bg-sidebar-accent/60">
+          <i class="ri-search-line text-base leading-none"></i>
+        </button>
+      </div>
+      ${railBody(opts.active, opts.sub, opts.flyout)}
+    </nav>
+    <div class="border-t border-sidebar-border p-2">
+      ${railFooterRow('<span class="flex w-4 shrink-0 items-center justify-center"><span class="size-1.5 rounded-full bg-emerald-500"></span></span>')}
+      ${railFooterRow('<i class="ri-shield-check-line w-4 shrink-0 text-base leading-none text-emerald-500"></i>')}
+      ${railFooterRow('<i class="ri-contrast-2-line w-4 shrink-0 text-base leading-none text-sidebar-foreground/70 opacity-80"></i>')}
+    </div>
+  </aside>`
+
+/** The sidebar at full width — what every screen mock but nav-collapsed draws. */
+const expandedAside = (opts) => `
+  <aside class="flex ${opts.navMode === 'cloudflare' ? 'w-64' : 'w-56'} shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
+    <div class="flex h-14 items-center gap-2 border-b border-sidebar-border px-4">
+      <div class="flex size-6 items-center justify-center rounded bg-foreground text-background">
+        <i class="ri-route-line text-sm leading-none"></i>
+      </div>
+      <span class="text-sm font-semibold tracking-tight">Rialto</span>
+      <span class="ml-auto font-mono text-[12px] text-muted-foreground">v3.0.0</span>
+    </div>
+
+    <nav class="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
+      ${navBody(opts.navMode ?? 'flat', opts.active, opts.sub, opts.alsoOpen ?? [])}
+    </nav>
+
+    <!-- Same row geometry as the nav above: 16px icon slot, gap-2.5,
+         px-2.5 py-1.5, 14px label. These three rows had grown three
+         different indents (a 6px dot, a 14px icon and a 16px icon, with
+         two different gaps), so the labels started at 24 / 34 / 36px
+         while the nav started at 44. The status dot now sits centred in
+         the same 16px slot the icons use, which is the only way a dot and
+         a glyph can share a column. -->
+    <div class="border-t border-sidebar-border p-2">
+      <div ${navTo('settings.html')} class="flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors hover:bg-sidebar-accent/60">
+        <span class="flex w-4 shrink-0 items-center justify-center">
+          <span class="size-1.5 rounded-full bg-emerald-500"></span>
+        </span>
+        <span class="text-sidebar-foreground/70">Serving</span>
+        <span class="ml-auto font-mono text-[12px] text-muted-foreground">:3456</span>
+      </div>
+      <div ${navTo('settings-access.html')} class="flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors hover:bg-sidebar-accent/60">
+        <i class="ri-shield-check-line w-4 shrink-0 text-base leading-none text-emerald-500"></i>
+        <span class="truncate text-sidebar-foreground/70">tkgstrator@…</span>
+        <span class="ml-auto shrink-0 font-mono text-[12px] text-muted-foreground">Access</span>
+      </div>
+      <button id="mock-theme-toggle" class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60">
+        <i class="ri-contrast-2-line w-4 shrink-0 text-base leading-none opacity-80"></i>
+        <span>Theme</span>
+        <span id="mock-theme-label" class="ml-auto font-mono text-[12px] text-muted-foreground"></span>
+      </button>
+    </div>
+  </aside>`
 
 const btn = (label, variant = 'ghost', icon = '', href = '') => {
   const variants = {
@@ -626,7 +726,7 @@ const SELECTOR_HINT = {
 
 const selectorBar = (active) => {
   const seg = (id, label) =>
-    `<button class="rounded px-2.5 py-1 text-[11px] ${
+    `<button class="rounded px-2.5 py-1 text-[12px] ${
       id === active ? 'bg-foreground font-medium text-background' : 'text-muted-foreground hover:text-foreground'
     }">${label}</button>`
   return `
@@ -637,7 +737,7 @@ const selectorBar = (active) => {
         ${seg('rules', 'Rules')}${seg('chain', 'Chain')}
       </div>
     </div>
-    <p class="ml-auto max-w-lg text-right text-[11px] leading-snug text-muted-foreground">${SELECTOR_HINT[active]}</p>
+    <p class="ml-auto max-w-lg text-right text-[12px] leading-snug text-muted-foreground">${SELECTOR_HINT[active]}</p>
   </div>`
 }
 
@@ -672,9 +772,9 @@ const providerRow = (p, activeId) => {
     <div class="flex items-center gap-2">
       <span class="text-xs font-medium">${p.label}</span>
       ${p.plan ? pill(p.plan, 'info') : ''}
-      <span class="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground">${p.models}</span>
+      <span class="ml-auto font-mono text-[12px] tabular-nums text-muted-foreground">${p.models}</span>
     </div>
-    <div class="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+    <div class="mt-1 flex items-center gap-2 text-[12px] text-muted-foreground">
       <span>${p.auth === 'subscription' ? 'OAuth' : 'API key'}</span>
       <span class="opacity-40">·</span>
       <span>${p.vendor}</span>
@@ -686,14 +786,14 @@ const providerRow = (p, activeId) => {
 
 const providerRail = (activeId) => `
   <div class="flex items-center gap-2 px-4 pt-5 pb-2">
-    <h2 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Subscriptions</h2>
-    <span class="ml-auto font-mono text-[11px] text-muted-foreground">3</span>
+    <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Subscriptions</h2>
+    <span class="ml-auto font-mono text-[12px] text-muted-foreground">3</span>
   </div>
   ${PROVIDER_ROWS.filter((p) => p.auth === 'subscription').map((p) => providerRow(p, activeId)).join('')}
 
   <div class="mt-2 flex items-center gap-2 border-t border-border px-4 pt-5 pb-2">
-    <h2 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">API keys</h2>
-    <span class="ml-auto font-mono text-[11px] text-muted-foreground">4</span>
+    <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">API keys</h2>
+    <span class="ml-auto font-mono text-[12px] text-muted-foreground">4</span>
   </div>
   ${PROVIDER_ROWS.filter((p) => p.auth === 'api_key').map((p) => providerRow(p, activeId)).join('')}
 

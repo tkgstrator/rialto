@@ -1,54 +1,38 @@
 /**
- * Settings → Advanced. The raw config document, a request scratchpad and
- * the health probe.
+ * Settings → Advanced. The raw config document and the health probe.
  *
- * Absorbs `JsonEditor` (the config document) and is the intended home
- * for `DebugPage` (the scratchpad). The mock designs only the config
- * tab; the scratchpad still lives on its legacy route and is linked
- * rather than reimplemented against a design that does not exist yet.
+ * Absorbs `JsonEditor` (the config document). A third tab, "Request
+ * scratchpad", used to sit between them: it rendered a "not built yet"
+ * panel whose copy sent the operator to `/debug` — a route that no
+ * longer exists and whose own 404 says it "moved into Settings". A tab
+ * that costs a click to reach a dead end is worse than no tab, so it is
+ * gone until there is something to put in it.
  *
  * Tab state rides on the query string so each tab is linkable and the
  * shared `Tabs` primitive can stay a plain list of links. The pane opens
  * straight into the strip — hence `showHeading={false}`.
  */
-import { Trans, useTranslation } from 'react-i18next'
+import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import { Tabs } from '@/components/rialto/primitives'
 import { ConfigDocument } from '@/components/rialto/settings/advanced/ConfigDocument'
 import { DangerZone } from '@/components/rialto/settings/advanced/DangerZone'
 import { HealthPanel } from '@/components/rialto/settings/advanced/HealthPanel'
 import { SectionHead } from '@/components/rialto/settings/fields'
-import { NotYetAvailable } from '@/components/rialto/settings/notice'
 import { SettingsLayout } from '@/components/rialto/settings/SettingsLayout'
 
 const TAB_KEYS = [
   { id: 'config', labelKey: 'settings.advanced.tabConfig', href: '?tab=config' },
-  { id: 'scratch', labelKey: 'settings.advanced.tabScratch', href: '?tab=scratch' },
   { id: 'health', labelKey: 'settings.advanced.tabHealth', href: '?tab=health' }
 ]
-
-function ScratchpadPanel() {
-  const { t } = useTranslation()
-  return (
-    <>
-      <SectionHead title={t('settings.advanced.scratchTitle')} meta={t('settings.advanced.notRebuilt')} />
-      <div className='px-6 py-4'>
-        <NotYetAvailable
-          what={t('settings.advanced.scratchWhat')}
-          needs={
-            <Trans i18nKey='settings.advanced.scratchNeeds' components={{ mono: <span className='font-mono' /> }} />
-          }
-        />
-      </div>
-    </>
-  )
-}
 
 export function SettingsAdvanced() {
   const { t } = useTranslation()
   const [params] = useSearchParams()
   const requested = params.get('tab')
-  const tab = requested === 'scratch' || requested === 'health' ? requested : 'config'
+  // An old ?tab=scratch link now lands on the config document rather
+  // than an empty pane — the tab it named is gone.
+  const tab = requested === 'health' ? 'health' : 'config'
 
   return (
     <SettingsLayout active='advanced' subtitle={t('settings.advanced.subtitle')} showHeading={false}>
@@ -59,7 +43,7 @@ export function SettingsAdvanced() {
         />
       </div>
 
-      {tab === 'config' ? <ConfigDocument /> : tab === 'health' ? <HealthPanel /> : <ScratchpadPanel />}
+      {tab === 'health' ? <HealthPanel /> : <ConfigDocument />}
 
       <DangerZone />
       <div className='h-10' />

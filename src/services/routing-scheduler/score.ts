@@ -2,7 +2,7 @@
  * Per-candidate scoring: the `healthiness` half of the score formula.
  *
  * Sits between `quota-math` (which turns quota counters into ratios) and
- * `shaping` (which turns scores into a normalised weight vector). Keeping
+ * `shaping` (which applies the three guards). Keeping
  * it apart from both means the formula's four factors — preference rank,
  * budget, error rate, reset penalty — can be read in one screen, and that
  * the two early returns for a disabled entry and a de-registered model
@@ -38,16 +38,27 @@ export interface RawScore {
   contextWindow: number | null
 }
 
+/**
+ * Score one candidate, 0..1, on its own terms.
+ *
+ * Preference rank is deliberately NOT a factor. It used to be — the
+ * formula opened with `(N - rank) / N` — because the weight vector was
+ * meant to be a traffic distribution that leaned on the top of the
+ * chain. Nothing ever consumed it that way: the selector walks the chain
+ * in priority order and only ever asks whether a weight is zero
+ * (`quota-router/runtime.ts`). All the rank term did was multiply every
+ * row by its position, so a perfectly healthy 4th entry published 0.25
+ * and the Chain screen showed a ladder that duplicated the ordinal
+ * column next to it. Rank lives in the chain order; this is the
+ * candidate's own health.
+ */
 export const scoreCandidate = (
   target: string,
-  rankIndex: number,
-  totalRanks: number,
   candidate: ModelCandidateState | undefined,
   input: SchedulerInputState,
   enabled: boolean
 ): RawScore => {
   const reasons: WeightReason[] = []
-  const preferenceWeight = totalRanks === 0 ? 0 : (totalRanks - rankIndex) / totalRanks
 
   if (!enabled) {
     return {
@@ -99,7 +110,7 @@ export const scoreCandidate = (
   const penalty = resetPenalty(budgetValue, earliestResetAt, input.now, input.constraints)
   if (penalty < 1) reasons.push('reset_soon')
 
-  const healthiness = preferenceWeight * budgetValue * errAdjust * penalty
+  const healthiness = budgetValue * errAdjust * penalty
   if (reasons.length === 0) reasons.push('ok')
 
   return {

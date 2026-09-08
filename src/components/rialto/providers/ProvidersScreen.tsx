@@ -11,8 +11,10 @@ import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
+import { useConfig } from '@/components/ConfigProvider'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
+import type { RouterConfig } from '@/schemas/domain/router'
 import {
   refreshPrices,
   removeProvider,
@@ -25,7 +27,7 @@ import {
   toggleProvider
 } from './actions'
 import { BusyOverlay } from './BusyOverlay'
-import { disabledModelsOf, enabledCountOf, listedModelsOf, providerState } from './derive'
+import { disabledModelsOf, enabledCountOf, listedModelsOf, providerState, routerBindingsFor } from './derive'
 import { ProviderDetail } from './ProviderDetail'
 import { ProviderRail, type RailProvider } from './ProviderRail'
 import type { CatalogEntry, Provider } from './types'
@@ -64,10 +66,43 @@ function summarySubtitle(data: ProvidersData, t: TFunction): string {
   return t('providers.screen.summarySubtitle', { providers, models, accounts })
 }
 
+/** The header line: a per-provider count for api_key providers, the
+ *  install-wide summary otherwise. */
+function subtitleFor(data: ProvidersData | null, selected: RailProvider | undefined, t: TFunction): string | undefined {
+  if (data === null) return undefined
+  if (selected === undefined) return summarySubtitle(data, t)
+  const p = selected.provider
+  if (p.auth_mode === 'subscription') return summarySubtitle(data, t)
+  return t('providers.screen.apiKeySubtitle', {
+    label: selected.label,
+    enabled: enabledCountOf(p),
+    total: listedModelsOf(p).length
+  })
+}
+
+/**
+ * What deleting this provider costs, as a sentence to confirm.
+ *
+ * Removal cascades to every model, the stored key or OAuth account, and
+ * any router slot pointing at one of them — the server reports the
+ * cleared slots only as an after-the-fact warning. Revoking an access
+ * token already asks first, and this is the more destructive of the two.
+ */
+function removeConfirmMessage(entry: RailProvider, router: RouterConfig | undefined, t: TFunction): string {
+  return t('providers.detail.removeConfirm', {
+    name: entry.label,
+    models: listedModelsOf(entry.provider).length,
+    bindings: routerBindingsFor(router, entry.provider.name)
+  })
+}
+
 export function ProvidersScreen() {
   const { t } = useTranslation()
   const { name } = useParams<{ name?: string }>()
   const navigate = useNavigate()
+  // Only for the removal confirm's blast radius — the screen's own data
+  // comes from useProvidersData.
+  const { config } = useConfig()
   const { data, error, loading, reload } = useProvidersData()
   const [busy, setBusy] = useState(false)
   // Label of the action currently running, or null when nothing needs a
@@ -113,17 +148,10 @@ export function ProvidersScreen() {
   const selected = name === undefined ? rail[0] : rail.find((e) => e.provider.name === name)
   const goAdd = useCallback(() => navigate('/providers/connect'), [navigate])
 
-  const subtitle = (() => {
-    if (data === null) return undefined
-    if (selected === undefined) return summarySubtitle(data, t)
-    const p = selected.provider
-    if (p.auth_mode === 'subscription') return summarySubtitle(data, t)
-    return t('providers.screen.apiKeySubtitle', {
-      label: selected.label,
-      enabled: enabledCountOf(p),
-      total: listedModelsOf(p).length
-    })
-  })()
+  // Hoisted out of the JSX: the removal confirm needs the router to count
+  // the slots it would clear.
+  const router = config === null ? undefined : config.Router
+  const subtitle = subtitleFor(data, selected, t)
 
   return (
     <Screen
@@ -193,6 +221,7 @@ export function ProvidersScreen() {
                   done: t('providers.detail.modelsSynced')
                 })
               }
+              removeConfirm={removeConfirmMessage(selected, router, t)}
               onRemove={() =>
                 run(async () => {
                   await removeProvider(selected.provider.name)

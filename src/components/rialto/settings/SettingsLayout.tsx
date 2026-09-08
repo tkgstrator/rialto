@@ -22,12 +22,12 @@ const SECTION_LABEL_KEYS: Readonly<Record<string, string>> = {
   logging: 'settings.rail.logging',
   personas: 'settings.rail.personas',
   statusline: 'settings.rail.statusline',
-  presets: 'settings.rail.presets',
   advanced: 'settings.rail.advanced'
 }
 
 export function SettingsLayout({
   active,
+  heading,
   subtitle,
   actions,
   headerNote,
@@ -40,6 +40,14 @@ export function SettingsLayout({
   subtitle?: ReactNode
   /** Actions for the app-level title bar. */
   actions?: ReactNode
+  /**
+   * What the first block on this screen is about, when that is not the
+   * screen's own name. The rail already says which screen you are on, so
+   * repeating it as the first heading spends a line saying "Access /
+   * Access"; the mocks name the block instead — "Admin access" over the
+   * credentials, "Server log" over the pino settings.
+   */
+  heading?: string
   /** The one-line explanation beside the section heading. */
   headerNote?: ReactNode
   /** Status pill beside the section heading (Access shows one). */
@@ -56,14 +64,15 @@ export function SettingsLayout({
 }) {
   const { t } = useTranslation()
   const labelKey = SECTION_LABEL_KEYS[active]
+  const title = heading === undefined ? (labelKey === undefined ? '' : t(labelKey)) : heading
   return (
     <Screen subtitle={subtitle} actions={actions}>
       <div className='min-w-0'>
         {showHeading ? (
           <div className='flex items-center gap-3 px-6 pt-6 pb-3'>
-            <h2 className='text-sm font-semibold'>{labelKey === undefined ? '' : t(labelKey)}</h2>
+            <h2 className='text-sm font-semibold'>{title}</h2>
             {headerBadge}
-            {headerNote ? <span className='text-[11px] text-muted-foreground'>{headerNote}</span> : null}
+            {headerNote ? <span className='text-[12px] text-muted-foreground'>{headerNote}</span> : null}
             {headerActions ? <div className='ml-auto'>{headerActions}</div> : null}
           </div>
         ) : null}
@@ -83,7 +92,7 @@ export function SettingsField({ label, hint, children }: { label: string; hint?:
     <div className='grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4'>
       <div>
         <div className='text-xs font-medium'>{label}</div>
-        {hint ? <div className='mt-0.5 text-[11px] leading-snug text-muted-foreground'>{hint}</div> : null}
+        {hint ? <div className='mt-0.5 text-[12px] leading-snug text-muted-foreground'>{hint}</div> : null}
       </div>
       <div>{children}</div>
     </div>

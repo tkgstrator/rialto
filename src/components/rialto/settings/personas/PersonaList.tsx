@@ -35,11 +35,11 @@ function PersonaRow({
       <div className='flex items-center gap-2'>
         <span className='text-xs font-medium'>{persona.name}</span>
         {active ? null : <Pill tone='mute'>{t('settings.personas.off')}</Pill>}
-        <span className='ml-auto font-mono text-[11px] tabular-nums text-muted-foreground'>
+        <span className='ml-auto font-mono text-[12px] tabular-nums text-muted-foreground'>
           {t('settings.personas.wordCount', { n: countWords(persona.prompt) })}
         </span>
       </div>
-      <div className='mt-0.5 text-[11px] text-muted-foreground'>
+      <div className='mt-0.5 text-[12px] text-muted-foreground'>
         {active ? t('settings.personas.allRoutedRequests') : '—'}
       </div>
     </button>
@@ -63,10 +63,10 @@ export function PersonaList({
   return (
     <aside className='min-w-0 overflow-y-auto border-r border-border'>
       <div className='flex items-center gap-2 px-4 pt-5 pb-2'>
-        <h2 className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>
+        <h2 className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>
           {t('settings.rail.personas')}
         </h2>
-        <span className='ml-auto font-mono text-[10px] text-muted-foreground'>{personas.length}</span>
+        <span className='ml-auto font-mono text-[11px] text-muted-foreground'>{personas.length}</span>
       </div>
       {personas.map((persona) => (
         <PersonaRow
@@ -83,7 +83,7 @@ export function PersonaList({
         </RButton>
       </div>
       <div className='border-t border-border px-4 py-4'>
-        <p className='text-[11px] leading-relaxed text-muted-foreground'>{t('settings.personas.libraryNote')}</p>
+        <p className='text-[12px] leading-relaxed text-muted-foreground'>{t('settings.personas.libraryNote')}</p>
       </div>
     </aside>
   )

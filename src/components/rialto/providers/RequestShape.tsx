@@ -20,8 +20,8 @@ function ShapeRow({ label, value, accent }: { label: string; value: string; acce
         accent ? 'border-l-2 border-l-transparent transition-colors hover:border-l-border' : ''
       )}
     >
-      <span className='text-[11px] text-muted-foreground'>{label}</span>
-      <span className='ml-auto font-mono text-[11px]'>{value}</span>
+      <span className='text-[12px] text-muted-foreground'>{label}</span>
+      <span className='ml-auto font-mono text-[12px]'>{value}</span>
     </div>
   )
 }
@@ -62,10 +62,14 @@ export function SubscriptionRequestShape({
   return (
     <Frame pad='px-6 pb-4'>
       <ShapeRow label={t('providers.shape.apiStyle')} value={v.style} accent />
-      <ShapeRow label={t('providers.shape.auth')} value={v.auth} accent />
+      <ShapeRow
+        label={t('providers.shape.auth')}
+        value={v.auth === null ? t('providers.shape.authSubscription') : v.auth}
+        accent
+      />
       <ShapeRow label={t('providers.shape.pipeline')} value={v.pipeline} accent />
       <ShapeRow label={t('providers.shape.endpoint')} value={endpoint === null ? '—' : endpoint} accent />
-      <p className='mt-3 text-[11px] leading-relaxed text-muted-foreground'>
+      <p className='mt-3 text-[12px] leading-relaxed text-muted-foreground'>
         {t('providers.shape.derivedWithOverrides')}
       </p>
     </Frame>
@@ -86,9 +90,13 @@ export function ApiKeyRequestShape({ provider }: { provider: Provider }) {
   return (
     <Frame pad='px-6 pb-5'>
       <ShapeRow label={t('providers.shape.apiStyle')} value={v.style} accent={false} />
-      <ShapeRow label={t('providers.shape.auth')} value={v.auth} accent={false} />
+      <ShapeRow
+        label={t('providers.shape.auth')}
+        value={v.auth === null ? t('providers.shape.authSubscription') : v.auth}
+        accent={false}
+      />
       <ShapeRow label={t('providers.shape.pipeline')} value={v.pipeline} accent={false} />
-      <p className='mt-3 text-[11px] leading-relaxed text-muted-foreground'>
+      <p className='mt-3 text-[12px] leading-relaxed text-muted-foreground'>
         {t('providers.shape.derived')}
         {overrides.length === 0 ? null : (
           <>

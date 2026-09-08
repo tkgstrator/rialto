@@ -11,6 +11,7 @@
 import type { TFunction } from 'i18next'
 import { type ReactNode, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { LANE_KEYS, type Row } from '@/components/rialto/activity/requests-rows'
 import { DASH, StatusPill, SurfaceCell } from '@/components/rialto/activity/shared'
 import { Pill } from '@/components/rialto/primitives'
@@ -20,18 +21,7 @@ import dayjs from '@/lib/dayjs'
 import { fmtCost, fmtTokens } from '@/lib/sessions/format'
 import { cn } from '@/lib/utils'
 
-export type ColumnId =
-  | 'time'
-  | 'status'
-  | 'endpoint'
-  | 'models'
-  | 'rule'
-  | 'lane'
-  | 'token'
-  | 'input'
-  | 'output'
-  | 'ms'
-  | 'cost'
+export type ColumnId = 'time' | 'status' | 'endpoint' | 'models' | 'rule' | 'token' | 'input' | 'output' | 'ms' | 'cost'
 
 export interface ColumnDef {
   id: ColumnId
@@ -72,25 +62,47 @@ const instant = (iso: string): SortValue => {
 function ModelsCell({ row }: { row: Row }) {
   const { t } = useTranslation()
   const requested = row.log.requestedModel
+  const requestedLabel = requested === null ? t('activity.common.untracked') : requested
+  const sent = `${row.log.provider},${row.log.model}`
+  // Two model ids in one column truncate to "claude… → claude-code…" at
+  // any realistic width, which makes the one column an operator opens this
+  // screen for unreadable. The full pair goes in the tooltip so the answer
+  // is a hover away rather than a horizontal scroll.
   return (
-    <div className='flex items-center gap-1.5 font-mono text-[11px]'>
-      <span className='truncate text-muted-foreground'>
-        {requested === null ? t('activity.common.untracked') : requested}
-      </span>
+    <div className='flex items-center gap-1.5 font-mono text-[12px]' title={`${requestedLabel} → ${sent}`}>
+      <span className='truncate text-muted-foreground'>{requestedLabel}</span>
       <i className='ri-arrow-right-line shrink-0 text-xs text-muted-foreground/50' />
-      <span className='truncate'>{`${row.log.provider},${row.log.model}`}</span>
+      <span className='truncate'>{sent}</span>
     </div>
   )
+}
+
+/**
+ * Arrival time, dated only when it needs to be.
+ *
+ * A bare HH:mm:ss is unambiguous while the range is an hour and useless
+ * once it is seven days — two rows both reading 14:03:02 gave no way to
+ * tell today from Tuesday. The date appears only when the row is not
+ * from today, and the full local instant with its UTC offset lives in
+ * the tooltip, because a time pasted into a thread with someone in
+ * another timezone needs to carry one.
+ */
+function TimeCell({ iso }: { iso: string }) {
+  const at = dayjs(iso)
+  const sameDay = at.isSame(dayjs(), 'day')
+  return <span title={at.format('YYYY-MM-DD HH:mm:ss Z')}>{at.format(sameDay ? 'HH:mm:ss' : 'MM-DD HH:mm')}</span>
 }
 
 export const COLUMNS: readonly ColumnDef[] = [
   {
     id: 'time',
     labelKey: 'activity.requests.colTime',
-    width: 'w-20',
+    // Wide enough for the dated form ("09-07 06:43") on one line; at w-20
+    // it wrapped and every row in a multi-day range grew a second line.
+    width: 'w-28',
     align: 'left',
-    cellClass: 'font-mono text-[11px] tabular-nums text-muted-foreground',
-    render: (row) => dayjs(row.log.createdAt).format('HH:mm:ss'),
+    cellClass: 'whitespace-nowrap font-mono text-[12px] tabular-nums text-muted-foreground',
+    render: (row) => <TimeCell iso={row.log.createdAt} />,
     // The cell abbreviates the arrival instant to a clock, but the column
     // means the instant: over a 7d window, ordering the printed HH:mm:ss
     // would interleave the days.
@@ -129,30 +141,30 @@ export const COLUMNS: readonly ColumnDef[] = [
     sortValue: (row) => `${row.log.provider},${row.log.model}`
   },
   {
+    // The lane rides with the rule rather than holding a column of its
+    // own. It qualifies the routing decision (there is no lane without
+    // one), it reads `agent` on almost every row, and the column it cost
+    // belonged to Requested → Sent — which was truncating both halves of
+    // the one thing this screen exists to show.
     id: 'rule',
     labelKey: 'activity.requests.colRule',
     width: 'w-32',
     align: 'left',
-    cellClass: 'text-[11px]',
-    render: (row) =>
-      row.rule === null ? <span className='text-muted-foreground/50'>{DASH}</span> : <span>{row.rule}</span>,
+    cellClass: 'text-[12px]',
+    render: (row, t) => (
+      <span className='flex items-baseline gap-1.5'>
+        {row.rule === null ? <span className='text-muted-foreground/50'>{DASH}</span> : <span>{row.rule}</span>}
+        {row.lane === 'agent' ? null : <span className='text-muted-foreground'>· {t(LANE_KEYS[row.lane])}</span>}
+      </span>
+    ),
     sortValue: (row) => row.rule
-  },
-  {
-    id: 'lane',
-    labelKey: 'activity.requests.colLane',
-    width: 'w-20',
-    align: 'left',
-    cellClass: '',
-    render: (row, t) => <Pill tone='mute'>{t(LANE_KEYS[row.lane])}</Pill>,
-    sortValue: (row, t) => t(LANE_KEYS[row.lane])
   },
   {
     id: 'token',
     labelKey: 'activity.requests.colToken',
-    width: 'w-40',
+    width: 'w-28',
     align: 'left',
-    cellClass: 'truncate text-[11px] text-muted-foreground',
+    cellClass: 'truncate text-[12px] text-muted-foreground',
     render: (row, t) => (row.client === null ? t('activity.common.untracked') : row.client),
     sortValue: (row) => row.client
   },
@@ -215,8 +227,15 @@ const edgeClass = (index: number, count: number, cell: boolean): string => {
 
 function RequestRow({ row, columns }: { row: Row; columns: readonly ColumnDef[] }) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
+  // "This request cost $0.13 — which conversation was that?" had no answer
+  // from here: the session id is on every row and was rendered nowhere, so
+  // there was not even a value to paste into the Sessions search.
   return (
-    <tr className='border-t border-border/60 transition-colors hover:bg-muted/50'>
+    <tr
+      className='cursor-pointer border-t border-border/60 transition-colors hover:bg-muted/50'
+      onClick={() => navigate(`/activity/sessions/${encodeURIComponent(row.log.sessionId)}`)}
+    >
       {columns.map((col, i) => (
         <td
           key={col.id}
@@ -254,7 +273,7 @@ export function RequestsTable({ rows, columns }: { rows: Row[]; columns: readonl
         ))}
       </colgroup>
       <thead>
-        <tr className='text-[11px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
+        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2'>
           {columns.map((col, i) => {
             const className = cn(
               edgeClass(i, columns.length, false),

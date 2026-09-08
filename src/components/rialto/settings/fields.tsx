@@ -146,7 +146,7 @@ export function SectionHead({
     <div className='flex items-center gap-3 border-t border-border px-6 pt-6 pb-3'>
       <h2 className='text-sm font-semibold'>{title}</h2>
       {lead}
-      {meta ? <span className='text-[11px] text-muted-foreground'>{meta}</span> : null}
+      {meta ? <span className='text-[12px] text-muted-foreground'>{meta}</span> : null}
       {actions ? <div className='ml-auto flex items-center gap-2'>{actions}</div> : null}
     </div>
   )
