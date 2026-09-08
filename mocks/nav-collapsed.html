@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rialto — Nav proposal E (the collapsed rail's second level)</title>
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/inter/index.css">
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/geist-mono/index.css">
+<link rel="stylesheet" href="../node_modules/remixicon/fonts/remixicon.css">
+<link rel="stylesheet" href="_shared/mock.build.css">
+<script src="_shared/shell.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const { renderShell, btn } = window.Shell
+
+// ─── Proposal E: what the folded sidebar does with the second level ───
+// A–D argued about where sub-views live; D won and the sidebar became the
+// app's ONLY navigation. Then the sidebar learned to fold — and folding
+// dropped the second level on the floor, because a 56px column has no
+// room for a label.
+//
+// That is fine on a desktop, where ⌘B unfolds it again. It is not fine
+// below 1024px, where the sidebar folds ITSELF: Activity's four views and
+// Settings' six sections were then reachable only through ⌘K, a keyboard
+// affordance on the one class of device with no keyboard. The tab strips
+// that used to carry them are gone, so there was no second way in.
+//
+// So the rail keeps its five icons, and the second level arrives as a
+// flyout: the same rows the expanded tree draws, in the same colours, on
+// the same surface — the rail is the sidebar folded, not a second menu
+// with its own manners. Drawn here on Settings › Logging with the
+// Settings panel open, which is what hover, keyboard focus and a tap each
+// open in the app.
+//
+// The chevron on the icon is doing real work. Without it the rail reads
+// as five destinations and the six Settings screens read as deleted; it
+// is the only thing at 56px that can say "there is more this way".
+
+const field = (label, value, hint, kind = 'text') => `
+  <div class="grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4">
+    <div>
+      <div class="text-xs font-medium">${label}</div>
+      ${hint ? `<div class="mt-0.5 text-[12px] leading-snug text-muted-foreground">${hint}</div>` : ''}
+    </div>
+    <div>
+      ${
+        kind === 'toggle'
+          ? `<span class="inline-flex h-5 w-9 items-center rounded-full ${value ? 'bg-foreground' : 'bg-muted-foreground/30'} px-0.5 align-middle">
+               <span class="size-4 rounded-full bg-background ${value ? 'translate-x-4' : ''}"></span>
+             </span>`
+          : kind === 'select'
+            ? `<button class="inline-flex h-8 min-w-40 items-center gap-2 rounded-md border border-border px-3 text-xs transition-colors hover:bg-muted/60">
+                 <span class="font-mono">${value}</span>
+                 <i class="ri-arrow-down-s-line ml-auto text-sm text-muted-foreground"></i>
+               </button>`
+            : `<div class="flex h-8 max-w-md items-center rounded-md border border-border px-3 font-mono text-xs">${value}</div>`
+      }
+    </div>
+  </div>`
+
+document.getElementById('root').innerHTML = `
+  <div class="min-w-0 overflow-y-auto">
+    <div class="flex items-center gap-3 px-6 pt-6 pb-3">
+      <h2 class="text-sm font-semibold">Server log</h2>
+      <span class="text-[12px] text-muted-foreground">pino → ~/.rialto/logs/</span>
+      <div class="ml-auto">${btn('Open in Activity', 'outline', 'ri-external-link-line', 'activity-logs.html')}</div>
+    </div>
+    ${field('Write to file', true, 'Off keeps logging to stdout only.', 'toggle')}
+    ${field('Level', 'info', 'fatal · error · warn · info · debug · trace', 'select')}
+    ${field('Rotate at', '10', 'Megabytes. A new file is started past this size.')}
+
+    <div class="border-t border-border px-6 py-6">
+      <div class="max-w-2xl rounded-lg border border-border p-4 text-xs leading-relaxed text-muted-foreground">
+        <div class="mb-1 text-xs font-medium text-foreground">Proposal E — the rail keeps every destination</div>
+        The panel opens on hover, on keyboard focus and on tap, and closes on Escape,
+        on an outside click and on arriving somewhere. Its first row is the section
+        itself: once the icon has to open the panel it can no longer also be the way
+        into the section, so the section takes a row like its children.
+        <div class="mt-2">
+          Compare with <a href="nav-cloudflare.html" class="underline underline-offset-2">D (what ships)</a>
+          and <a href="settings-logging.html" class="underline underline-offset-2">the same screen unfolded</a>.
+        </div>
+      </div>
+    </div>
+    <div class="h-6"></div>
+  </div>`
+
+renderShell({
+  active: 'settings',
+  navMode: 'collapsed',
+  sub: 'logging',
+  flyout: 'settings',
+  crumbs: ['Logging'],
+  subtitle: 'level info · 1.5 MB captured',
+  actions: btn('Discard', 'ghost') + btn('Save', 'primary', 'ri-check-line')
+})
+</script>
+</body>
+</html>

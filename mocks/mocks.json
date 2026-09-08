@@ -188,6 +188,13 @@
       "note": "Proposal D: C plus the two things that carry Cloudflare's own deep sidebar - a search field above the tree, and several groups open at once instead of only the current one. Sidebar 16rem. Drawn on Settings -> Server so it lines up with A and B."
     },
     {
+      "name": "nav-collapsed",
+      "mock": "nav-collapsed.html",
+      "route": null,
+      "group": "Navigation",
+      "note": "Proposal E: what the FOLDED sidebar does with the second level. D won and the sidebar became the only navigation; folding it then dropped Activity's four views and Settings' six sections, which below 1024px (where it folds itself) left them reachable only through the command palette. The rail keeps its icons and the children arrive as a flyout. Mock-only: the collapsed state is a state of every screen, not a route the diff harness can visit."
+    },
+    {
       "name": "setup",
       "mock": "setup.html",
       "route": "/setup",

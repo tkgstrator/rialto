@@ -83,9 +83,38 @@ describe.skipIf(!HAS_E2E)('Sidebar collapse', () => {
   test('every rail destination keeps an accessible name', async () => {
     const page = await openShell({ width: 900, height: 900 })
     await expectWidth(page, RAIL_WIDTH)
-    for (const name of ['Overview', 'Routing', 'Providers', 'Activity', 'Settings']) {
+    for (const name of ['Overview', 'Routing', 'Providers']) {
       expect(await page.getByRole('link', { name, exact: true }).count()).toBe(1)
     }
+    // A section with a second level trades its link for the button that
+    // opens that level. The name has to survive the trade — losing it
+    // here is the same regression as losing it on a link.
+    for (const name of ['Activity', 'Settings']) {
+      expect(await page.getByRole('button', { name, exact: true }).count()).toBe(1)
+    }
+    await page.close()
+  })
+
+  /**
+   * The reason the flyout exists. A narrow window folds the sidebar by
+   * itself and the sidebar is the app's only navigation, so without this
+   * path Settings' six screens and Activity's four are reachable from the
+   * rail only through the command palette — a keyboard affordance on the
+   * one class of device that has no keyboard.
+   */
+  test('a folded section still reaches its own pages', async () => {
+    const page = await openShell({ width: 900, height: 900 })
+    await expectWidth(page, RAIL_WIDTH)
+
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await page.getByRole('link', { name: 'Logging', exact: true }).click()
+    await page.waitForURL('**/settings/logging')
+    expect(new URL(page.url()).pathname).toBe('/settings/logging')
+
+    // And closes behind the row it was used for, rather than sitting over
+    // the screen it just navigated to.
+    await page.locator('[data-slot="popover-content"]').waitFor({ state: 'detached' })
+    expect(await page.locator('[data-slot="popover-content"]').count()).toBe(0)
     await page.close()
   })
 })
