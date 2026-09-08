@@ -22,6 +22,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Pill, RButton } from '@/components/rialto/primitives'
 import { AccessConfigSection } from '@/components/rialto/settings/access/AccessConfigSection'
@@ -171,6 +172,7 @@ function PolicyCoverage() {
 
 export function SettingsAccess() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [identity, setIdentity] = useState<IdentityResponse | null>(null)
   const [apiKey, setApiKey] = useState('')
   const [surfaces, setSurfaces] = useState<InboundSurfaceWire[]>([])
@@ -294,13 +296,22 @@ export function SettingsAccess() {
         </>
       }
       headerActions={
-        <RButton
-          variant='outline'
-          icon='ri-external-link-line'
-          onClick={() => window.open(ZERO_TRUST_URL, '_blank', 'noopener,noreferrer')}
-        >
-          {t('settings.access.openZeroTrust')}
-        </RButton>
+        <div className='flex items-center gap-2'>
+          {/* Who reached this install, and how, is a log question — the
+              mock puts the shortcut here because Access is where the
+              question occurs to you. Goes to the screen that already
+              exists rather than to a second log reader. */}
+          <RButton variant='ghost' icon='ri-history-line' onClick={() => navigate('/activity/logs')}>
+            {t('settings.access.auditLog')}
+          </RButton>
+          <RButton
+            variant='outline'
+            icon='ri-external-link-line'
+            onClick={() => window.open(ZERO_TRUST_URL, '_blank', 'noopener,noreferrer')}
+          >
+            {t('settings.access.openZeroTrust')}
+          </RButton>
+        </div>
       }
     >
       {identity === null ? null : <ExposureNotice identity={identity} />}

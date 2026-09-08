@@ -392,7 +392,8 @@
       "active": "使用中",
       "auth": "认证 {{status}}",
       "weekly": "每周",
-      "resetsIn": "{{window}} 额度将在 {{until}} 后重置"
+      "resetsIn": "{{window}} 额度将在 {{until}} 后重置",
+      "resetsDue": "{{window}} 正在重置 — 等待下次轮询"
     },
     "shape": {
       "title": "请求形态",
@@ -599,6 +600,8 @@
       "healthTitle": "健康",
       "healthMeta": "GET /health · 无需认证",
       "refresh": "刷新",
+      "rawJson": "原始 JSON",
+      "recheck": "重新检查",
       "status": "状态",
       "statusHint": "degraded 表示服务器有响应但某项依赖检查失败；unreachable 表示它根本没有响应。",
       "unreachable": "不可达",
@@ -638,6 +641,7 @@
       "badgeConfigured": "Cloudflare Access",
       "badgeUnconfigured": "前面没有 Access",
       "openZeroTrust": "打开 Zero Trust",
+      "auditLog": "审计日志",
       "checking": "检查中…",
       "signedInAs": "当前身份",
       "signedInAsHint": "Rialto 针对本次请求验证出的调用方。",
@@ -792,6 +796,9 @@
       "emptyLine": "状态栏为空——请添加一个模块。",
       "styleDefault": "默认",
       "stylePowerline": "Powerline",
+      "backdropDark": "深色终端",
+      "backdropLight": "浅色终端",
+      "backdropMono": "无颜色",
       "selectModule": "在状态栏中选择一个模块，即可编辑它的图标、颜色和格式。",
       "moduleTitle": "{{module}} 模块",
       "selected": "已选中",
@@ -849,7 +856,29 @@
     "failoverActivity": "故障转移情况",
     "noFailover": "该时间段内没有故障转移事件。",
     "recentSessions": "最近的会话",
-    "noSessions": "该时间段内没有会话。"
+    "noSessions": "该时间段内没有会话。",
+    "resetsDue": "正在重置 — 等待下次轮询",
+    "modeRoutedHint": "已路由：Rialto 依据该入口的链路、规则与配额选择模型。",
+    "modePassthroughHint": "透传：调用方指定的模型名直接发往上游，不会参考链路。请在 Routing 页面开启路由。",
+    "spendDeltaHint": "与前一个等长周期相比的变化。",
+    "failoverWeightLabel": "权重",
+    "failoverRateLimited": "{{account}} 触发了限流",
+    "failoverRetryAfter": "厂商要求等待 {{secs}} 秒后重试",
+    "failoverNoRetryAfter": "响应中没有 Retry-After",
+    "failoverWeight": "{{target}} 的权重从 {{from}} 变为 {{to}}",
+    "weightReason": {
+      "quota_drop": "配额即将耗尽，调度器正在把流量引开",
+      "quota_recovered": "配额已恢复，重新开始分配流量",
+      "error_rate": "开始返回错误",
+      "reset_soon": "窗口即将重置，因此暂时压低权重",
+      "probe_floor": "保持在零以上，以便调度器重新探测",
+      "hold_guard": "保持不变以避免权重来回摆动",
+      "stale_quota": "配额读数过旧，不可信",
+      "unknown_budget": "该目标的预算未知",
+      "no_quota_kind": "该目标未上报配额窗口",
+      "unknown": "未记录原因"
+    },
+    "lastDays": "最近 {{days}} 天"
   },
   "system": {
     "notFound": {
@@ -876,7 +905,8 @@
       "title": "无法访问 Rialto API",
       "retrying": "重试中",
       "body": "UI 已加载，但 <mono>/api/config</mono> 没有响应。<mono>/v1/*</mono> 上的代理可能仍在用缓存的配置处理请求——重启之前请先确认。",
-      "proxy": "代理"
+      "proxy": "代理",
+      "retryNow": "立即重试"
     },
     "crash": {
       "title": "该页面渲染失败",

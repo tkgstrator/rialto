@@ -392,7 +392,8 @@
       "active": "active",
       "auth": "auth {{status}}",
       "weekly": "weekly",
-      "resetsIn": "{{window}} resets in {{until}}"
+      "resetsIn": "{{window}} resets in {{until}}",
+      "resetsDue": "{{window}} resetting — waiting for the next poll"
     },
     "shape": {
       "title": "Request shape",
@@ -599,6 +600,8 @@
       "healthTitle": "Health",
       "healthMeta": "GET /health · unauthenticated",
       "refresh": "Refresh",
+      "rawJson": "Raw JSON",
+      "recheck": "Re-check",
       "status": "Status",
       "statusHint": "Degraded means the server answered but a dependency check failed. Unreachable means it did not answer at all.",
       "unreachable": "unreachable",
@@ -638,6 +641,7 @@
       "badgeConfigured": "Cloudflare Access",
       "badgeUnconfigured": "No Access in front",
       "openZeroTrust": "Open Zero Trust",
+      "auditLog": "Audit log",
       "checking": "Checking…",
       "signedInAs": "Signed in as",
       "signedInAsHint": "The caller Rialto verified for this request.",
@@ -792,6 +796,9 @@
       "emptyLine": "The line is empty — add a module.",
       "styleDefault": "Default",
       "stylePowerline": "Powerline",
+      "backdropDark": "Dark terminal",
+      "backdropLight": "Light terminal",
+      "backdropMono": "No color",
       "selectModule": "Select a module in the line to edit its icon, colour and format.",
       "moduleTitle": "{{module}} module",
       "selected": "selected",
@@ -849,7 +856,29 @@
     "failoverActivity": "Failover activity",
     "noFailover": "No failover events in this window.",
     "recentSessions": "Recent sessions",
-    "noSessions": "No sessions in this window."
+    "noSessions": "No sessions in this window.",
+    "resetsDue": "resetting — waiting for the next poll",
+    "modeRoutedHint": "Routed: Rialto picks the model from this surface's chain, rules and quota.",
+    "modePassthroughHint": "Passthrough: the caller's own model name goes straight upstream and the chain is not consulted. Turn routing on under Routing.",
+    "spendDeltaHint": "Change against the previous period of the same length.",
+    "failoverWeightLabel": "weight",
+    "failoverRateLimited": "{{account}} was rate limited",
+    "failoverRetryAfter": "the vendor asked for {{secs}}s before the next try",
+    "failoverNoRetryAfter": "no Retry-After on the response",
+    "failoverWeight": "{{target}} scored {{from}} → {{to}}",
+    "weightReason": {
+      "quota_drop": "its quota is running out, so the scheduler is steering traffic away",
+      "quota_recovered": "its quota recovered, so it is taking traffic again",
+      "error_rate": "it started returning errors",
+      "reset_soon": "its window resets soon, so the score is held back",
+      "probe_floor": "kept just above zero so the scheduler can retest it",
+      "hold_guard": "held steady to stop the score oscillating",
+      "stale_quota": "its quota reading is too old to trust",
+      "unknown_budget": "no budget is known for this target",
+      "no_quota_kind": "this target reports no quota window",
+      "unknown": "reason not recorded"
+    },
+    "lastDays": "last {{days}}d"
   },
   "system": {
     "notFound": {
@@ -876,7 +905,8 @@
       "title": "Cannot reach the Rialto API",
       "retrying": "retrying",
       "body": "The UI is loaded but <mono>/api/config</mono> is not answering. The proxy at <mono>/v1/*</mono> may still be serving requests from its cached configuration — check before restarting.",
-      "proxy": "Proxy"
+      "proxy": "Proxy",
+      "retryNow": "Retry now"
     },
     "crash": {
       "title": "This screen failed to render",

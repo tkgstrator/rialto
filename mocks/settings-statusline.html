@@ -19,24 +19,27 @@ const { renderShell, pill, btn } = window.Shell
 // it is a three-pane editor (module palette / assembled line / properties)
 // because you cannot judge a status line without seeing it rendered.
 
+// The palette is exactly what the line can render. Every module is a
+// template over the variables the status line is invoked with
+// (workDirName / gitBranch / model / inputTokens / outputTokens, plus the
+// derived token speed) — a Quota or Cost module would have nothing to
+// substitute and would print its own `{{placeholder}}` into the
+// operator's terminal. `script` is the escape hatch for anything else.
 const TYPES = [
   { id: 'model',     label: 'Model',      icon: 'ri-cpu-line' },
-  { id: 'provider',  label: 'Provider',   icon: 'ri-plug-line' },
-  { id: 'quota',     label: 'Quota',      icon: 'ri-battery-2-line' },
-  { id: 'cost',      label: 'Cost',       icon: 'ri-money-dollar-circle-line' },
-  { id: 'tokens',    label: 'Tokens',     icon: 'ri-hashtag' },
-  { id: 'session',   label: 'Session',    icon: 'ri-chat-1-line' },
+  { id: 'usage',     label: 'Tokens',     icon: 'ri-hashtag' },
+  { id: 'speed',     label: 'Speed',      icon: 'ri-speed-line' },
   { id: 'gitBranch', label: 'Git branch', icon: 'ri-git-branch-line' },
-  { id: 'cwd',       label: 'Directory',  icon: 'ri-folder-line' },
-  { id: 'text',      label: 'Static text',icon: 'ri-text' }
+  { id: 'workDir',   label: 'Directory',  icon: 'ri-folder-line' },
+  { id: 'script',    label: 'Script',     icon: 'ri-terminal-box-line' }
 ]
 
 const MODULES = [
-  { id: 'cwd',       label: 'Directory', icon: 'ri-folder-line',    color: 'text-muted-foreground', active: false },
+  { id: 'workDir',   label: 'Directory', icon: 'ri-folder-line',    color: 'text-muted-foreground', active: false },
   { id: 'gitBranch', label: 'Git branch',icon: 'ri-git-branch-line',color: 'text-muted-foreground', active: false },
   { id: 'model',     label: 'Model',     icon: 'ri-cpu-line',       color: 'text-sky-500',          active: true },
-  { id: 'quota',     label: 'Quota',     icon: 'ri-battery-2-line', color: 'text-emerald-500',      active: false },
-  { id: 'cost',      label: 'Cost',      icon: 'ri-money-dollar-circle-line', color: 'text-amber-500', active: false }
+  { id: 'usage',     label: 'Tokens',    icon: 'ri-hashtag',        color: 'text-emerald-500',      active: false },
+  { id: 'speed',     label: 'Speed',     icon: 'ri-speed-line',     color: 'text-amber-500',        active: false }
 ]
 
 const typeItem = (t) => `
@@ -93,12 +96,21 @@ document.getElementById('root').innerHTML = `
             <span class="text-neutral-500">~/app</span>
             <span class="text-neutral-500">⎇ master</span>
             <span class="text-sky-400">claude-opus-4-8</span>
-            <span class="text-emerald-400">▮▮▮▮▯ 71%</span>
-            <span class="text-amber-400">$1.24</span>
+            <span class="text-emerald-400">1.2k/2.5k</span>
+            <span class="text-amber-400">48 tok/s</span>
           </div>
         </div>
+        <!-- Two rows, because they answer different questions. The style
+             is part of the artefact (it is written to the config and
+             changes what the line prints); the backdrop is a way to look
+             at that artefact — the same line on a light terminal, or with
+             ANSI stripped, which is where a colour choice fails. -->
         <div class="mt-2 flex gap-2">
-          <button class="rounded border border-border px-2 py-0.5 text-[12px] text-muted-foreground hover:bg-muted/50">Dark terminal</button>
+          <button class="rounded border border-foreground/40 px-2 py-0.5 text-[12px] text-foreground">Default</button>
+          <button class="rounded border border-border px-2 py-0.5 text-[12px] text-muted-foreground hover:bg-muted/50">Powerline</button>
+        </div>
+        <div class="mt-2 flex gap-2">
+          <button class="rounded border border-foreground/40 px-2 py-0.5 text-[12px] text-foreground">Dark terminal</button>
           <button class="rounded border border-border px-2 py-0.5 text-[12px] text-muted-foreground hover:bg-muted/50">Light terminal</button>
           <button class="rounded border border-border px-2 py-0.5 text-[12px] text-muted-foreground hover:bg-muted/50">No color</button>
         </div>

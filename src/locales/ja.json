@@ -392,7 +392,8 @@
       "active": "使用中",
       "auth": "認証 {{status}}",
       "weekly": "週次",
-      "resetsIn": "{{window}} の枠は {{until}} でリセット"
+      "resetsIn": "{{window}} の枠は {{until}} でリセット",
+      "resetsDue": "{{window}} リセット中 — 次回の取得待ち"
     },
     "shape": {
       "title": "リクエスト形式",
@@ -599,6 +600,8 @@
       "healthTitle": "ヘルス",
       "healthMeta": "GET /health · 認証なし",
       "refresh": "更新",
+      "rawJson": "生 JSON",
+      "recheck": "再チェック",
       "status": "ステータス",
       "statusHint": "degraded はサーバーは応答したが依存チェックが失敗した状態、unreachable はそもそも応答がない状態です。",
       "unreachable": "到達不可",
@@ -638,6 +641,7 @@
       "badgeConfigured": "Cloudflare Access",
       "badgeUnconfigured": "前段に Access なし",
       "openZeroTrust": "Zero Trust を開く",
+      "auditLog": "監査ログ",
       "checking": "確認中…",
       "signedInAs": "サインイン中",
       "signedInAsHint": "このリクエストについて Rialto が検証した呼び出し元です。",
@@ -792,6 +796,9 @@
       "emptyLine": "ラインが空です。モジュールを追加してください。",
       "styleDefault": "デフォルト",
       "stylePowerline": "Powerline",
+      "backdropDark": "暗い端末",
+      "backdropLight": "明るい端末",
+      "backdropMono": "色なし",
       "selectModule": "ラインからモジュールを選ぶと、アイコン・色・フォーマットを編集できます。",
       "moduleTitle": "{{module}} モジュール",
       "selected": "選択中",
@@ -849,7 +856,29 @@
     "failoverActivity": "フェイルオーバーの状況",
     "noFailover": "この期間にフェイルオーバーはありませんでした。",
     "recentSessions": "最近のセッション",
-    "noSessions": "この期間にセッションはありません。"
+    "noSessions": "この期間にセッションはありません。",
+    "resetsDue": "リセット中 — 次回の取得待ち",
+    "modeRoutedHint": "ルーティング有効: このサーフェスのチェーン・ルール・クォータに基づいて Rialto がモデルを選びます。",
+    "modePassthroughHint": "パススルー: 呼び出し側が指定したモデル名がそのまま上流に渡され、チェーンは参照されません。ルーティングを有効にするには Routing 画面で切り替えてください。",
+    "spendDeltaHint": "同じ長さの前の期間との比較です。",
+    "failoverWeightLabel": "スコア",
+    "failoverRateLimited": "{{account}} がレート制限を受けました",
+    "failoverRetryAfter": "次の試行まで {{secs}} 秒待つよう指示されました",
+    "failoverNoRetryAfter": "レスポンスに Retry-After はありませんでした",
+    "failoverWeight": "{{target}} のスコアが {{from}} → {{to}} に変化",
+    "weightReason": {
+      "quota_drop": "クォータが減ってきたため、送信先を切り替えています",
+      "quota_recovered": "クォータが回復したため、再び振り分け対象になりました",
+      "error_rate": "エラーを返し始めました",
+      "reset_soon": "まもなく枠がリセットされるため、スコアを抑えています",
+      "probe_floor": "再検査できるようゼロより少しだけ高く保っています",
+      "hold_guard": "スコアの振動を抑えるため据え置いています",
+      "stale_quota": "クォータの取得が古く、信頼できません",
+      "unknown_budget": "この送信先の予算が不明です",
+      "no_quota_kind": "この送信先はクォータ枠を報告しません",
+      "unknown": "理由は記録されていません"
+    },
+    "lastDays": "直近 {{days}} 日"
   },
   "system": {
     "notFound": {
@@ -876,7 +905,8 @@
       "title": "Rialto の API に接続できません",
       "retrying": "再試行中",
       "body": "UI は読み込まれていますが <mono>/api/config</mono> が応答しません。<mono>/v1/*</mono> のプロキシはキャッシュ済みの設定でまだリクエストを処理している可能性があります。再起動する前に確認してください。",
-      "proxy": "プロキシ"
+      "proxy": "プロキシ",
+      "retryNow": "今すぐ再試行"
     },
     "crash": {
       "title": "この画面の描画に失敗しました",
