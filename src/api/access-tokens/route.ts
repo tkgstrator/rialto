@@ -15,8 +15,12 @@ import {
   issueAccessToken,
   listAccessTokens,
   revokeAccessToken,
-  rotateAccessToken
+  rotateAccessToken,
+  updateAccessToken
 } from '../../services/access-token-service'
+
+/** The surface ids a token may be scoped to, shared by issue and update. */
+const SurfaceIdSchema = z.enum(['anthropic-messages', 'openai-chat', 'openai-responses', 'gemini-generate'])
 
 const TokenSchema = z
   .object({
@@ -49,7 +53,7 @@ const ListSchema = z.object({ tokens: z.array(TokenSchema) }).openapi('AccessTok
 const IssueBodySchema = z
   .object({
     name: z.string().nonempty(),
-    surfaces: z.array(z.enum(['anthropic-messages', 'openai-chat', 'openai-responses', 'gemini-generate'])).optional(),
+    surfaces: z.array(SurfaceIdSchema).optional(),
     profileKey: z.string().nonempty().nullable().optional(),
     expiresAt: z.iso.datetime().nullable().optional()
   })
@@ -103,6 +107,40 @@ accessTokensRoute.openapi(
   }),
   async (c) => {
     const row = await getAccessToken(c.req.valid('param').id)
+    if (row === null) return c.json({ error: 'Not found' } as never, 404)
+    return c.json(row, 200)
+  }
+)
+
+/**
+ * What a token is allowed to do, after the fact.
+ *
+ * Only scope and profile. Renaming is cosmetic, the secret has its own
+ * operation, and an expiry that could be pushed out indefinitely is not
+ * an expiry — so none of them are here.
+ */
+const UpdateBodySchema = z
+  .object({
+    surfaces: z.array(SurfaceIdSchema).optional(),
+    profileKey: z.string().nonempty().nullable().optional()
+  })
+  .openapi('AccessTokenUpdateRequest')
+
+accessTokensRoute.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/api/access-tokens/{id}',
+    request: {
+      params: z.object({ id: z.string().nonempty() }),
+      body: { content: { 'application/json': { schema: UpdateBodySchema } } }
+    },
+    responses: {
+      200: { description: 'The updated token', content: { 'application/json': { schema: TokenSchema } } },
+      404: { description: 'No such token' }
+    }
+  }),
+  async (c) => {
+    const row = await updateAccessToken(c.req.valid('param').id, c.req.valid('json'))
     if (row === null) return c.json({ error: 'Not found' } as never, 404)
     return c.json(row, 200)
   }

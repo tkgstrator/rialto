@@ -790,7 +790,8 @@
       "detailExpires": "Expires {{date}}",
       "detailNoExpiry": "No expiry",
       "detailRotated": "Rotated {{date}}",
-      "detailRevoked": "Revoked {{date}}"
+      "detailRevoked": "Revoked {{date}}",
+      "scopeSaved": "Updated “{{name}}”. The change applies to its next request."
     },
     "personas": {
       "subtitle": "{{count}} personas · {{active}}",

@@ -790,7 +790,8 @@
       "detailExpires": "期限 {{date}}",
       "detailNoExpiry": "無期限",
       "detailRotated": "ローテート {{date}}",
-      "detailRevoked": "失効 {{date}}"
+      "detailRevoked": "失効 {{date}}",
+      "scopeSaved": "「{{name}}」を更新しました。次のリクエストから反映されます。"
     },
     "personas": {
       "subtitle": "ペルソナ {{count}} 件 · {{active}}",

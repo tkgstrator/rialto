@@ -112,6 +112,10 @@ class ApiClient {
     return this.apiFetch<T>(endpoint, { method: 'PUT', body: JSON.stringify(data) })
   }
 
+  async patch<T>(endpoint: string, data: unknown): Promise<T> {
+    return this.apiFetch<T>(endpoint, { method: 'PATCH', body: JSON.stringify(data) })
+  }
+
   private async deleteRequest<T>(endpoint: string, body: unknown = {}): Promise<T> {
     return this.apiFetch<T>(endpoint, { method: 'DELETE', body: JSON.stringify(body) })
   }
@@ -316,6 +320,19 @@ class ApiClient {
 
   async getAccessToken(id: string): Promise<AccessTokenWire> {
     return this.get<AccessTokenWire>(`/access-tokens/${encodeURIComponent(id)}`)
+  }
+
+  /**
+   * Change what an existing token may do.
+   *
+   * Scope and profile only — the two things about a token that
+   * legitimately change while the client keeps the same credential.
+   */
+  async updateAccessToken(
+    id: string,
+    body: { surfaces?: SurfaceId[]; profileKey?: string | null }
+  ): Promise<AccessTokenWire> {
+    return this.patch<AccessTokenWire>(`/access-tokens/${encodeURIComponent(id)}`, body)
   }
 
   /**

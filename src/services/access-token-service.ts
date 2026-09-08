@@ -257,6 +257,41 @@ export async function issueAccessToken(input: IssueInput): Promise<IssuedToken> 
   return { token: toWire(row), plaintext }
 }
 
+export interface UpdateInput {
+  /** Replaces the scope wholesale. Empty means every surface. */
+  surfaces?: string[]
+  profileKey?: string | null
+}
+
+/**
+ * Change what an existing token is allowed to do.
+ *
+ * Scope and routing profile are the two things about a token that
+ * legitimately change after it is issued — a client picks up a second
+ * endpoint, or its traffic should start following a different chain —
+ * and neither is a reason to hand the machine a new secret. The name,
+ * the secret and the expiry are deliberately not editable here: the
+ * first is cosmetic, and the other two have their own operations
+ * (`rotateAccessToken`, re-issue) whose consequences differ.
+ *
+ * Clears the resolver cache, without which a widened scope would take up
+ * to CACHE_TTL_MS to admit the client and a narrowed one would keep
+ * admitting it for just as long.
+ */
+export async function updateAccessToken(id: string, input: UpdateInput): Promise<AccessTokenRow | null> {
+  const row = await getPrismaClient()
+    .accessToken.update({
+      where: { id },
+      data: {
+        ...(input.surfaces === undefined ? {} : { surfaces: input.surfaces }),
+        ...(input.profileKey === undefined ? {} : { profileKey: input.profileKey })
+      }
+    })
+    .catch(() => null)
+  invalidateTokenCache()
+  return row === null ? null : toWire(row)
+}
+
 /**
  * Why a rotation was refused. Rotation replaces the secret in place, so
  * the only sensible answers for a token that cannot authenticate anyway

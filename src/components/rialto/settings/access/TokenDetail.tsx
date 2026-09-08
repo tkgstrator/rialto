@@ -14,19 +14,29 @@
  * the name, the scope, the request count and every RequestLog pointing
  * at it — and replaces only the secret, so the client's history stays
  * one story instead of splitting across "CI" and "CI (old)".
+ *
+ * Scope and profile are editable here, because neither is an issue-time
+ * decision: a client picks up a second endpoint, or its traffic should
+ * start following a different chain, and neither is a reason to hand the
+ * machine a new secret. Edited through a draft with an explicit Save
+ * rather than applied on click — a stray chip would otherwise change
+ * what a live client can reach, with the failure landing on the client
+ * as a 401 nobody can trace from that end.
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useSurfaces } from '@/components/rialto/activity/use-surfaces'
-import { Pill, RButton, SurfacePill } from '@/components/rialto/primitives'
+import { Pill, RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import { IssuedTokenPanel } from '@/components/rialto/settings/access/IssuedTokenPanel'
+import { ANY, Picker, SurfacePicker, sameScope } from '@/components/rialto/settings/access/pickers'
 import { SettingsField } from '@/components/rialto/settings/SettingsLayout'
+import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
 import { type AccessTokenWire, api } from '@/lib/api'
 import { fmtAgo, fmtCount } from '@/lib/rialto/format'
-import { TOKEN_STATE_PILL, tokenState } from '@/lib/rialto/settings/access-tokens'
+import { TOKEN_STATE_PILL, type TokenState, tokenState } from '@/lib/rialto/settings/access-tokens'
 import { fmtCost } from '@/lib/sessions/format'
 
 const BACK = '/settings/access'
@@ -41,6 +51,12 @@ const ROTATE_REFUSAL: Readonly<Record<string, string>> = {
   expired: 'settings.access.rotateRefusedExpired'
 }
 
+/** The two fields this page can change. */
+interface ScopeDraft {
+  surfaces: string[]
+  profileKey: string
+}
+
 interface Revealed {
   plaintext: string
   scope: string
@@ -48,15 +64,83 @@ interface Revealed {
   expiry: string
 }
 
+/**
+ * Identity and the destructive actions.
+ *
+ * Extracted from TokenDetail because it holds three of that component's
+ * branches and none of its state — the page was over the complexity
+ * ceiling with them inline.
+ */
+function DetailHeader({
+  token,
+  state,
+  busy,
+  onRotate,
+  onRevoke,
+  onDelete
+}: {
+  token: AccessTokenWire
+  state: TokenState
+  busy: boolean
+  onRotate: () => void
+  onRevoke: () => void
+  onDelete: () => void
+}) {
+  const { t } = useTranslation()
+  const pill = TOKEN_STATE_PILL[state]
+  return (
+    <div className='flex items-center gap-3 px-6 pt-6 pb-3'>
+      <Link
+        to={BACK}
+        className='text-muted-foreground hover:text-foreground'
+        aria-label={t('settings.access.backToTokens')}
+      >
+        <i className='ri-arrow-left-line text-base' />
+      </Link>
+      <div className='min-w-0'>
+        <div className='truncate text-sm font-semibold'>{token.name}</div>
+        <div className='font-mono text-[12px] text-muted-foreground'>{token.prefix}</div>
+      </div>
+      <Pill tone={pill.tone}>{t(pill.labelKey)}</Pill>
+      <div className='ml-auto flex items-center gap-2'>
+        {/* Rotate first and revoke second: rotating is the answer to
+            almost every reason for being on this page, and revoking is
+            the one that takes a client offline.
+            Absent rather than disabled on a dead token: a new secret on
+            a revoked or expired row would not authenticate, so the
+            server refuses the call outright — there is no state in which
+            this control could become live, and a permanently greyed-out
+            button is clutter rather than information. */}
+        {state === 'active' ? (
+          <RButton variant='outline' icon='ri-refresh-line' onClick={onRotate} disabled={busy}>
+            {t('settings.access.rotate')}
+          </RButton>
+        ) : null}
+        {state === 'revoked' ? (
+          <RButton variant='danger' icon='ri-delete-bin-line' onClick={onDelete} disabled={busy}>
+            {t('settings.access.delete')}
+          </RButton>
+        ) : (
+          <RButton variant='danger' icon='ri-forbid-line' onClick={onRevoke} disabled={busy}>
+            {t('settings.access.revoke')}
+          </RButton>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function TokenDetail() {
   const { t } = useTranslation()
   const { id = '' } = useParams()
   const navigate = useNavigate()
-  const { pathOf } = useSurfaces()
+  const { surfaces, pathOf } = useSurfaces()
   const [token, setToken] = useState<AccessTokenWire | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [revealed, setRevealed] = useState<Revealed | null>(null)
+  const [draft, setDraft] = useState<ScopeDraft | null>(null)
+  const [profiles, setProfiles] = useState<{ key: string }[]>([])
   // Pinned per load so every relative label measures from one instant.
   const [now, setNow] = useState(Date.now())
 
@@ -65,12 +149,25 @@ export function TokenDetail() {
       .getAccessToken(id)
       .then((res) => {
         setToken(res)
+        // Reset the draft from the server's answer after every load, so a
+        // rotation or a save cannot leave a stale edit on screen.
+        setDraft({ surfaces: res.surfaces, profileKey: res.profileKey === null ? ANY : res.profileKey })
         setNow(Date.now())
       })
       .catch((e: Error) => setError(e.message))
   }, [id])
 
   useEffect(load, [load])
+
+  useEffect(() => {
+    api
+      .get<{ profiles: { key: string }[] }>('/router-preferences/profiles')
+      .then((res) => setProfiles(res.profiles))
+      .catch(() => {
+        // The picker falls back to "follow the endpoint", which is the
+        // server's own default when profileKey is null.
+      })
+  }, [])
 
   const rotate = () => {
     if (token === null) return
@@ -127,6 +224,38 @@ export function TokenDetail() {
       .finally(() => setBusy(false))
   }
 
+  // Computed above the early returns: useUnsavedGuard is a hook, and a
+  // return between renders would change the hook order.
+  const dirty =
+    token !== null &&
+    draft !== null &&
+    (!sameScope(draft.surfaces, token.surfaces) ||
+      draft.profileKey !== (token.profileKey === null ? ANY : token.profileKey))
+  useUnsavedGuard(dirty)
+
+  const save = () => {
+    if (token === null || draft === null) return
+    setBusy(true)
+    api
+      .updateAccessToken(token.id, {
+        // Resolved through the fetched registry rather than asserted, so
+        // an id the server does not know cannot reach the wire.
+        surfaces: surfaces.filter((s) => draft.surfaces.includes(s.id)).map((s) => s.id),
+        profileKey: draft.profileKey === ANY ? null : draft.profileKey
+      })
+      .then(() => {
+        toast.success(t('settings.access.scopeSaved', { name: token.name }))
+        load()
+      })
+      .catch((e: Error) => toast.error(t('settings.common.saveFailed', { message: e.message })))
+      .finally(() => setBusy(false))
+  }
+
+  const discard = () => {
+    if (token === null) return
+    setDraft({ surfaces: token.surfaces, profileKey: token.profileKey === null ? ANY : token.profileKey })
+  }
+
   if (error !== null) {
     return (
       <Screen crumbs={[{ label: t('settings.access.tokenNotFound') }]}>
@@ -136,7 +265,7 @@ export function TokenDetail() {
       </Screen>
     )
   }
-  if (token === null) {
+  if (token === null || draft === null) {
     return (
       <Screen>
         <div className='px-6 py-8 text-xs text-muted-foreground'>{t('common.loading')}</div>
@@ -145,55 +274,24 @@ export function TokenDetail() {
   }
 
   const state = tokenState(token, now)
-  const pill = TOKEN_STATE_PILL[state]
-  // Every surface this token may reach, drawn in full — the detail page
-  // is where the whole list belongs, so nothing is collapsed to a count.
-  const surfacePaths = token.surfaces.flatMap((id) => {
-    const found = pathOf(id)
-    return found === null ? [] : [found]
-  })
+  const editable = state === 'active'
 
   return (
-    <Screen crumbs={[{ label: token.name }]}>
+    <Screen
+      crumbs={[{ label: token.name }]}
+      actions={
+        <>
+          <RButton variant='ghost' onClick={discard} disabled={!dirty || busy}>
+            {t('common.discard')}
+          </RButton>
+          <RButton variant='primary' icon='ri-check-line' onClick={save} disabled={!dirty || busy}>
+            {t('common.save')}
+          </RButton>
+        </>
+      }
+    >
       <div className='min-w-0'>
-        <div className='flex items-center gap-3 px-6 pt-6 pb-3'>
-          <Link
-            to={BACK}
-            className='text-muted-foreground hover:text-foreground'
-            aria-label={t('settings.access.backToTokens')}
-          >
-            <i className='ri-arrow-left-line text-base' />
-          </Link>
-          <div className='min-w-0'>
-            <div className='truncate text-sm font-semibold'>{token.name}</div>
-            <div className='font-mono text-[12px] text-muted-foreground'>{token.prefix}</div>
-          </div>
-          <Pill tone={pill.tone}>{t(pill.labelKey)}</Pill>
-          <div className='ml-auto flex items-center gap-2'>
-            {/* Rotate first and revoke second: rotating is the answer to
-                almost every reason for being on this page, and revoking
-                is the one that takes a client offline.
-                Absent rather than disabled on a dead token: a new secret
-                on a revoked or expired row would not authenticate, so the
-                server refuses the call outright — there is no state in
-                which this control could become live, and a permanently
-                greyed-out button is clutter rather than information. */}
-            {state === 'active' ? (
-              <RButton variant='outline' icon='ri-refresh-line' onClick={rotate} disabled={busy}>
-                {t('settings.access.rotate')}
-              </RButton>
-            ) : null}
-            {state === 'revoked' ? (
-              <RButton variant='danger' icon='ri-delete-bin-line' onClick={remove} disabled={busy}>
-                {t('settings.access.delete')}
-              </RButton>
-            ) : (
-              <RButton variant='danger' icon='ri-forbid-line' onClick={revoke} disabled={busy}>
-                {t('settings.access.revoke')}
-              </RButton>
-            )}
-          </div>
-        </div>
+        <DetailHeader token={token} state={state} busy={busy} onRotate={rotate} onRevoke={revoke} onDelete={remove} />
 
         {revealed === null ? null : (
           <IssuedTokenPanel
@@ -208,24 +306,33 @@ export function TokenDetail() {
           />
         )}
 
+        {/* Editable only while the token can actually be used: changing
+            the scope of a revoked or expired row alters nothing about
+            what reaches the proxy, so the controls would be theatre. */}
         <SettingsField label={t('settings.access.colEndpoint')} hint={t('settings.access.issueEndpointHint')}>
-          {surfacePaths.length === 0 ? (
-            <span className='text-[12px] text-muted-foreground'>{t('settings.access.allEndpoints')}</span>
-          ) : (
-            <div className='flex flex-wrap items-center gap-1.5'>
-              {surfacePaths.map((path) => (
-                <SurfacePill key={path} path={path} />
-              ))}
-            </div>
-          )}
+          <SurfacePicker
+            surfaces={surfaces}
+            selected={draft.surfaces}
+            onChange={(next) => setDraft({ ...draft, surfaces: next })}
+            allLabel={t('settings.access.allEndpoints')}
+            disabled={!editable || busy}
+          />
         </SettingsField>
 
         <SettingsField label={t('settings.access.colProfile')} hint={t('settings.access.issueProfileHint')}>
-          {token.profileKey === null ? (
-            <span className='text-[12px] text-muted-foreground'>{t('settings.access.followEndpoint')}</span>
-          ) : (
-            <span className='font-mono text-xs'>{token.profileKey}</span>
-          )}
+          <Picker
+            label={t('settings.access.colProfile')}
+            value={draft.profileKey}
+            onChange={(next) => setDraft({ ...draft, profileKey: next })}
+            disabled={!editable || busy}
+          >
+            <option value={ANY}>{t('settings.access.followEndpoint')}</option>
+            {profiles.map((profile) => (
+              <option key={profile.key} value={profile.key}>
+                {profile.key}
+              </option>
+            ))}
+          </Picker>
         </SettingsField>
 
         <SettingsField label={t('settings.access.detailUsage')} hint={t('settings.access.detailUsageHint')}>

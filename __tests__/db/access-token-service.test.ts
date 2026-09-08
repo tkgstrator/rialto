@@ -21,7 +21,8 @@ import {
   rotateAccessToken,
   SPEND_WINDOW_DAYS,
   sumSpendByToken,
-  type TokenSpendGroup
+  type TokenSpendGroup,
+  updateAccessToken
 } from '../../src/services/access-token-service'
 import type { PriceEntry } from '../../src/services/cost-service'
 import { HAS_DB, resetDbTables, teardownPrisma } from './helpers'
@@ -286,6 +287,46 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
 
     expect(await resolveAccessToken(plaintext)).toBeNull()
     expect((await resolveAccessToken(result.issued.plaintext))?.id).toBe(token.id)
+  })
+
+  test('scope and profile can be changed without touching the secret', async () => {
+    const { token, plaintext } = await issueAccessToken({ name: 'codex', surfaces: ['openai-responses'] })
+    expect(await resolveAccessToken(plaintext)).not.toBeNull()
+
+    const updated = await updateAccessToken(token.id, {
+      surfaces: ['openai-responses', 'openai-chat'],
+      profileKey: 'cost-first'
+    })
+    expect(updated?.surfaces).toEqual(['openai-responses', 'openai-chat'])
+    expect(updated?.profileKey).toBe('cost-first')
+    expect(updated?.prefix).toBe(token.prefix)
+
+    // The client keeps the credential it already has — widening the
+    // scope is not a reason to reissue — and the resolver sees the new
+    // scope immediately rather than after the cache TTL.
+    const resolved = await resolveAccessToken(plaintext)
+    expect(resolved?.surfaces).toEqual(['openai-responses', 'openai-chat'])
+    expect(resolved?.profileKey).toBe('cost-first')
+  })
+
+  test('an omitted field is left alone, and a null profile clears it', async () => {
+    const { token } = await issueAccessToken({
+      name: 'ci',
+      surfaces: ['openai-chat'],
+      profileKey: 'cost-first'
+    })
+
+    // Scope only: the profile must survive.
+    const scopeOnly = await updateAccessToken(token.id, { surfaces: [] })
+    expect(scopeOnly?.surfaces).toEqual([])
+    expect(scopeOnly?.profileKey).toBe('cost-first')
+
+    // Null is a value here, not "unchanged" — it puts the token back on
+    // the endpoint's own routing.
+    const cleared = await updateAccessToken(token.id, { profileKey: null })
+    expect(cleared?.profileKey).toBeNull()
+
+    expect(await updateAccessToken('no-such-id', { surfaces: [] })).toBeNull()
   })
 
   test('a revoked or expired token is refused rather than handed a dead secret', async () => {
