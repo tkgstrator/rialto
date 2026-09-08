@@ -61,7 +61,7 @@ const windowRow = (w) => `
     <span class="w-12 shrink-0">${w.scope ? mono(w.scope) : ''}</span>
     <div class="min-w-0 flex-1">${meter(w.pct)}</div>
     <span class="w-10 shrink-0 text-right font-mono text-xs tabular-nums">${w.pct}%</span>
-    <span class="w-20 shrink-0 text-right text-[12px] text-muted-foreground">${w.resets}</span>
+    <span class="w-20 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${w.resets}</span>
   </div>`
 
 const accountBlock = (a) => `
@@ -213,7 +213,7 @@ const tokenRow = (t) => `
         <span class="w-8 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${t.share}%</span>
       </div>
     </td>
-    <td class="py-2.5 pl-3 pr-6 text-right text-[12px] text-muted-foreground">${t.used}</td>
+    <td class="py-2.5 pl-3 pr-6 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${t.used}</td>
   </tr>`
 
 const tokenTable = `

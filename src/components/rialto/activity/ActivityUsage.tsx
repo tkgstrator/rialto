@@ -129,7 +129,9 @@ function WindowLine({ row, now }: { row: WindowRow; now: number }) {
         <Meter pct={row.pct} />
       </div>
       <span className='w-10 shrink-0 text-right font-mono text-xs tabular-nums'>{`${Math.round(row.pct)}%`}</span>
-      <span className='w-20 shrink-0 text-right text-[12px] text-muted-foreground'>
+      {/* A duration is a number: mono and tabular so the column lines
+          up. "4h 06m" and "4d 01h" are different widths otherwise. */}
+      <span className='w-20 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
         {fmtUntil(row.resetsAt, now) === null ? t('overview.resetsDue') : fmtUntil(row.resetsAt, now)}
       </span>
     </div>
@@ -272,7 +274,7 @@ function TokenRow({
           </span>
         </div>
       </td>
-      <td className='py-2.5 pl-3 pr-6 text-right text-[12px] text-muted-foreground'>
+      <td className='py-2.5 pl-3 pr-6 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
         {row.lastUsedAt === null ? t('settings.access.never') : fmtAgo(row.lastUsedAt, now)}
       </td>
     </tr>
