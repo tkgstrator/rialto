@@ -39,7 +39,7 @@ export function OauthConnected({ provider }: { provider: string }) {
         <i className='ri-check-line text-lg text-emerald-600 dark:text-emerald-400' />
       </div>
       <h3 className='mt-3 text-sm font-semibold'>{t('system.oauth.connected', { provider })}</h3>
-      <p className='mt-1.5 text-[11px] leading-relaxed text-muted-foreground'>{t('system.oauth.connectedBody')}</p>
+      <p className='mt-1.5 text-[12px] leading-relaxed text-muted-foreground'>{t('system.oauth.connectedBody')}</p>
       <RButton variant='outline' className='mt-4' onClick={() => navigate('/providers')}>
         {t('system.oauth.backToRialto')} <i className='ri-arrow-right-line text-sm' />
       </RButton>
@@ -56,9 +56,9 @@ export function OauthFailed({ message }: { message: string | null }) {
         <i className='ri-close-line text-lg text-destructive' />
       </div>
       <h3 className='mt-3 text-sm font-semibold'>{t('system.oauth.failedTitle')}</h3>
-      <p className='mt-1.5 text-[11px] leading-relaxed text-muted-foreground'>{t('system.oauth.failedBody')}</p>
+      <p className='mt-1.5 text-[12px] leading-relaxed text-muted-foreground'>{t('system.oauth.failedBody')}</p>
       {message === null ? null : (
-        <div className='mt-3 rounded-md bg-muted/60 px-3 py-2 text-left font-mono text-[11px] leading-relaxed whitespace-pre-wrap'>
+        <div className='mt-3 rounded-md bg-muted/60 px-3 py-2 text-left font-mono text-[12px] leading-relaxed whitespace-pre-wrap'>
           {message}
         </div>
       )}

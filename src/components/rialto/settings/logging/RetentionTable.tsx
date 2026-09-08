@@ -71,7 +71,7 @@ function StoreRow({
     <tr className='border-t border-border/60 transition-colors hover:bg-muted/50'>
       <td className='py-2.5 pl-6 pr-3'>
         <div className='font-mono text-xs'>{store.label}</div>
-        <div className='mt-0.5 text-[11px] text-muted-foreground'>
+        <div className='mt-0.5 text-[12px] text-muted-foreground'>
           {store.retention === null ? <Pill tone='warn'>{t('settings.logging.unbounded')}</Pill> : store.retention}
         </div>
       </td>
@@ -87,7 +87,7 @@ function StoreRow({
           type='button'
           onClick={onPrune}
           disabled={pruning}
-          className='text-[11px] text-muted-foreground hover:text-destructive disabled:opacity-50'
+          className='text-[12px] text-muted-foreground hover:text-destructive disabled:opacity-50'
         >
           {t('settings.logging.pruneNow')}
         </button>
@@ -120,7 +120,7 @@ export function RetentionTable({
         <col className='w-24' />
       </colgroup>
       <thead>
-        <tr className='text-[11px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
+        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
           <th className='pl-6 pr-3 text-left font-medium'>{t('settings.logging.colStore')}</th>
           <th className='px-3 text-right font-medium'>{t('settings.logging.colRows')}</th>
           <th className='px-3 text-right font-medium'>{t('settings.logging.colSize')}</th>

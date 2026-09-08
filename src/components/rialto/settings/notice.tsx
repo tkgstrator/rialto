@@ -24,7 +24,7 @@ export function WarnNotice({ title, tag, children }: { title: string; tag?: stri
         <span className='text-xs font-medium'>{title}</span>
         {tag ? <Pill tone='warn'>{tag}</Pill> : null}
       </div>
-      <p className='mt-1.5 text-[11px] leading-relaxed text-muted-foreground'>{children}</p>
+      <p className='mt-1.5 text-[12px] leading-relaxed text-muted-foreground'>{children}</p>
     </div>
   )
 }
@@ -32,7 +32,7 @@ export function WarnNotice({ title, tag, children }: { title: string; tag?: stri
 /** Dashed callout — explanatory copy that is not itself a warning. */
 export function InfoNotice({ children }: { children: ReactNode }) {
   return (
-    <div className='rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground'>
+    <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
       <i className='ri-information-line mr-1 align-[-1px]' />
       {children}
     </div>
@@ -52,7 +52,7 @@ export function NotYetAvailable({ what, needs }: { what: string; needs: ReactNod
         <span className='text-xs font-medium'>{what}</span>
         <Pill tone='mute'>{t('settings.common.notYetAvailable')}</Pill>
       </div>
-      <p className='mt-1.5 text-[11px] leading-relaxed text-muted-foreground'>{needs}</p>
+      <p className='mt-1.5 text-[12px] leading-relaxed text-muted-foreground'>{needs}</p>
     </div>
   )
 }

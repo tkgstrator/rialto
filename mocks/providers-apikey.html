@@ -58,7 +58,7 @@ const modelRow = (m) => `
     <td class="px-2 text-right font-mono text-xs tabular-nums">${m.inp}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${m.cache}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums">${m.out}</td>
-    <td class="px-2 font-mono text-[11px] text-muted-foreground">${m.style}</td>
+    <td class="px-2 font-mono text-[12px] text-muted-foreground">${m.style}</td>
     <td class="px-2">${effortCell(m.effort)}</td>
     <td class="px-2 text-center text-sm leading-none">${testIcon[m.test]}</td>
     <td class="py-2.5 pl-2 pr-6 text-right">
@@ -72,7 +72,7 @@ const models = `
   <table class="w-full table-fixed">
     <colgroup><col><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-24"><col class="w-24"><col class="w-14"><col class="w-16"></colgroup>
     <thead>
-      <tr class="text-[11px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2">
+      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2">
         ${sortTh('Model', 'pl-6 pr-2', 'left', true, 'desc')}
         ${sortTh('Tier', 'px-2')}
         ${sortTh('Context', 'px-2', 'right')}
@@ -103,7 +103,7 @@ document.getElementById('root').innerHTML = `
             ${pill('api key', 'mute')}
             ${pill('live', 'ok')}
           </div>
-          <p class="mt-0.5 font-mono text-[11px] text-muted-foreground">https://api.openai.com/v1/chat/completions</p>
+          <p class="mt-0.5 font-mono text-[12px] text-muted-foreground">https://api.openai.com/v1/chat/completions</p>
         </div>
         <div class="ml-auto flex gap-2">
           ${btn('Test all', 'outline', 'ri-pulse-line')}
@@ -119,21 +119,21 @@ document.getElementById('root').innerHTML = `
           </div>
           <div class="space-y-3 px-6 pb-5">
             <div>
-              <div class="mb-1 text-[11px] text-muted-foreground">API key</div>
+              <div class="mb-1 text-[12px] text-muted-foreground">API key</div>
               <div class="flex items-center gap-2">
                 <div class="flex h-8 flex-1 items-center rounded-md border border-border px-3 font-mono text-xs">sk-proj-••••••••••••••••7fA2</div>
                 ${btn('Reveal', 'ghost', 'ri-eye-line')}
               </div>
             </div>
             <div>
-              <div class="mb-1 text-[11px] text-muted-foreground">Base URL</div>
+              <div class="mb-1 text-[12px] text-muted-foreground">Base URL</div>
               <div class="flex h-8 items-center rounded-md border border-border px-3 font-mono text-xs">https://api.openai.com/v1/chat/completions</div>
             </div>
-            <p class="text-[11px] leading-relaxed text-muted-foreground">
+            <p class="text-[12px] leading-relaxed text-muted-foreground">
               Supports <span class="font-mono">$VAR</span> interpolation — the key is read from the
               environment at boot rather than stored, if you prefer.
             </p>
-            <p class="text-[11px] leading-relaxed text-muted-foreground">
+            <p class="text-[12px] leading-relaxed text-muted-foreground">
               <span class="font-medium text-foreground">Outbound only.</span> This is what Rialto
               sends to OpenAI. It has nothing to do with the
               <a href="settings-access.html" class="underline underline-offset-2">access tokens</a>
@@ -148,18 +148,18 @@ document.getElementById('root').innerHTML = `
           </div>
           <div class="px-6 pb-5">
             <div class="flex items-baseline gap-3 py-1.5">
-              <span class="text-[11px] text-muted-foreground">API style</span>
-              <span class="ml-auto font-mono text-[11px]">openai_chat</span>
+              <span class="text-[12px] text-muted-foreground">API style</span>
+              <span class="ml-auto font-mono text-[12px]">openai_chat</span>
             </div>
             <div class="flex items-baseline gap-3 py-1.5">
-              <span class="text-[11px] text-muted-foreground">Auth</span>
-              <span class="ml-auto font-mono text-[11px]">Bearer</span>
+              <span class="text-[12px] text-muted-foreground">Auth</span>
+              <span class="ml-auto font-mono text-[12px]">Bearer</span>
             </div>
             <div class="flex items-baseline gap-3 py-1.5">
-              <span class="text-[11px] text-muted-foreground">Pipeline</span>
-              <span class="ml-auto font-mono text-[11px]">openai</span>
+              <span class="text-[12px] text-muted-foreground">Pipeline</span>
+              <span class="ml-auto font-mono text-[12px]">openai</span>
             </div>
-            <p class="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+            <p class="mt-3 text-[12px] leading-relaxed text-muted-foreground">
               Derived from the API style — not configurable. Codex-family models here override to
               <span class="font-mono">openai_responses</span>; see the Shape column.
             </p>
@@ -169,7 +169,7 @@ document.getElementById('root').innerHTML = `
 
       <div class="flex items-center gap-3 px-6 pt-5 pb-3">
         <h3 class="text-sm font-semibold">Models</h3>
-        <span class="text-[11px] text-muted-foreground">5 of 18 enabled</span>
+        <span class="text-[12px] text-muted-foreground">5 of 18 enabled</span>
         <div class="ml-auto flex items-center gap-2">
           <button class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-muted/60">
             <span class="text-muted-foreground">Show</span> Enabled + priced
@@ -182,7 +182,7 @@ document.getElementById('root').innerHTML = `
       </div>
       ${models}
       <div class="px-6 pt-4">
-        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
+        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
           <i class="ri-information-line mr-1 align-[-1px]"></i>
           Tier is per model. Rialto only infers it from a name that says a Claude family, and nothing
           here does — every tier above was typed. A model left at <span class="font-mono">—</span> is
@@ -199,7 +199,7 @@ document.getElementById('root').innerHTML = `
         </div>
       </div>
       <div class="px-6 py-4">
-        <button class="w-full rounded-md border border-dashed border-border py-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted/50">
+        <button class="w-full rounded-md border border-dashed border-border py-2 text-[12px] text-muted-foreground transition-colors hover:bg-muted/50">
           Show 10 more models
         </button>
       </div>

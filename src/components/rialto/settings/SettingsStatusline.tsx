@@ -25,7 +25,7 @@ import { ModuleProperties } from './statusline/ModuleProperties'
 function WireUpNote() {
   return (
     <div className='px-6 py-5'>
-      <div className='rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground'>
+      <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
         <i className='ri-terminal-line mr-1 align-[-1px]' />
         <Trans
           i18nKey='settings.statusline.wireUp'

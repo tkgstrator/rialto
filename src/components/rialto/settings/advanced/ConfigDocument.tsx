@@ -24,7 +24,7 @@ import { formatJson, isValidJson, lineNumbers } from '@/lib/rialto/settings/enve
 // Matches the mock's per-line box: 11px text at the inherited 1.5
 // line-height plus its 2px vertical padding. Applied to the gutter and
 // the textarea alike so the numbers stay level with their lines.
-const LINE = 'font-mono text-[11px] leading-[20.5px]'
+const LINE = 'font-mono text-[12px] leading-[20.5px]'
 
 export function ConfigDocument() {
   const { t } = useTranslation()
@@ -70,14 +70,14 @@ export function ConfigDocument() {
   return (
     <>
       <div className='flex items-center gap-3 border-b border-border px-6 py-3'>
-        <span className='font-mono text-[11px] text-muted-foreground'>config.json</span>
+        <span className='font-mono text-[12px] text-muted-foreground'>config.json</span>
         <Pill tone='mute'>JSON</Pill>
         {valid ? (
           <Pill tone='ok'>{t('settings.advanced.valid')}</Pill>
         ) : (
           <Pill tone='bad'>{t('settings.advanced.invalid')}</Pill>
         )}
-        <span className='text-[11px] text-muted-foreground'>{t('settings.advanced.backupsKept')}</span>
+        <span className='text-[12px] text-muted-foreground'>{t('settings.advanced.backupsKept')}</span>
         <div className='ml-auto flex gap-2'>
           <RButton variant='ghost' icon='ri-refresh-line' onClick={load}>
             {t('settings.advanced.reload')}

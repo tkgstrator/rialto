@@ -35,7 +35,7 @@ function Header({
             <Pill tone='info'>{t('settings.presets.pillNotInstalled')}</Pill>
           )}
         </div>
-        <p className='mt-0.5 text-[11px] text-muted-foreground'>
+        <p className='mt-0.5 text-[12px] text-muted-foreground'>
           {preset.author === undefined
             ? t('settings.presets.authorUnknown')
             : t('settings.presets.byAuthor', { author: preset.author })}
@@ -75,7 +75,7 @@ function ApplyWarning() {
           <i className='ri-alert-line text-sm text-amber-600 dark:text-amber-400' />
           <span className='text-xs font-medium'>{t('settings.presets.warnTitle')}</span>
         </div>
-        <p className='mt-1.5 text-[11px] leading-relaxed text-muted-foreground'>{t('settings.presets.warnBody')}</p>
+        <p className='mt-1.5 text-[12px] leading-relaxed text-muted-foreground'>{t('settings.presets.warnBody')}</p>
       </div>
     </div>
   )

@@ -24,7 +24,7 @@ const step = (n, label, state) => {
   const tone = { done: 'bg-foreground text-background', active: 'bg-foreground text-background', todo: 'bg-muted text-muted-foreground' }[state]
   return `
     <div class="flex items-center gap-2">
-      <span class="flex size-5 items-center justify-center rounded-full text-[11px] font-medium ${tone}">
+      <span class="flex size-5 items-center justify-center rounded-full text-[12px] font-medium ${tone}">
         ${state === 'done' ? '<i class="ri-check-line text-xs"></i>' : n}
       </span>
       <span class="text-xs ${state === 'todo' ? 'text-muted-foreground' : 'font-medium'}">${label}</span>
@@ -59,9 +59,9 @@ const vendorCard = (v, selected) => `
       <div class="flex items-center gap-2">
         <span class="text-xs font-medium">${v.label}</span>
         ${v.kind === 'subscription' ? pill('OAuth', 'info') : pill('API key', 'mute')}
-        ${v.added ? '<span class="ml-auto text-[11px] text-muted-foreground">added</span>' : ''}
+        ${v.added ? '<span class="ml-auto text-[12px] text-muted-foreground">added</span>' : ''}
       </div>
-      <div class="mt-0.5 text-[11px] text-muted-foreground">${v.hint}</div>
+      <div class="mt-0.5 text-[12px] text-muted-foreground">${v.hint}</div>
     </div>
   </button>`
 
@@ -79,7 +79,7 @@ document.getElementById('root').innerHTML = `
 
     <aside class="min-w-0 overflow-y-auto border-r border-border">
       <div class="px-4 pt-5 pb-2">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Vendor</h2>
+        <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Vendor</h2>
       </div>
       ${VENDORS.map((v) => vendorCard(v, v.id === 'gemini-cli')).join('')}
     </aside>
@@ -90,7 +90,7 @@ document.getElementById('root').innerHTML = `
           <h2 class="text-sm font-semibold">Gemini CLI</h2>
           ${pill('subscription', 'info')}
         </div>
-        <p class="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+        <p class="mt-1 text-[12px] leading-relaxed text-muted-foreground">
           Uses your Google AI Pro / Ultra entitlement through the Code Assist API. Rialto never sees
           your password — it exchanges an OAuth code and stores only the encrypted tokens.
         </p>
@@ -108,7 +108,7 @@ document.getElementById('root').innerHTML = `
             <span class="text-xs font-medium">Sign in with Google</span>
             ${pill('recommended', 'ok')}
           </div>
-          <p class="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+          <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
             Opens Google in your browser and returns to <span class="font-mono">/callback</span>.
           </p>
         </button>
@@ -117,7 +117,7 @@ document.getElementById('root').innerHTML = `
             <i class="ri-folder-open-line text-sm text-muted-foreground"></i>
             <span class="text-xs font-medium">Import from Gemini CLI</span>
           </div>
-          <p class="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+          <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
             Reads <span class="font-mono">~/.gemini/oauth_creds.json</span> if you have already
             signed in on this machine.
           </p>
@@ -130,18 +130,18 @@ document.getElementById('root').innerHTML = `
             <i class="ri-loader-4-line text-sm text-muted-foreground"></i>
             <span class="text-xs font-medium">Waiting for Google…</span>
           </div>
-          <p class="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+          <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
             A browser tab should have opened. Finish there and this page will continue on its own.
           </p>
           <div class="mt-3 rounded-md bg-muted/50 px-3 py-2">
-            <div class="text-[11px] text-muted-foreground">Or paste the redirect URL manually</div>
+            <div class="text-[12px] text-muted-foreground">Or paste the redirect URL manually</div>
             <div class="mt-1.5 flex items-center gap-2">
-              <div class="flex h-8 flex-1 items-center rounded-md border border-border bg-background px-3 font-mono text-[11px] text-muted-foreground">
+              <div class="flex h-8 flex-1 items-center rounded-md border border-border bg-background px-3 font-mono text-[12px] text-muted-foreground">
                 http://localhost:3456/callback?code=…&amp;state=…
               </div>
               ${btn('Submit', 'outline', '')}
             </div>
-            <p class="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+            <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
               Needed when Rialto runs behind a tunnel and the browser cannot reach loopback.
             </p>
           </div>
@@ -156,9 +156,9 @@ document.getElementById('root').innerHTML = `
           <div class="flex items-center gap-2">
             <i class="ri-error-warning-line text-sm text-destructive"></i>
             <span class="text-xs font-medium">Previous attempt failed</span>
-            <span class="ml-auto text-[11px] text-muted-foreground">5h ago</span>
+            <span class="ml-auto text-[12px] text-muted-foreground">5h ago</span>
           </div>
-          <p class="mt-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground">
+          <p class="mt-1.5 font-mono text-[12px] leading-relaxed text-muted-foreground">
             403 — Code Assist onboarding required for this account (loadCodeAssist returned no project)
           </p>
         </div>

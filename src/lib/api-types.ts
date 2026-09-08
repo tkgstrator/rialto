@@ -111,6 +111,27 @@ export interface HealthResponse {
   checks: Record<string, 'ok' | 'fail' | 'skip'>
 }
 
+/**
+ * `GET /api/update/check`. Mirrors `UpdateCheckResponseSchema`.
+ *
+ * `status` is what makes the answer readable: `hasUpdate: false` alone
+ * cannot say whether this install is current or whether the check never
+ * got an answer, and the screen has to draw those differently.
+ */
+export interface UpdateCheckResponse {
+  status: 'ok' | 'error'
+  /** The version the server process is running, not the bundle's. */
+  currentVersion: string
+  latestVersion: string | null
+  hasUpdate: boolean
+  changelog: string | null
+  releaseUrl: string | null
+  publishedAt: string | null
+  checkedAt: string
+  /** Why the check failed. Null when `status` is 'ok'. */
+  message: string | null
+}
+
 export type SurfaceId = 'anthropic-messages' | 'openai-chat' | 'openai-responses' | 'gemini-generate'
 export type RoutingMode = 'routed' | 'passthrough'
 

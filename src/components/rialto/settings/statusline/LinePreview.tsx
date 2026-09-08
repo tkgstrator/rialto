@@ -69,7 +69,7 @@ export function LinePreview({
             type='button'
             onClick={() => onStyleChange(option.id)}
             className={cn(
-              'rounded border px-2 py-0.5 text-[10px] transition-colors',
+              'rounded border px-2 py-0.5 text-[11px] transition-colors',
               option.id === style
                 ? 'border-foreground/40 text-foreground'
                 : 'border-border text-muted-foreground hover:bg-muted/50'

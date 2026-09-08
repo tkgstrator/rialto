@@ -57,14 +57,17 @@ function ScenarioTabs({
           type='button'
           onClick={() => onSelect(scenario)}
           className={cn(
-            'flex items-center gap-2 border-b-2 px-3 py-2 text-xs transition-colors',
+            // py-3, not py-2: the strip is where a scenario is switched,
+            // and at 8px of padding it read as a caption over the table
+            // rather than a control you aim at.
+            'flex items-center gap-2 border-b-2 px-3 py-3 text-xs transition-colors',
             scenario === active
               ? 'border-b-foreground font-medium'
               : 'border-b-transparent text-muted-foreground hover:text-foreground'
           )}
         >
           {t(SCENARIO_LABEL_KEYS[scenario])}
-          <span className='font-mono text-[10px] tabular-nums text-muted-foreground'>{counts[scenario]}</span>
+          <span className='font-mono text-[12px] tabular-nums text-muted-foreground'>{counts[scenario]}</span>
         </button>
       ))}
     </div>
@@ -101,7 +104,7 @@ function ChainToolbar({
         ]}
         onChange={onLane}
       />
-      <span className='text-[11px] text-muted-foreground'>
+      <span className='text-[12px] text-muted-foreground'>
         {t('routing.common.targetCount', { n: entries.length })}
         {disabled === 0 ? '' : ` · ${t('routing.chain.disabledCount', { n: disabled })}`}
       </span>
@@ -118,7 +121,7 @@ function ChainToolbar({
 function ChainNote() {
   return (
     <div className='px-6 py-4'>
-      <div className='rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground'>
+      <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
         <i className='ri-information-line mr-1 align-[-1px]' />
         <Trans i18nKey='routing.chain.note' components={{ mono: <span className='font-mono' /> }} />
       </div>
@@ -135,7 +138,7 @@ function ChainNote() {
 function UnconfiguredProfile({ surface }: { surface: InboundSurfaceWire }) {
   return (
     <div className='border-t border-border/60 px-6 py-6'>
-      <div className='rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground'>
+      <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
         <i className='ri-information-line mr-1 align-[-1px]' />
         <Trans
           i18nKey='routing.chain.unconfiguredProfile'
@@ -209,7 +212,10 @@ function RoutedBody(props: RoutedBodyProps) {
 
 const subtitleFor = (surface: InboundSurfaceWire, t: TFunction): string =>
   surface.routingMode === 'routed'
-    ? t('routing.chain.subtitleRouted')
+    ? // Both placeholders have to be passed here: i18next renders an
+      // unsupplied one verbatim, so the header read "{{path}} · routed ·
+      // {{profile}}" on every routed surface.
+      t('routing.chain.subtitleRouted', { path: surface.path, profile: surface.profileKey })
     : t('routing.chain.subtitlePassthrough', { path: surface.path })
 
 /**
@@ -229,7 +235,7 @@ const subtitleFor = (surface: InboundSurfaceWire, t: TFunction): string =>
 function SchedulerNote({ i18nKey }: { i18nKey: string }) {
   return (
     <div className='px-6 pt-5'>
-      <div className='rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground'>
+      <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
         <i className='ri-information-line mr-1 align-[-1px]' />
         <Trans i18nKey={i18nKey} components={{ mono: <span className='font-mono' /> }} />
       </div>

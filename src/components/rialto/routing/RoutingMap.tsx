@@ -17,7 +17,10 @@ import { Screen } from '@/components/rialto/Screen'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { api, type RoutingPresetItem, type SurfaceId } from '@/lib/api'
 import { applyPresetToLive } from '@/lib/routing-map/apply-to-live'
-import { usePreferences, useProfiles, useScheduler, useSurfaces } from './data'
+import { resolveBuiltinPreset, resolvesToNothing } from '@/lib/routing-map/builtin-presets'
+import type { RouterConfig } from '@/schemas/domain/router'
+import { BUILTIN_ROUTING_PRESETS, type BuiltinRoutingPreset } from '@/shared/data'
+import { useEnabledTargets, usePreferences, useProfiles, useScheduler, useSurfaces } from './data'
 import { profileEntryCount, profileTargets, STATE_LABEL_KEYS, weightIndex } from './derive'
 import { MapCanvas } from './MapCanvas'
 import { allRules } from './rules'
@@ -57,7 +60,7 @@ function ZoomControls({ onZoom, onFit }: { onZoom: (factor: number) => void; onF
 
 function Legend() {
   const { t } = useTranslation()
-  const item = 'flex items-center gap-1.5 text-[11px] text-muted-foreground'
+  const item = 'flex items-center gap-1.5 text-[12px] text-muted-foreground'
   return (
     <div className='absolute bottom-4 right-4 z-10 flex items-center gap-3 rounded-md border border-border bg-background px-3 py-1.5'>
       <span className={item}>
@@ -72,7 +75,7 @@ function Legend() {
         <span className='size-1.5 rounded-full bg-destructive' />
         {t(STATE_LABEL_KEYS.exhausted)}
       </span>
-      <span className='ml-1 border-l border-border pl-3 text-[11px] text-muted-foreground'>
+      <span className='ml-1 border-l border-border pl-3 text-[12px] text-muted-foreground'>
         {`┄ ${t('routing.common.modePassthrough')}`}
       </span>
     </div>
@@ -116,7 +119,7 @@ function ProfileButton({
             <span className='truncate'>{profile.key}</span>
             {/* A reserved mode has no chain to count, and a bare 0 beside
                 it would read as an empty one. */}
-            <span className='ml-auto shrink-0 text-[10px] text-muted-foreground'>
+            <span className='ml-auto shrink-0 text-[11px] text-muted-foreground'>
               {profile.kind === 'passthrough' ? (
                 t('routing.map.skipsRouting')
               ) : (
@@ -133,6 +136,8 @@ function ProfileButton({
 function PresetsMenu({ onNotify }: { onNotify: (text: string, ok: boolean) => void }) {
   const { t } = useTranslation()
   const { config, setConfig } = useConfig()
+  // What the built-ins' tier chains resolve against.
+  const enabled = useEnabledTargets()
   const [open, setOpen] = useState(false)
   const [presets, setPresets] = useState<RoutingPresetItem[]>([])
 
@@ -148,19 +153,31 @@ function PresetsMenu({ onNotify }: { onNotify: (text: string, ok: boolean) => vo
     [onNotify]
   )
 
-  const apply = useCallback(
-    async (preset: RoutingPresetItem) => {
+  const applyConfig = useCallback(
+    async (router: RouterConfig, name: string) => {
       if (config === null) return
-      const result = await applyPresetToLive(config, preset.config, preset.name)
+      const result = await applyPresetToLive(config, router, name)
       if (result.ok) {
         setConfig(result.updatedConfig)
-        onNotify(t('routing.common.presetApplied', { name: preset.name }), true)
+        onNotify(t('routing.common.presetApplied', { name }), true)
       } else {
         onNotify(result.message, false)
       }
       setOpen(false)
     },
     [config, setConfig, onNotify, t]
+  )
+
+  const applyBuiltin = useCallback(
+    (preset: BuiltinRoutingPreset) => {
+      const resolved = resolveBuiltinPreset(preset, enabled)
+      if (resolvesToNothing(resolved)) {
+        onNotify(t('routing.common.presetUnresolved', { name: preset.name }), false)
+        return
+      }
+      void applyConfig(resolved, preset.name)
+    },
+    [enabled, applyConfig, onNotify, t]
   )
 
   const remove = useCallback(
@@ -188,30 +205,45 @@ function PresetsMenu({ onNotify }: { onNotify: (text: string, ok: boolean) => vo
         </RButton>
       </PopoverTrigger>
       <PopoverContent align='end' className='w-64 p-1'>
-        {presets.length === 0 ? (
-          <p className='px-2 py-1.5 text-[11px] text-muted-foreground'>{t('routing.common.noSnapshots')}</p>
-        ) : (
-          presets.map((preset) => (
-            <div key={preset.id} className='flex items-center gap-1 rounded px-2 py-1.5 text-xs hover:bg-muted/60'>
-              <span className='truncate'>{preset.name}</span>
-              <button
-                type='button'
-                className='ml-auto shrink-0 text-[11px] text-muted-foreground hover:text-foreground'
-                onClick={() => void apply(preset)}
-              >
-                {t('routing.common.apply')}
-              </button>
-              <button
-                type='button'
-                aria-label={t('routing.map.deletePreset', { name: preset.name })}
-                className='shrink-0 text-muted-foreground/60 hover:text-destructive'
-                onClick={() => void remove(preset)}
-              >
-                <i className='ri-delete-bin-line text-sm' />
-              </button>
-            </div>
-          ))
-        )}
+        {/* The built-ins have no delete affordance because there is
+            nothing to delete — they are code, not rows. */}
+        {BUILTIN_ROUTING_PRESETS.map((preset) => (
+          <div key={preset.id} className='flex items-center gap-1 rounded px-2 py-1.5 text-xs hover:bg-muted/60'>
+            <span className='min-w-0'>
+              <span className='block truncate'>{preset.name}</span>
+              <span className='block truncate font-mono text-[11px] text-muted-foreground'>
+                {preset.chains.agent.join(' → ')}
+              </span>
+            </span>
+            <button
+              type='button'
+              className='ml-auto shrink-0 text-[12px] text-muted-foreground hover:text-foreground'
+              onClick={() => applyBuiltin(preset)}
+            >
+              {t('routing.common.apply')}
+            </button>
+          </div>
+        ))}
+        {presets.map((preset) => (
+          <div key={preset.id} className='flex items-center gap-1 rounded px-2 py-1.5 text-xs hover:bg-muted/60'>
+            <span className='truncate'>{preset.name}</span>
+            <button
+              type='button'
+              className='ml-auto shrink-0 text-[12px] text-muted-foreground hover:text-foreground'
+              onClick={() => void applyConfig(preset.config, preset.name)}
+            >
+              {t('routing.common.apply')}
+            </button>
+            <button
+              type='button'
+              aria-label={t('routing.map.deletePreset', { name: preset.name })}
+              className='shrink-0 text-muted-foreground/60 hover:text-destructive'
+              onClick={() => void remove(preset)}
+            >
+              <i className='ri-delete-bin-line text-sm' />
+            </button>
+          </div>
+        ))}
       </PopoverContent>
     </Popover>
   )
@@ -302,7 +334,7 @@ export function RoutingMap() {
         {profileEntryCount(profile.entriesByScenario) === 0 ? (
           <Pill tone='warn'>{t('routing.common.notConfigured')}</Pill>
         ) : null}
-        <span className='text-[11px] text-muted-foreground'>{counts}</span>
+        <span className='text-[12px] text-muted-foreground'>{counts}</span>
         <div className='ml-auto flex gap-2'>
           <RButton variant='outline' icon='ri-bookmark-line' onClick={saveAsPreset}>
             {t('routing.map.saveAsPreset')}
@@ -332,7 +364,7 @@ export function RoutingMap() {
       </div>
 
       <div className='px-6 py-4'>
-        <div className='rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground'>
+        <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
           <i className='ri-information-line mr-1 align-[-1px]' />
           {t('routing.map.note')}
         </div>

@@ -44,7 +44,7 @@ function SurfaceTable({ data }: { data: OverviewResponse }) {
         <col className='w-24' />
       </colgroup>
       <thead>
-        <tr className='text-[11px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
+        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
           <th className='pl-6 pr-3 text-left font-medium'>{t('overview.colSurface')}</th>
           <th className='px-3 text-left font-medium'>{t('overview.colRouting')}</th>
           <th className='px-3 text-right font-medium'>{t('overview.colRequests')}</th>
@@ -57,7 +57,7 @@ function SurfaceTable({ data }: { data: OverviewResponse }) {
           <tr key={s.id} className='border-t border-border/60 transition-colors hover:bg-muted/50'>
             <td className='py-2.5 pl-6 pr-3'>
               <div className='font-mono text-xs'>{s.path}</div>
-              <div className='text-[11px] text-muted-foreground'>{s.client}</div>
+              <div className='text-[12px] text-muted-foreground'>{s.client}</div>
             </td>
             <td className='px-3'>
               {s.routingMode === 'routed' ? (
@@ -105,7 +105,7 @@ function SessionTable({ data, now }: { data: OverviewResponse; now: number }) {
         <col className='w-16' />
       </colgroup>
       <thead>
-        <tr className='text-[11px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
+        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
           <th className='pl-6 pr-3 text-left font-medium'>{t('activity.sessions.colSession')}</th>
           <th className='px-3 text-left font-medium'>{t('activity.sessions.colEndpoint')}</th>
           <th className='px-3 text-left font-medium'>{t('activity.sessions.colModel')}</th>
@@ -128,7 +128,7 @@ function SessionTable({ data, now }: { data: OverviewResponse; now: number }) {
               <td className='px-3 text-right font-mono text-xs tabular-nums'>{s.turns}</td>
               <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtTokens(s.tokens)}</td>
               <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCost(s.costUsd)}</td>
-              <td className='py-2.5 pl-3 pr-6 text-right text-[11px] text-muted-foreground'>{fmtAgo(s.lastAt, now)}</td>
+              <td className='py-2.5 pl-3 pr-6 text-right text-[12px] text-muted-foreground'>{fmtAgo(s.lastAt, now)}</td>
             </tr>
           )
         })}
@@ -201,7 +201,7 @@ export function Overview() {
                   key={s.label}
                   className='border-l-2 border-l-border px-4 py-3 transition-colors hover:bg-muted/50 hover:border-l-foreground/30'
                 >
-                  <div className='text-[11px] uppercase tracking-wider text-muted-foreground'>
+                  <div className='text-[12px] uppercase tracking-wider text-muted-foreground'>
                     {t(SPEND_LABEL_KEYS[s.label])}
                   </div>
                   <div className='mt-1 flex items-baseline gap-2'>
@@ -234,7 +234,7 @@ export function Overview() {
                       <div className='mt-2'>
                         <Meter pct={q.pct} />
                       </div>
-                      <div className='mt-1.5 text-[11px] text-muted-foreground'>
+                      <div className='mt-1.5 text-[12px] text-muted-foreground'>
                         {t('overview.resetsIn', { until: fmtUntil(q.resetAt, now) })}
                       </div>
                     </div>
@@ -256,11 +256,11 @@ export function Overview() {
                         <div className='flex items-baseline gap-2'>
                           <Pill tone={f.tone}>{f.label}</Pill>
                           <span className='text-xs'>{f.headline}</span>
-                          <span className='ml-auto text-[11px] text-muted-foreground'>
+                          <span className='ml-auto text-[12px] text-muted-foreground'>
                             {f.at === '' ? '' : t('settings.access.lastUsedAgo', { ago: fmtAgo(f.at, now) })}
                           </span>
                         </div>
-                        <div className='mt-1 text-[11px] text-muted-foreground'>{f.detail}</div>
+                        <div className='mt-1 text-[12px] text-muted-foreground'>{f.detail}</div>
                       </div>
                     ))}
                   </div>

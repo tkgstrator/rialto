@@ -53,7 +53,7 @@ export function Pill({ tone = 'mute', children, className }: { tone?: Tone; chil
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium',
+        'inline-flex items-center rounded px-1.5 py-0.5 text-[12px] font-medium',
         PILL_TONES[tone],
         className
       )}
@@ -65,7 +65,7 @@ export function Pill({ tone = 'mute', children, className }: { tone?: Tone; chil
 
 /** Inline monospace token — model ids, paths, keys. */
 export function Mono({ children, className }: { children: ReactNode; className?: string }) {
-  return <span className={cn('font-mono text-[11px] text-muted-foreground', className)}>{children}</span>
+  return <span className={cn('font-mono text-[12px] text-muted-foreground', className)}>{children}</span>
 }
 
 // `mute` is not a status: it is for meters that show a proportion rather
@@ -153,12 +153,12 @@ export function Tabs({ items, active }: { items: TabItem[]; active: string }) {
       {items.map((tab) => {
         const on = tab.id === active
         const cls = cn(
-          'flex items-center gap-2 border-b-2 px-3 py-2 text-xs transition-colors',
+          'flex items-center gap-2 border-b-2 px-3 py-3 text-xs transition-colors',
           on ? 'border-b-foreground font-medium' : 'border-b-transparent text-muted-foreground hover:text-foreground'
         )
         const count =
           tab.count === undefined || tab.count === '' ? null : (
-            <span className='font-mono text-[10px] tabular-nums text-muted-foreground'>{tab.count}</span>
+            <span className='font-mono text-[12px] tabular-nums text-muted-foreground'>{tab.count}</span>
           )
         if (tab.href) {
           return (
@@ -186,7 +186,7 @@ export function Tabs({ items, active }: { items: TabItem[]; active: string }) {
  */
 export function SurfacePill({ path }: { path: string }) {
   return (
-    <span className='inline-flex items-center rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground'>
+    <span className='inline-flex items-center rounded bg-muted px-1.5 py-0.5 font-mono text-[12px] text-muted-foreground'>
       {path}
     </span>
   )
@@ -215,7 +215,7 @@ export function SurfaceChip({
   readOnlyHint?: string
 }) {
   const base = cn(
-    'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 font-mono text-[11px] transition-colors',
+    'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 font-mono text-[12px] transition-colors',
     on ? 'border-foreground/40 bg-muted/60 text-foreground' : 'border-border text-muted-foreground'
   )
   const content = (

@@ -17,9 +17,9 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useConfig } from '@/components/ConfigProvider'
 import { Pill, RButton } from '@/components/rialto/primitives'
 import { isProviderConnected, markSetupOffered } from '@/components/rialto/system/first-run'
+import { useAppVersion } from '@/hooks/use-app-version'
 import { type AccessTokenWire, api } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { APP_VERSION } from '@/version'
 
 type StepState = 'done' | 'active' | 'todo'
 
@@ -75,7 +75,7 @@ function Step({
     <div className={cn('flex gap-4 border-t border-border px-6 py-5', state === 'todo' ? 'opacity-50' : '')}>
       <span
         className={cn(
-          'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-medium',
+          'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-[12px] font-medium',
           DOT[state]
         )}
       >
@@ -86,7 +86,7 @@ function Step({
           <h2 className='text-xs font-semibold'>{title}</h2>
           {state === 'done' ? <Pill tone='ok'>{t('system.setup.stepDone')}</Pill> : null}
         </div>
-        <p className='mt-1 text-[11px] leading-relaxed text-muted-foreground'>{body}</p>
+        <p className='mt-1 text-[12px] leading-relaxed text-muted-foreground'>{body}</p>
         {children}
       </div>
     </div>
@@ -117,7 +117,7 @@ function ExportBlock({ baseUrl, plaintext }: { baseUrl: string; plaintext: strin
 
   return (
     <>
-      <div className='mt-3 rounded-md bg-muted/60 px-3 py-2 font-mono text-[11px] leading-relaxed break-all'>
+      <div className='mt-3 rounded-md bg-muted/60 px-3 py-2 font-mono text-[12px] leading-relaxed break-all'>
         <div>export ANTHROPIC_BASE_URL={baseUrl}</div>
         {plaintext === null ? (
           <div className='text-muted-foreground'>export ANTHROPIC_AUTH_TOKEN=…</div>
@@ -136,7 +136,7 @@ function ExportBlock({ baseUrl, plaintext }: { baseUrl: string; plaintext: strin
           >
             {t(copied ? 'settings.access.tokenCopiedShort' : 'common.copy')}
           </RButton>
-          <span className='text-[11px] leading-relaxed text-muted-foreground'>
+          <span className='text-[12px] leading-relaxed text-muted-foreground'>
             {clipboardError === null ? t('system.setup.shownOnce') : clipboardError}
           </span>
         </div>
@@ -147,6 +147,7 @@ function ExportBlock({ baseUrl, plaintext }: { baseUrl: string; plaintext: strin
 
 export function SetupScreen() {
   const { t } = useTranslation()
+  const version = useAppVersion()
   const { config } = useConfig()
   const navigate = useNavigate()
   const [tokens, setTokens] = useState<AccessTokenWire[] | null>(null)
@@ -211,7 +212,7 @@ export function SetupScreen() {
               <i className='ri-route-line text-base leading-none' />
             </div>
             <span className='text-base font-semibold tracking-tight'>Rialto</span>
-            <span className='ml-auto font-mono text-[10px] text-muted-foreground'>v{APP_VERSION}</span>
+            <span className='ml-auto font-mono text-[11px] text-muted-foreground'>v{version}</span>
           </div>
           <p className='mt-4 text-xs leading-relaxed text-muted-foreground'>
             <Trans i18nKey='system.setup.intro' components={{ mono: <span className='font-mono' /> }} />
@@ -234,14 +235,14 @@ export function SetupScreen() {
                 className='rounded-md border border-border px-3 py-2.5 text-left transition-colors hover:bg-muted/50'
               >
                 <i className={cn(option.icon, 'text-sm text-muted-foreground')} />
-                <div className='mt-1 text-[11px] font-medium'>{option.label}</div>
-                <div className='text-[10px] text-muted-foreground'>{t(option.hintKey)}</div>
+                <div className='mt-1 text-[12px] font-medium'>{option.label}</div>
+                <div className='text-[11px] text-muted-foreground'>{t(option.hintKey)}</div>
               </Link>
             ))}
           </div>
           <Link
             to='/providers'
-            className='mt-2 inline-block text-[11px] text-muted-foreground underline-offset-2 hover:underline'
+            className='mt-2 inline-block text-[12px] text-muted-foreground underline-offset-2 hover:underline'
           >
             {t('system.setup.useApiKey')}
           </Link>
@@ -259,12 +260,12 @@ export function SetupScreen() {
               <RButton variant='outline' icon='ri-key-2-line' className='shrink-0' onClick={issue} disabled={issuing}>
                 {t(issuing ? 'system.setup.issuing' : 'system.setup.issueToken')}
               </RButton>
-              <span className='text-[11px] leading-relaxed text-muted-foreground'>
+              <span className='text-[12px] leading-relaxed text-muted-foreground'>
                 {live === 0 ? t('system.setup.nothingCanCall') : t('system.setup.alreadyHave', { n: live })}
               </span>
             </div>
           ) : null}
-          {issueError === null ? null : <p className='mt-2 text-[11px] text-destructive'>{issueError}</p>}
+          {issueError === null ? null : <p className='mt-2 text-[12px] text-destructive'>{issueError}</p>}
         </Step>
 
         <div className='flex items-center gap-3 border-t border-border px-6 py-4'>
@@ -272,12 +273,12 @@ export function SetupScreen() {
               shrink below its content width; without it flex refuses to
               compress the prose and squeezes the two actions instead,
               which wrapped "Skip setup" onto a second line. */}
-          <span className='min-w-0 text-[11px] text-muted-foreground'>
+          <span className='min-w-0 text-[12px] text-muted-foreground'>
             <Trans i18nKey='system.setup.footerNote' components={{ mono: <span className='font-mono' /> }} />
           </span>
           <Link
             to='/overview'
-            className='ml-auto shrink-0 whitespace-nowrap text-[11px] text-muted-foreground underline-offset-2 hover:underline'
+            className='ml-auto shrink-0 whitespace-nowrap text-[12px] text-muted-foreground underline-offset-2 hover:underline'
           >
             {t('system.setup.skip')}
           </Link>

@@ -43,8 +43,8 @@ const fileRow = (f) => `
     f.active ? 'border-l-foreground bg-muted/60' : 'border-l-transparent hover:border-l-border hover:bg-muted/50'
   }">
     <i class="ri-file-text-line text-sm text-muted-foreground"></i>
-    <span class="truncate font-mono text-[11px]">${f.name}</span>
-    <span class="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">${f.size}</span>
+    <span class="truncate font-mono text-[12px]">${f.name}</span>
+    <span class="ml-auto shrink-0 font-mono text-[12px] text-muted-foreground">${f.size}</span>
   </button>`
 
 const groupRow = (g) => `
@@ -52,12 +52,12 @@ const groupRow = (g) => `
     g.active ? 'border-l-foreground bg-muted/60' : 'border-l-transparent hover:border-l-border hover:bg-muted/50'
   }">
     <div class="flex items-center gap-2">
-      <span class="font-mono text-[11px] tabular-nums text-muted-foreground">${g.t}</span>
+      <span class="font-mono text-[12px] tabular-nums text-muted-foreground">${g.t}</span>
       ${pill(g.level, levelTone[g.level])}
-      <span class="ml-auto font-mono text-[11px] text-muted-foreground">${g.lines} lines</span>
+      <span class="ml-auto font-mono text-[12px] text-muted-foreground">${g.lines} lines</span>
     </div>
-    <div class="mt-1 truncate text-[11px]">${g.summary}</div>
-    <div class="mt-0.5 font-mono text-[11px] text-muted-foreground">${g.id}</div>
+    <div class="mt-1 truncate text-[12px]">${g.summary}</div>
+    <div class="mt-0.5 font-mono text-[12px] text-muted-foreground">${g.id}</div>
   </button>`
 
 // Log body. Levels are colour-coded on the gutter only — colouring the
@@ -81,13 +81,13 @@ const gutter = { info: 'bg-transparent', debug: 'bg-transparent', warn: 'bg-ambe
 const line = (l) => `
   <div class="group flex gap-0 hover:bg-muted/50">
     <span class="w-0.5 shrink-0 ${gutter[l.lv]}"></span>
-    <span class="w-28 shrink-0 py-1 pl-3 font-mono text-[11px] tabular-nums text-muted-foreground">${l.t}</span>
-    <span class="w-16 shrink-0 py-1 pl-2 font-mono text-[11px] uppercase ${
+    <span class="w-28 shrink-0 py-1 pl-3 font-mono text-[12px] tabular-nums text-muted-foreground">${l.t}</span>
+    <span class="w-16 shrink-0 py-1 pl-2 font-mono text-[12px] uppercase ${
       l.lv === 'warn' ? 'text-amber-600 dark:text-amber-400' : l.lv === 'error' ? 'text-destructive' : 'text-muted-foreground/60'
     }">${l.lv}</span>
     <span class="min-w-0 flex-1 py-1 pr-4">
-      <span class="font-mono text-[11px]">${l.msg}</span>
-      <span class="ml-2 font-mono text-[11px] text-muted-foreground">${l.kv}</span>
+      <span class="font-mono text-[12px]">${l.msg}</span>
+      <span class="ml-2 font-mono text-[12px] text-muted-foreground">${l.kv}</span>
     </span>
   </div>`
 
@@ -97,14 +97,14 @@ document.getElementById('root').innerHTML = `
 
     <aside class="min-w-0 overflow-y-auto border-r border-border">
       <div class="flex items-center gap-2 px-4 pt-5 pb-2">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Files</h2>
+        <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Files</h2>
       </div>
       ${FILES.map(fileRow).join('')}
       <div class="border-t border-border px-4 py-3">
-        <div class="text-[11px] text-muted-foreground">Level</div>
+        <div class="text-[12px] text-muted-foreground">Level</div>
         <div class="mt-1.5 flex flex-wrap gap-1">
           ${['error', 'warn', 'info', 'debug'].map((l, i) => `
-            <button class="rounded border px-1.5 py-0.5 text-[11px] transition-colors ${
+            <button class="rounded border px-1.5 py-0.5 text-[12px] transition-colors ${
               i < 3 ? 'border-foreground/40 bg-muted/60' : 'border-border text-muted-foreground hover:bg-muted/50'
             }">${l}</button>`).join('')}
         </div>
@@ -113,17 +113,17 @@ document.getElementById('root').innerHTML = `
 
     <aside class="min-w-0 overflow-y-auto border-r border-border">
       <div class="flex items-center gap-2 px-4 pt-5 pb-2">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Requests</h2>
-        <span class="ml-auto font-mono text-[11px] text-muted-foreground">6</span>
+        <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Requests</h2>
+        <span class="ml-auto font-mono text-[12px] text-muted-foreground">6</span>
       </div>
       ${GROUPS.map(groupRow).join('')}
     </aside>
 
     <div class="min-w-0 overflow-y-auto">
       <div class="flex items-center gap-2 border-b border-border px-4 py-2.5">
-        <span class="font-mono text-[11px] text-muted-foreground">rialto-2026-08-31.log</span>
+        <span class="font-mono text-[12px] text-muted-foreground">rialto-2026-08-31.log</span>
         <i class="ri-arrow-right-s-line text-sm text-muted-foreground/50"></i>
-        <span ${navTo('activity-requests.html')} class="font-mono text-[11px]">req_71bd08</span>
+        <span ${navTo('activity-requests.html')} class="font-mono text-[12px]">req_71bd08</span>
         ${pill('warn', 'warn')}
         <div class="ml-auto flex items-center gap-2">
           <div class="flex h-7 w-44 items-center gap-2 rounded-md border border-border px-2.5 text-xs text-muted-foreground">
@@ -135,7 +135,7 @@ document.getElementById('root').innerHTML = `
       </div>
       <div class="py-1">${LINES.map(line).join('')}</div>
       <div class="px-4 py-4">
-        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
+        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
           <i class="ri-information-line mr-1 align-[-1px]"></i>
           Grouped by request id, so a failover reads as one story instead of two interleaved ones.
           The 429 and the retry that succeeded are the same group.

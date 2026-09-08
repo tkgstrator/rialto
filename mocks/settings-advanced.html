@@ -43,8 +43,8 @@ const CONFIG = `{
 
 const line = (n, text) => `
   <div class="flex hover:bg-muted/40">
-    <span class="w-10 shrink-0 select-none py-0.5 pr-3 text-right font-mono text-[11px] tabular-nums text-muted-foreground/50">${n}</span>
-    <span class="min-w-0 flex-1 whitespace-pre py-0.5 font-mono text-[11px]">${text || ' '}</span>
+    <span class="w-10 shrink-0 select-none py-0.5 pr-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground/50">${n}</span>
+    <span class="min-w-0 flex-1 whitespace-pre py-0.5 font-mono text-[12px]">${text || ' '}</span>
   </div>`
 
 document.getElementById('root').innerHTML = `
@@ -60,10 +60,10 @@ document.getElementById('root').innerHTML = `
       </div>
 
       <div class="flex items-center gap-3 border-b border-border px-6 py-3">
-        <span class="font-mono text-[11px] text-muted-foreground">~/.rialto/config.json</span>
+        <span class="font-mono text-[12px] text-muted-foreground">~/.rialto/config.json</span>
         ${pill('JSON5', 'mute')}
         ${pill('valid', 'ok')}
-        <span class="text-[11px] text-muted-foreground">3 backups kept</span>
+        <span class="text-[12px] text-muted-foreground">3 backups kept</span>
         <div class="ml-auto flex gap-2">
           ${btn('Reload', 'ghost', 'ri-refresh-line')}
           ${btn('Format', 'ghost', 'ri-code-line')}
@@ -76,7 +76,7 @@ document.getElementById('root').innerHTML = `
       </div>
 
       <div class="px-6 py-4">
-        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
+        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
           <i class="ri-information-line mr-1 align-[-1px]"></i>
           Comments survive round-trips (JSON5) and <span class="font-mono">$VAR</span> is
           interpolated at boot, so a key can live in the environment rather than this file.
@@ -95,7 +95,7 @@ document.getElementById('root').innerHTML = `
         <div class="grid grid-cols-[1fr_auto] items-center gap-6 border-t border-border/60 px-6 py-4">
           <div>
             <div class="text-xs font-medium">${label}</div>
-            <div class="mt-0.5 text-[11px] leading-snug text-muted-foreground">${hint}</div>
+            <div class="mt-0.5 text-[12px] leading-snug text-muted-foreground">${hint}</div>
           </div>
           <button class="inline-flex h-8 items-center rounded-md border border-destructive/40 px-3 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10">
             ${label.split(' ')[0]}

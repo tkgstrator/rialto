@@ -46,10 +46,10 @@ function VendorCard({ entry, selected, onSelect }: { entry: CatalogEntry; select
             <Pill tone='mute'>{t('providers.rail.apiKey')}</Pill>
           )}
           {entry.enabled ? (
-            <span className='ml-auto text-[11px] text-muted-foreground'>{t('providers.connect.added')}</span>
+            <span className='ml-auto text-[12px] text-muted-foreground'>{t('providers.connect.added')}</span>
           ) : null}
         </div>
-        <div className='mt-0.5 text-[11px] text-muted-foreground'>{t(hint.key, hint.values)}</div>
+        <div className='mt-0.5 text-[12px] text-muted-foreground'>{t(hint.key, hint.values)}</div>
       </div>
     </button>
   )
@@ -68,7 +68,7 @@ export function ConnectVendorRail({
   return (
     <aside className='min-w-0 overflow-y-auto border-r border-border'>
       <div className='px-4 pt-5 pb-2'>
-        <h2 className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>
+        <h2 className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>
           {t('providers.connect.vendor')}
         </h2>
       </div>

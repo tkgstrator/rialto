@@ -47,7 +47,7 @@ document.getElementById('root').innerHTML = `
           <span class="text-xs font-medium">Send a request without a client</span>
           ${pill('not yet available', 'mute')}
         </div>
-        <p class="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+        <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
           Needs an endpoint that runs the pipeline without recording a session — the routing decision
           and the upstream call, with nothing written to <span class="font-mono">RequestLog</span> or
           <span class="font-mono">Message</span>. Until then the nearest thing is the rule tester in
@@ -58,7 +58,7 @@ document.getElementById('root').innerHTML = `
     </div>
 
     <div class="px-6 pb-4">
-      <div class="rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
+      <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
         <i class="ri-information-line mr-1 align-[-1px]"></i>
         The state is drawn rather than left blank on purpose: an empty pane reads as a bug, and a
         reviewer cannot tell a panel missing from the design from one missing from the build. Naming
@@ -77,7 +77,7 @@ document.getElementById('root').innerHTML = `
       <div class="grid grid-cols-[1fr_auto] items-center gap-6 border-t border-border/60 px-6 py-4">
         <div>
           <div class="text-xs font-medium">${label}</div>
-          <div class="mt-0.5 text-[11px] leading-snug text-muted-foreground">${hint}</div>
+          <div class="mt-0.5 text-[12px] leading-snug text-muted-foreground">${hint}</div>
         </div>
         <button class="inline-flex h-8 items-center rounded-md border border-destructive/40 px-3 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10">
           ${label.split(' ')[0]}

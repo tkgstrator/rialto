@@ -60,7 +60,7 @@ function OverrideCell({
   return (
     <span
       className={cn(
-        'relative inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition-colors hover:bg-muted/60',
+        'relative inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] transition-colors hover:bg-muted/60',
         CELL_TONE[tone]
       )}
     >
@@ -111,7 +111,7 @@ function Head({
   const { t } = useTranslation()
   return (
     <thead>
-      <tr className='text-[11px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
+      <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
         <SortTh sortKey='name' sort={sort} className='pl-6 pr-2 text-left'>
           {t('providers.models.colModel')}
         </SortTh>
@@ -205,7 +205,7 @@ function Row({
       <td className={cn(NUM_CELL, 'text-muted-foreground')}>{fmtCost(row.cachedInputPer1M)}</td>
       <td className={cn(NUM_CELL, priceTone)}>{fmtCost(row.outputPer1M)}</td>
       {withOverride ? (
-        <td className='px-2 font-mono text-[11px] text-muted-foreground'>
+        <td className='px-2 font-mono text-[12px] text-muted-foreground'>
           {row.apiStyleOverride === null ? DASH : row.apiStyleOverride}
         </td>
       ) : null}

@@ -92,7 +92,7 @@ function DetailHeader({
           )}
           <Pill tone={stateTone}>{t(STATE_LABEL_KEYS[state])}</Pill>
         </div>
-        <p className='mt-0.5 truncate font-mono text-[11px] text-muted-foreground' title={provider.api_base_url}>
+        <p className='mt-0.5 truncate font-mono text-[12px] text-muted-foreground' title={provider.api_base_url}>
           {provider.api_base_url}
         </p>
       </div>
@@ -105,7 +105,7 @@ function DetailHeader({
             Locked with no credential, because `getEnabledModels` drops
             such a provider regardless of the flag — an operator turning
             it on there would be setting something nothing reads. */}
-        <span className='flex items-center gap-1.5 pr-1 text-[11px] text-muted-foreground'>
+        <span className='flex items-center gap-1.5 pr-1 text-[12px] text-muted-foreground'>
           {t('providers.detail.routable')}
           <Toggle
             on={enabled}
@@ -178,7 +178,7 @@ function ModelsSection({
     <>
       <div className='flex items-center gap-3 px-6 pt-5 pb-3'>
         <h3 className='text-sm font-semibold'>{t('providers.models.title')}</h3>
-        <span className='text-[11px] text-muted-foreground'>
+        <span className='text-[12px] text-muted-foreground'>
           {t('providers.models.enabledCount', {
             enabled: enabledCountOf(provider),
             total: listedModelsOf(provider).length
@@ -204,7 +204,7 @@ function ModelsSection({
           <button
             type='button'
             onClick={() => setLimit(limit + PAGE)}
-            className='w-full rounded-md border border-dashed border-border py-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted/50'
+            className='w-full rounded-md border border-dashed border-border py-2 text-[12px] text-muted-foreground transition-colors hover:bg-muted/50'
           >
             {t('providers.models.showMore', { n: hidden })}
           </button>

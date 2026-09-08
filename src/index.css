@@ -7,6 +7,12 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  /* The workhorse size of every table and list in the app. 12px read as
+     small enough that the smallest labels around it had nowhere to go;
+     13px keeps the 11/12/13/14/16 ladder intact with room at the bottom.
+     NOT covered by the :root/.dark drift check in build-mock-css.ts —
+     mocks/_shared/mock.css and src/index.css must be edited together. */
+  --text-xs: 0.8125rem;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

@@ -54,13 +54,13 @@ function SessionRow({ row, now }: { row: Enriched; now: number }) {
       <td className='py-3 pl-6 pr-3'>
         <Link to={`/activity/sessions/${encodeURIComponent(session.sessionId)}`} className='block'>
           <div className='truncate text-xs font-medium'>{title}</div>
-          <div className='font-mono text-[11px] text-muted-foreground'>{session.sessionId}</div>
+          <div className='font-mono text-[12px] text-muted-foreground'>{session.sessionId}</div>
         </Link>
       </td>
       <td className='px-3'>
         <SurfaceCell path={row.surfacePath} />
       </td>
-      <td className='truncate px-3 font-mono text-[11px] text-muted-foreground'>{row.model}</td>
+      <td className='truncate px-3 font-mono text-[12px] text-muted-foreground'>{row.model}</td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{session.requestCount}</td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtTokens(session.totalInputTokens)}</td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtTokens(session.totalOutputTokens)}</td>
@@ -73,7 +73,7 @@ function SessionRow({ row, now }: { row: Enriched; now: number }) {
           <Sparkline points={row.trend} label={t('activity.sessions.trendLabel', { calls: session.requestCount })} />
         )}
       </td>
-      <td className='py-3 pl-3 pr-6 text-right text-[11px] text-muted-foreground'>{fmtAgo(session.lastAt, now)}</td>
+      <td className='py-3 pl-3 pr-6 text-right text-[12px] text-muted-foreground'>{fmtAgo(session.lastAt, now)}</td>
     </tr>
   )
 }
@@ -100,7 +100,7 @@ export function SessionsTable({ rows, now }: { rows: Enriched[]; now: number }) 
         <col className='w-16' />
       </colgroup>
       <thead>
-        <tr className='text-[11px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
+        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
           <SortTh sortKey='session' sort={sort} className='pl-6 pr-3 text-left font-medium'>
             {t('activity.sessions.colSession')}
           </SortTh>

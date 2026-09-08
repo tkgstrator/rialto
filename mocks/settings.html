@@ -23,7 +23,7 @@ const field = (label, value, hint, kind = 'text') => `
   <div class="grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4">
     <div>
       <div class="text-xs font-medium">${label}</div>
-      ${hint ? `<div class="mt-0.5 text-[11px] leading-snug text-muted-foreground">${hint}</div>` : ''}
+      ${hint ? `<div class="mt-0.5 text-[12px] leading-snug text-muted-foreground">${hint}</div>` : ''}
     </div>
     <div>
       ${
@@ -47,7 +47,7 @@ document.getElementById('root').innerHTML = `
     <div class="min-w-0 overflow-y-auto">
       <div class="flex items-center gap-3 px-6 pt-6 pb-3">
         <h2 class="text-sm font-semibold">Server</h2>
-        <span class="text-[11px] text-muted-foreground">Boot-time values. A change needs a restart.</span>
+        <span class="text-[12px] text-muted-foreground">Boot-time values. A change needs a restart.</span>
         <div class="ml-auto">${btn('Restart', 'outline', 'ri-restart-line')}</div>
       </div>
 
@@ -72,7 +72,7 @@ document.getElementById('root').innerHTML = `
             <span class="text-xs font-medium">Migrated from ~/.claude-code-router</span>
             ${pill('one-time', 'warn')}
           </div>
-          <p class="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+          <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
             Your config was copied to <span class="font-mono">~/.rialto</span> on first boot of v3.0.0.
             The old directory was left in place — delete it once you are satisfied nothing regressed.
           </p>
@@ -85,7 +85,7 @@ document.getElementById('root').innerHTML = `
       <div class="grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4">
         <div>
           <div class="text-xs font-medium">Version</div>
-          <div class="mt-0.5 text-[11px] text-muted-foreground">Checked 4 minutes ago</div>
+          <div class="mt-0.5 text-[12px] text-muted-foreground">Checked 4 minutes ago</div>
         </div>
         <div class="flex items-center gap-3">
           <span class="font-mono text-xs">v3.0.0</span>

@@ -30,9 +30,9 @@ const presetRow = (p) => `
   }">
     <div class="flex items-center gap-2">
       <span class="text-xs font-medium">${p.name}</span>
-      <span class="ml-auto font-mono text-[11px] text-muted-foreground">v${p.version}</span>
+      <span class="ml-auto font-mono text-[12px] text-muted-foreground">v${p.version}</span>
     </div>
-    <div class="mt-0.5 text-[11px] text-muted-foreground">
+    <div class="mt-0.5 text-[12px] text-muted-foreground">
       ${p.author} · ${p.providers} providers · ${p.models} models
     </div>
   </button>`
@@ -41,7 +41,7 @@ const input = (label, hint, value, secret) => `
   <div class="grid grid-cols-[12rem_1fr] items-start gap-4 border-t border-border/60 px-6 py-3">
     <div>
       <div class="flex items-center gap-1.5 text-xs font-medium">${label}<span class="text-destructive">*</span></div>
-      <div class="mt-0.5 text-[11px] leading-snug text-muted-foreground">${hint}</div>
+      <div class="mt-0.5 text-[12px] leading-snug text-muted-foreground">${hint}</div>
     </div>
     <div class="flex items-center gap-2">
       <div class="flex h-8 max-w-md flex-1 items-center rounded-md border border-border px-3 font-mono text-xs ${
@@ -67,7 +67,7 @@ document.getElementById('root').innerHTML = `
         ${btn('Export current', 'ghost', 'ri-download-line')}
       </div>
       <div class="border-t border-border px-4 py-4">
-        <p class="text-[11px] leading-relaxed text-muted-foreground">
+        <p class="text-[12px] leading-relaxed text-muted-foreground">
           A preset is a snapshot of providers, models and routing with secrets stripped —
           the shareable half of a configuration.
         </p>
@@ -82,7 +82,7 @@ document.getElementById('root').innerHTML = `
             ${pill('v1.2.0', 'mute')}
             ${pill('installed', 'ok')}
           </div>
-          <p class="mt-0.5 text-[11px] text-muted-foreground">
+          <p class="mt-0.5 text-[12px] text-muted-foreground">
             by tkgstrator · updated 2026-07-14 · <span class="font-mono">openai</span> <span class="font-mono">production</span>
           </p>
         </div>
@@ -109,9 +109,9 @@ document.getElementById('root').innerHTML = `
 
       <div class="flex items-center gap-2 border-t border-border px-6 pt-5 pb-2">
         <h3 class="text-sm font-semibold">What it changes</h3>
-        <span class="text-[11px] text-muted-foreground">diff against your current config</span>
+        <span class="text-[12px] text-muted-foreground">diff against your current config</span>
       </div>
-      <div class="space-y-1 px-6 pb-5 font-mono text-[11px]">
+      <div class="space-y-1 px-6 pb-5 font-mono text-[12px]">
         <!-- Every line of the diff names something with a screen of its
              own; following one is how you check what a preset would
              overwrite before you apply it. -->
@@ -128,7 +128,7 @@ document.getElementById('root').innerHTML = `
             <i class="ri-alert-line text-sm text-amber-600 dark:text-amber-400"></i>
             <span class="text-xs font-medium">Applying replaces your default route</span>
           </div>
-          <p class="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+          <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
             Your current routing is snapshotted first, so <span class="font-mono">Revert</span> is
             one click. Subscription providers and their accounts are never touched by a preset.
           </p>

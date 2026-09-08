@@ -51,7 +51,7 @@ const ABSENT_KEYS: Record<ConditionField, string> = {
 function ConditionRow({ condition }: { condition: RuleCondition }) {
   const { t } = useTranslation()
   return (
-    <div className='flex items-baseline gap-2 py-0.5 text-[11px]'>
+    <div className='flex items-baseline gap-2 py-0.5 text-[12px]'>
       <i
         className={cn(
           'shrink-0 text-xs',
@@ -87,7 +87,7 @@ function RuleTrace({ verdict, first }: { verdict: RuleVerdict; first: boolean })
         verdict.matched ? 'border-l-foreground bg-muted/40' : 'border-l-transparent'
       )}
     >
-      <div className='flex items-center gap-2 text-[11px]'>
+      <div className='flex items-center gap-2 text-[12px]'>
         <span className='font-mono tabular-nums text-muted-foreground'>{verdict.index + 1}</span>
         <span className='truncate'>
           {verdict.name === null ? t('routing.rules.ruleN', { n: verdict.index + 1 }) : verdict.name}
@@ -106,7 +106,7 @@ function RuleTrace({ verdict, first }: { verdict: RuleVerdict; first: boolean })
         </span>
       </div>
       {verdict.conditions.length === 0 ? (
-        <div className='mt-1 text-[11px] text-muted-foreground'>{t('routing.rules.tester.noConditions')}</div>
+        <div className='mt-1 text-[12px] text-muted-foreground'>{t('routing.rules.tester.noConditions')}</div>
       ) : (
         <div className='mt-1'>
           {verdict.conditions.map((condition) => (
@@ -127,7 +127,7 @@ function Trace({ result }: { result: RuleTestResult }) {
         <RuleTrace key={verdict.index} verdict={verdict} first={i === 0} />
       ))}
       {result.notEvaluated === 0 ? null : (
-        <div className='border-t border-border/60 px-3 py-2 text-[11px] text-muted-foreground'>
+        <div className='border-t border-border/60 px-3 py-2 text-[12px] text-muted-foreground'>
           {t('routing.rules.tester.evaluationStopped')}
         </div>
       )}
@@ -138,7 +138,7 @@ function Trace({ result }: { result: RuleTestResult }) {
 function TokenLine({ count }: { count: number }) {
   const { t } = useTranslation()
   return (
-    <div className='mt-2 text-[11px] text-muted-foreground'>
+    <div className='mt-2 text-[12px] text-muted-foreground'>
       {t('routing.rules.tester.tokenLine', { count: count.toLocaleString() })}
     </div>
   )
@@ -153,7 +153,7 @@ function NoMatch({ result }: { result: RuleTestResult }) {
   return (
     <div className='mt-3 rounded-md border border-border px-4 py-3'>
       <Pill tone='mute'>{t('routing.rules.tester.noRuleMatched')}</Pill>
-      <div className='mt-2 text-[11px] text-muted-foreground'>
+      <div className='mt-2 text-[12px] text-muted-foreground'>
         {t('routing.rules.tester.noneApplied', { n: result.evaluated.length })}
       </div>
       <TokenLine count={result.tokenCount} />
@@ -169,11 +169,11 @@ function Matched({ result }: { result: RuleTestResult }) {
     <div className='mt-3 rounded-md border border-border px-4 py-3'>
       <div className='flex items-center gap-2'>
         <Pill tone='ok'>{t('routing.rules.tester.rulePositionMatched', { n: position })}</Pill>
-        <span className='text-[11px] text-muted-foreground'>
+        <span className='text-[12px] text-muted-foreground'>
           {result.matchedName === null ? t('routing.rules.ruleN', { n: position }) : result.matchedName}
         </span>
       </div>
-      <div className='mt-2 flex items-center gap-1.5 font-mono text-[11px]'>
+      <div className='mt-2 flex items-center gap-1.5 font-mono text-[12px]'>
         <span className='text-muted-foreground'>{t('routing.rules.tester.requested')}</span>
         <i className='ri-arrow-right-line text-xs text-muted-foreground/50' />
         {/* A null target on a MATCHED rule is a deliberate "leave this
@@ -181,7 +181,7 @@ function Matched({ result }: { result: RuleTestResult }) {
         <span>{result.target === null ? t('routing.rules.tester.noRewriteUpstream') : result.target}</span>
       </div>
       {result.notEvaluated === 0 ? null : (
-        <div className='mt-1 text-[11px] text-muted-foreground'>
+        <div className='mt-1 text-[12px] text-muted-foreground'>
           {result.notEvaluated === 1
             ? t('routing.rules.tester.oneNotEvaluated', { n: last })
             : t('routing.rules.tester.rangeNotEvaluated', { from: position + 1, to: last })}
@@ -222,7 +222,7 @@ export function RuleTester({ rules }: { rules: readonly RouteRule[] }) {
     <div className='mt-6 border-t border-border px-6 py-5'>
       <div className='flex items-baseline gap-3'>
         <h3 className='text-sm font-semibold'>{t('routing.rules.tester.title')}</h3>
-        <span className='text-[11px] text-muted-foreground'>{t('routing.rules.tester.subtitle')}</span>
+        <span className='text-[12px] text-muted-foreground'>{t('routing.rules.tester.subtitle')}</span>
       </div>
       <div className='mt-3 flex items-center gap-2'>
         <input
@@ -235,7 +235,7 @@ export function RuleTester({ rules }: { rules: readonly RouteRule[] }) {
           {t('routing.rules.tester.run')}
         </RButton>
       </div>
-      {error === null ? null : <div className='mt-3 text-[11px] text-destructive'>{error}</div>}
+      {error === null ? null : <div className='mt-3 text-[12px] text-destructive'>{error}</div>}
       {result === null ? null : (
         <>
           {result.matchedIndex === null ? <NoMatch result={result} /> : <Matched result={result} />}

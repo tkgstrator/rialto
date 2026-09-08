@@ -68,7 +68,7 @@ const VIA = {
 function SignedInAs({ identity }: { identity: IdentityResponse | null }) {
   const { t } = useTranslation()
   if (identity === null)
-    return <span className='text-[11px] text-muted-foreground'>{t('settings.access.checking')}</span>
+    return <span className='text-[12px] text-muted-foreground'>{t('settings.access.checking')}</span>
 
   const via = VIA[identity.mode]
   return (
@@ -92,7 +92,7 @@ function ExposureNotice({ identity }: { identity: IdentityResponse }) {
   if (identity.accessConfigured) return null
   return (
     <div className='px-6 pt-1 pb-3'>
-      <div className='flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-2 text-[11px] leading-relaxed'>
+      <div className='flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-2 text-[12px] leading-relaxed'>
         <i className='ri-alert-line shrink-0 text-sm text-amber-600 dark:text-amber-400' />
         <span>
           <Trans
@@ -151,11 +151,11 @@ function PolicyCoverage() {
   return (
     <SettingsField label={t('settings.access.policyCoverage')} hint={t('settings.access.policyCoverageHint')}>
       <div className='space-y-2'>
-        <div className='rounded-md border border-dashed border-border px-3 py-1.5 text-[11px] text-muted-foreground'>
+        <div className='rounded-md border border-dashed border-border px-3 py-1.5 text-[12px] text-muted-foreground'>
           <i className='ri-tools-line mr-1 align-[-1px]' />
           {t('settings.access.policyListingUnavailable')}
         </div>
-        <p className='text-[11px] leading-relaxed text-muted-foreground'>
+        <p className='text-[12px] leading-relaxed text-muted-foreground'>
           <Trans
             i18nKey='settings.access.bypassNote'
             components={{
@@ -318,10 +318,10 @@ export function SettingsAccess() {
         stale={stale}
       />
       {dirty && !gate.allowed ? (
-        <div className='px-6 pb-4 text-[11px] leading-relaxed text-amber-600 dark:text-amber-400'>{gate.reason}</div>
+        <div className='px-6 pb-4 text-[12px] leading-relaxed text-amber-600 dark:text-amber-400'>{gate.reason}</div>
       ) : null}
       {dirty && gate.allowed && gate.caveat !== null ? (
-        <div className='px-6 pb-4 text-[11px] leading-relaxed text-muted-foreground'>{gate.caveat}</div>
+        <div className='px-6 pb-4 text-[12px] leading-relaxed text-muted-foreground'>{gate.caveat}</div>
       ) : null}
 
       <PolicyCoverage />

@@ -73,7 +73,7 @@ function ModelsCell({ row }: { row: Row }) {
   const { t } = useTranslation()
   const requested = row.log.requestedModel
   return (
-    <div className='flex items-center gap-1.5 font-mono text-[11px]'>
+    <div className='flex items-center gap-1.5 font-mono text-[12px]'>
       <span className='truncate text-muted-foreground'>
         {requested === null ? t('activity.common.untracked') : requested}
       </span>
@@ -89,7 +89,7 @@ export const COLUMNS: readonly ColumnDef[] = [
     labelKey: 'activity.requests.colTime',
     width: 'w-20',
     align: 'left',
-    cellClass: 'font-mono text-[11px] tabular-nums text-muted-foreground',
+    cellClass: 'font-mono text-[12px] tabular-nums text-muted-foreground',
     render: (row) => dayjs(row.log.createdAt).format('HH:mm:ss'),
     // The cell abbreviates the arrival instant to a clock, but the column
     // means the instant: over a 7d window, ordering the printed HH:mm:ss
@@ -133,7 +133,7 @@ export const COLUMNS: readonly ColumnDef[] = [
     labelKey: 'activity.requests.colRule',
     width: 'w-32',
     align: 'left',
-    cellClass: 'text-[11px]',
+    cellClass: 'text-[12px]',
     render: (row) =>
       row.rule === null ? <span className='text-muted-foreground/50'>{DASH}</span> : <span>{row.rule}</span>,
     sortValue: (row) => row.rule
@@ -152,7 +152,7 @@ export const COLUMNS: readonly ColumnDef[] = [
     labelKey: 'activity.requests.colToken',
     width: 'w-40',
     align: 'left',
-    cellClass: 'truncate text-[11px] text-muted-foreground',
+    cellClass: 'truncate text-[12px] text-muted-foreground',
     render: (row, t) => (row.client === null ? t('activity.common.untracked') : row.client),
     sortValue: (row) => row.client
   },
@@ -254,7 +254,7 @@ export function RequestsTable({ rows, columns }: { rows: Row[]; columns: readonl
         ))}
       </colgroup>
       <thead>
-        <tr className='text-[11px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
+        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
           {columns.map((col, i) => {
             const className = cn(
               edgeClass(i, columns.length, false),

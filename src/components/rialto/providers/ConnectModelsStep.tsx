@@ -47,13 +47,13 @@ export function ConnectModelsStep({
             <Pill tone='info'>{t('providers.connect.pillSubscription')}</Pill>
           )}
         </div>
-        <p className='mt-1 text-[11px] leading-relaxed text-muted-foreground'>
+        <p className='mt-1 text-[12px] leading-relaxed text-muted-foreground'>
           {t('providers.connect.modelsExplainer')}
         </p>
       </div>
       <div className='flex items-center gap-3 px-6 pt-5 pb-3'>
         <h3 className='text-sm font-semibold'>{t('providers.models.title')}</h3>
-        <span className='text-[11px] text-muted-foreground'>
+        <span className='text-[12px] text-muted-foreground'>
           {t('providers.models.enabledCount', {
             enabled: enabledCountOf(provider),
             total: listedModelsOf(provider).length

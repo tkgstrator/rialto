@@ -66,7 +66,7 @@ export function PassthroughPanel({
           so it cannot lean on a preceding block for spacing. */}
       <div className='flex items-center gap-3 px-6 pt-6 pb-3'>
         <h2 className='text-sm font-semibold'>{t('routing.chain.reachableTargets')}</h2>
-        <span className='text-[11px] text-muted-foreground'>
+        <span className='text-[12px] text-muted-foreground'>
           <Trans i18nKey='routing.chain.reachableHint' components={{ mono: <span className='font-mono' /> }} />
         </span>
         <div className='ml-auto'>
@@ -84,7 +84,7 @@ export function PassthroughPanel({
           <col className='w-16' />
         </colgroup>
         <thead>
-          <tr className='text-[11px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
+          <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2'>
             <th className='pl-6 pr-2 text-left font-medium'>{t('routing.common.colTarget')}</th>
             <th className='px-2 text-left font-medium'>{t('routing.common.colTier')}</th>
             <th className='px-2 text-left font-medium'>{t('routing.common.colState')}</th>
@@ -99,7 +99,7 @@ export function PassthroughPanel({
       </table>
 
       <div className='px-6 py-5'>
-        <div className='rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground'>
+        <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
           <i className='ri-lightbulb-line mr-1 align-[-1px]' />
           <Trans
             i18nKey='routing.chain.passthroughNote'

@@ -27,7 +27,7 @@ const step = (n, label, state) => {
   const tone = { done: 'bg-foreground text-background', active: 'bg-foreground text-background', todo: 'bg-muted text-muted-foreground' }[state]
   return `
     <div class="flex items-center gap-2">
-      <span class="flex size-5 items-center justify-center rounded-full text-[11px] font-medium ${tone}">
+      <span class="flex size-5 items-center justify-center rounded-full text-[12px] font-medium ${tone}">
         ${state === 'done' ? '<i class="ri-check-line text-xs"></i>' : n}
       </span>
       <span class="text-xs ${state === 'todo' ? 'text-muted-foreground' : 'font-medium'}">${label}</span>
@@ -56,9 +56,9 @@ const vendorCard = (v, selected) => `
       <div class="flex items-center gap-2">
         <span class="text-xs font-medium">${v.label}</span>
         ${v.kind === 'subscription' ? pill('OAuth', 'info') : pill('API key', 'mute')}
-        ${v.added ? '<span class="ml-auto text-[11px] text-muted-foreground">added</span>' : ''}
+        ${v.added ? '<span class="ml-auto text-[12px] text-muted-foreground">added</span>' : ''}
       </div>
-      <div class="mt-0.5 text-[11px] text-muted-foreground">${v.hint}</div>
+      <div class="mt-0.5 text-[12px] text-muted-foreground">${v.hint}</div>
     </div>
   </button>`
 
@@ -96,7 +96,7 @@ const models = `
   <table class="w-full table-fixed">
     <colgroup><col><col class="w-24"><col class="w-24"><col class="w-16"><col class="w-16"></colgroup>
     <thead>
-      <tr class="text-[11px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2">
+      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2">
         ${sortTh('Model', 'pl-6 pr-2', 'left', true, 'desc')}
         ${sortTh('Tier', 'px-2')}
         ${sortTh('Context', 'px-2', 'right')}
@@ -121,7 +121,7 @@ document.getElementById('root').innerHTML = `
 
     <aside class="min-w-0 overflow-y-auto border-r border-border">
       <div class="px-4 pt-5 pb-2">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Vendor</h2>
+        <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Vendor</h2>
       </div>
       ${VENDORS.map((v) => vendorCard(v, v.id === 'gemini-cli')).join('')}
     </aside>
@@ -133,7 +133,7 @@ document.getElementById('root').innerHTML = `
           ${pill('subscription', 'info')}
           ${pill('connected', 'ok')}
         </div>
-        <p class="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+        <p class="mt-1 text-[12px] leading-relaxed text-muted-foreground">
           Tokens stored encrypted for <span class="font-mono">ops@example.com</span>. The catalog
           below came back with the token — nothing has taken traffic yet.
         </p>
@@ -141,7 +141,7 @@ document.getElementById('root').innerHTML = `
 
       <div class="flex items-center gap-3 px-6 pt-5 pb-3">
         <h3 class="text-sm font-semibold">Models</h3>
-        <span class="text-[11px] text-muted-foreground">3 of 5 enabled</span>
+        <span class="text-[12px] text-muted-foreground">3 of 5 enabled</span>
         <div class="ml-auto flex items-center gap-2">
           ${btn('Enable all', 'ghost', 'ri-checkbox-multiple-line')}
           ${btn('Test all', 'outline', 'ri-pulse-line')}
@@ -150,7 +150,7 @@ document.getElementById('root').innerHTML = `
       ${models}
 
       <div class="px-6 py-4">
-        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
+        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
           <i class="ri-information-line mr-1 align-[-1px]"></i>
           A model registered here is <span class="font-medium text-foreground">not</span> routable
           until it is on: <span class="font-mono">Model.enabled</span> defaults to false so a catalog
@@ -161,7 +161,7 @@ document.getElementById('root').innerHTML = `
       </div>
 
       <div class="flex items-center gap-3 border-t border-border px-6 py-4">
-        <span class="text-[11px] text-muted-foreground">
+        <span class="text-[12px] text-muted-foreground">
           You can change any of this later on the provider's screen.
         </span>
         <div class="ml-auto flex gap-2">

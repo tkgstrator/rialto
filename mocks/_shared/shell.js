@@ -213,7 +213,7 @@ function renderShell(opts) {
         <i class="ri-route-line text-sm leading-none"></i>
       </div>
       <span class="text-sm font-semibold tracking-tight">Rialto</span>
-      <span class="ml-auto font-mono text-[11px] text-muted-foreground">v3.0.0</span>
+      <span class="ml-auto font-mono text-[12px] text-muted-foreground">v3.0.0</span>
     </div>
 
     <nav class="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
@@ -233,17 +233,17 @@ function renderShell(opts) {
           <span class="size-1.5 rounded-full bg-emerald-500"></span>
         </span>
         <span class="text-sidebar-foreground/70">Serving</span>
-        <span class="ml-auto font-mono text-[11px] text-muted-foreground">:3456</span>
+        <span class="ml-auto font-mono text-[12px] text-muted-foreground">:3456</span>
       </div>
       <div ${navTo('settings-access.html')} class="flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors hover:bg-sidebar-accent/60">
         <i class="ri-shield-check-line w-4 shrink-0 text-base leading-none text-emerald-500"></i>
         <span class="truncate text-sidebar-foreground/70">tkgstrator@…</span>
-        <span class="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">Access</span>
+        <span class="ml-auto shrink-0 font-mono text-[12px] text-muted-foreground">Access</span>
       </div>
       <button id="mock-theme-toggle" class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60">
         <i class="ri-contrast-2-line w-4 shrink-0 text-base leading-none opacity-80"></i>
         <span>Theme</span>
-        <span id="mock-theme-label" class="ml-auto font-mono text-[11px] text-muted-foreground"></span>
+        <span id="mock-theme-label" class="ml-auto font-mono text-[12px] text-muted-foreground"></span>
       </button>
     </div>
   </aside>
@@ -299,7 +299,7 @@ const pill = (text, tone = 'mute') => {
     info: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
     mute: 'bg-muted text-muted-foreground'
   }
-  return `<span class="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium ${tones[tone]}">${text}</span>`
+  return `<span class="inline-flex items-center rounded px-1.5 py-0.5 text-[12px] font-medium ${tones[tone]}">${text}</span>`
 }
 
 /**
@@ -324,13 +324,13 @@ const toast = (text, tone = 'ok', detail = '') => `
       <i class="${TOAST_ICON[tone]} mt-px text-base leading-none"></i>
       <div class="min-w-0 flex-1">
         <div class="text-xs font-medium">${text}</div>
-        ${detail ? `<div class="mt-0.5 text-[11px] leading-snug text-muted-foreground">${detail}</div>` : ''}
+        ${detail ? `<div class="mt-0.5 text-[12px] leading-snug text-muted-foreground">${detail}</div>` : ''}
       </div>
     </div>
   </div>`
 
 /** Inline monospace token — model ids, paths, keys. */
-const mono = (text) => `<span class="font-mono text-[11px] text-muted-foreground">${text}</span>`
+const mono = (text) => `<span class="font-mono text-[12px] text-muted-foreground">${text}</span>`
 
 /**
  * The four inbound surfaces, named by the raw endpoint a client actually
@@ -348,11 +348,11 @@ const SURFACES = [
 
 /** Surface label for a table cell. Monospace so paths align down a column. */
 const surfacePill = (path) =>
-  `<span class="inline-flex items-center rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">${path}</span>`
+  `<span class="inline-flex items-center rounded bg-muted px-1.5 py-0.5 font-mono text-[12px] text-muted-foreground">${path}</span>`
 
 /** Toggle chip for "which surfaces does this apply to" pickers. */
 const surfaceChip = (path, on) => `
-  <button class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 font-mono text-[11px] transition-colors ${
+  <button class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 font-mono text-[12px] transition-colors ${
     on ? 'border-foreground/40 bg-muted/60 text-foreground' : 'border-border text-muted-foreground hover:bg-muted/50'
   }">
     ${on ? '<i class="ri-check-line text-xs"></i>' : ''}${path}
@@ -382,7 +382,7 @@ const CELL_TONE = {
 
 /** Inline editable table cell: the value, plus a disclosure chevron. */
 const selectCell = (label, source) => `
-  <button class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition-colors hover:bg-muted/60 ${CELL_TONE[source]}">
+  <button class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] transition-colors hover:bg-muted/60 ${CELL_TONE[source]}">
     ${label}<i class="ri-arrow-down-s-line text-xs opacity-60"></i>
   </button>`
 
@@ -427,10 +427,10 @@ const tabs = (items, activeId) =>
       const count =
         t.count === undefined || t.count === ''
           ? ''
-          : `<span class="font-mono text-[11px] tabular-nums text-muted-foreground">${t.count}</span>`
+          : `<span class="font-mono text-[12px] tabular-nums text-muted-foreground">${t.count}</span>`
       const tag = t.href ? 'a' : 'button'
       const href = t.href ? ` href="${t.href}"` : ''
-      return `<${tag}${href} class="flex items-center gap-2 border-b-2 px-3 py-2 text-xs transition-colors ${cls}">${t.label}${count}</${tag}>`
+      return `<${tag}${href} class="flex items-center gap-2 border-b-2 px-3 py-3 text-xs transition-colors ${cls}">${t.label}${count}</${tag}>`
     })
     .join('')
 
@@ -447,7 +447,7 @@ const tabs = (items, activeId) =>
  */
 const sortTh = (label, cls, align = 'left', active = false, dir = 'desc') => {
   const justify = align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : 'justify-start'
-  const caret = `<i class="text-[10px] ${
+  const caret = `<i class="text-[11px] ${
     active ? (dir === 'asc' ? 'ri-arrow-up-s-fill' : 'ri-arrow-down-s-fill') : 'ri-arrow-up-s-fill opacity-0'
   }"></i>`
   return `<th class="${cls} text-${align}"><button class="inline-flex w-full items-center gap-1 font-medium uppercase tracking-wider transition-colors hover:text-foreground ${justify} ${
@@ -544,7 +544,7 @@ const navSearch = `
     <div class="flex h-9 items-center gap-2 rounded-md border border-sidebar-border px-2.5 text-sm text-muted-foreground">
       <i class="ri-search-line text-base leading-none"></i>
       <span>Search…</span>
-      <span class="ml-auto font-mono text-[11px] opacity-60">⌘K</span>
+      <span class="ml-auto font-mono text-[12px] opacity-60">⌘K</span>
     </div>
   </div>`
 
@@ -626,7 +626,7 @@ const SELECTOR_HINT = {
 
 const selectorBar = (active) => {
   const seg = (id, label) =>
-    `<button class="rounded px-2.5 py-1 text-[11px] ${
+    `<button class="rounded px-2.5 py-1 text-[12px] ${
       id === active ? 'bg-foreground font-medium text-background' : 'text-muted-foreground hover:text-foreground'
     }">${label}</button>`
   return `
@@ -637,7 +637,7 @@ const selectorBar = (active) => {
         ${seg('rules', 'Rules')}${seg('chain', 'Chain')}
       </div>
     </div>
-    <p class="ml-auto max-w-lg text-right text-[11px] leading-snug text-muted-foreground">${SELECTOR_HINT[active]}</p>
+    <p class="ml-auto max-w-lg text-right text-[12px] leading-snug text-muted-foreground">${SELECTOR_HINT[active]}</p>
   </div>`
 }
 
@@ -672,9 +672,9 @@ const providerRow = (p, activeId) => {
     <div class="flex items-center gap-2">
       <span class="text-xs font-medium">${p.label}</span>
       ${p.plan ? pill(p.plan, 'info') : ''}
-      <span class="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground">${p.models}</span>
+      <span class="ml-auto font-mono text-[12px] tabular-nums text-muted-foreground">${p.models}</span>
     </div>
-    <div class="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+    <div class="mt-1 flex items-center gap-2 text-[12px] text-muted-foreground">
       <span>${p.auth === 'subscription' ? 'OAuth' : 'API key'}</span>
       <span class="opacity-40">·</span>
       <span>${p.vendor}</span>
@@ -686,14 +686,14 @@ const providerRow = (p, activeId) => {
 
 const providerRail = (activeId) => `
   <div class="flex items-center gap-2 px-4 pt-5 pb-2">
-    <h2 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Subscriptions</h2>
-    <span class="ml-auto font-mono text-[11px] text-muted-foreground">3</span>
+    <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Subscriptions</h2>
+    <span class="ml-auto font-mono text-[12px] text-muted-foreground">3</span>
   </div>
   ${PROVIDER_ROWS.filter((p) => p.auth === 'subscription').map((p) => providerRow(p, activeId)).join('')}
 
   <div class="mt-2 flex items-center gap-2 border-t border-border px-4 pt-5 pb-2">
-    <h2 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">API keys</h2>
-    <span class="ml-auto font-mono text-[11px] text-muted-foreground">4</span>
+    <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">API keys</h2>
+    <span class="ml-auto font-mono text-[12px] text-muted-foreground">4</span>
   </div>
   ${PROVIDER_ROWS.filter((p) => p.auth === 'api_key').map((p) => providerRow(p, activeId)).join('')}
 

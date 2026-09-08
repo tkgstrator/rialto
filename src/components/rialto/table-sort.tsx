@@ -139,7 +139,7 @@ export function SortTh<K extends string>({
   const caret = (
     <i
       className={cn(
-        'text-[10px]',
+        'text-[11px]',
         active ? (sort.dir === 'asc' ? 'ri-arrow-up-s-fill' : 'ri-arrow-down-s-fill') : 'ri-arrow-up-s-fill opacity-0'
       )}
     />

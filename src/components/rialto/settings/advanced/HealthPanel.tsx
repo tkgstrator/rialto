@@ -63,7 +63,7 @@ export function HealthPanel() {
       </SettingsField>
       <SettingsField label={t('settings.advanced.dependencyChecks')} hint={t('settings.advanced.dependencyChecksHint')}>
         {health === null ? (
-          <span className='text-[11px] text-muted-foreground'>{t('settings.advanced.nothingReported')}</span>
+          <span className='text-[12px] text-muted-foreground'>{t('settings.advanced.nothingReported')}</span>
         ) : (
           <div className='flex flex-wrap items-center gap-2'>
             {Object.entries(health.checks).map(([name, state]) => (

@@ -32,7 +32,7 @@ function VendorIntro({ entry }: { entry: CatalogEntry }) {
           <Pill tone='mute'>{t('providers.connect.pillApiKey')}</Pill>
         )}
       </div>
-      <p className='mt-1 text-[11px] leading-relaxed text-muted-foreground'>
+      <p className='mt-1 text-[12px] leading-relaxed text-muted-foreground'>
         {subscription
           ? t('providers.connect.introSubscription', { brand })
           : t('providers.connect.introApiKey', { url: entry.apiBaseUrl, brand })}
@@ -73,7 +73,7 @@ function ChoiceCard({
         <span className='text-xs font-medium'>{title}</span>
         {selected ? <Pill tone='ok'>{t('providers.connect.recommended')}</Pill> : null}
       </div>
-      <p className='mt-1.5 text-[11px] leading-relaxed text-muted-foreground'>{body}</p>
+      <p className='mt-1.5 text-[12px] leading-relaxed text-muted-foreground'>{body}</p>
     </button>
   )
 }
@@ -99,7 +99,7 @@ function WaitingCard({
           <i className='ri-loader-4-line text-sm text-muted-foreground' />
           <span className='text-xs font-medium'>{t('providers.connect.waitingTitle')}</span>
         </div>
-        <p className='mt-1.5 text-[11px] leading-relaxed text-muted-foreground'>{t('providers.connect.waitingBody')}</p>
+        <p className='mt-1.5 text-[12px] leading-relaxed text-muted-foreground'>{t('providers.connect.waitingBody')}</p>
         {/* Both flows accept a pasted redirect. Codex depends on it: its
             OAuth client pins redirect_uri to localhost:1455, which resolves
             on the BROWSER's machine — so on a remote or containerised
@@ -108,7 +108,7 @@ function WaitingCard({
             through. The exchange only needs redirect_uri to match what
             authorize saw, never to be reachable. */}
         <div className='mt-3 rounded-md bg-muted/50 px-3 py-2'>
-          <div className='text-[11px] text-muted-foreground'>{t('providers.connect.pasteRedirect')}</div>
+          <div className='text-[12px] text-muted-foreground'>{t('providers.connect.pasteRedirect')}</div>
           <div className='mt-1.5 flex items-center gap-2'>
             <input
               value={manualUrl}
@@ -119,13 +119,13 @@ function WaitingCard({
                   : 'providers.connect.redirectPlaceholder'
               )}
               spellCheck={false}
-              className='h-8 flex-1 rounded-md border border-border bg-background px-3 font-mono text-[11px] text-muted-foreground outline-none focus:text-foreground'
+              className='h-8 flex-1 rounded-md border border-border bg-background px-3 font-mono text-[12px] text-muted-foreground outline-none focus:text-foreground'
             />
             <RButton variant='outline' onClick={onSubmitManual} disabled={busy || manualUrl.trim() === ''}>
               {t('providers.connect.submit')}
             </RButton>
           </div>
-          <p className='mt-1.5 text-[11px] leading-relaxed text-muted-foreground'>
+          <p className='mt-1.5 text-[12px] leading-relaxed text-muted-foreground'>
             {t(kind === 'codex' ? 'providers.connect.pasteRedirectHintCodex' : 'providers.connect.pasteRedirectHint')}
           </p>
         </div>
@@ -149,12 +149,12 @@ function FailureCard({ failure, now }: { failure: AuthFailure; now: number }) {
           <i className='ri-error-warning-line text-sm text-destructive' />
           <span className='text-xs font-medium'>{t('providers.connect.failureTitle')}</span>
           {failure.at === null ? null : (
-            <span className='ml-auto text-[11px] text-muted-foreground'>
+            <span className='ml-auto text-[12px] text-muted-foreground'>
               {t('providers.connect.failureAgo', { ago: fmtAgo(failure.at, now) })}
             </span>
           )}
         </div>
-        <p className='mt-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground'>{failure.message}</p>
+        <p className='mt-1.5 font-mono text-[12px] leading-relaxed text-muted-foreground'>{failure.message}</p>
       </div>
     </div>
   )
@@ -181,7 +181,7 @@ function ApiKeyForm({
       </div>
       <div className='space-y-3 px-6 pb-5'>
         <div>
-          <div className='mb-1 text-[11px] text-muted-foreground'>{t('providers.credentials.apiKey')}</div>
+          <div className='mb-1 text-[12px] text-muted-foreground'>{t('providers.credentials.apiKey')}</div>
           <div className='flex items-center gap-2'>
             <input
               value={value}
@@ -197,12 +197,12 @@ function ApiKeyForm({
           </div>
         </div>
         <div>
-          <div className='mb-1 text-[11px] text-muted-foreground'>{t('providers.credentials.baseUrl')}</div>
+          <div className='mb-1 text-[12px] text-muted-foreground'>{t('providers.credentials.baseUrl')}</div>
           <div className='flex h-8 items-center rounded-md border border-border px-3 font-mono text-xs'>
             {entry.apiBaseUrl}
           </div>
         </div>
-        <p className='text-[11px] leading-relaxed text-muted-foreground'>
+        <p className='text-[12px] leading-relaxed text-muted-foreground'>
           <Trans
             i18nKey='providers.credentials.interpolationNote'
             components={{ mono: <span className='font-mono' /> }}

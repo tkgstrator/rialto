@@ -51,8 +51,8 @@ function StatusRow({ label, tone, detail }: { label: string; tone: string; detai
   return (
     <div className='flex items-center gap-2 rounded-md border border-border px-3 py-1.5'>
       <span className={cn('size-1.5 rounded-full', tone)} />
-      <span className='text-[11px]'>{label}</span>
-      <span className='ml-auto font-mono text-[11px] text-muted-foreground'>{detail}</span>
+      <span className='text-[12px]'>{label}</span>
+      <span className='ml-auto font-mono text-[12px] text-muted-foreground'>{detail}</span>
     </div>
   )
 }
@@ -75,7 +75,7 @@ export function ApiUnreachable({ probe }: { probe: Probe | null }) {
         <h3 className='text-sm font-semibold'>{t('system.unreachable.title')}</h3>
         <Pill tone='warn'>{t('system.unreachable.retrying')}</Pill>
       </div>
-      <p className='mt-2 text-[11px] leading-relaxed text-muted-foreground'>
+      <p className='mt-2 text-[12px] leading-relaxed text-muted-foreground'>
         <Trans i18nKey='system.unreachable.body' components={{ mono: <span className='font-mono' /> }} />
       </p>
       <div className='mt-3 space-y-1.5'>
@@ -97,7 +97,7 @@ export function ApiUnreachable({ probe }: { probe: Probe | null }) {
         })}
       </div>
       {remedy === undefined ? null : (
-        <div className='mt-3 rounded-md bg-muted/60 px-3 py-2 font-mono text-[11px]'>{remedy}</div>
+        <div className='mt-3 rounded-md bg-muted/60 px-3 py-2 font-mono text-[12px]'>{remedy}</div>
       )}
     </div>
   )

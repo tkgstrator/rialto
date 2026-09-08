@@ -245,7 +245,7 @@ export function ActivityRequests() {
         />
         <div className='ml-auto flex items-center gap-2'>
           {live ? (
-            <span className='flex items-center gap-1.5 text-[11px] text-muted-foreground'>
+            <span className='flex items-center gap-1.5 text-[12px] text-muted-foreground'>
               <span className='size-1.5 animate-pulse rounded-full bg-emerald-500' /> {t('activity.requests.live')}
             </span>
           ) : null}

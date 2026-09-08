@@ -49,7 +49,7 @@ export function NotFound({ pathname }: { pathname: string }) {
     <div className='w-full max-w-xs text-center'>
       <div className='font-mono text-2xl tabular-nums text-muted-foreground/40'>404</div>
       <h3 className='mt-2 text-sm font-semibold'>{t('system.notFound.title')}</h3>
-      <p className='mt-1.5 text-[11px] leading-relaxed text-muted-foreground'>
+      <p className='mt-1.5 text-[12px] leading-relaxed text-muted-foreground'>
         <span className='font-mono'>{pathname}</span> {explain(pathname, t)}
       </p>
       <RButton variant='outline' icon='ri-arrow-left-line' className='mt-4' onClick={() => navigate('/overview')}>

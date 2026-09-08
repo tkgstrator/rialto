@@ -36,13 +36,13 @@ function Verdict({ check }: { check: AccessCheckResponse }) {
       <div className='flex items-center gap-2'>
         <Pill tone={tone}>{t(TONE_LABEL_KEYS[tone])}</Pill>
         {check.jwksReachable ? (
-          <span className='font-mono text-[11px] text-muted-foreground'>
+          <span className='font-mono text-[12px] text-muted-foreground'>
             {t('settings.access.signingKeys', { n: check.keyCount })}
           </span>
         ) : null}
-        {check.email === null ? null : <span className='font-mono text-[11px]'>{check.email}</span>}
+        {check.email === null ? null : <span className='font-mono text-[12px]'>{check.email}</span>}
       </div>
-      <p className='text-[11px] leading-relaxed text-muted-foreground'>{check.detail}</p>
+      <p className='text-[12px] leading-relaxed text-muted-foreground'>{check.detail}</p>
     </div>
   )
 }
@@ -95,7 +95,7 @@ export function AccessConfigSection({
               {t(checking ? 'settings.access.checking' : 'settings.access.checkSettings')}
             </RButton>
             {check !== null && stale ? (
-              <span className='text-[11px] text-amber-600 dark:text-amber-400'>{t('settings.access.checkStale')}</span>
+              <span className='text-[12px] text-amber-600 dark:text-amber-400'>{t('settings.access.checkStale')}</span>
             ) : null}
           </div>
           {check === null ? null : <Verdict check={check} />}

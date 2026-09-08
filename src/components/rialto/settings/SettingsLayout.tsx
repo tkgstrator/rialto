@@ -63,7 +63,7 @@ export function SettingsLayout({
           <div className='flex items-center gap-3 px-6 pt-6 pb-3'>
             <h2 className='text-sm font-semibold'>{labelKey === undefined ? '' : t(labelKey)}</h2>
             {headerBadge}
-            {headerNote ? <span className='text-[11px] text-muted-foreground'>{headerNote}</span> : null}
+            {headerNote ? <span className='text-[12px] text-muted-foreground'>{headerNote}</span> : null}
             {headerActions ? <div className='ml-auto'>{headerActions}</div> : null}
           </div>
         ) : null}
@@ -83,7 +83,7 @@ export function SettingsField({ label, hint, children }: { label: string; hint?:
     <div className='grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4'>
       <div>
         <div className='text-xs font-medium'>{label}</div>
-        {hint ? <div className='mt-0.5 text-[11px] leading-snug text-muted-foreground'>{hint}</div> : null}
+        {hint ? <div className='mt-0.5 text-[12px] leading-snug text-muted-foreground'>{hint}</div> : null}
       </div>
       <div>{children}</div>
     </div>

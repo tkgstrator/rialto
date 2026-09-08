@@ -61,7 +61,7 @@ const windowRow = (w) => `
     <span class="w-12 shrink-0">${w.scope ? mono(w.scope) : ''}</span>
     <div class="min-w-0 flex-1">${meter(w.pct)}</div>
     <span class="w-10 shrink-0 text-right font-mono text-xs tabular-nums">${w.pct}%</span>
-    <span class="w-20 shrink-0 text-right text-[11px] text-muted-foreground">${w.resets}</span>
+    <span class="w-20 shrink-0 text-right text-[12px] text-muted-foreground">${w.resets}</span>
   </div>`
 
 const accountBlock = (a) => `
@@ -69,7 +69,7 @@ const accountBlock = (a) => `
     <div class="flex items-baseline gap-2 px-6 pb-1">
       <span class="text-xs font-medium">${a.name}</span>
       ${pill(a.vendor, a.tone)}
-      <span class="ml-auto text-[11px] text-muted-foreground/70">resets in</span>
+      <span class="ml-auto text-[12px] text-muted-foreground/70">resets in</span>
     </div>
     ${a.windows.map(windowRow).join('')}
   </div>`
@@ -129,7 +129,7 @@ const line = (s) => {
     <circle cx="${px(s.points.length - 1, s.points.length)}" cy="${py(last)}" r="3"
             class="fill-current ${s.stroke}"/>
     <text x="${px(s.points.length - 1, s.points.length) + 8}" y="${py(last) + 3}"
-          class="fill-foreground text-[10px]">${s.label} ${last}%</text>`
+          class="fill-foreground text-[11px]">${s.label} ${last}%</text>`
 }
 
 // Crosshair + readout, drawn at one sample so the static mock carries the
@@ -144,22 +144,22 @@ const crosshair = `
 
 const tooltip = `
   <div class="pointer-events-none absolute left-[46%] top-6 w-44 rounded-md border border-border bg-background px-3 py-2 shadow-sm">
-    <div class="text-[11px] text-muted-foreground">Sun 18:00</div>
+    <div class="text-[12px] text-muted-foreground">Sun 18:00</div>
     ${SERIES.map((s) => `
       <div class="mt-1 flex items-center gap-2">
         <span class="h-1.5 w-1.5 shrink-0 rounded-full ${s.dot}"></span>
-        <span class="text-[11px]">${s.label}</span>
-        <span class="ml-auto font-mono text-[11px] tabular-nums">${s.points[CROSS_I]}%</span>
+        <span class="text-[12px]">${s.label}</span>
+        <span class="ml-auto font-mono text-[12px] tabular-nums">${s.points[CROSS_I]}%</span>
       </div>`).join('')}
   </div>`
 
 const legend = `
   <div class="flex items-center gap-4 px-6 pb-3">
     ${SERIES.map((s) => `
-      <span class="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <span class="flex items-center gap-1.5 text-[12px] text-muted-foreground">
         <span class="h-1.5 w-4 rounded-full ${s.dot}"></span>${s.label}
       </span>`).join('')}
-    <span class="ml-auto text-[11px] text-muted-foreground/70">sampled every 5 min · captured off real traffic</span>
+    <span class="ml-auto text-[12px] text-muted-foreground/70">sampled every 5 min · captured off real traffic</span>
   </div>`
 
 const chart = `
@@ -190,7 +190,7 @@ const tokenRow = (t) => `
   <tr ${navTo('activity-requests.html')} class="border-t border-border/60 transition-colors hover:bg-muted/50">
     <td class="py-2.5 pl-6 pr-3">
       <div class="text-xs font-medium">${t.name}</div>
-      <div class="font-mono text-[11px] text-muted-foreground">${t.prefix}</div>
+      <div class="font-mono text-[12px] text-muted-foreground">${t.prefix}</div>
     </td>
     <td class="px-3">${surfacePill(t.surface)}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${t.reqs}</td>
@@ -198,17 +198,17 @@ const tokenRow = (t) => `
     <td class="px-3">
       <div class="flex items-center gap-2">
         ${meter(t.share, 'mute')}
-        <span class="w-8 shrink-0 text-right font-mono text-[11px] tabular-nums text-muted-foreground">${t.share}%</span>
+        <span class="w-8 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${t.share}%</span>
       </div>
     </td>
-    <td class="py-2.5 pl-3 pr-6 text-right text-[11px] text-muted-foreground">${t.used}</td>
+    <td class="py-2.5 pl-3 pr-6 text-right text-[12px] text-muted-foreground">${t.used}</td>
   </tr>`
 
 const tokenTable = `
   <table class="w-full table-fixed">
     <colgroup><col><col class="w-40"><col class="w-24"><col class="w-24"><col class="w-40"><col class="w-28"></colgroup>
     <thead>
-      <tr class="text-[11px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2">
+      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:pb-2">
         <th class="pl-6 pr-3 text-left font-medium">Token</th>
         <th class="px-3 text-left font-medium">Endpoint</th>
         <th class="px-3 text-right font-medium">Requests</th>
@@ -232,7 +232,7 @@ document.getElementById('root').innerHTML = `
 
   <div class="flex flex-wrap items-center gap-2 border-b border-border px-6 py-3">
     ${filter('Range', '7 days')}
-    <p class="ml-auto max-w-md text-right text-[11px] leading-snug text-muted-foreground">
+    <p class="ml-auto max-w-md text-right text-[12px] leading-snug text-muted-foreground">
       Overview shows where the windows stand now. This is how they got there, and whose traffic did it.
     </p>
   </div>

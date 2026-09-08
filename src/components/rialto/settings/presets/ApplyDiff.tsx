@@ -45,9 +45,9 @@ export function ApplyDiff({ rows }: { rows: DiffRow[] }) {
     <>
       <div className='flex items-center gap-2 border-t border-border px-6 pt-5 pb-2'>
         <h3 className='text-sm font-semibold'>{t('settings.presets.whatItChanges')}</h3>
-        <span className='text-[11px] text-muted-foreground'>{t('settings.presets.diffAgainst')}</span>
+        <span className='text-[12px] text-muted-foreground'>{t('settings.presets.diffAgainst')}</span>
       </div>
-      <div className='space-y-1 px-6 pb-5 font-mono text-[11px]'>
+      <div className='space-y-1 px-6 pb-5 font-mono text-[12px]'>
         {rows.length === 0 ? (
           <div className='text-muted-foreground'>{t('settings.presets.diffEmpty')}</div>
         ) : (

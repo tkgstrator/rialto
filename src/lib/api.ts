@@ -15,7 +15,8 @@ import type {
   RoutingSchedulerStateResponse,
   SessionMessageItem,
   SessionSummary,
-  SurfaceId
+  SurfaceId,
+  UpdateCheckResponse
 } from '@/lib/api-types'
 import type { RouterConfig } from '@/schemas/domain/router'
 import type { Config } from '@/types'
@@ -129,8 +130,11 @@ class ApiClient {
     return this.post<void>('/restart', {})
   }
 
-  async checkForUpdates(): Promise<{ hasUpdate: boolean; latestVersion?: string; changelog?: string }> {
-    return this.get<{ hasUpdate: boolean; latestVersion?: string; changelog?: string }>('/update/check')
+  // `force` is the operator pressing "Check now". Without it the server
+  // may answer from its short cache, which is what keeps a screen that
+  // re-mounts from burning the anonymous GitHub rate limit.
+  async checkForUpdates(force = false): Promise<UpdateCheckResponse> {
+    return this.get<UpdateCheckResponse>(`/update/check?force=${force ? 'true' : 'false'}`)
   }
 
   async performUpdate(): Promise<{ success: boolean; message: string }> {

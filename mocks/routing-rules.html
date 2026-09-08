@@ -48,12 +48,12 @@ const ruleRow = (r) => `
     r.active ? 'border-l-foreground bg-muted/60' : 'border-l-transparent hover:border-l-border hover:bg-muted/50'
   } ${r.enabled ? '' : 'opacity-45'}">
     <div class="flex items-center gap-2">
-      <span class="font-mono text-[11px] tabular-nums text-muted-foreground">${r.n}</span>
+      <span class="font-mono text-[12px] tabular-nums text-muted-foreground">${r.n}</span>
       <span class="text-xs font-medium">${r.name}</span>
       ${r.enabled ? '' : pill('off', 'mute')}
-      <span class="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground">${r.hits}</span>
+      <span class="ml-auto font-mono text-[12px] tabular-nums text-muted-foreground">${r.hits}</span>
     </div>
-    <div class="mt-1 truncate font-mono text-[11px] text-muted-foreground">
+    <div class="mt-1 truncate font-mono text-[12px] text-muted-foreground">
       ${r.when[0].field} ${r.when[0].op} ${r.when[0].value}
     </div>
   </button>`
@@ -86,14 +86,14 @@ document.getElementById('root').innerHTML = `
 
     <aside class="min-w-0 overflow-y-auto border-r border-border">
       <div class="flex items-center gap-2 px-4 pt-5 pb-2">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Rules</h2>
-        <span class="text-[11px] text-muted-foreground">first match wins</span>
+        <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Rules</h2>
+        <span class="text-[12px] text-muted-foreground">first match wins</span>
       </div>
       ${RULES.map(ruleRow).join('')}
       <div class="p-4">${btn('Add rule', 'outline', 'ri-add-line')}</div>
 
       <div class="border-t border-border px-4 py-4">
-        <p class="text-[11px] leading-relaxed text-muted-foreground">
+        <p class="text-[12px] leading-relaxed text-muted-foreground">
           Evaluated top to bottom against the request, before the preference chain.
           A rule that matches replaces the target outright; the chain still supplies failover.
         </p>
@@ -118,7 +118,7 @@ document.getElementById('root').innerHTML = `
       </div>
       <div class="space-y-2 px-6">
         ${condition('requestedModel', 'matches', '*haiku*', true)}
-        <button class="flex items-center gap-2 rounded-md border border-dashed border-border px-3 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/50">
+        <button class="flex items-center gap-2 rounded-md border border-dashed border-border px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:bg-muted/50">
           <i class="ri-add-line"></i> Add condition <span class="opacity-60">(all must match)</span>
         </button>
       </div>
@@ -144,7 +144,7 @@ document.getElementById('root').innerHTML = `
       </div>
       <div class="flex flex-wrap gap-2 px-6">
         ${SURFACES.map((s, i) => surfaceChip(s.path, i < 2)).join('')}
-        <span class="self-center text-[11px] text-muted-foreground">only endpoints in routed mode can match</span>
+        <span class="self-center text-[12px] text-muted-foreground">only endpoints in routed mode can match</span>
       </div>
 
       <!-- The tester is the payoff of moving rules into their own view:
@@ -161,14 +161,14 @@ document.getElementById('root').innerHTML = `
         <div class="mt-3 rounded-md border border-border px-4 py-3">
           <div class="flex items-center gap-2">
             ${pill('rule 1 matched', 'ok')}
-            <span class="text-[11px] text-muted-foreground">Haiku passthrough</span>
+            <span class="text-[12px] text-muted-foreground">Haiku passthrough</span>
           </div>
-          <div class="mt-2 flex items-center gap-1.5 font-mono text-[11px]">
+          <div class="mt-2 flex items-center gap-1.5 font-mono text-[12px]">
             <span class="text-muted-foreground">claude-haiku-4-5</span>
             <i class="ri-arrow-right-line text-xs text-muted-foreground/50"></i>
             <span>claude-code,claude-haiku-4-5</span>
           </div>
-          <div class="mt-1 text-[11px] text-muted-foreground">rules 2–4 not evaluated (first match wins)</div>
+          <div class="mt-1 text-[12px] text-muted-foreground">rules 2–4 not evaluated (first match wins)</div>
         </div>
       </div>
       <div class="h-8"></div>

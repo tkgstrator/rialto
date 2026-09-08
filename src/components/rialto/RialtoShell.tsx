@@ -21,7 +21,7 @@
  * here would turn the menu into a dashboard.
  */
 import { useTheme } from 'next-themes'
-import { useCallback, useEffect, useState } from 'react'
+import { type ReactElement, useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useConfig } from '@/components/ConfigProvider'
@@ -34,6 +34,7 @@ import {
   CommandList
 } from '@/components/ui/command'
 import { Toaster } from '@/components/ui/sonner'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { api, type HealthResponse, type IdentityResponse } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { APP_VERSION } from '@/version'
@@ -118,6 +119,49 @@ export function childOf(pathname: string): NavChild | undefined {
     .find((child) => pathname === child.href || pathname.startsWith(`${child.href}/`))
 }
 
+/**
+ * Collapsed-sidebar geometry.
+ *
+ * `w-14` is the smallest width that still centres a 16px icon inside the
+ * same 36px hit target the expanded rows use, so collapsing changes what
+ * a row says and not how big it is.
+ */
+const RAIL_WIDTH = 'w-14'
+const RAIL_ITEM = 'flex h-9 items-center justify-center rounded-md transition-colors'
+
+/** Below this the sidebar collapses itself; see `RialtoShell`. */
+const NARROW_QUERY = '(max-width: 1023px)'
+
+/**
+ * The label a collapsed row cannot show, restored on hover.
+ *
+ * A pass-through while the sidebar is open: the label is right there, and
+ * a tooltip repeating it just flickers under the pointer as you travel
+ * down the tree.
+ */
+function RailTip({
+  label,
+  shortcut,
+  collapsed,
+  children
+}: {
+  label: string
+  shortcut?: string
+  collapsed: boolean
+  children: ReactElement
+}) {
+  if (!collapsed) return children
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side='right' className='flex items-center gap-2'>
+        <span>{label}</span>
+        {shortcut === undefined ? null : <span className='font-mono text-[12px] opacity-60'>{shortcut}</span>}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 function SubNavItem({ item, active }: { item: NavChild; active: boolean }) {
   const { t } = useTranslation()
   return (
@@ -143,16 +187,44 @@ function NavItem({
   activeSection,
   activeChild,
   open,
+  collapsed,
   onToggle
 }: {
   item: NavEntry
   activeSection: string | undefined
   activeChild: string | undefined
   open: boolean
+  collapsed: boolean
   onToggle: () => void
 }) {
   const { t } = useTranslation()
   const isActive = item.id === activeSection
+
+  // The rail carries top-level destinations only. Children are not
+  // dropped so much as deferred: every one of them is a row in ⌘K, and
+  // arriving in a section opens its tree the moment the sidebar is back.
+  if (collapsed) {
+    return (
+      <RailTip label={t(item.labelKey)} collapsed>
+        <NavLink
+          to={item.href}
+          // The tooltip is a description, not a name: with the label gone
+          // the row would otherwise reach assistive tech (and any test
+          // that queries by role) as an unnamed link.
+          aria-label={t(item.labelKey)}
+          className={cn(
+            RAIL_ITEM,
+            isActive
+              ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+              : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground'
+          )}
+        >
+          <i className={cn(item.icon, 'text-base leading-none opacity-80')} />
+        </NavLink>
+      </RailTip>
+    )
+  }
+
   return (
     <>
       <div className='relative'>
@@ -253,7 +325,7 @@ function NavSearch({ open, onOpenChange }: { open: boolean; onOpenChange: (next:
  * anything. The access decision itself belongs at the edge (Cloudflare
  * Access) and in the API-key middleware, never in a rendered string.
  */
-function IdentityRow({ identity }: { identity: IdentityResponse | null }) {
+function IdentityRow({ identity, collapsed }: { identity: IdentityResponse | null; collapsed: boolean }) {
   const { t } = useTranslation()
   const mode = identity === null ? null : identity.mode
   // A local request presents no credential, so labelling it 'token' said
@@ -271,14 +343,23 @@ function IdentityRow({ identity }: { identity: IdentityResponse | null }) {
         ? 'shell.identityLocal'
         : 'shell.identityToken'
   )
+  const who = identity?.email ? identity.email : t('settings.access.viaThisMachine')
   return (
-    <NavLink to='/settings/access' className={FOOTER_ROW}>
-      <i className={cn('w-4 shrink-0 text-base leading-none', icon)} />
-      <span className='truncate text-sidebar-foreground/70'>
-        {identity?.email ? identity.email : t('settings.access.viaThisMachine')}
-      </span>
-      <span className='ml-auto shrink-0 font-mono text-[11px] text-muted-foreground'>{label}</span>
-    </NavLink>
+    <RailTip label={who} shortcut={label} collapsed={collapsed}>
+      <NavLink
+        to='/settings/access'
+        aria-label={collapsed ? `${who} · ${label}` : undefined}
+        className={cn(FOOTER_ROW, collapsed ? 'justify-center px-0' : '')}
+      >
+        <i className={cn('w-4 shrink-0 text-base leading-none', icon)} />
+        {collapsed ? null : (
+          <>
+            <span className='truncate text-sidebar-foreground/70'>{who}</span>
+            <span className='ml-auto shrink-0 font-mono text-[12px] text-muted-foreground'>{label}</span>
+          </>
+        )}
+      </NavLink>
+    </RailTip>
   )
 }
 
@@ -301,11 +382,13 @@ const FOOTER_ROW =
 function ServingRow({
   health,
   reachable,
-  port
+  port,
+  collapsed
 }: {
   health: HealthResponse | null
   reachable: boolean
   port: number | undefined
+  collapsed: boolean
 }) {
   const { t } = useTranslation()
   const state = !reachable ? 'down' : health === null ? 'unknown' : health.status === 'ok' ? 'ok' : 'degraded'
@@ -323,16 +406,29 @@ function ServingRow({
       unknown: 'shell.serving'
     }[state]
   )
+  const portLabel = port ? `:${port}` : '—'
   return (
-    <NavLink to='/settings/advanced?tab=health' className={FOOTER_ROW}>
-      {/* The dot keeps its 6px but sits centred in the same 16px slot the
-          icons use — the only way a dot and a glyph share a column. */}
-      <span className='flex w-4 shrink-0 items-center justify-center'>
-        <span className={cn('size-1.5 rounded-full', dot)} />
-      </span>
-      <span className='text-sidebar-foreground/70'>{label}</span>
-      <span className='ml-auto font-mono text-[11px] text-muted-foreground'>{port ? `:${port}` : '—'}</span>
-    </NavLink>
+    // Collapsed, the dot IS the row — it is the one footer value that
+    // still reads at 16px, which is why the rail keeps this row at all.
+    <RailTip label={label} shortcut={portLabel} collapsed={collapsed}>
+      <NavLink
+        to='/settings/advanced?tab=health'
+        aria-label={collapsed ? `${label} ${portLabel}` : undefined}
+        className={cn(FOOTER_ROW, collapsed ? 'justify-center px-0' : '')}
+      >
+        {/* The dot keeps its 6px but sits centred in the same 16px slot the
+            icons use — the only way a dot and a glyph share a column. */}
+        <span className='flex w-4 shrink-0 items-center justify-center'>
+          <span className={cn('size-1.5 rounded-full', dot)} />
+        </span>
+        {collapsed ? null : (
+          <>
+            <span className='text-sidebar-foreground/70'>{label}</span>
+            <span className='ml-auto font-mono text-[12px] text-muted-foreground'>{portLabel}</span>
+          </>
+        )}
+      </NavLink>
+    </RailTip>
   )
 }
 
@@ -348,6 +444,7 @@ export function RialtoShell() {
   const [reachable, setReachable] = useState(true)
   const [mounted, setMounted] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
   /**
    * The sections standing open.
    *
@@ -377,16 +474,42 @@ export function RialtoShell() {
       .catch(() => setReachable(false))
   }, [])
 
+  /**
+   * Narrow windows start collapsed.
+   *
+   * Bound to the breakpoint CROSSING, not evaluated on every render: a
+   * manual toggle then stands until the window actually changes class,
+   * which is what keeps "I opened it on purpose" from being undone by
+   * the next re-render.
+   */
+  useEffect(() => {
+    const mql = window.matchMedia(NARROW_QUERY)
+    setCollapsed(mql.matches)
+    const onChange = (event: MediaQueryListEvent) => setCollapsed(event.matches)
+    mql.addEventListener('change', onChange)
+    return () => mql.removeEventListener('change', onChange)
+  }, [])
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'k' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault()
         setSearchOpen((prev) => !prev)
       }
+      if (event.key === 'b' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault()
+        setCollapsed((prev) => !prev)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  // The version the process reports, not the one compiled into this
+  // bundle: after an image upgrade a cached bundle would otherwise keep
+  // announcing the build it came from. Falls back to the constant until
+  // /health answers, and stays there if it never does.
+  const shellVersion = health === null ? APP_VERSION : health.version
 
   const activeSection = sectionOf(pathname)?.id
   const activeChild = childOf(pathname)?.id
@@ -408,60 +531,121 @@ export function RialtoShell() {
   }, [activeSection])
 
   return (
-    <div className='flex h-screen w-full overflow-hidden bg-background text-foreground'>
-      <aside className='flex w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar'>
-        <div className='flex h-14 items-center gap-2 border-b border-sidebar-border px-4'>
-          <div className='flex size-6 items-center justify-center rounded bg-foreground text-background'>
-            <i className='ri-route-line text-sm leading-none' />
-          </div>
-          <span className='text-sm font-semibold tracking-tight'>Rialto</span>
-          <span className='ml-auto font-mono text-[11px] text-muted-foreground'>v{APP_VERSION}</span>
-        </div>
-
-        <nav className='flex flex-1 flex-col gap-0.5 overflow-y-auto p-2'>
-          <div className='px-0 pb-2'>
-            <button
-              type='button'
-              onClick={() => setSearchOpen(true)}
-              className='flex h-9 w-full items-center gap-2 rounded-md border border-sidebar-border px-2.5 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent/60'
-            >
-              <i className='ri-search-line text-base leading-none' />
-              <span>{t('shell.searchPlaceholder')}</span>
-              <span className='ml-auto font-mono text-[11px] opacity-60'>⌘K</span>
-            </button>
-          </div>
-          {NAV.map((item) => (
-            <NavItem
-              key={item.id}
-              item={item}
-              activeSection={activeSection}
-              activeChild={activeChild}
-              open={isOpen(item.id)}
-              onToggle={() => toggle(item.id)}
-            />
-          ))}
-        </nav>
-
-        <div className='border-t border-sidebar-border p-2'>
-          <ServingRow health={health} reachable={reachable} port={port} />
-          <IdentityRow identity={identity} />
-          <button
-            type='button'
-            onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-            className={cn(FOOTER_ROW, 'text-sidebar-foreground/70')}
+    <TooltipProvider delayDuration={300}>
+      <div className='flex h-screen w-full overflow-hidden bg-background text-foreground'>
+        <aside
+          className={cn(
+            'flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200',
+            collapsed ? RAIL_WIDTH : 'w-64'
+          )}
+        >
+          <div
+            className={cn(
+              'flex h-14 items-center border-b border-sidebar-border',
+              collapsed ? 'justify-center' : 'gap-2 px-4'
+            )}
           >
-            <i className='ri-contrast-2-line w-4 shrink-0 text-base leading-none opacity-80' />
-            <span>{t('shell.theme')}</span>
-            <span className='ml-auto font-mono text-[11px] text-muted-foreground'>{themeLabel}</span>
-          </button>
-        </div>
-      </aside>
+            {collapsed ? (
+              <RailTip label={t('shell.expandSidebar')} shortcut='⌘B' collapsed>
+                <button
+                  type='button'
+                  aria-label={t('shell.expandSidebar')}
+                  aria-expanded={false}
+                  onClick={() => setCollapsed(false)}
+                  className='group flex size-9 items-center justify-center rounded-md transition-colors hover:bg-sidebar-accent/60'
+                >
+                  {/* The mark doubles as the control: it swaps to the unfold
+                      glyph under the pointer, so the rail keeps its identity
+                      without spending one of its few rows on a button. */}
+                  <span className='flex size-6 items-center justify-center rounded bg-foreground text-background group-hover:hidden'>
+                    <i className='ri-route-line text-sm leading-none' />
+                  </span>
+                  <i className='ri-menu-unfold-line hidden text-base leading-none text-muted-foreground group-hover:block' />
+                </button>
+              </RailTip>
+            ) : (
+              <>
+                <div className='flex size-6 items-center justify-center rounded bg-foreground text-background'>
+                  <i className='ri-route-line text-sm leading-none' />
+                </div>
+                <span className='text-sm font-semibold tracking-tight'>Rialto</span>
+                <span className='ml-auto font-mono text-[12px] text-muted-foreground'>v{shellVersion}</span>
+                <button
+                  type='button'
+                  aria-label={t('shell.collapseSidebar')}
+                  aria-expanded
+                  onClick={() => setCollapsed(true)}
+                  className='-mr-1.5 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground'
+                >
+                  <i className='ri-menu-fold-line text-base leading-none' />
+                </button>
+              </>
+            )}
+          </div>
 
-      <div className='flex min-w-0 flex-1 flex-col'>
-        <Outlet />
+          <nav className='flex flex-1 flex-col gap-0.5 overflow-y-auto p-2'>
+            <div className='px-0 pb-2'>
+              <RailTip label={t('shell.searchPlaceholder')} shortcut='⌘K' collapsed={collapsed}>
+                <button
+                  type='button'
+                  onClick={() => setSearchOpen(true)}
+                  aria-label={t('shell.searchPlaceholder')}
+                  className={cn(
+                    'flex h-9 w-full items-center rounded-md border border-sidebar-border text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent/60',
+                    collapsed ? 'justify-center' : 'gap-2 px-2.5'
+                  )}
+                >
+                  <i className='ri-search-line text-base leading-none' />
+                  {collapsed ? null : (
+                    <>
+                      <span>{t('shell.searchPlaceholder')}</span>
+                      <span className='ml-auto font-mono text-[12px] opacity-60'>⌘K</span>
+                    </>
+                  )}
+                </button>
+              </RailTip>
+            </div>
+            {NAV.map((item) => (
+              <NavItem
+                key={item.id}
+                item={item}
+                activeSection={activeSection}
+                activeChild={activeChild}
+                open={isOpen(item.id)}
+                collapsed={collapsed}
+                onToggle={() => toggle(item.id)}
+              />
+            ))}
+          </nav>
+
+          <div className='border-t border-sidebar-border p-2'>
+            <ServingRow health={health} reachable={reachable} port={port} collapsed={collapsed} />
+            <IdentityRow identity={identity} collapsed={collapsed} />
+            <RailTip label={t('shell.theme')} shortcut={themeLabel} collapsed={collapsed}>
+              <button
+                type='button'
+                aria-label={collapsed ? t('shell.theme') : undefined}
+                onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+                className={cn(FOOTER_ROW, 'text-sidebar-foreground/70', collapsed ? 'justify-center px-0' : '')}
+              >
+                <i className='ri-contrast-2-line w-4 shrink-0 text-base leading-none opacity-80' />
+                {collapsed ? null : (
+                  <>
+                    <span>{t('shell.theme')}</span>
+                    <span className='ml-auto font-mono text-[12px] text-muted-foreground'>{themeLabel}</span>
+                  </>
+                )}
+              </button>
+            </RailTip>
+          </div>
+        </aside>
+
+        <div className='flex min-w-0 flex-1 flex-col'>
+          <Outlet />
+        </div>
+        <NavSearch open={searchOpen} onOpenChange={setSearchOpen} />
+        <Toaster />
       </div>
-      <NavSearch open={searchOpen} onOpenChange={setSearchOpen} />
-      <Toaster />
-    </div>
+    </TooltipProvider>
   )
 }

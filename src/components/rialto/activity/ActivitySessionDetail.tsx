@@ -77,7 +77,7 @@ function TurnRow({ turn }: { turn: Turn }) {
       <div className='flex items-baseline gap-2'>
         <span
           className={cn(
-            'text-[11px] font-medium uppercase tracking-wider',
+            'text-[12px] font-medium uppercase tracking-wider',
             isUser ? 'text-foreground' : 'text-muted-foreground'
           )}
         >
@@ -88,7 +88,7 @@ function TurnRow({ turn }: { turn: Turn }) {
             {tool}
           </Pill>
         ))}
-        <span className='ml-auto font-mono text-[11px] tabular-nums text-muted-foreground'>{fmtChars(turn.chars)}</span>
+        <span className='ml-auto font-mono text-[12px] tabular-nums text-muted-foreground'>{fmtChars(turn.chars)}</span>
       </div>
       {turn.text === '' ? null : <p className='mt-1.5 whitespace-pre-wrap text-xs leading-relaxed'>{turn.text}</p>}
     </div>
@@ -98,8 +98,8 @@ function TurnRow({ turn }: { turn: Turn }) {
 function Kv({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className='flex items-baseline gap-3 px-4 py-1.5'>
-      <span className='text-[11px] text-muted-foreground'>{label}</span>
-      <span className='ml-auto font-mono text-[11px] tabular-nums'>{value}</span>
+      <span className='text-[12px] text-muted-foreground'>{label}</span>
+      <span className='ml-auto font-mono text-[12px] tabular-nums'>{value}</span>
     </div>
   )
 }
@@ -110,15 +110,15 @@ function CallRow({ call }: { call: ActivityRequestLog }) {
   return (
     <div className='border-t border-border/60 px-4 py-2.5 transition-colors hover:bg-muted/50'>
       <div className='flex items-baseline gap-2'>
-        <span className='font-mono text-[11px] tabular-nums text-muted-foreground'>
+        <span className='font-mono text-[12px] tabular-nums text-muted-foreground'>
           {dayjs(call.createdAt).format('HH:mm:ss')}
         </span>
         <StatusPill status={call.status} />
-        <span className='ml-auto font-mono text-[11px] tabular-nums text-muted-foreground'>
+        <span className='ml-auto font-mono text-[12px] tabular-nums text-muted-foreground'>
           {call.durationMs === 0 ? DASH : call.durationMs.toLocaleString()} ms
         </span>
       </div>
-      <div className='mt-1.5 flex items-center gap-1.5 font-mono text-[11px]'>
+      <div className='mt-1.5 flex items-center gap-1.5 font-mono text-[12px]'>
         <span className='text-muted-foreground'>{requested}</span>
         <i className='ri-arrow-right-line text-xs text-muted-foreground/50' />
         <span>{`${call.provider},${call.model}`}</span>
@@ -147,7 +147,7 @@ function SummaryPane({
   return (
     <>
       <div className='px-4 pt-5 pb-2'>
-        <h2 className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>
+        <h2 className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>
           {t('activity.session.summary')}
         </h2>
       </div>
@@ -166,8 +166,8 @@ function SummaryPane({
 
       <div className='px-4 pb-3 pt-3'>
         <div className='mb-1.5 flex items-baseline'>
-          <span className='text-[11px] text-muted-foreground'>{t('activity.session.cacheEfficiency')}</span>
-          <span className='ml-auto font-mono text-[11px] tabular-nums'>{cachePct}%</span>
+          <span className='text-[12px] text-muted-foreground'>{t('activity.session.cacheEfficiency')}</span>
+          <span className='ml-auto font-mono text-[12px] tabular-nums'>{cachePct}%</span>
         </div>
         {/* Explicit `ok`: a high cache hit is the good end of the scale, the
             inverse of the utilization meters the auto tone is built for. */}
@@ -184,7 +184,7 @@ function TracePane({ calls }: { calls: ActivityRequestLog[] }) {
   return (
     <>
       <div className='border-t border-border px-4 pt-5 pb-2'>
-        <h2 className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>
+        <h2 className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>
           {t('activity.session.routingTrace')}
         </h2>
       </div>
@@ -196,7 +196,7 @@ function TracePane({ calls }: { calls: ActivityRequestLog[] }) {
           <button
             type='button'
             onClick={() => setExpanded((v) => !v)}
-            className='w-full rounded-md border border-dashed border-border py-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted/50'
+            className='w-full rounded-md border border-dashed border-border py-2 text-[12px] text-muted-foreground transition-colors hover:bg-muted/50'
           >
             {expanded ? t('activity.session.showFewer') : t('activity.session.showAllCalls', { calls: calls.length })}
           </button>
@@ -336,7 +336,7 @@ export function ActivitySessionDetail() {
               </Link>
               <div className='min-w-0'>
                 <div className='truncate text-xs font-medium'>{title}</div>
-                <div className='font-mono text-[11px] text-muted-foreground'>{sessionId}</div>
+                <div className='font-mono text-[12px] text-muted-foreground'>{sessionId}</div>
               </div>
               <div className='ml-auto flex gap-2'>
                 <RButton variant='ghost' icon='ri-code-line' onClick={downloadRaw}>
@@ -352,7 +352,7 @@ export function ActivitySessionDetail() {
                 <button
                   type='button'
                   onClick={loadOlder}
-                  className='w-full rounded-md border border-dashed border-border py-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted/50'
+                  className='w-full rounded-md border border-dashed border-border py-2 text-[12px] text-muted-foreground transition-colors hover:bg-muted/50'
                 >
                   {t('activity.session.loadOlder')}
                 </button>

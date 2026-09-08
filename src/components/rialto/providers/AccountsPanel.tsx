@@ -42,14 +42,14 @@ function AccountRow({
         <span className='text-xs font-medium'>{accountLabel(account)}</span>
         {plan === null ? null : <Pill tone='info'>{plan}</Pill>}
         {active ? <Pill tone='ok'>{t('providers.accounts.active')}</Pill> : null}
-        {used === null ? null : <span className='ml-auto font-mono text-[11px] tabular-nums'>{used.pct}%</span>}
+        {used === null ? null : <span className='ml-auto font-mono text-[12px] tabular-nums'>{used.pct}%</span>}
       </div>
       {used === null ? null : (
         <div className='mt-2'>
           <Meter pct={used.pct} />
         </div>
       )}
-      <div className='mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground'>
+      <div className='mt-1.5 flex items-center gap-2 text-[12px] text-muted-foreground'>
         <span>{t('providers.accounts.auth', { status: account.authStatus })}</span>
         {used === null ? null : (
           <>
@@ -59,7 +59,7 @@ function AccountRow({
         )}
       </div>
       {account.authError === null ? null : (
-        <p className='mt-1.5 font-mono text-[11px] leading-relaxed text-destructive'>{account.authError}</p>
+        <p className='mt-1.5 font-mono text-[12px] leading-relaxed text-destructive'>{account.authError}</p>
       )}
     </div>
   )
@@ -84,7 +84,7 @@ export function AccountsPanel({
         <h3 className='text-sm font-semibold'>{t('providers.accounts.title')}</h3>
       </div>
       {accounts.length === 0 ? (
-        <div className='px-6 pb-5 text-[11px] text-muted-foreground'>{t('providers.accounts.empty')}</div>
+        <div className='px-6 pb-5 text-[12px] text-muted-foreground'>{t('providers.accounts.empty')}</div>
       ) : (
         <div className='px-2 pb-4'>
           {accounts.map((a) => (

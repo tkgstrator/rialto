@@ -77,9 +77,9 @@ export function StatTile({
 }) {
   return (
     <div className='border-l-2 border-l-border px-4 py-3 transition-colors hover:border-l-foreground/30 hover:bg-muted/50'>
-      <div className='text-[11px] uppercase tracking-wider text-muted-foreground'>{label}</div>
+      <div className='text-[12px] uppercase tracking-wider text-muted-foreground'>{label}</div>
       <div className={cn('mt-1 font-mono tabular-nums', size === 'lg' ? 'text-lg' : 'text-base')}>{value}</div>
-      <div className='text-[11px] text-muted-foreground'>{sub}</div>
+      <div className='text-[12px] text-muted-foreground'>{sub}</div>
     </div>
   )
 }
@@ -126,7 +126,7 @@ export function SurfaceCell({ path }: { path: string | null }) {
 /** The dashed explanatory block the mocks close their tables with. */
 export function NoteBox({ children }: { children: ReactNode }) {
   return (
-    <div className='rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground'>
+    <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
       <i className='ri-information-line mr-1 align-[-1px]' />
       {children}
     </div>

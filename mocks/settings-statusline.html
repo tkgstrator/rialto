@@ -62,19 +62,19 @@ document.getElementById('root').innerHTML = `
 
     <aside class="min-w-0 overflow-y-auto border-r border-border">
       <div class="px-4 pt-5 pb-2">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Add module</h2>
+        <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Add module</h2>
       </div>
       ${TYPES.map(typeItem).join('')}
     </aside>
 
     <aside class="min-w-0 overflow-y-auto border-r border-border">
       <div class="flex items-center gap-2 px-4 pt-5 pb-2">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Line</h2>
-        <span class="ml-auto font-mono text-[11px] text-muted-foreground">5</span>
+        <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Line</h2>
+        <span class="ml-auto font-mono text-[12px] text-muted-foreground">5</span>
       </div>
       ${MODULES.map(moduleRow).join('')}
       <div class="border-t border-border px-4 py-4">
-        <p class="text-[11px] leading-relaxed text-muted-foreground">
+        <p class="text-[12px] leading-relaxed text-muted-foreground">
           Order is left to right. Claude Code pipes session JSON to
           <span class="font-mono">rialto statusline</span> on every turn.
         </p>
@@ -98,9 +98,9 @@ document.getElementById('root').innerHTML = `
           </div>
         </div>
         <div class="mt-2 flex gap-2">
-          <button class="rounded border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted/50">Dark terminal</button>
-          <button class="rounded border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted/50">Light terminal</button>
-          <button class="rounded border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted/50">No color</button>
+          <button class="rounded border border-border px-2 py-0.5 text-[12px] text-muted-foreground hover:bg-muted/50">Dark terminal</button>
+          <button class="rounded border border-border px-2 py-0.5 text-[12px] text-muted-foreground hover:bg-muted/50">Light terminal</button>
+          <button class="rounded border border-border px-2 py-0.5 text-[12px] text-muted-foreground hover:bg-muted/50">No color</button>
         </div>
       </div>
 
@@ -123,7 +123,7 @@ document.getElementById('root').innerHTML = `
         <div class="flex items-center gap-1.5">
           ${['bg-sky-500', 'bg-emerald-500', 'bg-amber-500', 'bg-destructive', 'bg-foreground', 'bg-muted-foreground'].map((c, i) => `
             <button class="size-6 rounded ${c} ${i === 0 ? 'ring-2 ring-foreground ring-offset-2 ring-offset-background' : ''}"></button>`).join('')}
-          <div class="ml-2 flex h-8 w-24 items-center rounded-md border border-border px-2.5 font-mono text-[11px]">#38bdf8</div>
+          <div class="ml-2 flex h-8 w-24 items-center rounded-md border border-border px-2.5 font-mono text-[12px]">#38bdf8</div>
         </div>
       </div>
       <div class="grid grid-cols-[10rem_1fr] items-start gap-4 border-t border-border/60 px-6 py-3">
@@ -133,7 +133,7 @@ document.getElementById('root').innerHTML = `
       <div class="grid grid-cols-[10rem_1fr] items-start gap-4 border-t border-border/60 px-6 py-3">
         <div>
           <div class="text-xs">Strip provider</div>
-          <div class="mt-0.5 text-[11px] text-muted-foreground">Show <span class="font-mono">claude-opus-4-8</span>, not <span class="font-mono">claude-code,claude-opus-4-8</span>.</div>
+          <div class="mt-0.5 text-[12px] text-muted-foreground">Show <span class="font-mono">claude-opus-4-8</span>, not <span class="font-mono">claude-code,claude-opus-4-8</span>.</div>
         </div>
         <span class="inline-flex h-5 w-9 items-center rounded-full bg-foreground px-0.5 align-middle">
           <span class="size-4 translate-x-4 rounded-full bg-background"></span>
@@ -142,13 +142,13 @@ document.getElementById('root').innerHTML = `
       <div class="grid grid-cols-[10rem_1fr] items-start gap-4 border-t border-border/60 px-6 py-3">
         <div>
           <div class="text-xs">Separator</div>
-          <div class="mt-0.5 text-[11px] text-muted-foreground">Placed after this module.</div>
+          <div class="mt-0.5 text-[12px] text-muted-foreground">Placed after this module.</div>
         </div>
         <div class="flex h-8 w-24 items-center rounded-md border border-border px-3 font-mono text-xs">&nbsp;</div>
       </div>
 
       <div class="px-6 py-5">
-        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
+        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
           <i class="ri-terminal-line mr-1 align-[-1px]"></i>
           Wire it up in <span class="font-mono">~/.claude/settings.json</span>:
           <span class="font-mono">"statusLine": { "type": "command", "command": "rialto statusline" }</span>

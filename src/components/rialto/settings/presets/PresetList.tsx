@@ -36,9 +36,9 @@ function PresetRow({
     >
       <div className='flex items-center gap-2'>
         <span className='text-xs font-medium'>{name}</span>
-        <span className='ml-auto font-mono text-[10px] text-muted-foreground'>{badge}</span>
+        <span className='ml-auto font-mono text-[11px] text-muted-foreground'>{badge}</span>
       </div>
-      <div className='mt-0.5 truncate text-[11px] text-muted-foreground'>{subtitle}</div>
+      <div className='mt-0.5 truncate text-[12px] text-muted-foreground'>{subtitle}</div>
     </button>
   )
 }
@@ -76,7 +76,7 @@ function InstallBox({
             onChange={(e) => onRepoChange(e.target.value)}
             placeholder={t('settings.presets.repoPlaceholder')}
             aria-label={t('settings.presets.repoLabel')}
-            className='h-8 min-w-0 flex-1 rounded-md border border-border bg-transparent px-2.5 font-mono text-[11px] outline-none focus:border-foreground/40'
+            className='h-8 min-w-0 flex-1 rounded-md border border-border bg-transparent px-2.5 font-mono text-[12px] outline-none focus:border-foreground/40'
           />
           <RButton variant='primary' onClick={onInstall} disabled={repo === '' || busy}>
             {t(busy ? 'settings.presets.installing' : 'settings.presets.install')}
@@ -169,7 +169,7 @@ export function PresetList({
       />
 
       <div className='border-t border-border px-4 py-4'>
-        <p className='text-[11px] leading-relaxed text-muted-foreground'>{t('settings.presets.libraryNote')}</p>
+        <p className='text-[12px] leading-relaxed text-muted-foreground'>{t('settings.presets.libraryNote')}</p>
       </div>
     </aside>
   )

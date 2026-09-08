@@ -89,7 +89,7 @@ function AppliesToBar({ surfaces }: { surfaces: InboundSurfaceWire[] }) {
   const { t } = useTranslation()
   return (
     <div className='flex items-center gap-2 border-b border-border px-6 py-2.5'>
-      <span className='text-[11px] text-muted-foreground'>{t('settings.personas.appliesTo')}</span>
+      <span className='text-[12px] text-muted-foreground'>{t('settings.personas.appliesTo')}</span>
       {surfaces.map((surface) => (
         <SurfaceChip
           key={surface.id}
@@ -103,13 +103,13 @@ function AppliesToBar({ surfaces }: { surfaces: InboundSurfaceWire[] }) {
         />
       ))}
       <span className='mx-1 h-4 w-px bg-border' />
-      <span className='text-[11px] text-muted-foreground'>{t('settings.personas.lane')}</span>
+      <span className='text-[12px] text-muted-foreground'>{t('settings.personas.lane')}</span>
       {/* Not a control: persona injection is not lane-scoped, so there is
           nothing to choose. A disabled button still reads as a control
           someone is being denied, which is a different and wrong story. */}
       <span
         title={t('settings.personas.laneHint')}
-        className='inline-flex h-7 items-center rounded-md border border-border px-2.5 text-[11px] text-muted-foreground'
+        className='inline-flex h-7 items-center rounded-md border border-border px-2.5 text-[12px] text-muted-foreground'
       >
         {t('settings.personas.laneBoth')}
       </span>
@@ -153,14 +153,14 @@ export function PersonaDetail({
         <div className='border-r border-border'>
           <div className='flex items-center gap-2 px-6 pt-4 pb-2'>
             <h3 className='text-sm font-semibold'>{t('settings.personas.prompt')}</h3>
-            <span className='ml-auto text-[11px] text-muted-foreground'>{t('settings.personas.markdown')}</span>
+            <span className='ml-auto text-[12px] text-muted-foreground'>{t('settings.personas.markdown')}</span>
           </div>
           <PromptEditor value={persona.prompt} onChange={onEditPrompt} />
         </div>
         <div>
           <div className='flex items-center gap-2 px-6 pt-4 pb-2'>
             <h3 className='text-sm font-semibold'>{t('settings.personas.preview')}</h3>
-            <span className='ml-auto text-[11px] text-muted-foreground'>{t('settings.personas.asSent')}</span>
+            <span className='ml-auto text-[12px] text-muted-foreground'>{t('settings.personas.asSent')}</span>
           </div>
           <PersonaPreview name={persona.name} prompt={persona.prompt} />
         </div>

@@ -98,7 +98,7 @@ function FieldRow({
           {field.label === undefined ? field.id : field.label}
           {field.required === false ? null : <span className='text-destructive'>*</span>}
         </label>
-        <div className='mt-0.5 text-[11px] leading-snug text-muted-foreground'>
+        <div className='mt-0.5 text-[12px] leading-snug text-muted-foreground'>
           {secret && hint === '' ? t('settings.presets.secretHint') : hint}
         </div>
       </div>
@@ -111,7 +111,7 @@ function FieldRow({
           onChange={onChange}
         />
         {secret ? <i className='ri-lock-line text-sm text-muted-foreground' /> : null}
-        {stored ? <span className='text-[11px] text-muted-foreground'>{t('settings.presets.stored')}</span> : null}
+        {stored ? <span className='text-[12px] text-muted-foreground'>{t('settings.presets.stored')}</span> : null}
       </div>
     </div>
   )

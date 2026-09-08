@@ -35,13 +35,13 @@ function RuleRow({ scoped, active, onSelect }: { scoped: ScopedRule; active: boo
       )}
     >
       <div className='flex items-center gap-2'>
-        <span className='font-mono text-[11px] tabular-nums text-muted-foreground'>{scoped.index + 1}</span>
+        <span className='font-mono text-[12px] tabular-nums text-muted-foreground'>{scoped.index + 1}</span>
         <span className='truncate text-xs font-medium'>{ruleLabel(scoped.rule, scoped.index, t)}</span>
-        <span className='ml-auto shrink-0 font-mono text-[11px] text-muted-foreground'>
+        <span className='ml-auto shrink-0 font-mono text-[12px] text-muted-foreground'>
           {target === null || target === '' ? t('routing.rules.noRewrite') : splitTarget(target).model}
         </span>
       </div>
-      <div className='mt-1 truncate font-mono text-[11px] text-muted-foreground'>
+      <div className='mt-1 truncate font-mono text-[12px] text-muted-foreground'>
         {summarizePredicate(scoped.rule, t)}
       </div>
     </button>
@@ -64,7 +64,7 @@ function LaneGroup({
   return (
     <div>
       {labelled ? (
-        <div className='px-4 pt-4 pb-1 text-[11px] uppercase tracking-wider text-muted-foreground/70'>
+        <div className='px-4 pt-4 pb-1 text-[12px] uppercase tracking-wider text-muted-foreground/70'>
           {`${head.scenario} · ${head.lane}`}
         </div>
       ) : null}
@@ -183,10 +183,10 @@ export function RoutingRules() {
       <div className='grid h-full grid-cols-[20rem_1fr]'>
         <aside className='min-w-0 overflow-y-auto border-r border-border'>
           <div className='flex items-center gap-2 px-4 pt-5 pb-2'>
-            <h2 className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>
+            <h2 className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>
               {t('routing.common.rules')}
             </h2>
-            <span className='text-[11px] text-muted-foreground'>{t('routing.rules.firstMatchWins')}</span>
+            <span className='text-[12px] text-muted-foreground'>{t('routing.rules.firstMatchWins')}</span>
             {draft === null ? null : (
               <Pill tone='warn' className='ml-auto'>
                 {t('routing.rules.unsaved')}
@@ -201,7 +201,7 @@ export function RoutingRules() {
           </div>
 
           <div className='border-t border-border px-4 py-4'>
-            <p className='text-[11px] leading-relaxed text-muted-foreground'>
+            <p className='text-[12px] leading-relaxed text-muted-foreground'>
               <Trans i18nKey='routing.rules.explainer' components={{ mono: <span className='font-mono' /> }} />
             </p>
           </div>
