@@ -30,6 +30,7 @@ import { AccessTokensSection } from '@/components/rialto/settings/access/AccessT
 import { GuardsCard } from '@/components/rialto/settings/access/GuardsCard'
 import { SectionHead } from '@/components/rialto/settings/fields'
 import { SettingsField, SettingsLayout } from '@/components/rialto/settings/SettingsLayout'
+import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
 import { api, type IdentityResponse, type InboundSurfaceWire } from '@/lib/api'
 import {
   type AccessCheckResponse,
@@ -89,15 +90,33 @@ function SignedInAs({ identity }: { identity: IdentityResponse | null }) {
  * "anyone holding it has full administrative control" — what that covers
  * is spelled out in the guards card below.
  */
-function ExposureNotice({ identity }: { identity: IdentityResponse }) {
+function ExposureNotice({ identity, apiKey }: { identity: IdentityResponse; apiKey: string }) {
   if (identity.accessConfigured) return null
+  // Which sentence is true depends on whether a bootstrap token exists.
+  // With none — the fresh-install default, since createDefaultConfig
+  // stopped minting one — warning that "the bootstrap token alone gates
+  // /api/*" describes a credential that is not there, and points the
+  // operator at Cloudflare setup when nothing is actually exposed.
+  const exposed = apiKey.length > 0
   return (
     <div className='px-6 pt-1 pb-3'>
-      <div className='flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-2 text-[12px] leading-relaxed'>
-        <i className='ri-alert-line shrink-0 text-sm text-amber-600 dark:text-amber-400' />
+      <div
+        className={
+          exposed
+            ? 'flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-2 text-[12px] leading-relaxed'
+            : 'flex items-center gap-2 rounded-md border border-border px-4 py-2 text-[12px] leading-relaxed text-muted-foreground'
+        }
+      >
+        <i
+          className={
+            exposed
+              ? 'ri-alert-line shrink-0 text-sm text-amber-600 dark:text-amber-400'
+              : 'ri-lock-line shrink-0 text-sm'
+          }
+        />
         <span>
           <Trans
-            i18nKey='settings.access.exposureNotice'
+            i18nKey={exposed ? 'settings.access.exposureNotice' : 'settings.access.closedNotice'}
             components={{ strong: <span className='font-medium' />, mono: <span className='font-mono' /> }}
           />
         </span>
@@ -225,6 +244,7 @@ export function SettingsAccess() {
   const gate = accessSaveGate(normalized, check, checkedFor)
   const stale = checkedFor !== null && !sameAccessInput(normalized, checkedFor)
   const dirty = saved !== null && !sameAccessInput(normalized, normalizeAccessInput(saved))
+  useUnsavedGuard(dirty)
 
   const runCheck = () => {
     setChecking(true)
@@ -314,7 +334,7 @@ export function SettingsAccess() {
         </div>
       }
     >
-      {identity === null ? null : <ExposureNotice identity={identity} />}
+      {identity === null ? null : <ExposureNotice identity={identity} apiKey={apiKey} />}
 
       <SettingsField label={t('settings.access.signedInAs')} hint={t('settings.access.signedInAsHint')}>
         <SignedInAs identity={identity} />

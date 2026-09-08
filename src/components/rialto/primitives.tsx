@@ -48,10 +48,22 @@ const PILL_TONES: Record<Tone, string> = {
   mute: 'bg-muted text-muted-foreground'
 }
 
-/** Small status pill. */
-export function Pill({ tone = 'mute', children, className }: { tone?: Tone; children: ReactNode; className?: string }) {
+/** Small status pill. `title` carries the explanation for one-word
+ *  states like `passthrough`, which mean nothing on their own. */
+export function Pill({
+  tone = 'mute',
+  children,
+  className,
+  title
+}: {
+  tone?: Tone
+  children: ReactNode
+  className?: string
+  title?: string
+}) {
   return (
     <span
+      title={title}
       className={cn(
         'inline-flex items-center rounded px-1.5 py-0.5 text-[12px] font-medium',
         PILL_TONES[tone],

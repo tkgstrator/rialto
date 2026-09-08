@@ -163,13 +163,19 @@ export function ActivityRequests() {
 
   const range = RANGES.find((r) => r.id === filters.range)
   const rangeLabel = range === undefined ? '' : t(range.labelKey)
+  // One scope, named. This line used to read "279 requests · 1 failovers
+  // · newest 200": an all-time total, a failover count taken from the
+  // filtered rows, and the page cap, with nothing saying they were three
+  // different populations. The failover count lives in its own stat tile
+  // just below, so the subtitle only has to answer "how much of what am I
+  // looking at".
   const subtitle =
     page === null
       ? undefined
       : t('activity.requests.subtitle', {
+          shown: fmtCount(counts.total),
           logged: fmtCount(page.total),
-          failovers: counts.rateLimited,
-          newest: page.items.length
+          range: rangeLabel
         })
 
   const exportCsv = () => {

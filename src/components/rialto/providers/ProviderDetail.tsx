@@ -64,6 +64,7 @@ function DetailHeader({
   onTestAll,
   onSync,
   onRemove,
+  removeConfirm,
   onToggleProvider
 }: {
   provider: Provider
@@ -74,6 +75,9 @@ function DetailHeader({
   onTestAll: () => void
   onSync: () => void
   onRemove: () => void
+  /** Blast radius, stated before the click. Built by the screen, which
+   *  is the one that can count the router slots pointing here. */
+  removeConfirm: string
   onToggleProvider: (next: boolean) => void
 }) {
   const { t } = useTranslation()
@@ -122,7 +126,14 @@ function DetailHeader({
           {t('providers.detail.syncModels')}
         </RButton>
         {subscription ? null : (
-          <RButton variant='ghost' icon='ri-delete-bin-line' onClick={onRemove} disabled={busy}>
+          <RButton
+            variant='ghost'
+            icon='ri-delete-bin-line'
+            onClick={() => {
+              if (window.confirm(removeConfirm)) onRemove()
+            }}
+            disabled={busy}
+          >
             {t('common.remove')}
           </RButton>
         )}
@@ -170,9 +181,10 @@ function ModelsSection({
   const needle = query.trim().toLowerCase()
   const filtered = rows.filter((r) => r.name.toLowerCase().includes(needle) && (!isApiKey || passesShow(r, show)))
   // Subscription providers list a curated handful; only the api_key side
-  // is long enough that paging earns its footer row.
-  const visible = isApiKey ? filtered.slice(0, limit) : filtered
-  const hidden = filtered.length - visible.length
+  // is long enough that paging earns its footer row. The table does the
+  // slicing so it can sort the whole filtered list first.
+  const pageLimit = isApiKey ? limit : undefined
+  const hidden = isApiKey ? Math.max(0, filtered.length - limit) : 0
 
   return (
     <>
@@ -198,7 +210,14 @@ function ModelsSection({
           <FilterBox value={query} onChange={setQuery} wide={isApiKey} />
         </div>
       </div>
-      <ModelsTable rows={visible} withOverride={isApiKey} onToggle={onToggle} onTier={onTier} onEffort={onEffort} />
+      <ModelsTable
+        rows={filtered}
+        limit={pageLimit}
+        withOverride={isApiKey}
+        onToggle={onToggle}
+        onTier={onTier}
+        onEffort={onEffort}
+      />
       {hidden > 0 ? (
         <div className='px-6 py-4'>
           <button
@@ -235,6 +254,7 @@ export interface ProviderDetailProps {
   onTestAll: () => void
   onSync: () => void
   onRemove: () => void
+  removeConfirm: string
   onToggleProvider: (next: boolean) => void
 }
 
@@ -253,6 +273,7 @@ export function ProviderDetail(props: ProviderDetailProps) {
         onTestAll={props.onTestAll}
         onSync={props.onSync}
         onRemove={props.onRemove}
+        removeConfirm={props.removeConfirm}
         onToggleProvider={props.onToggleProvider}
       />
       <div className='grid grid-cols-2 border-b border-border'>

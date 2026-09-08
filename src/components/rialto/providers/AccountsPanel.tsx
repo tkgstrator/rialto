@@ -11,7 +11,15 @@ import { Meter, Pill } from '@/components/rialto/primitives'
 import { fmtUntil } from '@/lib/rialto/format'
 import { cn } from '@/lib/utils'
 import { accountLabel, formatPlan, type QuotaIndex, quotaForAccount } from './derive'
-import type { SubAccountWire, SubscriptionWire } from './types'
+import type { AuthStatus, SubAccountWire, SubscriptionWire } from './types'
+
+// Same three states the provider rail labels, so an account and its
+// provider never describe the same condition in two vocabularies.
+const AUTH_STATUS_KEYS: Record<AuthStatus, string> = {
+  unknown: 'providers.rail.stateUnknown',
+  live: 'providers.rail.stateLive',
+  invalid: 'providers.rail.stateInvalid'
+}
 
 function AccountRow({
   account,
@@ -50,11 +58,17 @@ function AccountRow({
         </div>
       )}
       <div className='mt-1.5 flex items-center gap-2 text-[12px] text-muted-foreground'>
-        <span>{t('providers.accounts.auth', { status: account.authStatus })}</span>
+        {/* The rail translates this same enum; interpolating it raw here
+            printed "認証 live" beside the rail's 稼働中. */}
+        <span>{t('providers.accounts.auth', { status: t(AUTH_STATUS_KEYS[account.authStatus]) })}</span>
         {used === null ? null : (
           <>
             <span className='opacity-40'>·</span>
-            <span>{t('providers.accounts.resetsIn', { window, until: fmtUntil(used.resetAt, now) })}</span>
+            <span>
+              {fmtUntil(used.resetAt, now) === null
+                ? t('providers.accounts.resetsDue', { window })
+                : t('providers.accounts.resetsIn', { window, until: fmtUntil(used.resetAt, now) })}
+            </span>
           </>
         )}
       </div>

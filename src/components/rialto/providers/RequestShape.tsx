@@ -62,7 +62,11 @@ export function SubscriptionRequestShape({
   return (
     <Frame pad='px-6 pb-4'>
       <ShapeRow label={t('providers.shape.apiStyle')} value={v.style} accent />
-      <ShapeRow label={t('providers.shape.auth')} value={v.auth} accent />
+      <ShapeRow
+        label={t('providers.shape.auth')}
+        value={v.auth === null ? t('providers.shape.authSubscription') : v.auth}
+        accent
+      />
       <ShapeRow label={t('providers.shape.pipeline')} value={v.pipeline} accent />
       <ShapeRow label={t('providers.shape.endpoint')} value={endpoint === null ? '—' : endpoint} accent />
       <p className='mt-3 text-[12px] leading-relaxed text-muted-foreground'>
@@ -86,7 +90,11 @@ export function ApiKeyRequestShape({ provider }: { provider: Provider }) {
   return (
     <Frame pad='px-6 pb-5'>
       <ShapeRow label={t('providers.shape.apiStyle')} value={v.style} accent={false} />
-      <ShapeRow label={t('providers.shape.auth')} value={v.auth} accent={false} />
+      <ShapeRow
+        label={t('providers.shape.auth')}
+        value={v.auth === null ? t('providers.shape.authSubscription') : v.auth}
+        accent={false}
+      />
       <ShapeRow label={t('providers.shape.pipeline')} value={v.pipeline} accent={false} />
       <p className='mt-3 text-[12px] leading-relaxed text-muted-foreground'>
         {t('providers.shape.derived')}

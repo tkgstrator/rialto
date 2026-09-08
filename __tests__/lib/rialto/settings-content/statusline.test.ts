@@ -12,7 +12,9 @@ const module = (over: Partial<StatusLineModuleConfig> = {}): StatusLineModuleCon
 
 describe('moduleMeta', () => {
   test('returns the palette entry for a known type', () => {
-    expect(moduleMeta('gitBranch').label).toBe('Git branch')
+    // A key, not a label: the palette used to carry English display text,
+    // which reached the JA build untranslated.
+    expect(moduleMeta('gitBranch').labelKey).toBe('settings.statusline.moduleGitBranch')
   })
 
   test('falls back rather than crashing on a hand-written type', () => {

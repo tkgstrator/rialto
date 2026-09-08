@@ -22,7 +22,7 @@
     },
     "requests": {
       "title": "Requests",
-      "subtitle": "{{logged}} requests · {{failovers}} failovers · newest {{newest}}",
+      "subtitle": "{{shown}} of {{logged}} requests · {{range}}",
       "liveTail": "Live tail",
       "live": "live",
       "export": "Export",
@@ -248,7 +248,8 @@
       "liveMap": "Live map",
       "passthroughNote": "Switch this surface to <mono>Routed</mono> to give {{client}} the same quota-aware failover Claude Code gets. Callers keep sending their own model string — it becomes the <mono>requestedModel</mono> that rules match on, rather than the final target.",
       "schedulerIdle": "The <mono>Rules</mono> selector is active, so this chain is not evaluated and every target below reads <mono>unknown</mono>. Switch the selector above to <mono>Chain</mono> to let it decide; the states fill in on the scheduler’s next tick.",
-      "schedulerNoChain": "The routing scheduler is running but has no preference chain to score, so every target below reads <mono>unknown</mono>. Add entries to this surface’s routing profile to see live states."
+      "schedulerNoChain": "The routing scheduler is running but has no preference chain to score, so every target below reads <mono>unknown</mono>. Add entries to this surface’s routing profile to see live states.",
+      "schedulerNotTicked": "The routing scheduler has not published a snapshot yet, so every target below reads <mono>unknown</mono>. States fill in on its first tick — by default within five minutes of the server starting."
     },
     "map": {
       "title": "Routing map",
@@ -374,7 +375,8 @@
       "modelsSynced": "Models synced",
       "routable": "Routable",
       "toggleProvider": "Toggle {{provider}}",
-      "routableNeedsCredential": "Needs a working credential before it can take traffic"
+      "routableNeedsCredential": "Needs a working credential before it can take traffic",
+      "removeConfirm": "Remove {{name}}? This deletes its {{models}} models and the stored credential, and clears {{bindings}} routing slot(s) that point at it. There is no undo."
     },
     "credentials": {
       "title": "Credentials",
@@ -403,7 +405,8 @@
       "endpoint": "Endpoint",
       "derived": "Derived from the API style — not configurable.",
       "derivedWithOverrides": "Derived from the API style — not configurable. Per-model overrides live in the model row below.",
-      "overrideNote": "Some models here override to <mono>{{styles}}</mono>; see the Shape column."
+      "overrideNote": "Some models here override to <mono>{{styles}}</mono>; see the Shape column.",
+      "authSubscription": "subscription (OAuth)"
     },
     "models": {
       "title": "Models",
@@ -476,7 +479,8 @@
       "errorRequest": "Request failed",
       "errorStartOauth": "Failed to start the OAuth flow.",
       "errorRedirect": "The redirect URL was rejected.",
-      "errorCredentials": "The credentials were rejected."
+      "errorCredentials": "The credentials were rejected.",
+      "errorNotJson": "{{name}} is not valid JSON."
     },
     "vendorHint": {
       "claudeCode": "Pro / Max via Claude CLI OAuth",
@@ -494,7 +498,8 @@
     "common": {
       "title": "Settings",
       "notYetAvailable": "not yet available",
-      "saveFailed": "Save failed: {{message}}"
+      "saveFailed": "Save failed: {{message}}",
+      "unsavedConfirm": "You have unsaved changes on this screen. Leave and discard them?"
     },
     "rail": {
       "server": "Server",
@@ -594,7 +599,7 @@
       "days": "{{n}} days"
     },
     "advanced": {
-      "subtitle": "config document · scratchpad · health",
+      "subtitle": "config document · health",
       "tabConfig": "Config document",
       "tabHealth": "Health",
       "healthTitle": "Health",
@@ -629,11 +634,11 @@
       "cannotSave": "Cannot save: the document does not parse.",
       "valid": "valid",
       "invalid": "invalid",
-      "backupsKept": "3 backups kept",
+      "backupsKept": "no backups — this is the only copy",
       "reload": "Reload",
       "format": "Format",
       "configDocument": "Config document",
-      "configNote": "<mono>$VAR</mono> is interpolated at boot, so a key can live in the environment rather than this file, and the last three versions are kept as backups beside it. The file on disk is JSON5 and keeps its comments; this view is the composed document the API returns, so saving from here rewrites it as plain JSON. Boot scalars need a restart — the screens above apply live."
+      "configNote": "<mono>$VAR</mono> is interpolated at boot, so a key can live in the environment rather than this file. Saving overwrites the file in place and there is no backup to roll back to — take your own copy first if the change is large. The file on disk is JSON5 and keeps its comments; this view is the composed document the API returns, so saving from here rewrites it as plain JSON. Boot scalars need a restart — the screens above apply live."
     },
     "access": {
       "subtitleConfigured": "Cloudflare Access on /api · scoped tokens on /v1",
@@ -678,7 +683,7 @@
       "bootstrapTitle": "Bootstrap token",
       "envelope": "envelope",
       "bootstrapMeta": "break-glass admin credential",
-      "apikey": "APIKEY",
+      "apikey": "Bootstrap token (APIKEY)",
       "apikeyHint": "Stored in the on-disk envelope and mirrored onto process.env. Accepted on /api/* only — the recovery path when Access or the database is down. The proxy refuses it.",
       "tokenCopied": "Bootstrap token copied.",
       "clipboardRefused": "Clipboard write was refused by the browser.",
@@ -748,7 +753,12 @@
       "revoke": "Revoke",
       "delete": "Delete",
       "tokenCopiedShort": "Copied",
-      "costNote": "The <strong>Cost</strong> column prices the last 30 days of retained request logs — a rate, not the lifetime total the counter beside it shows. A dash means nothing priced: no traffic in the window, capture off, or a subscription model, which has no per-request price."
+      "costNote": "The <strong>Cost</strong> column prices the last 30 days of retained request logs — a rate, not the lifetime total the counter beside it shows. A dash means nothing priced: no traffic in the window, capture off, or a subscription model, which has no per-request price.",
+      "expiryNever": "No expiry",
+      "expiry30d": "30 days",
+      "expiry90d": "90 days",
+      "expiry365d": "1 year",
+      "closedNotice": "<strong>Remote admin access is closed</strong> — no bootstrap token is set and Cloudflare Access is not configured, so only a browser on this machine can reach <mono>/api/*</mono>. Set a team domain and AUD below to open it to a verified identity."
     },
     "personas": {
       "subtitle": "{{count}} personas · {{active}}",
@@ -784,15 +794,14 @@
       "previewNote": "The persona goes first so the client's own prompt can still override it. Both blocks are marked cacheable, so the cost is paid once per session."
     },
     "statusline": {
-      "subtitle": "{{count}} modules · rialto statusline",
+      "subtitle": "{{count}} modules · preview only",
       "saved": "Status line saved",
-      "wireUp": "Wire it up in <mono>~/.claude/settings.json</mono>: <mono>{{snippet}}</mono>",
       "addModule": "Add module",
       "line": "Line",
       "removeModule": "Remove {{module}}",
-      "lineNote": "Order is left to right. Claude Code pipes session JSON to <mono>rialto statusline</mono> on every turn.",
+      "lineNote": "Order is left to right. The renderer that turns this into a status line does not ship yet, so what you build here is saved but not drawn anywhere outside this preview.",
       "preview": "Preview",
-      "live": "live",
+      "live": "preview",
       "emptyLine": "The line is empty — add a module.",
       "styleDefault": "Default",
       "stylePowerline": "Powerline",
@@ -813,7 +822,16 @@
       "hexColour": "Hex colour",
       "script": "Script",
       "scriptHint": "Executed each turn; its stdout replaces the module text.",
-      "scriptPath": "Script path"
+      "scriptPath": "Script path",
+      "renderingTitle": "Status line rendering",
+      "renderingNeeds": "Needs a <mono>rialto statusline</mono> command for Claude Code to pipe session JSON to. This build ships no CLI, so the layout below is stored and nothing reads it yet.",
+      "moduleModel": "Model",
+      "moduleUsage": "Tokens",
+      "moduleSpeed": "Speed",
+      "moduleGitBranch": "Git branch",
+      "moduleWorkDir": "Directory",
+      "moduleScript": "Script",
+      "moduleFallback": "Module"
     }
   },
   "shell": {

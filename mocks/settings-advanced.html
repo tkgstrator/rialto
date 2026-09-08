@@ -68,7 +68,7 @@ document.getElementById('root').innerHTML = `
         <span class="font-mono text-[12px] text-muted-foreground">~/.rialto/config.json</span>
         ${pill('JSON5', 'mute')}
         ${pill('valid', 'ok')}
-        <span class="text-[12px] text-muted-foreground">3 backups kept</span>
+        <span class="text-[12px] text-muted-foreground">no backups &mdash; this is the only copy</span>
         <div class="ml-auto flex gap-2">
           ${btn('Reload', 'ghost', 'ri-refresh-line')}
           ${btn('Format', 'ghost', 'ri-code-line')}
@@ -122,11 +122,12 @@ renderShell({
   sub: 'advanced',
   crumbs: ['Advanced'],
   subtitle: '~/.rialto/config.json · JSON5',
-  // No Backups button: the envelope keeps its last three copies on disk
-  // and nothing serves them — there is no endpoint to list or restore
-  // one, so the button would open nothing. The editor states the fact
-  // instead ("3 backups kept"), which is the part an operator acts on
-  // when they decide whether it is safe to save.
+  // No Backups button: there are none. `writeConfigFile` overwrites the
+  // file in place, and the only safety net is that a config which fails
+  // to parse gets renamed aside rather than deleted. The header says so
+  // outright, because this is the one screen where an operator decides
+  // whether it is safe to save — and it used to claim "3 backups kept",
+  // which is the opposite of the truth.
   actions: btn('Save', 'primary', 'ri-check-line')
 })
 </script>

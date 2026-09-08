@@ -133,7 +133,11 @@ renderShell({
   navMode: 'cloudflare',
   sub: 'requests',
   crumbs: ['Requests'],
-  subtitle: '18.7k requests · 104 failovers · last 24h',
+  // Every number here describes ONE scope, and says which. The build that
+  // followed this line drifted into mixing three: an all-time total, a
+  // failover count taken from the filtered rows, and the page cap — three
+  // scopes in one sentence, none of them labelled.
+  subtitle: '184 of 18.7k requests · last 24h',
   actions:
     btn('Live tail', 'outline', 'ri-broadcast-line', 'activity-logs.html') +
     btn('Columns', 'ghost', 'ri-layout-column-line')

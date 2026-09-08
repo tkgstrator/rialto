@@ -25,9 +25,12 @@ const MERGED_INTO: Record<string, string> = {
   '/cost': 'shell.navActivity',
   '/logs': 'shell.navActivity',
   '/personas': 'shell.navSettings',
-  '/presets': 'shell.navSettings',
-  '/json': 'shell.navSettings',
-  '/debug': 'shell.navSettings'
+  '/json': 'shell.navSettings'
+  // `/presets` and `/debug` are deliberately absent. Both were removed
+  // rather than merged (the presets screen in c0b0742, the Advanced
+  // scratchpad tab in ebf10bd), so "moved into Settings" sent operators
+  // looking for a screen that is not there. They fall through to the
+  // plain not-a-page sentence instead.
 }
 
 type Translate = (key: string, options?: Record<string, unknown>) => string

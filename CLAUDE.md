@@ -254,7 +254,9 @@ Config API (`src/api/config/route.ts`, service in `src/services/config/`):
 Key features (disk envelope):
 - Environment variable interpolation (`$VAR_NAME` or `${VAR_NAME}`)
 - JSON5 format (supports comments)
-- Automatic backups (keeps last 3 backups)
+- **No backups.** `writeConfigFile` overwrites in place; the only safety net is
+  `quarantineConfigFile`, which renames an unparseable config aside instead of
+  deleting it. The Advanced screen used to claim "3 backups kept" — it does not now.
 
 There is no `rialto restart`, and no CLI at all. A Docker deployment restarts with
 `docker compose restart`; a local one restarts the process. Envelope scalars written

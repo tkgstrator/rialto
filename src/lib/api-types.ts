@@ -201,13 +201,19 @@ export interface OverviewQuotaRow {
   resetAt: string | null
 }
 
+/** Fields, not prose — the sentence is composed and translated by the
+ *  Overview screen. See FailoverRow in services/overview-service.ts. */
 export interface OverviewFailoverRow {
   kind: 'rate_limit' | 'weight'
-  tone: 'bad' | 'warn'
-  label: string
-  headline: string
-  detail: string
+  tone: 'bad' | 'warn' | 'mute'
   at: string
+  account: string | null
+  status: number | null
+  retryAfterSec: number | null
+  target: string | null
+  fromWeight: number | null
+  toWeight: number | null
+  reason: string | null
 }
 
 export interface OverviewRecentSession {

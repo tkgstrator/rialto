@@ -239,12 +239,17 @@ function Row({
 
 export function ModelsTable({
   rows,
+  limit,
   withOverride,
   onToggle,
   onTier,
   onEffort
 }: {
   rows: ModelRow[]
+  /** Rows to render. Paging happens AFTER the sort, not before it: given
+   *  the pre-sliced page, "cheapest first" ranked the visible eight of 61
+   *  models and answered a question nobody asked. */
+  limit?: number
   withOverride: boolean
   onToggle: (model: string, next: boolean) => void
   onTier: (model: string, next: Tier | null) => void
@@ -273,7 +278,7 @@ export function ModelsTable({
       </colgroup>
       <Head withOverride={withOverride} sort={sort} />
       <tbody>
-        {sort.sorted.map((row) => (
+        {(limit === undefined ? sort.sorted : sort.sorted.slice(0, limit)).map((row) => (
           <Row
             key={row.name}
             row={row}

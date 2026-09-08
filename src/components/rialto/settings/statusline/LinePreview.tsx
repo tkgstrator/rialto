@@ -75,7 +75,9 @@ export function LinePreview({
     <div className='border-b border-border px-6 py-5'>
       <div className='flex items-center gap-2'>
         <h3 className='text-sm font-semibold'>{t('settings.statusline.preview')}</h3>
-        <Pill tone='ok'>{t('settings.statusline.live')}</Pill>
+        {/* Mute, not green: nothing renders this line outside this panel,
+            so an "ok" tone would claim a wiring that does not exist. */}
+        <Pill tone='mute'>{t('settings.statusline.live')}</Pill>
       </div>
       <div className={cn('mt-3 rounded-md border border-border px-4 py-3', surface.className)}>
         <div className={cn('flex items-center font-mono text-[12px]', powerline ? 'gap-0' : 'gap-3')}>

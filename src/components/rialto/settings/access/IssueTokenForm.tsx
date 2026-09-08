@@ -112,7 +112,7 @@ export function IssueTokenForm({
         <Picker label={t('settings.access.issueExpires')} value={draft.expiry} onChange={(v) => set('expiry', v)}>
           {EXPIRY_CHOICES.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.label}
+              {t(c.labelKey)}
             </option>
           ))}
         </Picker>

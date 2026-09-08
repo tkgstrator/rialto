@@ -53,11 +53,11 @@ function ModuleRow({
           className={cn(meta.icon, 'text-sm leading-none', hex === null ? 'text-muted-foreground' : '')}
           style={hex === null ? undefined : { color: hex }}
         />
-        <span className='text-xs'>{meta.label}</span>
+        <span className='text-xs'>{t(meta.labelKey)}</span>
       </button>
       <button
         type='button'
-        aria-label={t('settings.statusline.removeModule', { module: meta.label })}
+        aria-label={t('settings.statusline.removeModule', { module: t(meta.labelKey) })}
         onClick={onRemove}
         className='text-muted-foreground/50 hover:text-destructive'
       >

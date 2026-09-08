@@ -25,7 +25,7 @@ export function ModulePalette({ onAdd }: { onAdd: (type: string) => void }) {
           className='flex w-full items-center gap-2.5 border-l-2 border-l-transparent px-4 py-2 text-left text-xs transition-colors hover:border-l-border hover:bg-muted/50'
         >
           <i className={`${meta.icon} text-sm leading-none text-muted-foreground`} />
-          {meta.label}
+          {t(meta.labelKey)}
           <i className='ri-add-line ml-auto text-sm text-muted-foreground/40' />
         </button>
       ))}

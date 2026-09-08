@@ -227,6 +227,21 @@ export function schedulerScoredNothing(state: RoutingSchedulerStateResponse | nu
   return state.tickAt !== null && state.weights.length === 0
 }
 
+/**
+ * The scheduler is armed but has not produced a snapshot yet.
+ *
+ * The third way a State column fills with `unknown`, and the one that
+ * had no note. `schedulerScoredNothing` deliberately waits for a first
+ * tick, and `schedulerIdle` only covers the Rules selector — so between
+ * boot and the first tick (the interval defaults to five minutes) every
+ * target reads `unknown` with nothing on screen saying why, which is
+ * indistinguishable from a fleet of dead targets.
+ */
+export function schedulerNotTickedYet(state: RoutingSchedulerStateResponse | null): boolean {
+  if (state === null) return false
+  return state.tickAt === null
+}
+
 export const STATE_TONE = {
   ready: 'ok',
   throttled: 'warn',

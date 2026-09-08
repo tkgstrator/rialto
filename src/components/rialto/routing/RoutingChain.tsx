@@ -21,7 +21,7 @@ import { AddTargetDialog } from './AddTargetDialog'
 import { ChainRail } from './ChainRail'
 import { ChainTable } from './ChainTable'
 import { useEnabledTargets, usePreferences, useProfiles, useScheduler, useSurfaces } from './data'
-import { profileEntryCount, schedulerRuns, schedulerScoredNothing, weightIndex } from './derive'
+import { profileEntryCount, schedulerNotTickedYet, schedulerRuns, schedulerScoredNothing, weightIndex } from './derive'
 import { PassthroughPanel } from './PassthroughPanel'
 import { SurfaceTabs } from './RoutingTabs'
 import { SelectorBar } from './SelectorBar'
@@ -267,6 +267,7 @@ export function RoutingChain() {
   // own within a tick. Only the mode makes it permanent.
   const schedulerIdle = !schedulerRuns(config?.ROUTER_MODE, config?.ROUTER_SHADOW)
   const noChainToScore = !schedulerIdle && schedulerScoredNothing(scheduler)
+  const notTickedYet = !schedulerIdle && schedulerNotTickedYet(scheduler)
 
   const notify = useCallback((text: string, ok: boolean) => {
     if (ok) toast.success(text)
@@ -350,6 +351,7 @@ export function RoutingChain() {
           <SurfaceModeBar surface={surface} profiles={profiles} onMode={onMode} onProfile={onProfile} />
           {schedulerIdle ? <SchedulerNote i18nKey='routing.chain.schedulerIdle' /> : null}
           {noChainToScore ? <SchedulerNote i18nKey='routing.chain.schedulerNoChain' /> : null}
+          {notTickedYet ? <SchedulerNote i18nKey='routing.chain.schedulerNotTicked' /> : null}
           {surface.routingMode === 'routed' ? (
             <RoutedBody
               surface={surface}

@@ -72,13 +72,17 @@ const instant = (iso: string): SortValue => {
 function ModelsCell({ row }: { row: Row }) {
   const { t } = useTranslation()
   const requested = row.log.requestedModel
+  const requestedLabel = requested === null ? t('activity.common.untracked') : requested
+  const sent = `${row.log.provider},${row.log.model}`
+  // Two model ids in one column truncate to "claude… → claude-code…" at
+  // any realistic width, which makes the one column an operator opens this
+  // screen for unreadable. The full pair goes in the tooltip so the answer
+  // is a hover away rather than a horizontal scroll.
   return (
-    <div className='flex items-center gap-1.5 font-mono text-[12px]'>
-      <span className='truncate text-muted-foreground'>
-        {requested === null ? t('activity.common.untracked') : requested}
-      </span>
+    <div className='flex items-center gap-1.5 font-mono text-[12px]' title={`${requestedLabel} → ${sent}`}>
+      <span className='truncate text-muted-foreground'>{requestedLabel}</span>
       <i className='ri-arrow-right-line shrink-0 text-xs text-muted-foreground/50' />
-      <span className='truncate'>{`${row.log.provider},${row.log.model}`}</span>
+      <span className='truncate'>{sent}</span>
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ApiUnreachableScreen } from '@/components/rialto/system/ApiUnreachable'
 import { api } from '@/lib/api'
 import { type RouteRule, RouteRuleSchema } from '@/schemas/domain/router'
@@ -211,6 +212,7 @@ const emptyConfig = (): Config => ({
 })
 
 export function ConfigProvider({ children }: ConfigProviderProps) {
+  const { t } = useTranslation()
   const [config, setConfig] = useState<Config | null>(null)
   const [error, setError] = useState<Error | null>(null)
   const [hasFetched, setHasFetched] = useState<boolean>(false)
@@ -295,7 +297,7 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
   if (config === null && error === null && !authFailed) {
     return (
       <div className='h-screen bg-background font-sans flex items-center justify-center'>
-        <div className='text-muted-foreground'>Loading configuration...</div>
+        <div className='text-muted-foreground'>{t('common.loading')}</div>
       </div>
     )
   }
@@ -306,7 +308,9 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
   // state that explains it instead. It keeps probing, so the app comes
   // back on its own once the server does.
   if (error !== null && !authFailed) {
-    return <ApiUnreachableScreen />
+    // The screen polls /health and calls this once the server answers, so
+    // the app comes back on its own instead of stopping at green dots.
+    return <ApiUnreachableScreen onRecovered={() => void reloadConfig()} />
   }
 
   return (

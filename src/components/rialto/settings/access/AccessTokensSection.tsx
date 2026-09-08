@@ -31,7 +31,7 @@ interface Revealed {
 
 const expiryLabel = (choiceId: string, t: Translate): string => {
   const choice = EXPIRY_CHOICES.find((c) => c.id === choiceId)
-  return choice === undefined ? t('settings.access.noExpiry') : choice.label
+  return choice === undefined ? t('settings.access.noExpiry') : t(choice.labelKey)
 }
 
 const summary = (counts: { active: number; expired: number; revoked: number }, t: Translate): string => {

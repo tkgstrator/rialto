@@ -118,6 +118,7 @@ function SectionHead({ title, meta, action }: { title: string; meta: string; act
 // accounts is the common shape, and three lines each pushed the two
 // panels below it off the first screen.
 function WindowLine({ row, now }: { row: WindowRow; now: number }) {
+  const { t } = useTranslation()
   return (
     <div className='flex items-center gap-3 border-t border-border/60 px-6 py-2.5 transition-colors hover:bg-muted/50'>
       <span className='w-24 shrink-0 truncate text-xs'>{row.label}</span>
@@ -128,7 +129,9 @@ function WindowLine({ row, now }: { row: WindowRow; now: number }) {
         <Meter pct={row.pct} />
       </div>
       <span className='w-10 shrink-0 text-right font-mono text-xs tabular-nums'>{`${Math.round(row.pct)}%`}</span>
-      <span className='w-20 shrink-0 text-right text-[12px] text-muted-foreground'>{fmtUntil(row.resetsAt, now)}</span>
+      <span className='w-20 shrink-0 text-right text-[12px] text-muted-foreground'>
+        {fmtUntil(row.resetsAt, now) === null ? t('overview.resetsDue') : fmtUntil(row.resetsAt, now)}
+      </span>
     </div>
   )
 }

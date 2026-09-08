@@ -24,6 +24,7 @@ import {
 } from '@/components/rialto/settings/logging/RetentionTable'
 import { WarnNotice } from '@/components/rialto/settings/notice'
 import { SettingsLayout } from '@/components/rialto/settings/SettingsLayout'
+import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
 import { api } from '@/lib/api'
 import {
   captureSettings,
@@ -192,6 +193,7 @@ export function SettingsLogging() {
     () => wire !== null && draft !== null && JSON.stringify(draft) !== JSON.stringify(toDraft(wire)),
     [draft, wire]
   )
+  useUnsavedGuard(dirty)
 
   const save = () => {
     if (draft === null) return

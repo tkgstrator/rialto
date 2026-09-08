@@ -55,7 +55,7 @@ export function sortTokens(tokens: readonly AccessTokenWire[], now: number): Acc
 
 export interface ExpiryChoice {
   id: string
-  label: string
+  labelKey: string
   days: number | null
 }
 
@@ -66,10 +66,10 @@ export interface ExpiryChoice {
  * free-text date.
  */
 export const EXPIRY_CHOICES: readonly ExpiryChoice[] = [
-  { id: 'never', label: 'No expiry', days: null },
-  { id: '30d', label: '30 days', days: 30 },
-  { id: '90d', label: '90 days', days: 90 },
-  { id: '365d', label: '1 year', days: 365 }
+  { id: 'never', labelKey: 'settings.access.expiryNever', days: null },
+  { id: '30d', labelKey: 'settings.access.expiry30d', days: 30 },
+  { id: '90d', labelKey: 'settings.access.expiry90d', days: 90 },
+  { id: '365d', labelKey: 'settings.access.expiry365d', days: 365 }
 ]
 
 /** Resolve a choice id to the ISO instant the issue call wants, or null. */

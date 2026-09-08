@@ -19,6 +19,7 @@ import { toast } from 'sonner'
 import { Pill, RButton } from '@/components/rialto/primitives'
 import { SectionHead, StaticField, TextField, ToggleField } from '@/components/rialto/settings/fields'
 import { SettingsField, SettingsLayout } from '@/components/rialto/settings/SettingsLayout'
+import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
 import { useAppVersion } from '@/hooks/use-app-version'
 import { api, type HealthResponse, type UpdateCheckResponse } from '@/lib/api'
 import { fmtAgo } from '@/lib/rialto/format'
@@ -224,7 +225,13 @@ function ServerFields({
       <StaticField
         label={t('settings.server.bootstrapToken')}
         hint={t('settings.server.bootstrapTokenHint')}
-        value={maskSecret(wire.APIKEY)}
+        // maskSecret's own fallback is the English literal 'not set';
+        // the Access screen already has a translated key for the same word.
+        value={
+          typeof wire.APIKEY === 'string' && wire.APIKEY.length > 0
+            ? maskSecret(wire.APIKEY)
+            : t('providers.credentials.notSet')
+        }
       />
       <TextField
         label={t('settings.server.requestTimeout')}
@@ -275,6 +282,7 @@ export function SettingsServer() {
     () => wire !== null && draft !== null && JSON.stringify(draft) !== JSON.stringify(toDraft(wire)),
     [draft, wire]
   )
+  useUnsavedGuard(dirty)
 
   const save = () => {
     if (draft === null) return

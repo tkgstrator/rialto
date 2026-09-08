@@ -22,7 +22,7 @@
     },
     "requests": {
       "title": "请求",
-      "subtitle": "{{logged}} 个请求 · {{failovers}} 次故障转移 · 最新 {{newest}} 条",
+      "subtitle": "{{logged}} 条请求中的 {{shown}} 条 · {{range}}",
       "liveTail": "实时跟踪",
       "live": "实时",
       "export": "导出",
@@ -248,7 +248,8 @@
       "liveMap": "实时路由图",
       "passthroughNote": "把该入口切换为 <mono>Routed</mono>，即可让 {{client}} 获得与 Claude Code 相同的配额感知故障转移。调用方仍然照常发送自己的模型名，只是它会作为规则匹配用的 <mono>requestedModel</mono>，而不再直接当作最终 target。",
       "schedulerIdle": "<mono>规则</mono> 选择器正在生效，因此该链路不会被评估，下方每个目标的状态也始终显示为 <mono>unknown</mono>。将上方的选择器切换为 <mono>链路</mono> 后由它决定，状态会在调度器下一个 tick 填充。",
-      "schedulerNoChain": "路由调度器正在运行，但没有可评分的优先级链，因此下方每个目标的状态都显示为 <mono>unknown</mono>。请在该端点的路由配置中添加条目以查看实时状态。"
+      "schedulerNoChain": "路由调度器正在运行，但没有可评分的优先级链，因此下方每个目标的状态都显示为 <mono>unknown</mono>。请在该端点的路由配置中添加条目以查看实时状态。",
+      "schedulerNotTicked": "路由调度器尚未发布快照，因此下方每个目标都显示为 <mono>unknown</mono>。状态会在第一次调度后填充 — 默认在服务器启动后五分钟内。"
     },
     "map": {
       "title": "路由图",
@@ -374,7 +375,8 @@
       "modelsSynced": "模型已同步",
       "routable": "可路由",
       "toggleProvider": "切换 {{provider}}",
-      "routableNeedsCredential": "需要可用的凭据才能接收流量"
+      "routableNeedsCredential": "需要可用的凭据才能接收流量",
+      "removeConfirm": "要删除 {{name}} 吗？这会删除它的 {{models}} 个模型和已保存的凭据，并清空指向它的 {{bindings}} 个路由槽位。此操作无法撤销。"
     },
     "credentials": {
       "title": "凭据",
@@ -403,7 +405,8 @@
       "endpoint": "端点",
       "derived": "由 API 风格推导得出，不可配置。",
       "derivedWithOverrides": "由 API 风格推导得出，不可配置。按模型的覆盖设置见下方的模型行。",
-      "overrideNote": "这里有部分模型覆盖为 <mono>{{styles}}</mono>；请参见“形状”列。"
+      "overrideNote": "这里有部分模型覆盖为 <mono>{{styles}}</mono>；请参见“形状”列。",
+      "authSubscription": "订阅 (OAuth)"
     },
     "models": {
       "title": "模型",
@@ -476,7 +479,8 @@
       "errorRequest": "请求失败",
       "errorStartOauth": "无法启动 OAuth 流程。",
       "errorRedirect": "重定向 URL 被拒绝。",
-      "errorCredentials": "凭据被拒绝。"
+      "errorCredentials": "凭据被拒绝。",
+      "errorNotJson": "{{name}} 不是有效的 JSON。"
     },
     "vendorHint": {
       "claudeCode": "通过 Claude CLI OAuth 使用 Pro / Max",
@@ -494,7 +498,8 @@
     "common": {
       "title": "设置",
       "notYetAvailable": "尚未提供",
-      "saveFailed": "保存失败：{{message}}"
+      "saveFailed": "保存失败：{{message}}",
+      "unsavedConfirm": "此页面有未保存的更改。要放弃并离开吗？"
     },
     "rail": {
       "server": "服务器",
@@ -594,7 +599,7 @@
       "days": "{{n}} 天"
     },
     "advanced": {
-      "subtitle": "配置文档 · 草稿板 · 健康",
+      "subtitle": "配置文档 · 健康检查",
       "tabConfig": "配置文档",
       "tabHealth": "健康",
       "healthTitle": "健康",
@@ -629,11 +634,11 @@
       "cannotSave": "无法保存：文档无法解析。",
       "valid": "有效",
       "invalid": "无效",
-      "backupsKept": "保留 3 份备份",
+      "backupsKept": "没有备份 — 这是唯一的副本",
       "reload": "重新加载",
       "format": "格式化",
       "configDocument": "配置文档",
-      "configNote": "<mono>$VAR</mono> 会在启动时插值，因此密钥可以放在环境变量里而不是这个文件中，并且最近三个版本会作为备份保存在它旁边。磁盘上的文件是 JSON5 且保留注释；此处显示的是 API 返回的合成文档，所以从这里保存会把它重写为纯 JSON。启动期标量需要重启才生效，上面各屏的设置则是实时生效的。"
+      "configNote": "<mono>$VAR</mono> 在启动时展开，因此键可以放在环境变量而不是本文件中。保存会就地覆盖文件，且没有可回滚的备份 — 改动较大时请先自行备份。磁盘上的文件是 JSON5 并保留注释；此视图是 API 返回的合成文档，从这里保存会将其重写为普通 JSON。启动标量需要重启 — 上面各屏的项目即时生效。"
     },
     "access": {
       "subtitleConfigured": "/api 由 Cloudflare Access 保护 · /v1 使用带范围的令牌",
@@ -678,7 +683,7 @@
       "bootstrapTitle": "引导令牌",
       "envelope": "封套",
       "bootstrapMeta": "应急管理员凭据",
-      "apikey": "APIKEY",
+      "apikey": "引导令牌 (APIKEY)",
       "apikeyHint": "保存在磁盘上的封套中并映射到 process.env。仅在 /api/* 上被接受，是 Access 或数据库故障时的恢复通道。代理会拒绝它。",
       "tokenCopied": "已复制引导令牌。",
       "clipboardRefused": "浏览器拒绝了写入剪贴板。",
@@ -748,7 +753,12 @@
       "revoke": "吊销",
       "delete": "删除",
       "tokenCopiedShort": "已复制",
-      "costNote": "<strong>费用</strong>列按最近 30 天保留的请求日志计价 —— 它是速率，而不是旁边计数器那样的累计值。短横线表示无法计价：窗口内没有流量、请求记录已关闭，或是没有按请求单价的订阅制模型。"
+      "costNote": "<strong>费用</strong>列按最近 30 天保留的请求日志计价 —— 它是速率，而不是旁边计数器那样的累计值。短横线表示无法计价：窗口内没有流量、请求记录已关闭，或是没有按请求单价的订阅制模型。",
+      "expiryNever": "永不过期",
+      "expiry30d": "30 天",
+      "expiry90d": "90 天",
+      "expiry365d": "1 年",
+      "closedNotice": "<strong>远程管理访问已关闭</strong> — 未设置引导令牌，也未配置 Cloudflare Access，因此只有本机上的浏览器可以访问 <mono>/api/*</mono>。若要向已验证的身份开放，请在下方设置团队域名和 AUD。"
     },
     "personas": {
       "subtitle": "{{count}} 个人格 · {{active}}",
@@ -784,15 +794,14 @@
       "previewNote": "人格放在最前面，这样客户端自己的提示词仍然可以覆盖它。两个块都标记为可缓存，因此每个会话只需付一次成本。"
     },
     "statusline": {
-      "subtitle": "{{count}} 个模块 · rialto statusline",
+      "subtitle": "{{count}} 个模块 · 仅预览",
       "saved": "已保存状态栏",
-      "wireUp": "在 <mono>~/.claude/settings.json</mono> 中这样接入：<mono>{{snippet}}</mono>",
       "addModule": "添加模块",
       "line": "状态栏",
       "removeModule": "移除 {{module}}",
-      "lineNote": "顺序是从左到右。Claude Code 每一轮都会把会话 JSON 通过管道传给 <mono>rialto statusline</mono>。",
+      "lineNote": "顺序从左到右。把它渲染成状态栏的程序尚未提供，因此这里构建的内容会被保存，但除本预览外不会显示在任何地方。",
       "preview": "预览",
-      "live": "实时",
+      "live": "预览",
       "emptyLine": "状态栏为空——请添加一个模块。",
       "styleDefault": "默认",
       "stylePowerline": "Powerline",
@@ -813,7 +822,16 @@
       "hexColour": "十六进制颜色",
       "script": "脚本",
       "scriptHint": "每轮执行一次，其标准输出会替换模块文本。",
-      "scriptPath": "脚本路径"
+      "scriptPath": "脚本路径",
+      "renderingTitle": "状态栏渲染",
+      "renderingNeeds": "需要一个 <mono>rialto statusline</mono> 命令供 Claude Code 传入会话 JSON。此版本不包含 CLI，因此下面的布局会被保存，但暂时没有任何程序读取它。",
+      "moduleModel": "模型",
+      "moduleUsage": "令牌",
+      "moduleSpeed": "速度",
+      "moduleGitBranch": "Git 分支",
+      "moduleWorkDir": "目录",
+      "moduleScript": "脚本",
+      "moduleFallback": "模块"
     }
   },
   "shell": {
