@@ -10,7 +10,8 @@
     "copy": "复制",
     "discard": "放弃",
     "done": "完成",
-    "previous": "上一页"
+    "previous": "上一页",
+    "copied": "已复制"
   },
   "activity": {
     "common": {
@@ -114,7 +115,8 @@
       "routingTrace": "路由轨迹",
       "showAllCalls": "显示全部 {{calls}} 次调用",
       "showFewer": "收起",
-      "chars": "{{n}} 字符"
+      "chars": "{{n}} 字符",
+      "codePlain": "代码"
     },
     "logs": {
       "title": "日志",

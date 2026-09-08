@@ -10,7 +10,8 @@
     "copy": "Copy",
     "discard": "Discard",
     "done": "Done",
-    "previous": "Previous"
+    "previous": "Previous",
+    "copied": "Copied"
   },
   "activity": {
     "common": {
@@ -114,7 +115,8 @@
       "routingTrace": "Routing trace",
       "showAllCalls": "Show all {{calls}} calls",
       "showFewer": "Show fewer",
-      "chars": "{{n}} chars"
+      "chars": "{{n}} chars",
+      "codePlain": "code"
     },
     "logs": {
       "title": "Logs",

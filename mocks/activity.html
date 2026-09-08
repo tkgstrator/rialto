@@ -28,25 +28,24 @@ const filter = (label, value) => `
   </button>`
 
 const SESSIONS = [
-  { id: 'ses_9fa2…c41', title: 'Refactor the inbound surface registry', surface: '/v1/messages',  model: 'claude-opus-4-8',   turns: 42, inTok: '284k', outTok: '34.1k', cache: '78%', cost: '$1.24' },
-  { id: 'ses_71bd…08e', title: 'Codex: migrate prisma schema',           surface: '/v1/responses', model: 'gpt-5.5',           turns: 17, inTok: '88.4k', outTok: '7.80k', cache: '41%', cost: '$0.412' },
-  { id: 'ses_04c7…9aa', title: 'Gemini CLI scratch',                     surface: '/v1beta/models/*',    model: 'gemini-3.1-pro',    turns: 8,  inTok: '38.2k', outTok: '3.50k', cache: '0%',  cost: '$0.0930' },
-  { id: 'ses_ba51…2f0', title: 'Long: UI mock diff skill',               surface: '/v1/messages',  model: 'claude-sonnet-4-6', turns: 91, inTok: '641k', outTok: '61.4k', cache: '85%', cost: '$2.06' },
-  { id: 'ses_3d90…7bc', title: 'OpenAI SDK smoke test',                  surface: '/v1/chat/completions',      model: 'gpt-5.4-mini',      turns: 4,  inTok: '9.10k', outTok: '1.20k', cache: '0%',  cost: '$0.00610' },
-  { id: 'ses_c18e…44d', title: 'Zod schema layering spike',              surface: '/v1/messages',  model: 'claude-fable-5',    turns: 63, inTok: '412k', outTok: '48.9k', cache: '81%', cost: '$1.71' }
+  { id: 'ses_9fa2…c41', surface: '/v1/messages',  model: 'claude-opus-4-8',   turns: 42, inTok: '284k', outTok: '34.1k', cache: '78%', cost: '$1.24' },
+  { id: 'ses_71bd…08e', surface: '/v1/responses', model: 'gpt-5.5',           turns: 17, inTok: '88.4k', outTok: '7.80k', cache: '41%', cost: '$0.412' },
+  { id: 'ses_04c7…9aa', surface: '/v1beta/models/*',    model: 'gemini-3.1-pro',    turns: 8,  inTok: '38.2k', outTok: '3.50k', cache: '0%',  cost: '$0.0930' },
+  { id: 'ses_ba51…2f0', surface: '/v1/messages',  model: 'claude-sonnet-4-6', turns: 91, inTok: '641k', outTok: '61.4k', cache: '85%', cost: '$2.06' },
+  { id: 'ses_3d90…7bc', surface: '/v1/chat/completions',      model: 'gpt-5.4-mini',      turns: 4,  inTok: '9.10k', outTok: '1.20k', cache: '0%',  cost: '$0.00610' },
+  { id: 'ses_c18e…44d', surface: '/v1/messages',  model: 'claude-fable-5',    turns: 63, inTok: '412k', outTok: '48.9k', cache: '81%', cost: '$1.71' }
 ]
 
 const sessionRow = (s) => `
   <tr ${navTo('activity-session.html')} class="border-t border-border/60 transition-colors hover:bg-muted/50">
-    <!-- No session id line. It is a 36-character uuid that identifies the
-         row to the API, not to a person: two of them differ in the middle
-         and the eye cannot tell them apart, and the first line — the
-         opening turn of the conversation — is what an operator recognises.
-         The id is still in the URL of the row and on the detail screen,
-         where it is the thing you copy. A session with no captured turn
-         falls back to a short form of the id so the row is still nameable. -->
+    <!-- A short form of the session id, and nothing else. The full uuid
+         was 36 characters that no eye can tell apart, and the opening
+         turn of the conversation is the operator's own prompt text —
+         readable over someone's shoulder, and not what this row is for.
+         Both are on the session's own screen, which is one click away
+         and is where you go to read the conversation. -->
     <td class="py-3 pl-6 pr-3">
-      <div class="truncate text-xs font-medium">${s.title}</div>
+      <div class="truncate font-mono text-xs">${s.id}</div>
     </td>
     <td class="px-3">${surfacePill(s.surface)}</td>
     <td class="px-3 font-mono text-[12px] text-muted-foreground">${s.model}</td>
@@ -60,7 +59,7 @@ const sessionRow = (s) => `
 
 const table = `
   <table class="w-full table-fixed">
-    <colgroup><col><col class="w-40"><col class="w-36"><col class="w-16"><col class="w-20"><col class="w-20"><col class="w-16"><col class="w-24"></colgroup>
+    <colgroup><col class="w-44"><col class="w-40"><col><col class="w-16"><col class="w-20"><col class="w-20"><col class="w-16"><col class="w-24"></colgroup>
     <thead>
       <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         ${sortTh('Session', 'pl-6 pr-3')}
@@ -131,8 +130,7 @@ renderShell({
   navMode: 'cloudflare',
   sub: 'sessions',
   crumbs: ['Sessions'],
-  subtitle: '128 sessions · 18.7k requests · last 7 days',
-  actions:
+  subactions:
     btn('Live tail', 'outline', 'ri-broadcast-line', 'activity-requests.html') +
     btn('Archive', 'ghost', 'ri-archive-line')
 })

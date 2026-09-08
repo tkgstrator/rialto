@@ -24,8 +24,49 @@ const TURNS = [
   { role: 'assistant', text: 'I will start by reading the four places the surface knowledge is currently duplicated: errorShapeForPath, pickSseAggregator, the openaiBearerAuth path list, and inboundType.', tokens: '312', tool: 'Read × 4' },
   { role: 'assistant', text: 'errorShapeForPath and pickSseAggregator both key off the same set of paths. Collapsing them into one InboundSurface record removes the drift risk.', tokens: '204' },
   { role: 'user',      text: 'Good. Keep the Anthropic default for unknown paths.', tokens: '31' },
-  { role: 'assistant', text: 'Done — unknown paths fall back to the anthropic descriptor, matching the pre-existing behaviour.', tokens: '96', tool: 'Edit × 2' }
+  { role: 'assistant', text: 'Done — unknown paths fall back to the anthropic descriptor, matching the pre-existing behaviour.', tokens: '96', tool: 'Edit × 2' },
+  // A turn is not prose with a bit of code in it — it is prose AND code,
+  // and the code half is the half people came to read. Fenced blocks get
+  // their own treatment: monospace on a tinted ground, the language
+  // named, horizontal scroll of their own so a long line cannot widen
+  // the transcript, and highlighting so the shape is legible at a glance.
+  {
+    role: 'assistant',
+    tokens: '186',
+    text: 'The descriptor ends up as one record per surface:',
+    code: { lang: 'typescript', body: `export const SURFACES = {
+  // \`errorShape\` used to live in a switch three files away.
+  'anthropic-messages': {
+    path: '/v1/messages',
+    auth: 'x-api-key',
+    errorShape: 'anthropic',
+    aggregateSse: aggregateAnthropic
+  }
+} as const` }
+  }
 ]
+
+// Highlighting is four token classes, not a theme: comment, string,
+// keyword, number. They are what makes a block skimmable; anything
+// finer is a second colour system to keep in step with the app's own.
+const codeBlock = (c) => `
+  <div class="mt-2 overflow-hidden rounded-md border border-border">
+    <div class="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-1.5">
+      <span class="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">${c.lang}</span>
+      <button class="ml-auto text-[11px] text-muted-foreground hover:text-foreground">Copy</button>
+    </div>
+    <pre class="overflow-x-auto px-3 py-2.5 font-mono text-[12px] leading-relaxed"><code>${highlight(c.body)}</code></pre>
+  </div>`
+
+// Mock-side approximation of the real highlighter, enough to show the
+// palette the implementation has to hit.
+const highlight = (src) =>
+  src
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/(\/\/[^\n]*)/g, '<span class="text-muted-foreground/70">$1</span>')
+    .replace(/('[^']*')/g, '<span class="text-emerald-600 dark:text-emerald-400">$1</span>')
+    .replace(/\b(export|const|as|from|import|return|function)\b/g, '<span class="text-sky-600 dark:text-sky-400">$1</span>')
 
 const turn = (t) => {
   const isUser = t.role === 'user'
@@ -37,6 +78,7 @@ const turn = (t) => {
         <span class="ml-auto font-mono text-[12px] tabular-nums text-muted-foreground">${t.tokens} tok</span>
       </div>
       <p class="mt-1.5 text-xs leading-relaxed">${t.text}</p>
+      ${t.code ? codeBlock(t.code) : ''}
     </div>`
 }
 

@@ -13,22 +13,20 @@ import type { Enriched } from '@/components/rialto/activity/sessions-derive'
 import { SurfaceCell } from '@/components/rialto/activity/shared'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
 import type { SessionSummary } from '@/lib/api'
-import { fmtAgo, shortId } from '@/lib/rialto/format'
+import { shortId } from '@/lib/rialto/format'
 import { fmtCost, fmtTokens } from '@/lib/sessions/format'
 
-// What the first cell prints as its heading line. Shared with the sort so
-// the column cannot order by the preview while the row shows something
-// else.
+// What the first cell prints, and all it prints: a short form of the
+// session id.
 //
-// The raw session id used to sit under it on every row. It is a 36-char
-// uuid that identifies the row to the API, not to a person — two of them
-// differ somewhere in the middle and the eye cannot tell them apart — so
-// the row now shows only what an operator recognises: the opening turn.
-// The id stays in the row's link and on the detail screen, which is where
-// it gets copied. A session whose first turn was never captured falls
-// back to a short form of the id, because a row still has to be nameable.
-const titleOf = (session: SessionSummary): string =>
-  session.preview === null || session.preview === '' ? shortId(session.sessionId) : session.preview
+// It carried the opening turn of the conversation until now. That is the
+// operator's own prompt text — legible over a shoulder, wide enough to
+// need the whole column, and not what the row is for; the row is a
+// handle to open the session with. The full uuid is no better: 36
+// characters no eye can tell apart. Both live on the session's own
+// screen, one click away, which is where you go to read the conversation
+// and where the id is the thing you copy.
+const titleOf = (session: SessionSummary): string => shortId(session.sessionId)
 
 // Trend and Last are gone. The sparkline was a shape nobody could order
 // or read a number off — seven points at 40px wide, in a table whose
@@ -63,14 +61,13 @@ const cacheHitPct = (session: SessionSummary): number =>
   session.totalInputTokens === 0 ? 0 : Math.round((session.totalCacheReadTokens / session.totalInputTokens) * 100)
 
 function SessionRow({ row }: { row: Enriched }) {
-  const { t } = useTranslation()
   const { session } = row
   const title = titleOf(session)
   return (
     <tr className='border-t border-border/60 transition-colors hover:bg-muted/50'>
       <td className='py-3 pl-6 pr-3'>
         <Link to={`/activity/sessions/${encodeURIComponent(session.sessionId)}`} className='block'>
-          <div className='truncate text-xs font-medium'>{title}</div>
+          <div className='truncate font-mono text-xs'>{title}</div>
         </Link>
       </td>
       <td className='px-3'>
@@ -93,9 +90,11 @@ export function SessionsTable({ rows }: { rows: Enriched[] }) {
   return (
     <table className='w-full table-fixed'>
       <colgroup>
-        <col />
+        {/* Session is a fixed handle now, so the slack goes to Model
+            rather than to a column of short ids. */}
+        <col className='w-44' />
         <col className='w-40' />
-        <col className='w-36' />
+        <col />
         <col className='w-16' />
         <col className='w-20' />
         <col className='w-20' />

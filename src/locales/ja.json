@@ -10,7 +10,8 @@
     "copy": "コピー",
     "discard": "破棄",
     "done": "完了",
-    "previous": "前へ"
+    "previous": "前へ",
+    "copied": "コピーしました"
   },
   "activity": {
     "common": {
@@ -114,7 +115,8 @@
       "routingTrace": "ルーティングの経路",
       "showAllCalls": "{{calls}} 件すべてを表示",
       "showFewer": "表示を減らす",
-      "chars": "{{n}} 文字"
+      "chars": "{{n}} 文字",
+      "codePlain": "コード"
     },
     "logs": {
       "title": "ログ",

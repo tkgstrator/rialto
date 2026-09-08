@@ -9,6 +9,7 @@ import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
+import { CodeBlock } from '@/components/rialto/activity/CodeBlock'
 import { type ActivityRequestLog, downloadText, fetchSessionRequestLogs } from '@/components/rialto/activity/data'
 import { LANE_KEYS, lane as laneOf } from '@/components/rialto/activity/requests-rows'
 import { DASH, ScreenMessage, StatusPill } from '@/components/rialto/activity/shared'
@@ -18,6 +19,7 @@ import { Screen } from '@/components/rialto/Screen'
 import { api, type SessionMessageItem, type SessionSummary } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
 import { fmtAgo, fmtRate } from '@/lib/rialto/format'
+import { splitTurn } from '@/lib/sessions/code'
 import { fmtChars, fmtCost } from '@/lib/sessions/format'
 import { normaliseContent } from '@/lib/sessions/message-content'
 import { cn } from '@/lib/utils'
@@ -93,7 +95,21 @@ function TurnRow({ turn }: { turn: Turn }) {
           {t('activity.session.chars', { n: fmtChars(turn.chars) })}
         </span>
       </div>
-      {turn.text === '' ? null : <p className='mt-1.5 whitespace-pre-wrap text-xs leading-relaxed'>{turn.text}</p>}
+      {/* Prose and fenced code are rendered apart. As one paragraph the
+          code wrapped with the sentences around it, which is unreadable
+          exactly where it matters — the code is usually why the session
+          was opened. */}
+      {splitTurn(turn.text).map((segment, index) =>
+        segment.kind === 'text' ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: segments are an ordered split of one string
+          <p key={`text-${index}`} className='mt-1.5 whitespace-pre-wrap text-xs leading-relaxed'>
+            {segment.text}
+          </p>
+        ) : (
+          // biome-ignore lint/suspicious/noArrayIndexKey: segments are an ordered split of one string
+          <CodeBlock key={`code-${index}`} lang={segment.lang} body={segment.body} />
+        )
+      )}
     </div>
   )
 }
