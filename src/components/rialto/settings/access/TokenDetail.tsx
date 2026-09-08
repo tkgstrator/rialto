@@ -164,10 +164,16 @@ export function TokenDetail() {
           <div className='ml-auto flex items-center gap-2'>
             {/* Rotate first and revoke second: rotating is the answer to
                 almost every reason for being on this page, and revoking
-                is the one that takes a client offline. */}
-            <RButton variant='outline' icon='ri-refresh-line' onClick={rotate} disabled={busy || state !== 'active'}>
-              {t('settings.access.rotate')}
-            </RButton>
+                is the one that takes a client offline.
+                Absent rather than disabled on a dead token — RButton
+                paints no disabled state, so a greyed-out Rotate would be
+                indistinguishable from a live one, and the server refuses
+                the call anyway. */}
+            {state === 'active' ? (
+              <RButton variant='outline' icon='ri-refresh-line' onClick={rotate} disabled={busy}>
+                {t('settings.access.rotate')}
+              </RButton>
+            ) : null}
             {state === 'revoked' ? (
               <RButton variant='danger' icon='ri-delete-bin-line' onClick={remove} disabled={busy}>
                 {t('settings.access.delete')}
@@ -202,9 +208,11 @@ export function TokenDetail() {
         </SettingsField>
 
         <SettingsField label={t('settings.access.colProfile')} hint={t('settings.access.issueProfileHint')}>
-          <span className='font-mono text-xs'>
-            {token.profileKey === null ? t('settings.access.followEndpoint') : token.profileKey}
-          </span>
+          {token.profileKey === null ? (
+            <span className='text-[12px] text-muted-foreground'>{t('settings.access.followEndpoint')}</span>
+          ) : (
+            <span className='font-mono text-xs'>{token.profileKey}</span>
+          )}
         </SettingsField>
 
         <SettingsField label={t('settings.access.detailUsage')} hint={t('settings.access.detailUsageHint')}>

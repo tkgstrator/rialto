@@ -15,9 +15,21 @@ import { useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { RButton } from '@/components/rialto/primitives'
-import { maskKey } from './derive'
+import { maskKeyParts } from './derive'
 import { ReplaceKeyDialog } from './ReplaceKeyDialog'
 import type { Provider } from './types'
+
+/** The masked key, clipped in the middle rather than at the end. */
+function MaskedKey({ value }: { value: string }) {
+  const { head, bullets, tail } = maskKeyParts(value)
+  return (
+    <span className='flex min-w-0 items-center'>
+      <span className='shrink-0'>{head}</span>
+      <span className='min-w-0 overflow-hidden text-ellipsis'>{bullets}</span>
+      <span className='shrink-0'>{tail}</span>
+    </span>
+  )
+}
 
 export function CredentialsPanel({
   provider,
@@ -53,9 +65,16 @@ export function CredentialsPanel({
           <div className='mb-1 text-[12px] text-muted-foreground'>{t('providers.credentials.apiKey')}</div>
           <div className='flex items-center gap-2'>
             <div className='flex h-8 min-w-0 flex-1 items-center rounded-md border border-border px-3 font-mono text-xs'>
-              <span className='truncate'>
-                {stored === '' ? t('providers.credentials.notSet') : revealed ? stored : maskKey(stored)}
-              </span>
+              {stored === '' ? (
+                <span className='truncate'>{t('providers.credentials.notSet')}</span>
+              ) : revealed ? (
+                <span className='truncate'>{stored}</span>
+              ) : (
+                // The bullets are the only part that can be dropped: the
+                // prefix and the last four characters are what tell two
+                // keys apart, and a plain `truncate` eats the tail first.
+                <MaskedKey value={stored} />
+              )}
             </div>
             <RButton
               variant='ghost'

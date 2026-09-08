@@ -706,7 +706,7 @@
       "guardProviderBody": "<strong>出站方向。</strong> 由 Rialto 出示给厂商。它配置在<providers>provider</providers>页面的 provider 上。",
       "tokensTitle": "访问令牌",
       "tokensMeta": "{{summary}} · 全部作用于 <mono>/v1/*</mono>",
-      "tokensNote": "只保存 SHA-256 摘要，所以明文仅在签发时显示一次。这是 <mono>/v1/*</mono> 唯一接受的凭据。把范围限定到某个端点和某个配置档，就能给单个客户端专属的路由；<strong>吊销</strong>会保留这一行，过去的请求仍能看出属于谁，而删除会连这份归属一起丢掉。",
+      "tokensNote": "服务端只保存 SHA-256 摘要，因此明文只在签发时显示一次。<mono>/v1/*</mono> 只接受这类凭据；绑定端点与配置即可让每个客户端拥有各自的路由。<strong>点开某一行</strong>即可轮换它——在同一行换新密钥，保留名称、范围与历史——或将其吊销。",
       "countActive": "{{n}} 个有效",
       "countExpired": "{{n}} 个已过期",
       "countRevoked": "{{n}} 个已吊销",

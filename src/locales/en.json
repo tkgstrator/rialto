@@ -706,7 +706,7 @@
       "guardProviderBody": "<strong>Outbound.</strong> Rialto presents it to a vendor. Lives on the provider in <providers>Providers</providers>.",
       "tokensTitle": "Access tokens",
       "tokensMeta": "{{summary}} · all on <mono>/v1/*</mono>",
-      "tokensNote": "Only the SHA-256 digest is stored, so the plaintext is shown once, at issue. These are the only credentials <mono>/v1/*</mono> accepts. Scoping to an endpoint and a profile gives one client its own routing; <strong>revoke</strong> keeps the row so past requests still say whose traffic they were, delete drops that attribution.",
+      "tokensNote": "Only the SHA-256 digest is stored, so the plaintext is shown once, at issue. These are the only credentials <mono>/v1/*</mono> accepts. Scoping to an endpoint and a profile gives one client its own routing. <strong>Open a row</strong> to rotate it — a new secret on the same row, keeping its name, scope and history — or to revoke it.",
       "countActive": "{{n}} active",
       "countExpired": "{{n}} expired",
       "countRevoked": "{{n}} revoked",

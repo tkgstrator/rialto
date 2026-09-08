@@ -189,11 +189,25 @@ const KEY_BULLETS = '•'.repeat(16)
  * is enough to tell two keys apart and not enough to use one.
  */
 export function maskKey(key: string): string {
-  if (key.startsWith('$')) return key
-  if (key.length <= 8) return KEY_BULLETS
+  const { head, bullets, tail } = maskKeyParts(key)
+  return `${head}${bullets}${tail}`
+}
+
+/**
+ * The same mask, split where it is safe to lose characters.
+ *
+ * A box narrow enough to clip this string clips the END of it, which is
+ * the half that identifies the key — "sk-proj-••••••••" says nothing
+ * about which of two OpenAI keys is configured. Rendering the three
+ * parts separately lets the caller collapse the bullets, which carry no
+ * information at all, and keep both ends at any width.
+ */
+export function maskKeyParts(key: string): { head: string; bullets: string; tail: string } {
+  if (key.startsWith('$')) return { head: key, bullets: '', tail: '' }
+  if (key.length <= 8) return { head: '', bullets: KEY_BULLETS, tail: '' }
   const dash = key.slice(0, 12).lastIndexOf('-')
   const head = dash > 0 ? key.slice(0, dash + 1) : key.slice(0, 3)
-  return `${head}${KEY_BULLETS}${key.slice(-4)}`
+  return { head, bullets: KEY_BULLETS, tail: key.slice(-4) }
 }
 
 /** Header the outbound request carries the credential in. */
