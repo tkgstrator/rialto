@@ -14,21 +14,44 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { LANE_KEYS, type Row } from '@/components/rialto/activity/requests-rows'
 import { DASH, StatusPill, SurfaceCell } from '@/components/rialto/activity/shared'
-import { Pill } from '@/components/rialto/primitives'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import dayjs from '@/lib/dayjs'
 import { fmtCost, fmtTokens } from '@/lib/sessions/format'
 import { cn } from '@/lib/utils'
 
-export type ColumnId = 'time' | 'status' | 'endpoint' | 'models' | 'rule' | 'token' | 'input' | 'output' | 'ms' | 'cost'
+export type ColumnId =
+  | 'time'
+  | 'status'
+  | 'endpoint'
+  | 'requested'
+  | 'sent'
+  | 'rule'
+  | 'token'
+  | 'input'
+  | 'output'
+  | 'ms'
+  | 'cost'
 
 export interface ColumnDef {
   id: ColumnId
   /** Translation key for the header; the table and the menu resolve it. */
   labelKey: string
-  /** colgroup width class; empty means "take the remaining space". */
-  width: string
+  /**
+   * Column width in px; `0` is the auto column that takes what is left.
+   *
+   * A number rather than a Tailwind class because the table's own minimum
+   * width is their sum: eleven columns need more than a 1440px window has
+   * left over after the sidebar, so the table keeps its width and scrolls
+   * instead of paying for the gap in ellipses. Hiding a column through the
+   * Columns menu has to shrink that minimum with it, which a fixed class
+   * on the table could not do.
+   *
+   * Each value is the widest thing the column actually renders plus its
+   * padding, measured in the browser rather than guessed, and matches the
+   * `w-*` class its column carries in `mocks/activity-requests.html`.
+   */
+  width: number
   align: 'left' | 'right'
   cellClass: string
   /** `t` is threaded through because the descriptors are module-level. */
@@ -59,21 +82,22 @@ const instant = (iso: string): SortValue => {
   return Number.isNaN(ms) ? null : ms
 }
 
-function ModelsCell({ row }: { row: Row }) {
-  const { t } = useTranslation()
-  const requested = row.log.requestedModel
-  const requestedLabel = requested === null ? t('activity.common.untracked') : requested
-  const sent = `${row.log.provider},${row.log.model}`
-  // Two model ids in one column truncate to "claude… → claude-code…" at
-  // any realistic width, which makes the one column an operator opens this
-  // screen for unreadable. The full pair goes in the tooltip so the answer
-  // is a hover away rather than a horizontal scroll.
+/**
+ * One model identifier: the one the caller asked for, or the
+ * `provider,model` that actually served the turn.
+ *
+ * They are two columns rather than one cell with an arrow between them.
+ * Sharing a column meant both halves truncated to "claude… →
+ * claude-code…" at 1440px — the pair needs 318px and the column had 272 —
+ * which made the one thing this screen exists to show unreadable. The
+ * title stays for the install whose identifiers are longer than the
+ * measurements these widths came from.
+ */
+function ModelCell({ value, muted = false }: { value: string; muted?: boolean }) {
   return (
-    <div className='flex items-center gap-1.5 font-mono text-[12px]' title={`${requestedLabel} → ${sent}`}>
-      <span className='truncate text-muted-foreground'>{requestedLabel}</span>
-      <i className='ri-arrow-right-line shrink-0 text-xs text-muted-foreground/50' />
-      <span className='truncate'>{sent}</span>
-    </div>
+    <span className={cn('block truncate font-mono text-[12px]', muted ? 'text-muted-foreground' : '')} title={value}>
+      {value}
+    </span>
   )
 }
 
@@ -97,9 +121,9 @@ export const COLUMNS: readonly ColumnDef[] = [
   {
     id: 'time',
     labelKey: 'activity.requests.colTime',
-    // Wide enough for the dated form ("09-07 06:43") on one line; at w-20
+    // Wide enough for the dated form ("09-07 06:43") on one line; at 80
     // it wrapped and every row in a multi-day range grew a second line.
-    width: 'w-28',
+    width: 112,
     align: 'left',
     cellClass: 'whitespace-nowrap font-mono text-[12px] tabular-nums text-muted-foreground',
     render: (row) => <TimeCell iso={row.log.createdAt} />,
@@ -111,7 +135,7 @@ export const COLUMNS: readonly ColumnDef[] = [
   {
     id: 'status',
     labelKey: 'activity.requests.colStatus',
-    width: 'w-16',
+    width: 64,
     align: 'left',
     cellClass: '',
     render: (row) => <StatusPill status={row.log.status} />,
@@ -120,7 +144,7 @@ export const COLUMNS: readonly ColumnDef[] = [
   {
     id: 'endpoint',
     labelKey: 'activity.requests.colEndpoint',
-    width: 'w-40',
+    width: 176,
     align: 'left',
     cellClass: '',
     render: (row) => <SurfaceCell path={row.surfacePath} />,
@@ -129,26 +153,43 @@ export const COLUMNS: readonly ColumnDef[] = [
     sortValue: (row) => row.surfacePath
   },
   {
-    id: 'models',
-    labelKey: 'activity.requests.colModels',
-    width: '',
+    id: 'requested',
+    labelKey: 'activity.requests.colRequested',
+    width: 144,
     align: 'left',
     cellClass: '',
-    render: (row) => <ModelsCell row={row} />,
-    // The cell holds two identifiers; this orders by the sent pair — the
-    // emphasized half, and the only way to group the log by the upstream
-    // that served it, since this screen has no model filter.
+    render: (row, t) => (
+      <ModelCell
+        muted
+        value={row.log.requestedModel === null ? t('activity.common.untracked') : row.log.requestedModel}
+      />
+    ),
+    // Muted, and sorting a row that recorded no model as missing rather
+    // than under the spelling of its "untracked" label.
+    sortValue: (row) => row.log.requestedModel
+  },
+  {
+    id: 'sent',
+    labelKey: 'activity.requests.colSent',
+    // The auto column. A window wider than the table's minimum spends its
+    // slack on the longest value on the screen rather than on gutters.
+    width: 0,
+    align: 'left',
+    cellClass: '',
+    render: (row) => <ModelCell value={`${row.log.provider},${row.log.model}`} />,
+    // The only way to group the log by the upstream that served it, since
+    // this screen has no model filter.
     sortValue: (row) => `${row.log.provider},${row.log.model}`
   },
   {
     // The lane rides with the rule rather than holding a column of its
     // own. It qualifies the routing decision (there is no lane without
     // one), it reads `agent` on almost every row, and the column it cost
-    // belonged to Requested → Sent — which was truncating both halves of
+    // belonged to the model pair — which was truncating both halves of
     // the one thing this screen exists to show.
     id: 'rule',
     labelKey: 'activity.requests.colRule',
-    width: 'w-32',
+    width: 144,
     align: 'left',
     cellClass: 'text-[12px]',
     render: (row, t) => (
@@ -162,7 +203,7 @@ export const COLUMNS: readonly ColumnDef[] = [
   {
     id: 'token',
     labelKey: 'activity.requests.colToken',
-    width: 'w-28',
+    width: 144,
     align: 'left',
     cellClass: 'truncate text-[12px] text-muted-foreground',
     render: (row, t) => (row.client === null ? t('activity.common.untracked') : row.client),
@@ -171,7 +212,7 @@ export const COLUMNS: readonly ColumnDef[] = [
   {
     id: 'input',
     labelKey: 'activity.requests.colInput',
-    width: 'w-20',
+    width: 80,
     align: 'right',
     cellClass: 'font-mono text-xs tabular-nums',
     render: (row) => tokens(row.log.totalInputTokens),
@@ -180,7 +221,7 @@ export const COLUMNS: readonly ColumnDef[] = [
   {
     id: 'output',
     labelKey: 'activity.requests.colOutput',
-    width: 'w-20',
+    width: 80,
     align: 'right',
     cellClass: 'font-mono text-xs tabular-nums',
     render: (row) => tokens(row.log.outputTokens),
@@ -189,7 +230,7 @@ export const COLUMNS: readonly ColumnDef[] = [
   {
     id: 'ms',
     labelKey: 'activity.requests.colMs',
-    width: 'w-20',
+    width: 80,
     align: 'right',
     cellClass: 'font-mono text-xs tabular-nums text-muted-foreground',
     render: (row) => (row.log.durationMs === 0 ? DASH : row.log.durationMs.toLocaleString()),
@@ -198,7 +239,7 @@ export const COLUMNS: readonly ColumnDef[] = [
   {
     id: 'cost',
     labelKey: 'activity.requests.colCost',
-    width: 'w-24',
+    width: 112,
     align: 'right',
     cellClass: 'font-mono text-xs tabular-nums',
     // A priced 0 prints as `$0` rather than as a dash, so unlike the token
@@ -207,6 +248,11 @@ export const COLUMNS: readonly ColumnDef[] = [
     sortValue: (row) => row.log.totalCostUsd
   }
 ]
+
+// The floor under the auto column: what `provider,model` measures at its
+// longest on this screen. Without it the table's minimum would count the
+// one column that matters as zero and let it collapse.
+const AUTO_MIN_WIDTH = 224
 
 const BY_ID: ReadonlyMap<ColumnId, ColumnDef> = new Map(COLUMNS.map((col) => [col.id, col]))
 
@@ -265,39 +311,50 @@ export function RequestsTable({ rows, columns }: { rows: Row[]; columns: readonl
   // have no caret and no header to click to undo them.
   const visibleKeys = useMemo(() => columns.map((col) => col.id), [columns])
   const sort = useTableSort<Row, ColumnId>(rows, sortValue, visibleKeys)
+  // What the table refuses to go below. Eleven columns want 1360px and a
+  // 1440px window has 1184 left after the sidebar, so the last columns
+  // scroll rather than every column paying for the gap in ellipses. It is
+  // summed from the visible columns, so hiding one through the Columns
+  // menu takes its width out of the scroll as well as out of the row.
+  const minWidth = useMemo(
+    () => columns.reduce((sum, col) => sum + (col.width === 0 ? AUTO_MIN_WIDTH : col.width), 0),
+    [columns]
+  )
   return (
-    <table className='w-full table-fixed'>
-      <colgroup>
-        {columns.map((col) => (
-          <col key={col.id} className={col.width} />
-        ))}
-      </colgroup>
-      <thead>
-        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2'>
-          {columns.map((col, i) => {
-            const className = cn(
-              edgeClass(i, columns.length, false),
-              col.align === 'right' ? 'text-right' : 'text-left',
-              'font-medium'
-            )
-            return col.sortValue === undefined ? (
-              <th key={col.id} className={className}>
-                {t(col.labelKey)}
-              </th>
-            ) : (
-              <SortTh key={col.id} sortKey={col.id} sort={sort} className={className} align={col.align}>
-                {t(col.labelKey)}
-              </SortTh>
-            )
-          })}
-        </tr>
-      </thead>
-      <tbody>
-        {sort.sorted.map((row) => (
-          <RequestRow key={row.log.id} row={row} columns={columns} />
-        ))}
-      </tbody>
-    </table>
+    <div className='overflow-x-auto'>
+      <table className='w-full table-fixed' style={{ minWidth }}>
+        <colgroup>
+          {columns.map((col) => (
+            <col key={col.id} style={col.width === 0 ? undefined : { width: col.width }} />
+          ))}
+        </colgroup>
+        <thead>
+          <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2'>
+            {columns.map((col, i) => {
+              const className = cn(
+                edgeClass(i, columns.length, false),
+                col.align === 'right' ? 'text-right' : 'text-left',
+                'font-medium'
+              )
+              return col.sortValue === undefined ? (
+                <th key={col.id} className={className}>
+                  {t(col.labelKey)}
+                </th>
+              ) : (
+                <SortTh key={col.id} sortKey={col.id} sort={sort} className={className} align={col.align}>
+                  {t(col.labelKey)}
+                </SortTh>
+              )
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {sort.sorted.map((row) => (
+            <RequestRow key={row.log.id} row={row} columns={columns} />
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
