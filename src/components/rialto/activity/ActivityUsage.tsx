@@ -192,6 +192,8 @@ function UtilizationChart({ points, series }: { points: ChartPoint[]; series: re
         <ResponsiveContainer width='100%' height='100%'>
           <LineChart data={points} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
             <CartesianGrid vertical={false} className='stroke-border' strokeWidth={1} />
+            {/* 12px, the floor everything else on these screens uses.
+                The axes were at 10 and were the only text under it. */}
             <XAxis
               dataKey='t'
               type='number'
@@ -202,7 +204,7 @@ function UtilizationChart({ points, series }: { points: ChartPoint[]; series: re
               tickLine={false}
               axisLine={false}
               className='fill-muted-foreground'
-              tick={{ fontSize: 10 }}
+              tick={{ fontSize: 12 }}
             />
             <YAxis
               domain={[0, 100]}
@@ -211,7 +213,7 @@ function UtilizationChart({ points, series }: { points: ChartPoint[]; series: re
               tickLine={false}
               axisLine={false}
               className='fill-muted-foreground'
-              tick={{ fontSize: 10 }}
+              tick={{ fontSize: 12 }}
               width={40}
             />
             <Tooltip content={<ChartTooltip series={series} />} cursor={{ className: 'stroke-border' }} />

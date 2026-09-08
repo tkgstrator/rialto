@@ -109,15 +109,22 @@ const W = 1080, H = 200, PAD_L = 34, PAD_R = 96, PAD_T = 12, PAD_B = 24
 const px = (i, n) => PAD_L + (i / (n - 1)) * (W - PAD_L - PAD_R)
 const py = (v) => PAD_T + (1 - v / 100) * (H - PAD_T - PAD_B)
 
+// Axis labels sit in viewBox units and scale with the SVG, so the size
+// here is not the size on screen: the plot is 1080 wide and renders at
+// roughly 1170, so 11 lands on the 12px floor the rest of these screens
+// use. They were 9, which arrived under 10 and was the smallest text in
+// the app.
+const AXIS_TEXT = 'text-[11px]'
+
 const gridline = (v) => `
   <line x1="${PAD_L}" y1="${py(v)}" x2="${W - PAD_R}" y2="${py(v)}"
         class="stroke-border" stroke-width="1" vector-effect="non-scaling-stroke"/>
-  <text x="${PAD_L - 8}" y="${py(v) + 3}" text-anchor="end"
-        class="fill-muted-foreground text-[9px]">${v}%</text>`
+  <text x="${PAD_L - 8}" y="${py(v) + 4}" text-anchor="end"
+        class="fill-muted-foreground ${AXIS_TEXT}">${v}%</text>`
 
 const dayLabel = (d, i) => `
-  <text x="${px(i * 4, 28)}" y="${H - 8}" text-anchor="middle"
-        class="fill-muted-foreground text-[9px]">${d}</text>`
+  <text x="${px(i * 4, 28)}" y="${H - 6}" text-anchor="middle"
+        class="fill-muted-foreground ${AXIS_TEXT}">${d}</text>`
 
 const line = (s) => {
   const d = s.points.map((p, i) => `${px(i, s.points.length)},${py(p)}`).join(' ')
