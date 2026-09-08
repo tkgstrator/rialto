@@ -68,48 +68,49 @@ const surfaces = `
 // column both buried the relationship and read as four unrelated
 // accounts.
 //
-// Grouped by account, with the ACTIVE window first and called out.
+// Grouped by account, every window listed, ordered shortest window first.
 //
-// "Active" is upstream's word, not a heuristic: every row in Anthropic's
-// `limits[]` carries `is_active`, and it is not the highest percentage.
-// A live response from this install has session at 25% inactive and
-// weekly_all at 63% active — so "sort by percent and hope" would have
-// been right by luck there and wrong the moment a 5h window spikes above
-// a weekly one that is the one actually gating the account.
+// Nothing is marked as "the one that matters". Anthropic's `limits[]`
+// rows carry an `is_active` flag and it is tempting to badge it, but its
+// meaning is not documented and one live sample cannot settle it: that
+// sample had session 25% inactive, weekly_all 63% active and
+// weekly_scoped 8% inactive, which is neither "highest percent" nor "one
+// per group". A badge nobody can explain is worse than no badge.
 //
-// Codex reports no equivalent flag, so its windows stay in wire order
-// (primary, secondary) with nothing marked. Inventing an active window
-// for it would be the same guess in a different place.
+// The order is ours and is explainable: 5h, then 7d, then the per-model
+// weekly rows. Shortest window first, because that is the one that
+// recovers soonest, and the per-model rows sit under the 7d they belong
+// to. The account line carries the WORST percentage, which is a fact
+// rather than an interpretation.
 const QUOTA = [
   {
     account: 'Claude Max',
     windows: [
-      { window: '7d', pct: 63, resets: '3d 04h', active: true },
-      { window: '5h', pct: 25, resets: '2h 11m', active: false },
-      { window: '7d · Fable', pct: 8, resets: '3d 04h', active: false }
+      { window: '5h', pct: 25, resets: '2h 11m' },
+      { window: '7d', pct: 63, resets: '3d 04h' },
+      { window: '7d · Fable', pct: 8, resets: '3d 04h' }
     ]
   },
   {
     account: 'Codex Pro',
     windows: [
-      { window: 'primary', pct: 88, resets: '46m', active: false },
-      { window: 'secondary', pct: 65, resets: '4d 02h', active: false }
+      { window: 'primary', pct: 88, resets: '46m' },
+      { window: 'secondary', pct: 65, resets: '4d 02h' }
     ]
   },
-  { account: 'Gemini AI Pro', windows: [{ window: 'daily', pct: 12, resets: '9h 22m', active: false }] }
+  { account: 'Gemini AI Pro', windows: [{ window: 'daily', pct: 12, resets: '9h 22m' }] }
 ]
 
 const windowLine = (w) => `
   <div class="flex items-baseline gap-3 pt-2 first:pt-0">
-    <span class="w-24 shrink-0 font-mono text-[12px] ${w.active ? 'text-foreground' : 'text-muted-foreground'}">${w.window}</span>
-    <span class="w-14 shrink-0">${w.active ? pill('active', 'info') : ''}</span>
+    <span class="w-28 shrink-0 font-mono text-[12px] text-muted-foreground">${w.window}</span>
     <div class="min-w-0 flex-1">${meter(w.pct)}</div>
-    <span class="w-10 shrink-0 text-right font-mono text-[12px] tabular-nums ${w.active ? 'font-medium' : 'text-muted-foreground'}">${w.pct}%</span>
+    <span class="w-10 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${w.pct}%</span>
     <span class="w-20 shrink-0 text-right text-[12px] text-muted-foreground">${w.resets}</span>
   </div>`
 
 const quotaRow = (q) => {
-  const lead = q.windows.find((w) => w.active) ?? q.windows[0]
+  const lead = q.windows.reduce((a, b) => (b.pct > a.pct ? b : a))
   return `
   <div ${navTo('activity-usage.html')} class="border-t border-border/60 px-6 py-3 transition-colors hover:bg-muted/50">
     <div class="flex items-baseline gap-2">
@@ -181,7 +182,7 @@ document.getElementById('root').innerHTML = `
   ${section('Inbound surfaces', surfaces, 'last 24h')}
   <div class="grid grid-cols-2 border-t border-border">
     <div class="border-r border-border">
-      ${section('Subscription quota', QUOTA.map(quotaRow).join(''), 'every window, active one marked')}
+      ${section('Subscription quota', QUOTA.map(quotaRow).join(''), 'every window · worst shown per account')}
     </div>
     <div>
       ${section('Failover activity', `
