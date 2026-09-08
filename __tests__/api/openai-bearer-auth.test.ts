@@ -39,6 +39,7 @@ function buildApp(): Hono {
   for (const prefix of INBOUND_MOUNT_PREFIXES) app.use(prefix, inboundProxyAuth)
   const ok = (c: { text: (s: string) => Response }): Response => c.text('ok')
   app.get('/v1/models', ok)
+  app.post('/v1/messages/count_tokens', ok)
   app.post('/v1/chat/completions', ok)
   app.post('/v1/responses', ok)
   app.post('/v1/messages', ok)
@@ -80,10 +81,24 @@ describe.skipIf(!HAS_DB)('/v1 auth', () => {
     })
 
     test('a token scoped to one surface is refused on another', async () => {
-      const scoped = (await issueAccessToken({ name: 'chat only', surface: 'openai-chat' })).plaintext
+      const scoped = (await issueAccessToken({ name: 'chat only', surfaces: ['openai-chat'] })).plaintext
       const app = buildApp()
       expect((await call(app, '/v1/chat/completions', { authorization: `Bearer ${scoped}` })).status).toBe(200)
       expect((await call(app, '/v1/responses', { authorization: `Bearer ${scoped}` })).status).toBe(401)
+    })
+
+    test('a scoped token can still read the catalog', async () => {
+      // /v1/models is a catalog read, not a completion surface — it
+      // spends nothing and is deliberately absent from the surface
+      // registry. Refusing it to a scoped token breaks every OpenAI SDK
+      // client, which lists models before it calls one, and the scope it
+      // was given says nothing about whether it may read the menu.
+      const scoped = (await issueAccessToken({ name: 'chat only', surfaces: ['openai-chat'] })).plaintext
+      const app = buildApp()
+      expect((await call(app, '/v1/models', { authorization: `Bearer ${scoped}` }, 'GET')).status).toBe(200)
+      // The Anthropic-side equivalent: a pre-flight size check, also not
+      // a surface and also not a thing the scope is about.
+      expect((await call(app, '/v1/messages/count_tokens', { 'x-api-key': scoped })).status).toBe(200)
     })
 
     test('a bogus value is refused', async () => {

@@ -80,23 +80,26 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
   const issue = () => {
     if (draft === null) return
     setIssuing(true)
-    // Resolve the picker's string back through the fetched list rather
-    // than asserting it into a SurfaceId: the id is then one the server
-    // itself reported, so an unknown value cannot reach the wire.
-    const picked = surfaces.find((s) => s.id === draft.surface)
+    // Resolve the picker's strings back through the fetched list rather
+    // than asserting them into SurfaceIds: every id is then one the
+    // server itself reported, so an unknown value cannot reach the wire.
+    const picked = surfaces.filter((s) => draft.surfaces.includes(s.id)).map((s) => s.id)
     api
       .issueAccessToken({
         name: draft.name.trim(),
-        surface: picked === undefined ? null : picked.id,
+        surfaces: picked,
         profileKey: draft.profileKey === ANY ? null : draft.profileKey,
         expiresAt: expiryToIso(draft.expiry, Date.now())
       })
       .then((res) => {
-        const surfacePath = surfaces.find((s) => s.id === res.token.surface)?.path
+        const paths = res.token.surfaces.flatMap((id) => {
+          const found = surfaces.find((s) => s.id === id)
+          return found === undefined ? [] : [found.path]
+        })
         setRevealed({
           plaintext: res.plaintext,
           name: res.token.name,
-          scope: surfacePath === undefined ? t('settings.access.allEndpoints') : surfacePath,
+          scope: paths.length === 0 ? t('settings.access.allEndpoints') : paths.join(', '),
           profile: res.token.profileKey === null ? t('settings.access.followEndpoint') : res.token.profileKey,
           expiry: expiryLabel(draft.expiry, t)
         })

@@ -25,7 +25,10 @@ const TokenSchema = z
     // First characters only — enough to tell two tokens apart in a list,
     // not enough to authenticate with.
     prefix: z.string().nonempty(),
-    surface: z.string().nonempty().nullable(),
+    // Surfaces this token may call. Empty means every surface — the
+    // meaning the nullable single-surface field carried before it
+    // became a list.
+    surfaces: z.array(z.string().nonempty()),
     profileKey: z.string().nonempty().nullable(),
     lastUsedAt: z.string().nonempty().nullable(),
     requestCount: z.number().int().nonnegative(),
@@ -46,7 +49,7 @@ const ListSchema = z.object({ tokens: z.array(TokenSchema) }).openapi('AccessTok
 const IssueBodySchema = z
   .object({
     name: z.string().nonempty(),
-    surface: z.enum(['anthropic-messages', 'openai-chat', 'openai-responses', 'gemini-generate']).nullable().optional(),
+    surfaces: z.array(z.enum(['anthropic-messages', 'openai-chat', 'openai-responses', 'gemini-generate'])).optional(),
     profileKey: z.string().nonempty().nullable().optional(),
     expiresAt: z.iso.datetime().nullable().optional()
   })

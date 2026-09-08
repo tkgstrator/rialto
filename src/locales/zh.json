@@ -718,7 +718,7 @@
       "issueNameHint": "该客户端在列表和活动中的标识。",
       "issueNamePlaceholder": "MacBook — Claude Code",
       "issueEndpoint": "端点",
-      "issueEndpointHint": "把令牌限制到某一个入口。不设置则可以调用全部入口。",
+      "issueEndpointHint": "选择该令牌可以调用的端点。当一个客户端会用到多个时可多选——Codex 同时使用 /v1/responses 与 /v1/chat/completions。选“全部端点”则不加限制。",
       "allEndpoints": "全部端点",
       "issueProfile": "路由配置档",
       "issueProfileHint": "让该客户端的流量走指定的配置档。不设置则跟随端点自身的路由。",

@@ -718,7 +718,7 @@
       "issueNameHint": "How this client is identified in the list and in Activity.",
       "issueNamePlaceholder": "MacBook — Claude Code",
       "issueEndpoint": "Endpoint",
-      "issueEndpointHint": "Restrict the token to one inbound surface. Unset lets it call all of them.",
+      "issueEndpointHint": "Pick the endpoints this token may call. Choose several when one client speaks more than one — Codex uses both /v1/responses and /v1/chat/completions. All endpoints leaves it unrestricted.",
       "allEndpoints": "all endpoints",
       "issueProfile": "Routing profile",
       "issueProfileHint": "Route this client's traffic through a named profile. Unset follows the endpoint's own routing.",

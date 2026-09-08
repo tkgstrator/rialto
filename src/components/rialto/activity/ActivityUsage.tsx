@@ -36,7 +36,7 @@ import {
   type WindowRow
 } from '@/components/rialto/activity/usage-derive'
 import { useActivityCounts } from '@/components/rialto/activity/use-activity-counts'
-import { Meter, Pill, RButton, SurfacePill } from '@/components/rialto/primitives'
+import { Meter, Pill, RButton, SurfaceScope } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import { type AccessTokenWire, api, type InboundSurfaceWire } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
@@ -247,7 +247,10 @@ function TokenRow({
   now: number
 }) {
   const { t } = useTranslation()
-  const path = surfaces.find((s) => s.id === row.surface)?.path
+  const paths = row.surfaces.flatMap((id) => {
+    const found = surfaces.find((s) => s.id === id)
+    return found === undefined ? [] : [found.path]
+  })
   return (
     <tr className='border-t border-border/60 transition-colors hover:bg-muted/50'>
       <td className='py-2.5 pl-6 pr-3'>
@@ -255,11 +258,7 @@ function TokenRow({
         <div className='font-mono text-[12px] text-muted-foreground'>{row.prefix}</div>
       </td>
       <td className='px-3'>
-        {path === undefined ? (
-          <span className='text-[12px] text-muted-foreground/50'>{t('settings.access.scopeAll')}</span>
-        ) : (
-          <SurfacePill path={path} />
-        )}
+        <SurfaceScope paths={paths} allLabel={t('settings.access.scopeAll')} />
       </td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCount(row.requestCount)}</td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCost(row.costUsd)}</td>

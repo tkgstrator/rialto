@@ -25,7 +25,8 @@ export interface AccessTokenRow {
   id: string
   name: string
   prefix: string
-  surface: string | null
+  /** Surfaces this token may call. Empty means every surface. */
+  surfaces: string[]
   profileKey: string | null
   lastUsedAt: string | null
   requestCount: number
@@ -83,7 +84,8 @@ export function invalidateTokenCache(): void {
 export interface ResolvedToken {
   id: string
   name: string
-  surface: string | null
+  /** Empty means the token is not pinned to any surface in particular. */
+  surfaces: string[]
   profileKey: string | null
 }
 
@@ -92,7 +94,7 @@ const toWire = (
     id: string
     name: string
     prefix: string
-    surface: string | null
+    surfaces: string[]
     profileKey: string | null
     lastUsedAt: Date | null
     requestCount: number
@@ -106,7 +108,7 @@ const toWire = (
   id: row.id,
   name: row.name,
   prefix: row.prefix,
-  surface: row.surface,
+  surfaces: row.surfaces,
   profileKey: row.profileKey,
   lastUsedAt: row.lastUsedAt === null ? null : row.lastUsedAt.toISOString(),
   requestCount: row.requestCount,
@@ -215,7 +217,8 @@ export async function getAccessToken(id: string): Promise<AccessTokenRow | null>
 
 export interface IssueInput {
   name: string
-  surface?: string | null
+  /** Omitted or empty scopes the token to every surface. */
+  surfaces?: string[]
   profileKey?: string | null
   expiresAt?: string | null
 }
@@ -245,7 +248,7 @@ export async function issueAccessToken(input: IssueInput): Promise<IssuedToken> 
       name: input.name,
       tokenHash,
       prefix,
-      surface: input.surface === undefined ? null : input.surface,
+      surfaces: input.surfaces === undefined ? [] : input.surfaces,
       profileKey: input.profileKey === undefined ? null : input.profileKey,
       expiresAt: input.expiresAt === undefined || input.expiresAt === null ? null : new Date(input.expiresAt)
     }
@@ -343,7 +346,7 @@ export async function resolveAccessToken(presented: string): Promise<ResolvedTok
     timingSafeEqual(Buffer.from(row.tokenHash, 'hex'), Buffer.from(hash, 'hex'))
 
   const resolved: ResolvedToken | null = usable
-    ? { id: row.id, name: row.name, surface: row.surface, profileKey: row.profileKey }
+    ? { id: row.id, name: row.name, surfaces: row.surfaces, profileKey: row.profileKey }
     : null
   cache.set(hash, { row: resolved })
   return resolved

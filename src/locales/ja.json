@@ -718,7 +718,7 @@
       "issueNameHint": "一覧とアクティビティでこのクライアントを識別する名前です。",
       "issueNamePlaceholder": "MacBook — Claude Code",
       "issueEndpoint": "エンドポイント",
-      "issueEndpointHint": "トークンを 1 つの受信サーフェスに限定します。未指定ならすべてを呼び出せます。",
+      "issueEndpointHint": "このトークンが呼び出せるエンドポイントを選びます。1 つのクライアントが複数を使う場合は複数選択してください（Codex は /v1/responses と /v1/chat/completions の両方を使います）。「すべて」なら制限しません。",
       "allEndpoints": "すべてのエンドポイント",
       "issueProfile": "ルーティングプロファイル",
       "issueProfileHint": "このクライアントのトラフィックを指定プロファイル経由にします。未指定ならエンドポイント自身のルーティングに従います。",

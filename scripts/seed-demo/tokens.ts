@@ -19,7 +19,7 @@ const DAY_MS = 24 * 60 * MINUTE_MS
 
 interface TokenSpec {
   name: string
-  surface: string | null
+  surfaces: string[]
   profileKey: string | null
   requestCount: number
   expiresInDays: number | null
@@ -27,20 +27,38 @@ interface TokenSpec {
 }
 
 // Between them these cover every column the Access screen renders: an
-// unscoped long-lived token, one pinned to a surface AND a profile, one
-// with an expiry, and one revoked.
+// unscoped long-lived token, one pinned to a single surface AND a
+// profile, one pinned to two (the overflow count in the Endpoint cell
+// has nothing to draw otherwise), one with an expiry, and one revoked.
 const TOKENS: TokenSpec[] = [
-  { name: 'laptop (Claude Code)', surface: null, profileKey: null, requestCount: 1_284, expiresInDays: null, revoked: false },
+  {
+    name: 'laptop (Claude Code)',
+    surfaces: [],
+    profileKey: null,
+    requestCount: 1_284,
+    expiresInDays: null,
+    revoked: false
+  },
   {
     name: 'ci-pipeline',
-    surface: 'openai-chat',
+    surfaces: ['openai-chat'],
     profileKey: DEMO_PROFILE_KEY,
     requestCount: 412,
     expiresInDays: 30,
     revoked: false
   },
-  { name: 'scratch script', surface: null, profileKey: null, requestCount: 27, expiresInDays: 7, revoked: false },
-  { name: 'old laptop', surface: null, profileKey: null, requestCount: 903, expiresInDays: null, revoked: true }
+  // Codex speaks both, which is the case a single-surface pin could not
+  // express without giving the client an unscoped token.
+  {
+    name: 'codex-cli',
+    surfaces: ['openai-responses', 'openai-chat'],
+    profileKey: null,
+    requestCount: 738,
+    expiresInDays: null,
+    revoked: false
+  },
+  { name: 'scratch script', surfaces: [], profileKey: null, requestCount: 27, expiresInDays: 7, revoked: false },
+  { name: 'old laptop', surfaces: [], profileKey: null, requestCount: 903, expiresInDays: null, revoked: true }
 ]
 
 /** Returns the ids of the tokens traffic may be attributed to (not the revoked one). */
@@ -55,7 +73,7 @@ export async function seedAccessTokens(prisma: PrismaClient, random: Random, now
         name: spec.name,
         tokenHash: createHash('sha256').update(plaintext).digest('hex'),
         prefix: plaintext.slice(0, PREFIX.length + 6),
-        surface: spec.surface,
+        surfaces: spec.surfaces,
         profileKey: spec.profileKey,
         lastUsedAt: spec.revoked ? new Date(now - 9 * DAY_MS) : new Date(now - random.int(2, 240) * MINUTE_MS),
         requestCount: spec.requestCount,

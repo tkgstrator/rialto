@@ -155,7 +155,13 @@ export interface AccessTokenWire {
   name: string
   /** First characters only — identifies a token without being usable. */
   prefix: string
-  surface: string | null
+  /**
+   * Inbound surfaces this token may call. Empty means every surface —
+   * one client can legitimately speak more than one (Codex uses both
+   * /v1/responses and /v1/chat/completions), which a single id could
+   * only express by turning the scoping off.
+   */
+  surfaces: string[]
   profileKey: string | null
   lastUsedAt: string | null
   requestCount: number

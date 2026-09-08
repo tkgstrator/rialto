@@ -306,7 +306,8 @@ class ApiClient {
 
   async issueAccessToken(body: {
     name: string
-    surface?: SurfaceId | null
+    /** Omitted or empty issues a token that may call every surface. */
+    surfaces?: SurfaceId[]
     profileKey?: string | null
     expiresAt?: string | null
   }): Promise<{ token: AccessTokenWire; plaintext: string }> {

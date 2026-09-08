@@ -79,10 +79,13 @@ export function TokenDetail() {
     api
       .rotateAccessToken(token.id)
       .then((res) => {
-        const path = pathOf(res.token.surface)
+        const paths = res.token.surfaces.flatMap((id) => {
+          const found = pathOf(id)
+          return found === null ? [] : [found]
+        })
         setRevealed({
           plaintext: res.plaintext,
-          scope: path === null ? t('settings.access.allEndpoints') : path,
+          scope: paths.length === 0 ? t('settings.access.allEndpoints') : paths.join(', '),
           profile: res.token.profileKey === null ? t('settings.access.followEndpoint') : res.token.profileKey,
           expiry: res.token.expiresAt === null ? t('settings.access.never') : res.token.expiresAt.slice(0, 10)
         })
@@ -143,7 +146,12 @@ export function TokenDetail() {
 
   const state = tokenState(token, now)
   const pill = TOKEN_STATE_PILL[state]
-  const surfacePath = pathOf(token.surface)
+  // Every surface this token may reach, drawn in full — the detail page
+  // is where the whole list belongs, so nothing is collapsed to a count.
+  const surfacePaths = token.surfaces.flatMap((id) => {
+    const found = pathOf(id)
+    return found === null ? [] : [found]
+  })
 
   return (
     <Screen crumbs={[{ label: token.name }]}>
@@ -201,10 +209,14 @@ export function TokenDetail() {
         )}
 
         <SettingsField label={t('settings.access.colEndpoint')} hint={t('settings.access.issueEndpointHint')}>
-          {surfacePath === null ? (
+          {surfacePaths.length === 0 ? (
             <span className='text-[12px] text-muted-foreground'>{t('settings.access.allEndpoints')}</span>
           ) : (
-            <SurfacePill path={surfacePath} />
+            <div className='flex flex-wrap items-center gap-1.5'>
+              {surfacePaths.map((path) => (
+                <SurfacePill key={path} path={path} />
+              ))}
+            </div>
           )}
         </SettingsField>
 

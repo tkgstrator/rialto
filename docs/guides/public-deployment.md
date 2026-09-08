@@ -100,6 +100,22 @@ curl -s -X POST https://rialto.example.com/api/access-tokens \
 トークンには **面**（どのエンドポイントを叩けるか）と **ルーティングプロファイル**を
 紐づけられる。CI のトークンだけ `cost-first` に固定する、といった運用ができる。
 
+面は **複数指定できる**（`surfaces` は配列で、空なら全面）。1 つのクライアントが複数の面を
+使うことは珍しくない — Codex は `/v1/responses` と `/v1/chat/completions` の両方を叩くので、
+単一指定しかできなかった頃は「どちらかが 401 になる」か「面の指定を外す」かの二択だった。
+
+```bash
+curl -s -X POST https://rialto.example.com/api/access-tokens \
+  -H "X-API-Key: $APIKEY" -H 'content-type: application/json' \
+  -d '{"name":"codex","surfaces":["openai-responses","openai-chat"]}' | jq -r .plaintext
+```
+
+面の制限が掛かるのは**完了系のエンドポイントだけ**。`GET /v1/models` と
+`POST /v1/messages/count_tokens` はカタログ読み取りで、課金も発生せずサーフェス
+レジストリにも載っていないため、面を絞ったトークンでも通る。OpenAI SDK は最初に
+モデル一覧を取りに行くので、ここを塞ぐと「`/v1/chat/completions` に絞る」が
+「OpenAI SDK が使えない」と同義になってしまう。
+
 ### 漏れたトークンはローテートする（発行し直さない）
 
 Settings → Access のトークン行をクリックすると、そのトークンの詳細ページに入る。

@@ -144,17 +144,33 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
   })
 
   test('a freshly issued token resolves with its scope', async () => {
-    const { plaintext } = await issueAccessToken({ name: 'ci', surface: 'openai-chat', profileKey: 'cost-first' })
+    const { plaintext } = await issueAccessToken({
+      name: 'ci',
+      surfaces: ['openai-chat'],
+      profileKey: 'cost-first'
+    })
     const resolved = await resolveAccessToken(plaintext)
     expect(resolved?.name).toBe('ci')
-    expect(resolved?.surface).toBe('openai-chat')
+    expect(resolved?.surfaces).toEqual(['openai-chat'])
     expect(resolved?.profileKey).toBe('cost-first')
   })
 
-  test('an unscoped token resolves with nulls rather than defaults', async () => {
+  test('a token may be scoped to several surfaces at once', async () => {
+    // The case a single-surface pin could not express: Codex speaks both
+    // /v1/responses and /v1/chat/completions, so pinning it to either
+    // meant the other 401'd and the only way out was no scope at all.
+    const { plaintext } = await issueAccessToken({
+      name: 'codex',
+      surfaces: ['openai-responses', 'openai-chat']
+    })
+    const resolved = await resolveAccessToken(plaintext)
+    expect(resolved?.surfaces).toEqual(['openai-responses', 'openai-chat'])
+  })
+
+  test('an unscoped token resolves with an empty scope rather than defaults', async () => {
     const { plaintext } = await issueAccessToken({ name: 'anything' })
     const resolved = await resolveAccessToken(plaintext)
-    expect(resolved?.surface).toBeNull()
+    expect(resolved?.surfaces).toEqual([])
     expect(resolved?.profileKey).toBeNull()
   })
 
@@ -227,7 +243,7 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
   test('rotation swaps the secret and keeps everything else about the row', async () => {
     const { token, plaintext } = await issueAccessToken({
       name: 'ci',
-      surface: 'anthropic-messages',
+      surfaces: ['anthropic-messages'],
       profileKey: 'cost-first'
     })
     // A request against the original, so the row carries history worth
@@ -246,7 +262,7 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
     // would take the attribution with it.
     expect(result.issued.token.id).toBe(token.id)
     expect(result.issued.token.name).toBe('ci')
-    expect(result.issued.token.surface).toBe('anthropic-messages')
+    expect(result.issued.token.surfaces).toEqual(['anthropic-messages'])
     expect(result.issued.token.profileKey).toBe('cost-first')
     expect(result.issued.token.requestCount).toBe(41)
     expect(result.issued.token.createdAt).toBe(token.createdAt)

@@ -11,7 +11,7 @@
 import { useMemo } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { Pill, SurfacePill } from '@/components/rialto/primitives'
+import { Pill, SurfaceScope } from '@/components/rialto/primitives'
 import { WarnNotice } from '@/components/rialto/settings/notice'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
 import type { InboundSurfaceWire } from '@/lib/api'
@@ -33,11 +33,11 @@ import { fmtCost } from '@/lib/sessions/format'
 interface TokenRow {
   token: AccessTokenWire
   state: TokenState
-  /** Undefined when the token is scoped to every surface, not just one. */
-  surfacePath: string | undefined
+  /** Resolved display paths. Empty when the token may call every surface. */
+  surfacePaths: string[]
 }
 
-type TokenSortKey = 'name' | 'surface' | 'profile' | 'requests' | 'cost' | 'lastUsed' | 'expires'
+type TokenSortKey = 'name' | 'surface' | 'requests' | 'cost' | 'lastUsed' | 'expires'
 
 /**
  * Each column sorts on the value behind its own cell. The two date
@@ -50,8 +50,9 @@ type TokenSortKey = 'name' | 'surface' | 'profile' | 'requests' | 'cost' | 'last
  */
 const tokenSortValue = (row: TokenRow, key: TokenSortKey): SortValue => {
   if (key === 'name') return row.token.name
-  if (key === 'surface') return row.surfacePath
-  if (key === 'profile') return row.token.profileKey
+  // Ordered by the joined paths so the column sorts on what it draws:
+  // the first pill decides, and a longer scope tie-breaks after it.
+  if (key === 'surface') return row.surfacePaths.length === 0 ? null : row.surfacePaths.join(' ')
   if (key === 'requests') return row.token.requestCount
   // Unpriced traffic is a null, not a zero — it sorts last in both
   // directions rather than claiming the token was free.
@@ -67,7 +68,7 @@ const tokenSortValue = (row: TokenRow, key: TokenSortKey): SortValue => {
 
 function Row({ row, now, onOpen }: { row: TokenRow; now: number; onOpen: () => void }) {
   const { t } = useTranslation()
-  const { token, state, surfacePath } = row
+  const { token, state, surfacePaths } = row
   const dead = state !== 'active'
   return (
     <tr
@@ -82,14 +83,7 @@ function Row({ row, now, onOpen }: { row: TokenRow; now: number; onOpen: () => v
         <div className='font-mono text-[12px] text-muted-foreground'>{token.prefix}</div>
       </td>
       <td className='px-3'>
-        {surfacePath === undefined ? (
-          <span className='text-[12px] text-muted-foreground/50'>{t('settings.access.scopeAll')}</span>
-        ) : (
-          <SurfacePill path={surfacePath} />
-        )}
-      </td>
-      <td className='px-3 font-mono text-[12px] text-muted-foreground'>
-        {token.profileKey === null ? '—' : token.profileKey}
+        <SurfaceScope paths={surfacePaths} allLabel={t('settings.access.scopeAll')} />
       </td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCount(token.requestCount)}</td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCost(token.costUsd)}</td>
@@ -135,7 +129,10 @@ export function TokenTable({
       sortTokens(tokens, now).map((token) => ({
         token,
         state: tokenState(token, now),
-        surfacePath: surfaces.find((s) => s.id === token.surface)?.path
+        surfacePaths: token.surfaces.flatMap((id) => {
+          const found = surfaces.find((s) => s.id === id)
+          return found === undefined ? [] : [found.path]
+        })
       })),
     [tokens, surfaces, now]
   )
@@ -156,8 +153,8 @@ export function TokenTable({
     <table className='w-full table-fixed'>
       <colgroup>
         <col />
-        <col className='w-40' />
-        <col className='w-24' />
+        {/* Wider now that it may hold a pill plus an overflow count. */}
+        <col className='w-48' />
         <col className='w-20' />
         {/* Wide enough that "Cost 30d" stays on one line — a header that
             wraps makes the whole row two lines tall next to tables whose
@@ -176,9 +173,6 @@ export function TokenTable({
           </SortTh>
           <SortTh sortKey='surface' sort={sort} className='px-3 text-left'>
             {t('settings.access.colEndpoint')}
-          </SortTh>
-          <SortTh sortKey='profile' sort={sort} className='px-3 text-left'>
-            {t('settings.access.colProfile')}
           </SortTh>
           <SortTh sortKey='requests' sort={sort} className='px-3 text-right' align='right'>
             {t('settings.access.colRequests')}

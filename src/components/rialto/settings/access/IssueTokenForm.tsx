@@ -16,7 +16,8 @@ import { EXPIRY_CHOICES } from '@/lib/rialto/settings/access-tokens'
 
 export interface IssueDraft {
   name: string
-  surface: string
+  /** Empty selects every surface, which is what the wire's empty list means. */
+  surfaces: string[]
   profileKey: string
   expiry: string
 }
@@ -24,7 +25,7 @@ export interface IssueDraft {
 /** Sentinel for the "not scoped" option — the wire sends null for these. */
 export const ANY = ''
 
-export const emptyDraft = (): IssueDraft => ({ name: '', surface: ANY, profileKey: ANY, expiry: 'never' })
+export const emptyDraft = (): IssueDraft => ({ name: '', surfaces: [], profileKey: ANY, expiry: 'never' })
 
 const SELECT_CLASS =
   'inline-flex h-8 w-full max-w-md appearance-none items-center rounded-md border border-border bg-transparent pl-3 pr-8 font-mono text-xs transition-colors hover:bg-muted/60'
@@ -46,6 +47,62 @@ function Picker({
         {children}
       </select>
       <i className='ri-arrow-down-s-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground' />
+    </div>
+  )
+}
+
+const CHIP =
+  'inline-flex h-8 items-center rounded-md border px-3 font-mono text-xs transition-colors disabled:pointer-events-none'
+const CHIP_ON = 'border-foreground/40 bg-muted text-foreground'
+const CHIP_OFF = 'border-border text-muted-foreground hover:bg-muted/60'
+
+/**
+ * Which surfaces a token may call.
+ *
+ * Toggle chips rather than the `<select>` the other fields use, because
+ * this one answers "which of these four", not "which one". A multi
+ * `<select>` hides the answer behind a scroll box, and a popover
+ * multi-combobox is a lot of machinery for a fixed list of four.
+ *
+ * "All endpoints" is an explicit chip rather than the absence of a
+ * choice: the wire says "empty means every surface", and leaving the row
+ * blank to mean the broadest possible scope is the kind of default
+ * nobody reads. Picking it clears the rest; picking any specific surface
+ * clears it.
+ */
+function SurfacePicker({
+  surfaces,
+  selected,
+  onChange,
+  allLabel
+}: {
+  surfaces: InboundSurfaceWire[]
+  selected: string[]
+  onChange: (next: string[]) => void
+  allLabel: string
+}) {
+  const toggle = (id: string) => {
+    onChange(selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id])
+  }
+  return (
+    <div className='flex flex-wrap gap-2'>
+      <button
+        type='button'
+        onClick={() => onChange([])}
+        className={`${CHIP} ${selected.length === 0 ? CHIP_ON : CHIP_OFF}`}
+      >
+        {allLabel}
+      </button>
+      {surfaces.map((s) => (
+        <button
+          key={s.id}
+          type='button'
+          onClick={() => toggle(s.id)}
+          className={`${CHIP} ${selected.includes(s.id) ? CHIP_ON : CHIP_OFF}`}
+        >
+          {s.path}
+        </button>
+      ))}
     </div>
   )
 }
@@ -83,14 +140,12 @@ export function IssueTokenForm({
       </SettingsField>
 
       <SettingsField label={t('settings.access.issueEndpoint')} hint={t('settings.access.issueEndpointHint')}>
-        <Picker label={t('settings.access.issueEndpoint')} value={draft.surface} onChange={(v) => set('surface', v)}>
-          <option value={ANY}>{t('settings.access.allEndpoints')}</option>
-          {surfaces.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.path}
-            </option>
-          ))}
-        </Picker>
+        <SurfacePicker
+          surfaces={surfaces}
+          selected={draft.surfaces}
+          onChange={(next) => set('surfaces', next)}
+          allLabel={t('settings.access.allEndpoints')}
+        />
       </SettingsField>
 
       <SettingsField label={t('settings.access.issueProfile')} hint={t('settings.access.issueProfileHint')}>

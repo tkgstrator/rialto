@@ -220,6 +220,31 @@ export function SurfacePill({ path }: { path: string }) {
 }
 
 /**
+ * "Which surfaces may this reach", in one narrow column.
+ *
+ * A token can be pinned to several — one client legitimately speaks more
+ * than one — but the column it lands in is a table cell, so only the
+ * first is drawn in full and the rest become a count. The `title` keeps
+ * the whole list one hover away rather than wrapping the row to two
+ * lines, which is what listing four paths inline did.
+ *
+ * An empty list is "every surface", drawn muted: it is the absence of a
+ * restriction, not a value.
+ */
+export function SurfaceScope({ paths, allLabel }: { paths: readonly string[]; allLabel: string }) {
+  if (paths.length === 0) return <span className='text-[12px] text-muted-foreground/50'>{allLabel}</span>
+  const [first, ...rest] = paths
+  return (
+    <span className='inline-flex items-center gap-1' title={paths.join(' · ')}>
+      <SurfacePill path={first} />
+      {rest.length === 0 ? null : (
+        <span className='shrink-0 font-mono text-[12px] text-muted-foreground/70'>+{rest.length}</span>
+      )}
+    </span>
+  )
+}
+
+/**
  * Chip for "which surfaces does this apply to".
  *
  * Renders as a button only when it does something. Several screens show
