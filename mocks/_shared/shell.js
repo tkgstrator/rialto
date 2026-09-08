@@ -590,6 +590,19 @@ const SETTINGS_RAIL = [
  * reached from the chain's own header.
  */
 const SUBNAV = {
+  // Two lists, not two screens' worth of settings: a subscription and an
+  // API key are configured, read and worried about differently — one has
+  // accounts, plans and a quota that runs out, the other has a secret and
+  // a price list — and the columns that answer "is this one healthy"
+  // share almost nothing. They were one screen behind an 18rem rail that
+  // grouped them under two headings anyway; this is that rail, in the
+  // sidebar, where the app already keeps its second level. Removing it
+  // gives the detail pane back 288px, which is what the model table and
+  // the account rows were short of.
+  providers: [
+    { id: 'subscriptions', label: 'Subscriptions', icon: 'ri-shield-user-line', href: 'providers.html' },
+    { id: 'api-keys', label: 'API keys', icon: 'ri-key-line', href: 'providers-keys.html' }
+  ],
   activity: [
     { id: 'sessions', label: 'Sessions', icon: 'ri-chat-1-line', href: 'activity.html' },
     { id: 'requests', label: 'Requests', icon: 'ri-exchange-line', href: 'activity-requests.html' },
@@ -623,8 +636,8 @@ const EXPANDABLE = {
   flat: [],
   accordion: ['settings'],
   drilldown: [],
-  tree: ['activity', 'settings'],
-  cloudflare: ['activity', 'settings']
+  tree: ['providers', 'activity', 'settings'],
+  cloudflare: ['providers', 'activity', 'settings']
 }
 
 /**
@@ -862,44 +875,79 @@ const activityTabs = (active) =>
 /**
  * Providers master rail, shared by both detail mocks.
  *
- * The two screens exist because a subscription and an api_key provider
- * hold different things, not because they are different screens — so the
- * rail is one list and picking a row crosses between them. The mock has
- * one detail of each kind, which is why every subscription row lands on
- * providers.html and every key row on providers-apikey.html.
+ * The two lists exist because a subscription and an api_key provider
+ * hold different things: accounts, a plan and a window that runs out on
+ * one side, a secret and a price list on the other. The mock has one
+ * detail of each kind, which is why every subscription row lands on
+ * provider-subscription.html and every key row on provider-apikey.html.
  */
 const PROVIDER_ROWS = [
-  { id: 'claude-code', label: 'Claude Code', vendor: 'Anthropic', auth: 'subscription', plan: 'Max',    models: '6 / 7',  quota: 71, state: 'live' },
-  { id: 'codex',       label: 'Codex',       vendor: 'OpenAI',    auth: 'subscription', plan: 'Pro',    models: '1 / 4',  quota: 88, state: 'live' },
-  { id: 'gemini-cli',  label: 'Gemini CLI',  vendor: 'Google',    auth: 'subscription', plan: 'AI Pro', models: '3 / 5',  quota: 12, state: 'invalid' },
-  { id: 'anthropic',   label: 'Anthropic',   vendor: 'Anthropic', auth: 'api_key', plan: null, models: '4 / 12', quota: null, state: 'live' },
-  { id: 'openai',      label: 'OpenAI',      vendor: 'OpenAI',    auth: 'api_key', plan: null, models: '5 / 18', quota: null, state: 'live' },
-  { id: 'google',      label: 'Google',      vendor: 'Google',    auth: 'api_key', plan: null, models: '4 / 9',  quota: null, state: 'live' },
-  { id: 'deepseek',    label: 'DeepSeek',    vendor: 'DeepSeek',  auth: 'api_key', plan: null, models: '0 / 3',  quota: null, state: 'unknown' }
+  { id: 'claude-code', label: 'Claude Code', vendor: 'Anthropic', auth: 'subscription', plan: 'Max',    accounts: 2, key: null, models: '6 / 7',  quota: 71, state: 'live' },
+  { id: 'codex',       label: 'Codex',       vendor: 'OpenAI',    auth: 'subscription', plan: 'Pro',    accounts: 1, key: null, models: '1 / 4',  quota: 88, state: 'live' },
+  { id: 'gemini-cli',  label: 'Gemini CLI',  vendor: 'Google',    auth: 'subscription', plan: 'AI Pro', accounts: 1, key: null, models: '3 / 5',  quota: 12, state: 'invalid' },
+  { id: 'anthropic',   label: 'Anthropic',   vendor: 'Anthropic', auth: 'api_key', host: 'api.anthropic.com', plan: null, accounts: 0, key: 'sk-ant-··········a91f', models: '4 / 12', quota: null, state: 'live' },
+  { id: 'openai',      label: 'OpenAI',      vendor: 'OpenAI',    auth: 'api_key', host: 'api.openai.com', plan: null, accounts: 0, key: 'sk-proj-··········7c02', models: '5 / 18', quota: null, state: 'live' },
+  { id: 'google',      label: 'Google',      vendor: 'Google',    auth: 'api_key', host: 'generativelanguage.googleapis.com', plan: null, accounts: 0, key: 'AIza··········be44', models: '4 / 9',  quota: null, state: 'live' },
+  { id: 'deepseek',    label: 'DeepSeek',    vendor: 'DeepSeek',  auth: 'api_key', host: 'api.deepseek.com', plan: null, accounts: 0, key: 'not set', models: '0 / 3',  quota: null, state: 'unknown' }
 ]
 
 const PROVIDER_STATE_TONE = { live: 'ok', invalid: 'bad', unknown: 'mute' }
 
-const providerRow = (p, activeId) => {
-  const on = p.id === activeId
-  const href = p.auth === 'subscription' ? 'providers.html' : 'providers-apikey.html'
+const providerTable = (auth) => {
+  const rows = PROVIDER_ROWS.filter((p) => p.auth === auth)
+  const sub = auth === 'subscription'
+  // The two lists answer the same question — "is this one healthy, and
+  // what can it serve" — with the facts each kind actually has. A
+  // subscription has a plan, accounts and a quota that runs out; an API
+  // key has a secret and nothing that expires on its own. Giving both
+  // the union of those columns would mean four dashes per row on one
+  // side and three on the other.
+  const head = sub
+    ? `${sortTh('Provider', 'pl-6 pr-3')}${sortTh('Plan', 'px-3')}${sortTh('Accounts', 'px-3', 'right')}${sortTh('Quota', 'px-3', 'right', true, 'desc')}${sortTh('Models', 'px-3', 'right')}${sortTh('State', 'px-3', 'right')}`
+    : `${sortTh('Provider', 'pl-6 pr-3')}${sortTh('Key', 'px-3')}${sortTh('Models', 'px-3', 'right')}${sortTh('State', 'px-3', 'right')}`
+  const cols = sub
+    ? '<col><col class="w-24"><col class="w-24"><col class="w-40"><col class="w-24"><col class="w-24"><col class="w-10">'
+    : '<col><col class="w-56"><col class="w-24"><col class="w-24"><col class="w-10">'
+  const row = (p) => `
+    <tr ${navTo(sub ? 'provider-subscription.html' : 'provider-apikey.html')} class="cursor-pointer border-t border-border/60 transition-colors hover:bg-muted/50">
+      <td class="py-2.5 pl-6 pr-3">
+        <div class="text-xs font-medium">${p.label}</div>
+        <!-- The vendor under a subscription (Claude Code is Anthropic's,
+             and the two names are not the same word), the host under an
+             API key (where they are: an "Anthropic / Anthropic" row says
+             nothing twice, and the URL a key is spent against is the
+             fact that identifies it). -->
+        <div class="${sub ? '' : 'font-mono '}text-[12px] text-muted-foreground">${sub ? p.vendor : p.host}</div>
+      </td>
+      ${
+        sub
+          ? `<td class="px-3">${pill(p.plan, 'info')}</td>
+      <td class="px-3 text-right font-mono text-xs tabular-nums">${p.accounts}</td>
+      <td class="px-3">
+        <div class="flex items-center gap-2">
+          <div class="min-w-0 flex-1">${meter(p.quota)}</div>
+          <span class="shrink-0 font-mono text-[12px] tabular-nums text-muted-foreground">${p.quota}%</span>
+        </div>
+      </td>`
+          : `<td class="px-3 font-mono text-[12px] text-muted-foreground">${p.key}</td>`
+      }
+      <td class="px-3 text-right font-mono text-xs tabular-nums">${p.models}</td>
+      <td class="px-3 text-right">${pill(p.state, PROVIDER_STATE_TONE[p.state])}</td>
+      <td class="py-2.5 pl-3 pr-6">
+        <div class="flex justify-end text-muted-foreground/50"><i class="ri-arrow-right-s-line text-base"></i></div>
+      </td>
+    </tr>`
   return `
-  <button ${navTo(href)} class="block w-full border-l-2 px-4 py-3 text-left transition-colors ${
-    on ? 'border-l-foreground bg-muted/60' : 'border-l-transparent hover:border-l-border hover:bg-muted/50'
-  }">
-    <div class="flex items-center gap-2">
-      <span class="text-xs font-medium">${p.label}</span>
-      ${p.plan ? pill(p.plan, 'info') : ''}
-      <span class="ml-auto font-mono text-[12px] tabular-nums text-muted-foreground">${p.models}</span>
-    </div>
-    <div class="mt-1 flex items-center gap-2 text-[12px] text-muted-foreground">
-      <span>${p.auth === 'subscription' ? 'OAuth' : 'API key'}</span>
-      <span class="opacity-40">·</span>
-      <span>${p.vendor}</span>
-      <span class="ml-auto">${pill(p.state, PROVIDER_STATE_TONE[p.state])}</span>
-    </div>
-    ${p.quota === null ? '' : `<div class="mt-2">${meter(p.quota)}</div>`}
-  </button>`
+  <table class="w-full table-fixed">
+    <colgroup>${cols}</colgroup>
+    <thead>
+      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
+        ${head}
+        <th class="pl-3 pr-6"></th>
+      </tr>
+    </thead>
+    <tbody>${rows.map(row).join('')}</tbody>
+  </table>`
 }
 
 /**
@@ -948,25 +996,10 @@ const pager = ({ first, last, total, hasPrev = true, hasNext = true, compact = f
   </div>`
 }
 
-const providerRail = (activeId) => `
-  <div class="flex items-center gap-2 px-4 pt-5 pb-2">
-    <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Subscriptions</h2>
-    <span class="ml-auto font-mono text-[12px] text-muted-foreground">3</span>
-  </div>
-  ${PROVIDER_ROWS.filter((p) => p.auth === 'subscription').map((p) => providerRow(p, activeId)).join('')}
-
-  <div class="mt-2 flex items-center gap-2 border-t border-border px-4 pt-5 pb-2">
-    <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">API keys</h2>
-    <span class="ml-auto font-mono text-[12px] text-muted-foreground">4</span>
-  </div>
-  ${PROVIDER_ROWS.filter((p) => p.auth === 'api_key').map((p) => providerRow(p, activeId)).join('')}
-
-  <div class="p-4">${btn('Add provider', 'outline', 'ri-add-line', 'providers-connect.html')}</div>`
-
   global.Shell = {
     renderShell, ROW, section, dialog, pill, mono, meter, btn, pager,
     tabs, railItem, SETTINGS_RAIL,
-    navTo, activityTabs, providerRail, tierCell, effortCell, sortTh, toast,
+    navTo, activityTabs, providerTable, tierCell, effortCell, sortTh, toast,
     SURFACES, surfacePill, surfaceChip, ACCESS_TOKENS, tokenTable,
     toggleTheme, currentTheme
   }

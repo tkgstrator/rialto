@@ -57,7 +57,7 @@ const REACHABLE = [
 // leads to the provider that has to be configured for it to resolve.
 const SUBSCRIPTION_PROVIDERS = ['claude-code', 'codex', 'gemini-cli']
 const providerHref = (t) =>
-  SUBSCRIPTION_PROVIDERS.includes(t.split(',')[0]) ? 'providers.html' : 'providers-apikey.html'
+  SUBSCRIPTION_PROVIDERS.includes(t.split(',')[0]) ? 'provider-subscription.html' : 'provider-apikey.html'
 
 const row = (e) => `
   <tr ${navTo(providerHref(e.target))} class="border-t border-border/60 transition-colors hover:bg-muted/50">

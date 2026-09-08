@@ -35,16 +35,30 @@
     {
       "name": "providers",
       "mock": "providers.html",
-      "route": "/providers/claude-code",
+      "route": "/providers/subscriptions",
       "group": "Providers",
-      "note": "Subscription provider detail. Absorbs Subscriptions + SubscriptionAccountsPanel."
+      "note": "Subscriptions list. Providers gained two sub-entries because its 18rem rail already grouped them under these two headings, and that rail cost the detail pane 288px it needed — account emails truncated, six price columns collapsed to dashes. Quota is the column this list exists for: a subscription is the only provider kind that stops serving without anyone changing anything."
     },
     {
-      "name": "providers-apikey",
-      "mock": "providers-apikey.html",
+      "name": "providers-keys",
+      "mock": "providers-keys.html",
+      "route": "/providers/api-keys",
+      "group": "Providers",
+      "note": "API keys list. Different columns from Subscriptions on purpose — a key has a secret and a price list where a subscription has accounts, a plan and a window that runs out, and the union would be four dashes per row on one side. 'not set' is a real row: a provider can exist with no key, and that is why its models never answer."
+    },
+    {
+      "name": "provider-subscription",
+      "mock": "provider-subscription.html",
+      "route": "/providers/claude-code",
+      "group": "Providers",
+      "note": "One subscription provider: accounts, request shape, models. Full width now that the rail is gone — reached from the Subscriptions list, back via the breadcrumb, the same way a token detail works."
+    },
+    {
+      "name": "provider-apikey",
+      "mock": "provider-apikey.html",
       "route": "/providers/openai",
       "group": "Providers",
-      "note": "API-key provider detail — key field, real prices, per-model apiStyle override."
+      "note": "One API-key provider — masked key, real prices, per-model apiStyle override. Full width for the same reason as provider-subscription."
     },
     {
       "name": "providers-connect",

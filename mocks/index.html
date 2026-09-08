@@ -51,15 +51,27 @@ const GROUPS = [
     "screens": [
       {
         "file": "providers.html",
-        "title": "Subscription",
-        "replaces": "Providers / Subscriptions / ModelsDashboard / Transformers / catalog",
-        "why": "左でプロバイダ、右でアカウントとモデル。transformer 選択欄は廃止し、apiStyle から導出した読み取り専用の Request shape にした。"
+        "title": "Subscriptions",
+        "replaces": "Providers / Subscriptions / ProviderRail の上半分",
+        "why": "18rem のレールをサイドバーのサブメニューに移した。レールは元々この2見出しで分けていただけなので、列を1本減らして詳細に288px返した。クォータはこの一覧の存在理由：誰も何も変えていないのに供給が止まる唯一の種類なので、状態バッジではなくメーターと数字を出す。"
       },
       {
-        "file": "providers-apikey.html",
-        "title": "API key",
+        "file": "providers-keys.html",
+        "title": "API keys",
+        "replaces": "ProviderRail の下半分",
+        "why": "サブスクとは持っている事実が違う（キーと価格 / アカウントと期限）ので列も違う。両方の和集合にすると片側は毎行ダッシュ4つになる。「not set」は実在する行：キーの無いプロバイダは作れて、それがモデルの答えない理由。"
+      },
+      {
+        "file": "provider-subscription.html",
+        "title": "Subscription detail",
+        "replaces": "Providers / Subscriptions / ModelsDashboard / Transformers / catalog",
+        "why": "アカウントとモデル。レールが無くなって全幅になり、切り詰めていたアカウントのメールアドレスとモデル表の価格列がそのまま入る。transformer 選択欄は廃止し、apiStyle から導出した読み取り専用の Request shape にした。"
+      },
+      {
+        "file": "provider-apikey.html",
+        "title": "API key detail",
         "replaces": "EditProviderDialog / ApiKeyModelsSection",
-        "why": "サブスクとは中身が違う（キー欄・実価格・モデル数）ので別モック。価格は in / cached / out を独立列に。"
+        "why": "サブスクとは中身が違う（キー欄・実価格・モデル数）ので別モック。価格は in / cached / out を独立列に。こちらも全幅。"
       },
       {
         "file": "providers-connect.html",

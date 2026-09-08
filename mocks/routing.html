@@ -100,7 +100,7 @@ const stateTone = { ready: 'ok', throttled: 'warn', exhausted: 'bad', unknown: '
 // screen per auth mode, so the vendor half of the pair picks which.
 const SUBSCRIPTION_PROVIDERS = ['claude-code', 'codex', 'gemini-cli']
 const providerHref = (t) =>
-  SUBSCRIPTION_PROVIDERS.includes(t.split(',')[0]) ? 'providers.html' : 'providers-apikey.html'
+  SUBSCRIPTION_PROVIDERS.includes(t.split(',')[0]) ? 'provider-subscription.html' : 'provider-apikey.html'
 
 // The model half of "provider,model", unless another row in the lane
 // carries the same model under a different provider.
@@ -235,7 +235,7 @@ document.getElementById('root').innerHTML = `
       ${constraint(
         'Tier respect',
         'sonnet',
-        'never fall below this tier. A target whose tier is unknown is not held by it — set one in <a href="providers-apikey.html" class="underline underline-offset-2">Providers</a>.'
+        'never fall below this tier. A target whose tier is unknown is not held by it — set one in <a href="provider-apikey.html" class="underline underline-offset-2">Providers</a>.'
       )}
       ${constraint('Healthiness floor', '95%', 'skip targets below this')}
       ${constraint('When exhausted', 'next', 'next / wait / error')}
