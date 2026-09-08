@@ -177,6 +177,11 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
         }
       />
 
+      {/* The panel replaces the FORM, never the list. Naming a token is
+          a decision made against the ones that already exist — "MacBook
+          — Claude Code" being taken is exactly what you need to see —
+          and after issuing, the new row is the answer to "where did it
+          go". Replacing the table took both away. */}
       {revealed !== null ? (
         <IssuedTokenPanel {...revealed} onDone={() => setRevealed(null)} />
       ) : draft !== null ? (
@@ -189,8 +194,10 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
           onSubmit={issue}
           onCancel={() => setDraft(null)}
         />
-      ) : (
-        <>
+      ) : null}
+
+      <>
+        {draft === null && revealed === null ? (
           <div className='px-6 pb-4'>
             <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
               <i className='ri-information-line mr-1 align-[-1px]' />
@@ -214,9 +221,12 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
               </p>
             </div>
           </div>
-          <TokenTable tokens={listed} surfaces={surfaces} now={now} />
-        </>
-      )}
+        ) : null}
+        {/* The note is hidden while a panel is open — it explains the
+            table to someone reading it, and there is a form in the way —
+            but the table itself stays. */}
+        <TokenTable tokens={listed} surfaces={surfaces} now={now} />
+      </>
     </>
   )
 }
