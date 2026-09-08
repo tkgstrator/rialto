@@ -66,7 +66,7 @@
       "mock": "access-tokens.html",
       "route": "/access-tokens",
       "group": "Access tokens",
-      "note": "Per-client credentials for /v1/*. Top level rather than under Settings: Providers is outbound, this is the same question inbound, and a list carrying per-token spend, rotation and revocation is operations rather than configuration. KNOWN DIFF ~6%: the mock draws the issue form open so a reviewer can judge it without clicking; the route opens with it closed. State, not design — the table columns and the note below it line up."
+      "note": "Per-client credentials for /v1/*. Top level rather than under Settings: Providers is outbound, this is the same question inbound, and a list carrying per-token spend, rotation and revocation is operations rather than configuration. The issue form and the one-time reveal are in access-token-issue.html."
     },
     {
       "name": "access-token",
@@ -74,6 +74,13 @@
       "route": "/access-tokens/demo-token-00002",
       "group": "Access tokens",
       "note": "One token's own page: rotate, re-scope, revoke. Reached by clicking a row, which is where those actions used to live — as row actions they sat one mis-aimed click from every row of a table of live credentials. Route needs `bun run db:seed:demo`, whose token ids are deterministic; without it the capture lands on the not-found state."
+    },
+    {
+      "name": "access-token-issue",
+      "mock": "access-token-issue.html",
+      "route": null,
+      "group": "Access tokens",
+      "note": "The two states of issuing: the form, and the one-time reveal that replaces it. Route is null because both are states of /access-tokens rather than paths of their own — the screen opens on the list, and drawing the form there put a creation form in front of anyone who came to read the list."
     },
     {
       "name": "activity",

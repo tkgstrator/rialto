@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rialto — Issue token</title>
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/inter/index.css">
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/geist-mono/index.css">
+<link rel="stylesheet" href="../node_modules/remixicon/fonts/remixicon.css">
+<link rel="stylesheet" href="_shared/mock.build.css">
+<script src="_shared/shell.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const { renderShell, pill, btn, SURFACES, surfaceChip } = window.Shell
+
+
+// One row of the issue form. `placeholder` is the empty-input state (the
+// operator has not typed a name yet); `select` is the impl's picker — a
+// bordered box with a chevron, monospace because every value in it is a
+// path or a profile key.
+const issueField = (label, hint, value, kind) => `
+  <div class="grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4">
+    <div>
+      <div class="text-xs font-medium">${label}</div>
+      <div class="mt-0.5 text-[12px] leading-snug text-muted-foreground">${hint}</div>
+    </div>
+    <div class="relative inline-flex w-full max-w-md">
+      <div class="flex h-8 w-full items-center rounded-md border border-border pl-3 pr-8 font-mono text-xs ${
+        kind === 'placeholder' ? 'text-muted-foreground/50' : ''
+      }">${value}</div>
+      ${
+        kind === 'select'
+          ? '<i class="ri-arrow-down-s-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"></i>'
+          : ''
+      }
+    </div>
+  </div>`
+document.getElementById('root').innerHTML = `
+  <div class="min-w-0">
+
+      <!-- Both states of issuing, on one page so a reviewer can judge
+           them without clicking. They are states of the Access tokens
+           screen, not a route of their own: it opens on the list, and
+           the form replaces the table when Issue token is pressed. -->
+           routing profile — were never shown as decisions. Both lists come
+           from the server (/api/inbound-surfaces, the profile list); none
+           of it is hardcoded. -->
+      <div class="border-t border-border">
+        ${issueField('Name', 'How this client is identified in the list and in Activity.', 'MacBook — Claude Code', 'placeholder')}
+        <!-- Chips, not a select: the question is "which of these four",
+             not "which one", and the same control already asks it in
+             Routing -> Rules and in Personas. "All endpoints" is an
+             explicit chip rather than the absence of a choice, because
+             leaving a row blank to mean the broadest possible scope is
+             the kind of default nobody reads. -->
+        <div class="grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4">
+          <div>
+            <div class="text-xs font-medium">Endpoint</div>
+            <div class="mt-0.5 text-[12px] leading-snug text-muted-foreground">
+              Pick the endpoints this token may call. Choose several when one client speaks more than
+              one — Codex uses both <span class="font-mono">/v1/responses</span> and
+              <span class="font-mono">/v1/chat/completions</span>. All endpoints leaves it unrestricted.
+            </div>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            ${surfaceChip('all endpoints', false)}
+            ${SURFACES.map((s, i) => surfaceChip(s.path, i === 1 || i === 2)).join('')}
+          </div>
+        </div>
+        ${issueField('Routing profile', 'Route this client’s traffic through a named profile. Unset follows the endpoint’s own routing.', 'follow the endpoint', 'select')}
+        ${issueField('Expires', 'A bounded token limits the damage if it leaks. Revoke works either way.', '90 days', 'select')}
+        <div class="flex items-center gap-2 border-t border-border/60 px-6 py-4">
+          ${btn('Issue token', 'primary', 'ri-add-line')}
+          ${btn('Cancel', 'ghost', '')}
+          <span class="ml-3 text-[12px] text-muted-foreground">
+            The token is shown once, immediately after issuing, and never again.
+          </span>
+        </div>
+      </div>
+
+      <!-- Second state: the one-time reveal. It replaces the form the
+           moment the token exists, because the plaintext is in exactly
+           one response and dismissing the panel is the last chance to
+           copy it. -->
+      <div class="px-6 py-8">
+        <div class="mx-auto max-w-lg rounded-lg border border-border bg-popover p-5 shadow-sm">
+          <div class="flex items-center gap-2">
+            <h3 class="text-sm font-semibold">Token issued</h3>
+            ${pill('copy it now', 'warn')}
+          </div>
+          <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
+            This is the only time the full token is shown. Rialto stores a digest, so it cannot be
+            recovered — only replaced.
+          </p>
+          <div class="mt-3 flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2">
+            <span class="flex-1 truncate font-mono text-xs">rlt_a91f4c7e20b8d5169fa3e84c07b21d6f</span>
+            <button class="text-muted-foreground hover:text-foreground"><i class="ri-file-copy-line text-sm"></i></button>
+          </div>
+          <div class="mt-4 space-y-2">
+            <div class="flex items-baseline gap-3">
+              <span class="text-[12px] text-muted-foreground">Scope</span>
+              <span class="ml-auto font-mono text-[12px]">proxy</span>
+            </div>
+            <div class="flex items-baseline gap-3">
+              <span class="text-[12px] text-muted-foreground">Endpoint</span>
+              <span class="ml-auto font-mono text-[12px]">/v1/messages</span>
+            </div>
+            <div class="flex items-baseline gap-3">
+              <span class="text-[12px] text-muted-foreground">Routing profile</span>
+              <span class="ml-auto font-mono text-[12px]">live</span>
+            </div>
+          </div>
+          <div class="mt-4 flex justify-end gap-2">
+            ${btn('Done', 'primary', 'ri-check-line')}
+          </div>
+        </div>
+      </div>
+
+      <div class="h-8"></div>
+
+      <div class="h-8"></div>
+  </div>`
+
+renderShell({
+  active: 'access-tokens',
+  navMode: 'cloudflare',
+  crumbs: ['Issue token'],
+  subtitle: 'The two states of issuing a credential'
+})
+</script>
+</body>
+</html>
