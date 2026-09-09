@@ -96,6 +96,12 @@ export class OpenAIResponsesTransformer extends Transformer {
     // Defence in depth — an earlier chain step (OpenAITransformer) may have
     // renamed max_tokens to max_completion_tokens for newer gpt-5.x models.
     // Responses API uses neither; drop it.
+    //
+    // Note we do not re-emit the cap as `max_output_tokens` either. The
+    // Responses upstream this chain feeds is the codex/ChatGPT backend,
+    // which allow-lists top-level params and 400s on `max_output_tokens`
+    // ("Unsupported parameter"). Dropping the cap costs a ceiling; sending
+    // it costs the whole request.
     delete (responsesReq as { max_completion_tokens?: unknown }).max_completion_tokens
 
     // Manual per-model effort override wins over whatever the client
