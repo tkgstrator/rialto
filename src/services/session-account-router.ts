@@ -12,7 +12,8 @@
  *      window. Any of those at 100% guarantees an upstream 429, so we
  *      pre-empt to a peer account.
  *   3. From the surviving candidates, reuse the sticky-session mapping
- *      if it still points at one of them (prompt-cache continuity).
+ *      for this request's slot if it still points at one of them
+ *      (prompt-cache continuity).
  *   4. Otherwise pick the account with the HIGHEST required burn rate
  *      across the weekly windows it actually reports:
  *      pctRemaining / timeRemainingMs, taken as the MINIMUM over those
@@ -32,9 +33,19 @@
  * the durable source of truth across server restarts and multiple
  * instances. The in-process sticky-session map is best-effort only and
  * is allowed to reset on restart.
+ *
+ * The sticky is held per SLOT rather than per session, because which
+ * accounts are eligible depends on the model (see `windowBinds`) and on
+ * the kind. One slot per session made a single Fable call — the one
+ * request whose per-model window was spent — repick and then drag the
+ * session's Sonnet traffic onto the new account too, even though the
+ * original served Sonnet fine; and it made a session that touches both
+ * a claude and a codex provider evict its own mapping on every
+ * alternation, since the two pools share no accounts.
  */
 
 import dayjs from '../lib/dayjs'
+import { tierOf } from '../llms/scenario-router/request-signals'
 import { isAccountExhausted } from './failover-state'
 import {
   type AccountUsageMap,
@@ -46,8 +57,17 @@ import {
 } from './subaccount-usage-store'
 import { getSubAccountTokensForKind, type SubAccountTokenInfo } from './subscription-account-sync-service'
 
-// sessionId → subAccountId
-const sessionMap = new Map<string, string>()
+// sessionId → (slot → subAccountId). See the header comment for why the
+// sticky is slotted rather than one pointer per session.
+const sessionMap = new Map<string, Map<string, string>>()
+
+// sessionId → the account most recently handed out for that session, in
+// any slot. The reactive 429 path asks "which account did the request
+// that just failed use", and the slotted map above cannot answer that on
+// its own: the failing request's slot is not a handle the failover path
+// has. Kept as a separate map rather than derived so the answer is the
+// account actually returned, including on the single-candidate path.
+const lastResolved = new Map<string, string>()
 
 // An account's windows are not all about the same thing, and which ones
 // speak for a given request depends on the model it asks for.
@@ -129,9 +149,32 @@ const pickedAtOf = (subAccountId: string): number => {
   return at === undefined ? 0 : at
 }
 
-const remember = (account: SubAccountTokenInfo, now: number): SubAccountTokenInfo => {
+const remember = (sessionId: string, account: SubAccountTokenInfo, now: number): SubAccountTokenInfo => {
   lastPickedAt.set(account.subAccountId, now)
+  lastResolved.set(sessionId, account.subAccountId)
   return account
+}
+
+// The sticky slot this request belongs to. Codex meters only
+// account-wide windows, so all of its traffic shares one slot; claude's
+// per-model weekly windows are metered per tier, which is exactly the
+// granularity at which eligibility — and therefore a repick — can
+// differ. A model no tier can be read off shares the account-wide slot:
+// with no tier there is no per-model window to bind, so it passes the
+// same gates as account-wide traffic anyway.
+const slotOf = (kind: 'claude' | 'codex', requestedModel: string | undefined): string => {
+  if (kind === 'codex') return 'codex'
+  const tier = requestedModel === undefined ? undefined : tierOf(requestedModel)
+  return tier === undefined ? 'claude' : `claude:${tier}`
+}
+
+const setSticky = (sessionId: string, slot: string, subAccountId: string): void => {
+  const slots = sessionMap.get(sessionId)
+  if (slots === undefined) {
+    sessionMap.set(sessionId, new Map([[slot, subAccountId]]))
+    return
+  }
+  slots.set(slot, subAccountId)
 }
 
 // Whether the account has at least one window that binds for THIS
@@ -248,17 +291,27 @@ export async function resolveAccountForSession(
   // worse than letting the request go out.
   const accounts = usable.length > 0 ? usable : notExhausted.length > 0 ? notExhausted : all
 
-  if (accounts.length === 1) return remember(accounts[0], now)
-
-  const cached = sessionMap.get(sessionId)
-  if (cached) {
-    const found = accounts.find((a) => a.subAccountId === cached)
-    if (found) return remember(found, now)
-    // Previously-chosen account is no longer in the candidate set (either
-    // disabled, reactively-exhausted, or DB-marked hard-limit). Repick —
-    // and drop the sticky so a future request doesn't latch back onto the
-    // dead choice on a stale read.
-    sessionMap.delete(sessionId)
+  // A single candidate still goes through the sticky bookkeeping below
+  // rather than short-circuiting here. Returning early skipped the write,
+  // which left `lastResolved` pointing at whichever account the session
+  // used BEFORE the pool narrowed — so a 429 on this request marked the
+  // wrong account exhausted and the rotation never moved, and once the
+  // pool widened again the stale sticky pulled the session back onto its
+  // old account mid-conversation.
+  const slot = slotOf(kind, requestedModel)
+  const slots = sessionMap.get(sessionId)
+  if (slots !== undefined) {
+    const cached = slots.get(slot)
+    if (cached !== undefined) {
+      const found = accounts.find((a) => a.subAccountId === cached)
+      if (found) return remember(sessionId, found, now)
+      // Previously-chosen account is no longer in the candidate set (either
+      // disabled, reactively-exhausted, or DB-marked hard-limit). Repick —
+      // and drop the sticky so a future request doesn't latch back onto the
+      // dead choice on a stale read. Only THIS slot is dropped: the account
+      // may still be the right answer for the session's other models.
+      slots.delete(slot)
+    }
   }
 
   // Pick the account with the HIGHEST required burn rate across its
@@ -270,26 +323,36 @@ export async function resolveAccountForSession(
     return { account: a, rank, pickedAt: pickedAtOf(a.subAccountId) }
   })
   const picked = ranked.reduce((best, candidate) => (outranks(candidate, best) ? candidate : best)).account
-  sessionMap.set(sessionId, picked.subAccountId)
-  return remember(picked, now)
+  setSticky(sessionId, slot, picked.subAccountId)
+  return remember(sessionId, picked, now)
 }
 
-// Read-only lookup of which account the sticky map currently routes this
-// session to. The reactive 429 path uses this to learn the subAccountId
-// that just failed (the pipeline picked it deep inside the OAuth
-// transformer; there is no other handle on the way back up). Returns
-// null when no sticky mapping exists.
+// Read-only lookup of the account this session most recently went out
+// on. The reactive 429 path uses this to learn the subAccountId that
+// just failed (the pipeline picked it deep inside the OAuth transformer;
+// there is no other handle on the way back up). Returns null when the
+// session has not resolved an account yet.
 export function getActiveAccountForSession(sessionId: string): string | null {
-  const cached = sessionMap.get(sessionId)
-  return cached !== undefined ? cached : null
+  const resolved = lastResolved.get(sessionId)
+  return resolved !== undefined ? resolved : null
 }
 
-// Drop the sticky mapping for a session if (and only if) it still points
-// at the named account. Called by the reactive 429 path after marking
-// the account exhausted so the next retry repicks instead of latching
-// back onto the just-failed account. The conditional delete prevents
-// racing with a concurrent re-pick that may have already moved the
-// sticky onto a different account.
+// Drop the session's pointers to the named account if (and only if) they
+// still point at it. Called by the reactive 429 path after marking the
+// account exhausted so the next retry repicks instead of latching back
+// onto the just-failed account. The conditional delete prevents racing
+// with a concurrent re-pick that may have already moved on.
+//
+// Every slot holding the account goes, not just the failing request's:
+// `markAccountExhausted` has already taken it out of the candidate set
+// for all of them, so leaving the entries behind would only park stale
+// pointers until each slot next repicks.
 export function releaseAccountForSession(sessionId: string, subAccountId: string): void {
-  if (sessionMap.get(sessionId) === subAccountId) sessionMap.delete(sessionId)
+  if (lastResolved.get(sessionId) === subAccountId) lastResolved.delete(sessionId)
+  const slots = sessionMap.get(sessionId)
+  if (slots === undefined) return
+  for (const [slot, id] of slots) {
+    if (id === subAccountId) slots.delete(slot)
+  }
+  if (slots.size === 0) sessionMap.delete(sessionId)
 }
