@@ -69,7 +69,7 @@ function ProfilePicker({
             two-position switch. */}
         <button
           type='button'
-          className='inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-muted/60'
+          className='inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-muted/60'
         >
           <span className='text-muted-foreground'>{t('routing.chain.profile')}</span>
           {current}
@@ -146,7 +146,7 @@ export function SurfaceScopeBar({
         type='button'
         title={t('routing.chain.modeHelp')}
         aria-label={t('routing.chain.modeHelp')}
-        className='text-muted-foreground/60 hover:text-foreground'
+        className='flex h-8 w-8 shrink-0 items-center justify-center text-muted-foreground/60 hover:text-foreground'
       >
         <i className='ri-question-line text-sm' />
       </button>

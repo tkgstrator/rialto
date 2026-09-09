@@ -93,7 +93,7 @@ const ACTIVE_SCENARIO = 'default'
 const scenarioTab = (s) => {
   const on = s.id === ACTIVE_SCENARIO
   return `
-    <button class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs transition-colors ${
+    <button class="flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs transition-colors ${
       on ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground'
     }">
       ${s.label}<span class="font-mono text-[12px] tabular-nums ${on ? 'text-muted-foreground' : 'text-muted-foreground/70'}">${s.count}</span>
@@ -227,11 +227,11 @@ document.getElementById('root').innerHTML = `
     </div>
     <!-- The two-line paragraph this replaced held 380px of the strip.
          The distinction matters once, when you first meet the switch. -->
-    <button class="text-muted-foreground/60 hover:text-foreground" title="Routed walks the chain for this scenario and fails over on quota. Passthrough sends the caller's provider,model straight upstream.">
+    <button class="flex h-8 w-8 shrink-0 items-center justify-center text-muted-foreground/60 hover:text-foreground" title="Routed walks the chain for this scenario and fails over on quota. Passthrough sends the caller's provider,model straight upstream.">
       <i class="ri-question-line text-sm"></i>
     </button>
     <span class="mx-1 h-4 w-px shrink-0 bg-border"></span>
-    <button class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-muted/60">
+    <button class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-muted/60">
       <span class="text-muted-foreground">Profile</span> live <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i>
     </button>
   </div>

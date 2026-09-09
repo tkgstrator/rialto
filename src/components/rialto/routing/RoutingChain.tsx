@@ -65,7 +65,7 @@ function ScenarioChips({
             type='button'
             onClick={() => onSelect(scenario)}
             className={cn(
-              'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs transition-colors',
+              'flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs transition-colors',
               on ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground'
             )}
           >
