@@ -175,11 +175,6 @@
       "laneSubagent": "Subagent",
       "colTarget": "Target",
       "colTier": "Tier",
-      "colState": "State",
-      "stateReady": "ready",
-      "stateThrottled": "throttled",
-      "stateExhausted": "exhausted",
-      "stateUnknown": "unknown",
       "targetCount": "{{n}} targets"
     },
     "chain": {
@@ -227,8 +222,6 @@
       "substitutionSame": "same tier only",
       "reachableTargets": "Reachable targets",
       "reachableHint": "what a caller may put in <mono>body.model</mono>",
-      "copyAsList": "Copy as list",
-      "copied": "Copied",
       "copyTarget": "Copy {{target}}",
       "noSurfaces": "No inbound surfaces are configured.",
       "passthroughNote": "Switch this surface to <mono>Routed</mono> to give {{client}} the same quota-aware failover Claude Code gets. Callers keep sending their own model string — it becomes the <mono>requestedModel</mono> that rules match on, rather than the final target.",

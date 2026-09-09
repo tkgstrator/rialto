@@ -8,7 +8,7 @@
  */
 import type { RoutingSchedulerStateResponse, RoutingSchedulerWeightEntry } from '@/lib/api'
 import type { Provider } from '@/schemas/domain/provider'
-import type { EnabledTarget, PreferenceByScenario, TargetState, Tier } from './types'
+import type { EnabledTarget, PreferenceByScenario, Tier } from './types'
 import { SCENARIOS } from './types'
 
 /** Split a "provider,model" target. A malformed row keeps the raw string as its model. */
@@ -138,42 +138,13 @@ export function chainShares(rows: readonly ShareRow[]): Map<string, number | nul
   return out
 }
 
-/**
- * Whether the scheduler actually measured this target.
- *
- * `remainingBudgetPct` is null whenever no quota window could be read —
- * an api_key provider (which has no such window at all), an account
- * whose poll is stale, a model the scheduler no longer recognises. The
- * scheduler still has to publish *some* weight for those, and its policy
- * is to treat them as usable, so the factor comes out at 1.0. That is a
- * decision, not a reading, and the two must not share a column: a
- * measured 73% next to a policy 100% invites a comparison neither number
- * supports.
- */
-export function hasBudgetReading(entry: RoutingSchedulerWeightEntry | undefined): boolean {
-  return entry !== undefined && entry.remainingBudgetPct !== null
-}
-
-/**
- * Classify a target from its published weight.
- *
- * A zero weight means the selector will never pick it — that is exhaustion
- * as far as routing is concerned. Anything the scheduler annotated with a
- * reason other than `ok` is degraded but still reachable. No snapshot at
- * all (cold boot, or a target the scheduler has not scored) stays
- * `unknown` rather than being flattered into `ready`.
- *
- * A target with no budget reading is `unknown` too, and for the same
- * reason it shows no percentage: it used to render as `throttled`
- * forever, which said the router was holding back traffic when in truth
- * nothing was being measured.
- */
-export function targetState(entry: RoutingSchedulerWeightEntry | undefined): TargetState {
-  if (entry === undefined) return 'unknown'
-  if (entry.weight === 0) return 'exhausted'
-  if (!hasBudgetReading(entry)) return 'unknown'
-  return entry.reasons.every((r) => r === 'ok') ? 'ready' : 'throttled'
-}
+// `hasBudgetReading` and `targetState` lived here, with STATE_TONE and
+// STATE_LABEL_KEYS below them. They classified a target as ready /
+// throttled / exhausted / unknown for a State column that neither table
+// carries any more: the chain shows Share, which already says an
+// exhausted target is at 0% and a disabled one at a dash, and a
+// passthrough surface is never scored at all, so its column read
+// `unknown` on every row of every install.
 
 // `schedulerRuns`, `activeSelector` and `MODE_FOR_SELECTOR` lived here.
 // They existed to answer "which of the two selectors is live", and to
@@ -184,12 +155,12 @@ export function targetState(entry: RoutingSchedulerWeightEntry | undefined): Tar
 /**
  * The scheduler ran and had nothing to score.
  *
- * Turning the mode on is only half of what a live state needs: the tick
- * builds its weights entirely from `RouterPreferenceEntry` rows, so on
- * an install with no chain configured it publishes an empty snapshot and
- * every target still reads `unknown`. Saying "set ROUTER_MODE to
- * quota-aware to see live states" and leaving it there sends an operator
- * to flip a switch that changes nothing on their screen.
+ * Turning the mode on is only half of what a live reading needs: the
+ * tick builds its weights entirely from `RouterPreferenceEntry` rows, so
+ * on an install with no chain configured it publishes an empty snapshot
+ * and the Share column stays empty. Saying "set ROUTER_MODE to
+ * quota-aware to see live numbers" and leaving it there sends an
+ * operator to flip a switch that changes nothing on their screen.
  *
  * Gated on having ticked at least once. A cold boot in quota-aware mode
  * also has no weights yet, and that one resolves on its own.
@@ -202,36 +173,15 @@ export function schedulerScoredNothing(state: RoutingSchedulerStateResponse | nu
 /**
  * The scheduler is armed but has not produced a snapshot yet.
  *
- * The third way a State column fills with `unknown`, and the one that
- * had no note. `schedulerScoredNothing` deliberately waits for a first
- * tick, and `schedulerIdle` only covers the Rules selector — so between
- * boot and the first tick (the interval defaults to five minutes) every
- * target reads `unknown` with nothing on screen saying why, which is
- * indistinguishable from a fleet of dead targets.
+ * The other way the Share column comes up empty, and the one that had no
+ * note. `schedulerScoredNothing` deliberately waits for a first tick, so
+ * between boot and that tick (the interval defaults to five minutes)
+ * every row reads a dash with nothing on screen saying why, which is
+ * indistinguishable from a lane nobody has configured.
  */
 export function schedulerNotTickedYet(state: RoutingSchedulerStateResponse | null): boolean {
   if (state === null) return false
   return state.tickAt === null
-}
-
-export const STATE_TONE = {
-  ready: 'ok',
-  throttled: 'warn',
-  exhausted: 'bad',
-  unknown: 'mute'
-} as const
-
-/**
- * Translation keys for the four target states.
- *
- * Kept beside STATE_TONE so the pill in the chain table, the node subtitle
- * on the map and the map legend can never name the same state differently.
- */
-export const STATE_LABEL_KEYS: Record<TargetState, string> = {
-  ready: 'routing.common.stateReady',
-  throttled: 'routing.common.stateThrottled',
-  exhausted: 'routing.common.stateExhausted',
-  unknown: 'routing.common.stateUnknown'
 }
 
 /** Empty profile shape — every scenario and lane present, so tabs never branch on "missing". */

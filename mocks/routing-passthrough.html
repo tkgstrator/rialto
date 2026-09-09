@@ -13,7 +13,7 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, btn, navTo } = window.Shell
+const { renderShell, pill, navTo } = window.Shell
 
 // The other half of the Routing screen: what a surface looks like when
 // the router does NOT apply. This used to be hardcoded for
@@ -51,11 +51,11 @@ const surfaceTab = (s) => {
 // strings a caller may send. Showing the reachable set is the useful
 // content here — the chain editor would be misleading.
 const REACHABLE = [
-  { target: 'codex,gpt-5.5',                  tier: 'opus',   state: 'ready' },
-  { target: 'codex,gpt-5.4',                  tier: 'sonnet', state: 'ready' },
-  { target: 'openai,gpt-5.5',                 tier: 'opus',   state: 'ready' },
-  { target: 'openai,gpt-5.4-mini',            tier: 'haiku',  state: 'ready' },
-  { target: 'openai,gpt-5.3-codex',           tier: 'opus',   state: 'ready' }
+  { target: 'codex,gpt-5.5',                  tier: 'opus' },
+  { target: 'codex,gpt-5.4',                  tier: 'sonnet' },
+  { target: 'openai,gpt-5.5',                 tier: 'opus' },
+  { target: 'openai,gpt-5.4-mini',            tier: 'haiku' },
+  { target: 'openai,gpt-5.3-codex',           tier: 'opus' }
 ]
 
 // A reachable target is a "provider,model" a caller may name, so the row
@@ -68,7 +68,6 @@ const row = (e) => `
   <tr ${navTo(providerHref(e.target))} class="border-t border-border/60 transition-colors hover:bg-muted/50">
     <td class="py-2.5 pl-6 pr-2 font-mono text-xs">${e.target}</td>
     <td class="px-2">${pill(e.tier, 'mute')}</td>
-    <td class="px-2">${pill(e.state, 'ok')}</td>
     <td class="py-2.5 pl-2 pr-6 text-right">
       <button class="text-muted-foreground/60 hover:text-foreground"><i class="ri-file-copy-line text-sm"></i></button>
     </td>
@@ -99,16 +98,17 @@ document.getElementById('root').innerHTML = `
   <div class="flex items-center gap-3 border-b border-border px-6 py-2.5">
     <h2 class="text-sm font-semibold">Reachable targets</h2>
     <span class="text-[12px] text-muted-foreground">what a caller may put in <span class="font-mono">body.model</span></span>
-    <div class="ml-auto">${btn('Copy as list', 'outline', 'ri-file-copy-line')}</div>
   </div>
 
   <table class="w-full table-fixed">
-    <colgroup><col><col class="w-24"><col class="w-24"><col class="w-16"></colgroup>
+    <!-- Two columns and a copy affordance. State went with the chain
+         table's: a passthrough surface is never scored, so the pill read
+         "unknown" on every row of every install. -->
+    <colgroup><col><col class="w-24"><col class="w-16"></colgroup>
     <thead>
       <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         <th class="pl-6 pr-2 text-left font-medium">Target</th>
         <th class="px-2 text-left font-medium">Tier</th>
-        <th class="px-2 text-left font-medium">State</th>
         <th class="pl-2 pr-6"></th>
       </tr>
     </thead>

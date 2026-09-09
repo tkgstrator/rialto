@@ -175,11 +175,6 @@
       "laneSubagent": "Subagent",
       "colTarget": "target",
       "colTier": "档位",
-      "colState": "状态",
-      "stateReady": "可用",
-      "stateThrottled": "受限",
-      "stateExhausted": "已耗尽",
-      "stateUnknown": "未知",
       "targetCount": "{{n}} 个 target"
     },
     "chain": {
@@ -227,8 +222,6 @@
       "substitutionSame": "仅同档位",
       "reachableTargets": "可达的 target",
       "reachableHint": "调用方可以填进 <mono>body.model</mono> 的值",
-      "copyAsList": "复制为列表",
-      "copied": "已复制",
       "copyTarget": "复制 {{target}}",
       "noSurfaces": "尚未配置任何入口。",
       "passthroughNote": "把该入口切换为 <mono>Routed</mono>，即可让 {{client}} 获得与 Claude Code 相同的配额感知故障转移。调用方仍然照常发送自己的模型名，只是它会作为规则匹配用的 <mono>requestedModel</mono>，而不再直接当作最终 target。",

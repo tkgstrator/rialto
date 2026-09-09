@@ -388,8 +388,16 @@ export function RoutingChain() {
         <>
           <SurfaceBar surfaces={surfaces} active={surface.id} onSelect={selectSurface} />
           <SurfaceScopeBar surface={surface} profiles={profiles} onMode={onMode} onProfile={onProfile} />
-          {noChainToScore ? <SchedulerNote i18nKey='routing.chain.schedulerNoChain' /> : null}
-          {notTickedYet ? <SchedulerNote i18nKey='routing.chain.schedulerNotTicked' /> : null}
+          {/* The notes explain a missing live reading, and Share is the
+              only one on this screen — the passthrough half has no
+              scheduler-fed column at all now, so they render inside the
+              routed branch rather than above both. */}
+          {surface.routingMode === 'routed' ? (
+            <>
+              {noChainToScore ? <SchedulerNote i18nKey='routing.chain.schedulerNoChain' /> : null}
+              {notTickedYet ? <SchedulerNote i18nKey='routing.chain.schedulerNotTicked' /> : null}
+            </>
+          ) : null}
           {surface.routingMode === 'routed' ? (
             <RoutedBody
               surface={surface}
@@ -406,7 +414,7 @@ export function RoutingChain() {
               onNotify={notify}
             />
           ) : (
-            <PassthroughPanel surface={surface} targets={targets} weights={weights} />
+            <PassthroughPanel surface={surface} targets={targets} />
           )}
         </>
       )}

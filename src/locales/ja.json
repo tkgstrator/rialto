@@ -175,11 +175,6 @@
       "laneSubagent": "Subagent",
       "colTarget": "ターゲット",
       "colTier": "ティア",
-      "colState": "状態",
-      "stateReady": "利用可",
-      "stateThrottled": "抑制中",
-      "stateExhausted": "上限到達",
-      "stateUnknown": "不明",
       "targetCount": "ターゲット {{n}} 件"
     },
     "chain": {
@@ -227,8 +222,6 @@
       "substitutionSame": "同一ティアのみ",
       "reachableTargets": "到達可能なターゲット",
       "reachableHint": "呼び出し元が <mono>body.model</mono> に指定できる値",
-      "copyAsList": "一覧をコピー",
-      "copied": "コピーしました",
       "copyTarget": "{{target}} をコピー",
       "noSurfaces": "受信サーフェスが設定されていません。",
       "passthroughNote": "このサーフェスを <mono>Routed</mono> に切り替えると、Claude Code と同じクォータ考慮のフェイルオーバーを {{client}} にも適用できます。呼び出し元は今までどおり自分のモデル名を送れます。それが最終ターゲットではなく、ルールの照合対象となる <mono>requestedModel</mono> として扱われるようになります。",
