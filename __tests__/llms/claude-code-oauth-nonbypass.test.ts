@@ -77,6 +77,55 @@ describe('ClaudeCodeOauthTransformer.transformRequestIn — non-bypass provider-
     expect(body.system?.[0]?.text).toContain("Claude Code, Anthropic's official CLI")
   })
 
+  /*
+    Regression: a caller on /v1/responses or /v1/chat/completions has no
+    top-level `system` to send — the OpenAI wire shape carries the system
+    prompt as messages[0]. Forwarded as-is, Anthropic answered 400
+    "messages.0: use the top-level 'system' parameter for the initial
+    system prompt", so nothing streamed for any caller with a system prompt.
+  */
+  test('a leading system message is hoisted to the top-level system', async () => {
+    const provider = providerWithSubscriptionAuth('t', 'sub_1')
+    const request = {
+      model: 'claude-haiku-4-5',
+      messages: [
+        { role: 'system', content: 'You are terse.' },
+        { role: 'user', content: 'hi' }
+      ]
+    } as unknown as UnifiedChatRequest
+    const hook = await t.transformRequestIn(request, provider, ctx)
+    // biome-ignore plugin: same structural narrowing note as above.
+    const body = hook.body as {
+      system?: Array<{ text?: string }>
+      messages?: Array<{ role?: string }>
+    }
+    expect(body.messages?.map((message) => message.role)).toEqual(['user'])
+    expect(body.system?.map((block) => block.text)).toEqual([
+      "You are Claude Code, Anthropic's official CLI for Claude.",
+      'You are terse.'
+    ])
+  })
+
+  test('several system messages are all carried over, in order', async () => {
+    const provider = providerWithSubscriptionAuth('t', 'sub_1')
+    const request = {
+      model: 'claude-haiku-4-5',
+      messages: [
+        { role: 'system', content: 'Rules.' },
+        { role: 'system', content: [{ type: 'text', text: 'Sheet.' }] },
+        { role: 'user', content: 'hi' }
+      ]
+    } as unknown as UnifiedChatRequest
+    const hook = await t.transformRequestIn(request, provider, ctx)
+    // biome-ignore plugin: same structural narrowing note as above.
+    const body = hook.body as { system?: Array<{ text?: string }> }
+    expect(body.system?.map((block) => block.text)).toEqual([
+      "You are Claude Code, Anthropic's official CLI for Claude.",
+      'Rules.',
+      'Sheet.'
+    ])
+  })
+
   test('unsigned thinking blocks are stripped from message content', async () => {
     const provider = providerWithSubscriptionAuth('t', 'sub_1')
     const request = {
