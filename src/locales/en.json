@@ -182,7 +182,6 @@
       "routing": "Routing",
       "modeRoutedLabel": "Routed",
       "modePassthroughLabel": "Passthrough",
-      "modeHelp": "Routed walks the chain for this scenario and fails over on quota. Passthrough sends the caller's provider,model straight upstream.",
       "profile": "Profile",
       "modeChanged": "{{path}} is now {{mode}}.",
       "profileChanged": "{{path}} now draws from profile “{{profile}}”.",

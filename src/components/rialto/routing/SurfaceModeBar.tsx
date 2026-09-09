@@ -139,17 +139,12 @@ export function SurfaceScopeBar({
         ]}
         onChange={onMode}
       />
-      {/* The two-line paragraph this replaced held the right 380px of the
-          strip. The routed/passthrough distinction matters once, when you
-          first meet the switch — not on every later visit. */}
-      <button
-        type='button'
-        title={t('routing.chain.modeHelp')}
-        aria-label={t('routing.chain.modeHelp')}
-        className='flex h-8 w-8 shrink-0 items-center justify-center text-muted-foreground/60 hover:text-foreground'
-      >
-        <i className='ri-question-line text-sm' />
-      </button>
+      {/* No help marker beside the switch. It explained two words that
+          explain themselves, through a `title` that touch never shows and
+          the keyboard barely reaches — and the screen demonstrates the
+          difference anyway: flipping to Passthrough replaces the chain
+          with the set of targets a caller may name, under a note saying
+          what switching back would buy. */}
       {/* A passthrough surface draws from no profile, so the picker is
           absent rather than disabled — and the divider goes with it. */}
       {surface.routingMode === 'routed' ? (

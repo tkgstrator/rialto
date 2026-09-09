@@ -182,7 +182,6 @@
       "routing": "ルーティング",
       "modeRoutedLabel": "Routed",
       "modePassthroughLabel": "Passthrough",
-      "modeHelp": "Routed はこのシナリオのチェーンを辿り、クォータ枯渇でフェイルオーバーします。Passthrough は呼び出し側の provider,model をそのまま上流へ送ります。",
       "profile": "プロファイル",
       "modeChanged": "{{path}} を {{mode}} に切り替えました。",
       "profileChanged": "{{path}} はプロファイル「{{profile}}」を参照するようになりました。",

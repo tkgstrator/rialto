@@ -182,7 +182,6 @@
       "routing": "路由",
       "modeRoutedLabel": "Routed",
       "modePassthroughLabel": "Passthrough",
-      "modeHelp": "Routed 会遍历该场景的链路，并在配额耗尽时故障转移。Passthrough 将调用方的 provider,model 原样发送至上游。",
       "profile": "配置档",
       "modeChanged": "{{path}} 已切换为 {{mode}}。",
       "profileChanged": "{{path}} 现在使用配置档“{{profile}}”。",
