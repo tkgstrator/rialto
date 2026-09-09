@@ -5,59 +5,17 @@
  * budget to read and falls back to its "unknown budget → treat as
  * usable" policy, publishing a factor of 1.0. Rendered naively that
  * became a green-adjacent `100%` sitting next to a measured `73%`, as if
- * the two were the same kind of number, and a permanent `throttled` pill
- * on a provider nothing was throttling.
+ * the two were the same kind of number.
+ *
+ * The `targetState` cases that used to open this file went with the
+ * State column: with no pill to classify a target for, the classifier
+ * had no production reader left. What survives is the apportionment,
+ * which is the thing the column that replaced it actually shows.
  */
 
 import { describe, expect, test } from 'bun:test'
-import { chainShares, hasBudgetReading, targetLabels, targetState } from '../../src/components/rialto/routing/derive'
-import type { RoutingSchedulerWeightEntry } from '../../src/lib/api-types'
+import { chainShares, targetLabels } from '../../src/components/rialto/routing/derive'
 
-const entry = (over: Partial<RoutingSchedulerWeightEntry>): RoutingSchedulerWeightEntry => ({
-  target: 'p,m',
-  weight: 1,
-  healthiness: 1,
-  remainingBudgetPct: 50,
-  earliestResetAt: null,
-  reasons: ['ok'],
-  ...over
-})
-
-describe('targetState', () => {
-  test('a measured, healthy target is ready', () => {
-    expect(targetState(entry({}))).toBe('ready')
-    expect(hasBudgetReading(entry({}))).toBe(true)
-  })
-
-  test('a measured target the scheduler annotated is throttled', () => {
-    expect(targetState(entry({ reasons: ['reset_soon'] }))).toBe('throttled')
-  })
-
-  test('zero weight is exhausted whatever else is true', () => {
-    expect(targetState(entry({ weight: 0, remainingBudgetPct: null }))).toBe('exhausted')
-  })
-
-  test('no budget reading is unknown, not throttled', () => {
-    const unmeasured = entry({ remainingBudgetPct: null, reasons: ['unknown_budget'] })
-    expect(targetState(unmeasured)).toBe('unknown')
-    expect(hasBudgetReading(unmeasured)).toBe(false)
-  })
-
-  test('a stale poll is unknown too — the number it would show is a policy default', () => {
-    expect(targetState(entry({ remainingBudgetPct: null, reasons: ['stale_quota'], weight: 0.25 }))).toBe('unknown')
-  })
-
-  test('a target with no snapshot at all stays unknown', () => {
-    expect(targetState(undefined)).toBe('unknown')
-    expect(hasBudgetReading(undefined)).toBe(false)
-  })
-})
-
-/**
- * The Share column has one job the eye checks instantly: it adds up.
- * Rounding each row independently does not — three equal targets give
- * 33/33/33 — so the apportionment is largest-remainder.
- */
 describe('chainShares', () => {
   const row = (target: string, weight: number | undefined, enabled = true) => ({ target, enabled, weight })
   const total = (shares: Map<string, number | null>) =>

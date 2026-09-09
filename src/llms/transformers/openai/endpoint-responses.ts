@@ -92,11 +92,38 @@ export class OpenAIResponsesTransformer extends Transformer {
     // biome-ignore plugin: structural widening — Responses augments UnifiedChatRequest with optional fields (instructions/input/parallel_tool_calls) that we mutate in-place; the unified schema cannot model these without breaking other transformers.
     const responsesReq = request as ResponsesUnifiedChatRequest
     delete responsesReq.temperature
+
+    // Rename the output ceiling rather than dropping it. The unified body
+    // spells it `max_tokens`; an earlier chain step (OpenAITransformer)
+    // may already have renamed it to `max_completion_tokens` for a
+    // gpt-5.x model. The Responses API accepts neither — it wants
+    // `max_output_tokens` — so both are read here and re-emitted under
+    // that name.
+    //
+    // Measured against api.openai.com/v1/responses: the field is valid
+    // and honoured at any value >= 16, and 400s below that
+    // ("integer_below_min_value"). We forward whatever the caller asked
+    // for, including a too-small value, because that is what a direct
+    // call would do — a gateway that silently discards the ceiling bills
+    // its caller for output they explicitly capped.
+    //
+    // A tight cap on a reasoning model can come back `incomplete` with
+    // hidden reasoning having eaten the whole budget and no text at all.
+    // That is the vendor's own semantics, identical when calling OpenAI
+    // directly, and is not a reason to suppress the field here.
+    //
+    // The one upstream that must NOT see it is the codex/ChatGPT
+    // backend, which allow-lists top-level params (a `max_output_tokens`
+    // there was reported as 400 "Unsupported parameter" in #463).
+    // `codex-oauth` runs last and only for subscription providers, so it
+    // strips the field — that belongs with the rest of the codex-specific
+    // requirements, not here, because this transformer also serves
+    // api_key providers whose upstream is the real Responses API.
+    const priorCompletionCap: unknown = Reflect.get(responsesReq, 'max_completion_tokens')
+    const cap = typeof priorCompletionCap === 'number' ? priorCompletionCap : responsesReq.max_tokens
     delete responsesReq.max_tokens
-    // Defence in depth — an earlier chain step (OpenAITransformer) may have
-    // renamed max_tokens to max_completion_tokens for newer gpt-5.x models.
-    // Responses API uses neither; drop it.
     delete (responsesReq as { max_completion_tokens?: unknown }).max_completion_tokens
+    if (typeof cap === 'number') responsesReq.max_output_tokens = cap
 
     // Manual per-model effort override wins over whatever the client
     // sent (typically inherited from Anthropic's `thinking` block).

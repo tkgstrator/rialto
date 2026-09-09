@@ -1,16 +1,26 @@
 /**
- * The two tab strips the Routing screens share.
+ * Band 1 of the Routing screens: which inbound surface.
  *
- * `SurfaceTabs` is the outermost axis of the Chain view: you pick the wire
- * format you are configuring before anything else, because whether the
- * router applies at all is a per-surface fact. `ViewTabs` is the ordinary
- * sub-view strip the Map and Rules screens carry.
+ * The surface is the outermost axis — whether the router applies at all
+ * is a per-surface fact — so it comes first.
+ *
+ * Every tab is the same shape: a dot and a path, filled dot for routed
+ * and hollow for passthrough. Uniform on purpose. The selected surface's
+ * controls used to sit at the right end of this row, where a switch on
+ * the same line as four tabs reads as governing the row rather than one
+ * tab, and nothing on it said which surface it wrote to. Moving them
+ * inside the selected tab only traded that for a row that stretches and
+ * reflows on every switch. They live in a scope strip of their own now
+ * (`SurfaceScopeBar`), directly under this one.
+ *
+ * The dot still carries each surface's mode, which is the fact this
+ * screen exists to stop hiding: the old build bypassed the router on two
+ * surfaces and said so nowhere.
  */
-import { useTranslation } from 'react-i18next'
 import type { InboundSurfaceWire, SurfaceId } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
-export function SurfaceTabs({
+export function SurfaceBar({
   surfaces,
   active,
   onSelect
@@ -19,9 +29,8 @@ export function SurfaceTabs({
   active: SurfaceId | null
   onSelect: (id: SurfaceId) => void
 }) {
-  const { t } = useTranslation()
   return (
-    <div className='flex items-stretch gap-0 border-b border-border px-2'>
+    <div className='flex items-center gap-1 border-b border-border pl-4 pr-6'>
       {surfaces.map((surface) => {
         const on = surface.id === active
         return (
@@ -30,20 +39,20 @@ export function SurfaceTabs({
             type='button'
             onClick={() => onSelect(surface.id)}
             className={cn(
-              'relative flex flex-col items-start gap-0.5 border-b-2 px-4 py-2.5 text-left transition-colors',
+              'flex items-center gap-2 border-b-2 px-3 py-2.5 transition-colors',
               on ? 'border-b-foreground' : 'border-b-transparent hover:bg-muted/50'
             )}
           >
-            <span className={cn('font-mono text-xs', on ? 'text-foreground' : 'text-muted-foreground')}>
-              {surface.path}
-            </span>
-            <span className='flex items-center gap-1.5 text-[12px] text-muted-foreground'>
-              {`${surface.client} · `}
-              {surface.routingMode === 'routed' ? (
-                <span className='text-emerald-600 dark:text-emerald-400'>{t('routing.common.modeRouted')}</span>
-              ) : (
-                t('routing.common.modePassthrough')
+            <span
+              className={cn(
+                'size-1.5 shrink-0 rounded-full',
+                surface.routingMode === 'routed' ? 'bg-emerald-500' : 'border border-muted-foreground/50'
               )}
+            />
+            <span
+              className={cn('whitespace-nowrap font-mono text-xs', on ? 'text-foreground' : 'text-muted-foreground')}
+            >
+              {surface.path}
             </span>
           </button>
         )

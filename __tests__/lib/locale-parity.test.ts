@@ -75,8 +75,6 @@ const SHARED_VOCABULARY = new Set([
   'providers.rail.oauth',
   'routing.chain.modePassthroughLabel',
   'routing.chain.modeRoutedLabel',
-  'routing.chain.subtitlePassthrough',
-  'routing.chain.subtitleRouted',
   'routing.common.laneAgent',
   'routing.common.laneSubagent',
   'routing.common.modePassthrough',

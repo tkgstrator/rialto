@@ -7,23 +7,22 @@
  * traffic that will not walk it. The old build had no such axis, which is
  * how a routing screen could quietly be about one endpoint only.
  */
-import type { TFunction } from 'i18next'
 import { useCallback, useMemo, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { useConfig } from '@/components/ConfigProvider'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import type { InboundSurfaceWire, RoutingMode, RoutingSchedulerWeightEntry } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { AddTargetDialog } from './AddTargetDialog'
-import { ChainRail } from './ChainRail'
+import { ChainConstraints } from './ChainConstraints'
 import { ChainTable } from './ChainTable'
 import { useEnabledTargets, usePreferences, useProfiles, useScheduler, useSurfaces } from './data'
 import { profileEntryCount, schedulerNotTickedYet, schedulerScoredNothing, weightIndex } from './derive'
 import { PassthroughPanel } from './PassthroughPanel'
-import { SurfaceTabs } from './RoutingTabs'
-import { Segmented, SurfaceModeBar } from './SurfaceModeBar'
+import { PresetsMenu } from './PresetsMenu'
+import { SurfaceBar } from './RoutingTabs'
+import { Segmented, SurfaceScopeBar } from './SurfaceModeBar'
 import type { EnabledTarget, Lane, PreferenceEntry, PreferenceProfile, ScenarioKey } from './types'
 import { SCENARIOS } from './types'
 import { useChainEditing } from './useChainEditing'
@@ -37,7 +36,21 @@ const SCENARIO_LABEL_KEYS: Record<ScenarioKey, string> = {
   image: 'routing.chain.scenarioImage'
 }
 
-function ScenarioTabs({
+/**
+ * Underline tabs, the same treatment the surface strip uses.
+ *
+ * These were filled chips while the two strips sat adjacent: two
+ * underline rows stacked read as one nested inside the other, and the
+ * surface is the outer axis, so it was the wrong one to lose its
+ * emphasis. The scope strip sits between them now, so the ambiguity is
+ * gone and the two selectors can look like what they both are.
+ *
+ * The tab spans the band rather than matching the 32px controls beside
+ * it — `-my-2.5` with `self-stretch` cancels the band's padding — so the
+ * underline lands on the band's own rule instead of floating above it,
+ * which is what makes it read as a tab and not as underlined text.
+ */
+function ScenarioChips({
   counts,
   active,
   onSelect
@@ -48,52 +61,76 @@ function ScenarioTabs({
 }) {
   const { t } = useTranslation()
   return (
-    <div className='flex items-center gap-1 border-b border-border px-6'>
-      {SCENARIOS.map((scenario) => (
-        <button
-          key={scenario}
-          type='button'
-          onClick={() => onSelect(scenario)}
-          className={cn(
-            // py-3, not py-2: the strip is where a scenario is switched,
-            // and at 8px of padding it read as a caption over the table
-            // rather than a control you aim at.
-            'flex items-center gap-2 border-b-2 px-3 py-3 text-xs transition-colors',
-            scenario === active
-              ? 'border-b-foreground font-medium'
-              : 'border-b-transparent text-muted-foreground hover:text-foreground'
-          )}
-        >
-          {t(SCENARIO_LABEL_KEYS[scenario])}
-          <span className='font-mono text-[12px] tabular-nums text-muted-foreground'>{counts[scenario]}</span>
-        </button>
-      ))}
+    // Equal columns rather than content width: "Long context" is twice
+    // "Think", so packed side by side the strip read as five different
+    // kinds of thing. auto-cols-fr rather than a fixed width — the labels
+    // are translated, and the widest one is not the same string in every
+    // locale.
+    <div className='-my-2.5 grid grid-flow-col auto-cols-fr gap-0.5 self-stretch'>
+      {SCENARIOS.map((scenario) => {
+        const on = scenario === active
+        return (
+          <button
+            key={scenario}
+            type='button'
+            onClick={() => onSelect(scenario)}
+            className={cn(
+              'flex h-full items-center justify-center gap-1.5 border-b-2 px-2.5 text-xs transition-colors',
+              on
+                ? 'border-b-foreground font-medium'
+                : 'border-b-transparent text-muted-foreground hover:text-foreground'
+            )}
+          >
+            {t(SCENARIO_LABEL_KEYS[scenario])}
+            <span
+              className={cn(
+                'font-mono text-[12px] tabular-nums',
+                on ? 'text-muted-foreground' : 'text-muted-foreground/70'
+              )}
+            >
+              {counts[scenario]}
+            </span>
+          </button>
+        )
+      })}
     </div>
   )
 }
 
-function ChainToolbar({
+/**
+ * Band 2: which chain, and what you can do to it.
+ *
+ * Scenario, lane and the actions used to be two bands — a full-width
+ * scenario strip and a full-width toolbar under it — and both sat inside
+ * the left column of a grid, so they were laid out in 320px less than
+ * the page had. With the rail gone they fit in one row.
+ *
+ * The target count moved out of here and under the table, where it reads
+ * as a total of the thing above it rather than as a fourth control in a
+ * row of controls.
+ */
+function ChainBand({
+  scenario,
+  onScenario,
+  counts,
   lane,
   onLane,
-  entries,
-  targets,
-  onAdd,
   onSave,
   saveDisabled
 }: {
+  scenario: ScenarioKey
+  onScenario: (scenario: ScenarioKey) => void
+  counts: Record<ScenarioKey, number>
   lane: Lane
   onLane: (lane: Lane) => void
-  entries: readonly PreferenceEntry[]
-  targets: readonly EnabledTarget[]
-  onAdd: (target: string) => void
   onSave: () => void
   saveDisabled: boolean
 }) {
   const { t } = useTranslation()
-  const disabled = entries.filter((e) => !e.enabled).length
-  const taken = useMemo(() => new Set(entries.map((e) => e.target)), [entries])
   return (
-    <div className='flex items-center gap-3 px-6 py-3'>
+    <div className='flex items-center gap-3 border-b border-border px-6 py-2.5'>
+      <ScenarioChips counts={counts} active={scenario} onSelect={onScenario} />
+      <span className='h-4 w-px bg-border' />
       <Segmented
         value={lane}
         options={[
@@ -102,12 +139,11 @@ function ChainToolbar({
         ]}
         onChange={onLane}
       />
-      <span className='text-[12px] text-muted-foreground'>
-        {t('routing.common.targetCount', { n: entries.length })}
-        {disabled === 0 ? '' : ` · ${t('routing.chain.disabledCount', { n: disabled })}`}
-      </span>
-      <div className='ml-auto flex gap-2'>
-        <AddTargetDialog targets={targets} taken={taken} onAdd={onAdd} />
+      {/* Save alone. Presets and Add target moved under the table: five
+          scenario chips, a lane switch and three buttons was more than
+          one row should carry, and neither of those two acts on the
+          coordinate this band picks — they act on the list below it. */}
+      <div className='ml-auto'>
         <RButton variant='primary' icon='ri-check-line' onClick={onSave} disabled={saveDisabled}>
           {t('common.save')}
         </RButton>
@@ -116,12 +152,46 @@ function ChainToolbar({
   )
 }
 
-function ChainNote() {
+/**
+ * The total, under the thing it totals — with the two actions that add
+ * to it.
+ *
+ * "Add target" appends a row to the table directly above, which is where
+ * a reader looks for it once they have read the last one.
+ *
+ * The count line also carries the one sentence left of the four-line
+ * dashed box that used to close the table. The rest of that box
+ * explained the Share column, which is where the explanation belongs —
+ * it is a marker on that header now.
+ *
+ * This renders even when the lane is empty. Both buttons are the only
+ * way out of an empty lane, so they cannot live inside the branch that
+ * an empty lane skips.
+ */
+function ChainFooter({
+  entries,
+  targets,
+  onAdd,
+  presets
+}: {
+  entries: readonly PreferenceEntry[]
+  targets: readonly EnabledTarget[]
+  onAdd: (target: string) => void
+  presets: React.ReactNode
+}) {
+  const { t } = useTranslation()
+  const disabled = entries.filter((e) => !e.enabled).length
+  const taken = useMemo(() => new Set(entries.map((e) => e.target)), [entries])
   return (
-    <div className='px-6 py-4'>
-      <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
-        <i className='ri-information-line mr-1 align-[-1px]' />
-        <Trans i18nKey='routing.chain.note' components={{ mono: <span className='font-mono' /> }} />
+    <div className='flex items-center gap-3 border-t border-border/60 px-6 py-2.5'>
+      <span className='text-[12px] text-muted-foreground'>
+        {t('routing.common.targetCount', { n: entries.length })}
+        {disabled === 0 ? '' : ` · ${t('routing.chain.disabledCount', { n: disabled })}`}
+        {entries.length === 0 ? '' : ` · ${t('routing.chain.orderHint')}`}
+      </span>
+      <div className='ml-auto flex items-center gap-2'>
+        {presets}
+        <AddTargetDialog targets={targets} taken={taken} onAdd={onAdd} />
       </div>
     </div>
   )
@@ -165,7 +235,6 @@ interface RoutedBodyProps {
 
 function RoutedBody(props: RoutedBodyProps) {
   const { t } = useTranslation()
-  const { config } = useConfig()
   const { entries, actions, addTarget, counts } = useChainEditing(
     props.profile,
     props.setProfile,
@@ -173,49 +242,47 @@ function RoutedBody(props: RoutedBodyProps) {
     props.lane
   )
 
+  // No grid. The chain runs the full width and its constraints follow it
+  // as a footer — see ChainConstraints for why the rail went.
   return (
-    <div className='grid grid-cols-[1fr_20rem]'>
-      <div className='min-w-0 border-r border-border'>
-        <ScenarioTabs counts={counts} active={props.scenario} onSelect={props.onScenario} />
-        <ChainToolbar
-          lane={props.lane}
-          onLane={props.onLane}
-          entries={entries}
-          targets={props.targets}
-          onAdd={addTarget}
-          onSave={props.onSave}
-          saveDisabled={props.saveDisabled}
-        />
-        {entries.length === 0 ? (
-          profileEntryCount(props.profile.entriesByScenario) === 0 ? (
-            <UnconfiguredProfile surface={props.surface} />
-          ) : (
-            <div className='border-t border-border/60 px-6 py-6 text-xs text-muted-foreground'>
-              {t('routing.chain.emptyLane')}
-            </div>
-          )
-        ) : (
-          <ChainTable entries={entries} weights={props.weights} actions={actions} />
-        )}
-        <ChainNote />
-      </div>
-      <ChainRail
-        constraints={props.profile.constraints}
-        profileKey={props.surface.profileKey}
-        onApplied={props.setProfile}
-        onNotify={props.onNotify}
+    <>
+      <ChainBand
+        scenario={props.scenario}
+        onScenario={props.onScenario}
+        counts={counts}
+        lane={props.lane}
+        onLane={props.onLane}
+        onSave={props.onSave}
+        saveDisabled={props.saveDisabled}
       />
-    </div>
+      {entries.length === 0 ? (
+        profileEntryCount(props.profile.entriesByScenario) === 0 ? (
+          <UnconfiguredProfile surface={props.surface} />
+        ) : (
+          <div className='border-t border-border/60 px-6 py-6 text-xs text-muted-foreground'>
+            {t('routing.chain.emptyLane')}
+          </div>
+        )
+      ) : (
+        <ChainTable entries={entries} weights={props.weights} actions={actions} />
+      )}
+      <ChainFooter
+        entries={entries}
+        targets={props.targets}
+        onAdd={addTarget}
+        presets={
+          <PresetsMenu
+            profileKey={props.surface.profileKey}
+            constraints={props.profile.constraints}
+            onApplied={props.setProfile}
+            onNotify={props.onNotify}
+          />
+        }
+      />
+      <ChainConstraints constraints={props.profile.constraints} />
+    </>
   )
 }
-
-const subtitleFor = (surface: InboundSurfaceWire, t: TFunction): string =>
-  surface.routingMode === 'routed'
-    ? // Both placeholders have to be passed here: i18next renders an
-      // unsupplied one verbatim, so the header read "{{path}} · routed ·
-      // {{profile}}" on every routed surface.
-      t('routing.chain.subtitleRouted', { path: surface.path, profile: surface.profileKey })
-    : t('routing.chain.subtitlePassthrough', { path: surface.path })
 
 /**
  * Why every State column reads `unknown`.
@@ -244,7 +311,6 @@ function SchedulerNote({ i18nKey }: { i18nKey: string }) {
 
 export function RoutingChain() {
   const { t } = useTranslation()
-  const { config } = useConfig()
   const { surfaces, loading, error, setMode, setProfile: setSurfaceProfile } = useSurfaces()
   const profiles = useProfiles()
   const { snapshot: scheduler } = useScheduler()
@@ -316,8 +382,11 @@ export function RoutingChain() {
     [surface, setSurfaceProfile, notify, fail, t]
   )
 
+  // No subtitle on the Screen. It read "{path} · routed · {profile}",
+  // which is the surface tab, the mode switch and the profile picker of
+  // band 1 spelled out a second time one line above them.
   return (
-    <Screen subtitle={surface === undefined ? undefined : subtitleFor(surface, t)}>
+    <Screen>
       {/* No selector bar. There is one selector now: the operator says
           which models and in what order, and the scheduler computes the
           weights. A segmented control offering a second option that no
@@ -329,10 +398,18 @@ export function RoutingChain() {
         </div>
       ) : (
         <>
-          <SurfaceTabs surfaces={surfaces} active={surface.id} onSelect={selectSurface} />
-          <SurfaceModeBar surface={surface} profiles={profiles} onMode={onMode} onProfile={onProfile} />
-          {noChainToScore ? <SchedulerNote i18nKey='routing.chain.schedulerNoChain' /> : null}
-          {notTickedYet ? <SchedulerNote i18nKey='routing.chain.schedulerNotTicked' /> : null}
+          <SurfaceBar surfaces={surfaces} active={surface.id} onSelect={selectSurface} />
+          <SurfaceScopeBar surface={surface} profiles={profiles} onMode={onMode} onProfile={onProfile} />
+          {/* The notes explain a missing live reading, and Share is the
+              only one on this screen — the passthrough half has no
+              scheduler-fed column at all now, so they render inside the
+              routed branch rather than above both. */}
+          {surface.routingMode === 'routed' ? (
+            <>
+              {noChainToScore ? <SchedulerNote i18nKey='routing.chain.schedulerNoChain' /> : null}
+              {notTickedYet ? <SchedulerNote i18nKey='routing.chain.schedulerNotTicked' /> : null}
+            </>
+          ) : null}
           {surface.routingMode === 'routed' ? (
             <RoutedBody
               surface={surface}
@@ -349,7 +426,7 @@ export function RoutingChain() {
               onNotify={notify}
             />
           ) : (
-            <PassthroughPanel surface={surface} targets={targets} weights={weights} />
+            <PassthroughPanel surface={surface} targets={targets} />
           )}
         </>
       )}

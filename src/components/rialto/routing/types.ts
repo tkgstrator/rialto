@@ -57,7 +57,6 @@ export interface ProfileSummary {
 }
 
 /** How a target is behaving right now, per the last scheduler tick. */
-export type TargetState = 'ready' | 'throttled' | 'exhausted' | 'unknown'
 
 /** One routable "provider,model" the operator has left enabled. */
 export interface EnabledTarget {

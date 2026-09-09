@@ -13,7 +13,7 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, mono, meter, btn, navTo } = window.Shell
+const { renderShell, pill, btn, navTo } = window.Shell
 
 // ─── The fix for "every routing setting is messages-only" ─────────────
 // The old build hard-coded a router bypass for /v1/chat/completions and
@@ -21,6 +21,25 @@ const { renderShell, pill, mono, meter, btn, navTo } = window.Shell
 // so. Here the surface is the OUTERMOST selector: you pick which wire
 // format you are configuring, then whether the router applies to it at
 // all, and only then the scenario / lane / chain.
+//
+// ─── Two bands, not four ──────────────────────────────────────────────
+// That axis order is right; the earlier draft of this screen just spent
+// a full-width strip on each step of it — surface, then mode + profile,
+// then scenario, then lane — plus a header subtitle restating all three
+// and two separate blocks of prose explaining them. ~364px of chrome
+// stood above ~250px of chain, and the chain still left ~400px of empty
+// page under it.
+//
+// The four strips are two now. Band 1 answers "which surface, and does
+// the router apply to it" — the tabs went single-line and the
+// Routed/Passthrough switch moved into the same row, so a surface's
+// state and the control that changes it finally sit together instead of
+// two strips apart. Band 2 answers "which chain, and what can I do to
+// it": scenario, lane, actions.
+//
+// Both bands span the full width. They used to live inside the left
+// column of a grid, which cost them the 320px the right rail took.
+
 const SURFACES = [
   { id: 'messages',  label: '/v1/messages',         mode: 'routed',      hint: 'Claude Code' },
   { id: 'chat',      label: '/v1/chat/completions', mode: 'routed',      hint: 'OpenAI SDK' },
@@ -31,17 +50,30 @@ const ACTIVE_SURFACE = 'messages'
 
 // The outermost axis has to be walkable, so picking a passthrough surface
 // lands on the passthrough half of this screen rather than doing nothing.
+//
+// Every tab is the same shape — a dot and a path, filled dot for routed
+// and hollow for passthrough. Uniform on purpose: the controls for the
+// selected surface used to live at the right end of this row, where a
+// switch on the same line as four tabs reads as governing the row rather
+// than one tab, and moving them INSIDE the selected tab only traded that
+// for a row that stretches and reflows every time you switch. They sit
+// in a scope strip of their own now, directly under this row.
+//
+// The dot still carries each surface's mode, which is the fact this
+// screen exists to stop hiding: the old build bypassed the router on two
+// surfaces and said so nowhere.
 const surfaceTab = (s) => {
   const on = s.id === ACTIVE_SURFACE
   const href = s.mode === 'routed' ? 'routing.html' : 'routing-passthrough.html'
+  const dot = s.mode === 'routed'
+    ? '<span class="size-1.5 shrink-0 rounded-full bg-emerald-500"></span>'
+    : '<span class="size-1.5 shrink-0 rounded-full border border-muted-foreground/50"></span>'
   return `
-    <button ${navTo(href)} class="relative flex flex-col items-start gap-0.5 border-b-2 px-4 py-2.5 text-left transition-colors ${
+    <button ${navTo(href)} class="flex items-center gap-2 border-b-2 px-3 py-2.5 transition-colors ${
       on ? 'border-b-foreground' : 'border-b-transparent hover:bg-muted/50'
     }">
-      <span class="font-mono text-xs ${on ? 'text-foreground' : 'text-muted-foreground'}">${s.label}</span>
-      <span class="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-        ${s.hint} · ${s.mode === 'routed' ? '<span class="text-emerald-600 dark:text-emerald-400">routed</span>' : 'passthrough'}
-      </span>
+      ${dot}
+      <span class="whitespace-nowrap font-mono text-xs ${on ? 'text-foreground' : 'text-muted-foreground'}">${s.label}</span>
     </button>`
 }
 
@@ -54,16 +86,23 @@ const SCENARIOS = [
 ]
 const ACTIVE_SCENARIO = 'default'
 
+// Underline tabs, the same treatment the surface strip uses. These were
+// filled chips while the two strips sat adjacent — two underline rows
+// stacked read as one nested inside the other, and the surface is the
+// outer axis so it was the wrong one to lose its emphasis. The scope
+// strip sits between them now, so the ambiguity is gone and the two
+// selectors can look like what they both are.
+//
+// The tab spans the band rather than the 32px controls beside it, so its
+// underline lands on the band's own rule instead of floating above it —
+// which is what makes it read as a tab and not as underlined text.
 const scenarioTab = (s) => {
   const on = s.id === ACTIVE_SCENARIO
   return `
-    <!-- py-3, not py-2: the strip is the one place a scenario is
-         switched, and at 8px of padding it read as a caption over the
-         table rather than a control you aim at. -->
-    <button class="flex items-center gap-2 border-b-2 px-3 py-3 text-xs transition-colors ${
+    <button class="flex h-full items-center justify-center gap-1.5 border-b-2 px-2.5 text-xs transition-colors ${
       on ? 'border-b-foreground font-medium' : 'border-b-transparent text-muted-foreground hover:text-foreground'
     }">
-      ${s.label}<span class="font-mono text-[12px] tabular-nums text-muted-foreground">${s.count}</span>
+      ${s.label}<span class="font-mono text-[12px] tabular-nums ${on ? 'text-muted-foreground' : 'text-muted-foreground/70'}">${s.count}</span>
     </button>`
 }
 
@@ -77,9 +116,9 @@ const CHAIN = [
   // Shares are apportioned from the weights 0.60 / 1.00 / 0.00 / 1.00
   // (total 2.60) by largest remainder, which is what makes 23+39+0+38
   // land on 100 instead of the 99 that plain rounding gives.
-  { n: 1, target: 'claude-code,claude-opus-4-8',  tier: 'opus',   share: '23%',  state: 'throttled', on: true },
-  { n: 2, target: 'claude-code,claude-fable-5',   tier: 'fable',  share: '39%',  state: 'ready',     on: true },
-  { n: 3, target: 'codex,gpt-5.5',                tier: 'opus',   share: '0%',   state: 'exhausted', on: true },
+  { n: 1, target: 'claude-code,claude-opus-4-8',  tier: 'opus',   share: '23%', on: true },
+  { n: 2, target: 'claude-code,claude-fable-5',   tier: 'fable',  share: '39%',     on: true },
+  { n: 3, target: 'codex,gpt-5.5',                tier: 'opus',   share: '0%', on: true },
   // Tier null on purpose: no Gemini name says a Claude family, so the
   // router cannot classify it and nobody has set a manualTier in
   // Providers. It is the row the tier-respect floor below cannot hold.
@@ -87,13 +126,11 @@ const CHAIN = [
   // the scheduler has no reading to publish, not that the target is out
   // of the running. The pill says the number behind it is a policy
   // default rather than a measurement.
-  { n: 4, target: 'gemini-cli,gemini-3.1-pro',    tier: null,     share: '38%',  state: 'unknown',   on: true },
+  { n: 4, target: 'gemini-cli,gemini-3.1-pro',    tier: null,     share: '38%',   on: true },
   // Switched off: it takes no share of the lane, so the cell is a dash
   // rather than a 0% that would read as "lost the apportionment".
-  { n: 5, target: 'claude-code,claude-sonnet-4-6',tier: 'sonnet', share: null,   state: 'ready',     on: false }
+  { n: 5, target: 'claude-code,claude-sonnet-4-6',tier: 'sonnet', share: null,     on: false }
 ]
-
-const stateTone = { ready: 'ok', throttled: 'warn', exhausted: 'bad', unknown: 'mute' }
 
 // A chain entry names "provider,model", and the provider is where its
 // credentials, accounts and model list live. The mock set has one detail
@@ -126,7 +163,6 @@ const chainRow = (e) => `
     <td class="px-2">${
       e.tier === null ? '<span class="text-[12px] text-muted-foreground/50">—</span>' : pill(e.tier, 'mute')
     }</td>
-    <td class="px-2">${pill(e.state, stateTone[e.state])}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums ${e.share === null ? 'text-muted-foreground' : ''}">${
       e.share === null ? '–' : e.share
     }</td>
@@ -140,25 +176,35 @@ const chainRow = (e) => `
     </td>
   </tr>`
 
+// Share is the one column a reader misreads — it is a slice of the
+// lane's scheduler weight, not a traffic forecast — so the caveat rides
+// on the header as a marker. The dashed four-line box that used to
+// explain it under the table is gone; a table does not need a paragraph.
 const chain = `
   <table class="w-full table-fixed">
-    <colgroup><col class="w-16"><col><col class="w-20"><col class="w-24"><col class="w-20"><col class="w-24"></colgroup>
+    <!-- No State column: on most installs it reads "unknown" for most
+         rows, and where it does not, Share already implies it — an
+         exhausted target shows 0%, a disabled one a dash. Passthrough
+         keeps its State; that table has no Share to imply it.
+         (No backticks in here: this comment sits inside a template
+         literal, and one would close the string.) -->
+    <colgroup><col class="w-16"><col><col class="w-20"><col class="w-24"><col class="w-24"></colgroup>
     <thead>
       <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         <th class="pl-6 pr-2 text-left font-medium">#</th>
         <th class="px-2 text-left font-medium">Target</th>
         <th class="px-2 text-left font-medium">Tier</th>
-        <th class="px-2 text-left font-medium">State</th>
-        <th class="px-2 text-right font-medium">Share</th>
+        <th class="px-2 text-right font-medium">
+          Share <i class="ri-question-line align-[-1px] text-[13px] normal-case text-muted-foreground/50"></i>
+        </th>
         <th class="pl-2 pr-6 text-right font-medium">On</th>
       </tr>
     </thead>
     <tbody>${CHAIN.map(chainRow).join('')}</tbody>
   </table>`
 
-// ─── Right rail: constraints + presets ────────────────────────────────
 const constraint = (label, value, hint) => `
-  <div class="border-l-2 border-l-transparent px-4 py-3 transition-colors hover:border-l-border hover:bg-muted/50">
+  <div class="border-l-2 border-l-transparent bg-background px-4 py-3 transition-colors hover:border-l-border hover:bg-muted/50">
     <div class="flex items-baseline gap-2">
       <span class="text-xs">${label}</span>
       <span class="ml-auto font-mono text-xs">${value}</span>
@@ -166,123 +212,98 @@ const constraint = (label, value, hint) => `
     <div class="mt-0.5 text-[12px] text-muted-foreground">${hint}</div>
   </div>`
 
-
-
 document.getElementById('root').innerHTML = `
 
-  <!-- Surface selector: the outermost axis of the whole screen -->
-  <div class="flex items-stretch gap-0 border-b border-border px-2">
+  <!-- Band 1 — which surface. -->
+  <div class="flex items-center gap-1 border-b border-border pl-4 pr-6">
     ${SURFACES.map(surfaceTab).join('')}
   </div>
 
-  <!-- Mode + profile for the selected surface -->
-  <div class="flex items-center gap-4 border-b border-border bg-muted/30 px-6 py-3">
-    <div class="flex items-center gap-2">
-      <span class="text-xs text-muted-foreground">Routing</span>
-      <div class="flex rounded-md border border-border p-0.5">
-        <button class="rounded bg-foreground px-2.5 py-1 text-[12px] font-medium text-background">Routed</button>
-        <button ${navTo('routing-passthrough.html')} class="rounded px-2.5 py-1 text-[12px] text-muted-foreground hover:text-foreground">Passthrough</button>
-      </div>
+  <!-- Band 2 — the selected surface's own settings.
+       It leads with the surface it writes to. That repeats the path from
+       the tab above, and that repetition is the point: parked at the
+       right end of the tab row the same switch read as a screen-wide
+       control, and nothing on it said which surface it was changing.
+       The tinted ground ties the strip to the tabs it hangs from. -->
+  <div class="flex items-center gap-3 border-b border-border bg-muted/30 px-6 py-2.5">
+    <span class="whitespace-nowrap font-mono text-xs">/v1/messages</span>
+    <span class="whitespace-nowrap text-[12px] text-muted-foreground">Claude Code</span>
+    <span class="mx-1 h-4 w-px shrink-0 bg-border"></span>
+    <div class="flex rounded-md border border-border p-0.5">
+      <button class="rounded bg-foreground px-2.5 py-1 text-[12px] font-medium text-background">Routed</button>
+      <button ${navTo('routing-passthrough.html')} class="rounded px-2.5 py-1 text-[12px] text-muted-foreground hover:text-foreground">Passthrough</button>
     </div>
-    <div class="flex items-center gap-2">
-      <span class="text-xs text-muted-foreground">Profile</span>
-      <button class="inline-flex h-7 items-center gap-2 rounded-md border border-border px-2.5 text-xs hover:bg-muted/60">
-        live <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i>
-      </button>
-    </div>
-    <p class="ml-auto max-w-md text-right text-[12px] leading-snug text-muted-foreground">
-      Passthrough sends the caller's <span class="font-mono">provider,model</span> straight upstream.
-      Routed walks the chain for this scenario and fails over on quota.
-    </p>
+    <span class="mx-1 h-4 w-px shrink-0 bg-border"></span>
+    <button class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-muted/60">
+      <span class="text-muted-foreground">Profile</span> live <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i>
+    </button>
   </div>
 
-  <div class="grid grid-cols-[1fr_20rem]">
-    <div class="min-w-0 border-r border-border">
-      <div class="flex items-center gap-1 border-b border-border px-6">
-        ${SCENARIOS.map(scenarioTab).join('')}
-      </div>
-
-      <div class="flex items-center gap-3 px-6 py-3">
-        <div class="flex rounded-md border border-border p-0.5">
-          <button class="rounded bg-foreground px-2.5 py-1 text-[12px] font-medium text-background">Agent</button>
-          <button class="rounded px-2.5 py-1 text-[12px] text-muted-foreground hover:text-foreground">Subagent</button>
-        </div>
-        <span class="text-[12px] text-muted-foreground">5 targets · 1 disabled</span>
-        <div class="ml-auto flex gap-2">
-          ${btn('Add target', 'outline', 'ri-add-line')}
-          ${btn('Save', 'primary', 'ri-check-line')}
-        </div>
-      </div>
-
-      ${chain}
-
-      <div class="px-6 py-4">
-        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
-          <i class="ri-information-line mr-1 align-[-1px]"></i>
-          Order is preference, top first: the router walks the chain from the top and sends the request to
-          the first target it can use, so <span class="font-mono">Share</span> is each target's slice of this
-          lane's scheduler weight — not the fraction of traffic it will see. A target is skipped when it is
-          disabled, exhausted, or its share is <span class="font-mono">0%</span>. The weights are published
-          by the routing scheduler every tick — edit the chain, not the numbers.
-        </div>
-      </div>
+  <!-- Band 3 — which chain, and what you can do to it. Presets is one
+       control and lives here; it used to be a header button AND a list
+       in the right rail. -->
+  <div class="flex items-center gap-3 border-b border-border px-6 py-2.5">
+    <!-- Equal columns rather than content width. "Long context" is twice
+         "Think", so packed side by side the strip read as five different
+         kinds of thing. auto-cols-fr rather than a fixed width: the
+         labels are translated, and the widest one is not the same string
+         in every locale. -->
+    <div class="-my-2.5 grid grid-flow-col auto-cols-fr gap-0.5 self-stretch">
+      ${SCENARIOS.map(scenarioTab).join('')}
     </div>
+    <span class="h-4 w-px bg-border"></span>
+    <div class="flex rounded-md border border-border p-0.5">
+      <button class="rounded bg-foreground px-2.5 py-1 text-[12px] font-medium text-background">Agent</button>
+      <button class="rounded px-2.5 py-1 text-[12px] text-muted-foreground hover:text-foreground">Subagent</button>
+    </div>
+    <!-- Save alone. Presets and Add target moved under the table: five
+         scenario chips, a lane switch and three buttons was more than one
+         row should carry, and neither of those two acts on the coordinate
+         this band picks — they act on the list below it. -->
+    <div class="ml-auto">
+      ${btn('Save', 'primary', 'ri-check-line')}
+    </div>
+  </div>
 
-    <aside class="min-w-0">
-      <div class="px-4 pt-5 pb-2">
-        <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Constraints</h2>
-      </div>
-      ${constraint(
-        'Tier respect',
-        'sonnet',
-        'never fall below this tier. A target whose tier is unknown is not held by it — set one in <a href="provider-apikey.html" class="underline underline-offset-2">Providers</a>.'
-      )}
+  ${chain}
+
+  <!-- The count reads as a total under the thing it counts, and the two
+       actions that add to that list sit with it. "Add target" appends a
+       row to the table directly above, which is where a reader looks for
+       it once they have read the last one. -->
+  <div class="flex items-center gap-3 border-t border-border/60 px-6 py-2.5">
+    <span class="text-[12px] text-muted-foreground">5 targets · 1 disabled · order is preference, top first</span>
+    <div class="ml-auto flex items-center gap-2">
+      ${btn('Presets', 'ghost', 'ri-stack-line')}
+      ${btn('Add target', 'outline', 'ri-add-line')}
+    </div>
+  </div>
+
+  <!-- Constraints, four-up, in the space the right rail used to leave
+       empty. The rail ran the full page height for four rows while the
+       chain beside it ended after 250px — a tall column next to a short
+       one, with the empty half carrying the content. Same four items,
+       same values; they stopped being a column and became a footer to
+       the chain they constrain. -->
+  <div class="mt-6 border-t border-border">
+    <div class="px-6 pt-4 pb-2">
+      <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Constraints</h2>
+    </div>
+    <div class="grid grid-cols-4 gap-px bg-border/60">
+      ${constraint('Tier respect', 'sonnet', 'never fall below this tier. Unknown tiers are not held by it.')}
       ${constraint('Healthiness floor', '95%', 'skip targets below this')}
       ${constraint('When exhausted', 'next', 'next / wait / error')}
       ${constraint('Cross-provider', 'on', 'allow different auth modes')}
-
-
-      <div class="border-t border-border px-4 pt-5 pb-2">
-        <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Presets</h2>
-      </div>
-      <div class="px-4 pb-6">
-        <!-- Two kinds of row, and the difference is worth showing rather
-             than labelling: a built-in is a chain of TIERS, resolved
-             against whatever models this install has enabled at the
-             moment you apply it, so its second line is the chain itself.
-             A saved snapshot already names models and needs no gloss. -->
-        <div class="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
-          <i class="ri-stack-line text-sm text-muted-foreground"></i>
-          <div class="min-w-0">
-            <div class="truncate">Max quality</div>
-            <div class="truncate font-mono text-[11px] text-muted-foreground">fable → opus → sonnet</div>
-          </div>
-          <span class="ml-auto shrink-0 text-[12px] text-muted-foreground">Apply</span>
-        </div>
-        <div class="mt-2 flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
-          <i class="ri-stack-line text-sm text-muted-foreground"></i>
-          <div class="min-w-0">
-            <div class="truncate">Cost saver</div>
-            <div class="truncate font-mono text-[11px] text-muted-foreground">haiku → sonnet</div>
-          </div>
-          <span class="ml-auto shrink-0 text-[12px] text-muted-foreground">Apply</span>
-        </div>
-        <div class="mt-2 flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
-          <i class="ri-bookmark-line text-sm text-muted-foreground"></i>
-          <span class="truncate">Subscription first</span>
-          <span class="ml-auto shrink-0 text-[12px] text-muted-foreground">Apply</span>
-        </div>
-      </div>
-    </aside>
+    </div>
   </div>`
 
+// No Presets button in the header, and no subtitle: the subtitle read
+// "Per inbound surface · scenario · lane", which described the strips
+// that used to sit underneath it.
 renderShell({
   active: 'routing',
   navMode: 'cloudflare',
-  crumbs: ['Chain'],
-  subtitle: 'Per inbound surface · scenario · lane',
-  actions:
-    btn('Presets', 'ghost', 'ri-stack-line')
+  crumbs: ['Chain']
 })
 </script>
 </body>
