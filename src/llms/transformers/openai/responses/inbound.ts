@@ -220,10 +220,18 @@ export function convertResponsesRequestToUnified(body: Record<string, unknown>):
   // Responses spells it `max_output_tokens`, unified and chat-completions
   // spell it `max_tokens`, and newer gpt-5.x chat models want
   // `max_completion_tokens` (endpoint-chat.ts renames it further down).
-  // Absorb it here so the rest of the pipeline sees the unified name —
-  // left alone it rides `...body` all the way to the vendor and 400s as
-  // "Unknown parameter: 'max_output_tokens'". An explicit `max_tokens`
-  // wins, on the same "caller was more specific" rule as `tools`.
+  // Absorb it into the unified name so the rest of the pipeline sees one
+  // spelling and each outbound transformer can re-emit the one its own
+  // upstream takes.
+  //
+  // Left alone it rides `...body` untouched to whatever upstream the
+  // chain picked, which is only correct for a Responses upstream. Against
+  // chat/completions it is a hard failure: api.openai.com answers 400
+  // "Unknown parameter: 'max_output_tokens'" (measured), and the codex
+  // backend was reported answering 400 "Unsupported parameter" (#463).
+  //
+  // An explicit `max_tokens` wins, on the same "caller was more specific"
+  // rule as `tools`.
   if (typeof body.max_output_tokens === 'number' && unified.max_tokens === undefined) {
     unified.max_tokens = body.max_output_tokens
   }
