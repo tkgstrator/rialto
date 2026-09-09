@@ -51,12 +51,19 @@ const surfaceTab = (s) => {
 // strings a caller may send. Showing the reachable set is the useful
 // content here — the chain editor would be misleading.
 const REACHABLE = [
-  { target: 'codex,gpt-5.5',                  tier: 'opus' },
-  { target: 'codex,gpt-5.4',                  tier: 'sonnet' },
-  { target: 'openai,gpt-5.5',                 tier: 'opus' },
-  { target: 'openai,gpt-5.4-mini',            tier: 'haiku' },
-  { target: 'openai,gpt-5.3-codex',           tier: 'opus' }
+  { target: 'codex,gpt-5.5',                  tier: 'opus',   on: true },
+  { target: 'codex,gpt-5.4',                  tier: 'sonnet', on: true },
+  { target: 'openai,gpt-5.5',                 tier: 'opus',   on: true },
+  { target: 'openai,gpt-5.4-mini',            tier: 'haiku',  on: true },
+  { target: 'openai,gpt-5.3-codex',           tier: 'opus',   on: true }
 ]
+
+// Collapsed by default, and this is the state worth drawing: a vendor
+// catalog is mostly models an install does not serve, so inlining them
+// would bury the handful a caller can name under the ones they cannot.
+// Switching a row off moves it into this group rather than making it
+// vanish, which is the only way back from a table that hid it.
+const DISABLED_COUNT = 84
 
 // A reachable target is a "provider,model" a caller may name, so the row
 // leads to the provider that has to be configured for it to resolve.
@@ -65,9 +72,18 @@ const providerHref = (t) =>
   SUBSCRIPTION_PROVIDERS.includes(t.split(',')[0]) ? 'provider-subscription.html' : 'provider-apikey.html'
 
 const row = (e) => `
-  <tr ${navTo(providerHref(e.target))} class="border-t border-border/60 transition-colors hover:bg-muted/50">
+  <tr ${navTo(providerHref(e.target))} class="border-t border-border/60 transition-colors hover:bg-muted/50 ${e.on ? '' : 'opacity-45'}">
     <td class="py-2.5 pl-6 pr-2 font-mono text-xs">${e.target}</td>
     <td class="px-2">${pill(e.tier, 'mute')}</td>
+    <!-- "May a caller name this model" is the question this table
+         answers, so the switch that changes the answer belongs in it. It
+         writes Model.enabled, the same flag the Providers model table
+         edits. -->
+    <td class="px-2 text-right">
+      <span class="inline-flex h-4 w-7 items-center rounded-full ${e.on ? 'bg-foreground' : 'bg-muted-foreground/30'} px-0.5">
+        <span class="size-3 rounded-full bg-background ${e.on ? 'translate-x-3' : ''}"></span>
+      </span>
+    </td>
     <td class="py-2.5 pl-2 pr-6 text-right">
       <button class="text-muted-foreground/60 hover:text-foreground"><i class="ri-file-copy-line text-sm"></i></button>
     </td>
@@ -101,16 +117,24 @@ document.getElementById('root').innerHTML = `
     <!-- Two columns and a copy affordance. State went with the chain
          table's: a passthrough surface is never scored, so the pill read
          "unknown" on every row of every install. -->
-    <colgroup><col><col class="w-24"><col class="w-16"></colgroup>
+    <colgroup><col><col class="w-24"><col class="w-20"><col class="w-16"></colgroup>
     <thead>
       <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         <th class="pl-6 pr-2 text-left font-medium">Target</th>
         <th class="px-2 text-left font-medium">Tier</th>
+        <th class="px-2 text-right font-medium">On</th>
         <th class="pl-2 pr-6"></th>
       </tr>
     </thead>
     <tbody>${REACHABLE.map(row).join('')}</tbody>
   </table>
+
+  <div class="flex items-center gap-3 border-t border-border/60 px-6 py-2.5">
+    <span class="text-[12px] text-muted-foreground">${REACHABLE.length} targets</span>
+    <button class="-mx-2 flex h-8 items-center gap-1 rounded-md px-2 text-[12px] text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground">
+      <i class="ri-arrow-right-s-line text-sm"></i>${DISABLED_COUNT} disabled
+    </button>
+  </div>
 
   <div class="px-6 py-5">
     <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">

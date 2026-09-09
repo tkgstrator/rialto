@@ -65,3 +65,8 @@ export interface EnabledTarget {
   model: string
   tier: Tier | null
 }
+
+/** An EnabledTarget that also says whether it is switched on. */
+export interface ReachableTarget extends EnabledTarget {
+  enabled: boolean
+}

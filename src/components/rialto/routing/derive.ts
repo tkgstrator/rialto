@@ -8,7 +8,7 @@
  */
 import type { RoutingSchedulerStateResponse, RoutingSchedulerWeightEntry } from '@/lib/api'
 import type { Provider } from '@/schemas/domain/provider'
-import type { EnabledTarget, PreferenceByScenario, Tier } from './types'
+import type { EnabledTarget, PreferenceByScenario, ReachableTarget, Tier } from './types'
 import { SCENARIOS } from './types'
 
 /** Split a "provider,model" target. A malformed row keeps the raw string as its model. */
@@ -52,6 +52,37 @@ export function enabledTargets(providers: readonly Provider[]): EnabledTarget[] 
         provider: provider.name,
         model,
         tier: override === undefined ? inferTier(model) : override
+      })
+    }
+  }
+  return out
+}
+
+/**
+ * Every model an enabled provider serves, including the ones switched
+ * off — with the flag, so a screen can show both.
+ *
+ * `enabledTargets` filters the off ones out because its callers are
+ * offering a choice: a chain cannot route to a model that is disabled.
+ * The passthrough table is answering a different question — "what may a
+ * caller name, and what would I flip to change that" — and a row that
+ * vanishes when you switch it off cannot be switched back on from the
+ * screen that hid it.
+ */
+export function reachableTargets(providers: readonly Provider[]): ReachableTarget[] {
+  const out: ReachableTarget[] = []
+  for (const provider of providers) {
+    if (provider.enabled === false) continue
+    const disabled = new Set(provider.transformer?._disabledModels)
+    const manual = provider.modelManualTiers
+    for (const model of [...provider.models].sort((a, b) => a.localeCompare(b))) {
+      const override = manual === undefined ? undefined : manual[model]
+      out.push({
+        target: `${provider.name},${model}`,
+        provider: provider.name,
+        model,
+        tier: override === undefined ? inferTier(model) : override,
+        enabled: !disabled.has(model)
       })
     }
   }
