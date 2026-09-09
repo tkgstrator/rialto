@@ -15,7 +15,7 @@
 | `CCR_HOME_DIR` | `RIALTO_HOME_DIR` | 手作業。旧名は無視される |
 | `CCR_DEBUG_OAUTH` | `RIALTO_DEBUG_OAUTH` | 手作業。旧名は無視される |
 | DB `ccr` / `ccr_test` | `rialto` / `rialto_test` | 手作業（`scripts/rename-dev-database.ts`） |
-| `tkgling/claude-code-router` | `tkgling/rialto` | 手作業（`compose.yaml`） |
+| `tkgling/claude-code-router` | `ghcr.io/tkgstrator/rialto` | 手作業（`compose.yaml`）。v2.78.4 以降 Docker Hub には push していない |
 | `ccr_` thinking signature | `rialto_` | 移行不能。該当する会話は作り直す |
 | `ccrVersion`（preset manifest） | `rialtoVersion` | 不要。両方読める |
 | `<CCR-SUBAGENT-MODEL>` | `<RIALTO-SUBAGENT-MODEL>` | 不要。旧綴りは受理し続ける（ただし**意味が変わった**、後述） |
@@ -147,8 +147,11 @@ bun run scripts/rename-dev-database.ts --verify
  services:
    rialto:
 -    image: tkgling/claude-code-router:latest
-+    image: tkgling/rialto:latest
++    image: ghcr.io/tkgstrator/rialto:latest
 ```
+
+イメージは GHCR のみに publish している。Docker Hub の `tkgling/rialto` は
+v2.78.4 までのタグが残っているだけで、それ以降は更新されない。
 
 ボリュームのパスも併せて直すこと（§1 の落とし穴を参照）:
 

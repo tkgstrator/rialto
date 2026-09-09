@@ -3,7 +3,7 @@ set -e
 
 # Release script — Docker only now that the npm CLI package and the
 # packages/core npm publish flow have been retired. Publishes the
-# consolidated Vite + Hono image to Docker Hub.
+# consolidated Vite + Hono image to GHCR.
 #
 # Paths resolve from the script's own location, not from the caller's
 # working directory. They used to be `../package.json` and `-f ../Dockerfile ..`,
@@ -18,7 +18,7 @@ set -e
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 VERSION=$(node -p "require('${ROOT}/package.json').version")
-IMAGE_NAME="tkgling/rialto"
+IMAGE_NAME="ghcr.io/tkgstrator/rialto"
 IMAGE_TAG="${VERSION}"
 LATEST_TAG="latest"
 
@@ -33,6 +33,14 @@ echo "Releasing Rialto v${VERSION}"
 
 if ! docker info &>/dev/null; then
   echo "Error: Docker is not running"
+  exit 1
+fi
+
+# GHCR needs a token with write:packages; `gh auth token` carries it when
+# the CLI was authenticated with that scope. This is the manual path, so
+# fail loudly here rather than at push time after a full image build.
+if ! docker login ghcr.io -u "$(gh api /user --jq .login)" --password-stdin <<<"$(gh auth token)" &>/dev/null; then
+  echo "Error: could not log in to ghcr.io — check 'gh auth status' has write:packages"
   exit 1
 fi
 
