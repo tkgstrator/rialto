@@ -56,6 +56,30 @@ export function fmtUntil(iso: string | null, now: number): string | null {
   return `${d}d ${String(h).padStart(2, '0')}h`
 }
 
+/**
+ * Elapsed process uptime: `42s`, `37m 12s`, `3h 24m`, `7d 11h 10m`.
+ *
+ * Three units once it passes a day, two below that — an uptime is read
+ * to answer "how long has this been up", and a server up for a week does
+ * not need its seconds. Secondary units are zero-padded like `fmtUntil`
+ * so the value stays column-aligned in the tabular-nums readouts.
+ *
+ * `/health` keeps reporting `uptime_seconds` as an integer: that is the
+ * machine-readable contract an uptime monitor parses, and this is only
+ * how the two Settings screens render it.
+ */
+export function fmtUptime(seconds: number): string {
+  const secs = Math.max(0, Math.floor(seconds))
+  if (secs < MINUTE) return `${secs}s`
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  if (secs < HOUR) return `${Math.floor(secs / MINUTE)}m ${pad(secs % MINUTE)}s`
+  if (secs < DAY) return `${Math.floor(secs / HOUR)}h ${pad(Math.floor((secs % HOUR) / MINUTE))}m`
+  const d = Math.floor(secs / DAY)
+  const h = Math.floor((secs % DAY) / HOUR)
+  const m = Math.floor((secs % HOUR) / MINUTE)
+  return `${d}d ${pad(h)}h ${pad(m)}m`
+}
+
 /** Compact request counts: 486, 3.1k, 12.4k, 1.20M. */
 export function fmtCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`

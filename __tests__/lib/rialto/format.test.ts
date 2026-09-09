@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { fmtAgo, fmtCount, fmtLatency, fmtRate, fmtUntil, shortId } from '../../../src/lib/rialto/format'
+import { fmtAgo, fmtCount, fmtLatency, fmtRate, fmtUntil, fmtUptime, shortId } from '../../../src/lib/rialto/format'
 
 // A fixed "now" so the assertions never depend on wall-clock drift.
 const NOW = Date.parse('2026-08-31T12:00:00.000Z')
@@ -76,5 +76,30 @@ describe('shortId', () => {
   test('elides the middle of a long id and leaves short ones alone', () => {
     expect(shortId('ses_9fa2b1c3d4e5f6c41')).toBe('ses_9fa2…c41')
     expect(shortId('ses_short')).toBe('ses_short')
+  })
+})
+
+describe('fmtUptime', () => {
+  test('reads as a duration rather than a raw second count', () => {
+    // The number the Health tab used to print verbatim.
+    expect(fmtUptime(2232)).toBe('37m 12s')
+    expect(fmtUptime(7 * 86400 + 11 * 3600 + 10 * 60)).toBe('7d 11h 10m')
+  })
+
+  test('drops a unit at each threshold so the value stays two or three wide', () => {
+    expect(fmtUptime(42)).toBe('42s')
+    expect(fmtUptime(60)).toBe('1m 00s')
+    expect(fmtUptime(3600)).toBe('1h 00m')
+    expect(fmtUptime(3 * 3600 + 24 * 60 + 59)).toBe('3h 24m')
+    expect(fmtUptime(86400)).toBe('1d 00h 00m')
+  })
+
+  test('pads the secondary units so the column stays aligned', () => {
+    expect(fmtUptime(7 * 86400 + 3600 + 5 * 60)).toBe('7d 01h 05m')
+  })
+
+  test('clamps a negative or fractional input instead of rendering it', () => {
+    expect(fmtUptime(-5)).toBe('0s')
+    expect(fmtUptime(90.9)).toBe('1m 30s')
   })
 })
