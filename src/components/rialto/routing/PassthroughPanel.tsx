@@ -64,9 +64,8 @@ export function PassthroughPanel({
     <>
       {/* Own the gap: this heading is the first thing under the mode bar,
           so it cannot lean on a preceding block for spacing. */}
-      {/* This heading is the second band of the passthrough half, so it
-          carries the same height and rule as the chain half's — the
-          strip it used to sit under is gone. */}
+      {/* Band 3 of the passthrough half, at the same height and rule as
+          the chain half's action band. */}
       <div className='flex items-center gap-3 border-b border-border px-6 py-2.5'>
         <h2 className='text-sm font-semibold'>{t('routing.chain.reachableTargets')}</h2>
         <span className='text-[12px] text-muted-foreground'>

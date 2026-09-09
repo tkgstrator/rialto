@@ -1,13 +1,16 @@
 /**
- * The controls that act on the selected surface: whether the router
- * applies to it at all, and which preference profile it draws from.
+ * Band 2: the settings of the selected surface, and nothing else.
  *
- * These render inside `SurfaceBar`'s trailing slot rather than as a band
- * of their own — see the comment there. The mode switch writes straight
- * through: there is no draft state for a boolean whose whole purpose is
- * to be flipped and observed. Both controls change what actually routes:
- * `scenario-router.ts` resolves the surface for the inbound path and runs
- * that surface's profile.
+ * The strip leads with the surface it writes to. That repeats the path
+ * from the tab above it, and the repetition is the point — parked at the
+ * right end of the tab row the same switch read as a screen-wide
+ * control, and nothing on it said which surface it was changing. The
+ * tinted ground ties the strip to the tabs it hangs from.
+ *
+ * The mode switch writes straight through: there is no draft state for a
+ * boolean whose whole purpose is to be flipped and observed. Both
+ * controls change what actually routes — `scenario-router.ts` resolves
+ * the surface for the inbound path and runs that surface's profile.
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -111,7 +114,7 @@ function ProfilePicker({
   )
 }
 
-export function SurfaceControls({
+export function SurfaceScopeBar({
   surface,
   profiles,
   onMode,
@@ -124,7 +127,10 @@ export function SurfaceControls({
 }) {
   const { t } = useTranslation()
   return (
-    <>
+    <div className='flex items-center gap-3 border-b border-border bg-muted/30 px-6 py-2.5'>
+      <span className='whitespace-nowrap font-mono text-xs'>{surface.path}</span>
+      <span className='whitespace-nowrap text-[12px] text-muted-foreground'>{surface.client}</span>
+      <span className='mx-1 h-4 w-px shrink-0 bg-border' />
       <Segmented
         value={surface.routingMode}
         options={[
@@ -133,11 +139,9 @@ export function SurfaceControls({
         ]}
         onChange={onMode}
       />
-      {/* The two-line paragraph that used to hold the right half of a
-          band of its own is this marker. The routed/passthrough
-          distinction matters once, when you first meet the switch — not
-          on every later visit — and the band it was crowding is the one
-          that has to fit four surface tabs beside it. */}
+      {/* The two-line paragraph this replaced held the right 380px of the
+          strip. The routed/passthrough distinction matters once, when you
+          first meet the switch — not on every later visit. */}
       <button
         type='button'
         title={t('routing.chain.modeHelp')}
@@ -150,10 +154,10 @@ export function SurfaceControls({
           absent rather than disabled — and the divider goes with it. */}
       {surface.routingMode === 'routed' ? (
         <>
-          <span className='h-4 w-px bg-border' />
+          <span className='mx-1 h-4 w-px shrink-0 bg-border' />
           <ProfilePicker current={surface.profileKey} profiles={profiles} onSelect={onProfile} />
         </>
       ) : null}
-    </>
+    </div>
   )
 }

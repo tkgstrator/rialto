@@ -28,9 +28,10 @@ const SURFACES = [
 ]
 const ACTIVE_SURFACE = 'responses'
 
-// Same band 1 as routing.html — see the comment there. A dot carries
-// the mode, the client hint rides only the selected tab, and the switch
-// that changes the mode sits in the same row.
+// Same bands as routing.html — see the comments there. Every tab is the
+// same shape so the row never reflows, and the selected surface's
+// controls sit in a scope strip under it that names the surface it
+// writes to.
 const surfaceTab = (s) => {
   const on = s.id === ACTIVE_SURFACE
   const href = s.mode === 'routed' ? 'routing.html' : 'routing-passthrough.html'
@@ -43,7 +44,6 @@ const surfaceTab = (s) => {
     }">
       ${dot}
       <span class="whitespace-nowrap font-mono text-xs ${on ? 'text-foreground' : 'text-muted-foreground'}">${s.label}</span>
-      ${on ? `<span class="whitespace-nowrap text-[12px] text-muted-foreground/70">${s.hint}</span>` : ''}
     </button>`
 }
 
@@ -76,27 +76,25 @@ const row = (e) => `
 
 document.getElementById('root').innerHTML = `
 
+  <!-- Band 1 — which surface. -->
   <div class="flex items-center gap-1 border-b border-border pl-4 pr-6">
     ${SURFACES.map(surfaceTab).join('')}
-    <div class="ml-auto flex items-center gap-3 pl-4">
-      <div class="flex rounded-md border border-border p-0.5">
-        <button ${navTo('routing.html')} class="rounded px-2.5 py-1 text-[12px] text-muted-foreground hover:text-foreground">Routed</button>
-        <button class="rounded bg-foreground px-2.5 py-1 text-[12px] font-medium text-background">Passthrough</button>
-      </div>
-      <button class="text-muted-foreground/60 hover:text-foreground" title="Passthrough sends the caller's provider,model straight upstream: scenario classification, the chain and failover are all skipped. Routed walks the chain for this scenario and fails over on quota.">
-        <i class="ri-question-line text-sm"></i>
-      </button>
-    </div>
   </div>
 
-  <!-- The amber "this was the only behaviour before v3.0.0" notice that
-       used to sit here is gone. It said passthrough defaulted to the old
-       behaviour "so nothing changes on upgrade", and that stopped being
-       true when per-surface defaults were removed: every surface now
-       carries an explicit mode and none is more default than another.
-       The history also does not earn a block on every visit — what the
-       operator needs is what passthrough does, which the header
-       explainer and the footer hint already say. -->
+  <!-- Band 2 — the selected surface's own settings, named. No Profile:
+       a passthrough surface draws from no chain. -->
+  <div class="flex items-center gap-3 border-b border-border bg-muted/30 px-6 py-2.5">
+    <span class="whitespace-nowrap font-mono text-xs">/v1/responses</span>
+    <span class="whitespace-nowrap text-[12px] text-muted-foreground">Codex CLI</span>
+    <span class="mx-1 h-4 w-px shrink-0 bg-border"></span>
+    <div class="flex rounded-md border border-border p-0.5">
+      <button ${navTo('routing.html')} class="rounded px-2.5 py-1 text-[12px] text-muted-foreground hover:text-foreground">Routed</button>
+      <button class="rounded bg-foreground px-2.5 py-1 text-[12px] font-medium text-background">Passthrough</button>
+    </div>
+    <button class="text-muted-foreground/60 hover:text-foreground" title="Passthrough sends the caller's provider,model straight upstream: scenario classification, the chain and failover are all skipped. Routed walks the chain for this scenario and fails over on quota.">
+      <i class="ri-question-line text-sm"></i>
+    </button>
+  </div>
 
   <div class="flex items-center gap-3 border-b border-border px-6 py-2.5">
     <h2 class="text-sm font-semibold">Reachable targets</h2>

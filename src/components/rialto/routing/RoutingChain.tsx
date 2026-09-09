@@ -22,7 +22,7 @@ import { profileEntryCount, schedulerNotTickedYet, schedulerScoredNothing, weigh
 import { PassthroughPanel } from './PassthroughPanel'
 import { PresetsMenu } from './PresetsMenu'
 import { SurfaceBar } from './RoutingTabs'
-import { Segmented, SurfaceControls } from './SurfaceModeBar'
+import { Segmented, SurfaceScopeBar } from './SurfaceModeBar'
 import type { EnabledTarget, Lane, PreferenceEntry, PreferenceProfile, ScenarioKey } from './types'
 import { SCENARIOS } from './types'
 import { useChainEditing } from './useChainEditing'
@@ -369,12 +369,8 @@ export function RoutingChain() {
         </div>
       ) : (
         <>
-          <SurfaceBar
-            surfaces={surfaces}
-            active={surface.id}
-            onSelect={selectSurface}
-            trailing={<SurfaceControls surface={surface} profiles={profiles} onMode={onMode} onProfile={onProfile} />}
-          />
+          <SurfaceBar surfaces={surfaces} active={surface.id} onSelect={selectSurface} />
+          <SurfaceScopeBar surface={surface} profiles={profiles} onMode={onMode} onProfile={onProfile} />
           {noChainToScore ? <SchedulerNote i18nKey='routing.chain.schedulerNoChain' /> : null}
           {notTickedYet ? <SchedulerNote i18nKey='routing.chain.schedulerNotTicked' /> : null}
           {surface.routingMode === 'routed' ? (

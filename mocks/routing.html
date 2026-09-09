@@ -51,13 +51,17 @@ const ACTIVE_SURFACE = 'messages'
 // The outermost axis has to be walkable, so picking a passthrough surface
 // lands on the passthrough half of this screen rather than doing nothing.
 //
-// One line, not two. The mode used to be spelled under every tab
-// ("Claude Code · routed"), which printed the word four times beside a
-// switch that says it a fifth. A dot carries it — filled for routed,
-// hollow for passthrough — and the switch to its right is where the word
-// lives. The client hint rides only the selected tab: on all four it
-// wrapped every label and pushed Profile off the band; on one it still
-// answers "who speaks this?" for wherever you are.
+// Every tab is the same shape — a dot and a path, filled dot for routed
+// and hollow for passthrough. Uniform on purpose: the controls for the
+// selected surface used to live at the right end of this row, where a
+// switch on the same line as four tabs reads as governing the row rather
+// than one tab, and moving them INSIDE the selected tab only traded that
+// for a row that stretches and reflows every time you switch. They sit
+// in a scope strip of their own now, directly under this row.
+//
+// The dot still carries each surface's mode, which is the fact this
+// screen exists to stop hiding: the old build bypassed the router on two
+// surfaces and said so nowhere.
 const surfaceTab = (s) => {
   const on = s.id === ACTIVE_SURFACE
   const href = s.mode === 'routed' ? 'routing.html' : 'routing-passthrough.html'
@@ -70,7 +74,6 @@ const surfaceTab = (s) => {
     }">
       ${dot}
       <span class="whitespace-nowrap font-mono text-xs ${on ? 'text-foreground' : 'text-muted-foreground'}">${s.label}</span>
-      ${on ? `<span class="whitespace-nowrap text-[12px] text-muted-foreground/70">${s.hint}</span>` : ''}
     </button>`
 }
 
@@ -203,28 +206,37 @@ const constraint = (label, value, hint) => `
 
 document.getElementById('root').innerHTML = `
 
-  <!-- Band 1 — which surface, and does the router apply to it. -->
+  <!-- Band 1 — which surface. -->
   <div class="flex items-center gap-1 border-b border-border pl-4 pr-6">
     ${SURFACES.map(surfaceTab).join('')}
-    <div class="ml-auto flex items-center gap-3 pl-4">
-      <div class="flex rounded-md border border-border p-0.5">
-        <button class="rounded bg-foreground px-2.5 py-1 text-[12px] font-medium text-background">Routed</button>
-        <button ${navTo('routing-passthrough.html')} class="rounded px-2.5 py-1 text-[12px] text-muted-foreground hover:text-foreground">Passthrough</button>
-      </div>
-      <!-- The two-line paragraph that used to hold 380px of this band is
-           this marker now. The distinction matters once, when you first
-           meet the switch — not on every later visit. -->
-      <button class="text-muted-foreground/60 hover:text-foreground" title="Routed walks the chain for this scenario and fails over on quota. Passthrough sends the caller's provider,model straight upstream.">
-        <i class="ri-question-line text-sm"></i>
-      </button>
-      <span class="h-4 w-px bg-border"></span>
-      <button class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-muted/60">
-        <span class="text-muted-foreground">Profile</span> live <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i>
-      </button>
-    </div>
   </div>
 
-  <!-- Band 2 — which chain, and what you can do to it. Presets is one
+  <!-- Band 2 — the selected surface's own settings.
+       It leads with the surface it writes to. That repeats the path from
+       the tab above, and that repetition is the point: parked at the
+       right end of the tab row the same switch read as a screen-wide
+       control, and nothing on it said which surface it was changing.
+       The tinted ground ties the strip to the tabs it hangs from. -->
+  <div class="flex items-center gap-3 border-b border-border bg-muted/30 px-6 py-2.5">
+    <span class="whitespace-nowrap font-mono text-xs">/v1/messages</span>
+    <span class="whitespace-nowrap text-[12px] text-muted-foreground">Claude Code</span>
+    <span class="mx-1 h-4 w-px shrink-0 bg-border"></span>
+    <div class="flex rounded-md border border-border p-0.5">
+      <button class="rounded bg-foreground px-2.5 py-1 text-[12px] font-medium text-background">Routed</button>
+      <button ${navTo('routing-passthrough.html')} class="rounded px-2.5 py-1 text-[12px] text-muted-foreground hover:text-foreground">Passthrough</button>
+    </div>
+    <!-- The two-line paragraph this replaced held 380px of the strip.
+         The distinction matters once, when you first meet the switch. -->
+    <button class="text-muted-foreground/60 hover:text-foreground" title="Routed walks the chain for this scenario and fails over on quota. Passthrough sends the caller's provider,model straight upstream.">
+      <i class="ri-question-line text-sm"></i>
+    </button>
+    <span class="mx-1 h-4 w-px shrink-0 bg-border"></span>
+    <button class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-muted/60">
+      <span class="text-muted-foreground">Profile</span> live <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i>
+    </button>
+  </div>
+
+  <!-- Band 3 — which chain, and what you can do to it. Presets is one
        control and lives here; it used to be a header button AND a list
        in the right rail. -->
   <div class="flex items-center gap-3 border-b border-border px-6 py-2.5">
