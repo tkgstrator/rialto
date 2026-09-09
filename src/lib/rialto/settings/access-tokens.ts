@@ -11,8 +11,21 @@
 
 import type { AccessTokenWire } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
+import { fmtTokens } from '@/lib/sessions/format'
 
 export type { AccessTokenWire } from '@/lib/api'
+
+/**
+ * A windowed token count, or the dash for one the window cannot answer.
+ *
+ * Shared with the detail page for the same reason `TOKEN_STATE_PILL` is:
+ * the row and the token's own page show the same figure, and the absent
+ * case is exactly where two copies drift. The dash is the one `fmtCost`
+ * prints, so Cost / In / Out say "nothing to show" identically.
+ */
+export function fmtTokenCount(n: number | null): string {
+  return n === null ? '–' : fmtTokens(n)
+}
 
 export type TokenState = 'active' | 'expired' | 'revoked'
 
