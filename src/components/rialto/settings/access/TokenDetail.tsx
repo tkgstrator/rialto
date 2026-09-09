@@ -36,7 +36,7 @@ import { SettingsField } from '@/components/rialto/settings/SettingsLayout'
 import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
 import { type AccessTokenWire, api } from '@/lib/api'
 import { fmtAgo, fmtCount } from '@/lib/rialto/format'
-import { TOKEN_STATE_PILL, type TokenState, tokenState } from '@/lib/rialto/settings/access-tokens'
+import { fmtTokenCount, TOKEN_STATE_PILL, type TokenState, tokenState } from '@/lib/rialto/settings/access-tokens'
 import { fmtCost } from '@/lib/sessions/format'
 
 const BACK = '/access-tokens'
@@ -315,6 +315,15 @@ export function TokenDetail() {
             <span>{t('settings.access.detailRequests', { n: fmtCount(token.requestCount) })}</span>
             <span className='text-muted-foreground'>·</span>
             <span>{fmtCost(token.costUsd)}</span>
+            <span className='text-muted-foreground'>·</span>
+            {/* Same window and same absent-dash as the Cost beside it, so
+                the row reads as one span rather than three. */}
+            <span>
+              {t('settings.access.detailTokens', {
+                in: fmtTokenCount(token.inputTokens),
+                out: fmtTokenCount(token.outputTokens)
+              })}
+            </span>
             <span className='text-muted-foreground'>·</span>
             <span className='text-muted-foreground'>
               {token.lastUsedAt === null

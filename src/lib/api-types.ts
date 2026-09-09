@@ -176,6 +176,22 @@ export interface AccessTokenWire {
    * subscription model with no per-token price.
    */
   costUsd: number | null
+  /**
+   * Input / output tokens moved over the same 30-day window `costUsd` is
+   * priced from — so they pair with each other and with neither
+   * `requestCount`, which is a lifetime counter.
+   *
+   * Null is "the window holds no rows for this token", which is not the
+   * same null as `costUsd`'s: subscription traffic is logged with real
+   * token counts and no price, so a row showing a dash for cost and a
+   * number here is the expected reading, not a glitch.
+   *
+   * Cache reads and writes are counted in neither — they are priced on
+   * their own terms, and folding them in here would not add up against
+   * the cost sitting beside it.
+   */
+  inputTokens: number | null
+  outputTokens: number | null
   expiresAt: string | null
   revokedAt: string | null
   /**
