@@ -95,6 +95,14 @@ export class CodexOauthTransformer extends OAuthTransformer {
       req.instructions = 'You are a helpful assistant.'
     }
 
+    // The output ceiling stops here. openai-responses translates the
+    // unified cap into `max_output_tokens` because the public Responses
+    // API takes it, but this backend allow-lists top-level params and
+    // was reported answering 400 "Unsupported parameter" for it (#463).
+    // Losing the ceiling costs a cap; sending it costs the request.
+    // biome-ignore plugin: explicit removal of a field the backend rejects — CodexRequestShape does not model max_output_tokens and the schema cannot express deletion.
+    delete (req as { max_output_tokens?: unknown }).max_output_tokens
+
     // OpenAI routes its prompt cache by `prompt_cache_key`; the official
     // CLI uses a per-session uuid. This proxy is stateless, so derive a
     // deterministic key from the stable request prefix instead — every

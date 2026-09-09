@@ -80,11 +80,19 @@ const probeResponses = async (
     // chatgpt.com/backend-api/codex requires: `instructions`,
     // `input` as a list, store=false, stream=true. All are valid
     // on the public Responses API too, so one body serves both.
+    //
+    // The cap is 16 because that is the Responses API's documented
+    // minimum: api.openai.com answers 400 "integer_below_min_value"
+    // ("Expected a value >= 16") for anything smaller. This probe used
+    // to send 1, which never reached the model at all — it failed
+    // parameter validation, and `budgetExhausted` counted that 400 as a
+    // pass because its pattern matched the field name in the error text.
+    // 16 keeps the probe cheap while actually exercising the model.
     body: JSON.stringify({
       model,
       instructions: 'ping',
       input: [{ role: 'user', content: 'ping' }],
-      max_output_tokens: 1,
+      max_output_tokens: 16,
       store: false,
       stream: true
     })

@@ -37,8 +37,13 @@ describe('convertResponsesRequestToUnified', () => {
   })
 
   // Regression: left in place, `max_output_tokens` rode the `...body` spread
-  // out to the vendor, which answered 400 "Unknown parameter". Every caller
-  // that set an output ceiling hit it, so nothing streamed at all.
+  // to whatever upstream the chain picked. Against a chat/completions
+  // upstream that is a 400 "Unknown parameter", so every caller that set an
+  // output ceiling on such a route got nothing at all. Absorbing it into the
+  // unified name lets each outbound transformer re-emit the spelling its own
+  // upstream takes — `endpoint-responses` puts it back as
+  // `max_output_tokens`, `endpoint-chat` renames it to
+  // `max_completion_tokens` for gpt-5.x.
   test('max_output_tokens becomes the unified max_tokens', () => {
     const unified = convertResponsesRequestToUnified({
       model: 'gpt-5-mini',
