@@ -28,4 +28,4 @@ export { aggregateOpenAiResponsesSseToJson } from './openai-responses'
 // the four aggregators share, not something a call site outside this
 // directory has ever needed. Anything that does need it can import
 // `./parse` and say so explicitly.
-export { isSseContentType } from './parse'
+export { findSseStreamDefect, isSseContentType, type SseStreamDefect } from './parse'
