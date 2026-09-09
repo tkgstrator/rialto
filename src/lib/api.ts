@@ -112,6 +112,10 @@ class ApiClient {
     return this.apiFetch<T>(endpoint, { method: 'PUT', body: JSON.stringify(data) })
   }
 
+  async patch<T>(endpoint: string, data: unknown): Promise<T> {
+    return this.apiFetch<T>(endpoint, { method: 'PATCH', body: JSON.stringify(data) })
+  }
+
   private async deleteRequest<T>(endpoint: string, body: unknown = {}): Promise<T> {
     return this.apiFetch<T>(endpoint, { method: 'DELETE', body: JSON.stringify(body) })
   }
@@ -306,11 +310,44 @@ class ApiClient {
 
   async issueAccessToken(body: {
     name: string
-    surface?: SurfaceId | null
+    /** Omitted or empty issues a token that may call every surface. */
+    surfaces?: SurfaceId[]
     profileKey?: string | null
     expiresAt?: string | null
   }): Promise<{ token: AccessTokenWire; plaintext: string }> {
     return this.post<{ token: AccessTokenWire; plaintext: string }>('/access-tokens', body)
+  }
+
+  async getAccessToken(id: string): Promise<AccessTokenWire> {
+    return this.get<AccessTokenWire>(`/access-tokens/${encodeURIComponent(id)}`)
+  }
+
+  /**
+   * Change what an existing token may do.
+   *
+   * Scope and profile only — the two things about a token that
+   * legitimately change while the client keeps the same credential.
+   */
+  async updateAccessToken(
+    id: string,
+    body: { surfaces?: SurfaceId[]; profileKey?: string | null }
+  ): Promise<AccessTokenWire> {
+    return this.patch<AccessTokenWire>(`/access-tokens/${encodeURIComponent(id)}`, body)
+  }
+
+  /**
+   * Replace a token's secret in place.
+   *
+   * Same row, same statistics, same attribution on every request it has
+   * already served — only the credential changes, and the old one stops
+   * working the moment this resolves. Rejects with `revoked` / `expired`
+   * for a row that could not authenticate anyway.
+   */
+  async rotateAccessToken(id: string): Promise<{ token: AccessTokenWire; plaintext: string }> {
+    return this.post<{ token: AccessTokenWire; plaintext: string }>(
+      `/access-tokens/${encodeURIComponent(id)}/rotate`,
+      {}
+    )
   }
 
   async revokeAccessToken(id: string): Promise<AccessTokenWire> {

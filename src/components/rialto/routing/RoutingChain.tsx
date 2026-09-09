@@ -10,7 +10,6 @@
 import type { TFunction } from 'i18next'
 import { useCallback, useMemo, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useConfig } from '@/components/ConfigProvider'
 import { RButton } from '@/components/rialto/primitives'
@@ -21,10 +20,9 @@ import { AddTargetDialog } from './AddTargetDialog'
 import { ChainRail } from './ChainRail'
 import { ChainTable } from './ChainTable'
 import { useEnabledTargets, usePreferences, useProfiles, useScheduler, useSurfaces } from './data'
-import { profileEntryCount, schedulerNotTickedYet, schedulerRuns, schedulerScoredNothing, weightIndex } from './derive'
+import { profileEntryCount, schedulerNotTickedYet, schedulerScoredNothing, weightIndex } from './derive'
 import { PassthroughPanel } from './PassthroughPanel'
 import { SurfaceTabs } from './RoutingTabs'
-import { SelectorBar } from './SelectorBar'
 import { Segmented, SurfaceModeBar } from './SurfaceModeBar'
 import type { EnabledTarget, Lane, PreferenceEntry, PreferenceProfile, ScenarioKey } from './types'
 import { SCENARIOS } from './types'
@@ -205,7 +203,6 @@ function RoutedBody(props: RoutedBodyProps) {
         constraints={props.profile.constraints}
         profileKey={props.surface.profileKey}
         onApplied={props.setProfile}
-        rules={config === null ? [] : config.Router[props.scenario][props.lane].rules}
         onNotify={props.onNotify}
       />
     </div>
@@ -247,7 +244,6 @@ function SchedulerNote({ i18nKey }: { i18nKey: string }) {
 
 export function RoutingChain() {
   const { t } = useTranslation()
-  const navigate = useNavigate()
   const { config } = useConfig()
   const { surfaces, loading, error, setMode, setProfile: setSurfaceProfile } = useSurfaces()
   const profiles = useProfiles()
@@ -262,12 +258,11 @@ export function RoutingChain() {
 
   const { profile, setProfile, dirty, save } = usePreferences(surface === undefined ? null : surface.profileKey)
   const weights = useMemo(() => weightIndex(scheduler), [scheduler])
-  // Read from the mode rather than from an empty snapshot: a cold boot in
-  // quota-aware mode also has no weights yet, and that one resolves on its
-  // own within a tick. Only the mode makes it permanent.
-  const schedulerIdle = !schedulerRuns(config?.ROUTER_MODE, config?.ROUTER_SHADOW)
-  const noChainToScore = !schedulerIdle && schedulerScoredNothing(scheduler)
-  const notTickedYet = !schedulerIdle && schedulerNotTickedYet(scheduler)
+  // The scheduler always runs now. It used to sit armed and idle under
+  // the rules selector, which needed its own permanent note; the two
+  // remaining states are transient and resolve within a tick.
+  const noChainToScore = schedulerScoredNothing(scheduler)
+  const notTickedYet = schedulerNotTickedYet(scheduler)
 
   const notify = useCallback((text: string, ok: boolean) => {
     if (ok) toast.success(text)
@@ -322,24 +317,11 @@ export function RoutingChain() {
   )
 
   return (
-    <Screen
-      subtitle={surface === undefined ? undefined : subtitleFor(surface, t)}
-      // These two are the only doors to Map and Rules now that the sidebar
-      // lists Routing alone, so they name their destination rather than
-      // what you do once you are there ("Live map", "Simulate"). The chain
-      // is the screen; those two are the surrounding views.
-      actions={
-        <>
-          <RButton variant='ghost' icon='ri-node-tree' onClick={() => navigate('/routing/map')}>
-            {t('routing.common.tabMap')}
-          </RButton>
-          <RButton variant='ghost' icon='ri-filter-3-line' onClick={() => navigate('/routing/rules')}>
-            {t('routing.common.tabRules')}
-          </RButton>
-        </>
-      }
-    >
-      <SelectorBar />
+    <Screen subtitle={surface === undefined ? undefined : subtitleFor(surface, t)}>
+      {/* No selector bar. There is one selector now: the operator says
+          which models and in what order, and the scheduler computes the
+          weights. A segmented control offering a second option that no
+          longer exists would be a switch with one position. */}
       {error === null ? null : <div className='px-6 py-6 text-xs text-destructive'>{error}</div>}
       {surface === undefined ? (
         <div className='px-6 py-6 text-xs text-muted-foreground'>
@@ -349,7 +331,6 @@ export function RoutingChain() {
         <>
           <SurfaceTabs surfaces={surfaces} active={surface.id} onSelect={selectSurface} />
           <SurfaceModeBar surface={surface} profiles={profiles} onMode={onMode} onProfile={onProfile} />
-          {schedulerIdle ? <SchedulerNote i18nKey='routing.chain.schedulerIdle' /> : null}
           {noChainToScore ? <SchedulerNote i18nKey='routing.chain.schedulerNoChain' /> : null}
           {notTickedYet ? <SchedulerNote i18nKey='routing.chain.schedulerNotTicked' /> : null}
           {surface.routingMode === 'routed' ? (

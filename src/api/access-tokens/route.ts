@@ -1,18 +1,26 @@
 /**
  * Access token management (Phase 3.5).
  *
- * The plaintext appears in exactly one response — the issue call — and
- * is not recoverable afterwards. That is the point: a database read, a
- * backup, or a later GET cannot produce a working credential.
+ * A plaintext appears in exactly two responses — the issue call and the
+ * rotate call — and is not recoverable afterwards. That is the point: a
+ * database read, a backup, or a later GET cannot produce a working
+ * credential. Rotate is the same one-shot reveal as issue, against a row
+ * that already exists.
  */
 
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import {
   deleteAccessToken,
+  getAccessToken,
   issueAccessToken,
   listAccessTokens,
-  revokeAccessToken
+  revokeAccessToken,
+  rotateAccessToken,
+  updateAccessToken
 } from '../../services/access-token-service'
+
+/** The surface ids a token may be scoped to, shared by issue and update. */
+const SurfaceIdSchema = z.enum(['anthropic-messages', 'openai-chat', 'openai-responses', 'gemini-generate'])
 
 const TokenSchema = z
   .object({
@@ -21,7 +29,10 @@ const TokenSchema = z
     // First characters only — enough to tell two tokens apart in a list,
     // not enough to authenticate with.
     prefix: z.string().nonempty(),
-    surface: z.string().nonempty().nullable(),
+    // Surfaces this token may call. Empty means every surface — the
+    // meaning the nullable single-surface field carried before it
+    // became a list.
+    surfaces: z.array(z.string().nonempty()),
     profileKey: z.string().nonempty().nullable(),
     lastUsedAt: z.string().nonempty().nullable(),
     requestCount: z.number().int().nonnegative(),
@@ -31,6 +42,8 @@ const TokenSchema = z
     costUsd: z.number().nullable(),
     expiresAt: z.string().nonempty().nullable(),
     revokedAt: z.string().nonempty().nullable(),
+    // Null while the row still carries the secret it was issued with.
+    rotatedAt: z.string().nonempty().nullable(),
     createdAt: z.string().nonempty()
   })
   .openapi('AccessToken')
@@ -40,7 +53,7 @@ const ListSchema = z.object({ tokens: z.array(TokenSchema) }).openapi('AccessTok
 const IssueBodySchema = z
   .object({
     name: z.string().nonempty(),
-    surface: z.enum(['anthropic-messages', 'openai-chat', 'openai-responses', 'gemini-generate']).nullable().optional(),
+    surfaces: z.array(SurfaceIdSchema).optional(),
     profileKey: z.string().nonempty().nullable().optional(),
     expiresAt: z.iso.datetime().nullable().optional()
   })
@@ -80,6 +93,86 @@ accessTokensRoute.openapi(
     }
   }),
   async (c) => c.json(await issueAccessToken(c.req.valid('json')), 200)
+)
+
+accessTokensRoute.openapi(
+  createRoute({
+    method: 'get',
+    path: '/api/access-tokens/{id}',
+    request: { params: z.object({ id: z.string().nonempty() }) },
+    responses: {
+      200: { description: 'One token', content: { 'application/json': { schema: TokenSchema } } },
+      404: { description: 'No such token' }
+    }
+  }),
+  async (c) => {
+    const row = await getAccessToken(c.req.valid('param').id)
+    if (row === null) return c.json({ error: 'Not found' } as never, 404)
+    return c.json(row, 200)
+  }
+)
+
+/**
+ * What a token is allowed to do, after the fact.
+ *
+ * Only scope and profile. Renaming is cosmetic, the secret has its own
+ * operation, and an expiry that could be pushed out indefinitely is not
+ * an expiry — so none of them are here.
+ */
+const UpdateBodySchema = z
+  .object({
+    surfaces: z.array(SurfaceIdSchema).optional(),
+    profileKey: z.string().nonempty().nullable().optional()
+  })
+  .openapi('AccessTokenUpdateRequest')
+
+accessTokensRoute.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/api/access-tokens/{id}',
+    request: {
+      params: z.object({ id: z.string().nonempty() }),
+      body: { content: { 'application/json': { schema: UpdateBodySchema } } }
+    },
+    responses: {
+      200: { description: 'The updated token', content: { 'application/json': { schema: TokenSchema } } },
+      404: { description: 'No such token' }
+    }
+  }),
+  async (c) => {
+    const row = await updateAccessToken(c.req.valid('param').id, c.req.valid('json'))
+    if (row === null) return c.json({ error: 'Not found' } as never, 404)
+    return c.json(row, 200)
+  }
+)
+
+/**
+ * Rotate: a new secret on the same row.
+ *
+ * 409 rather than 200-with-a-dead-token when the row cannot authenticate
+ * anyway — handing back a plaintext for a revoked or expired token would
+ * look like success and fail at the first request.
+ */
+accessTokensRoute.openapi(
+  createRoute({
+    method: 'post',
+    path: '/api/access-tokens/{id}/rotate',
+    request: { params: z.object({ id: z.string().nonempty() }) },
+    responses: {
+      200: {
+        description: 'The replacement secret. Returned here and never again; the previous one stops working now.',
+        content: { 'application/json': { schema: IssuedSchema } }
+      },
+      404: { description: 'No such token' },
+      409: { description: 'Revoked or expired — issue a new token instead of rotating this one' }
+    }
+  }),
+  async (c) => {
+    const result = await rotateAccessToken(c.req.valid('param').id)
+    if (result.ok) return c.json(result.issued, 200)
+    if (result.reason === 'not-found') return c.json({ error: 'Not found' } as never, 404)
+    return c.json({ error: result.reason } as never, 409)
+  }
 )
 
 accessTokensRoute.openapi(

@@ -56,12 +56,12 @@ const ACCOUNTS = [
 ]
 
 const windowRow = (w) => `
-  <div ${navTo('providers.html')} class="flex items-center gap-3 border-t border-border/60 px-6 py-2.5 transition-colors hover:bg-muted/50">
+  <div ${navTo('provider-subscription.html')} class="flex items-center gap-3 border-t border-border/60 px-6 py-2.5 transition-colors hover:bg-muted/50">
     <span class="w-24 shrink-0 truncate text-xs">${w.label}</span>
     <span class="w-12 shrink-0">${w.scope ? mono(w.scope) : ''}</span>
     <div class="min-w-0 flex-1">${meter(w.pct)}</div>
     <span class="w-10 shrink-0 text-right font-mono text-xs tabular-nums">${w.pct}%</span>
-    <span class="w-20 shrink-0 text-right text-[12px] text-muted-foreground">${w.resets}</span>
+    <span class="w-20 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${w.resets}</span>
   </div>`
 
 const accountBlock = (a) => `
@@ -81,8 +81,8 @@ const accountBlock = (a) => `
 //   light #2563eb / #d97706 / #7c3aed   on #ffffff
 //   dark  #3b82f6 / #d97706 / #8b5cf6   on #0a0a0a
 // (worst adjacent CVD ΔE 32.3 light / 30.2 dark, every check PASS).
-// Identity never rests on colour alone: each line is direct-labelled at
-// its right end and repeated in the legend.
+// Identity never rests on colour alone: the legend above the plot names
+// every series.
 const SERIES = [
   {
     id: '5h', label: '5-hour', stroke: 'text-blue-600 dark:text-blue-500',
@@ -105,20 +105,34 @@ const DAYS = ['Thu', 'Fri', 'Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'now']
 
 // Plot geometry in viewBox units. The SVG scales to the container; strokes
 // are pinned with vector-effect so a wide viewport does not fatten them.
-const W = 1080, H = 200, PAD_L = 34, PAD_R = 96, PAD_T = 12, PAD_B = 24
+// PAD_R is half a day-label wide, not the 96 the end labels used to
+// need: the last tick is centred on the right edge of the plot, so "now"
+// runs off without it.
+const W = 1080, H = 200, PAD_L = 34, PAD_R = 28, PAD_T = 12, PAD_B = 24
 const px = (i, n) => PAD_L + (i / (n - 1)) * (W - PAD_L - PAD_R)
 const py = (v) => PAD_T + (1 - v / 100) * (H - PAD_T - PAD_B)
+
+// Axis labels sit in viewBox units and scale with the SVG, so the size
+// here is not the size on screen: the plot is 1080 wide and renders at
+// roughly 1170, so 11 lands on the 12px floor the rest of these screens
+// use. They were 9, which arrived under 10 and was the smallest text in
+// the app.
+const AXIS_TEXT = 'text-[11px]'
 
 const gridline = (v) => `
   <line x1="${PAD_L}" y1="${py(v)}" x2="${W - PAD_R}" y2="${py(v)}"
         class="stroke-border" stroke-width="1" vector-effect="non-scaling-stroke"/>
-  <text x="${PAD_L - 8}" y="${py(v) + 3}" text-anchor="end"
-        class="fill-muted-foreground text-[9px]">${v}%</text>`
+  <text x="${PAD_L - 8}" y="${py(v) + 4}" text-anchor="end"
+        class="fill-muted-foreground ${AXIS_TEXT}">${v}%</text>`
 
 const dayLabel = (d, i) => `
-  <text x="${px(i * 4, 28)}" y="${H - 8}" text-anchor="middle"
-        class="fill-muted-foreground text-[9px]">${d}</text>`
+  <text x="${px(i * 4, 28)}" y="${H - 6}" text-anchor="middle"
+        class="fill-muted-foreground ${AXIS_TEXT}">${d}</text>`
 
+// No label at the line's end. The legend above already names every
+// series, and with five of them the end labels collided with each other
+// and with the plot — and the 96 units of right padding they needed were
+// coming out of the chart, which is the part carrying the information.
 const line = (s) => {
   const d = s.points.map((p, i) => `${px(i, s.points.length)},${py(p)}`).join(' ')
   const last = s.points[s.points.length - 1]
@@ -127,9 +141,7 @@ const line = (s) => {
               stroke-linejoin="round" stroke-linecap="round"
               class="${s.stroke}" vector-effect="non-scaling-stroke"/>
     <circle cx="${px(s.points.length - 1, s.points.length)}" cy="${py(last)}" r="3"
-            class="fill-current ${s.stroke}"/>
-    <text x="${px(s.points.length - 1, s.points.length) + 8}" y="${py(last) + 3}"
-          class="fill-foreground text-[11px]">${s.label} ${last}%</text>`
+            class="fill-current ${s.stroke}"/>`
 }
 
 // Crosshair + readout, drawn at one sample so the static mock carries the
@@ -201,7 +213,7 @@ const tokenRow = (t) => `
         <span class="w-8 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${t.share}%</span>
       </div>
     </td>
-    <td class="py-2.5 pl-3 pr-6 text-right text-[12px] text-muted-foreground">${t.used}</td>
+    <td class="py-2.5 pl-3 pr-6 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${t.used}</td>
   </tr>`
 
 const tokenTable = `

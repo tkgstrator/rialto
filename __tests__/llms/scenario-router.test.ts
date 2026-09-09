@@ -307,40 +307,6 @@ test('selectModel: auto threshold falls back to 128k when no defaultAgentContext
   expect(over.scenarioType).toBe('longContext')
 })
 
-test('selectModel: a rule matching a haiku glob overrides the default primary (was: haiku → background)', () => {
-  // The former haiku→background lane is now a predicated rule on the
-  // `default` scenario. A rule whose `when.requestedModel` glob matches
-  // "claude-haiku-4-5" wins over the catch-all default primary. The
-  // rule doesn't carry its own failover chain — the scenario's catch-
-  // all `agentFallbacks[default]` serves both catch-all and rule-
-  // matched requests.
-  const provider = { ...claudeProvider, models: ['claude-haiku-4-5'] }
-  const router = {
-    agent: { default: 'anthropic,claude-sonnet' },
-    agentFallbacks: { default: ['codex,gpt-5'] },
-    agentRules: {
-      default: [
-        {
-          name: 'haiku',
-          when: { requestedModel: '*haiku*' },
-          target: 'anthropic,claude-bg'
-        }
-      ]
-    }
-  }
-  const config = new ConfigStore({ Router: router, providers: [provider] })
-  const out = selectModel(makeReq({ model: 'claude-haiku-4-5' }), 1000, router, config)
-  expect(out).toEqual({
-    model: 'anthropic,claude-bg',
-    scenarioType: 'default',
-    isSubagent: false,
-    // Cascade: rule target → scenario primary → scenario catch-all
-    // fallbacks. So `claude-sonnet` (scenario primary) precedes the
-    // scenario's `codex,gpt-5` fallback chain.
-    fallbacks: ['anthropic,claude-sonnet', 'codex,gpt-5']
-  })
-})
-
 test('selectModel: heavy escalation no-ops when the agent longContext route is unset', () => {
   const router = { agent: { default: 'anthropic,claude-sonnet' } }
   const config = new ConfigStore({ Router: router, providers: [claudeProvider] })
@@ -351,326 +317,6 @@ test('selectModel: heavy escalation no-ops when the agent longContext route is u
     config
   )
   expect(out).toEqual({ model: 'anthropic,claude-sonnet', scenarioType: 'default', isSubagent: false, fallbacks: [] })
-})
-
-// ---- selectModel: rule predicates -----------------------------------
-
-test('selectModel: `requestedTier` matches the family the request model tiers into', () => {
-  // requestedTier is what the UI exposes as a 4-choice checkbox
-  // (fable / opus / sonnet / haiku). Internally it tiers the request
-  // model with a substring match, so any Haiku version matches
-  // regardless of the -N-N suffix.
-  const router = {
-    agent: { default: 'anthropic,claude-sonnet' },
-    agentRules: {
-      default: [
-        {
-          name: 'haiku-only',
-          when: { requestedTier: ['haiku'] as const },
-          target: 'anthropic,claude-bg'
-        }
-      ]
-    }
-  }
-  const config = new ConfigStore({ Router: router, providers: [claudeProvider] })
-  expect(selectModel(makeReq({ model: 'claude-haiku-4-5' }), 1000, router, config).model).toBe('anthropic,claude-bg')
-  expect(selectModel(makeReq({ model: 'claude-haiku-3-5' }), 1000, router, config).model).toBe('anthropic,claude-bg')
-  expect(selectModel(makeReq({ model: 'claude-sonnet-4-6' }), 1000, router, config).model).toBe(
-    'anthropic,claude-sonnet'
-  )
-  expect(selectModel(makeReq({ model: 'claude-opus-4-7' }), 1000, router, config).model).toBe('anthropic,claude-sonnet')
-})
-
-test('selectModel: `requestedTier` accepts multiple tiers (IN semantics)', () => {
-  // Ticking three tiers is a NOT-IN of the remaining one. Here
-  // "fable / opus / sonnet" catches everything except haiku so a
-  // haiku request stays on the catch-all.
-  const router = {
-    agent: { default: 'anthropic,claude-haiku' },
-    agentRules: {
-      default: [
-        {
-          name: 'anything-but-haiku',
-          when: { requestedTier: ['fable', 'opus', 'sonnet'] as const },
-          target: 'anthropic,claude-heavy'
-        }
-      ]
-    }
-  }
-  const config = new ConfigStore({ Router: router, providers: [claudeProvider] })
-  expect(selectModel(makeReq({ model: 'claude-sonnet-4-6' }), 1000, router, config).model).toBe(
-    'anthropic,claude-heavy'
-  )
-  expect(selectModel(makeReq({ model: 'claude-opus-4-7' }), 1000, router, config).model).toBe('anthropic,claude-heavy')
-  expect(selectModel(makeReq({ model: 'claude-fable-x' }), 1000, router, config).model).toBe('anthropic,claude-heavy')
-  expect(selectModel(makeReq({ model: 'claude-haiku-4-5' }), 1000, router, config).model).toBe('anthropic,claude-haiku')
-})
-
-test('selectModel: `requestedTier` on an untierable model (gpt-*) falls through', () => {
-  // A model name that doesn't include any of the four tier keywords
-  // extracts to undefined, so a requestedTier predicate can never
-  // match it — the request falls through to the catch-all.
-  const router = {
-    agent: { default: 'anthropic,claude-sonnet' },
-    agentRules: {
-      default: [
-        {
-          when: { requestedTier: ['sonnet'] as const },
-          target: 'anthropic,claude-alt'
-        }
-      ]
-    }
-  }
-  const config = new ConfigStore({ Router: router, providers: [claudeProvider] })
-  expect(selectModel(makeReq({ model: 'gpt-5' }), 1000, router, config).model).toBe('anthropic,claude-sonnet')
-})
-
-test('selectModel: `effort` predicate matches when output_config.effort is in the list', () => {
-  // Multi-select IN over the five effort levels. Ticking
-  // ['high','xhigh','max'] catches every "heavy" grading in one rule.
-  const router = {
-    agent: { default: 'anthropic,claude-sonnet' },
-    agentRules: {
-      default: [
-        {
-          name: 'heavy-effort',
-          when: { effort: ['high', 'xhigh', 'max'] as const },
-          target: 'anthropic,claude-opus'
-        }
-      ]
-    }
-  }
-  const config = new ConfigStore({ Router: router, providers: [claudeProvider] })
-  expect(selectModel(makeReq({ model: 'x', output_config: { effort: 'high' } }), 1000, router, config).model).toBe(
-    'anthropic,claude-opus'
-  )
-  expect(selectModel(makeReq({ model: 'x', output_config: { effort: 'max' } }), 1000, router, config).model).toBe(
-    'anthropic,claude-opus'
-  )
-  expect(selectModel(makeReq({ model: 'x', output_config: { effort: 'low' } }), 1000, router, config).model).toBe(
-    'anthropic,claude-sonnet'
-  )
-  // A request without any output_config.effort field never matches.
-  expect(selectModel(makeReq({ model: 'x' }), 1000, router, config).model).toBe('anthropic,claude-sonnet')
-})
-
-test('selectModel: `thinking: true` predicate matches only when body.thinking is set', () => {
-  const router = {
-    agent: { default: 'anthropic,claude-sonnet' },
-    agentRules: {
-      default: [
-        {
-          name: 'thinking-only',
-          when: { thinking: true },
-          target: 'anthropic,claude-think'
-        }
-      ]
-    }
-  }
-  const config = new ConfigStore({ Router: router, providers: [claudeProvider] })
-  const withThinking = selectModel(
-    makeReq({ model: 'x', thinking: { type: 'enabled', budget_tokens: 1000 } }),
-    1000,
-    router,
-    config
-  )
-  expect(withThinking.model).toBe('anthropic,claude-think')
-  const withoutThinking = selectModel(makeReq({ model: 'x' }), 1000, router, config)
-  expect(withoutThinking.model).toBe('anthropic,claude-sonnet')
-  // Regression: {type:'disabled'} is truthy as an object but the
-  // predicate must read it as "thinking is off" (Claude Code sends
-  // this shape on every non-Plan-Mode request).
-  const withDisabledThinking = selectModel(
-    makeReq({ model: 'x', thinking: { type: 'disabled' } }),
-    1000,
-    router,
-    config
-  )
-  expect(withDisabledThinking.model).toBe('anthropic,claude-sonnet')
-  // {type:'adaptive'} is what newer Claude Code (opus 4-7, sonnet 4-6)
-  // sends — thinking-capable, must match the rule the same as 'enabled'.
-  const withAdaptiveThinking = selectModel(
-    makeReq({ model: 'x', thinking: { type: 'adaptive' } }),
-    1000,
-    router,
-    config
-  )
-  expect(withAdaptiveThinking.model).toBe('anthropic,claude-think')
-})
-
-test('selectModel: minTokens/maxTokens predicates bracket the request size', () => {
-  const router = {
-    agent: { default: 'anthropic,claude-sonnet' },
-    agentRules: {
-      default: [
-        {
-          name: 'mid-size',
-          when: { minTokens: 10_000, maxTokens: 100_000 },
-          target: 'anthropic,claude-mid'
-        }
-      ]
-    }
-  }
-  const config = new ConfigStore({ Router: router, providers: [claudeProvider] })
-  expect(selectModel(makeReq({ model: 'x' }), 5_000, router, config).model).toBe('anthropic,claude-sonnet')
-  expect(selectModel(makeReq({ model: 'x' }), 50_000, router, config).model).toBe('anthropic,claude-mid')
-  expect(selectModel(makeReq({ model: 'x' }), 200_000, router, config).model).toBe('anthropic,claude-sonnet')
-})
-
-test('selectModel: hasTool matches a web_search tool via glob', () => {
-  const router = {
-    agent: { default: 'anthropic,claude-sonnet' },
-    agentRules: {
-      default: [
-        {
-          name: 'web-search',
-          when: { hasTool: 'web_search_*' },
-          target: 'anthropic,claude-web'
-        }
-      ]
-    }
-  }
-  const config = new ConfigStore({ Router: router, providers: [claudeProvider] })
-  const withTool = selectModel(
-    makeReq({ model: 'x', tools: [{ type: 'web_search_20250305' }, { type: 'bash' }] }),
-    1000,
-    router,
-    config
-  )
-  expect(withTool.model).toBe('anthropic,claude-web')
-  const withoutTool = selectModel(makeReq({ model: 'x', tools: [{ type: 'bash' }] }), 1000, router, config)
-  expect(withoutTool.model).toBe('anthropic,claude-sonnet')
-})
-
-test('selectModel: multiple predicates AND together (thinking + minTokens = long-thinking)', () => {
-  // Classic "think + long context" ask: fire only when the request
-  // has thinking AND is above the long-context threshold. Rule sits
-  // on the longContext lane because the classifier picks it once the
-  // request crosses the size threshold.
-  const router = {
-    agent: {
-      default: 'anthropic,claude-sonnet',
-      longContext: 'anthropic,claude-opus'
-    },
-    agentRules: {
-      longContext: [
-        {
-          name: 'long-thinking',
-          when: { thinking: true, minTokens: 60_000 },
-          target: 'anthropic,claude-fable'
-        }
-      ]
-    },
-    longContextThreshold: 60_000
-  }
-  const config = new ConfigStore({ Router: router, providers: [claudeProvider] })
-  // Above threshold + thinking → hits the rule
-  const hit = selectModel(
-    makeReq({ model: 'x', thinking: { type: 'enabled', budget_tokens: 1000 } }),
-    100_000,
-    router,
-    config
-  )
-  expect(hit).toEqual({
-    model: 'anthropic,claude-fable',
-    scenarioType: 'longContext',
-    isSubagent: false,
-    // Cascade puts the scenario primary (`claude-opus`) behind the rule
-    // target so the rule-matched request still gets the catch-all
-    // as its next attempt.
-    fallbacks: ['anthropic,claude-opus']
-  })
-  // Above threshold WITHOUT thinking → longContext catch-all
-  const miss = selectModel(makeReq({ model: 'x' }), 100_000, router, config)
-  expect(miss.model).toBe('anthropic,claude-opus')
-})
-
-// ---- selectModel: rule-target cascade -------------------------------
-
-test('selectModel: rule cascade puts scenario primary between rule target and catch-all fallbacks', () => {
-  // Cascade shape (post rename): rule.target wins, then the scenario
-  // primary is tried, then each entry in the scenario catch-all
-  // fallbacks. Motivated by the Opus5 → Fable (rule) → Opus5 → Terra
-  // failover story: a Fable rate limit should still let the request
-  // land on the scenario primary before spilling to Terra.
-  const router = {
-    agent: { longContext: 'claude-code,claude-opus-5' },
-    agentFallbacks: { longContext: ['codex,gpt-5.6-terra'] },
-    agentRules: {
-      longContext: [
-        {
-          name: 'opus|fable → fable',
-          when: { requestedTier: ['fable', 'opus'] as const },
-          target: 'claude-code,claude-fable-5'
-        }
-      ]
-    },
-    longContextThreshold: 60_000
-  }
-  const config = new ConfigStore({ Router: router, providers: [claudeProvider] })
-  const out = selectModel(makeReq({ model: 'claude-opus-4-5' }), 100_000, router, config)
-  expect(out).toEqual({
-    model: 'claude-code,claude-fable-5',
-    scenarioType: 'longContext',
-    isSubagent: false,
-    fallbacks: ['claude-code,claude-opus-5', 'codex,gpt-5.6-terra']
-  })
-})
-
-test('selectModel: rule cascade omits the scenario primary when it equals the rule target', () => {
-  // De-dupe when a rule pins the same model the scenario primary
-  // already targets — the walker shouldn't retry the same entry back
-  // to back. Only the catch-all fallbacks remain behind rule.target.
-  const router = {
-    agent: { longContext: 'claude-code,claude-fable-5' },
-    agentFallbacks: { longContext: ['codex,gpt-5.6-terra'] },
-    agentRules: {
-      longContext: [
-        {
-          name: 'pin fable',
-          when: { requestedTier: ['fable'] as const },
-          target: 'claude-code,claude-fable-5'
-        }
-      ]
-    },
-    longContextThreshold: 60_000
-  }
-  const config = new ConfigStore({ Router: router, providers: [claudeProvider] })
-  const out = selectModel(makeReq({ model: 'claude-fable-x' }), 100_000, router, config)
-  expect(out).toEqual({
-    model: 'claude-code,claude-fable-5',
-    scenarioType: 'longContext',
-    isSubagent: false,
-    fallbacks: ['codex,gpt-5.6-terra']
-  })
-})
-
-test('selectModel: rule cascade skips the scenario primary when the scenario has none configured', () => {
-  // When the scenario has no catch-all primary of its own, the cascade
-  // collapses to `[rule.target, ...catchAllFallbacks]` — nothing to
-  // insert in between, no undefined entries in the chain.
-  const router = {
-    agent: {}, // no scenario primary
-    agentFallbacks: { default: ['codex,gpt-5'] },
-    agentRules: {
-      default: [
-        {
-          name: 'always',
-          when: {},
-          target: 'anthropic,claude-alt'
-        }
-      ]
-    }
-  }
-  const config = new ConfigStore({ Router: router, providers: [claudeProvider] })
-  const out = selectModel(makeReq({ model: 'x' }), 1000, router, config)
-  expect(out).toEqual({
-    model: 'anthropic,claude-alt',
-    scenarioType: 'default',
-    isSubagent: false,
-    // Only the catch-all fallbacks — no scenario primary to insert.
-    fallbacks: ['codex,gpt-5']
-  })
 })
 
 // ---- selectModel: subagent route (tag presence, not value) ---------
@@ -941,27 +587,17 @@ test('selectModel: size-based longContext wins over haiku→background', () => {
   expect(out).toEqual({ model: 'anthropic,claude-opus', scenarioType: 'longContext', isSubagent: false, fallbacks: [] })
 })
 
-test('selectModel: a haiku rule on the `think` lane wins when thinking is present', () => {
+test('selectModel: thinking picks the think lane regardless of the requested model', () => {
   // The pre-rules "background wins over thinking" semantic was a
-  // side-effect of the isHaiku→background classifier branch running
-  // ahead of the thinking check. Under the rule engine, the classifier
-  // picks `think` (because thinking is set), then evaluates the think
-  // lane's rules — so users who want haiku diverted from the think
-  // model install the rule on the `think` lane.
+  // side-effect of an isHaiku→background classifier branch running ahead
+  // of the thinking check. Both are gone: the classifier picks `think`
+  // because thinking is set, and the lane's own primary serves it. There
+  // is no predicate stack left that could divert it.
   const provider = { ...claudeProvider, models: ['claude-haiku-4-5'] }
   const router = {
     agent: {
       default: 'anthropic,claude-sonnet',
       think: 'anthropic,claude-think'
-    },
-    agentRules: {
-      think: [
-        {
-          name: 'haiku on think lane',
-          when: { requestedModel: '*haiku*' },
-          target: 'anthropic,claude-bg'
-        }
-      ]
     }
   }
   const config = new ConfigStore({ Router: router, providers: [provider] })
@@ -972,12 +608,10 @@ test('selectModel: a haiku rule on the `think` lane wins when thinking is presen
     config
   )
   expect(out).toEqual({
-    model: 'anthropic,claude-bg',
+    model: 'anthropic,claude-think',
     scenarioType: 'think',
     isSubagent: false,
-    // Cascade: rule target → scenario primary (`claude-think`) →
-    // scenario fallbacks (none here).
-    fallbacks: ['anthropic,claude-think']
+    fallbacks: []
   })
 })
 

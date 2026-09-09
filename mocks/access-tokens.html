@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rialto — Access tokens</title>
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/inter/index.css">
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/geist-mono/index.css">
+<link rel="stylesheet" href="../node_modules/remixicon/fonts/remixicon.css">
+<link rel="stylesheet" href="_shared/mock.build.css">
+<script src="_shared/shell.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const { renderShell, btn, tokenTable } = window.Shell
+
+// The list is `tokenTable()` in _shared/shell.js, because the two states
+// of issuing draw it too — behind a dialog, unchanged. The issue form and
+// the one-time reveal live in access-token-issue.html and
+// access-token-issued.html; they are states this screen enters, not what
+// it opens on.
+
+document.getElementById('root').innerHTML = `
+  <div class="min-w-0">
+      <!-- No "Access tokens" heading: the breadcrumb and the sidebar
+           both already say it, and on its own screen a title repeating
+           them costs a line that the counts can use.
+           Revoked rows are folded away, not deleted. They are the only
+           thing keeping past RequestLog entries attributable to a
+           client, so they have to exist — but the table answers "what
+           can reach the proxy right now", and a dead row is never that.
+           The count stays a control rather than a label: without it the
+           only way to Delete one would be to remember its URL. -->
+      <div class="flex items-center gap-3 px-6 pt-5 pb-3">
+        <span class="text-[12px] text-muted-foreground">4 active ·
+          <button class="underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground">1 revoked</button>
+          · all <span class="font-mono">/v1/*</span></span>
+        <!-- Beside the list it acts on, not in the app title bar. There
+             was one in each and the screen read as offering two. -->
+        <div class="ml-auto">${btn('Issue token', 'primary', 'ri-add-line', 'access-token-issue.html')}</div>
+      </div>
+
+      <div class="px-6 pb-4">
+        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
+          <i class="ri-information-line mr-1 align-[-1px]"></i>
+          Only a SHA-256 digest is stored — the plaintext is shown once, when the token is issued.
+          Scoping a token to endpoints and a routing profile is how a client gets its own routing:
+          the CI token below is pinned to <span class="font-mono">cost-first</span> without touching
+          anyone else's chain.
+          <span class="font-medium text-foreground">Open a row</span> to rotate it — a new secret on
+          the same row, keeping its name, scope and history — or to revoke it.
+        </div>
+      </div>
+
+      ${tokenTable()}
+  </div>`
+
+renderShell({
+  active: 'access-tokens',
+  navMode: 'cloudflare',
+  crumbs: [],
+  subtitle: 'Per-client credentials for /v1/*'
+})
+</script>
+</body>
+</html>

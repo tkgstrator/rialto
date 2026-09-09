@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rialto — Access token</title>
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/inter/index.css">
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/geist-mono/index.css">
+<link rel="stylesheet" href="../node_modules/remixicon/fonts/remixicon.css">
+<link rel="stylesheet" href="_shared/mock.build.css">
+<script src="_shared/shell.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const { renderShell, pill, btn, navTo, SURFACES, surfaceChip } = window.Shell
+
+// One token's own page.
+//
+// It exists so the destructive actions have somewhere to be that is not a
+// row in a table of live credentials. Revoke used to be a button in every
+// row; the cost of aiming one click badly there is a CLI that stops
+// working with a 401 nobody can trace from the client end. Reaching a
+// token's page first makes it deliberate, and puts the figures that
+// inform the decision — what this token has been doing, when it was last
+// seen — next to the button that acts on it.
+//
+// Rotate is the ordinary answer to a leak: a new secret on the SAME row,
+// keeping the id, the name, the scope and every request already
+// attributed to it. Re-issuing splits one client's history across two
+// rows and leaves the operator to remember they were the same machine.
+
+/** One labelled row. Same 14rem label column the Settings forms use. */
+const field = (label, hint, body) => `
+  <div class="grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4">
+    <div>
+      <div class="text-xs font-medium">${label}</div>
+      <div class="mt-0.5 text-[12px] leading-snug text-muted-foreground">${hint}</div>
+    </div>
+    <div>${body}</div>
+  </div>`
+
+const select = (value) => `
+  <div class="relative inline-flex w-full max-w-md">
+    <div class="flex h-8 w-full items-center rounded-md border border-border pl-3 pr-8 font-mono text-xs">${value}</div>
+    <i class="ri-arrow-down-s-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"></i>
+  </div>`
+
+document.getElementById('root').innerHTML = `
+  <div class="min-w-0">
+
+    <!-- Identity and the two actions that change what this token can do.
+         Rotate first and Revoke second: rotating answers almost every
+         reason for being on this page, and revoking is the one that takes
+         a client offline. On a revoked token Rotate is absent rather than
+         disabled — a new secret on a revoked row would not authenticate,
+         so there is no state in which the control could become live. -->
+    <div class="flex items-center gap-3 px-6 pt-6 pb-3">
+      <span ${navTo('access-tokens.html')} class="text-muted-foreground hover:text-foreground">
+        <i class="ri-arrow-left-line text-base"></i>
+      </span>
+      <div class="min-w-0">
+        <div class="truncate text-sm font-semibold">MacBook — Codex</div>
+        <div class="font-mono text-[12px] text-muted-foreground">rlt_7c02…</div>
+      </div>
+      ${pill('active', 'ok')}
+      <div class="ml-auto flex items-center gap-2">
+        ${btn('Rotate', 'outline', 'ri-refresh-line')}
+        ${btn('Revoke', 'danger', 'ri-forbid-line')}
+      </div>
+    </div>
+
+    <!-- Scope and profile are editable here, because neither is an
+         issue-time-only decision: a client picks up a second endpoint, or
+         its traffic should start following a different chain, and neither
+         is a reason to hand the machine a new secret. -->
+    ${field(
+      'Endpoint',
+      'Pick the endpoints this token may call. Choose several when one client speaks more than one — Codex uses both <span class="font-mono">/v1/responses</span> and <span class="font-mono">/v1/chat/completions</span>. All endpoints leaves it unrestricted.',
+      `<div class="flex flex-wrap gap-2">
+        ${surfaceChip('all endpoints', false)}
+        ${SURFACES.map((s, i) => surfaceChip(s.path, i === 1 || i === 2)).join('')}
+      </div>`
+    )}
+
+    ${field(
+      'Profile',
+      'Route this client’s traffic through a named profile. Unset follows the endpoint’s own routing.',
+      select('live')
+    )}
+
+    ${field(
+      'Usage',
+      'Requests served, spend over the last 30 days, and when this token was last seen.',
+      `<div class="flex items-center gap-4 font-mono text-xs tabular-nums">
+        <span>2.71k requests</span>
+        <span class="text-muted-foreground">·</span>
+        <span>$41.80</span>
+        <span class="text-muted-foreground">·</span>
+        <span class="text-muted-foreground">19m ago</span>
+      </div>`
+    )}
+
+    <!-- Rotated is drawn only once the secret has actually been replaced.
+         A "never rotated" line on a week-old token is noise; on a
+         two-year-old one the absence is the point, so it is the date that
+         appears rather than a reassuring default. -->
+    ${field(
+      'Lifetime',
+      'When this token was created, when it stops working, and when its secret last changed.',
+      `<div class="space-y-1 font-mono text-xs">
+        <div>Created 2026-06-04</div>
+        <div>No expiry</div>
+        <div>Rotated 2026-09-08</div>
+      </div>`
+    )}
+
+    <div class="px-6 py-4">
+      <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
+        <i class="ri-information-line mr-1 align-[-1px]"></i>
+        <span class="font-medium text-foreground">Rotating keeps this row.</span>
+        The name, endpoint scope, routing profile and every request already attributed to this token
+        stay as they are; only the secret the client presents changes.
+      </div>
+    </div>
+
+    <!-- Last thing on the page, which is where a form's own actions
+         belong. Not the app title bar — up there it sits beside the
+         breadcrumbs and says nothing about which of the page's controls
+         it applies to, and Rotate and Revoke are already in the header
+         without being part of this form. It names the token because this
+         page is reached from a table of several, and that is the one
+         thing worth being sure of before changing what a live client may
+         reach. Present rather than appearing on the first edit: a bar
+         that materialises moves everything around it. -->
+    <div class="flex items-center gap-2 border-t border-border/60 px-6 py-4">
+      <span class="text-[12px] text-muted-foreground">
+        Saves the endpoint and profile of <span class="font-medium text-foreground">MacBook — Codex</span>,
+        from its next request. The token value itself does not change.
+      </span>
+      <div class="ml-auto flex gap-2">
+        ${btn('Discard', 'ghost', '')}
+        ${btn('Save', 'primary', 'ri-check-line')}
+      </div>
+    </div>
+
+    <div class="h-8"></div>
+  </div>`
+
+renderShell({
+  active: 'access-tokens',
+  navMode: 'cloudflare',
+  crumbs: [{ label: 'Access tokens', href: 'access-tokens.html' }, 'MacBook — Codex'],
+  subtitle: 'Rotate, re-scope or revoke one client’s credential'
+})
+</script>
+</body>
+</html>

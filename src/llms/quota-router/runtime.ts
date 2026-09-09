@@ -250,28 +250,10 @@ export async function resolveQuotaAwareSelection(input: QuotaAwareSelectionInput
   return { selection, retryAfterSec }
 }
 
-// Log at INFO level when the shadow's primary differs from what the
-// scenario router chose. Kept as a fire-and-forget on the request
-// path — never awaited, never throws.
-export function logShadowDivergence(input: {
-  scenarioPrimary: string | null
-  shadow: PreferenceSelection
-  requestedModel: string | undefined
-  isSubagent: boolean
-}): void {
-  const shadowPrimary = input.shadow.primary
-  if (shadowPrimary === input.scenarioPrimary) return
-  logger.info(
-    {
-      scenarioPrimary: input.scenarioPrimary,
-      shadowPrimary,
-      shadowSkipped: input.shadow.skipped,
-      requestedModel: input.requestedModel,
-      isSubagent: input.isSubagent
-    },
-    '[routing-shadow] divergence'
-  )
-}
+// The shadow logger lived here. It compared the chain's answer against
+// the scenario router's on every request and logged where they diverged,
+// which was how the chain earned its promotion. With one selector left
+// there is nothing to compare against.
 
 // Adapter helpers for the request pipeline. Kept as separate small
 // exports so the wire-up PR (a future increment) can plug them into

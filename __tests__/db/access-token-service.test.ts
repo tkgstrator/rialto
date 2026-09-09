@@ -9,16 +9,20 @@
  */
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import { getPrismaClient } from '../../src/db/client'
+import dayjs from '../../src/lib/dayjs'
 import {
   deleteAccessToken,
+  getAccessToken,
   invalidateTokenCache,
   issueAccessToken,
   listAccessTokens,
   resolveAccessToken,
   revokeAccessToken,
+  rotateAccessToken,
   SPEND_WINDOW_DAYS,
   sumSpendByToken,
-  type TokenSpendGroup
+  type TokenSpendGroup,
+  updateAccessToken
 } from '../../src/services/access-token-service'
 import type { PriceEntry } from '../../src/services/cost-service'
 import { HAS_DB, resetDbTables, teardownPrisma } from './helpers'
@@ -141,17 +145,33 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
   })
 
   test('a freshly issued token resolves with its scope', async () => {
-    const { plaintext } = await issueAccessToken({ name: 'ci', surface: 'openai-chat', profileKey: 'cost-first' })
+    const { plaintext } = await issueAccessToken({
+      name: 'ci',
+      surfaces: ['openai-chat'],
+      profileKey: 'cost-first'
+    })
     const resolved = await resolveAccessToken(plaintext)
     expect(resolved?.name).toBe('ci')
-    expect(resolved?.surface).toBe('openai-chat')
+    expect(resolved?.surfaces).toEqual(['openai-chat'])
     expect(resolved?.profileKey).toBe('cost-first')
   })
 
-  test('an unscoped token resolves with nulls rather than defaults', async () => {
+  test('a token may be scoped to several surfaces at once', async () => {
+    // The case a single-surface pin could not express: Codex speaks both
+    // /v1/responses and /v1/chat/completions, so pinning it to either
+    // meant the other 401'd and the only way out was no scope at all.
+    const { plaintext } = await issueAccessToken({
+      name: 'codex',
+      surfaces: ['openai-responses', 'openai-chat']
+    })
+    const resolved = await resolveAccessToken(plaintext)
+    expect(resolved?.surfaces).toEqual(['openai-responses', 'openai-chat'])
+  })
+
+  test('an unscoped token resolves with an empty scope rather than defaults', async () => {
     const { plaintext } = await issueAccessToken({ name: 'anything' })
     const resolved = await resolveAccessToken(plaintext)
-    expect(resolved?.surface).toBeNull()
+    expect(resolved?.surfaces).toEqual([])
     expect(resolved?.profileKey).toBeNull()
   })
 
@@ -213,5 +233,113 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
     expect(await deleteAccessToken(token.id)).toBe(true)
     expect(await resolveAccessToken(plaintext)).toBeNull()
     expect(await listAccessTokens()).toHaveLength(0)
+  })
+
+  test('getAccessToken reads one row, and null for an id that is not one', async () => {
+    const { token } = await issueAccessToken({ name: 'ci' })
+    expect((await getAccessToken(token.id))?.name).toBe('ci')
+    expect(await getAccessToken('no-such-id')).toBeNull()
+  })
+
+  test('rotation swaps the secret and keeps everything else about the row', async () => {
+    const { token, plaintext } = await issueAccessToken({
+      name: 'ci',
+      surfaces: ['anthropic-messages'],
+      profileKey: 'cost-first'
+    })
+    // A request against the original, so the row carries history worth
+    // preserving across the rotation.
+    await getPrismaClient().accessToken.update({
+      where: { id: token.id },
+      data: { requestCount: 41, lastUsedAt: dayjs('2026-01-02T03:04:05Z').toDate() }
+    })
+    invalidateTokenCache()
+
+    const result = await rotateAccessToken(token.id)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    // Same row: the id is what every RequestLog points at, so losing it
+    // would take the attribution with it.
+    expect(result.issued.token.id).toBe(token.id)
+    expect(result.issued.token.name).toBe('ci')
+    expect(result.issued.token.surfaces).toEqual(['anthropic-messages'])
+    expect(result.issued.token.profileKey).toBe('cost-first')
+    expect(result.issued.token.requestCount).toBe(41)
+    expect(result.issued.token.createdAt).toBe(token.createdAt)
+    expect(result.issued.token.rotatedAt).not.toBeNull()
+
+    // New secret, and only one row.
+    expect(result.issued.plaintext).not.toBe(plaintext)
+    expect(result.issued.token.prefix).not.toBe(token.prefix)
+    expect(await listAccessTokens()).toHaveLength(1)
+  })
+
+  test('the previous secret stops working the moment it is rotated', async () => {
+    const { token, plaintext } = await issueAccessToken({ name: 'ci' })
+    // Prime the hot-path cache the way a real request would, so this
+    // also covers the invalidation and not just the stored hash.
+    expect(await resolveAccessToken(plaintext)).not.toBeNull()
+
+    const result = await rotateAccessToken(token.id)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(await resolveAccessToken(plaintext)).toBeNull()
+    expect((await resolveAccessToken(result.issued.plaintext))?.id).toBe(token.id)
+  })
+
+  test('scope and profile can be changed without touching the secret', async () => {
+    const { token, plaintext } = await issueAccessToken({ name: 'codex', surfaces: ['openai-responses'] })
+    expect(await resolveAccessToken(plaintext)).not.toBeNull()
+
+    const updated = await updateAccessToken(token.id, {
+      surfaces: ['openai-responses', 'openai-chat'],
+      profileKey: 'cost-first'
+    })
+    expect(updated?.surfaces).toEqual(['openai-responses', 'openai-chat'])
+    expect(updated?.profileKey).toBe('cost-first')
+    expect(updated?.prefix).toBe(token.prefix)
+
+    // The client keeps the credential it already has — widening the
+    // scope is not a reason to reissue — and the resolver sees the new
+    // scope immediately rather than after the cache TTL.
+    const resolved = await resolveAccessToken(plaintext)
+    expect(resolved?.surfaces).toEqual(['openai-responses', 'openai-chat'])
+    expect(resolved?.profileKey).toBe('cost-first')
+  })
+
+  test('an omitted field is left alone, and a null profile clears it', async () => {
+    const { token } = await issueAccessToken({
+      name: 'ci',
+      surfaces: ['openai-chat'],
+      profileKey: 'cost-first'
+    })
+
+    // Scope only: the profile must survive.
+    const scopeOnly = await updateAccessToken(token.id, { surfaces: [] })
+    expect(scopeOnly?.surfaces).toEqual([])
+    expect(scopeOnly?.profileKey).toBe('cost-first')
+
+    // Null is a value here, not "unchanged" — it puts the token back on
+    // the endpoint's own routing.
+    const cleared = await updateAccessToken(token.id, { profileKey: null })
+    expect(cleared?.profileKey).toBeNull()
+
+    expect(await updateAccessToken('no-such-id', { surfaces: [] })).toBeNull()
+  })
+
+  test('a revoked or expired token is refused rather than handed a dead secret', async () => {
+    const revoked = await issueAccessToken({ name: 'revoked' })
+    await revokeAccessToken(revoked.token.id)
+    expect(await rotateAccessToken(revoked.token.id)).toEqual({ ok: false, reason: 'revoked' })
+
+    const expired = await issueAccessToken({
+      name: 'expired',
+      expiresAt: dayjs().subtract(1, 'minute').toISOString()
+    })
+    expect(await rotateAccessToken(expired.token.id)).toEqual({ ok: false, reason: 'expired' })
+
+    expect(await rotateAccessToken('no-such-id')).toEqual({ ok: false, reason: 'not-found' })
   })
 })

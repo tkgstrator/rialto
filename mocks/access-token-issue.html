@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rialto — Issue token</title>
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/inter/index.css">
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/geist-mono/index.css">
+<link rel="stylesheet" href="../node_modules/remixicon/fonts/remixicon.css">
+<link rel="stylesheet" href="_shared/mock.build.css">
+<script src="_shared/shell.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const { renderShell, btn, dialog, SURFACES, surfaceChip, tokenTable } = window.Shell
+
+// One field of the dialog: a caption over its control, the way
+// ReplaceKeyDialog already stacks them. The two-column 14rem/1fr grid the
+// inline form used cannot survive a 28rem panel, and it was never the
+// dialog's shape anyway.
+//
+// `placeholder` is the empty-input state (nothing typed yet); `select` is
+// the impl's picker — a bordered box with a chevron, monospace because
+// every value in it is a path or a profile key.
+const dlgField = (label, value, kind, hint = '') => `
+  <div>
+    <div class="mb-1 text-[12px] text-muted-foreground">${label}</div>
+    <div class="relative flex h-8 w-full items-center rounded-md border border-border pl-3 pr-8 font-mono text-xs ${
+      kind === 'placeholder' ? 'text-muted-foreground/50' : ''
+    }">
+      ${value}
+      ${
+        kind === 'select'
+          ? '<i class="ri-arrow-down-s-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"></i>'
+          : ''
+      }
+    </div>
+    ${hint ? `<p class="mt-1 text-[12px] leading-snug text-muted-foreground">${hint}</p>` : ''}
+  </div>`
+
+// Chips, not a select: the question is "which of these four", not "which
+// one", and the same control already asks it in Personas. "All endpoints"
+// is an explicit chip rather than the absence of a choice, because leaving
+// a row blank to mean the broadest possible scope is the kind of default
+// nobody reads.
+const endpointField = `
+  <div>
+    <div class="mb-1 text-[12px] text-muted-foreground">Endpoint</div>
+    <div class="flex flex-wrap gap-2">
+      ${surfaceChip('all endpoints', false)}
+      ${SURFACES.map((s, i) => surfaceChip(s.path, i === 1 || i === 2)).join('')}
+    </div>
+    <p class="mt-1 text-[12px] leading-snug text-muted-foreground">
+      Pick the endpoints this token may call. Choose several when one client speaks more than one —
+      Codex uses both <span class="font-mono">/v1/responses</span> and
+      <span class="font-mono">/v1/chat/completions</span>. All endpoints leaves it unrestricted.
+    </p>
+  </div>`
+
+const form = `
+  <div class="space-y-3">
+    ${dlgField('Name', 'MacBook — Claude Code', 'placeholder', 'How this client is identified in the list and in Activity.')}
+    ${endpointField}
+    ${dlgField('Routing profile', 'follow the endpoint', 'select', 'Route this client through a named profile. Unset follows the endpoint’s own routing.')}
+    ${dlgField('Expires', '90 days', 'select', 'A bounded token limits the damage if it leaks. Revoke works either way.')}
+    <p class="text-[12px] leading-relaxed text-muted-foreground">
+      <i class="ri-information-line mr-1 align-[-1px]"></i>
+      The token is shown once, immediately after issuing, and never again.
+    </p>
+  </div>`
+
+document.getElementById('root').innerHTML = `
+  <div class="min-w-0">
+      <!-- The screen underneath is the list, unchanged and still legible
+           through the overlay. Naming a token is a decision made against
+           the ones that already exist — "MacBook — Claude Code" being
+           taken is exactly what you need to see while typing it — and the
+           inline form that used to ask pushed the list off the page. -->
+      <div class="flex items-center gap-3 px-6 pt-5 pb-3">
+        <span class="text-[12px] text-muted-foreground">4 active ·
+          <button class="underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground">1 revoked</button>
+          · all <span class="font-mono">/v1/*</span></span>
+        <div class="ml-auto">${btn('Issue token', 'primary', 'ri-add-line')}</div>
+      </div>
+
+      <div class="px-6 pb-4">
+        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
+          <i class="ri-information-line mr-1 align-[-1px]"></i>
+          Only a SHA-256 digest is stored — the plaintext is shown once, when the token is issued.
+          Scoping a token to endpoints and a routing profile is how a client gets its own routing:
+          the CI token below is pinned to <span class="font-mono">cost-first</span> without touching
+          anyone else's chain.
+          <span class="font-medium text-foreground">Open a row</span> to rotate it — a new secret on
+          the same row, keeping its name, scope and history — or to revoke it.
+        </div>
+      </div>
+
+      ${tokenTable()}
+
+      <!-- The endpoint and profile lists come from the server
+           (/api/inbound-surfaces, the profile list); none of it is
+           hardcoded. -->
+      ${dialog('Issue access token', form, `${btn('Cancel', 'ghost')}${btn('Issue token', 'primary', 'ri-add-line', 'access-token-issued.html')}`)}
+  </div>`
+
+renderShell({
+  active: 'access-tokens',
+  navMode: 'cloudflare',
+  crumbs: [],
+  subtitle: 'Per-client credentials for /v1/*'
+})
+</script>
+</body>
+</html>

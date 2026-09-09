@@ -189,11 +189,25 @@ const KEY_BULLETS = '•'.repeat(16)
  * is enough to tell two keys apart and not enough to use one.
  */
 export function maskKey(key: string): string {
-  if (key.startsWith('$')) return key
-  if (key.length <= 8) return KEY_BULLETS
+  const { head, bullets, tail } = maskKeyParts(key)
+  return `${head}${bullets}${tail}`
+}
+
+/**
+ * The same mask, split where it is safe to lose characters.
+ *
+ * A box narrow enough to clip this string clips the END of it, which is
+ * the half that identifies the key — "sk-proj-••••••••" says nothing
+ * about which of two OpenAI keys is configured. Rendering the three
+ * parts separately lets the caller collapse the bullets, which carry no
+ * information at all, and keep both ends at any width.
+ */
+export function maskKeyParts(key: string): { head: string; bullets: string; tail: string } {
+  if (key.startsWith('$')) return { head: key, bullets: '', tail: '' }
+  if (key.length <= 8) return { head: '', bullets: KEY_BULLETS, tail: '' }
   const dash = key.slice(0, 12).lastIndexOf('-')
   const head = dash > 0 ? key.slice(0, dash + 1) : key.slice(0, 3)
-  return `${head}${KEY_BULLETS}${key.slice(-4)}`
+  return { head, bullets: KEY_BULLETS, tail: key.slice(-4) }
 }
 
 /** Header the outbound request carries the credential in. */
@@ -322,6 +336,34 @@ export function buildModelRows(p: Provider, catalogEntry: CatalogEntry | undefin
   })
 }
 
+/**
+ * Which slice of a long model list to show. The default hides rows that
+ * are neither switched on nor priced — on an 18-model vendor those are
+ * the ones an operator has already decided against.
+ */
+export type ShowMode = 'priced' | 'enabled' | 'all'
+
+/**
+ * A legacy row worth folding away.
+ *
+ * Legacy models are still priced, so "Enabled + priced" kept every one of
+ * them — rows of vendor history above the models anyone actually routes
+ * to, and a decision the operator already made.
+ *
+ * Unless one is switched on. A legacy model that is enabled is a live
+ * routing target, and a list that hides a live target cannot be trusted
+ * to say what this provider serves.
+ */
+export const hidesAsLegacy = (row: ModelRow): boolean => row.legacy && !row.enabled
+
+/** The api_key side's Show control. Legacy rows survive only under "all". */
+export const passesShow = (row: ModelRow, mode: ShowMode): boolean => {
+  if (mode === 'all') return true
+  if (hidesAsLegacy(row)) return false
+  if (mode === 'enabled') return row.enabled
+  return row.enabled || row.inputPer1M !== null || row.outputPer1M !== null
+}
+
 export interface AccountQuota {
   /** '5h' or '7d' — the window the percentage and reset belong to. */
   window: string
@@ -343,13 +385,20 @@ export function quotaForAccount(index: QuotaIndex, accountId: string): AccountQu
   return weekly === undefined ? mine[0] : weekly
 }
 
-export function indexQuota(rows: ReadonlyArray<{ subAccountId: string } & AccountQuota>): QuotaIndex {
+export function indexQuota(
+  rows: ReadonlyArray<{ subAccountId: string; windows: readonly AccountQuota[] }>
+): QuotaIndex {
   const out: QuotaIndex = new Map()
-  for (const row of rows) {
-    const bucket = out.get(row.subAccountId)
-    const entry = { window: row.window, pct: row.pct, resetAt: row.resetAt }
-    if (bucket === undefined) out.set(row.subAccountId, [entry])
-    else bucket.push(entry)
+  // Flattened back out: this screen wants one window per account, and
+  // `quotaForAccount` below picks which. Overview groups because it shows
+  // them all; the provider rail shows one.
+  for (const account of rows) {
+    for (const row of account.windows) {
+      const bucket = out.get(account.subAccountId)
+      const entry = { window: row.window, pct: row.pct, resetAt: row.resetAt }
+      if (bucket === undefined) out.set(account.subAccountId, [entry])
+      else bucket.push(entry)
+    }
   }
   return out
 }

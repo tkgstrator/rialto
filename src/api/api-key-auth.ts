@@ -183,9 +183,27 @@ export function createProxyAuth(options: ApiKeyAuthOptions = {}): MiddlewareHand
       return c.json(err.body, err.status)
     }
 
-    // A token pinned to one surface must not reach another. Checked
-    // here rather than in the route so no handler can forget it.
-    if (token.surface !== null && surfaceForPath(c.req.path)?.id !== token.surface) {
+    // A token pinned to a set of surfaces must not reach one outside it.
+    // Checked here rather than in the route so no handler can forget it.
+    // An empty list is "not pinned".
+    //
+    // Catalog paths are exempt. `/v1/models` and
+    // `/v1/messages/count_tokens` are not completion surfaces — they
+    // spend nothing and are deliberately outside the registry — so
+    // `surfaceForPath` cannot name them and a scoped token was refused
+    // on all of them. An OpenAI SDK client lists models before it calls
+    // one, which made "scoped to /v1/chat/completions" mean "cannot use
+    // the OpenAI SDK". The scope says which surfaces may be *called*;
+    // it says nothing about reading the menu. If a token ever gains a
+    // model restriction, the answer here is to filter the listing, not
+    // to refuse it.
+    //
+    // Anywhere else the registry cannot name stays a rejection for a
+    // pinned token: "not one of the surfaces you were given" is the
+    // right answer for a path nothing claims.
+    const reached = surfaceForPath(c.req.path)
+    const catalogRead = catalogPathFor(c.req.path) !== undefined
+    if (!catalogRead && token.surfaces.length > 0 && (reached === undefined || !token.surfaces.includes(reached.id))) {
       const err = unauthorizedResponse(errorShape, PROXY_WRONG_SURFACE)
       return c.json(err.body, err.status)
     }

@@ -175,39 +175,11 @@ export function targetState(entry: RoutingSchedulerWeightEntry | undefined): Tar
   return entry.reasons.every((r) => r === 'ok') ? 'ready' : 'throttled'
 }
 
-/**
- * Whether the routing scheduler will ever publish a weight in this mode.
- *
- * Mirrors `shouldRunTick` in `services/routing-scheduler/index.ts`: the
- * tick only feeds quota-aware selection, so under `scenario` the
- * scheduler arms itself and then never runs. Every target's state is
- * `unknown` in that mode — not as a transient, but permanently — and a
- * State column that can only ever say one thing needs to say why, or it
- * reads as a fleet of broken targets.
- */
-export function schedulerRuns(mode: string | undefined, shadow: string | undefined): boolean {
-  return mode === 'quota-aware' || shadow === 'quota-aware'
-}
-
-/** Which of the two selectors the request path actually runs. */
-export type RouterSelector = 'rules' | 'chain'
-
-/**
- * Resolve `ROUTER_MODE` to the selector that decides a request.
- *
- * The envelope names three modes but the request path branches on one:
- * `scenario-router.ts` overrides the scenario router's answer only when
- * the mode is `quota-aware`, so `preference` behaves exactly like
- * `scenario`. Folding it in here rather than giving it a third label is
- * what keeps the switch honest — a control offering a value the runtime
- * does not honour is worse than no control.
- */
-export function activeSelector(mode: string | undefined): RouterSelector {
-  return mode === 'quota-aware' ? 'chain' : 'rules'
-}
-
-/** The `ROUTER_MODE` each selector writes back. Inverse of `activeSelector`. */
-export const MODE_FOR_SELECTOR = { rules: 'scenario', chain: 'quota-aware' } as const
+// `schedulerRuns`, `activeSelector` and `MODE_FOR_SELECTOR` lived here.
+// They existed to answer "which of the two selectors is live", and to
+// warn that the scheduler publishes nothing under the other one. The
+// chain is the only selector now, so the scheduler always runs and the
+// question has one answer.
 
 /**
  * The scheduler ran and had nothing to score.

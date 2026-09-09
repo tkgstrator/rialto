@@ -59,22 +59,148 @@ const surfaces = `
   </table>`
 
 // ─── Subscription quota ───────────────────────────────────────────────
+//
+// An account has SEVERAL limits, not one, and they are not
+// interchangeable: Claude runs a 5h rolling window, a 7d window, and a
+// per-model weekly window for each model it scopes (`scopedWindows` on
+// SubAccountQuota). Any one of them hitting 100% stops the account, so a
+// row per (account, window) with the account name repeated down the
+// column both buried the relationship and read as four unrelated
+// accounts.
+//
+// Grouped by account, every window listed, ordered shortest window first.
+//
+// Nothing is marked as "the one that matters". Anthropic's `limits[]`
+// rows carry an `is_active` flag and it is tempting to badge it, but its
+// meaning is not documented and one live sample cannot settle it: that
+// sample had session 25% inactive, weekly_all 63% active and
+// weekly_scoped 8% inactive, which is neither "highest percent" nor "one
+// per group". A badge nobody can explain is worse than no badge.
+//
+// The order is ours and is explainable: 5h, then 7d, then the per-model
+// weekly rows. Shortest window first, because that is the one that
+// recovers soonest, and the per-model rows sit under the 7d they belong
+// to.
 const QUOTA = [
-  { account: 'Claude Max',    window: '5h',     pct: 34, resets: '2h 11m' },
-  { account: 'Claude Max',    window: '7d',     pct: 71, resets: '3d 04h' },
-  { account: 'Codex Pro',     window: 'primary', pct: 88, resets: '46m' },
-  { account: 'Gemini AI Pro', window: 'daily',  pct: 12, resets: '9h 22m' }
+  {
+    account: 'Claude Max',
+    windows: [
+      { window: '5h', pct: 25, resets: '2h 11m' },
+      { window: '7d', pct: 63, resets: '3d 04h' },
+      { window: '7d · Fable', pct: 8, resets: '3d 04h' }
+    ]
+  },
+  {
+    account: 'Codex Pro',
+    windows: [
+      { window: 'primary', pct: 88, resets: '46m' },
+      { window: 'secondary', pct: 65, resets: '4d 02h' }
+    ]
+  },
+  { account: 'Gemini AI Pro', windows: [{ window: 'daily', pct: 12, resets: '9h 22m' }] }
 ]
 
+// The meter is capped rather than stretched. Full width it ran the
+// length of the pane, which makes a 63% bar and a 65% bar impossible to
+// tell apart and puts the number that matters a screen away from the
+// label it belongs to.
+const windowLine = (w) => `
+  <div class="flex items-baseline gap-3 pt-2 first:pt-0">
+    <span class="w-28 shrink-0 font-mono text-[12px] text-muted-foreground">${w.window}</span>
+    <div class="w-64 shrink-0">${meter(w.pct)}</div>
+    <span class="w-10 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${w.pct}%</span>
+    <span class="w-20 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${w.resets}</span>
+  </div>`
+
+// No percentage on the account line. It carried the worst window's
+// figure, which nothing on the row said — beside a list where every line
+// already shows its own percent, an unlabelled number in the corner is a
+// question, not an answer.
 const quotaRow = (q) => `
   <div ${navTo('activity-usage.html')} class="border-t border-border/60 px-6 py-3 transition-colors hover:bg-muted/50">
     <div class="flex items-baseline gap-2">
       <span class="text-xs font-medium">${q.account}</span>
-      ${mono(q.window)}
-      <span class="ml-auto font-mono text-xs tabular-nums">${q.pct}%</span>
+      <span class="text-[12px] text-muted-foreground/70">${q.windows.length} limit${q.windows.length === 1 ? '' : 's'}</span>
     </div>
-    <div class="mt-2">${meter(q.pct)}</div>
-    <div class="mt-1.5 text-[12px] text-muted-foreground">resets in ${q.resets}</div>
+    <div class="mt-2">${q.windows.map(windowLine).join('')}</div>
+  </div>`
+
+// ─── Failover activity ────────────────────────────────────────────────
+//
+// The panel exists to answer "what changed", so the change is a column,
+// not a phrase at the end of a sentence. `RoutingWeightChange` stores
+// fromWeight and toWeight; putting them in a fixed slot lets several
+// moves be compared down the page instead of read one at a time, and the
+// destination value carries the weight because that is the number in
+// force now.
+//
+// A 429 has no transition — the row carries account, status and
+// Retry-After and nothing else. Earlier drafts of this mock wrote "fell
+// through to openai,gpt-5.5" under one, which is a sentence with no data
+// behind it: nothing records which target picked the traffic up. Rather
+// than invent it, the 429 row shows what it does have, and Retry-After
+// is the value worth reading there.
+const FAILOVER = [
+  {
+    kind: 'weight',
+    tone: 'warn',
+    target: 'claude-code,claude-opus-5',
+    from: '1.00',
+    to: '0.60',
+    detail: 'its quota is running out',
+    at: '1h ago',
+    href: 'routing.html'
+  },
+  {
+    kind: 'weight',
+    tone: 'mute',
+    target: 'claude-code,claude-sonnet-5',
+    from: '0.38',
+    to: '0.37',
+    detail: 'its window resets soon',
+    at: '2h ago',
+    href: 'routing.html'
+  },
+  {
+    kind: '429',
+    tone: 'bad',
+    target: 'codex:demo',
+    detail: 'retry after 11m',
+    at: '46m ago',
+    href: 'activity-requests.html'
+  },
+  {
+    kind: 'auth',
+    tone: 'bad',
+    target: 'Gemini AI Pro',
+    detail: 'refresh token rejected by Code Assist',
+    at: '5h ago',
+    href: 'providers.html'
+  }
+]
+
+// Durations are numbers and are set as such — mono and tabular, like
+// every other figure on the page. In the proportional face "4h 36m" and
+// "3d 22h" are different widths, so a column of them does not line up and
+// the eye cannot compare two rows without reading both.
+
+/** from → to, aligned so a column of moves reads as a column. */
+const transition = (from, to) => `
+  <span class="inline-flex items-baseline gap-1.5 font-mono text-xs tabular-nums">
+    <span class="text-muted-foreground/70">${from}</span>
+    <i class="ri-arrow-right-line text-[11px] text-muted-foreground/50"></i>
+    <span class="font-medium text-foreground">${to}</span>
+  </span>`
+
+const failoverRow = (f) => `
+  <div ${navTo(f.href)} class="border-t border-border/60 px-6 py-3 transition-colors hover:bg-muted/50">
+    <div class="flex items-baseline gap-3">
+      <span class="w-14 shrink-0">${pill(f.kind, f.tone)}</span>
+      <span class="min-w-0 flex-1 truncate font-mono text-xs">${f.target}</span>
+      <span class="w-32 shrink-0 text-right">${f.from ? transition(f.from, f.to) : ''}</span>
+      <span class="w-16 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${f.at}</span>
+    </div>
+    ${f.detail ? `<div class="mt-1 pl-[4.25rem] text-[12px] text-muted-foreground">${f.detail}</div>` : ''}
   </div>`
 
 // ─── Spend ────────────────────────────────────────────────────────────
@@ -112,7 +238,7 @@ const sessionRow = (s) => `
     <td class="px-3 text-right font-mono text-xs tabular-nums">${s.turns}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${s.tokens}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${s.cost}</td>
-    <td class="py-2.5 pl-3 pr-6 text-right text-[12px] text-muted-foreground">${s.ago}</td>
+    <td class="py-2.5 pl-3 pr-6 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${s.ago}</td>
   </tr>`
 
 const sessions = `
@@ -133,42 +259,16 @@ const sessions = `
   </table>`
 
 document.getElementById('root').innerHTML = `
-  ${section('Inbound surfaces', surfaces, 'last 24h')}
   ${section('Spend', `<div class="grid grid-cols-4 gap-px px-6 pb-6">${SPEND.map(spendTile).join('')}</div>`)}
-  <div class="grid grid-cols-2 border-t border-border">
-    <div class="border-r border-border">
-      ${section('Subscription quota', QUOTA.map(quotaRow).join(''))}
-    </div>
-    <div>
-      ${section('Failover activity', `
-        <div class="space-y-0">
-          <div ${navTo('activity-requests.html')} class="border-t border-border/60 px-6 py-3 transition-colors hover:bg-muted/50">
-            <div class="flex items-baseline gap-2">
-              ${pill('429', 'bad')}
-              <span class="text-xs">Codex Pro exhausted on <span class="font-mono">primary</span></span>
-              <span class="ml-auto text-[12px] text-muted-foreground">46m ago</span>
-            </div>
-            <div class="mt-1 text-[12px] text-muted-foreground">fell through to <span class="font-mono">openai,gpt-5.5</span></div>
-          </div>
-          <div ${navTo('routing.html')} class="border-t border-border/60 px-6 py-3 transition-colors hover:bg-muted/50">
-            <div class="flex items-baseline gap-2">
-              ${pill('weight', 'warn')}
-              <span class="text-xs"><span class="font-mono">claude-code,claude-opus-4-8</span> 1.00 → 0.60</span>
-              <span class="ml-auto text-[12px] text-muted-foreground">1h ago</span>
-            </div>
-            <div class="mt-1 text-[12px] text-muted-foreground">reason: <span class="font-mono">quota_drop</span></div>
-          </div>
-          <div ${navTo('providers.html')} class="border-t border-border/60 px-6 py-3 transition-colors hover:bg-muted/50">
-            <div class="flex items-baseline gap-2">
-              ${pill('auth', 'bad')}
-              <span class="text-xs">Gemini AI Pro needs re-authentication</span>
-              <span class="ml-auto text-[12px] text-muted-foreground">5h ago</span>
-            </div>
-            <div class="mt-1 text-[12px] text-muted-foreground">refresh token rejected by Code Assist</div>
-          </div>
-        </div>`)}
-    </div>
-  </div>
+  ${section('Inbound surfaces', surfaces, 'last 24h')}
+  <!-- Stacked, not side by side. The two-column split was fine when a
+       quota row was one line per account; an account now lists every
+       window it has, so the left column wrapped while the right one sat
+       half empty. Both are lists that grow downwards — putting them in
+       one column lets each use the full width and keeps the page a single
+       reading order. -->
+  ${section('Subscription quota', QUOTA.map(quotaRow).join(''), 'every window · worst shown per account')}
+  ${section('Failover activity', FAILOVER.map(failoverRow).join(''), 'what moved, and to what')}
   ${section('Recent sessions', sessions)}
   <div class="h-10"></div>`
 

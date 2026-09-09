@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rialto — Providers</title>
+<title>Rialto — Subscriptions</title>
 <link rel="stylesheet" href="../node_modules/@fontsource-variable/inter/index.css">
 <link rel="stylesheet" href="../node_modules/@fontsource-variable/geist-mono/index.css">
 <link rel="stylesheet" href="../node_modules/remixicon/fonts/remixicon.css">
@@ -13,192 +13,51 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, meter, btn, navTo, providerRail, tierCell, sortTh, toast } = window.Shell
+const { renderShell, btn, providerTable } = window.Shell
 
-// Providers / Subscriptions / Models / Transformers were four separate
-// screens. They are one thing — "where requests can go" — so they become
-// one master-detail screen: pick a provider on the left, configure its
-// models on the right.
+// Subscriptions: the providers Rialto reaches through someone's plan.
 //
-// The rail itself lives in shell.js: it is the same list on both provider
-// detail mocks, and picking a row is how a reviewer crosses from the
-// subscription detail to the API-key one.
-
-// ─── Model table for the selected provider ────────────────────────────
-// Prices stay in separate columns (in / cached / out) — one packed
-// "$3/$0.30/$15" cell is unreadable and unsortable.
-// `tierSource` is the fact the old pill could not carry. Every name here
-// but one contains its family, so the router infers it; `claude-mythos-5`
-// does not, and only exists as a tier because someone set one.
-const MODELS = [
-  { name: 'claude-fable-5',    tier: 'fable',  tierSource: 'auto',   ctx: '500k', inp: '—', cache: '—', out: '—', test: 'ok',      on: true },
-  { name: 'claude-opus-4-8',   tier: 'opus',   tierSource: 'auto',   ctx: '200k', inp: '—', cache: '—', out: '—', test: 'ok',      on: true },
-  { name: 'claude-opus-4-7',   tier: 'opus',   tierSource: 'auto',   ctx: '200k', inp: '—', cache: '—', out: '—', test: 'ok',      on: true },
-  { name: 'claude-sonnet-5',   tier: 'sonnet', tierSource: 'auto',   ctx: '1M',   inp: '—', cache: '—', out: '—', test: 'ok',      on: true },
-  { name: 'claude-sonnet-4-6', tier: 'sonnet', tierSource: 'auto',   ctx: '1M',   inp: '—', cache: '—', out: '—', test: 'ok',      on: true },
-  { name: 'claude-haiku-4-5',  tier: 'haiku',  tierSource: 'auto',   ctx: '200k', inp: '—', cache: '—', out: '—', test: 'fail',    on: true },
-  { name: 'claude-mythos-5',   tier: 'fable',  tierSource: 'manual', ctx: '500k', inp: '—', cache: '—', out: '—', test: 'unknown', on: false }
-]
-
-const testIcon = { ok: '<i class="ri-check-line text-emerald-600 dark:text-emerald-400"></i>', fail: '<i class="ri-close-line text-destructive"></i>', unknown: '<i class="ri-subtract-line text-muted-foreground/50"></i>' }
-
-const modelRow = (m) => `
-  <tr class="border-t border-border/60 transition-colors hover:bg-muted/50 ${m.on ? '' : 'opacity-45'}">
-    <td class="py-2.5 pl-6 pr-2 font-mono text-xs">${m.name}</td>
-    <td class="px-2">${tierCell(m.tier, m.tierSource)}</td>
-    <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${m.ctx}</td>
-    <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${m.inp}</td>
-    <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${m.cache}</td>
-    <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${m.out}</td>
-    <td class="px-2 text-center text-sm leading-none">${testIcon[m.test]}</td>
-    <td class="py-2.5 pl-2 pr-6 text-right">
-      <span class="inline-flex h-4 w-7 items-center rounded-full ${m.on ? 'bg-foreground' : 'bg-muted-foreground/30'} px-0.5 align-middle">
-        <span class="size-3 rounded-full bg-background ${m.on ? 'translate-x-3' : ''}"></span>
-      </span>
-    </td>
-  </tr>`
-
-const models = `
-  <table class="w-full table-fixed">
-    <colgroup><col><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-16"><col class="w-20"></colgroup>
-    <thead>
-      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
-        ${sortTh('Model', 'pl-6 pr-2')}
-        ${sortTh('Tier', 'px-2', 'left', true, 'desc')}
-        ${sortTh('Context', 'px-2', 'right')}
-        ${sortTh('In /1M', 'px-2', 'right')}
-        ${sortTh('Cached', 'px-2', 'right')}
-        ${sortTh('Out /1M', 'px-2', 'right')}
-        ${sortTh('Test', 'px-2', 'center')}
-        ${sortTh('On', 'pl-2 pr-6', 'right')}
-      </tr>
-    </thead>
-    <tbody>${MODELS.map(modelRow).join('')}</tbody>
-  </table>`
-
-const ACCOUNTS = [
-  { label: 'tkgstrator@…', plan: 'Max', active: true,  auth: 'live',    used: 71, resets: '3d 04h' },
-  { label: 'second@…',     plan: 'Pro', active: false, auth: 'live',    used: 22, resets: '3d 04h' }
-]
-
-// An account's meters are a snapshot; the history behind them is Usage.
-const accountRow = (a) => `
-  <div ${navTo('activity-usage.html')} class="border-l-2 ${a.active ? 'border-l-foreground' : 'border-l-transparent'} px-4 py-3 transition-colors hover:bg-muted/50">
-    <div class="flex items-center gap-2">
-      <span class="text-xs font-medium">${a.label}</span>
-      ${pill(a.plan, 'info')}
-      ${a.active ? pill('active', 'ok') : ''}
-      <span class="ml-auto font-mono text-[12px] tabular-nums">${a.used}%</span>
-    </div>
-    <div class="mt-2">${meter(a.used)}</div>
-    <div class="mt-1.5 flex items-center gap-2 text-[12px] text-muted-foreground">
-      <span>auth ${a.auth}</span><span class="opacity-40">·</span><span>weekly resets in ${a.resets}</span>
-    </div>
-  </div>`
+// This used to be the top half of an 18rem rail beside a provider's
+// detail, which cost the detail 288px it did not have to spare — the
+// account emails truncated and the six price columns collapsed to
+// dashes. The rail's two headings are now the sidebar's two sub-entries,
+// and each is a list in its own right.
+//
+// Quota is the column this list exists for. A subscription is the only
+// provider kind that can stop serving without anyone changing anything,
+// and the number that predicts it is per-account usage against the
+// window — so it gets a meter and a figure rather than a state pill
+// alone.
 
 document.getElementById('root').innerHTML = `
-  <div class="grid h-full grid-cols-[18rem_1fr]">
-
-    <aside class="min-w-0 overflow-y-auto border-r border-border">
-      ${providerRail('claude-code')}
-    </aside>
-
-    <div class="min-w-0 overflow-y-auto">
-      <div class="flex items-center gap-3 border-b border-border px-6 py-4">
-        <div>
-          <div class="flex items-center gap-2">
-            <h2 class="text-sm font-semibold">Claude Code</h2>
-            ${pill('subscription', 'info')}
-            ${pill('live', 'ok')}
-          </div>
-          <p class="mt-0.5 font-mono text-[12px] text-muted-foreground">https://api.anthropic.com/v1/messages</p>
-        </div>
-        <div class="ml-auto flex gap-2">
-          ${btn('Test all', 'outline', 'ri-pulse-line')}
-          ${btn('Sync models', 'ghost', 'ri-refresh-line')}
-        </div>
-      </div>
-
-      <div class="grid grid-cols-2 border-b border-border">
-        <div class="border-r border-border">
-          <div class="px-6 pt-5 pb-2">
-            <h3 class="text-sm font-semibold">Accounts</h3>
-          </div>
-          <div class="px-2 pb-4">${ACCOUNTS.map(accountRow).join('')}</div>
-        </div>
-        <!-- Read-only. There is nothing to pick here: the wire shape is a
-             function of apiStyle + authMode, and all six registered
-             transformers are endpoint- or auth-bound. Shown because
-             "what does this provider actually speak" is worth seeing
-             when a request misbehaves. -->
-        <div>
-          <div class="px-6 pt-5 pb-2">
-            <h3 class="text-sm font-semibold">Request shape</h3>
-          </div>
-          <div class="px-6 pb-4">
-            <div class="flex items-baseline gap-3 border-l-2 border-l-transparent py-1.5 transition-colors hover:border-l-border">
-              <span class="text-[12px] text-muted-foreground">API style</span>
-              <span class="ml-auto font-mono text-[12px]">anthropic</span>
-            </div>
-            <div class="flex items-baseline gap-3 border-l-2 border-l-transparent py-1.5 transition-colors hover:border-l-border">
-              <span class="text-[12px] text-muted-foreground">Auth</span>
-              <span class="ml-auto font-mono text-[12px]">subscription (OAuth)</span>
-            </div>
-            <div class="flex items-baseline gap-3 border-l-2 border-l-transparent py-1.5 transition-colors hover:border-l-border">
-              <span class="text-[12px] text-muted-foreground">Pipeline</span>
-              <span class="ml-auto font-mono text-[12px]">claude-code-oauth</span>
-            </div>
-            <div class="flex items-baseline gap-3 border-l-2 border-l-transparent py-1.5 transition-colors hover:border-l-border">
-              <span class="text-[12px] text-muted-foreground">Endpoint</span>
-              <span class="ml-auto font-mono text-[12px]">/v1/messages</span>
-            </div>
-            <p class="mt-3 text-[12px] leading-relaxed text-muted-foreground">
-              Derived from the API style — not configurable. Per-model overrides live in the
-              model row below.
-            </p>
-          </div>
-        </div>
-      </div>
-
+  <div class="min-w-0">
+      <!-- No heading: the breadcrumb and the sidebar both say
+           "Subscriptions" already. -->
       <div class="flex items-center gap-3 px-6 pt-5 pb-3">
-        <h3 class="text-sm font-semibold">Models</h3>
-        <span class="text-[12px] text-muted-foreground">6 of 7 enabled</span>
-        <div class="ml-auto flex items-center gap-2">
-          <div class="flex h-7 items-center gap-2 rounded-md border border-border px-2.5 text-xs text-muted-foreground">
-            <i class="ri-search-line text-sm"></i> Filter
-          </div>
-        </div>
+        <span class="text-[12px] text-muted-foreground">3 accounts across 3 providers · 10 of 16 models enabled</span>
+        <div class="ml-auto">${btn('Add subscription', 'primary', 'ri-add-line', 'providers-connect.html')}</div>
       </div>
-      ${models}
-      <div class="px-6 py-4">
+
+      <div class="px-6 pb-4">
         <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
           <i class="ri-information-line mr-1 align-[-1px]"></i>
-          Tier is read from the model name when the name says a family —
-          <span class="font-mono">fable</span> / <span class="font-mono">opus</span> /
-          <span class="font-mono">sonnet</span> / <span class="font-mono">haiku</span>. Those cells are
-          plain. <span class="font-mono">claude-mythos-5</span> says none of them, so its tier was set
-          by hand and is shown solid. Click a tier to override or clear it; Routing's
-          <span class="font-medium text-foreground">tier respect</span> floor is what reads it.
+          A subscription authenticates with OAuth and serves whatever the plan allows — there is no
+          per-request price, which is why these rows carry a quota instead of a cost.
+          <span class="font-medium text-foreground">Open a row</span> to manage its accounts and pick
+          which models it may serve. Routing skips an account the moment its window is spent, and
+          comes back when the window rolls.
         </div>
       </div>
-      <div class="h-8"></div>
-    </div>
 
+      ${providerTable('subscription')}
   </div>`
 
 renderShell({
   active: 'providers',
+  sub: 'subscriptions',
   navMode: 'cloudflare',
-  crumbs: ['Claude Code'],
-  subtitle: '7 providers · 23 models enabled · 3 subscription accounts',
-  actions:
-    btn('Refresh prices', 'ghost', 'ri-price-tag-3-line') +
-    btn('Add provider', 'primary', 'ri-add-line', 'providers-connect.html'),
-  // Drawn here because a catalog refresh is the app's longest action and
-  // the one whose result you cannot see on the screen that started it: the
-  // model counts in the rail move, and nothing else does. What the toast
-  // has to say is what changed, not that something finished.
-  toast: toast('Synced 23 models across 7 providers', 'ok', '4 added · 1 removed · prices from 3 vendors')
+  crumbs: [],
+  subtitle: 'Providers reached through a plan'
 })
 </script>
 </body>

@@ -48,7 +48,7 @@ const VENDORS = [
 // with a detail screen, so the card goes there instead of restarting an
 // authentication the operator has already finished.
 const vendorHref = (v, selected) =>
-  v.added && !selected ? (v.kind === 'subscription' ? 'providers.html' : 'providers-apikey.html') : ''
+  v.added && !selected ? (v.kind === 'subscription' ? 'provider-subscription.html' : 'provider-apikey.html') : ''
 
 const vendorCard = (v, selected) => `
   <button ${vendorHref(v, selected) ? navTo(vendorHref(v, selected)) : ''} class="flex items-start gap-3 border-l-2 px-4 py-3 text-left transition-colors ${

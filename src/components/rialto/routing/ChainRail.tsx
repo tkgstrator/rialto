@@ -20,10 +20,9 @@ import { api, type RoutingPresetItem } from '@/lib/api'
 import { applyPresetToLive } from '@/lib/routing-map/apply-to-live'
 import { resolveBuiltinPreset, resolvesToNothing } from '@/lib/routing-map/builtin-presets'
 import { cn } from '@/lib/utils'
-import type { RouteRule, RouterConfig } from '@/schemas/domain/router'
+import type { RouterConfig } from '@/schemas/domain/router'
 import { BUILTIN_ROUTING_PRESETS, type BuiltinRoutingPreset } from '@/shared/data'
 import { useEnabledTargets } from './data'
-import { summarizePredicate, summarizeTarget } from './rules'
 import type { PreferenceProfile } from './types'
 
 const ROW = 'border-l-2 border-l-transparent px-4 py-3 transition-colors hover:border-l-border hover:bg-muted/50'
@@ -90,18 +89,6 @@ function Constraints({ constraints }: { constraints: Record<string, unknown> | n
         hint={t('routing.chain.quotaSkipHint')}
       />
     </>
-  )
-}
-
-function RuleSummary({ rule }: { rule: RouteRule }) {
-  const { t } = useTranslation()
-  return (
-    <div className={ROW}>
-      <div className='text-[12px] uppercase tracking-wider text-muted-foreground'>{t('routing.chain.when')}</div>
-      <div className='mt-0.5 text-xs'>{summarizePredicate(rule, t)}</div>
-      <div className='mt-2 text-[12px] uppercase tracking-wider text-muted-foreground'>{t('routing.chain.then')}</div>
-      <div className='mt-0.5 font-mono text-xs'>{summarizeTarget(rule, t)}</div>
-    </div>
   )
 }
 
@@ -223,13 +210,11 @@ export function ChainRail({
   constraints,
   profileKey,
   onApplied,
-  rules,
   onNotify
 }: {
   profileKey: string | null
   onApplied: (profile: PreferenceProfile) => void
   constraints: Record<string, unknown> | null
-  rules: readonly RouteRule[]
   onNotify: (message: string, ok: boolean) => void
 }) {
   const { t } = useTranslation()
@@ -240,20 +225,9 @@ export function ChainRail({
       </div>
       <Constraints constraints={constraints} />
 
-      <div className='border-t border-border px-4 pt-5 pb-2'>
-        <h2 className={HEADING}>{t('routing.common.rules')}</h2>
-      </div>
-      {rules.length === 0 ? (
-        <div className='px-4 pb-2 text-[12px] text-muted-foreground'>{t('routing.chain.noLaneRules')}</div>
-      ) : (
-        rules.map((rule, index) => (
-          // Rules are order-defined and unnamed by default, so position is
-          // the only stable identity a list row has.
-          // biome-ignore lint/suspicious/noArrayIndexKey: order is the identity
-          <RuleSummary key={index} rule={rule} />
-        ))
-      )}
-
+      {/* No rules list. It described the scenario router's first-match
+          rules, which decided nothing once the chain became the only
+          selector — a panel listing an alternative that does not run. */}
       <div className='border-t border-border px-4 pt-5 pb-2'>
         <h2 className={HEADING}>{t('routing.common.presets')}</h2>
       </div>
