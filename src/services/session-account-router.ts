@@ -14,10 +14,13 @@
  *   3. From the surviving candidates, reuse the sticky-session mapping
  *      if it still points at one of them (prompt-cache continuity).
  *   4. Otherwise pick the account with the HIGHEST required burn rate
- *      on the scarce weekly window (claude: 7d Opus, codex: primary):
- *      pctRemaining / timeRemainingMs. Larger means more unspent quota
- *      relative to time until reset → most at risk of leaving quota on
- *      the table, so drain it first.
+ *      across the weekly windows it actually reports:
+ *      pctRemaining / timeRemainingMs, taken as the MINIMUM over those
+ *      windows. Larger means more unspent quota relative to time until
+ *      reset → most at risk of leaving quota on the table, so drain it
+ *      first. An account with no usable reading ranks below one that has
+ *      a reading and above an exhausted one; ties go to the
+ *      least-recently-picked account.
  *
  * If every account is filtered out by steps 1-2, the picker falls back
  * to the full list and returns the least-bad candidate so the request
@@ -38,6 +41,7 @@ import {
   CLAUDE_METRICS,
   CODEX_METRICS,
   getPerAccountUsage,
+  isScopedMetric,
   type Metric
 } from './subaccount-usage-store'
 import { getSubAccountTokensForKind, type SubAccountTokenInfo } from './subscription-account-sync-service'
@@ -55,20 +59,60 @@ const HARD_LIMIT_METRICS: Record<'claude' | 'codex', Metric[]> = {
   codex: [CODEX_METRICS.primary]
 }
 
-// The scarce weekly window each kind balances on once hard limits are
-// out of the way. Claude spreads on the 7d Opus window (most precious);
-// codex uses primary because that is the only window with a stable
-// resetAt the wire reliably returns.
-const BALANCE_METRIC: Record<'claude' | 'codex', Metric> = {
-  claude: CLAUDE_METRICS.seven_day_opus,
-  codex: CODEX_METRICS.primary
+// The scarce windows each kind balances on once hard limits are out of
+// the way. Which keys exist is the vendor's call, not ours: Anthropic
+// stopped populating the flat `seven_day_opus` field for most plans and
+// now reports per-model weekly limits as `claude.seven_day_scoped.<model>`,
+// so pinning one metric key made every account read as "no data" and
+// silently disabled the balancing entirely. Match on the shape of the
+// metric instead and let each account contribute whichever weekly
+// windows it actually has.
+//
+// The 5h window is deliberately excluded: it is a hard limit (handled
+// above), not a resource worth spreading across accounts — its short
+// horizon would dominate the burn-rate arithmetic every time.
+const isWeeklyMetric = (metric: Metric, kind: 'claude' | 'codex'): boolean => {
+  if (kind === 'codex') return metric === CODEX_METRICS.secondary
+  return (
+    metric === CLAUDE_METRICS.seven_day ||
+    metric === CLAUDE_METRICS.seven_day_sonnet ||
+    metric === CLAUDE_METRICS.seven_day_opus ||
+    isScopedMetric(metric)
+  )
 }
 
-// A never-polled account (no DB row yet), one whose balancing window
-// has no resetAt, or one whose reset has already passed (DB row is
-// stale across a reset) all read as MAXIMUM priority so they stay
-// preferred. Mirrors the legacy "unknown = available" fallback.
-const MAX_PRIORITY = Number.POSITIVE_INFINITY
+// Ranking tiers. A single numeric scale cannot express "no reading":
+// this used to be `+Infinity`, and because a real burn rate is ~1e-7,
+// one account with a missing or stale row outranked every account that
+// had real data — permanently, and without even rotating, since the
+// reduce below compares with a strict `>`. Tier first, burn rate second
+// keeps the unknown case clear of both the healthy and the exhausted.
+const TIER_KNOWN = 2
+const TIER_UNKNOWN = 1
+const TIER_EXHAUSTED = 0
+
+interface AccountRank {
+  tier: number
+  burnRate: number
+}
+
+const UNKNOWN_RANK: AccountRank = { tier: TIER_UNKNOWN, burnRate: 0 }
+
+// subAccountId → when the picker last handed this account out. Ties on
+// tier + burn rate go to the least-recently-picked, so a pool of
+// equally-ranked accounts rotates instead of sending every request to
+// whichever row Postgres happened to return first.
+const lastPickedAt = new Map<string, number>()
+
+const pickedAtOf = (subAccountId: string): number => {
+  const at = lastPickedAt.get(subAccountId)
+  return at === undefined ? 0 : at
+}
+
+const remember = (account: SubAccountTokenInfo, now: number): SubAccountTokenInfo => {
+  lastPickedAt.set(account.subAccountId, now)
+  return account
+}
 
 // Whether the account has at least one always-binding window pinned at
 // 100% with resetAt still in the future. The "future resetAt" guard is
@@ -86,20 +130,46 @@ const accountHasHardLimitHit = (usage: AccountUsageMap, kind: 'claude' | 'codex'
   return false
 }
 
-// Cache-only required burn rate on the kind's scarce weekly window:
-// pctRemaining / timeRemainingMs. Larger means the account has more
-// unspent quota relative to the time it has left, so it's at greater
-// risk of leaving quota on the table at reset — prefer it. Branches are
-// explicit rather than nullish-coalesced so each "unknown" path is named.
-const balancingScore = (usage: AccountUsageMap, kind: 'claude' | 'codex', now: number): number => {
-  const w = usage.get(BALANCE_METRIC[kind])
-  if (!w) return MAX_PRIORITY
-  if (w.resetAt === null) return MAX_PRIORITY
-  const timeRemainingMs = w.resetAt.valueOf() - now
-  if (timeRemainingMs <= 0) return MAX_PRIORITY
-  const pctRemaining = 100 - w.percent
-  if (pctRemaining <= 0) return Number.NEGATIVE_INFINITY
-  return pctRemaining / timeRemainingMs
+// One window's required burn rate: remaining budget per remaining
+// millisecond. Null when the window carries no usable timing — no
+// resetAt at all, or a row left stale across its own reset. Null stays
+// null all the way up to the tier decision; collapsing it into a number
+// is exactly what made a stale row look like the most urgent account in
+// the pool.
+const burnRateOf = (window: { percent: number; resetAt: Date | null }, now: number): number | null => {
+  if (window.resetAt === null) return null
+  const timeRemainingMs = window.resetAt.valueOf() - now
+  if (timeRemainingMs <= 0) return null
+  return Math.max(0, 100 - window.percent) / timeRemainingMs
+}
+
+// An account can only spend as fast as its tightest weekly window
+// allows, so the minimum burn rate across the windows it reports is the
+// honest number: a fresh per-model window must not mask an account-wide
+// one sitting at 99%.
+const rankAccount = (usage: AccountUsageMap, kind: 'claude' | 'codex', now: number): AccountRank => {
+  const rates: number[] = []
+  for (const [metric, window] of usage) {
+    if (!isWeeklyMetric(metric, kind)) continue
+    const rate = burnRateOf(window, now)
+    if (rate !== null) rates.push(rate)
+  }
+  if (rates.length === 0) return UNKNOWN_RANK
+  const tightest = Math.min(...rates)
+  if (tightest <= 0) return { tier: TIER_EXHAUSTED, burnRate: 0 }
+  return { tier: TIER_KNOWN, burnRate: tightest }
+}
+
+interface RankedAccount {
+  account: SubAccountTokenInfo
+  rank: AccountRank
+  pickedAt: number
+}
+
+const outranks = (a: RankedAccount, b: RankedAccount): boolean => {
+  if (a.rank.tier !== b.rank.tier) return a.rank.tier > b.rank.tier
+  if (a.rank.burnRate !== b.rank.burnRate) return a.rank.burnRate > b.rank.burnRate
+  return a.pickedAt < b.pickedAt
 }
 
 // `now` is injectable so unit tests can pin the clock against seeded
@@ -136,12 +206,12 @@ export async function resolveAccountForSession(
   // worse than letting the request go out.
   const accounts = usable.length > 0 ? usable : notExhausted.length > 0 ? notExhausted : all
 
-  if (accounts.length === 1) return accounts[0]
+  if (accounts.length === 1) return remember(accounts[0], now)
 
   const cached = sessionMap.get(sessionId)
   if (cached) {
     const found = accounts.find((a) => a.subAccountId === cached)
-    if (found) return found
+    if (found) return remember(found, now)
     // Previously-chosen account is no longer in the candidate set (either
     // disabled, reactively-exhausted, or DB-marked hard-limit). Repick —
     // and drop the sticky so a future request doesn't latch back onto the
@@ -149,17 +219,17 @@ export async function resolveAccountForSession(
     sessionMap.delete(sessionId)
   }
 
-  // Pick the account with the HIGHEST required burn rate on the scarce
-  // weekly window. Score once up front so the reduce comparison stays
+  // Pick the account with the HIGHEST required burn rate across its
+  // weekly windows. Rank once up front so the reduce comparison stays
   // O(1) per step and can't see a different snapshot per iteration.
-  const scored = accounts.map((a) => {
+  const ranked = accounts.map((a) => {
     const usage = usageByAcct.get(a.subAccountId)
-    const score = usage !== undefined ? balancingScore(usage, kind, now) : MAX_PRIORITY
-    return { account: a, score }
+    const rank = usage === undefined ? UNKNOWN_RANK : rankAccount(usage, kind, now)
+    return { account: a, rank, pickedAt: pickedAtOf(a.subAccountId) }
   })
-  const picked = scored.reduce((best, candidate) => (candidate.score > best.score ? candidate : best)).account
+  const picked = ranked.reduce((best, candidate) => (outranks(candidate, best) ? candidate : best)).account
   sessionMap.set(sessionId, picked.subAccountId)
-  return picked
+  return remember(picked, now)
 }
 
 // Read-only lookup of which account the sticky map currently routes this

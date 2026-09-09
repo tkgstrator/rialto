@@ -25,8 +25,14 @@ type Metric =
   | 'claude.seven_day'
   | 'claude.seven_day_sonnet'
   | 'claude.seven_day_opus'
+  | 'claude.seven_day_scoped.fable'
   | 'codex.primary'
   | 'codex.secondary'
+
+// The per-model weekly window Anthropic actually reports today. Kept as
+// a named constant because the router recognises it by prefix, not by a
+// fixed key.
+const SCOPED_FABLE: Metric = 'claude.seven_day_scoped.fable'
 const CLAUDE_METRICS = {
   five_hour: 'claude.five_hour' as Metric,
   seven_day: 'claude.seven_day' as Metric,
@@ -151,12 +157,74 @@ test('picks the nearer-reset account when both have the same usage', async () =>
   expect(picked?.subAccountId).toBe('a1')
 })
 
-test('a never-polled account reads as MAX_PRIORITY and is preferred', async () => {
+test('an account with no usage rows ranks BELOW one with a healthy reading', async () => {
   // a1 has DB usage with a finite burn rate; a2 has no row at all.
+  // "No reading" must not outrank real data — as +Infinity did, which
+  // let one unpolled account monopolise the pool forever.
   claudeAccounts = [account('a1'), account('a2')]
-  perAccountUsage.set('a1', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 50, resetAt: HALFWAY_RESET } }))
+  perAccountUsage.set('a1', usage({ [CLAUDE_METRICS.seven_day]: { percent: 10, resetAt: HALFWAY_RESET } }))
   const picked = await resolveAccountForSession('s-fresh', 'claude', NOW)
+  expect(picked?.subAccountId).toBe('a1')
+})
+
+test('an account with no usage rows still ranks ABOVE an exhausted one', async () => {
+  // a1's scoped weekly window is spent (and scoped windows are not part
+  // of the account-wide hard-limit gate, so a1 survives to the ranking).
+  claudeAccounts = [account('a1'), account('a2')]
+  perAccountUsage.set('a1', usage({ [SCOPED_FABLE]: { percent: 100, resetAt: HALFWAY_RESET } }))
+  const picked = await resolveAccountForSession('s-unknown-beats-spent', 'claude', NOW)
   expect(picked?.subAccountId).toBe('a2')
+})
+
+test('balances on the weekly windows the account actually reports', async () => {
+  // The production shape since Anthropic dropped the flat
+  // `seven_day_opus` field: only `seven_day` plus per-model scoped rows
+  // exist. Pinning the balance metric to seven_day_opus made both
+  // accounts read as "no data", so the pool never rotated and the
+  // account resetting in 21h wasted its entire week.
+  const in21h = new Date(NOW + 21 * 3_600_000)
+  const in3d = new Date(NOW + 3 * 86_400_000)
+  const spent: AccountUsageMap = new Map()
+  spent.set(CLAUDE_METRICS.five_hour, { percent: 75, resetAt: new Date(NOW + 39 * 60_000) })
+  spent.set(CLAUDE_METRICS.seven_day, { percent: 99, resetAt: in3d })
+  spent.set(SCOPED_FABLE, { percent: 9, resetAt: in3d })
+  const untouched: AccountUsageMap = new Map()
+  untouched.set(CLAUDE_METRICS.seven_day, { percent: 0, resetAt: in21h })
+  untouched.set(SCOPED_FABLE, { percent: 0, resetAt: in21h })
+
+  claudeAccounts = [account('a1'), account('a2')]
+  perAccountUsage.set('a1', spent)
+  perAccountUsage.set('a2', untouched)
+  const picked = await resolveAccountForSession('s-real-shape', 'claude', NOW)
+  expect(picked?.subAccountId).toBe('a2')
+})
+
+test('the tightest weekly window decides, not the freshest one', async () => {
+  // a1's per-model window is untouched but its account-wide weekly is at
+  // 99% — the minimum across windows is what the account can actually
+  // spend, so a1 must lose to the more balanced a2.
+  claudeAccounts = [account('a1'), account('a2')]
+  perAccountUsage.set(
+    'a1',
+    usage({
+      [CLAUDE_METRICS.seven_day]: { percent: 99, resetAt: HALFWAY_RESET },
+      [SCOPED_FABLE]: { percent: 0, resetAt: HALFWAY_RESET }
+    })
+  )
+  perAccountUsage.set('a2', usage({ [CLAUDE_METRICS.seven_day]: { percent: 20, resetAt: HALFWAY_RESET } }))
+  const picked = await resolveAccountForSession('s-tightest', 'claude', NOW)
+  expect(picked?.subAccountId).toBe('a2')
+})
+
+test('equally-ranked accounts rotate instead of pinning the first', async () => {
+  // Neither account has a reading: same tier, same burn rate. The old
+  // strict `>` reduce always kept the first candidate, so one account
+  // took every request. Fresh ids so the least-recently-picked map
+  // starts empty for both.
+  claudeAccounts = [account('r1'), account('r2')]
+  const first = await resolveAccountForSession('s-rot-1', 'claude', NOW)
+  const second = await resolveAccountForSession('s-rot-2', 'claude', NOW + 1_000)
+  expect(first?.subAccountId).not.toBe(second?.subAccountId)
 })
 
 // ─── Hard-limit filter (7d + 5h) ───────────────────────────────────────
