@@ -13,6 +13,7 @@ import { Pill, RButton } from '@/components/rialto/primitives'
 import { SectionHead } from '@/components/rialto/settings/fields'
 import { SettingsField } from '@/components/rialto/settings/SettingsLayout'
 import { api, type HealthResponse } from '@/lib/api'
+import { fmtUptime } from '@/lib/rialto/format'
 
 const CHECK_TONES = { ok: 'ok', fail: 'bad', skip: 'mute' } as const
 
@@ -71,7 +72,9 @@ export function HealthPanel() {
         <span className='font-mono text-xs'>{health === null ? '–' : `v${health.version}`}</span>
       </SettingsField>
       <SettingsField label={t('settings.advanced.uptime')} hint={t('settings.advanced.uptimeHint')}>
-        <span className='font-mono text-xs tabular-nums'>{health === null ? '–' : health.uptime_seconds}</span>
+        <span className='font-mono text-xs tabular-nums'>
+          {health === null ? '–' : fmtUptime(health.uptime_seconds)}
+        </span>
       </SettingsField>
       <SettingsField label={t('settings.advanced.dependencyChecks')} hint={t('settings.advanced.dependencyChecksHint')}>
         {health === null ? (
