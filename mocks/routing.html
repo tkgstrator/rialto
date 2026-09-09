@@ -93,7 +93,7 @@ const ACTIVE_SCENARIO = 'default'
 const scenarioTab = (s) => {
   const on = s.id === ACTIVE_SCENARIO
   return `
-    <button class="flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs transition-colors ${
+    <button class="flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs transition-colors ${
       on ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground'
     }">
       ${s.label}<span class="font-mono text-[12px] tabular-nums ${on ? 'text-muted-foreground' : 'text-muted-foreground/70'}">${s.count}</span>
@@ -242,7 +242,12 @@ document.getElementById('root').innerHTML = `
        control and lives here; it used to be a header button AND a list
        in the right rail. -->
   <div class="flex items-center gap-3 border-b border-border px-6 py-2.5">
-    <div class="flex items-center gap-0.5">
+    <!-- Equal columns rather than content width. "Long context" is twice
+         "Think", so packed side by side the strip read as five different
+         kinds of thing. auto-cols-fr rather than a fixed width: the
+         labels are translated, and the widest one is not the same string
+         in every locale. -->
+    <div class="grid grid-flow-col auto-cols-fr gap-0.5">
       ${SCENARIOS.map(scenarioTab).join('')}
     </div>
     <span class="h-4 w-px bg-border"></span>

@@ -56,7 +56,12 @@ function ScenarioChips({
 }) {
   const { t } = useTranslation()
   return (
-    <div className='flex items-center gap-0.5'>
+    // Equal columns rather than content width: "Long context" is twice
+    // "Think", so packed side by side the strip read as five different
+    // kinds of thing. auto-cols-fr rather than a fixed width — the labels
+    // are translated, and the widest one is not the same string in every
+    // locale.
+    <div className='grid grid-flow-col auto-cols-fr gap-0.5'>
       {SCENARIOS.map((scenario) => {
         const on = scenario === active
         return (
@@ -65,7 +70,7 @@ function ScenarioChips({
             type='button'
             onClick={() => onSelect(scenario)}
             className={cn(
-              'flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs transition-colors',
+              'flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs transition-colors',
               on ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground'
             )}
           >
