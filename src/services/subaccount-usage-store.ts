@@ -36,6 +36,13 @@ export const scopedMetricKey = (modelName: string): ScopedMetric =>
   `${SCOPED_METRIC_PREFIX}${modelName.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`
 export const isScopedMetric = (metric: string): boolean => metric.startsWith(SCOPED_METRIC_PREFIX)
 
+// Inverse of scopedMetricKey: the model slug a scoped window is about,
+// or null when the metric is not per-model. The account picker needs it
+// to decide whether a window binds for the model actually being
+// requested — Fable's weekly allowance says nothing about a Sonnet call.
+export const scopedMetricModel = (metric: string): string | null =>
+  metric.startsWith(SCOPED_METRIC_PREFIX) ? metric.slice(SCOPED_METRIC_PREFIX.length) : null
+
 export const CODEX_METRICS = {
   primary: 'codex.primary',
   secondary: 'codex.secondary'

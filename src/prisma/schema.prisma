@@ -123,49 +123,49 @@ model Provider {
 }
 
 model SubAccount {
-  id              String     @id @default(cuid())
-  providerId      String
-  provider        Provider   @relation("ProviderSubscriptionAccounts", fields: [providerId], references: [id], onDelete: Cascade)
-  sourcePath      String
+  id                 String     @id @default(cuid())
+  providerId         String
+  provider           Provider   @relation("ProviderSubscriptionAccounts", fields: [providerId], references: [id], onDelete: Cascade)
+  sourcePath         String
   // User-facing on/off switch. The sync service treats only enabled
   // accounts as candidates for activeSubscriptionAccountId, so a disabled
   // row is effectively ignored at request time even though its tokens
   // remain on disk.
-  enabled         Boolean    @default(true)
-  label           String
-  userName        String?
-  userEmail       String?
-  userId          String?
-  accountId       String?
-  plan            String?
-  rateLimitTier   String?
+  enabled            Boolean    @default(true)
+  label              String
+  userName           String?
+  userEmail          String?
+  userId             String?
+  accountId          String?
+  plan               String?
+  rateLimitTier      String?
   // Expiry of the stored access token. Refreshed in place whenever the
   // grant rotates. Codex derives it from the token's own `exp` claim, so
   // a row written before this column meant that is self-correcting.
-  expiresAt       DateTime?
+  expiresAt          DateTime?
   // When the paid subscription itself lapses — Codex only, read from the
   // id_token's `chatgpt_subscription_active_until`. Kept apart from
   // expiresAt: conflating them made every near-expiry refresh check
   // conclude an hour-long access token was good for months.
   subscriptionEndsAt DateTime?
-  scopes          Json?
+  scopes             Json?
   // Encrypted token payloads. Plain tokens are never persisted.
-  accessTokenEnc  String?
-  refreshTokenEnc String?
-  idTokenEnc      String?
+  accessTokenEnc     String?
+  refreshTokenEnc    String?
+  idTokenEnc         String?
   // Monthly subscription price in USD, derived from the plan at sync
   // time (e.g. claude max → 100, codex pro → 200). Null when the plan
   // is unknown or free.
-  monthlyPriceUsd Float?
+  monthlyPriceUsd    Float?
   // Last auth-probe outcome + timestamps. authCheckedAt is set on every
   // probe; authError holds the latest failure reason for display. The
   // periodic auth-health job and the manual profile sync both write these.
-  authStatus      AuthStatus @default(unknown)
-  authCheckedAt   DateTime?
-  authError       String?
-  lastSyncedAt    DateTime   @default(now())
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  authStatus         AuthStatus @default(unknown)
+  authCheckedAt      DateTime?
+  authError          String?
+  lastSyncedAt       DateTime   @default(now())
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 
   activeForProviders Provider[]        @relation("ProviderActiveSubscriptionAccount")
   usage              SubAccountUsage[]
@@ -370,32 +370,32 @@ model RouterPreferenceProfile {
 }
 
 model RouterPreferenceEntry {
-  id            String                  @id @default(cuid())
-  profileId     String
-  profile       RouterPreferenceProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  id        String                  @id @default(cuid())
+  profileId String
+  profile   RouterPreferenceProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   // Scenario the entry participates in. Legacy rows created before
   // the per-scenario split default to `default` via the migration
   // backfill; new rows must pass the value explicitly. Each scenario
   // owns an independent chain (default / think / longContext /
   // webSearch / image).
-  scenario      ScenarioKey             @default(default)
+  scenario  ScenarioKey             @default(default)
   // Which caller lane this entry participates in — `agent` for main-
   // agent traffic, `subagent` for requests carrying a
   // <RIALTO-SUBAGENT-MODEL> tag. Split from the pre-A design (a single
   // chain plus per-entry `subagentTiers` filter) so operators can
   // reorder subagent independently of agent. Existing rows are
   // backfilled to `agent` by the migration.
-  kind          RouterPreferenceKind    @default(agent)
+  kind      RouterPreferenceKind    @default(agent)
   // 1 = most preferred. Unique per (profile, scenario, kind) so each
   // (scenario, kind) chain has a total ordering independent of the
   // others.
-  priority      Int
-  modelId       String
-  model         Model                   @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  priority  Int
+  modelId   String
+  model     Model                   @relation(fields: [modelId], references: [id], onDelete: Cascade)
   // Soft toggle: keep the row (and its priority slot) while excluding
   // the model from selection — "temporarily drop Fable" without
   // reordering the chain.
-  enabled       Boolean                 @default(true)
+  enabled   Boolean                 @default(true)
 
   @@unique([profileId, scenario, kind, priority])
   @@index([profileId])
@@ -449,14 +449,14 @@ model RouterSlot {
 // Using the external ID as PK avoids a surrogate key round-trip on every
 // request: the proxy can upsert by id without fetching first.
 model Session {
-  id         String       @id
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
+  id          String       @id
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
   // Archive (soft-delete) marker. Non-null hides the session from the
   // History list, but its RequestLog rows stay so cost/usage totals are
   // preserved. Reset to null when the session receives new activity, so a
   // resumed session reappears in the list. Never physically deleted here.
-  archivedAt DateTime?
+  archivedAt  DateTime?
   // First-observed inbound wire type for this session: 'anthropic',
   // 'openai' or 'gemini' (the `inboundType` of the surface it arrived
   // on — see src/llms/inbound/surfaces.ts). Set once on the first
@@ -468,8 +468,8 @@ model Session {
   // registry, and an enum would make each new one a DDL migration and a
   // deploy-order hazard for no read-side benefit.
   inboundType String?
-  logs       RequestLog[]
-  messages   Message[]
+  logs        RequestLog[]
+  messages    Message[]
 }
 
 // One row per chat turn. Populated by the pipeline: on request send it
@@ -544,11 +544,24 @@ model AccessToken {
 // RouterPreferenceProfile the surface's chain comes from — null means
 // the shared 'live' profile.
 model InboundSurfaceConfig {
-  id          String   @id @default(cuid())
-  surface     String   @unique
-  routingMode String
-  profileKey  String?
-  updatedAt   DateTime @updatedAt
+  id            String   @id @default(cuid())
+  surface       String   @unique
+  routingMode   String
+  profileKey    String?
+  // `provider,model` pairs a caller may NOT name on this surface while it
+  // is in passthrough. A deny list rather than an allow list because
+  // passthrough's rule today is "anything enabled is nameable": an empty
+  // array is exactly that behaviour, so this column is a no-op on every
+  // existing install and a model added to a provider later stays
+  // reachable without anyone editing a list.
+  //
+  // Distinct from `Model.enabled`, which is whether the provider serves
+  // the model at all — that one is shared by every surface and every
+  // chain. This is per surface, and only consulted in passthrough: in
+  // routed mode the caller's string is a hint the chain overrides, so
+  // there is nothing to deny.
+  deniedTargets String[] @default([])
+  updatedAt     DateTime @updatedAt
 }
 
 model RequestLog {

@@ -26,6 +26,12 @@ export interface ResolvedSurface extends InboundSurface {
   routingMode: RoutingMode
   /** RouterPreferenceProfile.key this surface's chain comes from. */
   profileKey: string
+  /**
+   * `provider,model` pairs a caller may not name here while this surface
+   * is in passthrough. Empty is the normal state and means "anything the
+   * providers serve", which is what passthrough did before this existed.
+   */
+  deniedTargets: string[]
 }
 
 // Resolved snapshot, rebuilt on write. `null` means "not loaded yet".
@@ -47,11 +53,15 @@ export function invalidateSurfaceCache(): void {
  * `/v1/messages` defaulting to routed, and broke when that default was
  * removed rather than when the behaviour they described changed.
  */
-export function __setSurfacesForTests(modes: Partial<Record<SurfaceId, RoutingMode>>): void {
+export function __setSurfacesForTests(
+  modes: Partial<Record<SurfaceId, RoutingMode>>,
+  denied?: Partial<Record<SurfaceId, string[]>>
+): void {
   cache.value = INBOUND_SURFACES.map((surface) => ({
     ...surface,
     routingMode: modes[surface.id] ?? INITIAL_ROUTING_MODE,
-    profileKey: DEFAULT_PROFILE_KEY
+    profileKey: DEFAULT_PROFILE_KEY,
+    deniedTargets: denied?.[surface.id] ?? []
   }))
 }
 
@@ -75,7 +85,8 @@ export async function listSurfaces(): Promise<ResolvedSurface[]> {
       // `ensureInboundSurfaces` runs; the seed value stands in until it
       // does, so a read never has to invent a per-surface default.
       routingMode: stored !== undefined ? stored : INITIAL_ROUTING_MODE,
-      profileKey: row?.profileKey !== undefined && row.profileKey !== null ? row.profileKey : DEFAULT_PROFILE_KEY
+      profileKey: row?.profileKey !== undefined && row.profileKey !== null ? row.profileKey : DEFAULT_PROFILE_KEY,
+      deniedTargets: row?.deniedTargets ?? []
     }
   })
   cache.value = resolved
@@ -143,6 +154,8 @@ export interface SurfaceUpdate {
   surface: SurfaceId
   routingMode: RoutingMode
   profileKey?: string | null
+  /** Omitted leaves the stored list alone; an array replaces it wholesale. */
+  deniedTargets?: string[]
 }
 
 export async function updateSurface(input: SurfaceUpdate): Promise<ResolvedSurface[]> {
@@ -150,11 +163,42 @@ export async function updateSurface(input: SurfaceUpdate): Promise<ResolvedSurfa
   if (descriptor === undefined) throw new Error(`Unknown inbound surface: ${input.surface}`)
 
   const profileKey = input.profileKey === undefined ? null : input.profileKey
+  // `deniedTargets` is optional so the mode/profile writers — which have
+  // no opinion on it — cannot blank the list by omitting it.
+  const denied = input.deniedTargets
   await getPrismaClient().inboundSurfaceConfig.upsert({
     where: { surface: input.surface },
-    create: { surface: input.surface, routingMode: input.routingMode, profileKey },
-    update: { routingMode: input.routingMode, profileKey }
+    create: {
+      surface: input.surface,
+      routingMode: input.routingMode,
+      profileKey,
+      deniedTargets: denied === undefined ? [] : denied
+    },
+    update:
+      denied === undefined
+        ? { routingMode: input.routingMode, profileKey }
+        : { routingMode: input.routingMode, profileKey, deniedTargets: denied }
   })
   invalidateSurfaceCache()
   return listSurfaces()
+}
+
+/**
+ * The reason to refuse this request, or undefined to let it through.
+ *
+ * Only passthrough surfaces have an answer. In routed mode the caller's
+ * `body.model` is a hint the chain overrides, so there is nothing to
+ * deny — denying it would reject a string that was never going to reach
+ * an upstream.
+ */
+export async function passthroughDenial(
+  path: string | undefined,
+  target: string | undefined
+): Promise<string | undefined> {
+  if (target === undefined || target.length === 0) return undefined
+  const surface = await resolveSurfaceForPath(path)
+  if (surface === undefined) return undefined
+  if (surface.routingMode !== 'passthrough') return undefined
+  if (!surface.deniedTargets.includes(target)) return undefined
+  return `${target} is turned off for ${surface.path}.`
 }

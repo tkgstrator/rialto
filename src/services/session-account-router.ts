@@ -12,12 +12,16 @@
  *      window. Any of those at 100% guarantees an upstream 429, so we
  *      pre-empt to a peer account.
  *   3. From the surviving candidates, reuse the sticky-session mapping
- *      if it still points at one of them (prompt-cache continuity).
+ *      for this request's slot if it still points at one of them
+ *      (prompt-cache continuity).
  *   4. Otherwise pick the account with the HIGHEST required burn rate
- *      on the scarce weekly window (claude: 7d Opus, codex: primary):
- *      pctRemaining / timeRemainingMs. Larger means more unspent quota
- *      relative to time until reset → most at risk of leaving quota on
- *      the table, so drain it first.
+ *      across the weekly windows it actually reports:
+ *      pctRemaining / timeRemainingMs, taken as the MINIMUM over those
+ *      windows. Larger means more unspent quota relative to time until
+ *      reset → most at risk of leaving quota on the table, so drain it
+ *      first. An account with no usable reading ranks below one that has
+ *      a reading and above an exhausted one; ties go to the
+ *      least-recently-picked account.
  *
  * If every account is filtered out by steps 1-2, the picker falls back
  * to the full list and returns the least-bad candidate so the request
@@ -29,56 +33,164 @@
  * the durable source of truth across server restarts and multiple
  * instances. The in-process sticky-session map is best-effort only and
  * is allowed to reset on restart.
+ *
+ * The sticky is held per SLOT rather than per session, because which
+ * accounts are eligible depends on the model (see `windowBinds`) and on
+ * the kind. One slot per session made a single Fable call — the one
+ * request whose per-model window was spent — repick and then drag the
+ * session's Sonnet traffic onto the new account too, even though the
+ * original served Sonnet fine; and it made a session that touches both
+ * a claude and a codex provider evict its own mapping on every
+ * alternation, since the two pools share no accounts.
  */
 
 import dayjs from '../lib/dayjs'
+import { tierOf } from '../llms/scenario-router/request-signals'
 import { isAccountExhausted } from './failover-state'
 import {
   type AccountUsageMap,
   CLAUDE_METRICS,
   CODEX_METRICS,
   getPerAccountUsage,
-  type Metric
+  type Metric,
+  scopedMetricModel
 } from './subaccount-usage-store'
 import { getSubAccountTokensForKind, type SubAccountTokenInfo } from './subscription-account-sync-service'
 
-// sessionId → subAccountId
-const sessionMap = new Map<string, string>()
+// sessionId → (slot → subAccountId). See the header comment for why the
+// sticky is slotted rather than one pointer per session.
+const sessionMap = new Map<string, Map<string, string>>()
 
-// Always-binding hard-limit windows per kind. Any of these at 100% with
-// resetAt still in the future guarantees an upstream 429, so the picker
-// must skip the account. Mirrors the constraints upstream actually
-// enforces: claude charges the overall 7d, the 7d Opus tier, and the
-// 5h rolling window simultaneously; codex enforces the primary window.
-const HARD_LIMIT_METRICS: Record<'claude' | 'codex', Metric[]> = {
-  claude: [CLAUDE_METRICS.five_hour, CLAUDE_METRICS.seven_day, CLAUDE_METRICS.seven_day_opus],
-  codex: [CODEX_METRICS.primary]
+// sessionId → the account most recently handed out for that session, in
+// any slot. The reactive 429 path asks "which account did the request
+// that just failed use", and the slotted map above cannot answer that on
+// its own: the failing request's slot is not a handle the failover path
+// has. Kept as a separate map rather than derived so the answer is the
+// account actually returned, including on the single-candidate path.
+const lastResolved = new Map<string, string>()
+
+// An account's windows are not all about the same thing, and which ones
+// speak for a given request depends on the model it asks for.
+//
+//   - Account-wide (claude 5h / 7d, codex primary / secondary): bind for
+//     every model.
+//   - Per-model (claude.seven_day_scoped.<model>, plus the legacy flat
+//     seven_day_sonnet / seven_day_opus): bind ONLY for that model.
+//     Anthropic meters Fable's weekly allowance separately, so a spent
+//     Fable window is no reason to skip an account for a Sonnet call —
+//     and, the other way round, a fresh account-wide 7d is no reason to
+//     send a Fable call to an account whose Fable window is gone.
+//
+// Which keys exist is the vendor's call, not ours: Anthropic stopped
+// populating the flat `seven_day_opus` field for most plans and now
+// reports the per-model limits through `limits[]`. Matching on the shape
+// of the metric rather than a pinned key is what keeps that from reading
+// as "no data" on every account.
+const belongsToKind = (metric: Metric, kind: 'claude' | 'codex'): boolean =>
+  kind === 'claude' ? metric.startsWith('claude.') : metric.startsWith('codex.')
+
+// The short rolling window each kind meters alongside the weekly one. It
+// gates (a 429 is a 429) but is never balanced on: its horizon is hours,
+// so it would dominate the burn-rate arithmetic every time.
+const isShortWindow = (metric: Metric, kind: 'claude' | 'codex'): boolean =>
+  kind === 'claude' ? metric === CLAUDE_METRICS.five_hour : metric === CODEX_METRICS.primary
+
+// The model slug a per-model window is about, or null when the window is
+// account-wide.
+const perModelSlugOf = (metric: Metric): string | null => {
+  if (metric === CLAUDE_METRICS.seven_day_sonnet) return 'sonnet'
+  if (metric === CLAUDE_METRICS.seven_day_opus) return 'opus'
+  return scopedMetricModel(metric)
 }
 
-// The scarce weekly window each kind balances on once hard limits are
-// out of the way. Claude spreads on the 7d Opus window (most precious);
-// codex uses primary because that is the only window with a stable
-// resetAt the wire reliably returns.
-const BALANCE_METRIC: Record<'claude' | 'codex', Metric> = {
-  claude: CLAUDE_METRICS.seven_day_opus,
-  codex: CODEX_METRICS.primary
+// The metric key is a slug of the vendor's `display_name` ("Fable" →
+// `fable`) while the request carries an API id ("claude-fable-5-1"), so
+// both sides are stripped to alphanumerics before the containment test.
+// Same heuristic the routing-scheduler uses in quota-math.ts.
+const squash = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, '')
+
+// Does this window bind for the model the request asks for? An unknown
+// model falls back to account-wide windows only: guessing wrong either
+// parks a usable account or picks one guaranteed to 429, whereas the
+// account-wide windows are never the wrong answer, only an incomplete one.
+const windowBinds = (metric: Metric, kind: 'claude' | 'codex', requestedModel: string | undefined): boolean => {
+  if (!belongsToKind(metric, kind)) return false
+  const slug = perModelSlugOf(metric)
+  if (slug === null) return true
+  if (requestedModel === undefined) return false
+  return squash(requestedModel).includes(squash(slug))
 }
 
-// A never-polled account (no DB row yet), one whose balancing window
-// has no resetAt, or one whose reset has already passed (DB row is
-// stale across a reset) all read as MAXIMUM priority so they stay
-// preferred. Mirrors the legacy "unknown = available" fallback.
-const MAX_PRIORITY = Number.POSITIVE_INFINITY
+// Ranking tiers. A single numeric scale cannot express "no reading":
+// this used to be `+Infinity`, and because a real burn rate is ~1e-7,
+// one account with a missing or stale row outranked every account that
+// had real data — permanently, and without even rotating, since the
+// reduce below compares with a strict `>`. Tier first, burn rate second
+// keeps the unknown case clear of both the healthy and the exhausted.
+const TIER_KNOWN = 2
+const TIER_UNKNOWN = 1
+const TIER_EXHAUSTED = 0
 
-// Whether the account has at least one always-binding window pinned at
-// 100% with resetAt still in the future. The "future resetAt" guard is
-// what makes a stale DB row self-heal: once the reset passes, the cache
-// no longer blocks the account even before the next poller cycle
-// rewrites it.
-const accountHasHardLimitHit = (usage: AccountUsageMap, kind: 'claude' | 'codex', now: number): boolean => {
-  for (const metric of HARD_LIMIT_METRICS[kind]) {
-    const w = usage.get(metric)
-    if (!w) continue
+interface AccountRank {
+  tier: number
+  burnRate: number
+}
+
+const UNKNOWN_RANK: AccountRank = { tier: TIER_UNKNOWN, burnRate: 0 }
+
+// subAccountId → when the picker last handed this account out. Ties on
+// tier + burn rate go to the least-recently-picked, so a pool of
+// equally-ranked accounts rotates instead of sending every request to
+// whichever row Postgres happened to return first.
+const lastPickedAt = new Map<string, number>()
+
+const pickedAtOf = (subAccountId: string): number => {
+  const at = lastPickedAt.get(subAccountId)
+  return at === undefined ? 0 : at
+}
+
+const remember = (sessionId: string, account: SubAccountTokenInfo, now: number): SubAccountTokenInfo => {
+  lastPickedAt.set(account.subAccountId, now)
+  lastResolved.set(sessionId, account.subAccountId)
+  return account
+}
+
+// The sticky slot this request belongs to. Codex meters only
+// account-wide windows, so all of its traffic shares one slot; claude's
+// per-model weekly windows are metered per tier, which is exactly the
+// granularity at which eligibility — and therefore a repick — can
+// differ. A model no tier can be read off shares the account-wide slot:
+// with no tier there is no per-model window to bind, so it passes the
+// same gates as account-wide traffic anyway.
+const slotOf = (kind: 'claude' | 'codex', requestedModel: string | undefined): string => {
+  if (kind === 'codex') return 'codex'
+  const tier = requestedModel === undefined ? undefined : tierOf(requestedModel)
+  return tier === undefined ? 'claude' : `claude:${tier}`
+}
+
+const setSticky = (sessionId: string, slot: string, subAccountId: string): void => {
+  const slots = sessionMap.get(sessionId)
+  if (slots === undefined) {
+    sessionMap.set(sessionId, new Map([[slot, subAccountId]]))
+    return
+  }
+  slots.set(slot, subAccountId)
+}
+
+// Whether the account has at least one window that binds for THIS
+// request pinned at 100% with resetAt still in the future — that
+// guarantees an upstream 429, so the picker skips the account. The
+// "future resetAt" guard is what makes a stale DB row self-heal: once
+// the reset passes, the cache no longer blocks the account even before
+// the next poller cycle rewrites it.
+const accountHasHardLimitHit = (
+  usage: AccountUsageMap,
+  kind: 'claude' | 'codex',
+  requestedModel: string | undefined,
+  now: number
+): boolean => {
+  for (const [metric, w] of usage) {
+    if (!windowBinds(metric, kind, requestedModel)) continue
     if (w.percent < 100) continue
     if (w.resetAt !== null && w.resetAt.valueOf() <= now) continue
     return true
@@ -86,28 +198,71 @@ const accountHasHardLimitHit = (usage: AccountUsageMap, kind: 'claude' | 'codex'
   return false
 }
 
-// Cache-only required burn rate on the kind's scarce weekly window:
-// pctRemaining / timeRemainingMs. Larger means the account has more
-// unspent quota relative to the time it has left, so it's at greater
-// risk of leaving quota on the table at reset — prefer it. Branches are
-// explicit rather than nullish-coalesced so each "unknown" path is named.
-const balancingScore = (usage: AccountUsageMap, kind: 'claude' | 'codex', now: number): number => {
-  const w = usage.get(BALANCE_METRIC[kind])
-  if (!w) return MAX_PRIORITY
-  if (w.resetAt === null) return MAX_PRIORITY
-  const timeRemainingMs = w.resetAt.valueOf() - now
-  if (timeRemainingMs <= 0) return MAX_PRIORITY
-  const pctRemaining = 100 - w.percent
-  if (pctRemaining <= 0) return Number.NEGATIVE_INFINITY
-  return pctRemaining / timeRemainingMs
+// One window's required burn rate, in **percentage points per hour**:
+// how fast the account has to spend to finish this window before it
+// resets. Hours rather than the raw milliseconds only because the
+// ordering is scale-invariant and %/ms puts every real value at 1e-6 or
+// below, which is unreadable the moment one of these lands in a log
+// line. Null when the window carries no usable timing — no resetAt at
+// all, or a row left stale across its own reset. Null stays null all the
+// way up to the tier decision; collapsing it into a number is exactly
+// what made a stale row look like the most urgent account in the pool.
+const MS_PER_HOUR = 3_600_000
+
+const burnRateOf = (window: { percent: number; resetAt: Date | null }, now: number): number | null => {
+  if (window.resetAt === null) return null
+  const hoursRemaining = (window.resetAt.valueOf() - now) / MS_PER_HOUR
+  if (hoursRemaining <= 0) return null
+  return Math.max(0, 100 - window.percent) / hoursRemaining
 }
 
+// An account can only spend as fast as its tightest binding weekly
+// window allows, so the minimum burn rate across them is the honest
+// number: a fresh per-model window must not mask an account-wide one
+// sitting at 99%, and a spent one belonging to another model must not
+// drag the account down for traffic it would serve fine.
+const rankAccount = (
+  usage: AccountUsageMap,
+  kind: 'claude' | 'codex',
+  requestedModel: string | undefined,
+  now: number
+): AccountRank => {
+  const rates: number[] = []
+  for (const [metric, window] of usage) {
+    if (isShortWindow(metric, kind)) continue
+    if (!windowBinds(metric, kind, requestedModel)) continue
+    const rate = burnRateOf(window, now)
+    if (rate !== null) rates.push(rate)
+  }
+  if (rates.length === 0) return UNKNOWN_RANK
+  const tightest = Math.min(...rates)
+  if (tightest <= 0) return { tier: TIER_EXHAUSTED, burnRate: 0 }
+  return { tier: TIER_KNOWN, burnRate: tightest }
+}
+
+interface RankedAccount {
+  account: SubAccountTokenInfo
+  rank: AccountRank
+  pickedAt: number
+}
+
+const outranks = (a: RankedAccount, b: RankedAccount): boolean => {
+  if (a.rank.tier !== b.rank.tier) return a.rank.tier > b.rank.tier
+  if (a.rank.burnRate !== b.rank.burnRate) return a.rank.burnRate > b.rank.burnRate
+  return a.pickedAt < b.pickedAt
+}
+
+// `requestedModel` decides which per-model windows bind (see
+// `windowBinds`); undefined means the caller could not read a model off
+// the request and only account-wide windows are consulted.
+//
 // `now` is injectable so unit tests can pin the clock against seeded
 // resetAt values without touching real time. Production callers omit
 // it and get the actual wall clock.
 export async function resolveAccountForSession(
   sessionId: string,
   kind: 'claude' | 'codex',
+  requestedModel: string | undefined,
   now: number = dayjs().valueOf()
 ): Promise<SubAccountTokenInfo | null> {
   const all = await getSubAccountTokensForKind(kind)
@@ -127,7 +282,7 @@ export async function resolveAccountForSession(
   // resetAt — those would 429 if we picked them.
   const usable = notExhausted.filter((a) => {
     const u = usageByAcct.get(a.subAccountId)
-    return u !== undefined ? !accountHasHardLimitHit(u, kind, now) : true
+    return u !== undefined ? !accountHasHardLimitHit(u, kind, requestedModel, now) : true
   })
 
   // If both filters dropped every candidate, fall back to the full list
@@ -136,48 +291,68 @@ export async function resolveAccountForSession(
   // worse than letting the request go out.
   const accounts = usable.length > 0 ? usable : notExhausted.length > 0 ? notExhausted : all
 
-  if (accounts.length === 1) return accounts[0]
-
-  const cached = sessionMap.get(sessionId)
-  if (cached) {
-    const found = accounts.find((a) => a.subAccountId === cached)
-    if (found) return found
-    // Previously-chosen account is no longer in the candidate set (either
-    // disabled, reactively-exhausted, or DB-marked hard-limit). Repick —
-    // and drop the sticky so a future request doesn't latch back onto the
-    // dead choice on a stale read.
-    sessionMap.delete(sessionId)
+  // A single candidate still goes through the sticky bookkeeping below
+  // rather than short-circuiting here. Returning early skipped the write,
+  // which left `lastResolved` pointing at whichever account the session
+  // used BEFORE the pool narrowed — so a 429 on this request marked the
+  // wrong account exhausted and the rotation never moved, and once the
+  // pool widened again the stale sticky pulled the session back onto its
+  // old account mid-conversation.
+  const slot = slotOf(kind, requestedModel)
+  const slots = sessionMap.get(sessionId)
+  if (slots !== undefined) {
+    const cached = slots.get(slot)
+    if (cached !== undefined) {
+      const found = accounts.find((a) => a.subAccountId === cached)
+      if (found) return remember(sessionId, found, now)
+      // Previously-chosen account is no longer in the candidate set (either
+      // disabled, reactively-exhausted, or DB-marked hard-limit). Repick —
+      // and drop the sticky so a future request doesn't latch back onto the
+      // dead choice on a stale read. Only THIS slot is dropped: the account
+      // may still be the right answer for the session's other models.
+      slots.delete(slot)
+    }
   }
 
-  // Pick the account with the HIGHEST required burn rate on the scarce
-  // weekly window. Score once up front so the reduce comparison stays
+  // Pick the account with the HIGHEST required burn rate across its
+  // weekly windows. Rank once up front so the reduce comparison stays
   // O(1) per step and can't see a different snapshot per iteration.
-  const scored = accounts.map((a) => {
+  const ranked = accounts.map((a) => {
     const usage = usageByAcct.get(a.subAccountId)
-    const score = usage !== undefined ? balancingScore(usage, kind, now) : MAX_PRIORITY
-    return { account: a, score }
+    const rank = usage === undefined ? UNKNOWN_RANK : rankAccount(usage, kind, requestedModel, now)
+    return { account: a, rank, pickedAt: pickedAtOf(a.subAccountId) }
   })
-  const picked = scored.reduce((best, candidate) => (candidate.score > best.score ? candidate : best)).account
-  sessionMap.set(sessionId, picked.subAccountId)
-  return picked
+  const picked = ranked.reduce((best, candidate) => (outranks(candidate, best) ? candidate : best)).account
+  setSticky(sessionId, slot, picked.subAccountId)
+  return remember(sessionId, picked, now)
 }
 
-// Read-only lookup of which account the sticky map currently routes this
-// session to. The reactive 429 path uses this to learn the subAccountId
-// that just failed (the pipeline picked it deep inside the OAuth
-// transformer; there is no other handle on the way back up). Returns
-// null when no sticky mapping exists.
+// Read-only lookup of the account this session most recently went out
+// on. The reactive 429 path uses this to learn the subAccountId that
+// just failed (the pipeline picked it deep inside the OAuth transformer;
+// there is no other handle on the way back up). Returns null when the
+// session has not resolved an account yet.
 export function getActiveAccountForSession(sessionId: string): string | null {
-  const cached = sessionMap.get(sessionId)
-  return cached !== undefined ? cached : null
+  const resolved = lastResolved.get(sessionId)
+  return resolved !== undefined ? resolved : null
 }
 
-// Drop the sticky mapping for a session if (and only if) it still points
-// at the named account. Called by the reactive 429 path after marking
-// the account exhausted so the next retry repicks instead of latching
-// back onto the just-failed account. The conditional delete prevents
-// racing with a concurrent re-pick that may have already moved the
-// sticky onto a different account.
+// Drop the session's pointers to the named account if (and only if) they
+// still point at it. Called by the reactive 429 path after marking the
+// account exhausted so the next retry repicks instead of latching back
+// onto the just-failed account. The conditional delete prevents racing
+// with a concurrent re-pick that may have already moved on.
+//
+// Every slot holding the account goes, not just the failing request's:
+// `markAccountExhausted` has already taken it out of the candidate set
+// for all of them, so leaving the entries behind would only park stale
+// pointers until each slot next repicks.
 export function releaseAccountForSession(sessionId: string, subAccountId: string): void {
-  if (sessionMap.get(sessionId) === subAccountId) sessionMap.delete(sessionId)
+  if (lastResolved.get(sessionId) === subAccountId) lastResolved.delete(sessionId)
+  const slots = sessionMap.get(sessionId)
+  if (slots === undefined) return
+  for (const [slot, id] of slots) {
+    if (id === subAccountId) slots.delete(slot)
+  }
+  if (slots.size === 0) sessionMap.delete(sessionId)
 }
