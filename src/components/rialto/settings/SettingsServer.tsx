@@ -22,7 +22,7 @@ import { SettingsField, SettingsLayout } from '@/components/rialto/settings/Sett
 import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
 import { useAppVersion } from '@/hooks/use-app-version'
 import { api, type HealthResponse, type UpdateCheckResponse } from '@/lib/api'
-import { fmtAgo } from '@/lib/rialto/format'
+import { fmtAgo, fmtUptime } from '@/lib/rialto/format'
 import { type EnvelopeWire, maskSecret, parseCount } from '@/lib/rialto/settings/envelope'
 
 /** Every editable scalar as text, so a half-typed number never becomes NaN. */
@@ -178,7 +178,7 @@ function DataSection() {
         meta={
           health === null
             ? t('settings.server.healthUnavailable')
-            : t('settings.server.uptime', { seconds: health.uptime_seconds })
+            : t('settings.server.uptime', { duration: fmtUptime(health.uptime_seconds) })
         }
       />
       <StaticField
