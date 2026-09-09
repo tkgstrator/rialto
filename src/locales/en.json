@@ -222,6 +222,7 @@
       "reachableTargets": "Reachable targets",
       "reachableHint": "what a caller may put in <mono>body.model</mono>",
       "copyTarget": "Copy {{target}}",
+      "allowTarget": "Allow {{target}} on this surface",
       "noSurfaces": "No inbound surfaces are configured.",
       "passthroughNote": "Switch this surface to <mono>Routed</mono> to give {{client}} the same quota-aware failover Claude Code gets. Callers keep sending their own model string — it becomes the <mono>requestedModel</mono> that rules match on, rather than the final target.",
       "schedulerNoChain": "The routing scheduler is running but has no preference chain to score, so it publishes no live readings for this surface. Add entries to this surface’s routing profile to see them.",

@@ -148,6 +148,8 @@ export interface InboundSurfaceWire {
   errorShape: 'anthropic' | 'openai' | 'google'
   routingMode: RoutingMode
   profileKey: string
+  /** `provider,model` pairs refused on this surface while it is in passthrough. */
+  deniedTargets: string[]
 }
 
 export interface AccessTokenWire {

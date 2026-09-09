@@ -311,7 +311,7 @@ function SchedulerNote({ i18nKey }: { i18nKey: string }) {
 
 export function RoutingChain() {
   const { t } = useTranslation()
-  const { surfaces, loading, error, setMode, setProfile: setSurfaceProfile } = useSurfaces()
+  const { surfaces, loading, error, setMode, setProfile: setSurfaceProfile, setTargetAllowed } = useSurfaces()
   const profiles = useProfiles()
   const { snapshot: scheduler } = useScheduler()
   const targets = useEnabledTargets()
@@ -426,7 +426,7 @@ export function RoutingChain() {
               onNotify={notify}
             />
           ) : (
-            <PassthroughPanel surface={surface} targets={targets} />
+            <PassthroughPanel surface={surface} targets={targets} onSetDenied={setTargetAllowed} />
           )}
         </>
       )}

@@ -13,9 +13,11 @@
  * the one that gets used, and a header button that duplicates the whole
  * table into the clipboard was a control nobody reached for.
  */
+import { useCallback, useMemo, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { Pill } from '@/components/rialto/primitives'
-import type { InboundSurfaceWire } from '@/lib/api'
+import type { InboundSurfaceWire, RoutingMode, SurfaceId } from '@/lib/api'
+import { cn } from '@/lib/utils'
 import type { EnabledTarget } from './types'
 
 const copy = (text: string): void => {
@@ -25,12 +27,42 @@ const copy = (text: string): void => {
   navigator.clipboard?.writeText(text).catch(() => {})
 }
 
-function ReachableRow({ entry }: { entry: EnabledTarget }) {
+function ReachableRow({
+  entry,
+  allowed,
+  busy,
+  onToggle
+}: {
+  entry: EnabledTarget
+  allowed: boolean
+  busy: boolean
+  onToggle: (next: boolean) => void
+}) {
   const { t } = useTranslation()
   return (
-    <tr className='border-t border-border/60 transition-colors hover:bg-muted/50'>
+    <tr className={cn('border-t border-border/60 transition-colors hover:bg-muted/50', allowed ? '' : 'opacity-45')}>
       <td className='py-2.5 pl-6 pr-2 font-mono text-xs'>{entry.target}</td>
       <td className='px-2'>{entry.tier === null ? null : <Pill tone='mute'>{entry.tier}</Pill>}</td>
+      <td className='px-2 text-right'>
+        <button
+          type='button'
+          disabled={busy}
+          aria-label={t('routing.chain.allowTarget', { target: entry.target })}
+          onClick={() => onToggle(!allowed)}
+          className='inline-flex h-8 items-center disabled:pointer-events-none disabled:opacity-50'
+        >
+          <span
+            className={cn(
+              'inline-flex h-4 w-7 items-center rounded-full px-0.5 transition-colors',
+              allowed ? 'bg-foreground' : 'bg-muted-foreground/30'
+            )}
+          >
+            <span
+              className={cn('size-3 rounded-full bg-background transition-transform', allowed ? 'translate-x-3' : '')}
+            />
+          </span>
+        </button>
+      </td>
       <td className='py-2.5 pl-2 pr-6 text-right'>
         <button
           type='button'
@@ -47,12 +79,33 @@ function ReachableRow({ entry }: { entry: EnabledTarget }) {
 
 export function PassthroughPanel({
   surface,
-  targets
+  targets,
+  onSetDenied
 }: {
   surface: InboundSurfaceWire
   targets: readonly EnabledTarget[]
+  onSetDenied: (surface: SurfaceId, routingMode: RoutingMode, denied: readonly string[]) => Promise<void>
 }) {
   const { t } = useTranslation()
+  const [busy, setBusy] = useState(false)
+  const denied = useMemo(() => new Set(surface.deniedTargets), [surface.deniedTargets])
+
+  const onToggle = useCallback(
+    (target: string, next: boolean) => {
+      const updated = new Set(denied)
+      if (next) updated.delete(target)
+      else updated.add(target)
+      setBusy(true)
+      onSetDenied(surface.id, surface.routingMode, [...updated])
+        .catch(() => {
+          // The row keeps the state it had: the surface list is only
+          // replaced on a resolved write, so nothing on screen claims a
+          // change that did not land.
+        })
+        .finally(() => setBusy(false))
+    },
+    [denied, onSetDenied, surface.id, surface.routingMode]
+  )
 
   return (
     <>
@@ -71,18 +124,26 @@ export function PassthroughPanel({
         <colgroup>
           <col />
           <col className='w-24' />
+          <col className='w-20' />
           <col className='w-16' />
         </colgroup>
         <thead>
           <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2'>
             <th className='pl-6 pr-2 text-left font-medium'>{t('routing.common.colTarget')}</th>
             <th className='px-2 text-left font-medium'>{t('routing.common.colTier')}</th>
+            <th className='px-2 text-right font-medium'>{t('routing.chain.colOn')}</th>
             <th className='pl-2 pr-6' />
           </tr>
         </thead>
         <tbody>
           {targets.map((entry) => (
-            <ReachableRow key={entry.target} entry={entry} />
+            <ReachableRow
+              key={entry.target}
+              entry={entry}
+              allowed={!denied.has(entry.target)}
+              busy={busy}
+              onToggle={(next) => onToggle(entry.target, next)}
+            />
           ))}
         </tbody>
       </table>

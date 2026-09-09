@@ -51,11 +51,14 @@ const surfaceTab = (s) => {
 // strings a caller may send. Showing the reachable set is the useful
 // content here — the chain editor would be misleading.
 const REACHABLE = [
-  { target: 'codex,gpt-5.5',                  tier: 'opus' },
-  { target: 'codex,gpt-5.4',                  tier: 'sonnet' },
-  { target: 'openai,gpt-5.5',                 tier: 'opus' },
-  { target: 'openai,gpt-5.4-mini',            tier: 'haiku' },
-  { target: 'openai,gpt-5.3-codex',           tier: 'opus' }
+  { target: 'codex,gpt-5.5',                  tier: 'opus',   on: true },
+  { target: 'codex,gpt-5.4',                  tier: 'sonnet', on: true },
+  { target: 'openai,gpt-5.5',                 tier: 'opus',   on: true },
+  // Off for THIS surface. The model is still served — it is on in
+  // Providers and reachable from every chain — a caller just may not name
+  // it here.
+  { target: 'openai,gpt-5.4-mini',            tier: 'haiku',  on: false },
+  { target: 'openai,gpt-5.3-codex',           tier: 'opus',   on: true }
 ]
 
 // A reachable target is a "provider,model" a caller may name, so the row
@@ -65,9 +68,20 @@ const providerHref = (t) =>
   SUBSCRIPTION_PROVIDERS.includes(t.split(',')[0]) ? 'provider-subscription.html' : 'provider-apikey.html'
 
 const row = (e) => `
-  <tr ${navTo(providerHref(e.target))} class="border-t border-border/60 transition-colors hover:bg-muted/50">
+  <tr ${navTo(providerHref(e.target))} class="border-t border-border/60 transition-colors hover:bg-muted/50 ${e.on ? '' : 'opacity-45'}">
     <td class="py-2.5 pl-6 pr-2 font-mono text-xs">${e.target}</td>
     <td class="px-2">${pill(e.tier, 'mute')}</td>
+    <!-- Per surface, and that is the whole point of the column: it
+         writes InboundSurfaceConfig.deniedTargets ("may a caller name
+         this here"), not Model.enabled ("does the provider serve this at
+         all"), which is shared by every surface and every chain and is
+         edited in Providers. A denied target answers 400 in this
+         surface's own error envelope rather than reaching an upstream. -->
+    <td class="px-2 text-right">
+      <span class="inline-flex h-4 w-7 items-center rounded-full ${e.on ? 'bg-foreground' : 'bg-muted-foreground/30'} px-0.5">
+        <span class="size-3 rounded-full bg-background ${e.on ? 'translate-x-3' : ''}"></span>
+      </span>
+    </td>
     <td class="py-2.5 pl-2 pr-6 text-right">
       <button class="text-muted-foreground/60 hover:text-foreground"><i class="ri-file-copy-line text-sm"></i></button>
     </td>
@@ -101,11 +115,12 @@ document.getElementById('root').innerHTML = `
     <!-- Two columns and a copy affordance. State went with the chain
          table's: a passthrough surface is never scored, so the pill read
          "unknown" on every row of every install. -->
-    <colgroup><col><col class="w-24"><col class="w-16"></colgroup>
+    <colgroup><col><col class="w-24"><col class="w-20"><col class="w-16"></colgroup>
     <thead>
       <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         <th class="pl-6 pr-2 text-left font-medium">Target</th>
         <th class="px-2 text-left font-medium">Tier</th>
+        <th class="px-2 text-right font-medium">On</th>
         <th class="pl-2 pr-6"></th>
       </tr>
     </thead>
