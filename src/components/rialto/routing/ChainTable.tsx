@@ -222,7 +222,22 @@ export function ChainTable({
           <th className='px-2 text-left font-medium'>{t('routing.common.colTarget')}</th>
           <th className='px-2 text-left font-medium'>{t('routing.common.colTier')}</th>
           <th className='px-2 text-left font-medium'>{t('routing.common.colState')}</th>
-          <th className='px-2 text-right font-medium'>{t('routing.chain.colShare')}</th>
+          <th className='px-2 text-right font-medium'>
+            {t('routing.chain.colShare')}{' '}
+            {/* Share is the one column a reader misreads — it is a slice
+                of the lane's scheduler weight, not a traffic forecast.
+                The caveat rides the header rather than the four-line
+                dashed box that used to close the table. */}
+            <i
+              // role='img' so the label is valid on an <i>: the glyph is
+              // the whole control, and without it a screen reader reads
+              // the header as "Share" with no hint that a caveat exists.
+              role='img'
+              title={t('routing.chain.shareHint')}
+              aria-label={t('routing.chain.shareHint')}
+              className='ri-question-line align-[-1px] text-[13px] normal-case text-muted-foreground/50'
+            />
+          </th>
           <th className='pl-2 pr-6 text-right font-medium'>{t('routing.chain.colOn')}</th>
         </tr>
       </thead>
