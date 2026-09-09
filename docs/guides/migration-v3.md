@@ -241,7 +241,7 @@ Anthropic に対しては同じく使い物にならないので落とされる�
 
 - envelope の `APIKEY` は `/v1/*` では**受理されない**。効くのは `/api/*` だけ。
 - `APIKEY` は**新規インストールでは生成もされない**（以前は初回起動時に自動生成していた）。
-- クライアントには **Settings → Access** で発行するトークンを配る。
+- クライアントには **Access tokens** で発行するトークンを配る。
 
 ```shell
 export ANTHROPIC_AUTH_TOKEN=rialto_xxxxxxxx
@@ -338,7 +338,7 @@ products" である。Rialto はゲートウェイなので**通るのは自分�
 - [ ] `RIALTO_ACCOUNT_ENCRYPTION_KEY` を**同じ値**で設定し、Providers 画面でサブスクリプションアカウントが正常に見えることを確認した
 - [ ] `CCR_HOME_DIR` / `CCR_DEBUG_OAUTH` を使っていたなら新名に直した
 - [ ] `bun run scripts/rename-dev-database.ts` を流し、`DATABASE_URL` / `TEST_DATABASE_URL` を更新し、`--verify` が通った
-- [ ] Settings → Access でアクセストークンを発行し、クライアントの `ANTHROPIC_AUTH_TOKEN` を差し替えた
+- [ ] Access tokens でアクセストークンを発行し、クライアントの `ANTHROPIC_AUTH_TOKEN` を差し替えた
 - [ ] Routing 画面で、使っている受け口を `routed` に切り替えた
 - [ ] 旧 `background` スロットに設定していた振り先を、Rules 画面のルールとして再現した
 - [ ] `ccr restart` などを叩くスクリプトを `docker compose restart` に置き換えた

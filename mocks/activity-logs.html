@@ -13,7 +13,7 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, btn, navTo } = window.Shell
+const { renderShell, pill, btn, navTo, pager } = window.Shell
 
 // Absorbs LogViewer + its four sub-components (LogFileList, Breadcrumbs,
 // RequestGroupList, LogEditor). Same three-pane shape as today, but the
@@ -117,6 +117,11 @@ document.getElementById('root').innerHTML = `
         <span class="ml-auto font-mono text-[12px] text-muted-foreground">6</span>
       </div>
       ${GROUPS.map(groupRow).join('')}
+      <!-- The request rail is the unbounded list on this screen: a busy
+           hour is hundreds of groups, and it was rendering whatever the
+           read returned. Compact form because the rail is too narrow for
+           the worded controls the full-width lists use. -->
+      ${pager({ first: 1, last: 6, total: 214, hasPrev: false, compact: true })}
     </aside>
 
     <div class="min-w-0 overflow-y-auto">

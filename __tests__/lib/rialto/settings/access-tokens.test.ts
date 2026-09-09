@@ -14,7 +14,7 @@ const token = (over: Partial<AccessTokenWire>): AccessTokenWire => ({
   id: 'tok_1',
   name: 'MacBook',
   prefix: 'rlt_a91f…',
-  surface: null,
+  surfaces: [],
   profileKey: null,
   lastUsedAt: null,
   requestCount: 0,

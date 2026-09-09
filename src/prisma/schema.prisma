@@ -508,13 +508,24 @@ model AccessToken {
   name         String
   tokenHash    String    @unique
   prefix       String
-  // InboundSurface.id this token may call. Null = every surface.
-  surface      String?
+  // InboundSurface ids this token may call. Empty = every surface.
+  //
+  // A list rather than a single id because one client legitimately speaks
+  // more than one: Codex uses /v1/responses and /v1/chat/completions, so
+  // pinning it to either meant the other 401'd and the only way out was
+  // an unscoped token — which is the scoping turned off, not narrowed.
+  surfaces     String[]
   // RouterPreferenceProfile.key this token's traffic routes through.
   // Null = the surface's own profile.
   profileKey   String?
   lastUsedAt   DateTime?
   requestCount Int       @default(0)
+  // When the secret behind this row was last replaced. Null means it is
+  // still the one issued at createdAt. Rotation keeps the row — the id,
+  // the name, the scope and every RequestLog pointing at it — and swaps
+  // only tokenHash/prefix, so createdAt stops being the age of the
+  // current credential and this becomes the field that answers it.
+  rotatedAt    DateTime?
   expiresAt    DateTime?
   // Set rather than deleted, so a revoked token's RequestLog rows keep
   // pointing at something that says who they belonged to.

@@ -71,8 +71,6 @@ node_modules/remixicon/
 |---|---|---|
 | `routing.html` | Chain | RouterPreferences / TierEditor / RouterUtilization |
 | `routing-passthrough.html` | Chain (passthrough) | — |
-| `routing-map.html` | Map | RoutingLibrary / RoutingLiveEditor / RoutingPresetEditor |
-| `routing-rules.html` | Rules | routing-map/RuleEditor |
 
 ### Providers
 

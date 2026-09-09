@@ -29,13 +29,24 @@ const SpendSchema = z
   })
   .openapi('OverviewSpend')
 
+const QuotaWindowSchema = z
+  .object({
+    // The window's own length. The per-model rows are also '7d'; `scope`
+    // is what tells them apart.
+    window: z.string().nonempty(),
+    scope: z.string().nonempty().nullable(),
+    pct: z.number().min(0).max(100),
+    resetAt: z.string().nonempty().nullable()
+  })
+  .openapi('OverviewQuotaWindow')
+
 const QuotaSchema = z
   .object({
     subAccountId: z.string().nonempty(),
     account: z.string().nonempty(),
-    window: z.string().nonempty(),
-    pct: z.number().min(0).max(100),
-    resetAt: z.string().nonempty().nullable()
+    // Every limit the account is under, shortest window first. An account
+    // has several and any one of them hitting 100% stops it.
+    windows: z.array(QuotaWindowSchema)
   })
   .openapi('OverviewQuota')
 

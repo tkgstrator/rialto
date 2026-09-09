@@ -13,13 +13,13 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, btn, providerRail, tierCell, effortCell, sortTh } = window.Shell
+const { renderShell, pill, btn, tierCell, effortCell, sortTh, pager } = window.Shell
 
 // The api_key half of Providers. Differs from the subscription detail in
 // three ways that matter: a key field instead of accounts, real prices
 // instead of "—", and a much longer model list that needs filtering.
 //
-// Same rail as providers.html, from shell.js — the two screens are one
+// Same shape as provider-subscription.html — the two are one
 // screen with two kinds of detail, and the rail is what says so.
 
 // Prices are per 1M tokens, each in its own right-aligned column.
@@ -85,17 +85,18 @@ const models = `
         ${sortTh('On', 'pl-2 pr-6', 'right')}
       </tr>
     </thead>
-    <tbody>${MODELS.map(modelRow).join('')}</tbody>
+    <!-- Legacy rows are filtered out here, not styled down. They are
+         still priced, so "Enabled + priced" kept every one of them — rows
+         of vendor history above the models anyone actually routes to, and
+         a decision already made. All models is where they live now. A
+         legacy model that is switched ON stays, because that is a live
+         routing target and a list that hides one cannot be trusted to say
+         what this provider serves. -->
+    <tbody>${MODELS.filter((m) => !m.legacy || m.on).map(modelRow).join('')}</tbody>
   </table>`
 
 document.getElementById('root').innerHTML = `
-  <div class="grid h-full grid-cols-[18rem_1fr]">
-
-    <aside class="min-w-0 overflow-y-auto border-r border-border">
-      ${providerRail('openai')}
-    </aside>
-
-    <div class="min-w-0 overflow-y-auto">
+  <div class="min-w-0">
       <div class="flex items-center gap-3 border-b border-border px-6 py-4">
         <div>
           <div class="flex items-center gap-2">
@@ -136,7 +137,7 @@ document.getElementById('root').innerHTML = `
             <p class="text-[12px] leading-relaxed text-muted-foreground">
               <span class="font-medium text-foreground">Outbound only.</span> This is what Rialto
               sends to OpenAI. It has nothing to do with the
-              <a href="settings-access.html" class="underline underline-offset-2">access tokens</a>
+              <a href="access-tokens.html" class="underline underline-offset-2">access tokens</a>
               that let your clients into Rialto.
             </p>
           </div>
@@ -198,20 +199,19 @@ document.getElementById('root').innerHTML = `
           </span>
         </div>
       </div>
-      <div class="px-6 py-4">
-        <button class="w-full rounded-md border border-dashed border-border py-2 text-[12px] text-muted-foreground transition-colors hover:bg-muted/50">
-          Show 10 more models
-        </button>
-      </div>
+      <!-- Paged like every other long list, rather than a "show 10 more"
+           that only ever grows. Revealing in steps means a 61-model
+           vendor ends as one 61-row table with no way back up, and the
+           button can never say where you are — this footer does both. -->
+      ${pager({ first: 1, last: 8, total: 16, hasPrev: false })}
       <div class="h-6"></div>
-    </div>
-
   </div>`
 
 renderShell({
   active: 'providers',
+  sub: 'api-keys',
   navMode: 'cloudflare',
-  crumbs: ['OpenAI'],
+  crumbs: [{ label: 'API keys', href: 'providers-keys.html' }, 'OpenAI'],
   subtitle: 'API key · 5 of 18 models enabled',
   actions:
     btn('Refresh prices', 'ghost', 'ri-price-tag-3-line') +

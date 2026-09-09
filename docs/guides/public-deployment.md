@@ -79,7 +79,7 @@ Access は効いていない。
 
 ## 3. `/v1/*` 用のトークンを発行する
 
-Settings → Access で発行する。**平文は発行時の1回しか表示されない**（保存しているのは
+Access tokens で発行する。**平文は発行時の1回しか表示されない**（保存しているのは
 sha256 のみ）。失くしたら再発行するしかない。
 
 クライアント側:
@@ -99,6 +99,55 @@ curl -s -X POST https://rialto.example.com/api/access-tokens \
 
 トークンには **面**（どのエンドポイントを叩けるか）と **ルーティングプロファイル**を
 紐づけられる。CI のトークンだけ `cost-first` に固定する、といった運用ができる。
+
+面は **複数指定できる**（`surfaces` は配列で、空なら全面）。1 つのクライアントが複数の面を
+使うことは珍しくない — Codex は `/v1/responses` と `/v1/chat/completions` の両方を叩くので、
+単一指定しかできなかった頃は「どちらかが 401 になる」か「面の指定を外す」かの二択だった。
+
+```bash
+curl -s -X POST https://rialto.example.com/api/access-tokens \
+  -H "X-API-Key: $APIKEY" -H 'content-type: application/json' \
+  -d '{"name":"codex","surfaces":["openai-responses","openai-chat"]}' | jq -r .plaintext
+```
+
+面の制限が掛かるのは**完了系のエンドポイントだけ**。`GET /v1/models` と
+`POST /v1/messages/count_tokens` はカタログ読み取りで、課金も発生せずサーフェス
+レジストリにも載っていないため、面を絞ったトークンでも通る。OpenAI SDK は最初に
+モデル一覧を取りに行くので、ここを塞ぐと「`/v1/chat/completions` に絞る」が
+「OpenAI SDK が使えない」と同義になってしまう。
+
+### 漏れたトークンはローテートする（発行し直さない）
+
+Access tokens のトークン行をクリックすると、そのトークンの詳細ページに入る。
+**Rotate / Revoke / Delete はここにしか無い**。一覧に置いていた頃は、生きている資格情報が
+並んだ表の全行に失効ボタンが載っていて、狙いを外した 1 クリックがクライアントを
+401 で落とす — しかもクライアント側からはその原因を辿れない。
+
+Rotate は**行を残したまま値だけ差し替える**:
+
+| 変わるもの | 変わらないもの |
+|---|---|
+| `tokenHash` / `prefix`（新しい平文を一度だけ表示） | `id`・名前・面・プロファイル・有効期限 |
+| `rotatedAt` | `requestCount`・利用額・この行を指す全 `RequestLog` |
+
+`id` が変わらないので、Activity の帰属が切れない。発行し直すと同じマシンの履歴が
+「CI」と「CI (old)」の 2 行に割れ、後から見て同一だと分かるのは覚えている人だけになる。
+
+旧トークンは即座に無効になる。行のハッシュが消え、`resolveAccessToken` のホットパス
+キャッシュも同時にクリアされるので、TTL（30 秒）の分だけ生き残ることもない。
+
+```bash
+curl -s -X POST https://rialto.example.com/api/access-tokens/$ID/rotate \
+  -H "X-API-Key: $APIKEY" | jq -r .plaintext
+```
+
+失効済み / 期限切れの行は **409 で拒否される**。新しい値を載せても `revokedAt` と
+`expiresAt` はそのままなので、返しても最初のリクエストで死ぬ平文になる。この場合は
+ローテートではなく新規発行が正しい。
+
+Revoke は行を残して無効化し、Delete は行ごと消す。Delete が失効済みの行にしか出ないのは、
+消した時点で過去のリクエストの帰属も一緒に失われるためで、アクセスの観点では何も変わらない
+操作と引き換えに監査証跡だけを捨てることになる。
 
 ## 4. オリジンを直接叩けなくする
 

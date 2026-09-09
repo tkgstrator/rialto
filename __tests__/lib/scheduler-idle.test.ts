@@ -1,23 +1,21 @@
 /**
- * Why the Routing screen's State column reads `unknown`, and which of the
- * two reasons to name.
+ * Why the Routing screen's State column reads `unknown`.
  *
- * The column is drawn from the scheduler's published weights, and there
- * are two independent ways there can be none:
+ * The column is drawn from the scheduler's published weights. There used
+ * to be two independent ways there could be none — the scheduler never
+ * ticking (it only ran for quota-aware selection, so under the rules
+ * selector there was no snapshot at all), and it ticking with nothing to
+ * score. The first is gone with the selector that caused it: the
+ * scheduler always runs now.
  *
- *   1. The scheduler never ticks. It only runs for quota-aware
- *      selection, so under `scenario` there is no snapshot at all.
- *   2. It ticks and scores nothing. The weights are built entirely from
- *      `RouterPreferenceEntry` rows, so an install with the mode on and
- *      no chain configured publishes an empty snapshot.
- *
- * The first version of the on-screen note named only (1), which sent an
- * operator with no chain to flip a switch that changed nothing on their
- * screen. These pin the two apart.
+ * What is left is the second, and it is the one that mattered: the
+ * weights are built entirely from `RouterPreferenceEntry` rows, so an
+ * install with no chain configured publishes an empty snapshot. Told
+ * apart from a cold boot, which resolves within a tick.
  */
 
 import { describe, expect, test } from 'bun:test'
-import { schedulerRuns, schedulerScoredNothing } from '../../src/components/rialto/routing/derive'
+import { schedulerScoredNothing } from '../../src/components/rialto/routing/derive'
 import type { RoutingSchedulerStateResponse, RoutingSchedulerWeightEntry } from '../../src/lib/api-types'
 
 const snapshot = (over: Partial<RoutingSchedulerStateResponse>): RoutingSchedulerStateResponse => ({
@@ -30,25 +28,6 @@ const snapshot = (over: Partial<RoutingSchedulerStateResponse>): RoutingSchedule
   soonestResetAt: null,
   recentChanges: [],
   ...over
-})
-
-describe('schedulerRuns', () => {
-  test('quota-aware as the primary mode runs it', () => {
-    expect(schedulerRuns('quota-aware', 'off')).toBe(true)
-  })
-
-  test('quota-aware in shadow runs it too — observing is enough to need weights', () => {
-    expect(schedulerRuns('scenario', 'quota-aware')).toBe(true)
-  })
-
-  test('scenario with no shadow never ticks', () => {
-    expect(schedulerRuns('scenario', 'off')).toBe(false)
-    expect(schedulerRuns('preference', 'preference')).toBe(false)
-  })
-
-  test('an unread config is treated as not running rather than assumed', () => {
-    expect(schedulerRuns(undefined, undefined)).toBe(false)
-  })
 })
 
 describe('schedulerScoredNothing', () => {

@@ -23,6 +23,18 @@ export function tokenState(token: AccessTokenWire, now: number): TokenState {
   return 'active'
 }
 
+/**
+ * How each state paints. Shared rather than local to the table because
+ * the detail page shows the same badge for the same token, and two
+ * copies of this map is exactly how a row and its own page end up
+ * disagreeing about whether a credential is live.
+ */
+export const TOKEN_STATE_PILL: Record<TokenState, { tone: 'ok' | 'warn' | 'bad'; labelKey: string }> = {
+  active: { tone: 'ok', labelKey: 'settings.access.tokenActive' },
+  expired: { tone: 'warn', labelKey: 'settings.access.tokenExpired' },
+  revoked: { tone: 'bad', labelKey: 'settings.access.tokenRevoked' }
+}
+
 export interface TokenCounts {
   active: number
   expired: number

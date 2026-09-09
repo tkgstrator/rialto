@@ -36,7 +36,7 @@ import {
   type WindowRow
 } from '@/components/rialto/activity/usage-derive'
 import { useActivityCounts } from '@/components/rialto/activity/use-activity-counts'
-import { Meter, Pill, RButton, SurfacePill } from '@/components/rialto/primitives'
+import { Meter, Pill, RButton, SurfaceScope } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import { type AccessTokenWire, api, type InboundSurfaceWire } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
@@ -129,7 +129,9 @@ function WindowLine({ row, now }: { row: WindowRow; now: number }) {
         <Meter pct={row.pct} />
       </div>
       <span className='w-10 shrink-0 text-right font-mono text-xs tabular-nums'>{`${Math.round(row.pct)}%`}</span>
-      <span className='w-20 shrink-0 text-right text-[12px] text-muted-foreground'>
+      {/* A duration is a number: mono and tabular so the column lines
+          up. "4h 06m" and "4d 01h" are different widths otherwise. */}
+      <span className='w-20 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
         {fmtUntil(row.resetsAt, now) === null ? t('overview.resetsDue') : fmtUntil(row.resetsAt, now)}
       </span>
     </div>
@@ -192,6 +194,8 @@ function UtilizationChart({ points, series }: { points: ChartPoint[]; series: re
         <ResponsiveContainer width='100%' height='100%'>
           <LineChart data={points} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
             <CartesianGrid vertical={false} className='stroke-border' strokeWidth={1} />
+            {/* 12px, the floor everything else on these screens uses.
+                The axes were at 10 and were the only text under it. */}
             <XAxis
               dataKey='t'
               type='number'
@@ -202,7 +206,7 @@ function UtilizationChart({ points, series }: { points: ChartPoint[]; series: re
               tickLine={false}
               axisLine={false}
               className='fill-muted-foreground'
-              tick={{ fontSize: 10 }}
+              tick={{ fontSize: 12 }}
             />
             <YAxis
               domain={[0, 100]}
@@ -211,7 +215,7 @@ function UtilizationChart({ points, series }: { points: ChartPoint[]; series: re
               tickLine={false}
               axisLine={false}
               className='fill-muted-foreground'
-              tick={{ fontSize: 10 }}
+              tick={{ fontSize: 12 }}
               width={40}
             />
             <Tooltip content={<ChartTooltip series={series} />} cursor={{ className: 'stroke-border' }} />
@@ -247,7 +251,10 @@ function TokenRow({
   now: number
 }) {
   const { t } = useTranslation()
-  const path = surfaces.find((s) => s.id === row.surface)?.path
+  const paths = row.surfaces.flatMap((id) => {
+    const found = surfaces.find((s) => s.id === id)
+    return found === undefined ? [] : [found.path]
+  })
   return (
     <tr className='border-t border-border/60 transition-colors hover:bg-muted/50'>
       <td className='py-2.5 pl-6 pr-3'>
@@ -255,11 +262,7 @@ function TokenRow({
         <div className='font-mono text-[12px] text-muted-foreground'>{row.prefix}</div>
       </td>
       <td className='px-3'>
-        {path === undefined ? (
-          <span className='text-[12px] text-muted-foreground/50'>{t('settings.access.scopeAll')}</span>
-        ) : (
-          <SurfacePill path={path} />
-        )}
+        <SurfaceScope paths={paths} allLabel={t('settings.access.scopeAll')} />
       </td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCount(row.requestCount)}</td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCost(row.costUsd)}</td>
@@ -271,7 +274,7 @@ function TokenRow({
           </span>
         </div>
       </td>
-      <td className='py-2.5 pl-3 pr-6 text-right text-[12px] text-muted-foreground'>
+      <td className='py-2.5 pl-3 pr-6 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
         {row.lastUsedAt === null ? t('settings.access.never') : fmtAgo(row.lastUsedAt, now)}
       </td>
     </tr>
@@ -399,7 +402,7 @@ export function ActivityUsage() {
         title={t('activity.usage.tokensTitle')}
         meta={t('activity.usage.tokensMeta')}
         action={
-          <RButton variant='ghost' icon='ri-key-2-line' onClick={() => navigate('/settings/access')}>
+          <RButton variant='ghost' icon='ri-key-2-line' onClick={() => navigate('/access-tokens')}>
             {t('activity.usage.manageTokens')}
           </RButton>
         }

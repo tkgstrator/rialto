@@ -60,24 +60,10 @@ const readIntervalMs = (): number => {
   return Number.isFinite(parsed) && parsed >= 60_000 ? parsed : DEFAULT_TICK_MS
 }
 
-const readMode = (): 'scenario' | 'preference' | 'quota-aware' => {
-  const raw = process.env.ROUTER_MODE ?? 'quota-aware'
-  if (raw === 'preference' || raw === 'scenario') return raw
-  return 'quota-aware'
-}
-
-const readShadow = (): 'off' | 'preference' | 'quota-aware' => {
-  const raw = process.env.ROUTER_SHADOW ?? 'off'
-  if (raw === 'preference' || raw === 'quota-aware') return raw
-  return 'off'
-}
-
-const shouldRunTick = (): boolean => {
-  // The tick is only useful for quota-aware selection (either primary
-  // or shadow). Preference-only mode uses cached usage directly and
-  // doesn't need the scheduler-owned weight snapshot.
-  return readMode() === 'quota-aware' || readShadow() === 'quota-aware'
-}
+// `shouldRunTick` gated this on ROUTER_MODE: the weights only fed the
+// quota-aware selector, so under the rules selector the scheduler armed
+// itself and never ran. The chain is the only selector now, so the tick
+// always has a consumer.
 
 // Convert a DB quota row into the in-memory window shape. Missing
 // values collapse to undefined so `computeWeights` can distinguish
@@ -342,30 +328,13 @@ export function startRoutingScheduler(): void {
   globalThis.__rialtoRoutingSchedulerStarted = true
 
   const intervalMs = readIntervalMs()
-  const mode = readMode()
-  const shadow = readShadow()
-  logger.info({ intervalMs, mode, shadow }, '[routing-scheduler] armed')
-  // Phase 4 deprecation notice: the scenario router is scheduled for
-  // removal after quota-aware mode reaches 100% rollout. Flag it at
-  // boot so operators still on the legacy path are aware.
-  if (mode === 'scenario' && shadow === 'off') {
-    logger.warn(
-      {
-        hint: 'set ROUTER_MODE=quota-aware (start with ROUTER_ROLLOUT_PCT=1) to migrate',
-        removal: 'scheduled for v3.0.0 — see docs/plan/quota-aware-router-post-phase-4.md',
-        editor: 'configure the preference chain at /router-preferences'
-      },
-      '[routing-scheduler] scenario mode is deprecated (removal in v3.0.0)'
-    )
-  }
+  logger.info({ intervalMs }, '[routing-scheduler] armed')
 
   const scheduleNext = (): void => {
     if (!globalThis.__rialtoRoutingSchedulerStarted) return
     const start = dayjs().valueOf()
     globalThis.__rialtoRoutingSchedulerTimer = setTimeout(async () => {
-      if (shouldRunTick()) {
-        await runSchedulerTickForTest()
-      }
+      await runSchedulerTickForTest()
       const elapsed = dayjs().valueOf() - start
       const delay = Math.max(1_000, intervalMs - elapsed)
       if (globalThis.__rialtoRoutingSchedulerStarted) {

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rialto — Token issued</title>
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/inter/index.css">
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/geist-mono/index.css">
+<link rel="stylesheet" href="../node_modules/remixicon/fonts/remixicon.css">
+<link rel="stylesheet" href="_shared/mock.build.css">
+<script src="_shared/shell.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const { renderShell, btn, dialog, pill, tokenTable } = window.Shell
+
+// One property of the issued token. Right-aligned monospace values so the
+// three read as a column rather than three sentences.
+const summaryRow = (label, value) => `
+  <div class="flex items-baseline gap-3">
+    <span class="text-[12px] text-muted-foreground">${label}</span>
+    <span class="ml-auto font-mono text-[12px] tabular-nums">${value}</span>
+  </div>`
+
+// The second step of the same dialog, not a second dialog: the panel
+// swaps its contents the moment the token exists. Closing is the last
+// chance to copy the plaintext, so the step that hands it over is the one
+// the operator is already looking at — a reveal that appeared somewhere
+// else on the page would be a reveal that can be missed.
+const body = `
+  <div class="min-w-0 space-y-3">
+    <p class="text-[12px] leading-relaxed text-muted-foreground">
+      This is the only time the full token is shown. Rialto stores a digest, so it cannot be
+      recovered — only replaced.
+    </p>
+    <!-- A real token, at its real length: the rialto_ prefix plus 64
+         hex characters, which is what the server actually mints. Drawn
+         short, the panel looked comfortable and the impl overflowed —
+         71 unbreakable characters are wider than a 28rem dialog, so the
+         string wraps rather than being elided. Whoever the clipboard
+         refused has to select the whole thing by hand. -->
+    <div class="flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2">
+      <span class="min-w-0 flex-1 break-all font-mono text-xs leading-relaxed">rialto_a91f4c7e20b8d5169fa3e84c07b21d6f5e83c0a47b21d6f5e83c0a47b21d6f5</span>
+      <button class="shrink-0 text-muted-foreground transition-colors hover:text-foreground"><i class="ri-file-copy-line text-sm"></i></button>
+    </div>
+    <div class="space-y-2">
+      ${summaryRow('Name', 'MacBook — Claude Code')}
+      ${summaryRow('Endpoint', '/v1/messages')}
+      ${summaryRow('Routing profile', 'live')}
+      ${summaryRow('Expires', '2026-12-07')}
+    </div>
+  </div>`
+
+document.getElementById('root').innerHTML = `
+  <div class="min-w-0">
+      <!-- The list behind already carries the new row. That is the answer
+           to "where did it go" once this closes, and it is why the reveal
+           is a dialog over the table rather than a panel that replaced
+           it. -->
+      <div class="flex items-center gap-3 px-6 pt-5 pb-3">
+        <span class="text-[12px] text-muted-foreground">4 active ·
+          <button class="underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground">1 revoked</button>
+          · all <span class="font-mono">/v1/*</span></span>
+        <div class="ml-auto">${btn('Issue token', 'primary', 'ri-add-line')}</div>
+      </div>
+
+      <div class="px-6 pb-4">
+        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
+          <i class="ri-information-line mr-1 align-[-1px]"></i>
+          Only a SHA-256 digest is stored — the plaintext is shown once, when the token is issued.
+          Scoping a token to endpoints and a routing profile is how a client gets its own routing:
+          the CI token below is pinned to <span class="font-mono">cost-first</span> without touching
+          anyone else's chain.
+          <span class="font-medium text-foreground">Open a row</span> to rotate it — a new secret on
+          the same row, keeping its name, scope and history — or to revoke it.
+        </div>
+      </div>
+
+      ${tokenTable()}
+
+      ${dialog(
+        `<span class="flex items-center gap-2">Token issued${pill('copy it now', 'warn')}</span>`,
+        body,
+        // The amber line is the state before the copy button has been
+        // pressed. Done still works from here — it asks first, because
+        // this is the last screen that can show the secret.
+        `<span class="mr-auto text-[12px] text-amber-600 dark:text-amber-400">Not copied yet</span>${btn('Done', 'primary', 'ri-check-line', 'access-tokens.html')}`
+      )}
+  </div>`
+
+renderShell({
+  active: 'access-tokens',
+  navMode: 'cloudflare',
+  crumbs: [],
+  subtitle: 'Per-client credentials for /v1/*'
+})
+</script>
+</body>
+</html>

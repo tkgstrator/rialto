@@ -24,14 +24,19 @@ import {
 import { FilterSelect, NoteBox, ScreenMessage, StatTile } from '@/components/rialto/activity/shared'
 import { useActivityCounts } from '@/components/rialto/activity/use-activity-counts'
 import { useSurfaces } from '@/components/rialto/activity/use-surfaces'
+import { Pager } from '@/components/rialto/Pager'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import { api } from '@/lib/api'
 import { fmtCount, fmtLatency, fmtRate } from '@/lib/rialto/format'
 
-// The endpoint has no time filter, so the page is the newest N calls and
-// every number on the screen describes that page.
-const PAGE_SIZE = 200
+// The endpoint has no time filter, so a page is N calls in recency order
+// and every number on the screen describes the page on screen.
+//
+// 200 with no pager was a cap pretending to be a list: the subtitle said
+// "184 of 18.7k" and there was no way to reach the other 18.5k. 25 to
+// match Sessions, which pages the same archive.
+const PAGE_SIZE = 25
 
 /** The caller's name: the issued token when the row names one, else the
  *  surface's client label. */
@@ -99,6 +104,7 @@ function StatsRow({ counts, rangeLabel }: { counts: Counts; rangeLabel: string }
 export function ActivityRequests() {
   const { t } = useTranslation()
   const [page, setPage] = useState<{ items: ActivityRequestLog[]; total: number } | null>(null)
+  const [pageIndex, setPageIndex] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [now, setNow] = useState(Date.now())
   // The mock ships this screen tailing: a request log that does not move
@@ -137,14 +143,14 @@ export function ActivityRequests() {
   const _tabCounts = useActivityCounts()
 
   const load = useCallback(() => {
-    fetchRequestLogs(PAGE_SIZE)
+    fetchRequestLogs(PAGE_SIZE, pageIndex * PAGE_SIZE)
       .then((res) => {
         setPage(res)
         setNow(Date.now())
         setError(null)
       })
       .catch((e: Error) => setError(e.message))
-  }, [])
+  }, [pageIndex])
 
   useEffect(load, [load])
 
@@ -318,6 +324,20 @@ export function ActivityRequests() {
         </ScreenMessage>
       ) : (
         <RequestsTable rows={visible} columns={columns} />
+      )}
+
+      {/* `loaded` counts the fetched page, not the filtered rows: the
+          filters run client-side over one page, so measuring them would
+          make Next disappear whenever a filter hid the tail of a page
+          that has more behind it. */}
+      {page === null ? null : (
+        <Pager
+          page={pageIndex}
+          pageSize={PAGE_SIZE}
+          loaded={page.items.length}
+          total={page.total}
+          onPage={setPageIndex}
+        />
       )}
 
       <div className='px-6 py-4'>
