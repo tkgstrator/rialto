@@ -41,44 +41,64 @@ import {
   CLAUDE_METRICS,
   CODEX_METRICS,
   getPerAccountUsage,
-  isScopedMetric,
-  type Metric
+  type Metric,
+  scopedMetricModel
 } from './subaccount-usage-store'
 import { getSubAccountTokensForKind, type SubAccountTokenInfo } from './subscription-account-sync-service'
 
 // sessionId → subAccountId
 const sessionMap = new Map<string, string>()
 
-// Always-binding hard-limit windows per kind. Any of these at 100% with
-// resetAt still in the future guarantees an upstream 429, so the picker
-// must skip the account. Mirrors the constraints upstream actually
-// enforces: claude charges the overall 7d, the 7d Opus tier, and the
-// 5h rolling window simultaneously; codex enforces the primary window.
-const HARD_LIMIT_METRICS: Record<'claude' | 'codex', Metric[]> = {
-  claude: [CLAUDE_METRICS.five_hour, CLAUDE_METRICS.seven_day, CLAUDE_METRICS.seven_day_opus],
-  codex: [CODEX_METRICS.primary]
+// An account's windows are not all about the same thing, and which ones
+// speak for a given request depends on the model it asks for.
+//
+//   - Account-wide (claude 5h / 7d, codex primary / secondary): bind for
+//     every model.
+//   - Per-model (claude.seven_day_scoped.<model>, plus the legacy flat
+//     seven_day_sonnet / seven_day_opus): bind ONLY for that model.
+//     Anthropic meters Fable's weekly allowance separately, so a spent
+//     Fable window is no reason to skip an account for a Sonnet call —
+//     and, the other way round, a fresh account-wide 7d is no reason to
+//     send a Fable call to an account whose Fable window is gone.
+//
+// Which keys exist is the vendor's call, not ours: Anthropic stopped
+// populating the flat `seven_day_opus` field for most plans and now
+// reports the per-model limits through `limits[]`. Matching on the shape
+// of the metric rather than a pinned key is what keeps that from reading
+// as "no data" on every account.
+const belongsToKind = (metric: Metric, kind: 'claude' | 'codex'): boolean =>
+  kind === 'claude' ? metric.startsWith('claude.') : metric.startsWith('codex.')
+
+// The short rolling window each kind meters alongside the weekly one. It
+// gates (a 429 is a 429) but is never balanced on: its horizon is hours,
+// so it would dominate the burn-rate arithmetic every time.
+const isShortWindow = (metric: Metric, kind: 'claude' | 'codex'): boolean =>
+  kind === 'claude' ? metric === CLAUDE_METRICS.five_hour : metric === CODEX_METRICS.primary
+
+// The model slug a per-model window is about, or null when the window is
+// account-wide.
+const perModelSlugOf = (metric: Metric): string | null => {
+  if (metric === CLAUDE_METRICS.seven_day_sonnet) return 'sonnet'
+  if (metric === CLAUDE_METRICS.seven_day_opus) return 'opus'
+  return scopedMetricModel(metric)
 }
 
-// The scarce windows each kind balances on once hard limits are out of
-// the way. Which keys exist is the vendor's call, not ours: Anthropic
-// stopped populating the flat `seven_day_opus` field for most plans and
-// now reports per-model weekly limits as `claude.seven_day_scoped.<model>`,
-// so pinning one metric key made every account read as "no data" and
-// silently disabled the balancing entirely. Match on the shape of the
-// metric instead and let each account contribute whichever weekly
-// windows it actually has.
-//
-// The 5h window is deliberately excluded: it is a hard limit (handled
-// above), not a resource worth spreading across accounts — its short
-// horizon would dominate the burn-rate arithmetic every time.
-const isWeeklyMetric = (metric: Metric, kind: 'claude' | 'codex'): boolean => {
-  if (kind === 'codex') return metric === CODEX_METRICS.secondary
-  return (
-    metric === CLAUDE_METRICS.seven_day ||
-    metric === CLAUDE_METRICS.seven_day_sonnet ||
-    metric === CLAUDE_METRICS.seven_day_opus ||
-    isScopedMetric(metric)
-  )
+// The metric key is a slug of the vendor's `display_name` ("Fable" →
+// `fable`) while the request carries an API id ("claude-fable-5-1"), so
+// both sides are stripped to alphanumerics before the containment test.
+// Same heuristic the routing-scheduler uses in quota-math.ts.
+const squash = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, '')
+
+// Does this window bind for the model the request asks for? An unknown
+// model falls back to account-wide windows only: guessing wrong either
+// parks a usable account or picks one guaranteed to 429, whereas the
+// account-wide windows are never the wrong answer, only an incomplete one.
+const windowBinds = (metric: Metric, kind: 'claude' | 'codex', requestedModel: string | undefined): boolean => {
+  if (!belongsToKind(metric, kind)) return false
+  const slug = perModelSlugOf(metric)
+  if (slug === null) return true
+  if (requestedModel === undefined) return false
+  return squash(requestedModel).includes(squash(slug))
 }
 
 // Ranking tiers. A single numeric scale cannot express "no reading":
@@ -114,15 +134,20 @@ const remember = (account: SubAccountTokenInfo, now: number): SubAccountTokenInf
   return account
 }
 
-// Whether the account has at least one always-binding window pinned at
-// 100% with resetAt still in the future. The "future resetAt" guard is
-// what makes a stale DB row self-heal: once the reset passes, the cache
-// no longer blocks the account even before the next poller cycle
-// rewrites it.
-const accountHasHardLimitHit = (usage: AccountUsageMap, kind: 'claude' | 'codex', now: number): boolean => {
-  for (const metric of HARD_LIMIT_METRICS[kind]) {
-    const w = usage.get(metric)
-    if (!w) continue
+// Whether the account has at least one window that binds for THIS
+// request pinned at 100% with resetAt still in the future — that
+// guarantees an upstream 429, so the picker skips the account. The
+// "future resetAt" guard is what makes a stale DB row self-heal: once
+// the reset passes, the cache no longer blocks the account even before
+// the next poller cycle rewrites it.
+const accountHasHardLimitHit = (
+  usage: AccountUsageMap,
+  kind: 'claude' | 'codex',
+  requestedModel: string | undefined,
+  now: number
+): boolean => {
+  for (const [metric, w] of usage) {
+    if (!windowBinds(metric, kind, requestedModel)) continue
     if (w.percent < 100) continue
     if (w.resetAt !== null && w.resetAt.valueOf() <= now) continue
     return true
@@ -130,27 +155,39 @@ const accountHasHardLimitHit = (usage: AccountUsageMap, kind: 'claude' | 'codex'
   return false
 }
 
-// One window's required burn rate: remaining budget per remaining
-// millisecond. Null when the window carries no usable timing — no
-// resetAt at all, or a row left stale across its own reset. Null stays
-// null all the way up to the tier decision; collapsing it into a number
-// is exactly what made a stale row look like the most urgent account in
-// the pool.
+// One window's required burn rate, in **percentage points per hour**:
+// how fast the account has to spend to finish this window before it
+// resets. Hours rather than the raw milliseconds only because the
+// ordering is scale-invariant and %/ms puts every real value at 1e-6 or
+// below, which is unreadable the moment one of these lands in a log
+// line. Null when the window carries no usable timing — no resetAt at
+// all, or a row left stale across its own reset. Null stays null all the
+// way up to the tier decision; collapsing it into a number is exactly
+// what made a stale row look like the most urgent account in the pool.
+const MS_PER_HOUR = 3_600_000
+
 const burnRateOf = (window: { percent: number; resetAt: Date | null }, now: number): number | null => {
   if (window.resetAt === null) return null
-  const timeRemainingMs = window.resetAt.valueOf() - now
-  if (timeRemainingMs <= 0) return null
-  return Math.max(0, 100 - window.percent) / timeRemainingMs
+  const hoursRemaining = (window.resetAt.valueOf() - now) / MS_PER_HOUR
+  if (hoursRemaining <= 0) return null
+  return Math.max(0, 100 - window.percent) / hoursRemaining
 }
 
-// An account can only spend as fast as its tightest weekly window
-// allows, so the minimum burn rate across the windows it reports is the
-// honest number: a fresh per-model window must not mask an account-wide
-// one sitting at 99%.
-const rankAccount = (usage: AccountUsageMap, kind: 'claude' | 'codex', now: number): AccountRank => {
+// An account can only spend as fast as its tightest binding weekly
+// window allows, so the minimum burn rate across them is the honest
+// number: a fresh per-model window must not mask an account-wide one
+// sitting at 99%, and a spent one belonging to another model must not
+// drag the account down for traffic it would serve fine.
+const rankAccount = (
+  usage: AccountUsageMap,
+  kind: 'claude' | 'codex',
+  requestedModel: string | undefined,
+  now: number
+): AccountRank => {
   const rates: number[] = []
   for (const [metric, window] of usage) {
-    if (!isWeeklyMetric(metric, kind)) continue
+    if (isShortWindow(metric, kind)) continue
+    if (!windowBinds(metric, kind, requestedModel)) continue
     const rate = burnRateOf(window, now)
     if (rate !== null) rates.push(rate)
   }
@@ -172,12 +209,17 @@ const outranks = (a: RankedAccount, b: RankedAccount): boolean => {
   return a.pickedAt < b.pickedAt
 }
 
+// `requestedModel` decides which per-model windows bind (see
+// `windowBinds`); undefined means the caller could not read a model off
+// the request and only account-wide windows are consulted.
+//
 // `now` is injectable so unit tests can pin the clock against seeded
 // resetAt values without touching real time. Production callers omit
 // it and get the actual wall clock.
 export async function resolveAccountForSession(
   sessionId: string,
   kind: 'claude' | 'codex',
+  requestedModel: string | undefined,
   now: number = dayjs().valueOf()
 ): Promise<SubAccountTokenInfo | null> {
   const all = await getSubAccountTokensForKind(kind)
@@ -197,7 +239,7 @@ export async function resolveAccountForSession(
   // resetAt — those would 429 if we picked them.
   const usable = notExhausted.filter((a) => {
     const u = usageByAcct.get(a.subAccountId)
-    return u !== undefined ? !accountHasHardLimitHit(u, kind, now) : true
+    return u !== undefined ? !accountHasHardLimitHit(u, kind, requestedModel, now) : true
   })
 
   // If both filters dropped every candidate, fall back to the full list
@@ -224,7 +266,7 @@ export async function resolveAccountForSession(
   // O(1) per step and can't see a different snapshot per iteration.
   const ranked = accounts.map((a) => {
     const usage = usageByAcct.get(a.subAccountId)
-    const rank = usage === undefined ? UNKNOWN_RANK : rankAccount(usage, kind, now)
+    const rank = usage === undefined ? UNKNOWN_RANK : rankAccount(usage, kind, requestedModel, now)
     return { account: a, rank, pickedAt: pickedAtOf(a.subAccountId) }
   })
   const picked = ranked.reduce((best, candidate) => (outranks(candidate, best) ? candidate : best)).account

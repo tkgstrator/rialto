@@ -47,14 +47,31 @@ export abstract class OAuthTransformer extends Transformer {
     return null
   }
 
+  /**
+   * The model a request asks for, read defensively off the vendor body.
+   *
+   * The account picker needs it because a subscription's per-model
+   * weekly windows (Anthropic's `limits[]`, e.g. Fable) bind only for
+   * that model — without it the picker can only consult the
+   * account-wide windows and will happily hand back an account whose
+   * Fable allowance is gone.
+   */
+  private modelOf(request: unknown): string | undefined {
+    if (request === null || typeof request !== 'object') return undefined
+    if (!('model' in request)) return undefined
+    const model = request.model
+    return typeof model === 'string' && model.length > 0 ? model : undefined
+  }
+
   protected async resolveSubscriptionAuth(
     provider: RuntimeProvider | null | undefined,
     sessionId?: string | null,
-    kind?: 'claude' | 'codex'
+    kind?: 'claude' | 'codex',
+    request?: unknown
   ): Promise<OauthCredentials> {
     // Session-aware path: pick account by session continuity or lowest usage.
     if (sessionId && kind) {
-      const account = await resolveAccountForSession(sessionId, kind)
+      const account = await resolveAccountForSession(sessionId, kind, this.modelOf(request))
       if (account) {
         const live = await this.ensureFreshToken({
           subAccountId: account.subAccountId,

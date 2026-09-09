@@ -33,6 +33,13 @@ type Metric =
 // a named constant because the router recognises it by prefix, not by a
 // fixed key.
 const SCOPED_FABLE: Metric = 'claude.seven_day_scoped.fable'
+
+// Requested-model ids. Per-model windows bind only for the model the
+// request asks for, so a test that seeds one has to say which model it
+// is routing.
+const OPUS_MODEL = 'claude-opus-4-5'
+const FABLE_MODEL = 'claude-fable-5-1'
+const SONNET_MODEL = 'claude-sonnet-5'
 const CLAUDE_METRICS = {
   five_hour: 'claude.five_hour' as Metric,
   seven_day: 'claude.seven_day' as Metric,
@@ -126,12 +133,12 @@ afterEach(() => {
 })
 
 test('returns null when no accounts exist', async () => {
-  expect(await resolveAccountForSession('s-none', 'claude', NOW)).toBeNull()
+  expect(await resolveAccountForSession('s-none', 'claude', undefined, NOW)).toBeNull()
 })
 
 test('returns the only account without consulting usage', async () => {
   claudeAccounts = [account('solo')]
-  const picked = await resolveAccountForSession('s-solo', 'claude', NOW)
+  const picked = await resolveAccountForSession('s-solo', 'claude', undefined, NOW)
   expect(picked?.subAccountId).toBe('solo')
 })
 
@@ -141,7 +148,7 @@ test('picks the account with the highest required burn rate (same resetAt)', asy
   claudeAccounts = [account('a1'), account('a2')]
   perAccountUsage.set('a1', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 20, resetAt: HALFWAY_RESET } }))
   perAccountUsage.set('a2', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 45, resetAt: HALFWAY_RESET } }))
-  const picked = await resolveAccountForSession('s-opus', 'claude', NOW)
+  const picked = await resolveAccountForSession('s-opus', 'claude', OPUS_MODEL, NOW)
   expect(picked?.subAccountId).toBe('a1')
 })
 
@@ -153,7 +160,7 @@ test('picks the nearer-reset account when both have the same usage', async () =>
   claudeAccounts = [account('a1'), account('a2')]
   perAccountUsage.set('a1', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 50, resetAt: nearReset } }))
   perAccountUsage.set('a2', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 50, resetAt: farReset } }))
-  const picked = await resolveAccountForSession('s-near', 'claude', NOW)
+  const picked = await resolveAccountForSession('s-near', 'claude', OPUS_MODEL, NOW)
   expect(picked?.subAccountId).toBe('a1')
 })
 
@@ -163,7 +170,7 @@ test('an account with no usage rows ranks BELOW one with a healthy reading', asy
   // let one unpolled account monopolise the pool forever.
   claudeAccounts = [account('a1'), account('a2')]
   perAccountUsage.set('a1', usage({ [CLAUDE_METRICS.seven_day]: { percent: 10, resetAt: HALFWAY_RESET } }))
-  const picked = await resolveAccountForSession('s-fresh', 'claude', NOW)
+  const picked = await resolveAccountForSession('s-fresh', 'claude', undefined, NOW)
   expect(picked?.subAccountId).toBe('a1')
 })
 
@@ -172,7 +179,7 @@ test('an account with no usage rows still ranks ABOVE an exhausted one', async (
   // of the account-wide hard-limit gate, so a1 survives to the ranking).
   claudeAccounts = [account('a1'), account('a2')]
   perAccountUsage.set('a1', usage({ [SCOPED_FABLE]: { percent: 100, resetAt: HALFWAY_RESET } }))
-  const picked = await resolveAccountForSession('s-unknown-beats-spent', 'claude', NOW)
+  const picked = await resolveAccountForSession('s-unknown-beats-spent', 'claude', FABLE_MODEL, NOW)
   expect(picked?.subAccountId).toBe('a2')
 })
 
@@ -195,7 +202,7 @@ test('balances on the weekly windows the account actually reports', async () => 
   claudeAccounts = [account('a1'), account('a2')]
   perAccountUsage.set('a1', spent)
   perAccountUsage.set('a2', untouched)
-  const picked = await resolveAccountForSession('s-real-shape', 'claude', NOW)
+  const picked = await resolveAccountForSession('s-real-shape', 'claude', undefined, NOW)
   expect(picked?.subAccountId).toBe('a2')
 })
 
@@ -212,7 +219,38 @@ test('the tightest weekly window decides, not the freshest one', async () => {
     })
   )
   perAccountUsage.set('a2', usage({ [CLAUDE_METRICS.seven_day]: { percent: 20, resetAt: HALFWAY_RESET } }))
-  const picked = await resolveAccountForSession('s-tightest', 'claude', NOW)
+  const picked = await resolveAccountForSession('s-tightest', 'claude', FABLE_MODEL, NOW)
+  expect(picked?.subAccountId).toBe('a2')
+})
+
+// ─── Per-model windows bind only for their own model ───────────────────
+
+test('a spent Fable window does not hold the account back on a Sonnet request', async () => {
+  // a1's Fable allowance is gone but its Sonnet headroom is the best in
+  // the pool. Anthropic meters the two separately, so a1 must still win
+  // a Sonnet call — treating every scoped window as binding would park
+  // the account for traffic it serves fine.
+  claudeAccounts = [account('a1'), account('a2')]
+  perAccountUsage.set(
+    'a1',
+    usage({
+      [SCOPED_FABLE]: { percent: 100, resetAt: HALFWAY_RESET },
+      [CLAUDE_METRICS.seven_day_sonnet]: { percent: 10, resetAt: HALFWAY_RESET }
+    })
+  )
+  perAccountUsage.set('a2', usage({ [CLAUDE_METRICS.seven_day_sonnet]: { percent: 80, resetAt: HALFWAY_RESET } }))
+  const picked = await resolveAccountForSession('s-fable-spent-sonnet', 'claude', SONNET_MODEL, NOW)
+  expect(picked?.subAccountId).toBe('a1')
+})
+
+test('a spent Fable window DOES skip the account on a Fable request', async () => {
+  // Same account, same data — only the requested model changes. The
+  // scoped window is a guaranteed 429 for this model, so the picker has
+  // to rotate off it.
+  claudeAccounts = [account('a1'), account('a2')]
+  perAccountUsage.set('a1', usage({ [SCOPED_FABLE]: { percent: 100, resetAt: HALFWAY_RESET } }))
+  perAccountUsage.set('a2', usage({ [SCOPED_FABLE]: { percent: 5, resetAt: HALFWAY_RESET } }))
+  const picked = await resolveAccountForSession('s-fable-spent-fable', 'claude', FABLE_MODEL, NOW)
   expect(picked?.subAccountId).toBe('a2')
 })
 
@@ -222,8 +260,8 @@ test('equally-ranked accounts rotate instead of pinning the first', async () => 
   // took every request. Fresh ids so the least-recently-picked map
   // starts empty for both.
   claudeAccounts = [account('r1'), account('r2')]
-  const first = await resolveAccountForSession('s-rot-1', 'claude', NOW)
-  const second = await resolveAccountForSession('s-rot-2', 'claude', NOW + 1_000)
+  const first = await resolveAccountForSession('s-rot-1', 'claude', undefined, NOW)
+  const second = await resolveAccountForSession('s-rot-2', 'claude', undefined, NOW + 1_000)
   expect(first?.subAccountId).not.toBe(second?.subAccountId)
 })
 
@@ -235,7 +273,7 @@ test('a 7d-opus 100% account is filtered out even when its burn-rate score would
   claudeAccounts = [account('a1'), account('a2')]
   perAccountUsage.set('a1', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 100, resetAt: HALFWAY_RESET } }))
   perAccountUsage.set('a2', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 60, resetAt: HALFWAY_RESET } }))
-  const picked = await resolveAccountForSession('s-7d-hit', 'claude', NOW)
+  const picked = await resolveAccountForSession('s-7d-hit', 'claude', OPUS_MODEL, NOW)
   expect(picked?.subAccountId).toBe('a2')
 })
 
@@ -251,7 +289,7 @@ test('a 5h 100% account is filtered out even when its 7d windows have headroom',
     })
   )
   perAccountUsage.set('a2', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 60, resetAt: HALFWAY_RESET } }))
-  const picked = await resolveAccountForSession('s-5h-hit', 'claude', NOW)
+  const picked = await resolveAccountForSession('s-5h-hit', 'claude', undefined, NOW)
   expect(picked?.subAccountId).toBe('a2')
 })
 
@@ -269,7 +307,7 @@ test('a 5h 100% account with resetAt already passed is NOT filtered (stale cache
       [CLAUDE_METRICS.seven_day_opus]: { percent: 60, resetAt: HALFWAY_RESET }
     })
   )
-  const picked = await resolveAccountForSession('s-stale', 'claude', NOW)
+  const picked = await resolveAccountForSession('s-stale', 'claude', undefined, NOW)
   expect(picked?.subAccountId).toBe('a1')
 })
 
@@ -280,7 +318,7 @@ test('when EVERY account has a hard limit hit, the router still returns one (fal
   claudeAccounts = [account('a1'), account('a2')]
   perAccountUsage.set('a1', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 100, resetAt: HALFWAY_RESET } }))
   perAccountUsage.set('a2', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 100, resetAt: HALFWAY_RESET } }))
-  const picked = await resolveAccountForSession('s-all-hit', 'claude', NOW)
+  const picked = await resolveAccountForSession('s-all-hit', 'claude', OPUS_MODEL, NOW)
   expect(picked).not.toBeNull()
 })
 
@@ -291,7 +329,7 @@ test('an exhausted account is filtered out and the router picks a peer', async (
   perAccountUsage.set('a1', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 20, resetAt: HALFWAY_RESET } }))
   perAccountUsage.set('a2', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 45, resetAt: HALFWAY_RESET } }))
   markAccountExhausted('a1', NOW + 5 * 60_000)
-  const picked = await resolveAccountForSession('s-acct-exh', 'claude', NOW)
+  const picked = await resolveAccountForSession('s-acct-exh', 'claude', OPUS_MODEL, NOW)
   expect(picked?.subAccountId).toBe('a2')
 })
 
@@ -299,11 +337,11 @@ test('exhausting the sticky account causes a repick on the next call', async () 
   claudeAccounts = [account('a1'), account('a2')]
   perAccountUsage.set('a1', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 20, resetAt: HALFWAY_RESET } }))
   perAccountUsage.set('a2', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 45, resetAt: HALFWAY_RESET } }))
-  const first = await resolveAccountForSession('s-sticky-exh', 'claude', NOW)
+  const first = await resolveAccountForSession('s-sticky-exh', 'claude', OPUS_MODEL, NOW)
   expect(first?.subAccountId).toBe('a1')
 
   markAccountExhausted('a1', NOW + 5 * 60_000)
-  const second = await resolveAccountForSession('s-sticky-exh', 'claude', NOW)
+  const second = await resolveAccountForSession('s-sticky-exh', 'claude', OPUS_MODEL, NOW)
   expect(second?.subAccountId).toBe('a2')
 })
 
@@ -313,13 +351,13 @@ test('a known session sticks to its previously-chosen account', async () => {
   claudeAccounts = [account('a1'), account('a2')]
   perAccountUsage.set('a1', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 20, resetAt: HALFWAY_RESET } }))
   perAccountUsage.set('a2', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 45, resetAt: HALFWAY_RESET } }))
-  const first = await resolveAccountForSession('s-sticky', 'claude', NOW)
+  const first = await resolveAccountForSession('s-sticky', 'claude', OPUS_MODEL, NOW)
   expect(first?.subAccountId).toBe('a1')
   // Flip the usage so a2 now has more headroom; the sticky map must keep
   // returning a1 for the same session id.
   perAccountUsage.set('a1', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 48, resetAt: HALFWAY_RESET } }))
   perAccountUsage.set('a2', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 10, resetAt: HALFWAY_RESET } }))
-  const second = await resolveAccountForSession('s-sticky', 'claude', NOW)
+  const second = await resolveAccountForSession('s-sticky', 'claude', OPUS_MODEL, NOW)
   expect(second?.subAccountId).toBe('a1')
 })
 
@@ -327,10 +365,10 @@ test('a sticky account that is gone triggers a repick', async () => {
   claudeAccounts = [account('a1'), account('a2')]
   perAccountUsage.set('a1', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 20, resetAt: HALFWAY_RESET } }))
   perAccountUsage.set('a2', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 45, resetAt: HALFWAY_RESET } }))
-  const first = await resolveAccountForSession('s-gone', 'claude', NOW)
+  const first = await resolveAccountForSession('s-gone', 'claude', OPUS_MODEL, NOW)
   expect(first?.subAccountId).toBe('a1')
   claudeAccounts = [account('a2')]
-  const second = await resolveAccountForSession('s-gone', 'claude', NOW)
+  const second = await resolveAccountForSession('s-gone', 'claude', OPUS_MODEL, NOW)
   expect(second?.subAccountId).toBe('a2')
 })
 
@@ -340,7 +378,7 @@ test('getActiveAccountForSession returns the picked subAccountId', async () => {
   claudeAccounts = [account('a1'), account('a2')]
   perAccountUsage.set('a1', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 20, resetAt: HALFWAY_RESET } }))
   perAccountUsage.set('a2', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 45, resetAt: HALFWAY_RESET } }))
-  await resolveAccountForSession('s-active', 'claude', NOW)
+  await resolveAccountForSession('s-active', 'claude', OPUS_MODEL, NOW)
   expect(getActiveAccountForSession('s-active')).toBe('a1')
 })
 
@@ -352,7 +390,7 @@ test('releaseAccountForSession drops the sticky only when the subAccountId match
   claudeAccounts = [account('a1'), account('a2')]
   perAccountUsage.set('a1', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 20, resetAt: HALFWAY_RESET } }))
   perAccountUsage.set('a2', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 45, resetAt: HALFWAY_RESET } }))
-  await resolveAccountForSession('s-release', 'claude', NOW)
+  await resolveAccountForSession('s-release', 'claude', OPUS_MODEL, NOW)
   expect(getActiveAccountForSession('s-release')).toBe('a1')
 
   releaseAccountForSession('s-release', 'a2')
