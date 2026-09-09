@@ -20,7 +20,8 @@ const SurfaceSchema = z
     auth: z.enum(['x-api-key', 'bearer', 'google']),
     errorShape: z.enum(['anthropic', 'openai', 'google']),
     routingMode: z.enum(['routed', 'passthrough']),
-    profileKey: z.string().nonempty()
+    profileKey: z.string().nonempty(),
+    deniedTargets: z.array(z.string().nonempty())
   })
   .openapi('InboundSurface')
 
@@ -30,7 +31,10 @@ const UpdateBodySchema = z
   .object({
     surface: SurfaceIdSchema,
     routingMode: z.enum(['routed', 'passthrough']),
-    profileKey: z.string().nonempty().nullable().optional()
+    profileKey: z.string().nonempty().nullable().optional(),
+    // Omitted leaves the stored list alone. The mode and profile writers
+    // send neither, and must not blank it by saying nothing.
+    deniedTargets: z.array(z.string().nonempty()).optional()
   })
   .openapi('InboundSurfaceUpdate')
 

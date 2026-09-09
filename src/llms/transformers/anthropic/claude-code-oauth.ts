@@ -72,6 +72,52 @@ export function withClaudeCodeIdentity(system: unknown): AnthropicSystemBlock[] 
   return [{ type: 'text', text: CLAUDE_CODE_IDENTITY }, ...blocks]
 }
 
+// Anthropic takes the system prompt as a top-level `system`, never as
+// `messages[0]`. Callers who came in through /v1/responses or
+// /v1/chat/completions carry it the other way round — the OpenAI wire
+// shape has no top-level system field, so the unified body reaching this
+// hook has a leading `role: 'system'` message and nothing in `system`.
+// Forwarded verbatim, Anthropic answers 400 "messages.0: use the
+// top-level 'system' parameter for the initial system prompt".
+//
+// Hoist them here. Every system message is taken, not just the first:
+// a client is free to send several (one per stable prefix block) and
+// dropping the later ones would silently lose instructions. Order is
+// preserved, and an existing top-level `system` stays in front of them.
+function hoistSystemMessages(req: ClaudeCodeRequestShape): void {
+  if (!Array.isArray(req.messages)) return
+  const carried = req.messages.filter((message) => message.role === 'system')
+  if (carried.length === 0) return
+
+  req.messages = req.messages.filter((message) => message.role !== 'system')
+
+  const existing = Array.isArray(req.system)
+    ? req.system
+    : typeof req.system === 'string' && req.system.length > 0
+      ? [req.system]
+      : []
+  req.system = [...existing, ...carried.map((message) => systemText(message.content))].filter(
+    (block) => typeof block !== 'string' || block.length > 0
+  )
+}
+
+// Unified message content is a string, or an array of blocks of which only
+// the text ones carry the prompt. Anything else (images, tool results) has
+// no place in a system block and is dropped rather than stringified.
+function systemText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content
+    .map((block) => {
+      if (typeof block === 'string') return block
+      if (block === null || typeof block !== 'object') return ''
+      const text = Reflect.get(block, 'text')
+      return typeof text === 'string' ? text : ''
+    })
+    .filter((text) => text.length > 0)
+    .join('\n\n')
+}
+
 type ClaudeCodeRequestShape = {
   system?: unknown
   messages?: Array<{ content?: unknown; [k: string]: unknown }>
@@ -144,9 +190,10 @@ export class ClaudeCodeOauthTransformer extends OAuthTransformer {
 
   async auth(request: unknown, provider: RuntimeProvider, context: TransformerContext): Promise<TransformerAuthResult> {
     const sessionId = (context?.req?.headers?.['x-claude-code-session-id'] as string | undefined) ?? undefined
-    const { token } = await this.resolveSubscriptionAuth(provider, sessionId, 'claude')
+    const { token } = await this.resolveSubscriptionAuth(provider, sessionId, 'claude', request)
     // biome-ignore plugin: the OAuth auth hook receives the inbound Anthropic body verbatim (unknown by design); narrowing to a Zod schema would re-encode the whole request, defeating the bypass-mode passthrough.
     const req = request as ClaudeCodeRequestShape
+    hoistSystemMessages(req)
     req.system = withClaudeCodeIdentity(req.system)
 
     // Remove thinking blocks that lack a valid Anthropic signature. When

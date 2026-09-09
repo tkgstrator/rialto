@@ -47,6 +47,7 @@ export interface SurfacesState {
   reload: () => void
   setMode: (surface: SurfaceId, routingMode: RoutingMode) => Promise<void>
   setProfile: (surface: SurfaceId, routingMode: RoutingMode, profileKey: string) => Promise<void>
+  setTargetAllowed: (surface: SurfaceId, routingMode: RoutingMode, denied: readonly string[]) => Promise<void>
 }
 
 export function useSurfaces(): SurfacesState {
@@ -86,7 +87,19 @@ export function useSurfaces(): SurfacesState {
     setSurfaces(res.surfaces)
   }, [])
 
-  return { surfaces, loading, error, reload, setMode, setProfile }
+  // Whether a caller may name this target on this surface. Distinct from
+  // `Model.enabled`, which is whether the provider serves the model at
+  // all — that one is shared by every surface and every chain, and is
+  // edited in Providers.
+  const setTargetAllowed = useCallback(
+    async (surface: SurfaceId, routingMode: RoutingMode, denied: readonly string[]) => {
+      const res = await api.updateInboundSurface({ surface, routingMode, deniedTargets: [...denied] })
+      setSurfaces(res.surfaces)
+    },
+    []
+  )
+
+  return { surfaces, loading, error, reload, setMode, setProfile, setTargetAllowed }
 }
 
 export interface PreferencesState {

@@ -81,7 +81,7 @@ export class CodexOauthTransformer extends OAuthTransformer {
     context: TransformerContext
   ): Promise<TransformerHookResult> {
     const sessionId = (context?.req?.headers?.['x-claude-code-session-id'] as string | undefined) ?? undefined
-    const { token, accountId } = await this.resolveSubscriptionAuth(provider, sessionId, 'codex')
+    const { token, accountId } = await this.resolveSubscriptionAuth(provider, sessionId, 'codex', request)
     // biome-ignore plugin: CodexRequestShape adds optional Responses-API-specific fields (store/instructions/input/prompt_cache_key) on top of UnifiedChatRequest; the unified schema cannot model these without leaking codex-specific shape into the shared type.
     const req = request as CodexRequestShape
 

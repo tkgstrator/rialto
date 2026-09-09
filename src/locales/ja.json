@@ -222,6 +222,7 @@
       "reachableTargets": "到達可能なターゲット",
       "reachableHint": "呼び出し元が <mono>body.model</mono> に指定できる値",
       "copyTarget": "{{target}} をコピー",
+      "allowTarget": "この面で {{target}} を許可する",
       "noSurfaces": "受信サーフェスが設定されていません。",
       "passthroughNote": "このサーフェスを <mono>Routed</mono> に切り替えると、Claude Code と同じクォータ考慮のフェイルオーバーを {{client}} にも適用できます。呼び出し元は今までどおり自分のモデル名を送れます。それが最終ターゲットではなく、ルールの照合対象となる <mono>requestedModel</mono> として扱われるようになります。",
       "schedulerNoChain": "ルーティングスケジューラは動いていますが、採点する優先チェーンがないため、この面のライブな計測値は発行されません。表示するには、この面のルーティングプロファイルにエントリを追加してください。",

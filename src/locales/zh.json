@@ -222,6 +222,7 @@
       "reachableTargets": "可达的 target",
       "reachableHint": "调用方可以填进 <mono>body.model</mono> 的值",
       "copyTarget": "复制 {{target}}",
+      "allowTarget": "在该端点上允许 {{target}}",
       "noSurfaces": "尚未配置任何入口。",
       "passthroughNote": "把该入口切换为 <mono>Routed</mono>，即可让 {{client}} 获得与 Claude Code 相同的配额感知故障转移。调用方仍然照常发送自己的模型名，只是它会作为规则匹配用的 <mono>requestedModel</mono>，而不再直接当作最终 target。",
       "schedulerNoChain": "路由调度器正在运行，但没有可评分的优先级链，因此不会为该端点发布实时读数。请在该端点的路由配置中添加条目以查看。",

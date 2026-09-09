@@ -19,6 +19,7 @@ import type { PipelineRequest } from '@/schemas/domain/pipeline'
 import { RecordSchema } from '@/schemas/primitives/record'
 import { type LlmsContext, type RouterRequest, routeScenario, type ScenarioType, type Transformer } from '../../llms'
 import { surfaceForPath } from '../../llms/inbound/surfaces'
+import { passthroughDenial } from '../../services/inbound-surface-service'
 import { buildErrorEnvelope, errorShapeForPath } from './error-shape'
 
 // ─── Endpoint transformer index ────────────────────────────────────────
@@ -176,6 +177,22 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
         headers: { 'content-type': 'application/json', 'Retry-After': String(retryAfter) }
       }
     )
+  }
+
+  // A passthrough surface can refuse a target. The check lives here and
+  // not in `routeScenario` because that function never throws — it
+  // catches everything and falls back, so a rejection raised inside it
+  // would be swallowed and the request would go upstream anyway. Here we
+  // still have the inbound path and the client's error shape, which is
+  // what a refusal has to answer in.
+  //
+  // It runs after routeScenario on purpose: in routed mode body.model is
+  // no longer the caller's string, and `passthroughDenial` returns
+  // undefined for routed surfaces rather than judging a value the chain
+  // already replaced.
+  const denial = await passthroughDenial(path, typeof body.model === 'string' ? body.model : undefined)
+  if (denial !== undefined) {
+    return c.json(buildErrorEnvelope({ shape, status: 400, from: denial }), 400)
   }
 
   const primaryModel = typeof body.model === 'string' ? body.model : ''
