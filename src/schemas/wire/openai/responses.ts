@@ -163,7 +163,11 @@ export type CodexRequestShape = z.input<typeof CodexRequestShapeSchema>
 export const ResponsesUnifiedChatRequestSchema = UnifiedChatRequestSchema.extend({
   instructions: z.string().min(0).optional(),
   input: z.array(z.unknown()).default([]),
-  parallel_tool_calls: z.boolean().default(false)
+  parallel_tool_calls: z.boolean().default(false),
+  // The output ceiling under the name this surface uses. Unified spells
+  // it `max_tokens` and gpt-5.x chat wants `max_completion_tokens`;
+  // `openai-responses` translates whichever arrived into this one.
+  max_output_tokens: z.number().int().positive().optional()
 })
 export type ResponsesUnifiedChatRequest = z.input<typeof ResponsesUnifiedChatRequestSchema>
 

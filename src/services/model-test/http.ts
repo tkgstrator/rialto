@@ -19,12 +19,19 @@ export const fetchWithTimeout = async (url: string, init: RequestInit): Promise<
 
 // A 400 saying the output budget was exhausted means the model
 // actually ran (auth ok, model exists) — it just couldn't finish
-// within our deliberately tiny 1-token cap. For a reachability test
-// that's a pass; reasoning models spend the budget on hidden
-// reasoning and never emit a token here.
+// within the deliberately tiny cap the probes send. For a reachability
+// test that's a pass; reasoning models spend the budget on hidden
+// reasoning and never emit a token.
+//
+// A bare `max_output_tokens` used to be a third alternative here, which
+// was wrong twice over: the Responses API reports an exhausted budget as
+// HTTP 200 with `status: "incomplete"`, never a 400, so no legitimate
+// rejection carries that word — and matching it turned the
+// "integer_below_min_value" error from the probe's own invalid cap of 1
+// into a pass. The probe now sends a valid 16 (see probes.ts), so a 400
+// naming that field is a real failure and must surface as one.
 const budgetExhausted = (s: number, b: string): boolean =>
-  s === 400 &&
-  /could not finish the message because max_tokens|model output limit was reached|max_output_tokens/i.test(b)
+  s === 400 && /could not finish the message because max_tokens|model output limit was reached/i.test(b)
 
 // A 429 means the credential authenticated and the endpoint is
 // reachable — we're just throttled. For a connectivity/auth test

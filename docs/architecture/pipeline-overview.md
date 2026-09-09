@@ -680,7 +680,7 @@ flowchart TD
 | transformer | 主な仕事 |
 |-------------|----------|
 | `anthropic` (endpoint) | inbound `/v1/messages` を unified に reshape、SSE を Anthropic スキーマに揃え直す |
-| `openai` / `openai-responses` | `/v1/chat/completions` および Responses API のリシェイプ。`max_tokens` → `max_completion_tokens` (gpt-5 系) |
+| `openai` / `openai-responses` | `/v1/chat/completions` および Responses API のリシェイプ。出力上限は面ごとに名前が違うので、unified の `max_tokens` から `openai` が `max_completion_tokens` (gpt-5 系)、`openai-responses` が `max_output_tokens` に付け替える |
 | `gemini` | Google Gemini 形式変換 |
 | `claude-code-oauth` | Anthropic 直叩き subscription。`auth()` で `.credentials.json` の bearer token 注入 |
 | `codex-oauth` | ChatGPT backend (codex) — openai-responses chain と組合せ |
