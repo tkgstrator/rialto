@@ -110,9 +110,9 @@ const CHAIN = [
   // Shares are apportioned from the weights 0.60 / 1.00 / 0.00 / 1.00
   // (total 2.60) by largest remainder, which is what makes 23+39+0+38
   // land on 100 instead of the 99 that plain rounding gives.
-  { n: 1, target: 'claude-code,claude-opus-4-8',  tier: 'opus',   share: '23%',  state: 'throttled', on: true },
-  { n: 2, target: 'claude-code,claude-fable-5',   tier: 'fable',  share: '39%',  state: 'ready',     on: true },
-  { n: 3, target: 'codex,gpt-5.5',                tier: 'opus',   share: '0%',   state: 'exhausted', on: true },
+  { n: 1, target: 'claude-code,claude-opus-4-8',  tier: 'opus',   share: '23%', on: true },
+  { n: 2, target: 'claude-code,claude-fable-5',   tier: 'fable',  share: '39%',     on: true },
+  { n: 3, target: 'codex,gpt-5.5',                tier: 'opus',   share: '0%', on: true },
   // Tier null on purpose: no Gemini name says a Claude family, so the
   // router cannot classify it and nobody has set a manualTier in
   // Providers. It is the row the tier-respect floor below cannot hold.
@@ -120,13 +120,11 @@ const CHAIN = [
   // the scheduler has no reading to publish, not that the target is out
   // of the running. The pill says the number behind it is a policy
   // default rather than a measurement.
-  { n: 4, target: 'gemini-cli,gemini-3.1-pro',    tier: null,     share: '38%',  state: 'unknown',   on: true },
+  { n: 4, target: 'gemini-cli,gemini-3.1-pro',    tier: null,     share: '38%',   on: true },
   // Switched off: it takes no share of the lane, so the cell is a dash
   // rather than a 0% that would read as "lost the apportionment".
-  { n: 5, target: 'claude-code,claude-sonnet-4-6',tier: 'sonnet', share: null,   state: 'ready',     on: false }
+  { n: 5, target: 'claude-code,claude-sonnet-4-6',tier: 'sonnet', share: null,     on: false }
 ]
-
-const stateTone = { ready: 'ok', throttled: 'warn', exhausted: 'bad', unknown: 'mute' }
 
 // A chain entry names "provider,model", and the provider is where its
 // credentials, accounts and model list live. The mock set has one detail
@@ -159,7 +157,6 @@ const chainRow = (e) => `
     <td class="px-2">${
       e.tier === null ? '<span class="text-[12px] text-muted-foreground/50">—</span>' : pill(e.tier, 'mute')
     }</td>
-    <td class="px-2">${pill(e.state, stateTone[e.state])}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums ${e.share === null ? 'text-muted-foreground' : ''}">${
       e.share === null ? '–' : e.share
     }</td>
@@ -179,13 +176,18 @@ const chainRow = (e) => `
 // explain it under the table is gone; a table does not need a paragraph.
 const chain = `
   <table class="w-full table-fixed">
-    <colgroup><col class="w-16"><col><col class="w-20"><col class="w-24"><col class="w-24"><col class="w-24"></colgroup>
+    <!-- No State column: on most installs it reads "unknown" for most
+         rows, and where it does not, Share already implies it — an
+         exhausted target shows 0%, a disabled one a dash. Passthrough
+         keeps its State; that table has no Share to imply it.
+         (No backticks in here: this comment sits inside a template
+         literal, and one would close the string.) -->
+    <colgroup><col class="w-16"><col><col class="w-20"><col class="w-24"><col class="w-24"></colgroup>
     <thead>
       <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         <th class="pl-6 pr-2 text-left font-medium">#</th>
         <th class="px-2 text-left font-medium">Target</th>
         <th class="px-2 text-left font-medium">Tier</th>
-        <th class="px-2 text-left font-medium">State</th>
         <th class="px-2 text-right font-medium">
           Share <i class="ri-question-line align-[-1px] text-[13px] normal-case text-muted-foreground/50"></i>
         </th>

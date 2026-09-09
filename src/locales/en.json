@@ -232,8 +232,8 @@
       "copyTarget": "Copy {{target}}",
       "noSurfaces": "No inbound surfaces are configured.",
       "passthroughNote": "Switch this surface to <mono>Routed</mono> to give {{client}} the same quota-aware failover Claude Code gets. Callers keep sending their own model string — it becomes the <mono>requestedModel</mono> that rules match on, rather than the final target.",
-      "schedulerNoChain": "The routing scheduler is running but has no preference chain to score, so every target below reads <mono>unknown</mono>. Add entries to this surface’s routing profile to see live states.",
-      "schedulerNotTicked": "The routing scheduler has not published a snapshot yet, so every target below reads <mono>unknown</mono>. States fill in on its first tick — by default within five minutes of the server starting."
+      "schedulerNoChain": "The routing scheduler is running but has no preference chain to score, so it publishes no live readings for this surface. Add entries to this surface’s routing profile to see them.",
+      "schedulerNotTicked": "The routing scheduler has not published a snapshot yet, so the live readings below are missing. They fill in on its first tick — by default within five minutes of the server starting."
     }
   },
   "color_picker": {

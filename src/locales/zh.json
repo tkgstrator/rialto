@@ -232,8 +232,8 @@
       "copyTarget": "复制 {{target}}",
       "noSurfaces": "尚未配置任何入口。",
       "passthroughNote": "把该入口切换为 <mono>Routed</mono>，即可让 {{client}} 获得与 Claude Code 相同的配额感知故障转移。调用方仍然照常发送自己的模型名，只是它会作为规则匹配用的 <mono>requestedModel</mono>，而不再直接当作最终 target。",
-      "schedulerNoChain": "路由调度器正在运行，但没有可评分的优先级链，因此下方每个目标的状态都显示为 <mono>unknown</mono>。请在该端点的路由配置中添加条目以查看实时状态。",
-      "schedulerNotTicked": "路由调度器尚未发布快照，因此下方每个目标都显示为 <mono>unknown</mono>。状态会在第一次调度后填充 — 默认在服务器启动后五分钟内。"
+      "schedulerNoChain": "路由调度器正在运行，但没有可评分的优先级链，因此不会为该端点发布实时读数。请在该端点的路由配置中添加条目以查看。",
+      "schedulerNotTicked": "路由调度器尚未发布快照，因此下方的实时读数为空。它们会在第一次调度后填充 — 默认在服务器启动后五分钟内。"
     }
   },
   "color_picker": {

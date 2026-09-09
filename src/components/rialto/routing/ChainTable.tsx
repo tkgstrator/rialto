@@ -18,7 +18,7 @@ import { Pill } from '@/components/rialto/primitives'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { RoutingSchedulerWeightEntry } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { chainShares, inferTier, STATE_LABEL_KEYS, STATE_TONE, splitTarget, targetLabels, targetState } from './derive'
+import { chainShares, inferTier, splitTarget, targetLabels } from './derive'
 import type { PreferenceEntry } from './types'
 
 export interface ChainRowActions {
@@ -76,8 +76,7 @@ function RowMenu({ index, count, actions }: { index: number; count: number; acti
  *
  * No `<1%` case: shares are apportioned to whole percents that must add
  * to 100, so a 0% on an enabled target is honest — it lost the
- * apportionment, and the State pill says whether the router can still
- * reach it.
+ * apportionment, or the scheduler scored it out of the running.
  */
 function shareLabel(share: number | null): string {
   return share === null ? '–' : `${share}%`
@@ -99,7 +98,6 @@ function ChainRow({
   entry,
   index,
   count,
-  live,
   share,
   label,
   actions,
@@ -110,7 +108,6 @@ function ChainRow({
   entry: PreferenceEntry
   index: number
   count: number
-  live: RoutingSchedulerWeightEntry | undefined
   share: number | null
   /** Model name, or the full pair when the lane needs it — see targetLabels. */
   label: string
@@ -120,7 +117,6 @@ function ChainRow({
   onDrop: () => void
 }) {
   const { t } = useTranslation()
-  const state = targetState(live)
   const declared = entry.resolvedTier
   const tier = declared === null || declared === undefined ? inferTier(splitTarget(entry.target).model) : declared
   return (
@@ -139,9 +135,6 @@ function ChainRow({
       </td>
       <td className='px-2 truncate font-mono text-xs'>{label}</td>
       <td className='px-2'>{tier === null ? null : <Pill tone='mute'>{tier}</Pill>}</td>
-      <td className='px-2'>
-        <Pill tone={STATE_TONE[state]}>{t(STATE_LABEL_KEYS[state])}</Pill>
-      </td>
       <td
         className={cn('px-2 text-right font-mono text-xs tabular-nums', share === null ? 'text-muted-foreground' : '')}
       >
@@ -208,12 +201,16 @@ export function ChainTable({
 
   return (
     <table className='w-full table-fixed'>
+      {/* No State column. It reported the scheduler's reading of each
+          target, which on most installs is `unknown` for most rows and
+          is already implied by Share where it is not: an exhausted target
+          shows 0%, a disabled one a dash. Passthrough keeps its State —
+          that table has no Share to imply it. */}
       <colgroup>
         <col className='w-16' />
         <col />
         <col className='w-20' />
         <col className='w-24' />
-        <col className='w-20' />
         <col className='w-24' />
       </colgroup>
       <thead>
@@ -221,7 +218,6 @@ export function ChainTable({
           <th className='pl-6 pr-2 text-left font-medium'>#</th>
           <th className='px-2 text-left font-medium'>{t('routing.common.colTarget')}</th>
           <th className='px-2 text-left font-medium'>{t('routing.common.colTier')}</th>
-          <th className='px-2 text-left font-medium'>{t('routing.common.colState')}</th>
           <th className='px-2 text-right font-medium'>
             {t('routing.chain.colShare')}{' '}
             {/* Share is the one column a reader misreads — it is a slice
@@ -248,7 +244,6 @@ export function ChainTable({
             entry={entry}
             index={index}
             count={entries.length}
-            live={weights.get(entry.target)}
             share={shareOf(shares, entry.target)}
             label={labelOf(labels, entry.target)}
             actions={actions}
