@@ -109,7 +109,12 @@ export function Meter({ pct, tone = 'auto' }: { pct: number; tone?: 'auto' | 'ok
 const BUTTON_VARIANTS = {
   primary: 'bg-primary text-primary-foreground hover:bg-primary/90',
   outline: 'border border-border hover:bg-muted/60',
-  ghost: 'hover:bg-muted/60 text-muted-foreground hover:text-foreground'
+  ghost: 'hover:bg-muted/60 text-muted-foreground hover:text-foreground',
+  // Outlined rather than filled: a solid red button is the loudest thing
+  // on any screen it lands on, and revoke sits beside actions the
+  // operator reaches for far more often. It reads destructive on
+  // approach without owning the page at rest.
+  danger: 'border border-destructive/30 text-destructive hover:border-destructive/50 hover:bg-destructive/10'
 } as const
 
 export type ButtonVariant = keyof typeof BUTTON_VARIANTS
@@ -119,6 +124,15 @@ export type ButtonVariant = keyof typeof BUTTON_VARIANTS
  *
  * shadcn's `Button` is 36px tall with different padding, so matching the
  * mock through it would mean overriding every class that defines it.
+ *
+ * `disabled` paints, which it did not used to. A disabled button that
+ * looks exactly like a live one is worse than no button: Save on an
+ * unchanged form, Previous on the first page and Rotate on a revoked
+ * token all invited a click and answered with nothing, and the operator
+ * has no way to tell that from a control that is broken. The mocks are
+ * static HTML with no disabled state to draw, so this is expected to
+ * read as a small mock diff on the screens that rest with a disabled
+ * control — state the mock cannot express, not a design difference.
  */
 export function RButton({
   variant = 'ghost',
@@ -136,6 +150,7 @@ export function RButton({
       type='button'
       className={cn(
         'inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors',
+        'disabled:pointer-events-none disabled:opacity-50',
         BUTTON_VARIANTS[variant],
         className
       )}
@@ -205,6 +220,31 @@ export function SurfacePill({ path }: { path: string }) {
 }
 
 /**
+ * "Which surfaces may this reach", in one narrow column.
+ *
+ * A token can be pinned to several — one client legitimately speaks more
+ * than one — but the column it lands in is a table cell, so only the
+ * first is drawn in full and the rest become a count. The `title` keeps
+ * the whole list one hover away rather than wrapping the row to two
+ * lines, which is what listing four paths inline did.
+ *
+ * An empty list is "every surface", drawn muted: it is the absence of a
+ * restriction, not a value.
+ */
+export function SurfaceScope({ paths, allLabel }: { paths: readonly string[]; allLabel: string }) {
+  if (paths.length === 0) return <span className='text-[12px] text-muted-foreground/50'>{allLabel}</span>
+  const [first, ...rest] = paths
+  return (
+    <span className='inline-flex items-center gap-1' title={paths.join(' · ')}>
+      <SurfacePill path={first} />
+      {rest.length === 0 ? null : (
+        <span className='shrink-0 font-mono text-[12px] text-muted-foreground/70'>+{rest.length}</span>
+      )}
+    </span>
+  )
+}
+
+/**
  * Chip for "which surfaces does this apply to".
  *
  * Renders as a button only when it does something. Several screens show
@@ -218,11 +258,14 @@ export function SurfaceChip({
   path,
   on,
   onClick,
+  disabled,
   readOnlyHint
 }: {
   path: string
   on: boolean
   onClick?: () => void
+  /** Operable in principle, but not right now — greyed rather than inert. */
+  disabled?: boolean
   /** Tooltip for the read-only form: why this is showing, not settable. */
   readOnlyHint?: string
 }) {
@@ -246,7 +289,12 @@ export function SurfaceChip({
   }
 
   return (
-    <button type='button' onClick={onClick} className={cn(base, on ? '' : 'hover:bg-muted/50')}>
+    <button
+      type='button'
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(base, on ? '' : 'hover:bg-muted/50', 'disabled:pointer-events-none disabled:opacity-50')}
+    >
       {content}
     </button>
   )

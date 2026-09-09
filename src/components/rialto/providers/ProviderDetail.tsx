@@ -8,6 +8,7 @@
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Pager } from '@/components/rialto/Pager'
 import { Pill, RButton, Toggle } from '@/components/rialto/primitives'
 import { AccountsPanel } from './AccountsPanel'
 import { CredentialsPanel } from './CredentialsPanel'
@@ -15,21 +16,17 @@ import {
   buildModelRows,
   enabledCountOf,
   hasCredential,
+  hidesAsLegacy,
   listedModelsOf,
   type ModelRow,
   type ProviderState,
-  type QuotaIndex
+  passesShow,
+  type QuotaIndex,
+  type ShowMode
 } from './derive'
 import { ModelsTable } from './ModelsTable'
 import { ApiKeyRequestShape, SubscriptionRequestShape } from './RequestShape'
 import type { CatalogEntry, Provider, ReasoningEffort, SubscriptionWire, Tier, TransformerWire } from './types'
-
-/**
- * Which slice of a long model list to show. The default hides rows that
- * are neither switched on nor priced — on an 18-model vendor those are
- * the ones an operator has already decided against.
- */
-type ShowMode = 'priced' | 'enabled' | 'all'
 
 const SHOW_LABEL_KEYS: Record<ShowMode, string> = {
   priced: 'providers.models.showPriced',
@@ -46,13 +43,7 @@ const STATE_LABEL_KEYS: Record<ProviderState, string> = {
 
 const NEXT_SHOW: Record<ShowMode, ShowMode> = { priced: 'enabled', enabled: 'all', all: 'priced' }
 
-const passesShow = (row: ModelRow, mode: ShowMode): boolean => {
-  if (mode === 'all') return true
-  if (mode === 'enabled') return row.enabled
-  return row.enabled || row.inputPer1M !== null || row.outputPer1M !== null
-}
-
-/** Rows revealed per press of the footer expander. */
+/** Models per page on the api_key side. */
 const PAGE = 8
 
 function DetailHeader({
@@ -175,16 +166,34 @@ function ModelsSection({
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [show, setShow] = useState<ShowMode>('priced')
-  const [limit, setLimit] = useState(PAGE)
+  const [page, setPage] = useState(0)
+  // Subscription side only. The api_key side reveals legacy rows through
+  // its Show control; this side has none, and hiding a row with no way
+  // back would make a legacy model impossible to switch on again.
+  const [showLegacy, setShowLegacy] = useState(false)
   const isApiKey = provider.auth_mode !== 'subscription'
 
+  const hidesLegacy = !isApiKey && !showLegacy
+  const legacyHidden = hidesLegacy ? rows.filter(hidesAsLegacy).length : 0
   const needle = query.trim().toLowerCase()
-  const filtered = rows.filter((r) => r.name.toLowerCase().includes(needle) && (!isApiKey || passesShow(r, show)))
+  const filtered = rows.filter(
+    (r) =>
+      r.name.toLowerCase().includes(needle) && (!isApiKey || passesShow(r, show)) && (!hidesLegacy || !hidesAsLegacy(r))
+  )
   // Subscription providers list a curated handful; only the api_key side
-  // is long enough that paging earns its footer row. The table does the
-  // slicing so it can sort the whole filtered list first.
-  const pageLimit = isApiKey ? limit : undefined
-  const hidden = isApiKey ? Math.max(0, filtered.length - limit) : 0
+  // is long enough that paging earns its footer row.
+  //
+  // Paged rather than the "show 8 more" expander this used to be. On a
+  // 61-model vendor that button ends in a 61-row table with no way back
+  // up, and it can never say where you are — the range footer does both,
+  // and it is the same control every other long list on the screen uses.
+  //
+  // The filters rebuild the list under the cursor, so a page index past
+  // the new end has to fall back rather than render nothing.
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE))
+  const current = isApiKey ? Math.min(page, pageCount - 1) : 0
+  const offset = current * PAGE
+  const shownCount = isApiKey ? Math.min(PAGE, Math.max(0, filtered.length - offset)) : filtered.length
 
   return (
     <>
@@ -196,6 +205,19 @@ function ModelsSection({
             total: listedModelsOf(provider).length
           })}
         </span>
+        {/* The count is the control that unfolds them, the way the
+            revoked count is on Access tokens. A plain label would leave
+            the rows unreachable and a separate switch would spend a
+            control on a state most installs never look at. */}
+        {legacyHidden === 0 ? null : (
+          <button
+            type='button'
+            onClick={() => setShowLegacy(true)}
+            className='text-[12px] text-muted-foreground underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground'
+          >
+            {t('providers.models.legacyHidden', { n: legacyHidden })}
+          </button>
+        )}
         <div className='ml-auto flex items-center gap-2'>
           {isApiKey ? (
             <button
@@ -212,22 +234,15 @@ function ModelsSection({
       </div>
       <ModelsTable
         rows={filtered}
-        limit={pageLimit}
+        limit={isApiKey ? PAGE : undefined}
+        offset={offset}
         withOverride={isApiKey}
         onToggle={onToggle}
         onTier={onTier}
         onEffort={onEffort}
       />
-      {hidden > 0 ? (
-        <div className='px-6 py-4'>
-          <button
-            type='button'
-            onClick={() => setLimit(limit + PAGE)}
-            className='w-full rounded-md border border-dashed border-border py-2 text-[12px] text-muted-foreground transition-colors hover:bg-muted/50'
-          >
-            {t('providers.models.showMore', { n: hidden })}
-          </button>
-        </div>
+      {isApiKey ? (
+        <Pager page={current} pageSize={PAGE} loaded={shownCount} total={filtered.length} onPage={setPage} />
       ) : null}
       <div className={isApiKey ? 'h-6' : 'h-8'} />
     </>

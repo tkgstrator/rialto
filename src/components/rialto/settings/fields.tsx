@@ -136,15 +136,22 @@ export function SectionHead({
   meta,
   actions
 }: {
-  title: string
+  /**
+   * Absent on a screen whose breadcrumb already carries the name — a
+   * title repeating it costs a line and a rule for nothing. The row
+   * still draws, because the meta and the actions live in it.
+   */
+  title?: string
   /** Sits between the title and the meta text — a status pill, in practice. */
   lead?: ReactNode
   meta?: ReactNode
   actions?: ReactNode
 }) {
   return (
-    <div className='flex items-center gap-3 border-t border-border px-6 pt-6 pb-3'>
-      <h2 className='text-sm font-semibold'>{title}</h2>
+    <div
+      className={cn('flex items-center gap-3 px-6 pb-3', title === undefined ? 'pt-5' : 'border-t border-border pt-6')}
+    >
+      {title === undefined ? null : <h2 className='text-sm font-semibold'>{title}</h2>}
       {lead}
       {meta ? <span className='text-[12px] text-muted-foreground'>{meta}</span> : null}
       {actions ? <div className='ml-auto flex items-center gap-2'>{actions}</div> : null}

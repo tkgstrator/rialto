@@ -94,6 +94,13 @@ const NAV = [
   { id: 'overview', label: 'Overview', icon: 'ri-dashboard-3-line', href: 'overview.html' },
   { id: 'routing', label: 'Routing', icon: 'ri-git-branch-line', href: 'routing.html' },
   { id: 'providers', label: 'Providers', icon: 'ri-plug-line', href: 'providers.html' },
+  // Next to Providers because it is the same question pointed the other
+  // way: Providers is outbound (who Rialto sends to), this is inbound
+  // (who may send to Rialto). It lived under Settings, where a list with
+  // per-token spend, rotation and revocation does not belong — that is
+  // operations, not configuration. Settings -> Access keeps the half
+  // that really is configuration: who may administer the install.
+  { id: 'access-tokens', label: 'Access tokens', icon: 'ri-key-2-line', href: 'access-tokens.html' },
   { id: 'activity', label: 'Activity', icon: 'ri-pulse-line', href: 'activity.html' },
   { id: 'settings', label: 'Settings', icon: 'ri-settings-3-line', href: 'settings.html' }
 ]
@@ -251,6 +258,38 @@ const section = (title, body, meta = '') => `
     ${body}
   </section>`
 
+/**
+ * Modal over the screen, mirroring `components/ui/dialog.tsx`.
+ *
+ * Every class here is copied from DialogOverlay / DialogContent /
+ * DialogHeader so the mock and the shadcn dialog it stands for cannot
+ * drift: a `bg-black/10` backdrop-blurred overlay, and a `sm:max-w-md`
+ * popover panel with `rounded-xl`, `p-6`, `gap-6`, a ring rather than a
+ * border, and the ghost `icon-sm` close button at `top-4 right-4`.
+ *
+ * `fixed`, not `absolute`, because the real one portals to the body: the
+ * overlay covers the sidebar too. Asking a question over the whole app is
+ * the point — it is what says the rest of the screen is not what you are
+ * answering right now.
+ *
+ * A dialog is right when the task is discrete, cancellable, and decided
+ * against what is already on screen. Naming a token is exactly that:
+ * "MacBook — Claude Code" being taken is the thing you need to see while
+ * typing, and an inline form pushed the list that says so off the page.
+ */
+const dialog = (title, body, footer = '') => `
+  <div class="fixed inset-0 isolate z-50 bg-black/10 supports-backdrop-filter:backdrop-blur-xs"></div>
+  <div class="fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100vh-4rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-6 overflow-y-auto rounded-xl bg-popover p-6 text-sm text-popover-foreground ring-1 ring-foreground/10 sm:max-w-md">
+    <div class="flex flex-col gap-2">
+      <h2 class="font-heading text-sm font-medium leading-none">${title}</h2>
+    </div>
+    ${body}
+    ${footer ? `<div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">${footer}</div>` : ''}
+    <button class="absolute top-4 right-4 inline-flex size-8 shrink-0 items-center justify-center rounded-[min(var(--radius-md),10px)] border border-transparent text-sm transition-all hover:bg-muted hover:text-foreground">
+      <i class="ri-close-line text-base leading-none"></i>
+    </button>
+  </div>`
+
 /** Small status pill. tone: ok | warn | bad | mute | info */
 const pill = (text, tone = 'mute') => {
   const tones = {
@@ -318,6 +357,101 @@ const surfaceChip = (path, on) => `
   }">
     ${on ? '<i class="ri-check-line text-xs"></i>' : ''}${path}
   </button>`
+
+// ─── Access tokens ────────────────────────────────────────────────────
+// Shared because three screens draw this same list: the list itself, and
+// the two states of issuing, both of which keep the table on screen
+// behind a dialog. Three copies of a table is three chances for them to
+// disagree about what a token row says.
+
+/**
+ * Only the sha256 is stored; `prefix` is a separate column purely so a
+ * row is identifiable in the list. The plaintext is shown once, at
+ * creation, and never again.
+ *
+ * Endpoint is the interesting column: scoping a token to the inbound
+ * surfaces it may call turns "issue another key" into per-client routing,
+ * without inventing a second config axis.
+ *
+ * Cost and Expires rather than Scope and Created. Scope was a `proxy`
+ * pill on every row — a column that can only say one thing. Created is
+ * not a decision; Expires is, and Cost 30d is the number an operator
+ * opens this screen for.
+ */
+const ACCESS_TOKENS = [
+  { name: 'MacBook — Claude Code', prefix: 'rialto_a91f4c', surfaces: ['/v1/messages'], used: '2m ago', reqs: '12.4k', cost: '$41.2', expires: 'never' },
+  // Two surfaces on one row. Codex speaks /v1/responses and
+  // /v1/chat/completions, so a single-surface pin could only be expressed
+  // by giving it no scope at all.
+  { name: 'MacBook — Codex', prefix: 'rialto_7c02b8', surfaces: ['/v1/responses', '/v1/chat/completions'], used: '19m ago', reqs: '2.71k', cost: '$18.6', expires: 'never' },
+  { name: 'Gemini CLI', prefix: 'rialto_be44d1', surfaces: ['/v1beta/models/*'], used: '1h ago', reqs: '486', cost: '–', expires: '2026-12-01' },
+  { name: 'CI — nightly evals', prefix: 'rialto_0d18e9', surfaces: [], used: '6h ago', reqs: '3.10k', cost: '$9.14', expires: '2026-10-08' },
+  { name: 'Old laptop', prefix: 'rialto_2b9047', surfaces: ['/v1/messages'], used: '41d ago', reqs: '88.1k', cost: '–', expires: 'never', revoked: true }
+]
+
+/**
+ * The endpoint cell.
+ *
+ * One pill and a count, not every path: the column is 12rem and four
+ * paths would take the row to two lines. The whole list is a hover away.
+ */
+const tokenScopeCell = (paths) => {
+  if (paths.length === 0) return '<span class="text-[12px] text-muted-foreground/50">all</span>'
+  const rest = paths.length - 1
+  return `<span class="inline-flex items-center gap-1" title="${paths.join(' · ')}">${surfacePill(paths[0])}${
+    rest > 0 ? `<span class="shrink-0 font-mono text-[12px] text-muted-foreground/70">+${rest}</span>` : ''
+  }</span>`
+}
+
+/**
+ * One token row. The requests and last-used columns are decision support
+ * for Revoke; the full picture behind them is Activity → Usage, which
+ * breaks spend down by exactly these rows.
+ *
+ * The row leads to the token's own page. Rotate and Revoke live there and
+ * nowhere else — as row actions they sat one mis-aimed click from every
+ * row of a table of live credentials, and the cost of that click is a CLI
+ * failing with a 401 nobody can trace from the client end. Profile is off
+ * this table for the same reason it is not a column here: it is a routing
+ * detail, and the row exists to say which credentials are live and what
+ * they cost.
+ */
+const tokenRow = (t) => `
+  <tr ${navTo('access-token.html')} class="cursor-pointer border-t border-border/60 transition-colors hover:bg-muted/50 ${t.revoked ? 'opacity-45' : ''}">
+    <td class="py-2.5 pl-6 pr-3">
+      <div class="flex items-center gap-2">
+        <span class="text-xs font-medium">${t.name}</span>
+        ${t.revoked ? pill('revoked', 'bad') : ''}
+      </div>
+      <div class="font-mono text-[12px] text-muted-foreground">${t.prefix}</div>
+    </td>
+    <td class="px-3">${tokenScopeCell(t.surfaces)}</td>
+    <td class="px-3 text-right font-mono text-xs tabular-nums">${t.reqs}</td>
+    <td class="px-3 text-right font-mono text-xs tabular-nums">${t.cost}</td>
+    <td class="px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${t.used}</td>
+    <td class="px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${t.expires}</td>
+    <td class="py-2.5 pl-3 pr-6">
+      <div class="flex justify-end text-muted-foreground/50"><i class="ri-arrow-right-s-line text-base"></i></div>
+    </td>
+  </tr>`
+
+/** The live tokens, as the list screen and both issuing states draw them. */
+const tokenTable = () => `
+  <table class="w-full table-fixed">
+    <colgroup><col><col class="w-48"><col class="w-20"><col class="w-28"><col class="w-28"><col class="w-24"><col class="w-10"></colgroup>
+    <thead>
+      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
+        ${sortTh('Token', 'pl-6 pr-3')}
+        ${sortTh('Endpoint', 'px-3')}
+        ${sortTh('Requests', 'px-3', 'right')}
+        ${sortTh('Cost 30d', 'px-3', 'right')}
+        ${sortTh('Last used', 'px-3', 'right', true, 'desc')}
+        ${sortTh('Expires', 'px-3', 'right')}
+        <th class="pl-3 pr-6"></th>
+      </tr>
+    </thead>
+    <tbody>${ACCESS_TOKENS.filter((t) => !t.revoked).map(tokenRow).join('')}</tbody>
+  </table>`
 
 /**
  * Tier cell for the model tables — editable, not a label.
@@ -456,6 +590,19 @@ const SETTINGS_RAIL = [
  * reached from the chain's own header.
  */
 const SUBNAV = {
+  // Two lists, not two screens' worth of settings: a subscription and an
+  // API key are configured, read and worried about differently — one has
+  // accounts, plans and a quota that runs out, the other has a secret and
+  // a price list — and the columns that answer "is this one healthy"
+  // share almost nothing. They were one screen behind an 18rem rail that
+  // grouped them under two headings anyway; this is that rail, in the
+  // sidebar, where the app already keeps its second level. Removing it
+  // gives the detail pane back 288px, which is what the model table and
+  // the account rows were short of.
+  providers: [
+    { id: 'subscriptions', label: 'Subscriptions', icon: 'ri-shield-user-line', href: 'providers.html' },
+    { id: 'api-keys', label: 'API keys', icon: 'ri-key-line', href: 'providers-keys.html' }
+  ],
   activity: [
     { id: 'sessions', label: 'Sessions', icon: 'ri-chat-1-line', href: 'activity.html' },
     { id: 'requests', label: 'Requests', icon: 'ri-exchange-line', href: 'activity-requests.html' },
@@ -489,8 +636,8 @@ const EXPANDABLE = {
   flat: [],
   accordion: ['settings'],
   drilldown: [],
-  tree: ['activity', 'settings'],
-  cloudflare: ['activity', 'settings']
+  tree: ['providers', 'activity', 'settings'],
+  cloudflare: ['providers', 'activity', 'settings']
 }
 
 /**
@@ -682,7 +829,11 @@ const btn = (label, variant = 'ghost', icon = '', href = '') => {
   const variants = {
     primary: 'bg-primary text-primary-foreground hover:bg-primary/90',
     outline: 'border border-border hover:bg-muted/60',
-    ghost: 'hover:bg-muted/60 text-muted-foreground hover:text-foreground'
+    ghost: 'hover:bg-muted/60 text-muted-foreground hover:text-foreground',
+    // Outlined rather than filled: a solid red button is the loudest
+    // thing on any screen it lands on, and Revoke sits beside actions
+    // reached for far more often.
+    danger: 'border border-destructive/30 text-destructive hover:border-destructive/50 hover:bg-destructive/10'
   }
   const cls = `inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors ${variants[variant]}`
   const body = `${icon ? `<i class="${icon} text-sm leading-none"></i>` : ''}${label}`
@@ -719,91 +870,156 @@ const activityTabs = (active) =>
  *
  * One stored value, so all four Routing mocks show the same one.
  */
-const SELECTOR_HINT = {
-  rules: 'Rules and the scenario map decide. The chain is not evaluated at all in this mode.',
-  chain: 'The chain decides. A rule applies only where its scenario’s chain is empty.'
-}
 
-const selectorBar = (active) => {
-  const seg = (id, label) =>
-    `<button class="rounded px-2.5 py-1 text-[12px] ${
-      id === active ? 'bg-foreground font-medium text-background' : 'text-muted-foreground hover:text-foreground'
-    }">${label}</button>`
-  return `
-  <div class="flex items-center gap-4 border-b border-border px-6 py-3">
-    <div class="flex items-center gap-2">
-      <span class="text-xs text-muted-foreground">Selector</span>
-      <div class="flex rounded-md border border-border p-0.5">
-        ${seg('rules', 'Rules')}${seg('chain', 'Chain')}
-      </div>
-    </div>
-    <p class="ml-auto max-w-lg text-right text-[12px] leading-snug text-muted-foreground">${SELECTOR_HINT[active]}</p>
-  </div>`
-}
 
 /**
  * Providers master rail, shared by both detail mocks.
  *
- * The two screens exist because a subscription and an api_key provider
- * hold different things, not because they are different screens — so the
- * rail is one list and picking a row crosses between them. The mock has
- * one detail of each kind, which is why every subscription row lands on
- * providers.html and every key row on providers-apikey.html.
+ * The two lists exist because a subscription and an api_key provider
+ * hold different things: accounts, a plan and a window that runs out on
+ * one side, a secret and a price list on the other. The mock has one
+ * detail of each kind, which is why every subscription row lands on
+ * provider-subscription.html and every key row on provider-apikey.html.
  */
 const PROVIDER_ROWS = [
-  { id: 'claude-code', label: 'Claude Code', vendor: 'Anthropic', auth: 'subscription', plan: 'Max',    models: '6 / 7',  quota: 71, state: 'live' },
-  { id: 'codex',       label: 'Codex',       vendor: 'OpenAI',    auth: 'subscription', plan: 'Pro',    models: '1 / 4',  quota: 88, state: 'live' },
-  { id: 'gemini-cli',  label: 'Gemini CLI',  vendor: 'Google',    auth: 'subscription', plan: 'AI Pro', models: '3 / 5',  quota: 12, state: 'invalid' },
-  { id: 'anthropic',   label: 'Anthropic',   vendor: 'Anthropic', auth: 'api_key', plan: null, models: '4 / 12', quota: null, state: 'live' },
-  { id: 'openai',      label: 'OpenAI',      vendor: 'OpenAI',    auth: 'api_key', plan: null, models: '5 / 18', quota: null, state: 'live' },
-  { id: 'google',      label: 'Google',      vendor: 'Google',    auth: 'api_key', plan: null, models: '4 / 9',  quota: null, state: 'live' },
-  { id: 'deepseek',    label: 'DeepSeek',    vendor: 'DeepSeek',  auth: 'api_key', plan: null, models: '0 / 3',  quota: null, state: 'unknown' }
+  { id: 'claude-code', label: 'Claude Code', vendor: 'Anthropic', auth: 'subscription', plan: 'Max',    accounts: 2, key: null, models: '6 / 7',  quota: 71, state: 'live' },
+  { id: 'codex',       label: 'Codex',       vendor: 'OpenAI',    auth: 'subscription', plan: 'Pro',    accounts: 1, key: null, models: '1 / 4',  quota: 88, state: 'live' },
+  { id: 'gemini-cli',  label: 'Gemini CLI',  vendor: 'Google',    auth: 'subscription', plan: 'AI Pro', accounts: 1, key: null, models: '3 / 5',  quota: 12, state: 'invalid' },
+  { id: 'anthropic',   label: 'Anthropic',   vendor: 'Anthropic', auth: 'api_key', host: 'api.anthropic.com', plan: null, accounts: 0, key: { head: 'sk-ant-', bullets: '••••••••••••••••', tail: 'a91f' }, models: '4 / 12', quota: null, state: 'live' },
+  { id: 'openai',      label: 'OpenAI',      vendor: 'OpenAI',    auth: 'api_key', host: 'api.openai.com', plan: null, accounts: 0, key: { head: 'sk-proj-', bullets: '••••••••••••••••', tail: '7c02' }, models: '5 / 18', quota: null, state: 'live' },
+  { id: 'google',      label: 'Google',      vendor: 'Google',    auth: 'api_key', host: 'generativelanguage.googleapis.com', plan: null, accounts: 0, key: { head: 'AIz', bullets: '••••••••••••••••', tail: 'be44' }, models: '4 / 9',  quota: null, state: 'live' },
+  { id: 'deepseek',    label: 'DeepSeek',    vendor: 'DeepSeek',  auth: 'api_key', host: 'api.deepseek.com', plan: null, accounts: 0, key: 'not set', models: '0 / 3',  quota: null, state: 'unknown' }
 ]
 
 const PROVIDER_STATE_TONE = { live: 'ok', invalid: 'bad', unknown: 'mute' }
 
-const providerRow = (p, activeId) => {
-  const on = p.id === activeId
-  const href = p.auth === 'subscription' ? 'providers.html' : 'providers-apikey.html'
+/**
+ * A masked key in a fixed-width cell.
+ *
+ * The bullets are the only part that carries nothing, so they are the
+ * only part allowed to disappear: a cell narrow enough to clip
+ * "sk-proj-••••••••••••N44A" clips the tail, which is the half that says
+ * which of two OpenAI keys is configured. The impl splits the same three
+ * parts with maskKeyParts.
+ */
+const keyCell = (key) => {
+  if (key.head === undefined) return key
   return `
-  <button ${navTo(href)} class="block w-full border-l-2 px-4 py-3 text-left transition-colors ${
-    on ? 'border-l-foreground bg-muted/60' : 'border-l-transparent hover:border-l-border hover:bg-muted/50'
-  }">
-    <div class="flex items-center gap-2">
-      <span class="text-xs font-medium">${p.label}</span>
-      ${p.plan ? pill(p.plan, 'info') : ''}
-      <span class="ml-auto font-mono text-[12px] tabular-nums text-muted-foreground">${p.models}</span>
-    </div>
-    <div class="mt-1 flex items-center gap-2 text-[12px] text-muted-foreground">
-      <span>${p.auth === 'subscription' ? 'OAuth' : 'API key'}</span>
-      <span class="opacity-40">·</span>
-      <span>${p.vendor}</span>
-      <span class="ml-auto">${pill(p.state, PROVIDER_STATE_TONE[p.state])}</span>
-    </div>
-    ${p.quota === null ? '' : `<div class="mt-2">${meter(p.quota)}</div>`}
-  </button>`
+    <span class="flex min-w-0 items-baseline">
+      <span class="shrink-0">${key.head}</span>
+      <span class="min-w-0 truncate">${key.bullets}</span>
+      <span class="shrink-0">${key.tail}</span>
+    </span>`
 }
 
-const providerRail = (activeId) => `
-  <div class="flex items-center gap-2 px-4 pt-5 pb-2">
-    <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Subscriptions</h2>
-    <span class="ml-auto font-mono text-[12px] text-muted-foreground">3</span>
-  </div>
-  ${PROVIDER_ROWS.filter((p) => p.auth === 'subscription').map((p) => providerRow(p, activeId)).join('')}
+const providerTable = (auth) => {
+  const rows = PROVIDER_ROWS.filter((p) => p.auth === auth)
+  const sub = auth === 'subscription'
+  // The two lists answer the same question — "is this one healthy, and
+  // what can it serve" — with the facts each kind actually has. A
+  // subscription has a plan, accounts and a quota that runs out; an API
+  // key has a secret and nothing that expires on its own. Giving both
+  // the union of those columns would mean four dashes per row on one
+  // side and three on the other.
+  const head = sub
+    ? `${sortTh('Provider', 'pl-6 pr-3')}${sortTh('Plan', 'px-3')}${sortTh('Accounts', 'px-3', 'right')}${sortTh('Quota', 'px-3', 'right', true, 'desc')}${sortTh('Models', 'px-3', 'right')}${sortTh('State', 'px-3', 'right')}`
+    : `${sortTh('Provider', 'pl-6 pr-3')}${sortTh('Key', 'px-3')}${sortTh('Models', 'px-3', 'right')}${sortTh('State', 'px-3', 'right')}`
+  const cols = sub
+    ? '<col><col class="w-24"><col class="w-24"><col class="w-40"><col class="w-24"><col class="w-24"><col class="w-10">'
+    : '<col><col class="w-56"><col class="w-24"><col class="w-24"><col class="w-10">'
+  const row = (p) => `
+    <tr ${navTo(sub ? 'provider-subscription.html' : 'provider-apikey.html')} class="cursor-pointer border-t border-border/60 transition-colors hover:bg-muted/50">
+      <td class="py-2.5 pl-6 pr-3">
+        <div class="text-xs font-medium">${p.label}</div>
+        <!-- The vendor under a subscription (Claude Code is Anthropic's,
+             and the two names are not the same word), the host under an
+             API key (where they are: an "Anthropic / Anthropic" row says
+             nothing twice, and the URL a key is spent against is the
+             fact that identifies it). -->
+        <div class="${sub ? '' : 'font-mono '}text-[12px] text-muted-foreground">${sub ? p.vendor : p.host}</div>
+      </td>
+      ${
+        sub
+          ? `<td class="px-3">${pill(p.plan, 'info')}</td>
+      <td class="px-3 text-right font-mono text-xs tabular-nums">${p.accounts}</td>
+      <td class="px-3">
+        <div class="flex items-center gap-2">
+          <div class="min-w-0 flex-1">${meter(p.quota)}</div>
+          <span class="shrink-0 font-mono text-[12px] tabular-nums text-muted-foreground">${p.quota}%</span>
+        </div>
+      </td>`
+          : `<td class="px-3 font-mono text-[12px] text-muted-foreground">${keyCell(p.key)}</td>`
+      }
+      <td class="px-3 text-right font-mono text-xs tabular-nums">${p.models}</td>
+      <td class="px-3 text-right">${pill(p.state, PROVIDER_STATE_TONE[p.state])}</td>
+      <td class="py-2.5 pl-3 pr-6">
+        <div class="flex justify-end text-muted-foreground/50"><i class="ri-arrow-right-s-line text-base"></i></div>
+      </td>
+    </tr>`
+  return `
+  <table class="w-full table-fixed">
+    <colgroup>${cols}</colgroup>
+    <thead>
+      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
+        ${head}
+        <th class="pl-3 pr-6"></th>
+      </tr>
+    </thead>
+    <tbody>${rows.map(row).join('')}</tbody>
+  </table>`
+}
 
-  <div class="mt-2 flex items-center gap-2 border-t border-border px-4 pt-5 pb-2">
-    <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">API keys</h2>
-    <span class="ml-auto font-mono text-[12px] text-muted-foreground">4</span>
-  </div>
-  ${PROVIDER_ROWS.filter((p) => p.auth === 'api_key').map((p) => providerRow(p, activeId)).join('')}
-
-  <div class="p-4">${btn('Add provider', 'outline', 'ri-add-line', 'providers-connect.html')}</div>`
+/**
+ * Range footer for any unbounded list.
+ *
+ * Lived inline on Activity -> Sessions, which is how Requests and Logs
+ * ended up rendering whatever the first fetch returned with no way to
+ * reach the rest. One definition so the three cannot disagree.
+ *
+ * The range is spelled out rather than a page number: "26-50 of 128"
+ * answers both "where am I" and "how much is there", and a page number
+ * answers neither without knowing the page size. `total` is optional
+ * because a count is not always cheap — without it the footer says
+ * "26-50" and lets Next decide whether there is more.
+ */
+const pager = ({ first, last, total, hasPrev = true, hasNext = true, compact = false }) => {
+  const range = `${first}-${last}${total === undefined ? '' : ` of ${total}`}`
+  if (compact) {
+    const arrow = (icon, on) =>
+      `<button class="inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+        on ? 'text-muted-foreground hover:bg-muted/60 hover:text-foreground' : 'text-muted-foreground opacity-40'
+      }" ${on ? '' : 'disabled'}><i class="${icon} text-sm"></i></button>`
+    return `
+  <div class="flex items-center gap-1 border-t border-border px-4 py-2">
+    <span class="text-[12px] text-muted-foreground">${range}</span>
+    <div class="ml-auto flex items-center">
+      ${arrow('ri-arrow-left-s-line', hasPrev)}${arrow('ri-arrow-right-s-line', hasNext)}
+    </div>
+  </div>`
+  }
+  const ctl = (on) =>
+    `inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors ${
+      on ? 'hover:bg-muted/60' : 'text-muted-foreground opacity-50'
+    }`
+  return `
+  <div class="flex items-center gap-3 border-t border-border px-6 py-3">
+    <span class="text-[12px] text-muted-foreground">${range}</span>
+    <div class="ml-auto flex items-center gap-2">
+      <button class="${ctl(hasPrev)}" ${hasPrev ? '' : 'disabled'}>
+        <i class="ri-arrow-left-s-line text-sm leading-none"></i>Previous
+      </button>
+      <button class="${ctl(hasNext)}" ${hasNext ? '' : 'disabled'}>
+        Next<i class="ri-arrow-right-s-line text-sm leading-none"></i>
+      </button>
+    </div>
+  </div>`
+}
 
   global.Shell = {
-    renderShell, ROW, section, pill, mono, meter, btn,
+    renderShell, ROW, section, dialog, pill, mono, meter, btn, pager,
     tabs, railItem, SETTINGS_RAIL,
-    navTo, activityTabs, selectorBar, providerRail, tierCell, effortCell, sortTh, toast,
-    SURFACES, surfacePill, surfaceChip,
+    navTo, activityTabs, providerTable, tierCell, effortCell, sortTh, toast,
+    SURFACES, surfacePill, surfaceChip, ACCESS_TOKENS, tokenTable,
     toggleTheme, currentTheme
   }
 })(window)

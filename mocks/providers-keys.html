@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rialto — API keys</title>
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/inter/index.css">
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/geist-mono/index.css">
+<link rel="stylesheet" href="../node_modules/remixicon/fonts/remixicon.css">
+<link rel="stylesheet" href="_shared/mock.build.css">
+<script src="_shared/shell.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const { renderShell, btn, providerTable } = window.Shell
+
+// API keys: the providers Rialto pays per request.
+//
+// The Key column is masked and read-only here for the same reason it is
+// read-only on the detail page — a stored credential one stray keystroke
+// from being overwritten is a working provider one stray keystroke from
+// being broken. Replacing one is a deliberate action behind its own
+// dialog, on the provider's own page.
+//
+// "not set" is a real row, not an empty one: a provider can exist with
+// no key, and it is the reason its models never answer. Hiding it would
+// hide the diagnosis.
+
+document.getElementById('root').innerHTML = `
+  <div class="min-w-0">
+      <div class="flex items-center gap-3 px-6 pt-5 pb-3">
+        <span class="text-[12px] text-muted-foreground">4 providers · 13 of 42 models enabled ·
+          <span class="font-mono">1</span> without a key</span>
+        <div class="ml-auto">${btn('Add provider', 'primary', 'ri-add-line', 'providers-connect.html')}</div>
+      </div>
+
+      <div class="px-6 pb-4">
+        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
+          <i class="ri-information-line mr-1 align-[-1px]"></i>
+          These providers bill per request, so their models carry real prices — Routing's cost
+          ordering reads them.
+          <span class="font-medium text-foreground">Open a row</span> to replace its key, sync its
+          catalogue, or choose which models it may serve. A key is shown masked and never becomes
+          an editable field by accident.
+        </div>
+      </div>
+
+      ${providerTable('api_key')}
+  </div>`
+
+renderShell({
+  active: 'providers',
+  sub: 'api-keys',
+  navMode: 'cloudflare',
+  crumbs: [],
+  subtitle: 'Providers billed per request'
+})
+</script>
+</body>
+</html>

@@ -26,7 +26,6 @@ import { requestLogsRoute } from './api/request-logs/route'
 import { routerPreferencesRoute } from './api/router-preferences/route'
 import { routerUtilizationRoute } from './api/router-utilization/route'
 import { routingPresetsRoute } from './api/routing-presets/route'
-import { routingRulesTestRoute } from './api/routing-rules/test/route'
 import { routingSchedulerStateRoute } from './api/routing-scheduler-state/route'
 import { scrapePricesRoute } from './api/scrape-prices/[vendor]/route'
 import { solverInputRoute } from './api/solver-input/route'
@@ -113,10 +112,10 @@ void startUsageCapture()
 // persist its authStatus so the UI can flag accounts that need
 // re-authentication.
 void startAuthHealthCheck()
-// Routing scheduler (Phase 2 of the quota-aware router). Arms the
-// tick regardless of ROUTER_MODE; the tick body itself no-ops when
-// mode/shadow don't need a snapshot, so a scenario-mode deployment
-// pays no CPU cost beyond an idle setTimeout.
+// Routing scheduler. It computes the weights the chain routes on — the
+// operator picks the models and their order, this decides how much of
+// the traffic each one takes. It used to be gated on ROUTER_MODE and sat
+// idle under the other selector; there is no other selector.
 startRoutingScheduler()
 
 const app = new OpenAPIHono()
@@ -201,7 +200,6 @@ app.route('/', inboundSurfacesRoute)
 app.route('/', identityRoute)
 app.route('/', accessTokensRoute)
 app.route('/', accessCheckRoute)
-app.route('/', routingRulesTestRoute)
 app.route('/', storageRoute)
 app.route('/', oauthRoute)
 

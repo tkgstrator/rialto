@@ -161,14 +161,10 @@ function normalizeConfig(data: Config): Config {
     CUSTOM_ROUTER_PATH: typeof data.CUSTOM_ROUTER_PATH === 'string' ? data.CUSTOM_ROUTER_PATH : '',
     // Envelope scalars edited from the Settings page. Optional on the
     // wire (Config schema) — leave them undefined when absent so the
-    // form's default-value fallback (?? 'scenario' / ?? 100 / ?? false)
-    // decides the initial UI value.  Copying them through here is what
-    // makes save-then-reload actually round-trip; without this the wire
-    // value gets dropped and the form always re-initialises to the
-    // default.
-    ROUTER_MODE: data.ROUTER_MODE,
-    ROUTER_SHADOW: data.ROUTER_SHADOW,
-    ROUTER_ROLLOUT_PCT: data.ROUTER_ROLLOUT_PCT,
+    // form's default-value fallback decides the initial UI value.
+    // Copying them through here is what makes save-then-reload actually
+    // round-trip; without this the wire value gets dropped and the form
+    // always re-initialises to the default.
     CROSS_PROVIDER_FALLBACK: data.CROSS_PROVIDER_FALLBACK,
     LiveRoutingName: data.LiveRoutingName,
     // Guarantee every persona carries a stable uuid `id` (the key the URL

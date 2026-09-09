@@ -33,32 +33,32 @@
       "note": "The passthrough half — today's hardcoded behaviour for chat/completions and responses, made visible and reversible."
     },
     {
-      "name": "routing-map",
-      "mock": "routing-map.html",
-      "route": "/routing/map",
-      "group": "Routing",
-      "note": "Graph editor. Absorbs RoutingLibrary + RoutingLiveEditor + RoutingPresetEditor. Adds the inbound-surface column."
-    },
-    {
-      "name": "routing-rules",
-      "mock": "routing-rules.html",
-      "route": "/routing/rules",
-      "group": "Routing",
-      "note": "Rule editor + tester. Replaces routing-map/RuleEditor.tsx."
-    },
-    {
       "name": "providers",
       "mock": "providers.html",
-      "route": "/providers/claude-code",
+      "route": "/providers/subscriptions",
       "group": "Providers",
-      "note": "Subscription provider detail. Absorbs Subscriptions + SubscriptionAccountsPanel."
+      "note": "Subscriptions list. Providers gained two sub-entries because its 18rem rail already grouped them under these two headings, and that rail cost the detail pane 288px it needed — account emails truncated, six price columns collapsed to dashes. Quota is the column this list exists for: a subscription is the only provider kind that stops serving without anyone changing anything."
     },
     {
-      "name": "providers-apikey",
-      "mock": "providers-apikey.html",
+      "name": "providers-keys",
+      "mock": "providers-keys.html",
+      "route": "/providers/api-keys",
+      "group": "Providers",
+      "note": "API keys list. Different columns from Subscriptions on purpose — a key has a secret and a price list where a subscription has accounts, a plan and a window that runs out, and the union would be four dashes per row on one side. 'not set' is a real row: a provider can exist with no key, and that is why its models never answer."
+    },
+    {
+      "name": "provider-subscription",
+      "mock": "provider-subscription.html",
+      "route": "/providers/claude-code",
+      "group": "Providers",
+      "note": "One subscription provider: accounts, request shape, models. Full width now that the rail is gone — reached from the Subscriptions list, back via the breadcrumb, the same way a token detail works."
+    },
+    {
+      "name": "provider-apikey",
+      "mock": "provider-apikey.html",
       "route": "/providers/openai",
       "group": "Providers",
-      "note": "API-key provider detail — key field, real prices, per-model apiStyle override."
+      "note": "One API-key provider — masked key, real prices, per-model apiStyle override. Full width for the same reason as provider-subscription."
     },
     {
       "name": "providers-connect",
@@ -74,6 +74,34 @@
       "group": "Providers",
       "note": "Step 3 of the add-provider flow (ConnectModelsStep), which the mock set stopped short of. Route is null because the step is a state of /providers/connect rather than its own path, so a capture would land on step 1.",
       "$comment": "Reuses the provider detail model table on purpose: same decision, made before the provider takes traffic."
+    },
+    {
+      "name": "access-tokens",
+      "mock": "access-tokens.html",
+      "route": "/access-tokens",
+      "group": "Access tokens",
+      "note": "Per-client credentials for /v1/*. Top level rather than under Settings: Providers is outbound, this is the same question inbound, and a list carrying per-token spend, rotation and revocation is operations rather than configuration. Issuing happens in a dialog over this list — access-token-issue.html and access-token-issued.html are its two steps."
+    },
+    {
+      "name": "access-token",
+      "mock": "access-token.html",
+      "route": "/access-tokens/demo-token-00002",
+      "group": "Access tokens",
+      "note": "One token's own page: rotate, re-scope, revoke. Reached by clicking a row, which is where those actions used to live — as row actions they sat one mis-aimed click from every row of a table of live credentials. Route needs `bun run db:seed:demo`, whose token ids are deterministic; without it the capture lands on the not-found state."
+    },
+    {
+      "name": "access-token-issue",
+      "mock": "access-token-issue.html",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Step 1 of issuing: the form, in a dialog over the list. A dialog rather than an inline panel because naming a token is decided against the ones that already exist, and the inline form pushed that list off the page to ask. Route is null because it is a state of /access-tokens rather than a path of its own."
+    },
+    {
+      "name": "access-token-issued",
+      "mock": "access-token-issued.html",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Step 2 of issuing: the one-time reveal, in the same dialog. The panel swaps its contents rather than opening a second one — closing it is the last chance to copy the plaintext, so it happens where the operator is already looking. Route is null for the same reason as step 1."
     },
     {
       "name": "activity",
@@ -122,7 +150,7 @@
       "mock": "settings-access.html",
       "route": "/settings/access",
       "group": "Settings",
-      "note": "Access tokens (Phase 3.5). KNOWN DIFF ~12%: the mock depicts an install with Cloudflare Access configured (signed-in email, populated policy rows); an install without it correctly renders the other state, including an exposure warning the mock is never in a position to show. State, not design — trimming copy does not move it."
+      "note": "Admin access: Cloudflare Access and the bootstrap token. The per-client /v1 tokens moved to their own top-level section. KNOWN DIFF: the mock depicts an install with Cloudflare Access configured (signed-in email, populated policy rows); an install without it correctly renders the other state, including an exposure warning the mock is never in a position to show."
     },
     {
       "name": "settings-logging",

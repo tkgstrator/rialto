@@ -1,22 +1,43 @@
 /**
- * Access tokens — issue, list, revoke, delete.
+ * Access tokens — issue and list.
  *
  * Owns the one-time plaintext: it is held in component state only for as
- * long as the reveal panel is open, and is never written anywhere it
- * could be read back. The list refreshes after every mutation rather
- * than being patched locally, so `lastUsedAt` and `requestCount` cannot
- * drift from what the gate actually recorded.
+ * long as the reveal dialog is open, and is never written anywhere it
+ * could be read back. The list refreshes after issuing rather than being
+ * patched locally, so `lastUsedAt` and `requestCount` cannot drift from
+ * what the gate actually recorded.
+ *
+ * Issuing happens in a dialog over this list, in two steps — the form,
+ * then the reveal. The table never moves for either.
+ *
+ * Rotate, revoke and delete are not here. They live on a token's own
+ * page (TokenDetail), reached by clicking its row — a destructive action
+ * repeated once per row is an action aimed at the wrong row eventually.
+ *
+ * Revoked rows are folded away rather than dropped. They are the only
+ * thing keeping past RequestLog entries attributable to a client, so they
+ * have to exist; but this table answers "what can reach the proxy right
+ * now", and a dead row is never that. The count in the heading opens
+ * them, because without a way back the Delete on a revoked token's page
+ * would be reachable only by remembering its URL.
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { RButton } from '@/components/rialto/primitives'
-import { IssuedTokenPanel } from '@/components/rialto/settings/access/IssuedTokenPanel'
-import { ANY, emptyDraft, type IssueDraft, IssueTokenForm } from '@/components/rialto/settings/access/IssueTokenForm'
+import { IssuedTokenDialog } from '@/components/rialto/settings/access/IssuedTokenDialog'
+import { emptyDraft, type IssueDraft, IssueTokenDialog } from '@/components/rialto/settings/access/IssueTokenDialog'
+import { ANY } from '@/components/rialto/settings/access/pickers'
 import { TokenTable } from '@/components/rialto/settings/access/TokenTable'
 import { SectionHead } from '@/components/rialto/settings/fields'
 import { type AccessTokenWire, api, type InboundSurfaceWire } from '@/lib/api'
-import { countTokens, EXPIRY_CHOICES, expiryToIso } from '@/lib/rialto/settings/access-tokens'
+import {
+  countTokens,
+  EXPIRY_CHOICES,
+  expiryToIso,
+  type TokenCounts,
+  tokenState
+} from '@/lib/rialto/settings/access-tokens'
 
 // react-i18next's t(), trimmed to what these two helpers call.
 type Translate = (key: string, options?: Record<string, unknown>) => string
@@ -34,11 +55,42 @@ const expiryLabel = (choiceId: string, t: Translate): string => {
   return choice === undefined ? t('settings.access.noExpiry') : t(choice.labelKey)
 }
 
-const summary = (counts: { active: number; expired: number; revoked: number }, t: Translate): string => {
-  const parts = [t('settings.access.countActive', { n: counts.active })]
-  if (counts.expired > 0) parts.push(t('settings.access.countExpired', { n: counts.expired }))
-  if (counts.revoked > 0) parts.push(t('settings.access.countRevoked', { n: counts.revoked }))
-  return parts.join(' · ')
+/**
+ * "4 active · 1 revoked · all on /v1/*", where the revoked count is the
+ * control that unfolds those rows. A plain label there would leave them
+ * unreachable, and a separate toggle would spend a control on a state
+ * most installs never look at.
+ */
+function Summary({
+  counts,
+  showRevoked,
+  onToggleRevoked
+}: {
+  counts: TokenCounts
+  showRevoked: boolean
+  onToggleRevoked: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <>
+      {t('settings.access.countActive', { n: counts.active })}
+      {counts.expired > 0 ? ` · ${t('settings.access.countExpired', { n: counts.expired })}` : ''}
+      {counts.revoked > 0 ? (
+        <>
+          {' · '}
+          <button
+            type='button'
+            onClick={onToggleRevoked}
+            className='underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground'
+          >
+            {t(showRevoked ? 'settings.access.hideRevoked' : 'settings.access.countRevoked', { n: counts.revoked })}
+          </button>
+        </>
+      ) : null}
+      {' · '}
+      <Trans i18nKey='settings.access.tokensScope' components={{ mono: <span className='font-mono' /> }} />
+    </>
+  )
 }
 
 export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire[] }) {
@@ -47,8 +99,8 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
   const [profiles, setProfiles] = useState<{ key: string }[]>([])
   const [draft, setDraft] = useState<IssueDraft | null>(null)
   const [revealed, setRevealed] = useState<Revealed | null>(null)
-  const [busyId, setBusyId] = useState<string | null>(null)
   const [issuing, setIssuing] = useState(false)
+  const [showRevoked, setShowRevoked] = useState(false)
   // Pinned per load so every relative label on the page measures from
   // the same instant, and so an expiry cannot flip mid-render.
   const [now, setNow] = useState(Date.now())
@@ -77,23 +129,26 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
   const issue = () => {
     if (draft === null) return
     setIssuing(true)
-    // Resolve the picker's string back through the fetched list rather
-    // than asserting it into a SurfaceId: the id is then one the server
-    // itself reported, so an unknown value cannot reach the wire.
-    const picked = surfaces.find((s) => s.id === draft.surface)
+    // Resolve the picker's strings back through the fetched list rather
+    // than asserting them into SurfaceIds: every id is then one the
+    // server itself reported, so an unknown value cannot reach the wire.
+    const picked = surfaces.filter((s) => draft.surfaces.includes(s.id)).map((s) => s.id)
     api
       .issueAccessToken({
         name: draft.name.trim(),
-        surface: picked === undefined ? null : picked.id,
+        surfaces: picked,
         profileKey: draft.profileKey === ANY ? null : draft.profileKey,
         expiresAt: expiryToIso(draft.expiry, Date.now())
       })
       .then((res) => {
-        const surfacePath = surfaces.find((s) => s.id === res.token.surface)?.path
+        const paths = res.token.surfaces.flatMap((id) => {
+          const found = surfaces.find((s) => s.id === id)
+          return found === undefined ? [] : [found.path]
+        })
         setRevealed({
           plaintext: res.plaintext,
           name: res.token.name,
-          scope: surfacePath === undefined ? t('settings.access.allEndpoints') : surfacePath,
+          scope: paths.length === 0 ? t('settings.access.allEndpoints') : paths.join(', '),
           profile: res.token.profileKey === null ? t('settings.access.followEndpoint') : res.token.profileKey,
           expiry: expiryLabel(draft.expiry, t)
         })
@@ -104,60 +159,61 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
       .finally(() => setIssuing(false))
   }
 
-  const revoke = (token: AccessTokenWire) => {
-    if (!window.confirm(t('settings.access.revokeConfirm', { name: token.name }))) return
-    setBusyId(token.id)
-    api
-      .revokeAccessToken(token.id)
-      .then(() => {
-        toast.success(t('settings.access.revoked', { name: token.name }))
-        load()
-      })
-      .catch((e: Error) => toast.error(t('settings.access.revokeFailed', { message: e.message })))
-      .finally(() => setBusyId(null))
-  }
-
-  const remove = (token: AccessTokenWire) => {
-    if (!window.confirm(t('settings.access.deleteConfirm', { name: token.name }))) {
-      return
-    }
-    setBusyId(token.id)
-    api
-      .deleteAccessToken(token.id)
-      .then(() => {
-        toast.success(t('settings.access.deleted', { name: token.name }))
-        load()
-      })
-      .catch((e: Error) => toast.error(t('settings.access.deleteFailed', { message: e.message })))
-      .finally(() => setBusyId(null))
-  }
-
   const counts = countTokens(tokens, now)
+  const listed = showRevoked ? tokens : tokens.filter((token) => tokenState(token, now) !== 'revoked')
 
   return (
     <>
+      {/* No title: the breadcrumb and the sidebar both say "Access
+          tokens" already, and this is the whole screen rather than a
+          section of one. */}
       <SectionHead
-        title={t('settings.access.tokensTitle')}
         meta={
-          <Trans
-            i18nKey='settings.access.tokensMeta'
-            values={{ summary: summary(counts, t) }}
-            components={{ mono: <span className='font-mono' /> }}
-          />
+          <Summary counts={counts} showRevoked={showRevoked} onToggleRevoked={() => setShowRevoked(!showRevoked)} />
         }
         actions={
-          draft === null && revealed === null ? (
-            <RButton variant='primary' icon='ri-add-line' onClick={() => setDraft(emptyDraft())}>
-              {t('settings.access.issueToken')}
-            </RButton>
-          ) : null
+          <RButton variant='primary' icon='ri-add-line' onClick={() => setDraft(emptyDraft())}>
+            {t('settings.access.issueToken')}
+          </RButton>
         }
       />
 
+      <div className='px-6 pb-4'>
+        <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
+          <i className='ri-information-line mr-1 align-[-1px]' />
+          <Trans
+            i18nKey='settings.access.tokensNote'
+            components={{
+              mono: <span className='font-mono' />,
+              strong: <span className='font-medium text-foreground' />
+            }}
+          />
+          {/* Second paragraph rather than a second banner: the Cost
+              column reads as broken on a subscription-only install
+              (every row a dash) unless something says why, and one more
+              box above the table would cost more attention than the
+              answer is worth. */}
+          <p className='mt-2'>
+            <Trans
+              i18nKey='settings.access.costNote'
+              components={{ strong: <span className='font-medium text-foreground' /> }}
+            />
+          </p>
+        </div>
+      </div>
+
+      <TokenTable tokens={listed} surfaces={surfaces} now={now} />
+
+      {/* Both steps of issuing are modals over that table, and nothing
+          above moves to make room for them. Naming a token is decided
+          against the ones that already exist, and after issuing, the new
+          row is the answer to "where did it go" — a panel that replaced
+          the list took both away, and one that pushed it down asked the
+          question with the answer scrolled off the page. */}
       {revealed !== null ? (
-        <IssuedTokenPanel {...revealed} onDone={() => setRevealed(null)} />
+        <IssuedTokenDialog {...revealed} onDone={() => setRevealed(null)} />
       ) : draft !== null ? (
-        <IssueTokenForm
+        <IssueTokenDialog
           draft={draft}
           surfaces={surfaces}
           profiles={profiles}
@@ -166,41 +222,7 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
           onSubmit={issue}
           onCancel={() => setDraft(null)}
         />
-      ) : (
-        <>
-          <div className='px-6 pb-4'>
-            <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
-              <i className='ri-information-line mr-1 align-[-1px]' />
-              <Trans
-                i18nKey='settings.access.tokensNote'
-                components={{
-                  mono: <span className='font-mono' />,
-                  strong: <span className='font-medium text-foreground' />
-                }}
-              />
-              {/* Second paragraph rather than a second banner: the Cost
-                  column reads as broken on a subscription-only install
-                  (every row a dash) unless something says why, and one
-                  more box above the table would cost more attention than
-                  the answer is worth. */}
-              <p className='mt-2'>
-                <Trans
-                  i18nKey='settings.access.costNote'
-                  components={{ strong: <span className='font-medium text-foreground' /> }}
-                />
-              </p>
-            </div>
-          </div>
-          <TokenTable
-            tokens={tokens}
-            surfaces={surfaces}
-            now={now}
-            busyId={busyId}
-            onRevoke={revoke}
-            onDelete={remove}
-          />
-        </>
-      )}
+      ) : null}
     </>
   )
 }

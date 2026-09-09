@@ -83,13 +83,17 @@ describe.skipIf(!HAS_E2E)('Sidebar collapse', () => {
   test('every rail destination keeps an accessible name', async () => {
     const page = await openShell({ width: 900, height: 900 })
     await expectWidth(page, RAIL_WIDTH)
-    for (const name of ['Overview', 'Routing', 'Providers']) {
+    for (const name of ['Overview', 'Routing']) {
       expect(await page.getByRole('link', { name, exact: true }).count()).toBe(1)
     }
     // A section with a second level trades its link for the button that
     // opens that level. The name has to survive the trade — losing it
     // here is the same regression as losing it on a link.
-    for (const name of ['Activity', 'Settings']) {
+    //
+    // Providers is in this list rather than the one above because it
+    // gained Subscriptions and API keys when its 18rem rail moved into
+    // the sidebar.
+    for (const name of ['Providers', 'Activity', 'Settings']) {
       expect(await page.getByRole('button', { name, exact: true }).count()).toBe(1)
     }
     await page.close()

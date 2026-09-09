@@ -112,16 +112,9 @@ export function tierOf(model: string): RequestedModelTier | undefined {
   return undefined
 }
 
-// Match a shell-style glob against a string. `*` = any run of chars
-// (including empty); every other char is literal. Anchored to the full
-// input on both ends (so `*haiku*` matches "claude-haiku-4-5" but
-// `haiku` does not — matching a raw substring would require the user
-// to write `*haiku*`).
-export function globMatch(pattern: string, value: string): boolean {
-  if (typeof value !== 'string') return false
-  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')
-  return new RegExp(`^${escaped}$`).test(value)
-}
+// `globMatch` lived here. It matched a rule's `when.requestedModel`
+// pattern (`*haiku*`) against the request, and had no other caller — the
+// predicate stack went and took its only reader with it.
 export function isWebSearchTool(tool: unknown): tool is { type: string } {
   if (tool === null || typeof tool !== 'object' || !('type' in tool)) return false
   const type: unknown = Reflect.get(tool, 'type')

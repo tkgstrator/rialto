@@ -177,7 +177,14 @@ const main = async (): Promise<void> => {
   const cell = Number(arg('--cell') ?? 64)
 
   const screens = onlyScreen ? config.screens.filter((s) => s.name === onlyScreen) : config.screens
-  const browser = await chromium.launch()
+  // Same escape hatch shoot.ts has: playwright resolves its bundled chromium
+  // by build number, so a machine holding a different build cannot launch it.
+  // Only shoot.ts read this, which left the pipeline able to capture both
+  // sides and then fail on the step that compares them.
+  const chromiumPath = process.env.RIALTO_CHROMIUM_PATH
+  const browser = await chromium.launch(
+    chromiumPath === undefined || chromiumPath.length === 0 ? {} : { executablePath: chromiumPath }
+  )
   const page = await browser.newPage()
   const pairs: Pair[] = []
 

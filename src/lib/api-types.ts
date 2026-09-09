@@ -155,7 +155,13 @@ export interface AccessTokenWire {
   name: string
   /** First characters only — identifies a token without being usable. */
   prefix: string
-  surface: string | null
+  /**
+   * Inbound surfaces this token may call. Empty means every surface —
+   * one client can legitimately speak more than one (Codex uses both
+   * /v1/responses and /v1/chat/completions), which a single id could
+   * only express by turning the scoping off.
+   */
+  surfaces: string[]
   profileKey: string | null
   lastUsedAt: string | null
   requestCount: number
@@ -170,6 +176,13 @@ export interface AccessTokenWire {
   costUsd: number | null
   expiresAt: string | null
   revokedAt: string | null
+  /**
+   * When the secret was last replaced, or null while the row still
+   * carries the one it was issued with. Rotation keeps the row, so
+   * `createdAt` is how long this client has existed and this is how old
+   * the credential it presents actually is.
+   */
+  rotatedAt: string | null
   createdAt: string
 }
 
@@ -197,12 +210,20 @@ export interface OverviewSpendRow {
   deltaRatio: number | null
 }
 
+export interface OverviewQuotaWindow {
+  /** '5h' or '7d'. The per-model rows are also '7d'; `scope` separates them. */
+  window: string
+  /** Model name for a per-model weekly row, null for an account-wide one. */
+  scope: string | null
+  pct: number
+  resetAt: string | null
+}
+
+/** One subscription account and every limit it is under, shortest first. */
 export interface OverviewQuotaRow {
   subAccountId: string
   account: string
-  window: string
-  pct: number
-  resetAt: string | null
+  windows: OverviewQuotaWindow[]
 }
 
 /** Fields, not prose — the sentence is composed and translated by the

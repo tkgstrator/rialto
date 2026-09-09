@@ -13,7 +13,7 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, btn, navTo, selectorBar } = window.Shell
+const { renderShell, pill, btn, navTo } = window.Shell
 
 // The other half of the Routing screen: what a surface looks like when
 // the router does NOT apply. This used to be hardcoded for
@@ -57,7 +57,7 @@ const REACHABLE = [
 // leads to the provider that has to be configured for it to resolve.
 const SUBSCRIPTION_PROVIDERS = ['claude-code', 'codex', 'gemini-cli']
 const providerHref = (t) =>
-  SUBSCRIPTION_PROVIDERS.includes(t.split(',')[0]) ? 'providers.html' : 'providers-apikey.html'
+  SUBSCRIPTION_PROVIDERS.includes(t.split(',')[0]) ? 'provider-subscription.html' : 'provider-apikey.html'
 
 const row = (e) => `
   <tr ${navTo(providerHref(e.target))} class="border-t border-border/60 transition-colors hover:bg-muted/50">
@@ -70,7 +70,6 @@ const row = (e) => `
   </tr>`
 
 document.getElementById('root').innerHTML = `
-  ${selectorBar('chain')}
 
   <div class="flex items-stretch gap-0 border-b border-border px-2">
     ${SURFACES.map(surfaceTab).join('')}
@@ -86,7 +85,7 @@ document.getElementById('root').innerHTML = `
     </div>
     <p class="ml-auto max-w-md text-right text-[12px] leading-snug text-muted-foreground">
       The caller's <span class="font-mono">provider,model</span> goes upstream unchanged.
-      Scenarios, rules, quota-aware selection and failover are all skipped.
+      Scenario classification, the chain and failover are all skipped.
     </p>
   </div>
 
@@ -123,8 +122,8 @@ document.getElementById('root').innerHTML = `
       <i class="ri-lightbulb-line mr-1 align-[-1px]"></i>
       Switch this surface to <span ${navTo('routing.html')} class="font-mono underline underline-offset-2">Routed</span> to give Codex CLI the same
       quota-aware failover Claude Code gets. Callers keep sending their own model string — it
-      becomes the <span class="font-mono">requestedModel</span> that rules match on, rather than the
-      final target.
+      becomes the <span class="font-mono">requestedModel</span> the classifier reads, rather than
+      the final target.
     </div>
   </div>
   <div class="h-8"></div>`
@@ -134,11 +133,8 @@ renderShell({
   navMode: 'cloudflare',
   crumbs: ['Chain'],
   subtitle: '/v1/responses · passthrough',
-  // The only doors to Map and Rules now that the sidebar lists Routing
-  // alone, so they name the destination rather than what you do there.
   actions:
-    btn('Map', 'ghost', 'ri-node-tree', 'routing-map.html') +
-    btn('Rules', 'ghost', 'ri-filter-3-line', 'routing-rules.html')
+    btn('Presets', 'ghost', 'ri-stack-line')
 })
 </script>
 </body>

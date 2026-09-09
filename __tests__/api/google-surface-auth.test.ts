@@ -111,14 +111,14 @@ describe.skipIf(!HAS_DB)('/v1beta auth', () => {
     })
 
     test('a token scoped to another surface', async () => {
-      const scoped = (await issueAccessToken({ name: 'chat only', surface: 'openai-chat' })).plaintext
+      const scoped = (await issueAccessToken({ name: 'chat only', surfaces: ['openai-chat'] })).plaintext
       expect((await call(buildApp(), GENERATE, { 'x-goog-api-key': scoped })).status).toBe(401)
     })
 
     test('a gemini-scoped token on another surface', async () => {
       // The mirror of the case above: scoping must bind in both
       // directions, and the globbed path must not widen it.
-      const scoped = (await issueAccessToken({ name: 'gemini only', surface: 'gemini-generate' })).plaintext
+      const scoped = (await issueAccessToken({ name: 'gemini only', surfaces: ['gemini-generate'] })).plaintext
       const app = buildApp()
       expect((await call(app, GENERATE, { 'x-goog-api-key': scoped })).status).toBe(200)
       expect((await call(app, '/v1/messages', { 'x-api-key': scoped })).status).toBe(401)

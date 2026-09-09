@@ -26,12 +26,11 @@ import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Pill, RButton } from '@/components/rialto/primitives'
 import { AccessConfigSection } from '@/components/rialto/settings/access/AccessConfigSection'
-import { AccessTokensSection } from '@/components/rialto/settings/access/AccessTokensSection'
 import { GuardsCard } from '@/components/rialto/settings/access/GuardsCard'
 import { SectionHead } from '@/components/rialto/settings/fields'
 import { SettingsField, SettingsLayout } from '@/components/rialto/settings/SettingsLayout'
 import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
-import { api, type IdentityResponse, type InboundSurfaceWire } from '@/lib/api'
+import { api, type IdentityResponse } from '@/lib/api'
 import {
   type AccessCheckResponse,
   type AccessInput,
@@ -194,7 +193,6 @@ export function SettingsAccess() {
   const navigate = useNavigate()
   const [identity, setIdentity] = useState<IdentityResponse | null>(null)
   const [apiKey, setApiKey] = useState('')
-  const [surfaces, setSurfaces] = useState<InboundSurfaceWire[]>([])
   const [saved, setSaved] = useState<AccessInput | null>(null)
   const [draft, setDraft] = useState<AccessInput>({ teamDomain: '', aud: '' })
   const [check, setCheck] = useState<AccessCheckResponse | null>(null)
@@ -229,13 +227,6 @@ export function SettingsAccess() {
   useEffect(() => {
     loadIdentity()
     loadConfig()
-    api
-      .getInboundSurfaces()
-      .then((res) => setSurfaces(res.surfaces))
-      .catch(() => {
-        // Scoping pickers fall back to "all endpoints", which is the
-        // server's own default when surface is null.
-      })
   }, [loadIdentity, loadConfig])
 
   // Normalised once, and used for the check, the gate and the save alike
@@ -364,7 +355,10 @@ export function SettingsAccess() {
         <GuardsCard />
       </div>
 
-      <AccessTokensSection surfaces={surfaces} />
+      {/* The /v1 token list is its own top-level screen now. This page
+          answers who may administer the install; that one answers who
+          may send it traffic, and the two were only ever together
+          because both involve a credential. */}
       <div className='h-8' />
     </SettingsLayout>
   )

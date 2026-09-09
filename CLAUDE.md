@@ -27,7 +27,7 @@ is not a dependency either; that code was absorbed into `src/llms/`.
 | `src/services/` | config, OAuth, usage, routing-scheduler, access tokens, model tests |
 | `src/vendors/` | Per-vendor catalog + pricing adapters (`VendorProvider`): fetch a vendor's live model list, scrape its published prices, read per-model context windows. Read by `model-sync-service` / `catalog-service`, **never on the request path**. Named `vendors` and not `providers` because `src/llms/registry/provider.ts` is a different thing — see below |
 | `src/schemas/` | Zod, split into four layers — `primitives / wire / domain / api`. There is **no** global `@/schemas` barrel; import from the layer. `wire` / `domain` / `api` each expose one; `primitives` has no barrel because nothing composes the layer as a whole — import `primitives/record` and friends by name |
-| `src/components/rialto/` | The UI — five screens (Overview / Routing / Providers / Activity / Settings) |
+| `src/components/rialto/` | The UI — six screens (Overview / Routing / Providers / Access tokens / Activity / Settings). Access tokens is top level, beside Providers: Providers is outbound, it is the same question inbound. Settings → Access keeps only admin access |
 | `src/components/ui/` | shadcn components. Never edit (see Rules) |
 | `src/app/` | React entry point and the `react-router-dom` route table |
 | `src/shared/` | Code shared by the server and the browser bundle — must not import server-only modules |
@@ -112,19 +112,33 @@ Details: `docs/architecture/inbound-surfaces.md`.
 
 ### 2. Routing System
 
-Two selectors exist, chosen by `ROUTER_MODE`:
+**One selector: the chain.** The operator says which models and in what order;
+the scheduler computes the weights. Nothing in the UI writes a weight.
 
-- **`scenario-router`** (`src/llms/scenario-router.ts` + `src/llms/scenario-router/`) —
-  the original. Classifies the request into a `ScenarioKey`, applies per-scenario
-  `rules[]`, and rewrites `body.model`. **Marked `@deprecated`**, scheduled for
-  deletion once `ROUTER_MODE=quota-aware` has been at 100% rollout for a release cycle.
-- **`quota-router`** (`src/llms/quota-router/`) — the preference-based selector.
-  Walks an ordered chain from `RouterPreferenceProfile` / `RouterPreferenceEntry`,
-  skipping accounts whose `SubAccountQuota` says they are exhausted, then fails over.
+- **`quota-router`** (`src/llms/quota-router/`) — the selector. Walks an ordered
+  chain from `RouterPreferenceProfile` / `RouterPreferenceEntry`, skipping
+  accounts whose `SubAccountQuota` says they are exhausted, then fails over.
+- **`routing-scheduler`** (`src/services/routing-scheduler/`) — computes and
+  publishes the weights that chain rides on, one tick at a time. Always runs;
+  it used to be gated on `ROUTER_MODE` and sat idle under the other selector.
+- `src/llms/scenario-router.ts` is the entry point (`routeScenario`) and
+  `src/llms/scenario-router/` the shared primitives — scenario classification,
+  tier inference, the subagent tag, proactive failover. The name is left over
+  from when it also hosted a second selector.
+
+**There is no `ROUTER_MODE`.** It, `ROUTER_SHADOW` and `ROUTER_ROLLOUT_PCT`
+selected between two selectors and moved traffic between them a percentage at a
+time; that migration is over. A stale value on disk is preserved by
+`ConfigEnvelopeSchema`'s `.catchall` and read by nothing.
+
+**There are no routing rules.** The first-match `rules[]` stack that could
+rewrite `body.model` from a predicate went with the selector that owned it,
+along with `/routing/map`, `/routing/rules` and `POST /api/routing-rules/test`.
+Routing is one screen.
 
 Scenarios are the `ScenarioKey` enum: `default` / `think` / `longContext` /
-`webSearch` / `image`. **`background` is gone** — it was folded into a predicated
-rule on `default` (migration `20260728_router_rules_drop_background`).
+`webSearch` / `image`. **`background` is gone** — it was folded into `default`
+(migration `20260728_router_rules_drop_background`).
 
 Two independent lanes exist per scenario: `agent` (ordinary traffic) and `subagent`
 (requests carrying a subagent tag — see Subagent Routing below).
@@ -203,7 +217,7 @@ longer read**. Anything still using one has to be updated.
 
 Configuration is split across two stores:
 
-- **Disk envelope**: `~/.rialto/config.json`. The whitelist is `ConfigEnvelopeSchema` in `src/schemas/domain/config.ts` — read that, not a list here, because it is what boot actually parses. It carries the boot-time scalars (`HOST` / `PORT` / `APIKEY` / `LOG` / `LOG_LEVEL` / `PROXY_URL` / `API_TIMEOUT_MS` / `CLAUDE_PATH` / `NON_INTERACTIVE_MODE`), the archive switches (`CAPTURE_REQUESTS` / `CAPTURE_MESSAGES` / `REDACT_TOOL_ARGUMENTS`), the Cloudflare Access pair (`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD`), the quota-aware router knobs (`ROUTER_MODE` / `ROUTER_SHADOW` / `ROUTER_ROLLOUT_PCT` / `ROUTING_SCHEDULER_INTERVAL_MS` / `CROSS_PROVIDER_FALLBACK`), and the disk-resident objects (`Personas`, `StatusLine`, `ActivePersona`, `LiveRoutingName`). Keys the schema does not declare are preserved by its `.catchall`, not dropped.
+- **Disk envelope**: `~/.rialto/config.json`. The whitelist is `ConfigEnvelopeSchema` in `src/schemas/domain/config.ts` — read that, not a list here, because it is what boot actually parses. It carries the boot-time scalars (`HOST` / `PORT` / `APIKEY` / `LOG` / `LOG_LEVEL` / `PROXY_URL` / `API_TIMEOUT_MS` / `CLAUDE_PATH` / `NON_INTERACTIVE_MODE`), the archive switches (`CAPTURE_REQUESTS` / `CAPTURE_MESSAGES` / `REDACT_TOOL_ARGUMENTS`), the Cloudflare Access pair (`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD`), the router knobs (`ROUTING_SCHEDULER_INTERVAL_MS` / `CROSS_PROVIDER_FALLBACK`), and the disk-resident objects (`Personas`, `StatusLine`, `ActivePersona`, `LiveRoutingName`). Keys the schema does not declare are preserved by its `.catchall`, not dropped.
 - **PostgreSQL** (via Prisma, `src/prisma/schema.prisma`): everything else. `DATABASE_URL` is loaded from `.env` (`.devcontainer/compose.yaml` provides `postgres` and `redis`).
 
 The schema is well past the three tables the first PR shipped; the column comments in
@@ -277,7 +291,7 @@ Database tooling (`bun run`, from the repo root — there is no `packages/`):
 - `db:migrate:test` — apply them to `rialto_test`. **Separate database; CI fails without it.**
 - `db:reset` — drop and recreate the schema (destructive).
 - `db:seed` — `src/prisma/seed.ts`; idempotent, creates the RouterSlot rows and the preference profile. No placeholder Providers.
-- `db:seed:demo` — `scripts/seed-demo-data.ts`; dev-only demo data for all five screens (traffic, chains, presets, quota, tokens). Rows it owns carry a `demo-` id and `-- --clean` removes them; live config (RouterSlot, the `live` chain, surface modes, an account's quota) is written only while unset. Never wired into `db:seed`. See `docs/guides/demo-data.md`.
+- `db:seed:demo` — `scripts/seed-demo-data.ts`; dev-only demo data for every screen (traffic, chains, presets, quota, tokens). Rows it owns carry a `demo-` id and `-- --clean` removes them; live config (RouterSlot, the `live` chain, surface modes, an account's quota) is written only while unset. Never wired into `db:seed`. See `docs/guides/demo-data.md`.
 - `db:studio` — open Prisma Studio.
 
 Never edit DDL directly; always go through Prisma migrations.

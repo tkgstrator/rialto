@@ -297,7 +297,7 @@ export interface TokenUsageRow {
   id: string
   name: string
   prefix: string
-  surface: string | null
+  surfaces: string[]
   requestCount: number
   costUsd: number | null
   /** Share of the priced total, 0-100. Null when nothing priced. */
@@ -325,7 +325,7 @@ export function tokenUsageRows(tokens: readonly AccessTokenWire[]): TokenUsageRo
       id: token.id,
       name: token.name,
       prefix: token.prefix,
-      surface: token.surface,
+      surfaces: token.surfaces,
       requestCount: token.requestCount,
       costUsd: token.costUsd,
       sharePct: token.costUsd === null || total <= 0 ? null : Math.round((token.costUsd / total) * 100),

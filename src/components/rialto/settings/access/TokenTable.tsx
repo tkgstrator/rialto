@@ -1,29 +1,29 @@
 /**
  * The issued-token list.
  *
- * Revoke and delete are deliberately not the same control. Revoking
- * keeps the row, so RequestLog entries that reference this token still
- * resolve to a name and Activity can still say whose traffic a request
- * was. Deleting drops the row and that attribution goes with it — so
- * revoke is the plain action, and delete appears only once a row is
- * already revoked — by which point it changes nothing about access and
- * only trades away the audit trail.
+ * A directory, not a control panel: every row leads to the token's own
+ * page and nothing here changes what a token can do. Revoke used to be a
+ * button in each row, which put an irreversible action — one that takes
+ * a client offline with a 401 nobody can trace from the client end — one
+ * mis-aimed click from every row on the screen. It lives on the detail
+ * page now, next to the usage figures that inform the decision.
  */
 import { useMemo } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
-import { Pill, SurfacePill } from '@/components/rialto/primitives'
+import { useNavigate } from 'react-router-dom'
+import { Pill, SurfaceScope } from '@/components/rialto/primitives'
 import { WarnNotice } from '@/components/rialto/settings/notice'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
 import type { InboundSurfaceWire } from '@/lib/api'
 import { fmtAgo, fmtCount } from '@/lib/rialto/format'
-import { type AccessTokenWire, sortTokens, type TokenState, tokenState } from '@/lib/rialto/settings/access-tokens'
+import {
+  type AccessTokenWire,
+  sortTokens,
+  TOKEN_STATE_PILL,
+  type TokenState,
+  tokenState
+} from '@/lib/rialto/settings/access-tokens'
 import { fmtCost } from '@/lib/sessions/format'
-
-const STATE_PILL: Record<TokenState, { tone: 'ok' | 'warn' | 'bad'; labelKey: string }> = {
-  active: { tone: 'ok', labelKey: 'settings.access.tokenActive' },
-  expired: { tone: 'warn', labelKey: 'settings.access.tokenExpired' },
-  revoked: { tone: 'bad', labelKey: 'settings.access.tokenRevoked' }
-}
 
 /**
  * A row with everything the cells print already resolved. The surface
@@ -33,27 +33,11 @@ const STATE_PILL: Record<TokenState, { tone: 'ok' | 'warn' | 'bad'; labelKey: st
 interface TokenRow {
   token: AccessTokenWire
   state: TokenState
-  /** Undefined when the token is scoped to every surface, not just one. */
-  surfacePath: string | undefined
+  /** Resolved display paths. Empty when the token may call every surface. */
+  surfacePaths: string[]
 }
 
-/**
- * Row actions are buttons, not bare text.
- *
- * They used to be an 11px link with no box, which read as a caption
- * rather than a control and sat on its own text baseline — a different
- * height from every other cell in the row. A fixed 28px box inside a
- * flex cell takes the height off the line box entirely, so the control
- * lines up with the row whatever the cell beside it renders.
- *
- * Destructive styling is on hover only: both actions are destructive, and
- * painting two of them red in every row makes the table look like an
- * error state rather than a list of working credentials.
- */
-const ROW_ACTION =
-  'inline-flex h-7 items-center rounded-md border border-border px-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive disabled:pointer-events-none disabled:opacity-50'
-
-type TokenSortKey = 'name' | 'surface' | 'profile' | 'requests' | 'cost' | 'lastUsed' | 'expires'
+type TokenSortKey = 'name' | 'surface' | 'requests' | 'cost' | 'lastUsed' | 'expires'
 
 /**
  * Each column sorts on the value behind its own cell. The two date
@@ -66,8 +50,9 @@ type TokenSortKey = 'name' | 'surface' | 'profile' | 'requests' | 'cost' | 'last
  */
 const tokenSortValue = (row: TokenRow, key: TokenSortKey): SortValue => {
   if (key === 'name') return row.token.name
-  if (key === 'surface') return row.surfacePath
-  if (key === 'profile') return row.token.profileKey
+  // Ordered by the joined paths so the column sorts on what it draws:
+  // the first pill decides, and a longer scope tie-breaks after it.
+  if (key === 'surface') return row.surfacePaths.length === 0 ? null : row.surfacePaths.join(' ')
   if (key === 'requests') return row.token.requestCount
   // Unpriced traffic is a null, not a zero — it sorts last in both
   // directions rather than claiming the token was free.
@@ -81,62 +66,44 @@ const tokenSortValue = (row: TokenRow, key: TokenSortKey): SortValue => {
   return row.token.expiresAt === null ? Number.POSITIVE_INFINITY : Date.parse(row.token.expiresAt)
 }
 
-function Row({
-  row,
-  now,
-  onRevoke,
-  onDelete,
-  busy
-}: {
-  row: TokenRow
-  now: number
-  onRevoke: () => void
-  onDelete: () => void
-  busy: boolean
-}) {
+function Row({ row, now, onOpen }: { row: TokenRow; now: number; onOpen: () => void }) {
   const { t } = useTranslation()
-  const { token, state, surfacePath } = row
+  const { token, state, surfacePaths } = row
   const dead = state !== 'active'
   return (
-    <tr className={`border-t border-border/60 transition-colors hover:bg-muted/50 ${dead ? 'opacity-60' : ''}`}>
+    <tr
+      className={`cursor-pointer border-t border-border/60 transition-colors hover:bg-muted/50 ${dead ? 'opacity-60' : ''}`}
+      onClick={onOpen}
+    >
       <td className='py-2.5 pl-6 pr-3'>
         <div className='flex items-center gap-2'>
           <span className='text-xs font-medium'>{token.name}</span>
-          {dead ? <Pill tone={STATE_PILL[state].tone}>{t(STATE_PILL[state].labelKey)}</Pill> : null}
+          {dead ? <Pill tone={TOKEN_STATE_PILL[state].tone}>{t(TOKEN_STATE_PILL[state].labelKey)}</Pill> : null}
         </div>
         <div className='font-mono text-[12px] text-muted-foreground'>{token.prefix}</div>
       </td>
       <td className='px-3'>
-        {surfacePath === undefined ? (
-          <span className='text-[12px] text-muted-foreground/50'>{t('settings.access.scopeAll')}</span>
-        ) : (
-          <SurfacePill path={surfacePath} />
-        )}
-      </td>
-      <td className='px-3 font-mono text-[12px] text-muted-foreground'>
-        {token.profileKey === null ? '—' : token.profileKey}
+        <SurfaceScope paths={surfacePaths} allLabel={t('settings.access.scopeAll')} />
       </td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCount(token.requestCount)}</td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCost(token.costUsd)}</td>
-      <td className='px-3 text-right text-[12px] text-muted-foreground'>
+      {/* Dates and durations are numbers: mono and tabular so the column
+          lines up. In the proportional face "3h ago" and "41d ago" are
+          different widths and cannot be compared down the column. */}
+      <td className='px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
         {token.lastUsedAt === null
           ? t('settings.access.never')
           : t('settings.access.lastUsedAgo', { ago: fmtAgo(token.lastUsedAt, now) })}
       </td>
-      <td className='px-3 text-right text-[12px] text-muted-foreground'>
+      <td className='px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
         {token.expiresAt === null ? t('settings.access.never') : token.expiresAt.slice(0, 10)}
       </td>
+      {/* Where revoke used to sit. A chevron says the row leads
+          somewhere without offering an action the operator can trigger
+          by aiming badly. */}
       <td className='py-2.5 pl-3 pr-6'>
-        <div className='flex justify-end'>
-          {state === 'revoked' ? (
-            <button type='button' onClick={onDelete} disabled={busy} className={ROW_ACTION}>
-              {t('settings.access.delete')}
-            </button>
-          ) : (
-            <button type='button' onClick={onRevoke} disabled={busy} className={ROW_ACTION}>
-              {t('settings.access.revoke')}
-            </button>
-          )}
+        <div className='flex justify-end text-muted-foreground/50'>
+          <i className='ri-arrow-right-s-line text-base' />
         </div>
       </td>
     </tr>
@@ -146,19 +113,14 @@ function Row({
 export function TokenTable({
   tokens,
   surfaces,
-  now,
-  busyId,
-  onRevoke,
-  onDelete
+  now
 }: {
   tokens: AccessTokenWire[]
   surfaces: InboundSurfaceWire[]
   now: number
-  busyId: string | null
-  onRevoke: (token: AccessTokenWire) => void
-  onDelete: (token: AccessTokenWire) => void
 }) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   // Hooks run before the empty-state return: an early return above a hook
   // changes the hook order between renders.
   //
@@ -170,7 +132,10 @@ export function TokenTable({
       sortTokens(tokens, now).map((token) => ({
         token,
         state: tokenState(token, now),
-        surfacePath: surfaces.find((s) => s.id === token.surface)?.path
+        surfacePaths: token.surfaces.flatMap((id) => {
+          const found = surfaces.find((s) => s.id === id)
+          return found === undefined ? [] : [found.path]
+        })
       })),
     [tokens, surfaces, now]
   )
@@ -191,8 +156,8 @@ export function TokenTable({
     <table className='w-full table-fixed'>
       <colgroup>
         <col />
-        <col className='w-40' />
-        <col className='w-24' />
+        {/* Wider now that it may hold a pill plus an overflow count. */}
+        <col className='w-48' />
         <col className='w-20' />
         {/* Wide enough that "Cost 30d" stays on one line — a header that
             wraps makes the whole row two lines tall next to tables whose
@@ -200,8 +165,9 @@ export function TokenTable({
         <col className='w-28' />
         <col className='w-28' />
         <col className='w-24' />
-        {/* Wide enough for the action button's box rather than its text. */}
-        <col className='w-28' />
+        {/* Just the chevron now that the row actions have moved to the
+            token's own page. */}
+        <col className='w-10' />
       </colgroup>
       <thead>
         <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2'>
@@ -210,9 +176,6 @@ export function TokenTable({
           </SortTh>
           <SortTh sortKey='surface' sort={sort} className='px-3 text-left'>
             {t('settings.access.colEndpoint')}
-          </SortTh>
-          <SortTh sortKey='profile' sort={sort} className='px-3 text-left'>
-            {t('settings.access.colProfile')}
           </SortTh>
           <SortTh sortKey='requests' sort={sort} className='px-3 text-right' align='right'>
             {t('settings.access.colRequests')}
@@ -226,7 +189,7 @@ export function TokenTable({
           <SortTh sortKey='expires' sort={sort} className='px-3 text-right' align='right'>
             {t('settings.access.colExpires')}
           </SortTh>
-          {/* Revoke / delete: a control, not a value to order by. */}
+          {/* The chevron: an affordance, not a value to order by. */}
           <th className='pl-3 pr-6' />
         </tr>
       </thead>
@@ -236,9 +199,7 @@ export function TokenTable({
             key={row.token.id}
             row={row}
             now={now}
-            busy={busyId === row.token.id}
-            onRevoke={() => onRevoke(row.token)}
-            onDelete={() => onDelete(row.token)}
+            onOpen={() => navigate(`/access-tokens/${encodeURIComponent(row.token.id)}`)}
           />
         ))}
       </tbody>

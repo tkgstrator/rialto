@@ -217,7 +217,7 @@ describe('tokenUsageRows', () => {
     id: 'tok',
     name: 'CI',
     prefix: 'rialto_0d18',
-    surface: null,
+    surfaces: [],
     profileKey: null,
     lastUsedAt: null,
     requestCount: 0,

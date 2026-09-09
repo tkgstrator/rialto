@@ -17,24 +17,23 @@
  *      migration `20260728_router_rules_drop_background`).
  */
 
-// Three modules, one per stage of the doc above: `request-signals` reads
-// the wire, `rules` judges a predicate against it, and this file holds
-// the config lookup and the classifier that pick which of them to ask.
-import { type RouteRule, RouteRuleSchema, type ScenarioType } from '@/schemas/domain'
+// Two modules, one per stage of the doc above: `request-signals` reads
+// the wire, and this file holds the config lookup and the classifier.
+// A third, `rules`, judged a predicate against the request and picked a
+// target from it — the scenario router's half. It went with that
+// selector.
+import type { ScenarioType } from '@/schemas/domain'
 import type { ConfigStore } from '../registry/config'
 import { isHeavyRequest, stripSubagentTag } from './request-signals'
-import { matchesRule, type RuleEvalContext } from './rules'
 import { signalsOf } from './surface-signals'
 import type { RouterConfig, RouterRequest } from './types'
 
 // `selectModel` is the only entry point most callers need, but the
-// pieces it is built from are public API in their own right — the Rule
-// Tester screen and the quota router import them directly. Re-exported
-// here so `scenario-router/model-selection` stays the one import path.
+// pieces it is built from are public API in their own right — the quota
+// router imports them directly. Re-exported here so
+// `scenario-router/model-selection` stays the one import path.
 export type { EffortLevel, ModelTier } from './request-signals'
 export { isHeavyRequest, tierOf } from './request-signals'
-export type { ConditionVerdict, RuleEvalContext } from './rules'
-export { explainRule, matchesRule } from './rules'
 
 const DEFAULT_LONG_CONTEXT_THRESHOLD = 128_000
 // Fraction of the default agent primary's contextWindow used as the
@@ -106,9 +105,8 @@ export function selectModel(
   // Kept for call-site compatibility; model selection no longer resolves
   // by the request's bare model name, so the provider registry isn't read.
   _config: ConfigStore,
-  // Present only when the preference chain is the live selector for this
-  // request. Absent keeps the pre-chain behaviour, which is what the
-  // rules path needs.
+  // The request's chain. Absent only where no profile resolves, which
+  // leaves classification on the RouterSlot map alone.
   chain?: ChainRouting
 ): { model: string; scenarioType: ScenarioType; isSubagent: boolean; fallbacks: string[] } {
   // Stage 1 — caller kind. A <RIALTO-SUBAGENT-MODEL> tag's PRESENCE selects
@@ -121,11 +119,9 @@ export function selectModel(
   // Stage 2 — scenario classification from the request signals.
   const scenario = classifyScenario(req, tokenCount, router, kind, chain)
 
-  // Stage 3 — walk the scenario's rule stack first (first-match wins).
-  // A matched rule overrides the catch-all primary AND supplies its own
-  // fallback chain. Falls back to the request's own model when nothing
-  // is configured.
-  const resolved = resolveTarget(router, kind, scenario, { req, tokenCount })
+  // Stage 3 — the scenario's RouterSlot target and its fallbacks. Falls
+  // back to the request's own model when the slot is empty.
+  const resolved = resolveTarget(router, kind, scenario)
   const model = resolved?.primary ?? req.body.model
   const fallbacks = resolved?.fallbacks ?? []
   return { model, scenarioType: scenario, isSubagent, fallbacks }
@@ -140,60 +136,24 @@ function primaryFor(router: RouterConfig | undefined, kind: RouteKind, scenario:
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 
-// Return the ordered rule list for (scenario, kind), or an empty array
-// when the runtime router doesn't carry rules (per-project override
-// files may skip them entirely). The runtime shape stores rules as
-// unknown[] — each entry is parsed through RouteRuleSchema here so a
-// malformed rule is skipped rather than blowing up the walker.
-export function rulesFor(router: RouterConfig | undefined, kind: RouteKind, scenario: ScenarioType): RouteRule[] {
-  const map = kind === 'subagent' ? router?.subagentRules : router?.agentRules
-  const list = map?.[scenario]
-  if (!Array.isArray(list)) return []
-  const out: RouteRule[] = []
-  for (const item of list) {
-    const parsed = RouteRuleSchema.safeParse(item)
-    if (parsed.success) out.push(parsed.data)
-  }
-  return out
-}
-
-// Resolve the primary target for (scenario, kind, request): walk the
-// scenario's rule stack; the first rule whose predicate matches wins
-// and its `target` becomes the primary. The failover chain then
-// cascades through the scenario catch-all: rule target → scenario
-// primary → scenario fallbacks, deduped in order. Returns undefined
-// when neither a matching rule nor a catch-all is configured, so
-// selectModel can fall back to `req.body.model` with an empty chain.
+// Resolve the RouterSlot target for (scenario, kind): the slot's primary
+// and its catch-all fallbacks. Undefined when the slot is empty, so
+// selectModel falls back to `req.body.model` with an empty chain.
+//
+// There used to be a first-match rule stack in front of this, and its
+// matching rule's `target` overrode the slot. Rules were the scenario
+// router's half of the screen; the chain decides now, and a predicate
+// stack that could still rewrite `body.model` underneath it would be a
+// second selector wearing a different name.
 function resolveTarget(
   router: RouterConfig | undefined,
   kind: RouteKind,
-  scenario: ScenarioType,
-  ctx: RuleEvalContext
+  scenario: ScenarioType
 ): { primary: string; fallbacks: string[] } | undefined {
   const fallbacksMap = kind === 'subagent' ? router?.subagentFallbacks : router?.agentFallbacks
   const scenarioFallbacks = fallbacksMap?.[scenario]
   const catchAllFallbacks = Array.isArray(scenarioFallbacks) ? scenarioFallbacks : []
   const scenarioPrimary = primaryFor(router, kind, scenario)
-
-  for (const rule of rulesFor(router, kind, scenario)) {
-    if (!matchesRule(rule, ctx)) continue
-    if (typeof rule.target === 'string' && rule.target.length > 0) {
-      ctx.req.log.info({ rule: rule.name ?? '(unnamed)', scenario, kind }, 'Matched routing rule')
-      // Cascade: rule target → scenario primary → catch-all fallbacks.
-      // Drop the scenario primary when it equals the rule target so the
-      // walker doesn't re-attempt the same model twice; buildFailoverChain
-      // dedupes the remaining catch-all entries downstream.
-      const cascade =
-        scenarioPrimary !== undefined && scenarioPrimary !== rule.target
-          ? [scenarioPrimary, ...catchAllFallbacks]
-          : catchAllFallbacks
-      return { primary: rule.target, fallbacks: cascade }
-    }
-    // Rule matched but has no target — a legitimate "block escalation"
-    // pattern (e.g. "for these requests, do NOT reroute"). Return
-    // undefined so selectModel falls back to `req.body.model`.
-    return undefined
-  }
   if (scenarioPrimary === undefined) return undefined
   return { primary: scenarioPrimary, fallbacks: catchAllFallbacks }
 }
