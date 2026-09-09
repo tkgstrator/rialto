@@ -1,6 +1,6 @@
 services:
   rialto:
-    image: tkgling/rialto:latest
+    image: ghcr.io/tkgstrator/rialto:latest
     build:
       context: .
       dockerfile: Dockerfile
