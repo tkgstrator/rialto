@@ -216,10 +216,22 @@ export function convertResponsesRequestToUnified(body: Record<string, unknown>):
   const unified: Record<string, unknown> = { ...body, model, messages }
   if (tools !== undefined) unified.tools = tools
   if (toolChoice !== undefined) unified.tool_choice = toolChoice
+  // The output cap is the one field whose name differs on every surface:
+  // Responses spells it `max_output_tokens`, unified and chat-completions
+  // spell it `max_tokens`, and newer gpt-5.x chat models want
+  // `max_completion_tokens` (endpoint-chat.ts renames it further down).
+  // Absorb it here so the rest of the pipeline sees the unified name —
+  // left alone it rides `...body` all the way to the vendor and 400s as
+  // "Unknown parameter: 'max_output_tokens'". An explicit `max_tokens`
+  // wins, on the same "caller was more specific" rule as `tools`.
+  if (typeof body.max_output_tokens === 'number' && unified.max_tokens === undefined) {
+    unified.max_tokens = body.max_output_tokens
+  }
   // These fields are Responses-only or already absorbed above; strip so
   // downstream `openai` / `anthropic` transformers don't see stray keys.
   delete unified.input
   delete unified.instructions
+  delete unified.max_output_tokens
   delete unified.parallel_tool_calls
   delete unified.previous_response_id
   delete unified.store

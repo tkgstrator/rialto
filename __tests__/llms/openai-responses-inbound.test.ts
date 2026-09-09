@@ -36,6 +36,35 @@ describe('convertResponsesRequestToUnified', () => {
     expect((unified as Record<string, unknown>).instructions).toBeUndefined()
   })
 
+  // Regression: left in place, `max_output_tokens` rode the `...body` spread
+  // out to the vendor, which answered 400 "Unknown parameter". Every caller
+  // that set an output ceiling hit it, so nothing streamed at all.
+  test('max_output_tokens becomes the unified max_tokens', () => {
+    const unified = convertResponsesRequestToUnified({
+      model: 'gpt-5-mini',
+      input: 'ping',
+      max_output_tokens: 256
+    })
+    expect(unified.max_tokens).toBe(256)
+    expect((unified as Record<string, unknown>).max_output_tokens).toBeUndefined()
+  })
+
+  test('an explicit max_tokens wins over max_output_tokens', () => {
+    const unified = convertResponsesRequestToUnified({
+      model: 'gpt-5-mini',
+      input: 'ping',
+      max_tokens: 64,
+      max_output_tokens: 256
+    })
+    expect(unified.max_tokens).toBe(64)
+    expect((unified as Record<string, unknown>).max_output_tokens).toBeUndefined()
+  })
+
+  test('no cap stays absent rather than becoming undefined-valued', () => {
+    const unified = convertResponsesRequestToUnified({ model: 'gpt-5-mini', input: 'ping' })
+    expect('max_tokens' in (unified as Record<string, unknown>)).toBe(false)
+  })
+
   test('array input with input_text and output_text blocks flatten to plain text messages', () => {
     const unified = convertResponsesRequestToUnified({
       model: 'gpt-5-mini',
