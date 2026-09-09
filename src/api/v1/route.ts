@@ -18,7 +18,7 @@ import type { Logger } from 'pino'
 import { getPrismaClient } from '../../db/client'
 import { getLlmsContext, type MessageRecord, runPipeline, type UsageRecord } from '../../llms'
 import { INBOUND_SURFACES, surfaceForPath } from '../../llms/inbound/surfaces'
-import { aggregateAnthropicSseToJson, isSseContentType } from '../../llms/utils/sse-aggregate'
+import { aggregateAnthropicSseToJson, findSseStreamDefect, isSseContentType } from '../../llms/utils/sse-aggregate'
 import { requestLogEmitter } from '../request-logs/events'
 import { buildFailoverChain } from './candidate-chain'
 import { attemptChainEntry, type ChainCtx, type SubscriptionKindProvider, sessionIdFrom } from './chain-failover'
@@ -142,6 +142,94 @@ function pickSseAggregator(path: string): (response: Response) => Promise<Record
   return surface !== undefined ? surface.aggregateSse : aggregateAnthropicSseToJson
 }
 
+// An upstream response the caller cannot use: an SSE body that folded to
+// nothing, one that ended in an error event, or an empty body where a
+// JSON envelope was due. Relaying the husk under the upstream's 200 is
+// what made this whole class of failure invisible — the caller's SDK
+// reports "empty or malformed response (HTTP 200)" and stops, because a
+// 200 is not something it may retry, and the operator gets no signal
+// either. Re-shape it as the caller's own error envelope under a real
+// status so SDK retry logic engages and the log names a cause.
+//
+// Goes out through `c.json` rather than a bare `new Response` so it
+// still picks up the `x-request-id` accessLog prepared for it: an error
+// is precisely when an operator needs to correlate the response with a
+// log line.
+function unusableUpstream(
+  c: Context,
+  log: Logger,
+  observed: { provider: string; model: string | undefined; path: string },
+  detail: { reason: string; status: number; from: unknown }
+): Response {
+  log.error(
+    { provider: observed.provider, model: observed.model, status: detail.status, reason: detail.reason },
+    'upstream response was not usable — answering with an error instead of a malformed 200'
+  )
+  const via = observed.provider.length > 0 ? observed.provider : undefined
+  if (via !== undefined) c.header('x-rialto-upstream', via)
+  const envelope = buildErrorEnvelope({
+    shape: errorShapeForPath(observed.path),
+    status: detail.status,
+    from: detail.from,
+    via
+  })
+  return c.json(envelope, detail.status as 502)
+}
+
+// The blocking half of `formatResponse`.
+//
+// A few provider paths (codex-oauth notably) force stream=true upstream
+// even when the client asked for blocking JSON, so this has to fold an
+// SSE body back into the non-stream envelope that matches the inbound
+// endpoint, and only fall through to JSON.parse when the upstream
+// really is JSON — without that the parse throws on
+// "event: ...\ndata: ..." and the client sees a 500.
+//
+// Either way it answers the same question first: is this actually a
+// response? Everything that is not gets an error status rather than a
+// 200 the caller cannot parse.
+async function formatBlockingResponse(
+  c: Context,
+  response: Response,
+  log: Logger,
+  observed: { provider: string; model: string | undefined; path: string }
+): Promise<Response> {
+  if (isSseContentType(response.headers.get('content-type'))) {
+    const raw = await response.text()
+    // Refuse to fold a stream that carried no usable event, or that
+    // ended in an upstream error event. Both used to reach the caller
+    // as a 200 whose body no SDK could parse.
+    const defect = findSseStreamDefect(raw)
+    if (defect !== null) {
+      return unusableUpstream(c, log, observed, {
+        reason: defect.reason,
+        status: defect.reason === 'upstream-error' ? defect.status : 502,
+        from:
+          defect.reason === 'upstream-error'
+            ? defect.body
+            : 'Upstream closed the response stream without sending a usable event.'
+      })
+    }
+    const aggregate = pickSseAggregator(observed.path)
+    const message = await aggregate(new Response(raw))
+    return c.json(message, (response.status || 200) as 200)
+  }
+  const text = await response.text()
+  if (text.length === 0) {
+    // The same laundering one wire format up: an empty body is not a
+    // response, so `{}` under the upstream's status is a lie the
+    // caller cannot act on. Keep an upstream error status when there
+    // is one — it is more specific than the 502 we would invent.
+    return unusableUpstream(c, log, observed, {
+      reason: 'empty-body',
+      status: response.status >= 400 ? response.status : 502,
+      from: 'Upstream returned an empty body.'
+    })
+  }
+  const json = JSON.parse(text)
+  return c.json(json, (response.status || 200) as 200)
+}
+
 async function formatResponse(
   c: Context,
   response: Response,
@@ -149,34 +237,7 @@ async function formatResponse(
   log: Logger,
   observed: { provider: string; model: string | undefined; path: string }
 ): Promise<Response> {
-  if (!stream) {
-    // A few provider paths (codex-oauth notably) force stream=true
-    // upstream even when the client asked for blocking JSON. Detect
-    // SSE by content-type and aggregate the events back into the
-    // non-stream envelope that matches the inbound endpoint; only fall
-    // through to JSON.parse when the upstream really is JSON. Without
-    // this the parse throws on "event: ...\ndata: ..." and the client
-    // sees a 500.
-    if (isSseContentType(response.headers.get('content-type'))) {
-      const aggregate = pickSseAggregator(observed.path)
-      const message = await aggregate(response)
-      return c.json(message, (response.status || 200) as 200)
-    }
-    const text = await response.text()
-    if (text.length === 0) {
-      log.warn(
-        {
-          provider: observed.provider,
-          model: observed.model,
-          status: response.status,
-          contentType: response.headers.get('content-type')
-        },
-        'upstream returned empty body — client will see malformed 200'
-      )
-    }
-    const json = text.length > 0 ? JSON.parse(text) : {}
-    return c.json(json, (response.status || 200) as 200)
-  }
+  if (!stream) return formatBlockingResponse(c, response, log, observed)
   // SSE — relay the upstream stream as-is. Set the headers the Anthropic
   // SDK expects on the inbound client.
   const headers = new Headers({

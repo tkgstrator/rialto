@@ -306,8 +306,24 @@ The following run through **one implementation** on all four surfaces. These row
 | Sub-account rotation and exhaustion marks | `src/api/v1/chain-failover.ts` | same (an identical chain shows there is no per-surface branch) |
 | Choosing the error envelope | `src/api/v1/error-shape.ts` | `__tests__/parity/error-envelope.test.ts` |
 | Choosing the non-streaming aggregator | the descriptor's `aggregateSse` | `__tests__/parity/non-stream-aggregate.test.ts` |
+| Refusing an upstream response no client can parse | `findSseStreamDefect` in `src/llms/utils/sse-aggregate/parse.ts` | `__tests__/llms/sse-aggregate.test.ts` (all three vocabularies detected by one function) |
 
 **The envelope a failure comes back in is the only thing that varies by surface.**
+
+### What counts as a failure on the aggregation path
+
+The aggregators are forgiving on purpose — a stream cut off mid-block still folds into a coherent
+envelope, because a partial answer beats a 500. That forgiveness used to extend one step too far:
+a stream carrying *no* foldable event, or one ending in an upstream `error` event, folded into a
+husk (`{"content":[]}` on messages) that was then relayed under the upstream's `200`. Clients
+report that as an empty or malformed response and cannot retry it, because a 200 is a success.
+
+`findSseStreamDefect` draws the line before the fold, and it needs no per-surface vocabulary to do
+it: all four wire formats signal a mid-stream failure with a top-level `error` object, and "no
+events at all" is not a vocabulary question. A defect becomes the caller's own error envelope under
+a real status — the upstream's when it named one (`error.code` on google, `error.type` mapped back
+through the same table `error-shape.ts` maps forward), 529 for `overloaded_error`, otherwise 502.
+The same rule covers a non-SSE upstream that returns an empty body.
 
 ## Surface parity for routing
 
