@@ -86,15 +86,21 @@ const SCENARIOS = [
 ]
 const ACTIVE_SCENARIO = 'default'
 
-// Chips rather than a second row of underline tabs. Underlines belong to
-// the band above — two underline strips stacked read as one nested
-// inside the other, which is exactly backwards: the surface is the outer
-// axis and it is the one that lost its emphasis.
+// Underline tabs, the same treatment the surface strip uses. These were
+// filled chips while the two strips sat adjacent — two underline rows
+// stacked read as one nested inside the other, and the surface is the
+// outer axis so it was the wrong one to lose its emphasis. The scope
+// strip sits between them now, so the ambiguity is gone and the two
+// selectors can look like what they both are.
+//
+// The tab spans the band rather than the 32px controls beside it, so its
+// underline lands on the band's own rule instead of floating above it —
+// which is what makes it read as a tab and not as underlined text.
 const scenarioTab = (s) => {
   const on = s.id === ACTIVE_SCENARIO
   return `
-    <button class="flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs transition-colors ${
-      on ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground'
+    <button class="flex h-full items-center justify-center gap-1.5 border-b-2 px-2.5 text-xs transition-colors ${
+      on ? 'border-b-foreground font-medium' : 'border-b-transparent text-muted-foreground hover:text-foreground'
     }">
       ${s.label}<span class="font-mono text-[12px] tabular-nums ${on ? 'text-muted-foreground' : 'text-muted-foreground/70'}">${s.count}</span>
     </button>`
@@ -247,7 +253,7 @@ document.getElementById('root').innerHTML = `
          kinds of thing. auto-cols-fr rather than a fixed width: the
          labels are translated, and the widest one is not the same string
          in every locale. -->
-    <div class="grid grid-flow-col auto-cols-fr gap-0.5">
+    <div class="-my-2.5 grid grid-flow-col auto-cols-fr gap-0.5 self-stretch">
       ${SCENARIOS.map(scenarioTab).join('')}
     </div>
     <span class="h-4 w-px bg-border"></span>

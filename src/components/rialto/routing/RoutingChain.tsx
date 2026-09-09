@@ -37,13 +37,18 @@ const SCENARIO_LABEL_KEYS: Record<ScenarioKey, string> = {
 }
 
 /**
- * Chips, not a second strip of underline tabs.
+ * Underline tabs, the same treatment the surface strip uses.
  *
- * The scenario used to own a full-width band with the same underline
- * treatment the surface tabs use. Two underline strips stacked read as
- * one nested inside the other, which is backwards — the surface is the
- * outer axis and it was the one that lost its emphasis. As chips the
- * scenarios fit beside the lane switch in a single band.
+ * These were filled chips while the two strips sat adjacent: two
+ * underline rows stacked read as one nested inside the other, and the
+ * surface is the outer axis, so it was the wrong one to lose its
+ * emphasis. The scope strip sits between them now, so the ambiguity is
+ * gone and the two selectors can look like what they both are.
+ *
+ * The tab spans the band rather than matching the 32px controls beside
+ * it — `-my-2.5` with `self-stretch` cancels the band's padding — so the
+ * underline lands on the band's own rule instead of floating above it,
+ * which is what makes it read as a tab and not as underlined text.
  */
 function ScenarioChips({
   counts,
@@ -61,7 +66,7 @@ function ScenarioChips({
     // kinds of thing. auto-cols-fr rather than a fixed width — the labels
     // are translated, and the widest one is not the same string in every
     // locale.
-    <div className='grid grid-flow-col auto-cols-fr gap-0.5'>
+    <div className='-my-2.5 grid grid-flow-col auto-cols-fr gap-0.5 self-stretch'>
       {SCENARIOS.map((scenario) => {
         const on = scenario === active
         return (
@@ -70,8 +75,10 @@ function ScenarioChips({
             type='button'
             onClick={() => onSelect(scenario)}
             className={cn(
-              'flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs transition-colors',
-              on ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground'
+              'flex h-full items-center justify-center gap-1.5 border-b-2 px-2.5 text-xs transition-colors',
+              on
+                ? 'border-b-foreground font-medium'
+                : 'border-b-transparent text-muted-foreground hover:text-foreground'
             )}
           >
             {t(SCENARIO_LABEL_KEYS[scenario])}
