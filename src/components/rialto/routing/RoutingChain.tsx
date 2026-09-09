@@ -426,7 +426,7 @@ export function RoutingChain() {
               onNotify={notify}
             />
           ) : (
-            <PassthroughPanel surface={surface} />
+            <PassthroughPanel surface={surface} targets={targets} />
           )}
         </>
       )}
