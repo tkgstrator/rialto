@@ -103,27 +103,18 @@ function ChainBand({
   counts,
   lane,
   onLane,
-  entries,
-  targets,
-  onAdd,
   onSave,
-  saveDisabled,
-  presets
+  saveDisabled
 }: {
   scenario: ScenarioKey
   onScenario: (scenario: ScenarioKey) => void
   counts: Record<ScenarioKey, number>
   lane: Lane
   onLane: (lane: Lane) => void
-  entries: readonly PreferenceEntry[]
-  targets: readonly EnabledTarget[]
-  onAdd: (target: string) => void
   onSave: () => void
   saveDisabled: boolean
-  presets: React.ReactNode
 }) {
   const { t } = useTranslation()
-  const taken = useMemo(() => new Set(entries.map((e) => e.target)), [entries])
   return (
     <div className='flex items-center gap-3 border-b border-border px-6 py-2.5'>
       <ScenarioChips counts={counts} active={scenario} onSelect={onScenario} />
@@ -136,9 +127,11 @@ function ChainBand({
         ]}
         onChange={onLane}
       />
-      <div className='ml-auto flex items-center gap-2'>
-        {presets}
-        <AddTargetDialog targets={targets} taken={taken} onAdd={onAdd} />
+      {/* Save alone. Presets and Add target moved under the table: five
+          scenario chips, a lane switch and three buttons was more than
+          one row should carry, and neither of those two acts on the
+          coordinate this band picks — they act on the list below it. */}
+      <div className='ml-auto'>
         <RButton variant='primary' icon='ri-check-line' onClick={onSave} disabled={saveDisabled}>
           {t('common.save')}
         </RButton>
@@ -148,21 +141,46 @@ function ChainBand({
 }
 
 /**
- * The total, under the thing it totals.
+ * The total, under the thing it totals — with the two actions that add
+ * to it.
  *
- * This also carries the one sentence left of the four-line dashed box
- * that used to close the table. The rest of that box explained the Share
- * column, which is where the explanation belongs — it is a marker on
- * that header now.
+ * "Add target" appends a row to the table directly above, which is where
+ * a reader looks for it once they have read the last one.
+ *
+ * The count line also carries the one sentence left of the four-line
+ * dashed box that used to close the table. The rest of that box
+ * explained the Share column, which is where the explanation belongs —
+ * it is a marker on that header now.
+ *
+ * This renders even when the lane is empty. Both buttons are the only
+ * way out of an empty lane, so they cannot live inside the branch that
+ * an empty lane skips.
  */
-function ChainFooter({ entries }: { entries: readonly PreferenceEntry[] }) {
+function ChainFooter({
+  entries,
+  targets,
+  onAdd,
+  presets
+}: {
+  entries: readonly PreferenceEntry[]
+  targets: readonly EnabledTarget[]
+  onAdd: (target: string) => void
+  presets: React.ReactNode
+}) {
   const { t } = useTranslation()
   const disabled = entries.filter((e) => !e.enabled).length
+  const taken = useMemo(() => new Set(entries.map((e) => e.target)), [entries])
   return (
-    <div className='border-t border-border/60 px-6 py-2.5 text-[12px] text-muted-foreground'>
-      {t('routing.common.targetCount', { n: entries.length })}
-      {disabled === 0 ? '' : ` · ${t('routing.chain.disabledCount', { n: disabled })}`}
-      {` · ${t('routing.chain.orderHint')}`}
+    <div className='flex items-center gap-3 border-t border-border/60 px-6 py-2.5'>
+      <span className='text-[12px] text-muted-foreground'>
+        {t('routing.common.targetCount', { n: entries.length })}
+        {disabled === 0 ? '' : ` · ${t('routing.chain.disabledCount', { n: disabled })}`}
+        {entries.length === 0 ? '' : ` · ${t('routing.chain.orderHint')}`}
+      </span>
+      <div className='ml-auto flex items-center gap-2'>
+        {presets}
+        <AddTargetDialog targets={targets} taken={taken} onAdd={onAdd} />
+      </div>
     </div>
   )
 }
@@ -222,19 +240,8 @@ function RoutedBody(props: RoutedBodyProps) {
         counts={counts}
         lane={props.lane}
         onLane={props.onLane}
-        entries={entries}
-        targets={props.targets}
-        onAdd={addTarget}
         onSave={props.onSave}
         saveDisabled={props.saveDisabled}
-        presets={
-          <PresetsMenu
-            profileKey={props.surface.profileKey}
-            constraints={props.profile.constraints}
-            onApplied={props.setProfile}
-            onNotify={props.onNotify}
-          />
-        }
       />
       {entries.length === 0 ? (
         profileEntryCount(props.profile.entriesByScenario) === 0 ? (
@@ -245,11 +252,21 @@ function RoutedBody(props: RoutedBodyProps) {
           </div>
         )
       ) : (
-        <>
-          <ChainTable entries={entries} weights={props.weights} actions={actions} />
-          <ChainFooter entries={entries} />
-        </>
+        <ChainTable entries={entries} weights={props.weights} actions={actions} />
       )}
+      <ChainFooter
+        entries={entries}
+        targets={props.targets}
+        onAdd={addTarget}
+        presets={
+          <PresetsMenu
+            profileKey={props.surface.profileKey}
+            constraints={props.profile.constraints}
+            onApplied={props.setProfile}
+            onNotify={props.onNotify}
+          />
+        }
+      />
       <ChainConstraints constraints={props.profile.constraints} />
     </>
   )

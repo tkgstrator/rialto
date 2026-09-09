@@ -248,19 +248,27 @@ document.getElementById('root').innerHTML = `
       <button class="rounded bg-foreground px-2.5 py-1 text-[12px] font-medium text-background">Agent</button>
       <button class="rounded px-2.5 py-1 text-[12px] text-muted-foreground hover:text-foreground">Subagent</button>
     </div>
-    <div class="ml-auto flex items-center gap-2">
-      ${btn('Presets', 'ghost', 'ri-stack-line')}
-      ${btn('Add target', 'outline', 'ri-add-line')}
+    <!-- Save alone. Presets and Add target moved under the table: five
+         scenario chips, a lane switch and three buttons was more than one
+         row should carry, and neither of those two acts on the coordinate
+         this band picks — they act on the list below it. -->
+    <div class="ml-auto">
       ${btn('Save', 'primary', 'ri-check-line')}
     </div>
   </div>
 
   ${chain}
 
-  <!-- The count reads as a total under the thing it counts, rather than
-       as a fourth control in the band above. -->
-  <div class="border-t border-border/60 px-6 py-2.5 text-[12px] text-muted-foreground">
-    5 targets · 1 disabled · order is preference, top first
+  <!-- The count reads as a total under the thing it counts, and the two
+       actions that add to that list sit with it. "Add target" appends a
+       row to the table directly above, which is where a reader looks for
+       it once they have read the last one. -->
+  <div class="flex items-center gap-3 border-t border-border/60 px-6 py-2.5">
+    <span class="text-[12px] text-muted-foreground">5 targets · 1 disabled · order is preference, top first</span>
+    <div class="ml-auto flex items-center gap-2">
+      ${btn('Presets', 'ghost', 'ri-stack-line')}
+      ${btn('Add target', 'outline', 'ri-add-line')}
+    </div>
   </div>
 
   <!-- Constraints, four-up, in the space the right rail used to leave
