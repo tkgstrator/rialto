@@ -1,14 +1,19 @@
 /**
- * The bar under the surface tabs: whether the router applies to this
- * surface at all, and which preference profile it draws from.
+ * Band 2: the settings of the selected surface, and nothing else.
  *
- * The mode switch writes straight through — there is no draft state for a
- * boolean whose whole purpose is to be flipped and observed. Both controls
- * change what actually routes: `scenario-router.ts` resolves the surface
- * for the inbound path and runs that surface's profile.
+ * The strip leads with the surface it writes to. That repeats the path
+ * from the tab above it, and the repetition is the point — parked at the
+ * right end of the tab row the same switch read as a screen-wide
+ * control, and nothing on it said which surface it was changing. The
+ * tinted ground ties the strip to the tabs it hangs from.
+ *
+ * The mode switch writes straight through: there is no draft state for a
+ * boolean whose whole purpose is to be flipped and observed. Both
+ * controls change what actually routes — `scenario-router.ts` resolves
+ * the surface for the inbound path and runs that surface's profile.
  */
 import { useState } from 'react'
-import { Trans, useTranslation } from 'react-i18next'
+import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { InboundSurfaceWire, RoutingMode } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -56,63 +61,60 @@ function ProfilePicker({
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   return (
-    <div className='flex items-center gap-2'>
-      <span className='text-xs text-muted-foreground'>{t('routing.chain.profile')}</span>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <button
-            type='button'
-            className='inline-flex h-7 items-center gap-2 rounded-md border border-border px-2.5 text-xs hover:bg-muted/60'
-          >
-            {current}
-            <i className='ri-arrow-down-s-line text-sm text-muted-foreground' />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent align='start' className='w-60 p-1'>
-          {/* The reserved passthrough profile is deliberately not offered
-              here. Selecting it on a surface would mean exactly what the
-              Routed/Passthrough toggle two controls to the left already
-              means, and two controls for one decision is how they end up
-              disagreeing on screen. It stays available for access
-              tokens, where it is the only way to express it. */}
-          {profiles
-            .filter((profile) => profile.kind === 'chain')
-            .map((profile) => (
-              <button
-                key={profile.key}
-                type='button'
-                onClick={() => {
-                  onSelect(profile.key)
-                  setOpen(false)
-                }}
-                className='flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/60'
-              >
-                <span className='truncate'>{profile.key}</span>
-                {/* An unconfigured profile is a real choice with a real
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        {/* The label lives inside the trigger now. As a separate
+            <span> beside it, "Profile" was one more free-floating word
+            in a band that already carries four surface tabs and a
+            two-position switch. */}
+        <button
+          type='button'
+          className='inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-muted/60'
+        >
+          <span className='text-muted-foreground'>{t('routing.chain.profile')}</span>
+          {current}
+          <i className='ri-arrow-down-s-line text-sm text-muted-foreground' />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align='end' className='w-60 p-1'>
+        {/* The reserved passthrough profile is deliberately not offered
+            here. Selecting it on a surface would mean exactly what the
+            Routed/Passthrough toggle to the left already means, and two
+            controls for one decision is how they end up disagreeing on
+            screen. It stays available for access tokens, where it is the
+            only way to express it. */}
+        {profiles
+          .filter((profile) => profile.kind === 'chain')
+          .map((profile) => (
+            <button
+              key={profile.key}
+              type='button'
+              onClick={() => {
+                onSelect(profile.key)
+                setOpen(false)
+              }}
+              className='flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/60'
+            >
+              <span className='truncate'>{profile.key}</span>
+              {/* An unconfigured profile is a real choice with a real
                   consequence, so it says so rather than showing a bare 0. */}
-                {profile.entryCount === 0 ? (
-                  <span className='ml-auto shrink-0 text-[11px] text-muted-foreground'>
-                    {t('routing.common.notConfigured')}
-                  </span>
-                ) : (
-                  <span className='ml-auto shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground'>
-                    {profile.entryCount}
-                  </span>
-                )}
-              </button>
-            ))}
-        </PopoverContent>
-      </Popover>
-    </div>
+              {profile.entryCount === 0 ? (
+                <span className='ml-auto shrink-0 text-[11px] text-muted-foreground'>
+                  {t('routing.common.notConfigured')}
+                </span>
+              ) : (
+                <span className='ml-auto shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground'>
+                  {profile.entryCount}
+                </span>
+              )}
+            </button>
+          ))}
+      </PopoverContent>
+    </Popover>
   )
 }
 
-const EXPLAINER_KEY = {
-  routed: 'routing.chain.explainerRouted',
-  passthrough: 'routing.chain.explainerPassthrough'
-} as const
-
-export function SurfaceModeBar({
+export function SurfaceScopeBar({
   surface,
   profiles,
   onMode,
@@ -125,24 +127,32 @@ export function SurfaceModeBar({
 }) {
   const { t } = useTranslation()
   return (
-    <div className='flex items-center gap-4 border-b border-border bg-muted/30 px-6 py-3'>
-      <div className='flex items-center gap-2'>
-        <span className='text-xs text-muted-foreground'>{t('routing.chain.routing')}</span>
-        <Segmented
-          value={surface.routingMode}
-          options={[
-            { value: 'routed', label: t('routing.chain.modeRoutedLabel') },
-            { value: 'passthrough', label: t('routing.chain.modePassthroughLabel') }
-          ]}
-          onChange={onMode}
-        />
-      </div>
+    <div className='flex items-center gap-3 border-b border-border bg-muted/30 px-6 py-2.5'>
+      <span className='whitespace-nowrap font-mono text-xs'>{surface.path}</span>
+      <span className='whitespace-nowrap text-[12px] text-muted-foreground'>{surface.client}</span>
+      <span className='mx-1 h-4 w-px shrink-0 bg-border' />
+      <Segmented
+        value={surface.routingMode}
+        options={[
+          { value: 'routed', label: t('routing.chain.modeRoutedLabel') },
+          { value: 'passthrough', label: t('routing.chain.modePassthroughLabel') }
+        ]}
+        onChange={onMode}
+      />
+      {/* No help marker beside the switch. It explained two words that
+          explain themselves, through a `title` that touch never shows and
+          the keyboard barely reaches — and the screen demonstrates the
+          difference anyway: flipping to Passthrough replaces the chain
+          with the set of targets a caller may name, under a note saying
+          what switching back would buy. */}
+      {/* A passthrough surface draws from no profile, so the picker is
+          absent rather than disabled — and the divider goes with it. */}
       {surface.routingMode === 'routed' ? (
-        <ProfilePicker current={surface.profileKey} profiles={profiles} onSelect={onProfile} />
+        <>
+          <span className='mx-1 h-4 w-px shrink-0 bg-border' />
+          <ProfilePicker current={surface.profileKey} profiles={profiles} onSelect={onProfile} />
+        </>
       ) : null}
-      <p className='ml-auto max-w-md text-right text-[12px] leading-snug text-muted-foreground'>
-        <Trans i18nKey={EXPLAINER_KEY[surface.routingMode]} components={{ mono: <span className='font-mono' /> }} />
-      </p>
     </div>
   )
 }
