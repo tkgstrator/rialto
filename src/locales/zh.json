@@ -280,7 +280,6 @@
     "accounts": {
       "title": "账号",
       "empty": "尚未连接任何账号。请通过“添加 provider”登录。",
-      "active": "使用中",
       "auth": "认证 {{status}}",
       "resetsIn": "重置于",
       "windowFiveHour": "5 小时",

@@ -117,7 +117,7 @@ describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', (
       ]
     })
     const claudeCode = await prisma.provider.findUniqueOrThrow({ where: { name: 'claude-code' } })
-    const seededAccount = await prisma.subAccount.create({
+    await prisma.subAccount.create({
       data: {
         providerId: claudeCode.id,
         sourcePath: 'oauth:claude:test-user',
@@ -129,11 +129,6 @@ describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', (
         refreshTokenEnc: 'iv.tag.body'
       }
     })
-    await prisma.provider.update({
-      where: { id: claudeCode.id },
-      data: { activeSubscriptionAccountId: seededAccount.id }
-    })
-
     // Flip openai through the CRUD path — this is the reproducer for
     // the incident that wiped subscription credentials in production.
     await upsertProvider({
@@ -144,16 +139,14 @@ describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', (
       models: ['gpt-5-nano']
     })
 
-    // claude-code provider still there, SubAccount still there, active
-    // binding still there.
+    // claude-code provider still there, SubAccount still there.
     const after = await prisma.provider.findUnique({
       where: { name: 'claude-code' },
-      include: { subscriptionAccounts: true, activeSubscriptionAccount: true }
+      include: { subscriptionAccounts: true }
     })
     expect(after).not.toBeNull()
     expect(after?.subscriptionAccounts).toHaveLength(1)
     expect(after?.subscriptionAccounts[0].sourcePath).toBe('oauth:claude:test-user')
-    expect(after?.activeSubscriptionAccountId).toBe(seededAccount.id)
   })
 
   test("editing a provider does not null RouterSlot bindings pointing at another provider's models", async () => {

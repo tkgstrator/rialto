@@ -88,14 +88,16 @@ const models = `
 // The first account is this install's, from GET /api/usage: 5-hour 0%
 // with no reset time yet, 7-day at 100%, and the weeklyScoped row the
 // collector reports, which on this account is Fable. The second is
-// invented so the panel shows an inactive row — its windows are the same
-// three, because those are the ones Claude actually publishes.
+// invented so the panel shows more than one row — its windows are the
+// same three, because those are the ones Claude actually publishes. No
+// row is singled out: no account is designated any more, the proxy picks
+// between them per request.
 const ACCOUNTS = [
   // Full addresses, not the elided ones this fixture used to carry. They
   // were shortened to survive a 288px-narrower pane; drawn short, the
   // panel looked comfortable at a width it never had.
   {
-    label: 'tkgstrator@gmail.com', plan: 'Max', active: true, auth: 'live',
+    label: 'tkgstrator@gmail.com', plan: 'Max', auth: 'live',
     windows: [
       { label: '5-hour',        pct: 0,   resets: '—' },
       { label: '7-day',         pct: 100, resets: '2d 09h' },
@@ -103,7 +105,7 @@ const ACCOUNTS = [
     ]
   },
   {
-    label: 'second.account@gmail.com', plan: 'Pro', active: false, auth: 'live',
+    label: 'second.account@gmail.com', plan: 'Pro', auth: 'live',
     windows: [
       { label: '5-hour',        pct: 12, resets: '1h 47m' },
       { label: '7-day',         pct: 22, resets: '3d 04h' },
@@ -126,11 +128,10 @@ const windowLine = (w) => `
 
 // An account's meters are a snapshot; the history behind them is Usage.
 const accountRow = (a) => `
-  <div ${navTo('activity-usage.html')} class="border-l-2 ${a.active ? 'border-l-foreground' : 'border-l-transparent'} px-4 py-3 transition-colors hover:bg-muted/50">
+  <div ${navTo('activity-usage.html')} class="px-4 py-3 transition-colors hover:bg-muted/50">
     <div class="flex items-center gap-2">
       <span class="text-xs font-medium">${a.label}</span>
       ${pill(a.plan, 'info')}
-      ${a.active ? pill('active', 'ok') : ''}
       <span class="ml-auto text-[12px] text-muted-foreground/70">resets in</span>
     </div>
     ${a.windows.map(windowLine).join('')}

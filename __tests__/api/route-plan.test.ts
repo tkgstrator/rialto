@@ -55,18 +55,25 @@ async function buildContext(): Promise<LlmsContext> {
 
 // Drive buildRoutePlan through a real Hono context, which is the only
 // way it reads a body and a URL.
-async function plan(path: string, body: Record<string, unknown>): Promise<RoutePlan | Response> {
+async function plan(
+  path: string,
+  body: Record<string, unknown>,
+  inbound: { headers?: Record<string, string>; tokenId?: string } = {}
+): Promise<RoutePlan | Response> {
   const ctx = await buildContext()
   const app = new Hono()
   const captured: { value: RoutePlan | Response | null } = { value: null }
   app.post('/*', async (c) => {
+    // The /v1 auth middleware sets this when an issued token authenticated
+    // the call; buildRoutePlan reads it back off the context.
+    if (inbound.tokenId !== undefined) c.set('accessToken', { id: inbound.tokenId, profileKey: null })
     captured.value = await buildRoutePlan(c, ctx)
     return c.text('ok')
   })
   await app.fetch(
     new Request(`http://local${path}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...inbound.headers },
       body: JSON.stringify(body)
     })
   )
@@ -171,5 +178,44 @@ describe('the error envelope of a failed plan follows the surface', () => {
     const body = (await (result as Response).json()) as { error?: { status?: string; code?: number } }
     expect(body.error?.status).toBe('INVALID_ARGUMENT')
     expect(body.error?.code).toBe(400)
+  })
+})
+
+/**
+ * The sub-account sticky key. It is what the OAuth transformer picks an
+ * account under and what the reactive 429 path releases, so "the client
+ * sent no session header" must not resolve to "no key": that dropped the
+ * request onto the provider's stored active account and kept it there,
+ * 429 after 429, while its peer accounts sat unspent.
+ */
+describe('accountSessionKey', () => {
+  test('uses the session the client sent', async () => {
+    const result = asPlan(
+      await plan(
+        '/v1/messages',
+        { model: 'anthropic,claude-sonnet-5', messages: [] },
+        { headers: { 'x-claude-code-session-id': 'sess-1' }, tokenId: 'tok-1' }
+      )
+    )
+    expect(result.accountSessionKey).toBe('sess-1')
+  })
+
+  test('falls back to the issued token when the client sends no session', async () => {
+    const result = asPlan(
+      await plan('/v1/chat/completions', { model: 'anthropic,claude-sonnet-5', messages: [] }, { tokenId: 'tok-1' })
+    )
+    expect(result.accountSessionKey).toBe('token:tok-1')
+  })
+
+  test('is stable across requests from the same token, so the pick sticks', async () => {
+    const body = { model: 'anthropic,claude-sonnet-5', messages: [] }
+    const first = asPlan(await plan('/v1/chat/completions', body, { tokenId: 'tok-1' }))
+    const second = asPlan(await plan('/v1/chat/completions', body, { tokenId: 'tok-1' }))
+    expect(second.accountSessionKey).toBe(first.accountSessionKey)
+  })
+
+  test('an unauthenticated-by-token call still gets a key rather than nothing', async () => {
+    const result = asPlan(await plan('/v1/chat/completions', { model: 'anthropic,claude-sonnet-5', messages: [] }))
+    expect(result.accountSessionKey).toBe('anonymous')
   })
 })

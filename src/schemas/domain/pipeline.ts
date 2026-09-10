@@ -116,6 +116,14 @@ export const PipelineRequestSchema = z.object({
   // token was used.
   accessTokenId: z.string().nonempty().optional(),
   sessionId: z.string().nonempty().optional(),
+  // The key the subscription sub-account picker sticks on, resolved once
+  // per request by the /v1 route layer. Distinct from the archive's
+  // session id (`resolveSessionId`): a client that sends no session
+  // header still needs ONE stable key here, or every request re-enters
+  // the picker as a stranger and the OAuth transformer falls back to the
+  // provider's stored active account. Absent on probe contexts, which
+  // deliberately test that active account.
+  accountSessionKey: z.string().nonempty().optional(),
   tokenCount: z.number().optional()
 })
 export type PipelineRequest = z.infer<typeof PipelineRequestSchema>

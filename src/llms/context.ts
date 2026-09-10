@@ -12,9 +12,7 @@ import type { Logger } from 'pino'
 import { flattenNestedRouter, type Provider, type ProviderConfigShape } from '@/schemas/domain'
 import { logger } from '../logger'
 import { loadFullConfig } from '../services/config'
-import { getActiveSubAccountAuth } from '../services/subscription-account-sync-service'
-import { getSubscriptionsInfo } from '../services/subscription-info-service'
-import { applySubscriptionAuth, type SubscriptionAuthOverlay } from '../services/subscription-overlay'
+import { applySubscriptionAuth } from '../services/subscription-overlay'
 import { ConfigStore } from './registry/config'
 import { ProviderRegistry } from './registry/provider'
 import { TokenizerRegistry } from './registry/tokenizer'
@@ -46,18 +44,15 @@ export function resetLlmsContext(): void {
 async function buildLlmsContext(): Promise<LlmsContext> {
   const cfg = await loadFullConfig()
 
-  // 1. Subscription overlay — inject OAuth credentials onto subscription
-  //    providers so the OAuth transformers can read them at request time.
-  //    AppConfig.Providers is non-optional per the schema, so no nullish
-  //    fallback is needed here. The transformer chain itself is not
-  //    overlaid: the registry derives it from api_style + auth_mode in
-  //    step 4.
+  // 1. Subscription overlay — mark subscription providers as servable so
+  //    the registry does not skip them for a missing api_key. No
+  //    credential is baked in here: the OAuth transformers resolve one
+  //    per request, which is what lets a provider's accounts be used in
+  //    turn rather than one being frozen into the context at build time.
+  //    The transformer chain is not overlaid either: the registry derives
+  //    it from api_style + auth_mode in step 4.
   const rawProviders: Provider[] = cfg.Providers
-  const [activeAccountPaths, authByProvider] = await Promise.all([
-    collectActiveAccountPaths(),
-    collectAuthByProvider(rawProviders)
-  ])
-  const providersWithAuth = applySubscriptionAuth(rawProviders, activeAccountPaths, authByProvider)
+  const providersWithAuth = applySubscriptionAuth(rawProviders)
 
   // 2. ConfigStore — the pipeline reads Router config, scenario thresholds,
   //    HTTPS_PROXY, etc. The router uses configService.get('providers') for
@@ -133,8 +128,6 @@ function toProviderConfigShapes(providers: Provider[]): ProviderConfigShape[] {
   }))
 }
 
-// ─── Subscription overlay collection ───────────────────────────────────
-
 // Resolve a "provider,model" pointer to its declared contextWindow via
 // the provider list. Returns null when the pointer is unset / malformed,
 // the provider is unknown, or the vendor never published a window for
@@ -150,24 +143,4 @@ function resolveDefaultAgentContextWindow(providers: Provider[], primary: string
   if (!provider?.modelContextWindows) return null
   const window = provider.modelContextWindows[modelName]
   return typeof window === 'number' && window > 0 ? window : null
-}
-
-async function collectActiveAccountPaths(): Promise<Map<string, string>> {
-  const subscriptions = await getSubscriptionsInfo()
-  const map = new Map<string, string>()
-  for (const s of subscriptions) {
-    const path = s.activeAccount?.sourcePath
-    if (path) map.set(s.providerName, path)
-  }
-  return map
-}
-
-async function collectAuthByProvider(providers: Provider[]): Promise<Map<string, SubscriptionAuthOverlay>> {
-  const map = new Map<string, SubscriptionAuthOverlay>()
-  for (const p of providers) {
-    if (p.auth_mode !== 'subscription') continue
-    const auth = await getActiveSubAccountAuth(p.name).catch(() => null)
-    if (auth) map.set(p.name, auth)
-  }
-  return map
 }

@@ -1,7 +1,6 @@
 /**
  * DB write path: upsert a discovered account onto its matching
- * Provider(s), keep `activeSubscriptionAccountId` pointed at a usable
- * row, and the boot-time reconciliation self-heal.
+ * Provider(s), and switch a provider on when it gains its first one.
  */
 
 import { getPrismaClient } from '../../db/client'
@@ -36,60 +35,6 @@ const upsertAccount = async (
   return prisma.subAccount.create({
     data: { providerId, sourcePath: account.sourcePath, ...payload }
   })
-}
-
-// Set `activeSubscriptionAccountId` to the row we just upserted, unless
-// the user has explicitly bound a (still-enabled) account already. The
-// freshly-authed account is the most-recently-touched signal we have,
-// and treating it as the new default mirrors what users expect after a
-// successful Connect.
-const ensureActiveAccount = async (prisma: PrismaClient, providerId: string, upsertedId: string): Promise<void> => {
-  const provider = await prisma.provider.findUnique({
-    where: { id: providerId },
-    include: { activeSubscriptionAccount: true }
-  })
-  if (!provider) return
-  const current = provider.activeSubscriptionAccount
-  if (current && current.enabled) return
-  await prisma.provider.update({
-    where: { id: providerId },
-    data: { activeSubscriptionAccountId: upsertedId }
-  })
-}
-
-// Boot-time self-heal: pick up subscription providers whose active
-// account is null (or points at a now-disabled row) and promote the
-// oldest still-enabled account into the slot. Recovers DB state left
-// over from the pre-fix toggle code path, which used to null the
-// binding without choosing a successor.
-export async function reconcileActiveSubAccounts(prisma: PrismaClient = getPrismaClient()): Promise<void> {
-  const providers = await prisma.provider.findMany({
-    where: { authMode: AuthMode.subscription },
-    include: {
-      activeSubscriptionAccount: true,
-      subscriptionAccounts: { where: { enabled: true }, orderBy: { createdAt: 'asc' }, select: { id: true } }
-    }
-  })
-  for (const p of providers) {
-    if (p.activeSubscriptionAccount?.enabled) continue
-    const next = p.subscriptionAccounts[0]
-    const nextId = next ? next.id : null
-    // Already in the right shape: binding is null and there is no
-    // candidate to promote — nothing to write.
-    if (nextId === null && p.activeSubscriptionAccountId === null) continue
-    await prisma.provider.update({
-      where: { id: p.id },
-      data: { activeSubscriptionAccountId: nextId }
-    })
-    if (nextId === null) {
-      logger.info({ provider: p.name }, '[subaccount] reconcile: cleared stale active binding (no enabled candidate)')
-    } else {
-      logger.info(
-        { provider: p.name, subAccountId: nextId },
-        '[subaccount] reconcile: promoted enabled subaccount into orphaned active slot'
-      )
-    }
-  }
 }
 
 export const providersForKind = async (
@@ -140,8 +85,7 @@ const recordOAuthAccount = async (
     // Counted before the upsert, which is about to create the row that
     // would make this look like a provider that was already set up.
     const hadAccounts = (await prisma.subAccount.count({ where: { providerId: p.id } })) > 0
-    const row = await upsertAccount(prisma, p.id, p.name, account, key)
-    await ensureActiveAccount(prisma, p.id, row.id)
+    await upsertAccount(prisma, p.id, p.name, account, key)
     if (!hadAccounts) await enableOnFirstAccount(prisma, p.id, p.name)
   }
 }

@@ -24,6 +24,7 @@ import { getPrismaClient } from '../db/client'
 import { type ApiStyle, AuthMode, ModelTestStatus, type PrismaClient } from '../generated/prisma/client'
 import dayjs from '../lib/dayjs'
 import type { ModelTestAllResponseSchema, ModelTestResultSchema } from '../schemas/api/models'
+import { hasUnexpiredAccount } from '../shared/subscription-credential'
 import { probeInference } from './model-test/probes'
 import { probeSubscription } from './model-test/subscription-probe'
 import { getSubscriptionsInfo } from './subscription-info-service'
@@ -159,17 +160,12 @@ export async function testAllModels(
     orderBy: [{ provider: { name: 'asc' } }, { name: 'asc' }]
   })
 
-  // Which subscription providers actually have valid, unexpired creds.
+  // Which subscription providers actually have valid, unexpired creds —
+  // asked of every account, since any of them may serve the request.
+  const now = dayjs().valueOf()
   const subs = await getSubscriptionsInfo()
   const validSubscription = new Set(
-    subs
-      .filter(
-        (s) =>
-          s.enabled &&
-          s.activeAccount?.plan &&
-          !(s.activeAccount.expiresAt && s.activeAccount.expiresAt < dayjs().valueOf())
-      )
-      .map((s) => s.providerName)
+    subs.filter((s) => s.enabled && hasUnexpiredAccount(s.accounts, now)).map((s) => s.providerName)
   )
   const hasCredentials = (p: { name: string; apiKey: string | null; authMode: AuthMode }): boolean =>
     p.authMode === AuthMode.subscription

@@ -23,7 +23,7 @@ flowchart TB
     B0[migrateHomeDir<br/>~/.claude-code-router → ~/.rialto]
     B1[initDir]
     B2[initConfig + syncLoggerFromEnv<br/>disk envelope → process.env]
-    B3[reconcileActiveSubAccounts<br/>ensureInboundSurfaces]
+    B3[ensureInboundSurfaces]
     B4[背景ジョブ起動<br/>usage / auth-health / scheduler]
     B0 --> B1 --> B2 --> B3 --> B4
   end
@@ -71,9 +71,8 @@ flowchart TB
 | ① Bootstrap | 0. migrateHomeDir | 旧 `~/.claude-code-router` を `~/.rialto` へコピー→検証→旧削除。**必ず最初**（`~/.rialto` が先にできると恒久 no-op になる） | disk → disk | `src/services/config/migrate-home-dir.ts` |
 | | 1. initDir | `~/.rialto/` などホーム作成 | – | `src/services/config/envelope.ts` |
 | | 2. initConfig | disk envelope を読み、HOST/PORT/APIKEY/LOG_LEVEL/PROXY_URL を `process.env` に反映。直後に `syncLoggerFromEnv()` が LOG_LEVEL を既存 pino に再適用 | disk → env | `src/services/config/envelope.ts`<br/>`src/logger.ts` |
-| | 3. reconcileActiveSubAccounts | active binding が orphan になった subscription provider を自己修復（冪等） | DB → DB | `src/services/subscription-account-sync-service.ts` |
-| | 4. ensureInboundSurfaces | 全面に明示的な `routingMode` 行を入れる（既存行は不変） | – → DB | `src/services/inbound-surface-service.ts` |
-| | 5. 背景ジョブ | usage capture / auth health / routing scheduler。いずれも fire-and-forget で boot をブロックしない | – | `src/services/usage-job.ts` ほか |
+| | 3. ensureInboundSurfaces | 全面に明示的な `routingMode` 行を入れる（既存行は不変） | – → DB | `src/services/inbound-surface-service.ts` |
+| | 4. 背景ジョブ | usage capture / auth health / routing scheduler。いずれも fire-and-forget で boot をブロックしない | – | `src/services/usage-job.ts` ほか |
 | ② State | LlmsContext | 4 registries を 1 個に束ねた lazy singleton。DB-backed config 変更時に `resetLlmsContext()` で再生成 | AppConfig → ctx | `src/llms/context.ts` |
 | | failover-state | provider / sub-account 単位の枯渇フラグ。`until` 時刻 or default 5min で失効 | – | `src/services/failover-state.ts` |
 | | session-account-router | session → 選択 sub-account の sticky マップ | – | `src/services/session-account-router.ts` |
@@ -402,9 +401,8 @@ sequenceDiagram
 1. `migrateHomeDir()` — 旧 `~/.claude-code-router` を `~/.rialto` へ移す。**この文が最初でなければならない**: 移行の冪等条件が「宛先が既に存在する」なので、`initDir()` でも logger の初回ファイル書き込みでも、先に `~/.rialto` を作った時点でコピーは恒久的な no-op になり、運用者は無言で空の設定から始まってしまう。`RIALTO_HOME_DIR` でホームが別の場所に固定されているときはスキップする。
 2. `initDir()` — `~/.rialto/` などのホームディレクトリ確保。
 3. `initConfig()` — disk envelope を読んで `HOST` / `PORT` / `APIKEY` / `LOG_LEVEL` / `PROXY_URL` などを `process.env` に反映。続けて `syncLoggerFromEnv()` が、import 時に構築済みの pino インスタンスへ `LOG_LEVEL` を再適用する。
-4. `reconcileActiveSubAccounts()` — active account binding が orphan になった subscription provider の自己修復。冪等。
-5. `ensureInboundSurfaces()` — 全面に明示的な `routingMode` 行を入れる。
-6. `startUsageCapture()` / `startAuthHealthCheck()` / `startRoutingScheduler()` — 背景ジョブ。Redis 到達性などで boot をブロックしない。
+4. `ensureInboundSurfaces()` — 全面に明示的な `routingMode` 行を入れる。
+5. `startUsageCapture()` / `startAuthHealthCheck()` / `startRoutingScheduler()` — 背景ジョブ。Redis 到達性などで boot をブロックしない。
 
 **`runJsonToDbMigration()` は存在しない。** 旧 `config.json` の `Providers` / `Router` を Postgres へ
 lift する一回限りの移行は削除済みで、流れは逆向きになった: `syncToConfigFile()`

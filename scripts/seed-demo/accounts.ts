@@ -52,7 +52,7 @@ async function ensureAccounts(prisma: PrismaClient, now: number): Promise<number
   for (const [idx, provider] of missing.entries()) {
     const kind = kindOf(provider.apiBaseUrl)
     const plan = PLAN_BY_KIND[kind]
-    const account = await prisma.subAccount.create({
+    await prisma.subAccount.create({
       data: {
         id: demoId('acct', idx + 1),
         providerId: provider.id,
@@ -74,12 +74,6 @@ async function ensureAccounts(prisma: PrismaClient, now: number): Promise<number
         lastSyncedAt: new Date(now - 5 * 60_000)
       }
     })
-    if (provider.activeSubscriptionAccountId === null) {
-      await prisma.provider.update({
-        where: { id: provider.id },
-        data: { activeSubscriptionAccountId: account.id }
-      })
-    }
   }
   return missing.length
 }

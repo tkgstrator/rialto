@@ -1,7 +1,8 @@
 /**
  * Shared scaffolding for subscription-OAuth transformers (claude-code,
- * codex, …). All credential reads come from the DB-synced overlay on
- * `provider.transformer.subscriptionAuth` — there is no disk fallback.
+ * codex, …). Credentials come from the DB, resolved per request: the
+ * session-account picker first, then a caller-supplied block (probes),
+ * then any account on the provider. There is no disk fallback.
  * Concrete subclasses opt into a near-expiry refresh by overriding
  * `refresh()`; the base owns the in-flight dedup so concurrent requests
  * don't race the upstream refresh endpoint with the same single-use
@@ -14,7 +15,7 @@ import { type OauthCredentials, OauthSubscriptionAuthBlockSchema } from '@/schem
 import { logger } from '../../logger'
 import { withRefreshLock } from '../../services/oauth/refresh-lock'
 import { resolveAccountForSession } from '../../services/session-account-router'
-import { updateSubAccountAccessToken } from '../../services/subscription-account-sync-service'
+import { getUsableSubAccountAuth, updateSubAccountAccessToken } from '../../services/subscription-account-sync-service'
 import { Transformer } from './base'
 
 export type { OauthCredentials } from '@/schemas/wire/oauth'
@@ -63,46 +64,84 @@ export abstract class OAuthTransformer extends Transformer {
     return typeof model === 'string' && model.length > 0 ? model : undefined
   }
 
+  /** Freshen a resolved account's token and shape it for the caller. */
+  private async credentialsFor(auth: {
+    subAccountId: string
+    accessToken: string
+    refreshToken: string | null
+    accountId: string | null
+    expiresAt: Date | null
+  }): Promise<OauthCredentials> {
+    const live = await this.ensureFreshToken({
+      subAccountId: auth.subAccountId,
+      accessToken: auth.accessToken,
+      refreshToken: auth.refreshToken === null ? '' : auth.refreshToken,
+      expiresAt: auth.expiresAt
+    })
+    return auth.accountId === null ? { token: live } : { token: live, accountId: auth.accountId }
+  }
+
   protected async resolveSubscriptionAuth(
     provider: RuntimeProvider | null | undefined,
     sessionId?: string | null,
     kind?: 'claude' | 'codex',
     request?: unknown
   ): Promise<OauthCredentials> {
-    // Session-aware path: pick account by session continuity or lowest usage.
+    // Session-aware path: pick the account by session continuity, or by
+    // which one has the most quota left to burn. This is the path all
+    // proxied traffic takes.
     if (sessionId && kind) {
       const account = await resolveAccountForSession(sessionId, kind, this.modelOf(request))
       if (account) {
-        const live = await this.ensureFreshToken({
+        return this.credentialsFor({
           subAccountId: account.subAccountId,
           accessToken: account.accessToken,
-          refreshToken: account.refreshToken ?? '',
+          refreshToken: account.refreshToken,
+          accountId: account.accountId,
           expiresAt: account.expiresAt
         })
-        return account.accountId ? { token: live, accountId: account.accountId } : { token: live }
       }
     }
 
-    // Fallback: use the context-build-time active account overlay.
+    // A caller that brought its own credential block instead of a
+    // session: the model-test probes, which build the same upstream
+    // request as the proxy off one account they already read.
     const parsed = OauthSubscriptionAuthBlockSchema.safeParse(
       // biome-ignore plugin: provider.transformer is the pipeline-owned `Record<string, unknown>` overlay; safeParse narrows the subscriptionAuth block from there.
       (provider?.transformer as Record<string, unknown> | undefined)?.subscriptionAuth
     )
-    if (!parsed.success) {
-      throw new HTTPException(401, {
-        message:
-          'No active subscription account for this provider. Sign in via Settings → Providers → Connect, then retry.'
+    if (parsed.success) {
+      const auth = parsed.data
+      return this.credentialsFor({
+        subAccountId: auth.subAccountId,
+        accessToken: auth.accessToken,
+        refreshToken: typeof auth.refreshToken === 'string' ? auth.refreshToken : null,
+        accountId: typeof auth.accountId === 'string' ? auth.accountId : null,
+        expiresAt: auth.expiresAt === undefined ? null : auth.expiresAt
       })
     }
-    const auth = parsed.data
-    const live = await this.ensureFreshToken({
-      subAccountId: auth.subAccountId,
-      accessToken: auth.accessToken,
-      refreshToken: typeof auth.refreshToken === 'string' ? auth.refreshToken : '',
-      expiresAt: auth.expiresAt ?? null
+
+    // Last resort: any account on this provider that can authenticate.
+    // Reached when the picker found no candidates for the kind — it
+    // sniffs the kind from the provider's base URL, so a subscription
+    // provider on an unrecognised host lands here — and refusing a
+    // provider that does hold usable credentials would be a lie.
+    const fallback =
+      provider?.name === undefined ? null : await getUsableSubAccountAuth(provider.name).catch(() => null)
+    if (fallback?.accessToken) {
+      return this.credentialsFor({
+        subAccountId: fallback.subAccountId,
+        accessToken: fallback.accessToken,
+        refreshToken: fallback.refreshToken,
+        accountId: fallback.accountId,
+        expiresAt: fallback.expiresAt
+      })
+    }
+
+    throw new HTTPException(401, {
+      message:
+        'No usable subscription account for this provider. Sign in via Settings → Providers → Connect, then retry.'
     })
-    const accountId = typeof auth.accountId === 'string' ? auth.accountId : undefined
-    return accountId ? { token: live, accountId } : { token: live }
   }
 
   /**

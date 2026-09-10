@@ -1,5 +1,6 @@
 import type { z } from '@hono/zod-openapi'
 import { VENDOR_DEFAULTS } from '@/shared'
+import { hasAuthenticableAccount, hasUnexpiredAccount } from '@/shared/subscription-credential'
 import { getPrismaClient } from '../db/client'
 import dayjs from '../lib/dayjs'
 import type { ProviderTestResponseSchema } from '../schemas/api/providers'
@@ -47,15 +48,18 @@ export async function testProvider(name: string): Promise<ProviderTestResult> {
     if (match && !match.enabled) {
       return { success: false, latencyMs: dayjs().diff(start), error: 'provider is disabled' }
     }
-    const account = match?.activeAccount
-    if (!account?.plan) {
+    // Any connected account makes the provider usable — the proxy picks
+    // between them per request, so one expired token is not a verdict on
+    // the provider while a peer still authenticates.
+    const accounts = match === undefined ? [] : match.accounts
+    if (!hasAuthenticableAccount(accounts)) {
       return {
         success: false,
         latencyMs: dayjs().diff(start),
         error: 'no subscription credentials on disk — log in with the vendor CLI first'
       }
     }
-    if (account.expiresAt && account.expiresAt < dayjs().valueOf()) {
+    if (!hasUnexpiredAccount(accounts, dayjs().valueOf())) {
       return {
         success: false,
         latencyMs: dayjs().diff(start),

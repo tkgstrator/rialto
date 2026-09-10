@@ -280,7 +280,6 @@
     "accounts": {
       "title": "Accounts",
       "empty": "No accounts connected yet. Use Add provider to sign in.",
-      "active": "active",
       "auth": "auth {{status}}",
       "resetsIn": "resets in",
       "windowFiveHour": "5-hour",

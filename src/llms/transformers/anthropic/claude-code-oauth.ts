@@ -189,7 +189,11 @@ export class ClaudeCodeOauthTransformer extends OAuthTransformer {
   }
 
   async auth(request: unknown, provider: RuntimeProvider, context: TransformerContext): Promise<TransformerAuthResult> {
-    const sessionId = (context?.req?.headers?.['x-claude-code-session-id'] as string | undefined) ?? undefined
+    // The route layer resolves this once per request and it is never
+    // absent on proxied traffic; a context without one is a probe (model
+    // test), which wants the provider's own active account and so stays
+    // on the overlay path inside resolveSubscriptionAuth.
+    const sessionId = context?.req?.accountSessionKey
     const { token } = await this.resolveSubscriptionAuth(provider, sessionId, 'claude', request)
     // biome-ignore plugin: the OAuth auth hook receives the inbound Anthropic body verbatim (unknown by design); narrowing to a Zod schema would re-encode the whole request, defeating the bypass-mode passthrough.
     const req = request as ClaudeCodeRequestShape
