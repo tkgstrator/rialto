@@ -6,11 +6,10 @@
  *   1. Drop accounts the in-process exhaustion map has marked as
  *      reactively-failed (a recent 429 against that subAccountId).
  *   2. Drop accounts whose DB-recorded rate-limit state shows ANY
- *      always-binding window at or above 100% with `resetAt` still in
- *      the future. For claude that is the overall 7d window, the 7d
- *      Opus window, and the 5h window; for codex it is the primary
- *      window. Any of those at 100% guarantees an upstream 429, so we
- *      pre-empt to a peer account.
+ *      binding window at or above `HARD_LIMIT_PCT` with `resetAt` still
+ *      in the future — which windows bind is decided per request by
+ *      `windowBinds`. Such an account is about to 429, so we pre-empt to
+ *      a peer rather than spend a request finding out.
  *   3. From the surviving candidates, reuse the sticky-session mapping
  *      for this request's slot if it still points at one of them
  *      (prompt-cache continuity).
@@ -53,7 +52,7 @@ import {
   CODEX_METRICS,
   getPerAccountUsage,
   type Metric,
-  scopedMetricModel
+  windowBinds
 } from './subaccount-usage-store'
 import { getSubAccountTokensForKind, type SubAccountTokenInfo } from './subscription-account-sync-service'
 
@@ -69,57 +68,11 @@ const sessionMap = new Map<string, Map<string, string>>()
 // account actually returned, including on the single-candidate path.
 const lastResolved = new Map<string, string>()
 
-// An account's windows are not all about the same thing, and which ones
-// speak for a given request depends on the model it asks for.
-//
-//   - Account-wide (claude 5h / 7d, codex primary / secondary): bind for
-//     every model.
-//   - Per-model (claude.seven_day_scoped.<model>, plus the legacy flat
-//     seven_day_sonnet / seven_day_opus): bind ONLY for that model.
-//     Anthropic meters Fable's weekly allowance separately, so a spent
-//     Fable window is no reason to skip an account for a Sonnet call —
-//     and, the other way round, a fresh account-wide 7d is no reason to
-//     send a Fable call to an account whose Fable window is gone.
-//
-// Which keys exist is the vendor's call, not ours: Anthropic stopped
-// populating the flat `seven_day_opus` field for most plans and now
-// reports the per-model limits through `limits[]`. Matching on the shape
-// of the metric rather than a pinned key is what keeps that from reading
-// as "no data" on every account.
-const belongsToKind = (metric: Metric, kind: 'claude' | 'codex'): boolean =>
-  kind === 'claude' ? metric.startsWith('claude.') : metric.startsWith('codex.')
-
 // The short rolling window each kind meters alongside the weekly one. It
 // gates (a 429 is a 429) but is never balanced on: its horizon is hours,
 // so it would dominate the burn-rate arithmetic every time.
 const isShortWindow = (metric: Metric, kind: 'claude' | 'codex'): boolean =>
   kind === 'claude' ? metric === CLAUDE_METRICS.five_hour : metric === CODEX_METRICS.primary
-
-// The model slug a per-model window is about, or null when the window is
-// account-wide.
-const perModelSlugOf = (metric: Metric): string | null => {
-  if (metric === CLAUDE_METRICS.seven_day_sonnet) return 'sonnet'
-  if (metric === CLAUDE_METRICS.seven_day_opus) return 'opus'
-  return scopedMetricModel(metric)
-}
-
-// The metric key is a slug of the vendor's `display_name` ("Fable" →
-// `fable`) while the request carries an API id ("claude-fable-5-1"), so
-// both sides are stripped to alphanumerics before the containment test.
-// Same heuristic the routing-scheduler uses in quota-math.ts.
-const squash = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, '')
-
-// Does this window bind for the model the request asks for? An unknown
-// model falls back to account-wide windows only: guessing wrong either
-// parks a usable account or picks one guaranteed to 429, whereas the
-// account-wide windows are never the wrong answer, only an incomplete one.
-const windowBinds = (metric: Metric, kind: 'claude' | 'codex', requestedModel: string | undefined): boolean => {
-  if (!belongsToKind(metric, kind)) return false
-  const slug = perModelSlugOf(metric)
-  if (slug === null) return true
-  if (requestedModel === undefined) return false
-  return squash(requestedModel).includes(squash(slug))
-}
 
 // Ranking tiers. A single numeric scale cannot express "no reading":
 // this used to be `+Infinity`, and because a real burn rate is ~1e-7,
@@ -177,9 +130,26 @@ const setSticky = (sessionId: string, slot: string, subAccountId: string): void 
   slots.set(slot, subAccountId)
 }
 
+/**
+ * How full a binding window has to be for the account to count as spent.
+ *
+ * Not 100. The vendor reports `utilization` as a whole number, so 99 is
+ * the last reading before the ceiling and an account sitting there will
+ * 429 within a handful of requests — every one of which costs a round
+ * trip and a failover before the reactive path parks the account. Taking
+ * it out a step early buys that back.
+ *
+ * What it costs is the final percent of the window, which on a weekly
+ * allowance is not nothing — and draining the allowance is the whole
+ * point of the ranking below. That trade is why this is a named constant
+ * rather than a literal in the comparison: it is a policy dial, and the
+ * honest reading of a change here is "how much tail quota am I willing
+ * to strand to avoid a wasted request".
+ */
+const HARD_LIMIT_PCT = 99
+
 // Whether the account has at least one window that binds for THIS
-// request pinned at 100% with resetAt still in the future — that
-// guarantees an upstream 429, so the picker skips the account. The
+// request at or above that mark with resetAt still in the future. The
 // "future resetAt" guard is what makes a stale DB row self-heal: once
 // the reset passes, the cache no longer blocks the account even before
 // the next poller cycle rewrites it.
@@ -191,7 +161,7 @@ const accountHasHardLimitHit = (
 ): boolean => {
   for (const [metric, w] of usage) {
     if (!windowBinds(metric, kind, requestedModel)) continue
-    if (w.percent < 100) continue
+    if (w.percent < HARD_LIMIT_PCT) continue
     if (w.resetAt !== null && w.resetAt.valueOf() <= now) continue
     return true
   }

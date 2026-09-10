@@ -14,6 +14,7 @@
  */
 
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
+import dayjs from '../../src/lib/dayjs'
 import { clearAccountExhaustion, markAccountExhausted } from '../../src/services/failover-state'
 import type { SubAccountTokenInfo } from '../../src/services/subscription-account-sync-service'
 
@@ -88,6 +89,11 @@ mock.module('../../src/services/subaccount-usage-store', () => ({
 const { resolveAccountForSession, getActiveAccountForSession, releaseAccountForSession } = await import(
   '../../src/services/session-account-router'
 )
+
+// A reset near enough that the burn rate measured over it outruns a peer
+// with far more headroom but days to spend it — the shape that separates
+// "filtered by the gate" from "lost the ranking".
+const soon = (): Date => dayjs(NOW).add(30, 'minute').toDate()
 
 // A 7-day window in ms and a fixed `now` sitting exactly halfway through a
 // window whose reset is a further half-window away => linear target 50%.
@@ -213,7 +219,10 @@ test('balances on the weekly windows the account actually reports', async () => 
   const in3d = new Date(NOW + 3 * 86_400_000)
   const spent: AccountUsageMap = new Map()
   spent.set(CLAUDE_METRICS.five_hour, { percent: 75, resetAt: new Date(NOW + 39 * 60_000) })
-  spent.set(CLAUDE_METRICS.seven_day, { percent: 99, resetAt: in3d })
+  // Production read 99 here, which now trips the hard-limit gate and
+  // never reaches the ranking. 95 is the nearest value that still does,
+  // and the outcome the test is about is the same either way.
+  spent.set(CLAUDE_METRICS.seven_day, { percent: 95, resetAt: in3d })
   spent.set(SCOPED_FABLE, { percent: 9, resetAt: in3d })
   const untouched: AccountUsageMap = new Map()
   untouched.set(CLAUDE_METRICS.seven_day, { percent: 0, resetAt: in21h })
@@ -227,14 +236,16 @@ test('balances on the weekly windows the account actually reports', async () => 
 })
 
 test('the tightest weekly window decides, not the freshest one', async () => {
-  // a1's per-model window is untouched but its account-wide weekly is at
-  // 99% — the minimum across windows is what the account can actually
-  // spend, so a1 must lose to the more balanced a2.
+  // a1's per-model window is untouched but its account-wide weekly is
+  // nearly spent — the minimum across windows is what the account can
+  // actually spend, so a1 must lose to the more balanced a2. Kept below
+  // HARD_LIMIT_PCT so the gate does not answer this instead of the
+  // ranking.
   claudeAccounts = [account('a1'), account('a2')]
   perAccountUsage.set(
     'a1',
     usage({
-      [CLAUDE_METRICS.seven_day]: { percent: 99, resetAt: HALFWAY_RESET },
+      [CLAUDE_METRICS.seven_day]: { percent: 95, resetAt: HALFWAY_RESET },
       [SCOPED_FABLE]: { percent: 0, resetAt: HALFWAY_RESET }
     })
   )
@@ -295,6 +306,26 @@ test('a 7d-opus 100% account is filtered out even when its burn-rate score would
   perAccountUsage.set('a2', usage({ [CLAUDE_METRICS.seven_day_opus]: { percent: 60, resetAt: HALFWAY_RESET } }))
   const picked = await resolveAccountForSession('s-7d-hit', 'claude', OPUS_MODEL, NOW)
   expect(picked?.subAccountId).toBe('a2')
+})
+
+test('an account one point short of the ceiling is filtered, not merely outranked', async () => {
+  // 99 is the last reading before the ceiling — `utilization` is a whole
+  // number — so the account will 429 within a few requests. a1 is given a
+  // near reset so its burn rate WINS the ranking outright: without the
+  // gate the picker would send the request to it and eat the failover.
+  claudeAccounts = [account('a1'), account('a2')]
+  perAccountUsage.set('a1', usage({ [CLAUDE_METRICS.seven_day]: { percent: 99, resetAt: soon() } }))
+  perAccountUsage.set('a2', usage({ [CLAUDE_METRICS.seven_day]: { percent: 90, resetAt: HALFWAY_RESET } }))
+  const picked = await resolveAccountForSession('s-one-short', 'claude', undefined, NOW)
+  expect(picked?.subAccountId).toBe('a2')
+})
+
+test('a 98% account is still a candidate — the gate strands one point, not ten', async () => {
+  claudeAccounts = [account('a1'), account('a2')]
+  perAccountUsage.set('a1', usage({ [CLAUDE_METRICS.seven_day]: { percent: 98, resetAt: soon() } }))
+  perAccountUsage.set('a2', usage({ [CLAUDE_METRICS.seven_day]: { percent: 90, resetAt: HALFWAY_RESET } }))
+  const picked = await resolveAccountForSession('s-two-short', 'claude', undefined, NOW)
+  expect(picked?.subAccountId).toBe('a1')
 })
 
 test('a 5h 100% account is filtered out even when its 7d windows have headroom', async () => {
