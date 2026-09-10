@@ -46,16 +46,6 @@ const MAX_ACCOUNT_ROTATIONS = 10
 // it would have built inline.
 export type SubscriptionKindProvider = Parameters<typeof subscriptionKindOf>[1][number]
 
-// Read the inbound session header the same way the OAuth transformer
-// does so the reactive 429 path can look up which subAccountId the
-// pipeline picked. Returns null when the client omitted it (request
-// flows on the provider-level overlay path and there is no sticky
-// mapping to invalidate).
-export function sessionIdFrom(headers: Record<string, string>): string | null {
-  const v = headers['x-claude-code-session-id']
-  return typeof v === 'string' && v.length > 0 ? v : null
-}
-
 // Constant-for-the-request data the chain walker and its helpers all
 // need. Bundled so the inner functions take one ChainCtx arg instead of
 // re-listing the same six fields each.
@@ -64,7 +54,10 @@ export type ChainCtx = {
   ctx: LlmsContext
   plan: RoutePlan
   providers: SubscriptionKindProvider[]
-  sessionId: string | null
+  // Resolved once per request by the route plan and never absent — the
+  // OAuth transformer picked its sub-account under this same key, so the
+  // rotation below can always look up which account just 429'd.
+  sessionId: string
   attempt: (inv: ResolvedInvocation) => Promise<Response>
   errorResponse: (c: Context, err: unknown) => Response
 }
@@ -131,7 +124,7 @@ export async function attemptChainEntry(chain: ChainCtx, model: string): Promise
     // quota error for a request that never hit a quota.
     if (!longContextRetried && isLongContextGate(err)) {
       longContextRetried = true
-      const deniedAccount = sessionId === null ? null : getActiveAccountForSession(sessionId)
+      const deniedAccount = getActiveAccountForSession(sessionId)
       markLongContextDenied(inv.provider.name, deniedAccount)
       ctx.log.warn(
         { provider: inv.provider.name, model: inv.request.model, subAccountId: deniedAccount },
@@ -253,7 +246,7 @@ async function tryRotateAccount(
 ): Promise<boolean> {
   const { ctx, plan, providers, sessionId } = chain
   const kind = subscriptionKindOf(inv.provider.name, providers)
-  if (kind === null || sessionId === null) return false
+  if (kind === null) return false
 
   const failedAcct = getActiveAccountForSession(sessionId)
   if (failedAcct === null || triedAccounts.has(failedAcct)) return false

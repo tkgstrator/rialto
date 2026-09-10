@@ -53,21 +53,13 @@ const toAccountInfo = (a: {
 export async function getSubscriptionsInfo(prisma: PrismaClient = getPrismaClient()): Promise<SubscriptionInfo[]> {
   const providers = await prisma.provider.findMany({
     where: { authMode: 'subscription' },
-    include: {
-      subscriptionAccounts: { orderBy: { createdAt: 'asc' } },
-      activeSubscriptionAccount: true
-    },
+    include: { subscriptionAccounts: { orderBy: { createdAt: 'asc' } } },
     orderBy: { createdAt: 'asc' }
   })
-  return providers.map((p) => {
-    const accounts = p.subscriptionAccounts.map(toAccountInfo)
-    const active = p.activeSubscriptionAccount ? toAccountInfo(p.activeSubscriptionAccount) : null
-    return {
-      providerName: p.name,
-      kind: providerKind(p.apiBaseUrl),
-      enabled: p.enabled,
-      accounts,
-      activeAccount: active
-    }
-  })
+  return providers.map((p) => ({
+    providerName: p.name,
+    kind: providerKind(p.apiBaseUrl),
+    enabled: p.enabled,
+    accounts: p.subscriptionAccounts.map(toAccountInfo)
+  }))
 }

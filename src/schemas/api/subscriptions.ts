@@ -40,8 +40,10 @@ export const SubscriptionProviderInfoSchema = z
     // coding provider names.
     kind: z.enum(['claude', 'codex', 'other']),
     enabled: z.boolean(),
-    accounts: z.array(SubscriptionInfoSchema),
-    activeAccount: SubscriptionInfoSchema.nullable()
+    // Every connected account. No account is designated: the proxy
+    // picks one per request (session-account-router) and the gates ask
+    // whether ANY of these can authenticate (shared/subscription-credential).
+    accounts: z.array(SubscriptionInfoSchema)
   })
   .openapi('SubscriptionInfo')
 
@@ -50,6 +52,29 @@ export const SubscriptionsResponseSchema = z
     subscriptions: z.array(SubscriptionProviderInfoSchema)
   })
   .openapi('SubscriptionsResponse')
+
+// A failure names the account rather than counting it: the Providers list
+// shows accounts by label, and "1 of 10 failed" would send the operator
+// checking all ten.
+const SubscriptionRefreshFailureSchema = z
+  .object({
+    subAccountId: z.string().nonempty(),
+    label: z.string().nonempty(),
+    providerName: z.string().nonempty()
+  })
+  .openapi('SubscriptionRefreshFailure')
+
+export const SubscriptionRefreshResponseSchema = z
+  .object({
+    // Accounts on enabled subscription providers the refresh was pointed at.
+    attempted: z.number().int().nonnegative(),
+    // Of those, the accounts whose profile sync and usage fetch both answered.
+    refreshed: z.number().int().nonnegative(),
+    failed: z.array(SubscriptionRefreshFailureSchema)
+  })
+  .openapi('SubscriptionRefreshResponse')
+
+export type SubscriptionRefreshResponse = z.infer<typeof SubscriptionRefreshResponseSchema>
 
 export const EnabledModelSchema = z
   .object({

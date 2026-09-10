@@ -1,13 +1,14 @@
 /**
- * Routing configuration for the demo: slots, preference chains, saved
- * presets, scheduler weight history, and the per-surface routing mode.
+ * Routing configuration for the demo: preference chains, scheduler
+ * weight history, and the per-surface routing mode.
  *
  * The split between "demo-owned" and "only when unset" matters here.
- * Presets and weight changes carry `demo-` ids and are replaced on every
- * run. RouterSlot rows, the `live` preference chain and the surface modes
- * are the operator's live configuration — the seed fills them in only
- * while they are still empty, so running it against a configured install
- * cannot silently re-point real traffic.
+ * Weight changes carry `demo-` ids and are replaced on every run; the
+ * `cost-first` profile is keyed for the demo and recreated. The `live`
+ * preference chain and the surface modes are the operator's live
+ * configuration — the seed fills them in only while they are still
+ * empty, so running it against a configured install cannot silently
+ * re-point real traffic.
  */
 
 import type { PrismaClient } from '../../src/generated/prisma/client'
@@ -17,21 +18,6 @@ import type { Random } from './random'
 import { type DemoTarget, pickChain } from './targets'
 
 type ScenarioKey = 'default' | 'think' | 'longContext' | 'webSearch' | 'image'
-
-const SCENARIOS: readonly ScenarioKey[] = ['default', 'think', 'longContext', 'webSearch', 'image']
-
-// Object types rather than interfaces: Prisma's JSON input accepts a
-// mapped index signature, which an interface does not satisfy implicitly.
-type RuleWhen = { requestedModel?: string; effort?: string[]; requestedTier?: string[]; thinking?: boolean }
-type RuleJson = { name: string; when: RuleWhen; target: string }
-type RouteJson = { primary: string | null; fallbacks: string[]; rules: RuleJson[] }
-type SlotParams = {
-  fallbacks: string[]
-  subagentFallbacks: string[]
-  agentRules: RuleJson[]
-  subagentRules: RuleJson[]
-  threshold?: number
-}
 
 // Model-name fragments, most preferred first, per scenario and lane.
 // Fragments rather than exact ids because the database may hold a
@@ -45,8 +31,8 @@ const CHAIN_PREFERENCES: Record<ScenarioKey, { agent: string[]; subagent: string
   image: { agent: ['flash', 'sonnet'], subagent: ['flash-lite', 'haiku'] }
 }
 
-// Manual longContext threshold, so the Routing screen shows a configured
-// value instead of only the auto-derived one.
+// Manual longContext threshold on the live profile, so the Routing
+// screen shows a configured value instead of only the auto-derived one.
 const LONG_CONTEXT_THRESHOLD = 200_000
 
 // Unpriced (subscription) models sort last rather than free: "no price"
@@ -54,8 +40,6 @@ const LONG_CONTEXT_THRESHOLD = 200_000
 // led with them would be misleading.
 const costOf = (target: DemoTarget): number =>
   target.inputPer1M === null ? Number.MAX_SAFE_INTEGER : target.inputPer1M
-
-const refsOf = (chain: DemoTarget[]): string[] => chain.map((t) => t.ref)
 
 export type ChainsByScenario = Record<ScenarioKey, { agent: DemoTarget[]; subagent: DemoTarget[] }>
 
@@ -71,63 +55,6 @@ export function buildChains(targets: DemoTarget[]): ChainsByScenario {
     webSearch: chainFor('webSearch'),
     image: chainFor('image')
   }
-}
-
-// Two rules that exercise the rule editor: the haiku predicate that
-// replaced the deleted `background` scenario, and an effort-based
-// escalation on `think`.
-function rulesFor(scenario: ScenarioKey, chains: ChainsByScenario): RuleJson[] {
-  if (scenario === 'default') {
-    const cheap = chains.default.subagent[0]
-    if (cheap === undefined) return []
-    return [{ name: 'background traffic', when: { requestedModel: '*haiku*' }, target: cheap.ref }]
-  }
-  if (scenario === 'think') {
-    const top = chains.think.agent[0]
-    if (top === undefined) return []
-    return [{ name: 'heavy effort', when: { effort: ['xhigh', 'max'] }, target: top.ref }]
-  }
-  return []
-}
-
-export interface SlotReport {
-  written: ScenarioKey[]
-  skipped: ScenarioKey[]
-}
-
-/**
- * Bind every scenario's agent and subagent lanes.
- *
- * A slot that already points somewhere is left untouched — the operator
- * configured it, and the demo has no business overwriting live routing.
- */
-export async function seedRouterSlots(prisma: PrismaClient, chains: ChainsByScenario): Promise<SlotReport> {
-  const report: SlotReport = { written: [], skipped: [] }
-  for (const scenario of SCENARIOS) {
-    const agent = chains[scenario].agent
-    const subagent = chains[scenario].subagent
-    if (agent.length === 0) continue
-    const existing = await prisma.routerSlot.findUnique({ where: { scenario } })
-    if (existing !== null && (existing.modelId !== null || existing.subagentModelId !== null)) {
-      report.skipped.push(scenario)
-      continue
-    }
-    const params: SlotParams = {
-      fallbacks: refsOf(agent.slice(1)),
-      subagentFallbacks: refsOf(subagent.slice(1)),
-      agentRules: rulesFor(scenario, chains),
-      subagentRules: [],
-      ...(scenario === 'longContext' ? { threshold: LONG_CONTEXT_THRESHOLD } : {})
-    }
-    const data = {
-      modelId: agent[0].modelId,
-      subagentModelId: subagent.length > 0 ? subagent[0].modelId : null,
-      params
-    }
-    await prisma.routerSlot.upsert({ where: { scenario }, update: data, create: { scenario, ...data } })
-    report.written.push(scenario)
-  }
-  return report
 }
 
 // `disableTail` leaves one chain with a soft-disabled last entry, so the
@@ -183,7 +110,11 @@ export async function seedPreferences(prisma: PrismaClient, targets: DemoTarget[
   const warnings: string[] = []
 
   if (liveIsEmpty) {
-    const outcome = await applyRouterPreferences(profileFrom(buildChains(targets), null), prisma, 'live')
+    const outcome = await applyRouterPreferences(
+      profileFrom(buildChains(targets), { longContextThreshold: LONG_CONTEXT_THRESHOLD }),
+      prisma,
+      'live'
+    )
     warnings.push(...outcome.warnings)
   }
 
@@ -198,76 +129,6 @@ export async function seedPreferences(prisma: PrismaClient, targets: DemoTarget[
   warnings.push(...outcome.warnings)
 
   return { live: liveIsEmpty ? 'written' : 'skipped', demoProfile: DEMO_PROFILE_KEY, warnings }
-}
-
-interface PresetSpec {
-  name: string
-  preferences: Record<ScenarioKey, string[]>
-}
-
-const PRESETS: PresetSpec[] = [
-  {
-    name: 'Subscription first',
-    preferences: {
-      default: ['sonnet', 'haiku'],
-      think: ['opus', 'fable'],
-      longContext: ['fable', 'sonnet'],
-      webSearch: ['sonnet', 'haiku'],
-      image: ['sonnet', 'haiku']
-    }
-  },
-  {
-    name: 'Cost saver',
-    preferences: {
-      default: ['flash-lite', 'luna', 'haiku'],
-      think: ['terra', 'flash'],
-      longContext: ['luna', 'flash'],
-      webSearch: ['flash-lite', 'flash'],
-      image: ['flash-lite', 'flash']
-    }
-  },
-  {
-    name: 'Max quality',
-    preferences: {
-      default: ['opus', 'sol'],
-      think: ['fable', 'astra'],
-      longContext: ['fable', 'astra'],
-      webSearch: ['sol', 'opus'],
-      image: ['sol', 'opus']
-    }
-  }
-]
-
-const routeOf = (chain: DemoTarget[]): RouteJson => ({
-  primary: chain.length > 0 ? chain[0].ref : null,
-  fallbacks: refsOf(chain.slice(1)),
-  rules: []
-})
-
-/** Saved Router snapshots for Settings → Presets. Demo-owned. */
-export async function seedRoutingPresets(prisma: PrismaClient, targets: DemoTarget[]): Promise<number> {
-  const rows = PRESETS.map((preset, idx) => {
-    const routes = (scenario: ScenarioKey): { agent: RouteJson; subagent: RouteJson } => {
-      const chain = pickChain(targets, preset.preferences[scenario], 2)
-      // The subagent lane leads with the cheaper tail of the same chain —
-      // the shape most of these presets exist to express.
-      return { agent: routeOf(chain), subagent: routeOf([...chain.slice(1), ...chain.slice(0, 1)]) }
-    }
-    return {
-      id: demoId('preset', idx + 1),
-      name: preset.name,
-      config: {
-        default: routes('default'),
-        think: routes('think'),
-        longContext: { ...routes('longContext'), threshold: LONG_CONTEXT_THRESHOLD },
-        webSearch: routes('webSearch'),
-        image: routes('image'),
-        persona: null
-      }
-    }
-  })
-  await prisma.routingPreset.createMany({ data: rows })
-  return rows.length
 }
 
 // The scheduler's own vocabulary (see RoutingWeightChange.reason).

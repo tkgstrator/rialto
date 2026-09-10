@@ -102,9 +102,9 @@ per-surface default made the UI explain which of two identical values was "the
 shipped one". Every surface has one explicit stored mode in `InboundSurfaceConfig`,
 seeded at boot by `ensureInboundSurfaces()` from the single
 `INITIAL_ROUTING_MODE = 'passthrough'`. Passthrough is the seed because routing an
-unconfigured install does nothing useful: with no preference chain and no rules the
-selector falls straight through to the caller's own model. **A fresh install does not
-route `/v1/messages` — turn it on in Routing.**
+unconfigured install does nothing useful: with no chain the selector falls straight
+through to the caller's own model. **A fresh install does not route `/v1/messages` —
+turn it on in Routing.**
 
 Adding a surface should mean adding one descriptor. If you find yourself editing
 several files to add one, knowledge has leaked back out — put it in the descriptor.
@@ -112,63 +112,122 @@ Details: `docs/architecture/inbound-surfaces.md`.
 
 ### 2. Routing System
 
-**One selector: the chain.** The operator says which models and in what order;
-the scheduler computes the weights. Nothing in the UI writes a weight.
+**Two modes, one selector.** Every inbound surface stores one `routingMode`, and a
+request is either **routed** through the chain or **passed through** untouched.
+Nothing else picks a model: there is no per-scenario slot table, no rule stack, no
+custom router hook and no peer injection. The operator says which models and in what
+order; the scheduler computes the weights. Nothing in the UI writes a weight.
 
-- **`quota-router`** (`src/llms/quota-router/`) — the selector. Walks an ordered
-  chain from `RouterPreferenceProfile` / `RouterPreferenceEntry`, skipping
-  accounts whose `SubAccountQuota` says they are exhausted, then fails over.
+**Chain** (`routingMode = 'routed'`). `routeScenario` (`src/llms/scenario-router.ts`)
+resolves the profile — the authenticating token's `profileKey` wins, else the surface's
+`profileKey`, else `DEFAULT_PROFILE_KEY = 'live'` — loads its `RouterPreferenceProfile`
+/ `RouterPreferenceEntry` rows once (`loadRoutableProfile`), classifies the request into
+a scenario and a lane, and asks the selector for a primary and the rest of the chain:
+
+- **`quota-router`** (`src/llms/quota-router/`) — the selector. Walks the ordered
+  entries for `(scenario, lane)`, skipping entries the scheduler snapshot says are
+  exhausted, that fail the tier / error-rate / context-window gates, or that are
+  switched off. `chainRoutingOf` projects the same loaded profile into what the
+  classifier needs before the selector runs (which lanes have a routable entry, the
+  default lane's context window, the pinned threshold).
 - **`routing-scheduler`** (`src/services/routing-scheduler/`) — computes and
-  publishes the weights that chain rides on, one tick at a time. Always runs;
-  it used to be gated on `ROUTER_MODE` and sat idle under the other selector.
-- `src/llms/scenario-router.ts` is the entry point (`routeScenario`) and
-  `src/llms/scenario-router/` the shared primitives — scenario classification,
-  tier inference, the subagent tag, proactive failover. The name is left over
-  from when it also hosted a second selector.
+  publishes the weights that walk rides on, one tick at a time. Always runs.
+- `src/llms/scenario-router/` — the primitives: `classifyRequest` (subagent tag →
+  lane, then scenario), tier inference, `applyProactiveFailover`, persona injection.
+  The directory name is left over from when it also hosted a second selector.
+- `src/api/v1/` — `buildRoutePlan` runs the router once per request;
+  `buildFailoverChain` orders `[primary, ...fallbacks]` minus exhausted marks;
+  `attemptChainEntry` walks it, rotating subscription accounts inside one entry on
+  429 before moving to the next.
+
+**The chain's order is followed as written.** There is no `auth_mode` gate any more: a
+subscription primary keeps its api_key fallbacks, and a same-provider fallback is
+legitimate because exhaustion is marked per `(provider, model)`. An entry the operator
+did not want after a subscription would not be in the list.
+
+**What happens when the chain has nothing.** The contract, pinned by
+`__tests__/llms/route-scenario-chain.test.ts`:
+
+| Situation | `body.model` | Response |
+|---|---|---|
+| Lane has entries, every one gated, profile `exhaustedBehavior = '429'` (the default) | untouched | 429 + `Retry-After` from `buildRoutePlan`, no upstream dispatch |
+| Lane has entries, every one gated, `exhaustedBehavior = 'passthrough'` | untouched, `resolvedFallbacks = []` | goes upstream as the caller sent it |
+| Lane has **no entries** | untouched, no fallbacks. **Never a 429**, whatever `exhaustedBehavior` says — the empty-lane shortcut in `quota-router/runtime.ts`: an unconfigured lane is "no opinion", not "everything is exhausted" | goes upstream as the caller sent it |
+| Chain fails to load (Postgres away), or routing throws | untouched; logged at `error`; stamped `scenarioType = 'default'`, `isSubagent` from the tag, fallbacks `[]` | goes upstream as the caller sent it |
+
+`routeScenario` never invents a target: `body.model` is only ever rewritten to a chain
+entry. A bare model name that reaches the chain walker this way is resolved to the one
+enabled provider hosting it (`src/api/v1/invocation.ts`), or refused.
+
+**Passthrough** (`routingMode = 'passthrough'`, or a token whose `profileKey` is the
+reserved `PASSTHROUGH_PROFILE_KEY = 'passthrough'`). The caller's own `body.model` goes
+upstream — `provider,model`, or a bare name hosted by exactly one enabled provider.
+Classification, the chain and proactive failover are skipped; `passthroughDenial` may
+refuse a `provider,model` the surface's `deniedTargets` lists. The reserved key is not
+a stored profile and cannot hold a chain (`applyRouterPreferences` refuses it).
+
+**Disabled targets are never dispatched, on any path.** `buildLlmsContext` builds the
+provider registry and the `providers` view the router reads from enabled providers and
+enabled models only — the same predicate `/v1/models` advertises (`getEnabledModels`),
+so the menu and the door agree. `loadRoutableProfile` folds `Model.enabled &&
+Provider.enabled` into each entry's `enabled`, so the selector, the classifier's lane
+gate and the scheduler cannot disagree on whether a switched-off model is "in the
+chain"; `resolveInvocationForModel` returns null for a pair outside the registry; and
+the per-request subscription account pool (`subscription-account-sync/read.ts`) filters
+`Provider.enabled`. A `provider,model` naming a disabled or uncatalogued model is
+refused, not forwarded. `loadRouterPreferences` — what the Routing screen reads — keeps
+the two switches apart as `targetEnabled`, so the editor can show an entry whose target
+is off without pretending the entry itself was.
 
 **There is no `ROUTER_MODE`.** It, `ROUTER_SHADOW` and `ROUTER_ROLLOUT_PCT`
 selected between two selectors and moved traffic between them a percentage at a
 time; that migration is over. A stale value on disk is preserved by
 `ConfigEnvelopeSchema`'s `.catchall` and read by nothing.
 
-**There are no routing rules.** The first-match `rules[]` stack that could
-rewrite `body.model` from a predicate went with the selector that owned it,
-along with `/routing/map`, `/routing/rules` and `POST /api/routing-rules/test`.
-Routing is one screen.
+**There are no routing rules, slots, presets or override files.** The first-match
+`rules[]` stack, the `RouterSlot` table and the `Router` config object that projected
+it, the `RoutingPreset` snapshots (`/api/routing-presets`, the built-in tier presets,
+the Routing screen's Presets menu), the per-project / per-session `Router` override
+files under `~/.rialto/<project>/`, `CROSS_PROVIDER_FALLBACK` same-model peer
+injection, `CUSTOM_ROUTER_PATH` and `LiveRoutingName` all went with the selector that
+owned them (migration `20260910095324_drop_router_slot_and_routing_preset`; the slots
+are deliberately **not** backfilled into the chain). `POST /api/config` drops the
+retired keys with a warning and prunes them from disk on the next save
+(`RETIRED_ENVELOPE_KEYS` in `src/services/config/compose.ts`). Routing is one screen.
 
 Scenarios are the `ScenarioKey` enum: `default` / `think` / `longContext` /
 `webSearch` / `image`. **`background` is gone** — it was folded into `default`
-(migration `20260728_router_rules_drop_background`).
+(migration `20260728_router_rules_drop_background`). A scenario is only chosen when
+the chain has a routable entry for it on the request's lane (`ChainRouting.hasLane`);
+otherwise the request lands on `default`.
 
 Two independent lanes exist per scenario: `agent` (ordinary traffic) and `subagent`
 (requests carrying a subagent tag — see Subagent Routing below).
 
-Project- and session-level `Router` overrides are read from `~/.rialto/<project>/`;
-the session id is matched to a project via `~/.claude/projects/<project>/<sessionId>.jsonl`.
-
 Token estimation for the `longContext` scenario goes through `src/llms/tokenizers/`,
 which has a tiktoken backend and a model-accurate `@huggingface/tokenizers` backend.
+A `tool_result`'s array content is walked block by block, so an image or document
+payload nested in a tool result weighs nothing — the same as a top-level image block.
+Serialising it as text once made one screenshot count as a million tokens and pushed
+every later request in that session into `longContext`.
 
 The `longContext` threshold is **not a fixed 60 000**. `effectiveLongContextThreshold`
-(`src/llms/scenario-router/model-selection.ts`) takes a configured
-`Router.longContextThreshold` when one is set; otherwise it is 70 % of the default
-agent primary's `contextWindow` (`LONG_CONTEXT_AUTO_RATIO`), leaving headroom for the
-reply; and only when neither resolves does it fall back to
-`DEFAULT_LONG_CONTEXT_THRESHOLD = 128_000`.
+(`src/llms/scenario-router/model-selection.ts`) takes the profile's
+`constraints.longContextThreshold` when one is set (a positive integer; `null` means
+auto; edited on the Routing screen and round-tripped through `/api/router-preferences`);
+otherwise it is 70 % of the `contextWindow` of the chain's top routable `default` /
+`agent` entry (`LONG_CONTEXT_AUTO_RATIO`), leaving headroom for the reply; and only when
+neither resolves does it fall back to `DEFAULT_LONG_CONTEXT_THRESHOLD = 128_000`. The
+migration copied a numeric threshold off the old `longContext` slot onto the `live`
+profile's constraints.
 
 **There is no weekly drain guard on the request path any more.**
-`applyProactiveFailover` (`src/llms/scenario-router/failover.ts`) now walks
+`applyProactiveFailover` (`src/llms/scenario-router/failover.ts`) walks
 `[primary, ...fallbacks]` against two gates only — the exhaustion marks written by the
 reactive 429 path, and the context-window capability gate. Subscription providers run
 to their upstream limit and are rotated reactively. `getKindWindowHeadroom` /
 `drainTarget` still exist in `src/services/usage-service/`, but nothing on the request
 path calls them — the only callers left are tests.
-
-> `CUSTOM_ROUTER_PATH` is not even declared by `ConfigEnvelopeSchema` — it survives on
-> disk through that schema's `.catchall`, and is re-declared by `AppConfigSchema` and the
-> settings form so it round-trips. **Nothing reads it at request time**; the only
-> references are those schemas, `OPTIONAL_ENVELOPE_PATHS` in the disk sync list, and the
-> form. Treat it as an unimplemented setting, not a feature.
 
 ### 3. Transformer System
 
@@ -212,12 +271,12 @@ longer read**. Anything still using one has to be updated.
 | `CCR_DEBUG_OAUTH` | `RIALTO_DEBUG_OAUTH` | ignored |
 | `~/.claude-code-router` | `~/.rialto` | moved on first boot by `src/services/config/migrate-home-dir.ts` — copy, verify, then remove the original |
 | `ccr_` thinking signatures | `rialto_` | a pre-rename placeholder now reaches Anthropic and 400s that conversation; restart it |
-| `ccrVersion` (preset manifests) | `rialtoVersion` | `src/schemas/domain/preset.ts` |
+| `ccrVersion` (preset manifests) | `rialtoVersion` | moot — the manifest schemas are gone from `src/schemas/domain/preset.ts`, nothing parses either spelling |
 | DB `ccr` / `ccr_test` | `rialto` / `rialto_test` | fresh volumes are provisioned with the new names; existing ones need `bun run scripts/rename-dev-database.ts`, then `DATABASE_URL` / `TEST_DATABASE_URL` updated |
 
 Configuration is split across two stores:
 
-- **Disk envelope**: `~/.rialto/config.json`. The whitelist is `ConfigEnvelopeSchema` in `src/schemas/domain/config.ts` — read that, not a list here, because it is what boot actually parses. It carries the boot-time scalars (`HOST` / `PORT` / `APIKEY` / `LOG` / `LOG_LEVEL` / `PROXY_URL` / `API_TIMEOUT_MS` / `CLAUDE_PATH` / `NON_INTERACTIVE_MODE`), the archive switches (`CAPTURE_REQUESTS` / `CAPTURE_MESSAGES` / `REDACT_TOOL_ARGUMENTS`), the Cloudflare Access pair (`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD`), the router knobs (`ROUTING_SCHEDULER_INTERVAL_MS` / `CROSS_PROVIDER_FALLBACK`), and the disk-resident objects (`Personas`, `StatusLine`, `ActivePersona`, `LiveRoutingName`). Keys the schema does not declare are preserved by its `.catchall`, not dropped.
+- **Disk envelope**: `~/.rialto/config.json`. The whitelist is `ConfigEnvelopeSchema` in `src/schemas/domain/config.ts` — read that, not a list here, because it is what boot actually parses. It carries the boot-time scalars (`HOST` / `PORT` / `APIKEY` / `LOG` / `LOG_LEVEL` / `PROXY_URL` / `API_TIMEOUT_MS` / `CLAUDE_PATH` / `NON_INTERACTIVE_MODE`), the archive switches (`CAPTURE_REQUESTS` / `CAPTURE_MESSAGES` / `REDACT_TOOL_ARGUMENTS`), the Cloudflare Access pair (`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD`), the scheduler tick (`ROUTING_SCHEDULER_INTERVAL_MS`), the active persona's id (`ActivePersona` — also a top-level key on the `/api/config` wire and on the `ConfigStore`), and the disk-resident objects (`Personas`, `StatusLine`). Keys the schema does not declare are preserved by its `.catchall`, not dropped — except the retired routing keys (`Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK`), which `RETIRED_ENVELOPE_KEYS` strips on every read and prunes on the next save.
 - **PostgreSQL** (via Prisma, `src/prisma/schema.prisma`): everything else. `DATABASE_URL` is loaded from `.env` (`.devcontainer/compose.yaml` provides `postgres` and `redis`).
 
 The schema is well past the three tables the first PR shipped; the column comments in
@@ -225,12 +284,11 @@ The schema is well past the three tables the first PR shipped; the column commen
 
 | Table | Notes |
 |-------|-------|
-| `Provider` | unique `name`, `apiBaseUrl`, `apiKey`, `authMode`, `apiStyle`, `enabled`, `activeSubscriptionAccountId`. **There is no `transformer` column** — the chain is derived (see Transformer System) and the `transformer._disabledModels` the UI reads is synthesized from `Model.enabled` by `toWireTransformer` |
+| `Provider` | unique `name`, `apiBaseUrl`, `apiKey`, `authMode`, `apiStyle`, `enabled`. **No account is designated** — `activeSubscriptionAccountId` is gone (migration `20260910084500_drop_provider_active_subscription_account`); which SubAccount serves a request is decided per request, and "can this provider authenticate" is asked of its accounts as a set (`src/shared/subscription-credential.ts`). **There is no `transformer` column** — the chain is derived (see Transformer System) and the `transformer._disabledModels` the UI reads is synthesized from `Model.enabled` by `toWireTransformer` |
 | `Model` | FK to Provider with `onDelete: Cascade`, composite unique `(providerId, name)`, optional per-model `apiStyle` override. `enabled` is the per-model switch; `Provider.enabled` gates the whole provider above it |
-| `RouterSlot` | one row per `ScenarioKey` value — **five, not six** (`background` is gone) — with independent `agent` and `subagent` model references, each a nullable FK with `onDelete: Restrict` |
 | `SubAccount` / `SubAccountUsage` / `SubAccountQuota` | subscription accounts, their observed windows, and the exhaustion state the quota router reads |
-| `RouterPreferenceProfile` / `RouterPreferenceEntry` | the ordered chain the `quota-router` walks, per scenario and per `RouterPreferenceKind` lane |
-| `InboundSurfaceConfig` | one row per surface: `routingMode` + `profileKey` |
+| `RouterPreferenceProfile` / `RouterPreferenceEntry` | the ordered chain the `quota-router` walks, per scenario and per `RouterPreferenceKind` lane. `constraints` (JSONB, no DDL to add a knob) holds `exhaustedBehavior`, `longContextThreshold` and the rest; an entry's `model` FK is `onDelete: Cascade`, so the apply layer counts the entries a model or provider deletion takes with it and warns. **There is no `RouterSlot` table** (dropped by `20260910095324_drop_router_slot_and_routing_preset`, together with `RoutingPreset`) |
+| `InboundSurfaceConfig` | one row per surface: `routingMode` + `profileKey` + `deniedTargets` |
 | `AccessToken` | issued `/v1/*` credentials — sha256 only, optional surface and routing-profile scope |
 | `Session` / `Message` / `RequestLog` / `UsageSnapshot` | the archive behind Activity and Overview |
 
@@ -239,17 +297,18 @@ Boot sequence — top-level statements in `src/index.ts`, not a `getServer()`:
 1. `migrateHomeDir()` — carry a pre-rename `~/.claude-code-router` over to `~/.rialto`. **Must run first**: the migration is idempotent by "the destination already exists", so any earlier `mkdir` of `~/.rialto` makes the copy a permanent no-op. Skipped when `RIALTO_HOME_DIR` pins the home elsewhere.
 2. `initDir()` — ensure home directories.
 3. `initConfig()` — read the envelope from disk, mirror scalar keys onto `process.env` via `applyEnvelopeToEnv`, then `syncLoggerFromEnv()` re-applies `LOG_LEVEL` to the already-constructed pino instance.
-4. `reconcileActiveSubAccounts()` — self-heal subscription providers whose active account binding was orphaned by older toggle code.
-5. `ensureInboundSurfaces()` — give every registered surface an explicit stored routing mode.
-6. `startUsageCapture()` / `startAuthHealthCheck()` / `startRoutingScheduler()` — fire-and-forget background jobs; none of them may block boot.
+4. `ensureInboundSurfaces()` — give every registered surface an explicit stored routing mode.
+5. `startUsageCapture()` / `startAuthHealthCheck()` / `startRoutingScheduler()` — fire-and-forget background jobs; none of them may block boot.
 
 There is **no `runJsonToDbMigration()`** and no `getServer()`. The one-shot lift of
-legacy `Providers` / `Router` out of `config.json` is gone. The flow now runs the
-other way: `syncToConfigFile()` (`src/services/config/sync-to-disk.ts`) writes the
-DB's `Providers` / `Router` **back onto** `config.json` after every CRUD, so those two
-keys on disk are a read-only mirror. Editing them by hand does nothing and is
-overwritten on the next save. `loadFullConfig()` (`src/services/config/compose.ts`)
-is still there; it is called lazily by `buildLlmsContext`, not at boot.
+legacy `Providers` out of `config.json` is gone. The flow now runs the other way:
+`syncToConfigFile()` (`src/services/config/sync-to-disk.ts`) writes the DB's
+`Providers` **back onto** `config.json` after every CRUD, so that key on disk is a
+read-only mirror. Editing it by hand does nothing and is overwritten on the next save.
+`Router` is not mirrored at all any more — there is nothing to mirror — and a copy an
+older build left on disk is stripped on read and pruned on the next save.
+`loadFullConfig()` (`src/services/config/compose.ts`) is still there; it is called
+lazily by `buildLlmsContext`, not at boot.
 
 **A fresh install mints no `APIKEY`.** `createDefaultConfig` used to generate one,
 which meant every install shipped a master key for `/api/*` that bypasses Cloudflare
@@ -263,7 +322,7 @@ DDL is not created at boot either: `entrypoint.sh` runs `prisma migrate deploy` 
 Config API (`src/api/config/route.ts`, service in `src/services/config/`):
 
 - `GET /api/config` returns `composeUiConfig()` (envelope on disk + DB-resident config).
-- `POST /api/config` calls `applyUiConfig(body)`: diffs the incoming UI payload inside a single Prisma transaction, nulls any RouterSlot bound to a removed model, and returns `{ success, warnings[] }`. Envelope keys land on disk via `writeConfigFile` after the DB transaction commits, and `applyEnvelopeToEnv` re-mirrors them onto `process.env` — so envelope changes are hot, without a restart.
+- `POST /api/config` calls `applyUiConfig(body)`: diffs the incoming UI payload inside a single Prisma transaction and returns `{ success, warnings[] }`. A removed model or provider takes its chain entries with it (`RouterPreferenceEntry.model` cascades), so the apply layer counts them **before** the delete and warns with the number per profile / scenario / lane; the retired keys (`Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK`) are dropped with a warning and never stored. `ActivePersona` is an ordinary top-level key: `''` / `null` clears it, absent leaves it alone. Envelope keys land on disk via `writeConfigFile` after the DB transaction commits, and `applyEnvelopeToEnv` re-mirrors them onto `process.env` — so envelope changes are hot, without a restart.
 
 Key features (disk envelope):
 - Environment variable interpolation (`$VAR_NAME` or `${VAR_NAME}`)
@@ -290,8 +349,8 @@ Database tooling (`bun run`, from the repo root — there is no `packages/`):
 - `db:migrate:deploy` — apply existing migrations (production / CI).
 - `db:migrate:test` — apply them to `rialto_test`. **Separate database; CI fails without it.**
 - `db:reset` — drop and recreate the schema (destructive).
-- `db:seed` — `src/prisma/seed.ts`; idempotent, creates the RouterSlot rows and the preference profile. No placeholder Providers.
-- `db:seed:demo` — `scripts/seed-demo-data.ts`; dev-only demo data for every screen (traffic, chains, presets, quota, tokens). Rows it owns carry a `demo-` id and `-- --clean` removes them; live config (RouterSlot, the `live` chain, surface modes, an account's quota) is written only while unset. Never wired into `db:seed`. See `docs/guides/demo-data.md`.
+- `db:seed` — `src/prisma/seed.ts`; idempotent, creates the `live` preference profile (empty until the operator fills it in). No slot rows — there is no such table — and no placeholder Providers.
+- `db:seed:demo` — `scripts/seed-demo-data.ts`; dev-only demo data for every screen (traffic, chains, quota, tokens). Rows it owns carry a `demo-` id and `-- --clean` removes them; live config (the `live` chain and its `longContextThreshold` constraint, surface modes, an account's quota) is written only while unset. Never wired into `db:seed`. See `docs/guides/demo-data.md`.
 - `db:studio` — open Prisma Studio.
 
 Never edit DDL directly; always go through Prisma migrations.
@@ -320,12 +379,14 @@ Please help me analyze this code...
 
 **Only the tag's presence is read. Its value is ignored.** `stripSubagentTag`
 (`src/llms/scenario-router/request-signals.ts`) returns a boolean and strips the tag
-in place so the internal marker never reaches upstream; `selectModel` then reads
-`router.subagent` / `router.subagentRules` instead of `router.agent` /
-`router.agentRules`. It no longer resolves `provider,model` out of the tag body — the
-model comes from the subagent lane's configuration, which is what makes the lane
+in place so the internal marker never reaches upstream; `classifyRequest` turns that
+boolean into the lane, and the selector walks the `subagent` entries of the chosen
+scenario instead of the `agent` ones. It does not resolve `provider,model` out of the
+tag body — the model comes from the subagent lane's chain, which is what makes the lane
 editable in Routing instead of scattered across prompt files. A tag whose body is a
-now-deleted `provider,model` pair still routes correctly; it just routes by lane.
+now-deleted `provider,model` pair still routes correctly; it just routes by lane. A
+subagent lane with no entries behaves like any empty lane: the caller's own model
+passes through.
 
 `<CCR-SUBAGENT-MODEL>` is the pre-rename spelling and is still accepted (same file,
 `SUBAGENT_TAGS`). It lives in prompts users have already written, and dropping it
@@ -337,56 +398,34 @@ but is left in the prompt.
 
 ## Presets
 
-**Three** unrelated things are called "preset". Do not conflate them.
+**There is no preset feature.** Three unrelated things used to carry the name, and
+all three are gone — do not build on any of them:
 
-**1. `RoutingPreset` — the live feature.** Named snapshots of the Router config, stored
-as JSONB in the `RoutingPreset` table. `src/services/routing-preset.ts` is a typed
-Prisma wrapper; `/api/routing-presets` is the endpoint; the UI is Settings → Presets.
-Applying a preset is a **client-side** action: the editor loads the snapshot into its
-draft state, and the ordinary `/api/config` save path writes it to `RouterSlot`. A
-snapshot may reference `provider,model` pairs that no longer resolve — the editor
-surfaces those as unresolved rather than failing to load.
+1. **`RoutingPreset`** — named snapshots of the retired `Router` slot config. The
+   table, `src/services/routing-preset.ts`, `/api/routing-presets`, the built-in tier
+   presets (`shared/data/routing-presets.ts`, `lib/routing-map/`) and the Routing
+   screen's Presets menu were removed with the slot selector (migration
+   `20260910095324_drop_router_slot_and_routing_preset`). The chain is edited in place
+   on the Routing screen; there is nothing to snapshot it into.
+2. **`src/lib/presets/`** — the dynamic-input form (`form-logic.ts`, `types.ts`)
+   behind a Settings → Presets screen. Both went with that screen; there is no
+   `/settings/presets` route in `src/app/routes.tsx`.
+3. **The preset manifest schemas** that used to fill `src/schemas/domain/preset.ts` —
+   `PresetFileSchema`, `PresetMetadataSchema`, `ConditionSchema` and the rest,
+   inherited from the deleted CLI preset installer. Deleted; nothing ever parsed a
+   manifest, so the `rialtoVersion` / `ccrVersion` compatibility they carried is moot.
 
-**2. `src/lib/presets/` — the live dynamic-input form.** `form-logic.ts`
-(`evaluateCondition` + field validators) and `types.ts`, which declares its own
-`Condition` / `InputOption` / `RequiredInput` / `PresetConfigSection`. Read by
-`src/components/rialto/settings/presets/RequiredInputs.tsx` to drive a preset's
-required-input form. Pure and React-free so the `when`-conditions can be tested
-without mounting the form (`__tests__/lib/preset-form-logic.test.ts`).
+What survives at that path is only the recursive JSON value schema —
+`JsonPrimitiveSchema` / `JsonValueSchema` / `JsonObjectSchema` — which backs the
+`.catchall` on `schemas/api/config.ts` and `schemas/domain/config.ts` and types the
+envelope's `StatusLine`. The file name is historical. `__tests__/preset/schema.test.ts`
+stays at its path so `bun run test`'s glob (`__tests__/preset`) is still correct, and
+is scoped to those schemas.
 
-**3. `src/schemas/domain/preset.ts` — the manifest schemas, almost all dead.** Only
-`JsonValueSchema` has production readers: `schemas/api/config.ts` and
-`schemas/domain/config.ts` both use it as their `.catchall`, and the latter also types
-`StatusLine` with it. `JsonPrimitiveSchema` exists solely to build it. `JsonObjectSchema`
-is reached only by `__tests__/preset/schema.test.ts`.
-
-Everything else in that file has **zero readers** — not even a test:
-`PresetFileSchema`, `PresetMetadataSchema`, `ConditionSchema`, `RequiredInputSchema`,
-`ManifestFileSchema`, `InputType`, `MergeStrategy`, `UserInputValuesSchema`,
-`InputOptionSchema`, `DynamicOptionsSchema`, `PresetProviderSchema`,
-`PresetRouterConfigSchema`, `PresetConfigSectionSchema`, `TemplateConfigSchema`,
-`ConfigMappingSchema`, `PresetIndexEntrySchema`, `PresetRegistrySchema`,
-`ValidationResultSchema`, `SanitizeResultSchema`, `PresetInfoSchema`.
-
-> `ConditionSchema` in `src/api/routing-rules/test/route.ts` is a **local `const` in
-> that file**, not this one. Same name, different type — do not read it as evidence
-> that the manifest schema is used.
-
-**`src/shared/preset/` no longer exists** (9 files, 461 lines, plus its two
-`export *` lines in `src/shared/index.ts`). It was a dead twin of #2 — the
-dynamic-input-schema machinery inherited from the deleted CLI preset installer
-(conditions, template interpolation, dependency graph, config mappings, user inputs) —
-kept alive by one test, whose coverage moved to `__tests__/lib/preset-form-logic.test.ts`.
-`__tests__/preset/schema.test.ts` stayed at its path (so `bun run test`'s glob is still
-correct) and is now scoped to `JsonValueSchema` / `JsonObjectSchema`.
-
-The functions older docs describe (`exportPreset` / `installPreset` / `loadPreset` /
-`listPresets` / `merge.ts` / `sensitiveFields.ts`) never survived either, and neither
-did the `rialto preset *` subcommands. Run `bunx knip` before building on anything here.
-
-The manifest schemas accept both `rialtoVersion` and the pre-rename `ccrVersion` as
-optional fields — but since nothing parses a manifest, that compatibility is currently
-theoretical.
+`src/shared/preset/` (the dead twin of #2) and the functions older docs describe
+(`exportPreset` / `installPreset` / `loadPreset` / `listPresets` / `merge.ts` /
+`sensitiveFields.ts`, the `rialto preset *` subcommands) are gone as well. Run
+`bunx knip` before building on anything here.
 
 ## Dependencies
 
@@ -423,6 +462,20 @@ can recover comes from three sources that must not be conflated:
 Every write is "update what the vendor confirmed, leave the rest alone", so a thin
 scrape degrades coverage rather than nulling existing rows.
 
+**Refreshing subscriptions** is a third button, on the Subscriptions list only:
+"Refresh" (`POST /api/subscriptions/refresh`, `src/services/subscription-refresh-service.ts`).
+It is not a catalog operation and touches no model or price. It re-syncs every account
+on an **enabled** subscription provider the way `POST /api/subscriptions/sync` does,
+then polls usage with `forceRefresh` past the 5-minute cache in
+`src/services/usage-service/cache.ts`, and rewrites the two current-state tables —
+`SubAccountUsage` (the account picker) and `SubAccountQuota` (the routing scheduler,
+and the list's quota column via `/api/overview`). It deliberately writes no
+`UsageSnapshot` row, so the Usage chart stays on the usage job's 5-minute grid; skips
+accounts on disabled providers; leaves an account's rows alone when its upstream call
+failed and names it in `failed[]` instead; and coalesces concurrent calls into one
+upstream pass — there is no cooldown beyond that. `/sync` is unchanged: it still probes
+every provider, disabled ones included, because that is what the auth-health job runs.
+
 
 There is no dependency graph to learn — this is one package. Two rules matter:
 
@@ -457,8 +510,7 @@ There is no dependency graph to learn — this is one package. Two rules matter:
 ## Configuration Examples
 
 - Full configuration example: `README.md` (also `README_ja.md` / `README_zh.md`)
-- Custom router example: `custom-router.example.js` — note that `CUSTOM_ROUTER_PATH`
-  currently has no runtime reader (see Routing System above)
-- Migration off the pre-rename build: `docs/guides/migration-v3.md`
+- Migration off the pre-rename build, and off the slot / rules / preset routing:
+  `docs/guides/migration-v3.md`
 - Installed-app / PWA behaviour (display mode, service worker, icons): `docs/guides/pwa.md`
 - Public deployment behind Cloudflare Access: `docs/guides/public-deployment.md`

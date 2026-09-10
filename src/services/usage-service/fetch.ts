@@ -93,25 +93,51 @@ const requestClaudeUsage = async (info: SubAccountTokenInfo): Promise<ClaudeUsag
   }
 }
 
-const fetchClaudeUsage = async (): Promise<ClaudeUsage[]> => {
-  const accounts = await getSubAccountTokensForKind('claude').catch(() => [])
-  const results: ClaudeUsage[] = []
+interface PollOutcome<T> {
+  results: Array<{ subAccountId: string; usage: T }>
+  // Accounts whose upstream call failed this pass. Each keeps its last
+  // cached value in `results` when it has one — a stale reading beats a
+  // gap for the poller's history — but a caller that promised a person
+  // fresh numbers needs to know which account it could not deliver them for.
+  failed: string[]
+}
+
+// One pass over a kind's accounts: serve the cache while it is inside
+// TTL_MS, otherwise ask upstream and re-cache. `force` skips the TTL check
+// and nothing else, so the forced path cannot drift from the scheduled one.
+const pollAccounts = async <T>(
+  accounts: readonly SubAccountTokenInfo[],
+  cache: Map<string, { value: T; at: number }>,
+  request: (info: SubAccountTokenInfo) => Promise<T | null>,
+  force: boolean
+): Promise<PollOutcome<T>> => {
+  const results: PollOutcome<T>['results'] = []
+  const failed: string[] = []
   for (const info of accounts) {
-    const cached = claudeCache.get(info.subAccountId)
-    if (cached && dayjs().valueOf() - cached.at < TTL_MS) {
-      results.push(cached.value)
+    const cached = cache.get(info.subAccountId)
+    if (!force && cached && dayjs().valueOf() - cached.at < TTL_MS) {
+      results.push({ subAccountId: info.subAccountId, usage: cached.value })
       continue
     }
-    const next = await requestClaudeUsage(info)
+    const next = await request(info)
     if (next) {
-      claudeCache.set(info.subAccountId, { value: next, at: dayjs().valueOf() })
-      results.push(next)
-    } else if (cached) {
-      results.push(cached.value)
+      cache.set(info.subAccountId, { value: next, at: dayjs().valueOf() })
+      results.push({ subAccountId: info.subAccountId, usage: next })
+      continue
     }
+    failed.push(info.subAccountId)
+    if (cached) results.push({ subAccountId: info.subAccountId, usage: cached.value })
   }
-  return results
+  return { results, failed }
 }
+
+// The same pool the account picker draws from, so an account on a
+// switched-off provider is never polled either.
+const accountsOf = (kind: 'claude' | 'codex'): Promise<SubAccountTokenInfo[]> =>
+  getSubAccountTokensForKind(kind).catch(() => [])
+
+const fetchClaudeUsage = async (input: GetUsageInput): Promise<PollOutcome<ClaudeUsage>> =>
+  pollAccounts(await accountsOf('claude'), claudeCache, requestClaudeUsage, input.forceRefresh === true)
 
 const requestCodexUsage = async (info: SubAccountTokenInfo): Promise<CodexUsage | null> => {
   try {
@@ -175,29 +201,17 @@ const requestCodexUsage = async (info: SubAccountTokenInfo): Promise<CodexUsage 
   }
 }
 
-const fetchCodexUsage = async (): Promise<CodexUsage[]> => {
-  const accounts = await getSubAccountTokensForKind('codex').catch(() => [])
-  const results: CodexUsage[] = []
-  for (const info of accounts) {
-    const cached = codexCache.get(info.subAccountId)
-    if (cached && dayjs().valueOf() - cached.at < TTL_MS) {
-      results.push(cached.value)
-      continue
-    }
-    const next = await requestCodexUsage(info)
-    if (next) {
-      codexCache.set(info.subAccountId, { value: next, at: dayjs().valueOf() })
-      results.push(next)
-    } else if (cached) {
-      results.push(cached.value)
-    }
-  }
-  return results
+const fetchCodexUsage = async (input: GetUsageInput): Promise<PollOutcome<CodexUsage>> =>
+  pollAccounts(await accountsOf('codex'), codexCache, requestCodexUsage, input.forceRefresh === true)
+
+const pollUsage = async (input: GetUsageInput) => {
+  const [claude, codex] = await Promise.all([fetchClaudeUsage(input), fetchCodexUsage(input)])
+  return { claude, codex }
 }
 
-export async function fetchUsageSnapshot(_input: GetUsageInput = {}): Promise<GetUsageOutput> {
-  const [claude, codex] = await Promise.all([fetchClaudeUsage(), fetchCodexUsage()])
-  return { usage: { claude, codex } }
+export async function fetchUsageSnapshot(input: GetUsageInput = {}): Promise<GetUsageOutput> {
+  const { claude, codex } = await pollUsage(input)
+  return { usage: { claude: claude.results.map((r) => r.usage), codex: codex.results.map((r) => r.usage) } }
 }
 
 export async function getUsage(): Promise<UsageResponse> {
@@ -207,39 +221,14 @@ export async function getUsage(): Promise<UsageResponse> {
 
 // Per-account variant of the snapshot — used by the poller to write
 // per-account rows into SubAccountUsage (history-aggregated UsageSnapshot
-// loses the subAccountId, so we pair the cached value with its id
-// directly here). Skips accounts whose cache is missing because the
-// upstream fetch failed AND no prior value exists.
-export async function fetchUsageSnapshotWithAccountIds(): Promise<{
+// loses the subAccountId, so the value travels with its id here). Skips
+// accounts whose upstream fetch failed AND that have no prior value;
+// `failed` names every account whose fetch failed either way.
+export async function fetchUsageSnapshotWithAccountIds(input: GetUsageInput = {}): Promise<{
   claude: Array<{ subAccountId: string; usage: ClaudeUsage }>
   codex: Array<{ subAccountId: string; usage: CodexUsage }>
+  failed: string[]
 }> {
-  // Force a refresh by going through the public fetch path — this
-  // ensures the cache is populated before we read it below.
-  await fetchUsageSnapshot()
-  const claudeAccts = await getSubAccountTokensForKind('claude').catch(() => [])
-  const codexAccts = await getSubAccountTokensForKind('codex').catch(() => [])
-  const claude: Array<{ subAccountId: string; usage: ClaudeUsage }> = []
-  const codex: Array<{ subAccountId: string; usage: CodexUsage }> = []
-  for (const a of claudeAccts) {
-    const cached = claudeCache.get(a.subAccountId)
-    if (cached) claude.push({ subAccountId: a.subAccountId, usage: cached.value })
-  }
-  for (const a of codexAccts) {
-    const cached = codexCache.get(a.subAccountId)
-    if (cached) codex.push({ subAccountId: a.subAccountId, usage: cached.value })
-  }
-  return { claude, codex }
-}
-
-// Returns the most relevant current usage percent for a given subAccountId
-// without triggering a live fetch — reads the existing in-memory cache only.
-// Returns 0 when no cached data exists (treat unknown = available).
-export function getCachedUsagePct(subAccountId: string, kind: 'claude' | 'codex'): number {
-  if (kind === 'claude') {
-    const c = claudeCache.get(subAccountId)
-    return c ? (c.value.fiveHour?.utilization ?? 0) : 0
-  }
-  const c = codexCache.get(subAccountId)
-  return c ? (c.value.primary?.usedPercent ?? 0) : 0
+  const { claude, codex } = await pollUsage(input)
+  return { claude: claude.results, codex: codex.results, failed: [...claude.failed, ...codex.failed] }
 }

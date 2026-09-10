@@ -68,7 +68,7 @@ function DetailHeader({
   onSync: () => void
   onRemove: () => void
   /** Blast radius, stated before the click. Built by the screen, which
-   *  is the one that can count the router slots pointing here. */
+   *  is the one that knows the vendor label and the model count. */
   removeConfirm: string
   onToggleProvider: (next: boolean) => void
 }) {

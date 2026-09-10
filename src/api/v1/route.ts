@@ -21,7 +21,7 @@ import { INBOUND_SURFACES, surfaceForPath } from '../../llms/inbound/surfaces'
 import { aggregateAnthropicSseToJson, findSseStreamDefect, isSseContentType } from '../../llms/utils/sse-aggregate'
 import { requestLogEmitter } from '../request-logs/events'
 import { buildFailoverChain } from './candidate-chain'
-import { attemptChainEntry, type ChainCtx, type SubscriptionKindProvider, sessionIdFrom } from './chain-failover'
+import { attemptChainEntry, type ChainCtx, type SubscriptionKindProvider } from './chain-failover'
 import { buildErrorEnvelope, errorShapeForPath } from './error-shape'
 import type { ResolvedInvocation } from './invocation'
 import { redactToolArguments } from './redact'
@@ -286,9 +286,9 @@ const handleInbound = async (c: Context): Promise<Response> => {
   if (planOrResponse instanceof Response) return planOrResponse
   const plan = planOrResponse
 
-  const chain = buildFailoverChain(plan, ctx)
+  const chain = buildFailoverChain(plan)
   const providers = ctx.config.get<SubscriptionKindProvider[]>('providers', [])
-  const sessionId = sessionIdFrom(plan.headers)
+  const sessionId = plan.accountSessionKey
 
   const runWith = async (inv: ResolvedInvocation): Promise<Response> => {
     // Snapshot the client's stream preference BEFORE the pipeline runs.

@@ -24,7 +24,7 @@ import type { PrismaClient } from '../../generated/prisma/client'
 import dayjs from '../../lib/dayjs'
 import { logger } from '../../logger'
 import { type QuotaAwareConstraints, QuotaAwareConstraintsSchema } from '../../schemas/domain/preference'
-import { loadRouterPreferences } from '../router-preference-service'
+import { DEFAULT_PROFILE_KEY, loadRoutableProfile } from '../router-preference-service'
 import { refreshQuotaSnapshots } from './collector'
 import { computeWeights } from './compute'
 import {
@@ -60,10 +60,8 @@ const readIntervalMs = (): number => {
   return Number.isFinite(parsed) && parsed >= 60_000 ? parsed : DEFAULT_TICK_MS
 }
 
-// `shouldRunTick` gated this on ROUTER_MODE: the weights only fed the
-// quota-aware selector, so under the rules selector the scheduler armed
-// itself and never ran. The chain is the only selector now, so the tick
-// always has a consumer.
+// There is no gate on the tick: the weights feed the chain, the chain
+// is the only selector, so every tick has a consumer.
 
 // Convert a DB quota row into the in-memory window shape. Missing
 // values collapse to undefined so `computeWeights` can distinguish
@@ -123,7 +121,7 @@ interface LoadedState {
 // gone entirely) still get an empty `accounts` array so the compute
 // function can attach `no_quota_kind` / `unknown_budget`.
 async function loadCandidateState(prisma: PrismaClient): Promise<LoadedState> {
-  const preferences = await loadRouterPreferences(prisma)
+  const preferences = await loadRoutableProfile(DEFAULT_PROFILE_KEY, prisma)
   const providers = await prisma.provider.findMany({
     include: {
       models: true,
@@ -244,7 +242,11 @@ export async function runSchedulerTickForTest(prismaOverride?: PrismaClient): Pr
     const now = dayjs().valueOf()
     await refreshQuotaSnapshots(undefined, prisma)
     const { candidates, accounts } = await loadCandidateState(prisma)
-    const preferences = await loadRouterPreferences(prisma)
+    // The routable view, not the editor's: an entry whose model or
+    // provider is switched off scores as disabled here for the same
+    // reason the selector skips it, so the weights it publishes describe
+    // the chain that actually runs.
+    const preferences = await loadRoutableProfile(DEFAULT_PROFILE_KEY, prisma)
     const previous = getRoutingSnapshot()
     const previousWeights = previous === null ? null : previous.weights
     const constraints = resolveConstraints(preferences.constraints)

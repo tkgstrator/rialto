@@ -23,17 +23,6 @@ export const stableIdentityFor = (
   a: Pick<DiscoveredAccount | SubAccount, 'userId' | 'accountId' | 'sourcePath'>
 ): StableIdentity => a.userId ?? a.accountId ?? `path:${a.sourcePath}`
 
-export const pickActive = (current: SubAccount | null, accounts: DiscoveredAccount[]): DiscoveredAccount | null => {
-  if (accounts.length === 0) return null
-  if (current) {
-    const match = accounts.find((a) => a.sourcePath === current.sourcePath)
-    if (match) return match
-  }
-  const now = dayjs().valueOf()
-  const fresh = accounts.find((a) => a.expiresAt === null || a.expiresAt.valueOf() > now)
-  return fresh ? fresh : accounts[0]
-}
-
 export const buildAccountPayload = (providerName: string, account: DiscoveredAccount, key: Buffer) => ({
   label: `${providerName}:${account.label}`,
   userName: account.userName,

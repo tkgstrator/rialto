@@ -3,7 +3,6 @@ import seed from './llm-prices.json'
 export { DEPRECATED_MODELS, isDeprecatedModel } from './deprecations'
 export { SEED_PERSONAS, type SeedPersona } from './personas'
 export { OFFICIAL_VENDOR_PRICES, type OfficialPricingEntry } from './providers'
-export { BUILTIN_ROUTING_PRESETS, type BuiltinRoutingPreset, type ModelTier } from './routing-presets'
 export { findSubscriptionPreset, SUBSCRIPTION_PRESETS, type SubscriptionPreset } from './subscriptions'
 
 export interface PriceEntry {

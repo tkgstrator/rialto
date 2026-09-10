@@ -25,7 +25,6 @@ export {
 export {
   fetchUsageSnapshot,
   fetchUsageSnapshotWithAccountIds,
-  getCachedUsagePct,
   getUsage
 } from './usage-service/fetch'
 export { getKindHeadroom, headroomFrom, PROACTIVE_THRESHOLD_PCT, type UsageWindow } from './usage-service/headroom'

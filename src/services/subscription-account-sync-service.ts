@@ -15,25 +15,21 @@
  * preference order). Plain tokens never land on disk and never leave
  * memory after the upsert returns.
  *
- * getActiveSubAccountAuth(providerName) is the read path: decrypts and
- * returns the active SubAccount's tokens for use by the proxy.
+ * getUsableSubAccountAuth(providerName) is the read path: decrypts and
+ * returns the tokens of one account that can authenticate, for the
+ * callers that need a credential rather than a specific account.
  *
  * The implementation lives in ./subscription-account-sync/*; this file
  * is the stable public entry point re-exporting that surface.
  */
 
 export { decryptString } from './subscription-account-sync/crypto'
-export { pickActive } from './subscription-account-sync/discovery'
-export {
-  reconcileActiveSubAccounts,
-  recordClaudeOAuthAccount,
-  recordCodexOAuthAccount
-} from './subscription-account-sync/persist'
+export { recordClaudeOAuthAccount, recordCodexOAuthAccount } from './subscription-account-sync/persist'
 export { syncSubAccountProfiles } from './subscription-account-sync/profile-sync'
 export {
-  type ActiveSubAccountAuth,
-  getActiveSubAccountAuth,
   getSubAccountTokensForKind,
+  getUsableSubAccountAuth,
   type SubAccountTokenInfo,
+  type UsableSubAccountAuth,
   updateSubAccountAccessToken
 } from './subscription-account-sync/read'

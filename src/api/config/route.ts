@@ -20,9 +20,8 @@ configRoute.post('/api/config', async (c) => {
   const raw = await c.req.json().catch(() => null)
   const parsed = ApplyConfigPayloadSchema.parse(raw)
   const result = await applyUiConfig(parsed)
-  // The /v1 proxy caches the llms services (incl. Router/providers)
-  // built from this config — drop it so edits take effect without a
-  // restart.
+  // The /v1 proxy caches the llms services (providers, persona) built
+  // from this config — drop it so edits take effect without a restart.
   resetLlmsContext()
   return c.json({
     success: true,

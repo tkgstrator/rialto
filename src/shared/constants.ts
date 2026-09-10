@@ -33,7 +33,3 @@ export const CONFIG_FILE = path.join(HOME_DIR, 'config.json')
 // Where pino's rotating file sink writes. Shared with the storage
 // report, which measures the same directory the logger fills.
 export const LOG_DIR = path.join(HOME_DIR, 'logs')
-
-// Claude projects directory — read by the scenario router to map a
-// session id back to the project the active Rialto session belongs to.
-export const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects')

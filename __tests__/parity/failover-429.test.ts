@@ -15,19 +15,11 @@
 
 import { describe, expect, test } from 'bun:test'
 import { HTTPException } from 'hono/http-exception'
-import pino from 'pino'
 import { buildFailoverChain } from '../../src/api/v1/candidate-chain'
 import { errorShapeForPath } from '../../src/api/v1/error-shape'
 import type { RoutePlan } from '../../src/api/v1/route-plan'
 import { forwardUpstreamError, isInsufficientQuota, isRateLimited } from '../../src/api/v1/upstream-error'
-import type { LlmsContext } from '../../src/llms'
-import { ConfigStore } from '../../src/llms/registry/config'
-import { ProviderRegistry } from '../../src/llms/registry/provider'
-import { TokenizerRegistry } from '../../src/llms/registry/tokenizer'
-import { TransformerRegistry } from '../../src/llms/registry/transformer'
 import { OpenAITransformer } from '../../src/llms/transformers/openai'
-
-const log = pino({ level: 'silent' })
 
 const SURFACE_PATHS: readonly string[] = [
   '/v1/messages',
@@ -35,34 +27,6 @@ const SURFACE_PATHS: readonly string[] = [
   '/v1/responses',
   '/v1beta/models/gemini-3-pro:generateContent'
 ]
-
-const PROVIDERS = [
-  {
-    name: 'sub',
-    auth_mode: 'subscription' as const,
-    api_style: 'anthropic' as const,
-    api_key: 'sk-a',
-    api_base_url: 'https://api.anthropic.com/v1/messages',
-    models: ['fable', 'opus']
-  },
-  {
-    name: 'paid',
-    auth_mode: 'api_key' as const,
-    api_style: 'anthropic' as const,
-    api_key: 'sk-b',
-    api_base_url: 'https://api.anthropic.com/v1/messages',
-    models: ['opus']
-  }
-]
-
-function buildLlmsContext(): LlmsContext {
-  const transformers = new TransformerRegistry(log)
-  transformers.registerMany([new OpenAITransformer()])
-  const providers = new ProviderRegistry(transformers, log)
-  providers.registerFromConfig(PROVIDERS)
-  const config = new ConfigStore({ Providers: PROVIDERS, providers: PROVIDERS, Router: {} })
-  return { config, transformers, providers, tokenizers: new TokenizerRegistry(log), log }
-}
 
 const planFor = (path: string, fallbacks: readonly string[]): RoutePlan => ({
   routedBody: { model: 'sub,fable' },
@@ -73,9 +37,9 @@ const planFor = (path: string, fallbacks: readonly string[]): RoutePlan => ({
   primaryModel: 'sub,fable',
   isSubagent: false,
   fallbacks,
-  peerTargets: new Set<string>(),
   path,
-  search: ''
+  search: '',
+  accountSessionKey: 'anonymous'
 })
 
 const upstream429 = (rawBody: string): HTTPException =>
@@ -83,27 +47,21 @@ const upstream429 = (rawBody: string): HTTPException =>
 
 describe('building the chain does not depend on the surface', () => {
   test('the same plan yields the same candidate list on all four', () => {
-    const ctx = buildLlmsContext()
-    const chains = SURFACE_PATHS.map((path) => buildFailoverChain(planFor(path, ['sub,opus']), ctx))
+    const chains = SURFACE_PATHS.map((path) => buildFailoverChain(planFor(path, ['sub,opus'])))
     for (const chain of chains) expect(chain).toEqual(['sub,fable', 'sub,opus'])
   })
 
-  test('the auth_mode gate is surface-independent too, stopping a slide from subscription onto metered billing', () => {
-    // A request whose primary is a subscription must not fall through to
-    // an api_key provider on every 429. That call is the same wherever
-    // the request came in.
-    const ctx = buildLlmsContext()
+  test('a subscription primary keeps an api_key fallback on every surface, in chain order', () => {
+    // The chain is the operator's own statement of what may follow
+    // what; there is no auth-mode gate that could read it differently
+    // per surface.
     for (const path of SURFACE_PATHS) {
-      expect(buildFailoverChain(planFor(path, ['paid,opus']), ctx)).toEqual(['sub,fable'])
+      expect(buildFailoverChain(planFor(path, ['paid,opus']))).toEqual(['sub,fable', 'paid,opus'])
     }
   })
 
   test('falling back to another model on the same provider is kept (fable → opus)', () => {
-    const ctx = buildLlmsContext()
-    expect(buildFailoverChain(planFor('/v1/messages', ['sub,opus', 'sub,fable']), ctx)).toEqual([
-      'sub,fable',
-      'sub,opus'
-    ])
+    expect(buildFailoverChain(planFor('/v1/messages', ['sub,opus', 'sub,fable']))).toEqual(['sub,fable', 'sub,opus'])
   })
 })
 

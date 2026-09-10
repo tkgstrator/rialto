@@ -11,19 +11,22 @@
  * routine save.
  *
  * These tests pin the fix: upsertProvider must upsert only the target
- * row and leave every other Provider / RouterSlot binding / SubAccount
- * intact.
+ * row and leave every other Provider / chain entry / SubAccount intact.
+ * The one deletion that does cascade — deleting a provider outright —
+ * has to say how many chain entries went with it.
  */
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import { getPrismaClient } from '../../src/db/client'
-import { applyUiConfig, ensureRouterSlots, upsertProvider } from '../../src/services/config'
+import { applyUiConfig, deleteProviderByName, ensurePreferenceProfile, upsertProvider } from '../../src/services/config'
+import { applyRouterPreferences, loadRouterPreferences } from '../../src/services/router-preference-service'
+import { profileWith } from '../llms/chain-fixture'
 import { HAS_DB, resetDbTables, teardownPrisma } from './helpers'
 
 describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', () => {
   beforeEach(async () => {
     await resetDbTables()
-    await ensureRouterSlots()
+    await ensurePreferenceProfile()
   })
 
   afterAll(async () => {
@@ -117,7 +120,7 @@ describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', (
       ]
     })
     const claudeCode = await prisma.provider.findUniqueOrThrow({ where: { name: 'claude-code' } })
-    const seededAccount = await prisma.subAccount.create({
+    await prisma.subAccount.create({
       data: {
         providerId: claudeCode.id,
         sourcePath: 'oauth:claude:test-user',
@@ -129,11 +132,6 @@ describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', (
         refreshTokenEnc: 'iv.tag.body'
       }
     })
-    await prisma.provider.update({
-      where: { id: claudeCode.id },
-      data: { activeSubscriptionAccountId: seededAccount.id }
-    })
-
     // Flip openai through the CRUD path — this is the reproducer for
     // the incident that wiped subscription credentials in production.
     await upsertProvider({
@@ -144,21 +142,17 @@ describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', (
       models: ['gpt-5-nano']
     })
 
-    // claude-code provider still there, SubAccount still there, active
-    // binding still there.
+    // claude-code provider still there, SubAccount still there.
     const after = await prisma.provider.findUnique({
       where: { name: 'claude-code' },
-      include: { subscriptionAccounts: true, activeSubscriptionAccount: true }
+      include: { subscriptionAccounts: true }
     })
     expect(after).not.toBeNull()
     expect(after?.subscriptionAccounts).toHaveLength(1)
     expect(after?.subscriptionAccounts[0].sourcePath).toBe('oauth:claude:test-user')
-    expect(after?.activeSubscriptionAccountId).toBe(seededAccount.id)
   })
 
-  test("editing a provider does not null RouterSlot bindings pointing at another provider's models", async () => {
-    // Full round-trip via applyUiConfig so the RouterSlot for 'default'
-    // exists and binds to anthropic's model.
+  const seedTwoProvidersWithChain = async () => {
     await applyUiConfig({
       Providers: [
         {
@@ -175,39 +169,72 @@ describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', (
           auth_mode: 'api_key',
           models: ['claude-sonnet-5']
         }
-      ],
-      Router: {
-        default: {
-          agent: { primary: 'anthropic,claude-sonnet-5', fallbacks: [] },
-          subagent: {}
-        }
-      }
+      ]
     })
-    const prisma = getPrismaClient()
-    const slotBefore = await prisma.routerSlot.findUnique({
-      where: { scenario: 'default' },
-      include: { model: { include: { provider: true } } }
-    })
-    expect(slotBefore?.model?.name).toBe('claude-sonnet-5')
-    expect(slotBefore?.model?.provider.name).toBe('anthropic')
+    const outcome = await applyRouterPreferences(
+      profileWith({
+        'default.agent': ['anthropic,claude-sonnet-5', 'openai,gpt-5-nano'],
+        'think.subagent': ['anthropic,claude-sonnet-5']
+      })
+    )
+    expect(outcome.warnings).toEqual([])
+  }
 
-    // Edit openai — the router's default slot points at anthropic and
-    // must survive because the CRUD path never touches sibling
-    // providers (and therefore never touches slots bound to them).
-    await upsertProvider({
+  test("editing a provider does not remove chain entries naming another provider's models", async () => {
+    await seedTwoProvidersWithChain()
+
+    // Edit openai — the chain's default primary is anthropic and must
+    // survive because the CRUD path never touches sibling providers.
+    const { warnings } = await upsertProvider({
       name: 'openai',
       api_base_url: 'https://api.openai.com/v1/chat/completions',
       api_key: 'sk-openai-ROTATED',
       auth_mode: 'api_key',
       models: ['gpt-5-nano']
     })
+    expect(warnings).toEqual([])
 
-    const slotAfter = await prisma.routerSlot.findUnique({
-      where: { scenario: 'default' },
-      include: { model: { include: { provider: true } } }
+    const after = await loadRouterPreferences()
+    expect(after.entriesByScenario.default.agent.map((e) => e.target)).toEqual([
+      'anthropic,claude-sonnet-5',
+      'openai,gpt-5-nano'
+    ])
+  })
+
+  test('removing a model through the CRUD path reports the chain entries that cascade away', async () => {
+    await seedTwoProvidersWithChain()
+    const { warnings } = await upsertProvider({
+      name: 'openai',
+      api_base_url: 'https://api.openai.com/v1/chat/completions',
+      api_key: 'sk-openai',
+      auth_mode: 'api_key',
+      models: []
     })
-    expect(slotAfter?.model?.name).toBe('claude-sonnet-5')
-    expect(slotAfter?.model?.provider.name).toBe('anthropic')
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('Removed 1 chain entry')
+    expect(warnings[0]).toContain('live/default/agent')
+    const after = await loadRouterPreferences()
+    expect(after.entriesByScenario.default.agent.map((e) => e.target)).toEqual(['anthropic,claude-sonnet-5'])
+  })
+
+  test('deleting a provider reports every chain entry that went with it, by profile, scenario and lane', async () => {
+    await seedTwoProvidersWithChain()
+    const { warnings } = await deleteProviderByName('anthropic')
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('Removed 2 chain entries')
+    expect(warnings[0]).toContain('live/default/agent')
+    expect(warnings[0]).toContain('live/think/subagent')
+
+    const after = await loadRouterPreferences()
+    expect(after.entriesByScenario.default.agent.map((e) => e.target)).toEqual(['openai,gpt-5-nano'])
+    expect(after.entriesByScenario.think.subagent).toEqual([])
+  })
+
+  test('deleting a provider no chain names reports nothing', async () => {
+    await seedTwoProvidersWithChain()
+    await applyRouterPreferences(profileWith({ 'default.agent': ['anthropic,claude-sonnet-5'] }))
+    const { warnings } = await deleteProviderByName('openai')
+    expect(warnings).toEqual([])
   })
 
   test('a fresh provider name via upsertProvider still creates the row (create path)', async () => {

@@ -7,7 +7,7 @@
  * there because lib/api.ts is owned elsewhere during the migration.
  */
 
-import type { ModelTier } from '@/shared/data'
+import type { RequestedModelTier } from '@/schemas/domain/router'
 
 export const SCENARIOS = ['default', 'think', 'longContext', 'webSearch', 'image'] as const
 export type ScenarioKey = (typeof SCENARIOS)[number]
@@ -15,10 +15,11 @@ export type ScenarioKey = (typeof SCENARIOS)[number]
 export const LANES = ['agent', 'subagent'] as const
 export type Lane = (typeof LANES)[number]
 
-// One definition, in shared, because the built-in presets are written in
-// tiers and are bundled for the browser from there. A second copy here
-// would be free to drift from the one the presets are validated against.
-export type Tier = ModelTier
+// The selector's own vocabulary, not a copy: the Tier column and the
+// tier floor show what the chain's tier gates will read, and a second
+// definition here would be free to drift from it. Type-only, so the
+// browser bundle takes nothing from the schema module.
+export type Tier = RequestedModelTier
 
 export interface PreferenceEntry {
   priority: number

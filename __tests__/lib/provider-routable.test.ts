@@ -30,6 +30,7 @@ const subProvider = (over: Partial<Provider> = {}): Provider => ({
 const account = (over: Record<string, unknown> = {}) => ({
   id: 'a1',
   label: 'acct',
+  enabled: true,
   plan: 'claude_max',
   authStatus: 'live',
   userName: null,
@@ -37,17 +38,14 @@ const account = (over: Record<string, unknown> = {}) => ({
   ...over
 })
 
-const sub = (over: Record<string, unknown> = {}): SubscriptionWire => {
-  const active = account()
-  return {
+const sub = (over: Record<string, unknown> = {}): SubscriptionWire =>
+  ({
     providerName: 'claude-code',
     kind: 'claude',
     enabled: true,
-    accounts: [active],
-    activeAccount: active,
+    accounts: [account()],
     ...over
-  } as unknown as SubscriptionWire
-}
+  }) as unknown as SubscriptionWire
 
 const liveSub = sub()
 
@@ -102,7 +100,7 @@ describe('the Providers screen and Routing agree', () => {
  * same trap this change exists to remove.
  */
 describe("hasCredential — when the switch is the operator's to set", () => {
-  test('a subscription with an active account on a resolved plan has one', () => {
+  test('a subscription with an account on a resolved plan has one', () => {
     expect(hasCredential(subProvider(), liveSub)).toBe(true)
   })
 
@@ -111,8 +109,21 @@ describe("hasCredential — when the switch is the operator's to set", () => {
   })
 
   test('an account whose plan never resolved does not count', () => {
-    const unresolved = sub({ activeAccount: account({ plan: null }) })
+    const unresolved = sub({ accounts: [account({ plan: null })] })
     expect(hasCredential(subProvider(), unresolved)).toBe(false)
+  })
+
+  // The question is about the provider, not about one designated row:
+  // the binding that used to answer it is gone, and a healthy peer now
+  // keeps the provider routable rather than being ignored.
+  test('one healthy account is enough, whatever shape the others are in', () => {
+    const mixed = sub({ accounts: [account({ id: 'a0', plan: null }), account({ id: 'a1' })] })
+    expect(hasCredential(subProvider(), mixed)).toBe(true)
+  })
+
+  test('a disabled account does not count', () => {
+    const off = sub({ accounts: [account({ enabled: false })] })
+    expect(hasCredential(subProvider(), off)).toBe(false)
   })
 
   test('an api_key provider needs only a non-empty key', () => {
@@ -132,10 +143,7 @@ describe("hasCredential — when the switch is the operator's to set", () => {
   test('a subscription whose probe came back invalid keeps its switch too', () => {
     // The credential exists and the server would still route to it; the
     // probe verdict is not the same claim as "there is nothing here".
-    const bad = sub({
-      accounts: [account({ authStatus: 'invalid' })],
-      activeAccount: account({ authStatus: 'invalid' })
-    })
+    const bad = sub({ accounts: [account({ authStatus: 'invalid' })] })
     expect(providerState(subProvider(), bad)).toBe('invalid')
     expect(hasCredential(subProvider(), bad)).toBe(true)
   })

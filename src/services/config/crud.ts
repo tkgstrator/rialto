@@ -9,7 +9,9 @@ import { type Provider, ProviderSchema } from '@/schemas/domain/provider'
 import { getPrismaClient } from '../../db/client'
 import { ModelTestStatus, type PrismaClient } from '../../generated/prisma/client'
 import { resetLlmsContext } from '../../llms'
+import { logger } from '../../logger'
 import { applyProviderRow } from './apply'
+import { chainEntryCascadeWarning } from './apply/chain-entries'
 import { toProvider } from './compose'
 import { syncToConfigFile } from './sync-to-disk'
 
@@ -62,19 +64,24 @@ export async function upsertProvider(incoming: Provider): Promise<{ provider: Pr
   return { provider: toProvider(p), warnings }
 }
 
-export async function deleteProviderByName(name: string): Promise<void> {
+// Deleting a provider cascades to its models and from there to every
+// chain entry naming one. The entries cannot be kept — their target is
+// gone — so the count is returned as a warning and logged, rather than
+// the chains quietly getting shorter.
+export async function deleteProviderByName(name: string): Promise<{ warnings: string[] }> {
   const prisma = getPrismaClient()
+  const warnings: string[] = []
   await prisma.$transaction(async (tx) => {
     const p = await tx.provider.findUnique({ where: { name } })
     if (!p) throw new Error(`Provider "${name}" not found`)
-    await tx.routerSlot.updateMany({
-      where: { model: { providerId: p.id } },
-      data: { modelId: null }
-    })
+    const cascade = await chainEntryCascadeWarning(tx, { providerId: p.id }, `deleted provider "${name}"`)
+    if (cascade !== null) warnings.push(cascade)
     await tx.provider.delete({ where: { id: p.id } })
   })
+  if (warnings.length > 0) logger.warn({ provider: name, warnings }, '[config] provider delete cascaded to chain')
   await syncToConfigFile()
   resetLlmsContext()
+  return { warnings }
 }
 
 export async function setModelEnabled(providerName: string, modelName: string, enabled: boolean): Promise<void> {

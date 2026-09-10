@@ -1,12 +1,12 @@
 // Rialto's Postgres-backed config store.
 //
-// Three normalized tables hold what used to live as `Providers` and
-// `Router` in ~/.rialto/config.json:
-//   - Provider:   one row per LLM provider account (api_base_url + api_key)
-//   - Model:      one row per model name, child of Provider
-//   - RouterSlot: 6 rows keyed by scenario, each pointing at a Model (or null)
-// Transformer-level config (Provider.transformer, top-level transformers[])
-// stays JSONB / on-disk respectively for PR #1 — PR #2 normalizes them.
+// The upstreams and how traffic is routed to them:
+//   - Provider:                one row per LLM provider account (api_base_url + api_key)
+//   - Model:                   one row per model name, child of Provider
+//   - RouterPreferenceProfile: a named chain; `live` is the default every surface uses
+//   - RouterPreferenceEntry:   the ordered targets of a chain, per scenario and lane
+// Everything else here is the archive behind Activity and Overview, the
+// subscription accounts and their observed quota, and issued credentials.
 //
 // Prisma 7: the datasource URL lives in prisma.config.ts (passed via a
 // driver adapter), not in this file.
@@ -20,11 +20,10 @@ datasource db {
   provider = "postgresql"
 }
 
-// The built-in routing scenarios consumed by router.ts.
-// `default` is the catch-all; the rest are scenario-specific overrides.
-// The former `background` scenario was folded into a predicated rule on
-// `default` (requestedModel matches a haiku glob) — see the migration
-// `20260728_router_rules_drop_background`.
+// The scenarios a request is classified into, each owning its own chain
+// lanes. `default` is the catch-all; the rest are reached only when the
+// chain has an entry for them. The former `background` scenario was
+// folded into `default` (migration `20260728_router_rules_drop_background`).
 enum ScenarioKey {
   default
   think
@@ -113,9 +112,12 @@ model Provider {
   // Defaults true because the blob's absence meant "enabled" — only an
   // explicit `providerEnabled: false` turned a provider off.
   enabled                     Boolean      @default(true)
-  // Selected account for subscription-auth providers. Null for api_key providers.
-  activeSubscriptionAccountId String?
-  activeSubscriptionAccount   SubAccount?  @relation("ProviderActiveSubscriptionAccount", fields: [activeSubscriptionAccountId], references: [id], onDelete: SetNull)
+  // No account is designated. A subscription provider's accounts are all
+  // candidates; which one serves a request is decided per request by
+  // session-account-router, and "can this provider authenticate" is asked
+  // of the accounts as a set (shared/subscription-credential.ts). The
+  // dropped `activeSubscriptionAccountId` made both answers hostage to
+  // one promoted row.
   subscriptionAccounts        SubAccount[] @relation("ProviderSubscriptionAccounts")
   models                      Model[]
   createdAt                   DateTime     @default(now())
@@ -127,10 +129,9 @@ model SubAccount {
   providerId         String
   provider           Provider   @relation("ProviderSubscriptionAccounts", fields: [providerId], references: [id], onDelete: Cascade)
   sourcePath         String
-  // User-facing on/off switch. The sync service treats only enabled
-  // accounts as candidates for activeSubscriptionAccountId, so a disabled
-  // row is effectively ignored at request time even though its tokens
-  // remain on disk.
+  // User-facing on/off switch. Only enabled accounts are candidates for
+  // the request-time picker, so a disabled row is ignored at request
+  // time even though its tokens remain on disk.
   enabled            Boolean    @default(true)
   label              String
   userName           String?
@@ -167,7 +168,6 @@ model SubAccount {
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
 
-  activeForProviders Provider[]        @relation("ProviderActiveSubscriptionAccount")
   usage              SubAccountUsage[]
   quota              SubAccountQuota?
 
@@ -336,12 +336,6 @@ model Model {
   testCheckedAt       DateTime?
   testPassedAt        DateTime?
   testError           String?
-  // A RouterSlot binds two independent model references per scenario: the
-  // agent route (main-agent traffic) and the subagent route (requests
-  // carrying a <RIALTO-SUBAGENT-MODEL> tag). Named relations keep the two
-  // back-references distinct on this side.
-  routerSlots         RouterSlot[]            @relation("RouterSlotAgentModel")
-  subagentRouterSlots RouterSlot[]            @relation("RouterSlotSubagentModel")
   preferenceEntries   RouterPreferenceEntry[]
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
@@ -350,20 +344,20 @@ model Model {
   @@index([providerId])
 }
 
-// Preference-based routing (docs/plan/quota-aware-preference-router.md
-// §6.3). One profile row (key='live') holds mode-independent constraint
-// knobs; ordered entries reference Models directly so the same
-// delete-warning flow as RouterSlot applies.
+// The chain (docs/plan/quota-aware-preference-router.md §6.3). One row
+// per named profile holds the constraint knobs; ordered entries
+// reference Models directly, and cascade when a model is deleted — the
+// apply layer counts them first and warns.
 //
-// The profile is a singleton in Phase 2; the `key` column exists so a
-// future "preference presets" feature can add more rows without another
-// migration. Every apply path today upserts key='live'.
+// `live` is the default profile every surface routes through until it
+// is pointed at another one (InboundSurfaceConfig.profileKey), and a
+// token may pin its client to a profile of its own (AccessToken.profileKey).
 model RouterPreferenceProfile {
   id          String                  @id @default(cuid())
   key         String                  @unique @default("live")
-  // Constraint knobs as JSONB (sonnetTierRespect / healthinessThreshold /
-  // exhaustedBehavior / ...). JSONB so adding a knob is not a
-  // migration, mirroring RouterSlot.params.
+  // Constraint knobs as JSONB (allowEscalation / exhaustedBehavior /
+  // longContextThreshold / ...). JSONB so adding a knob is not a
+  // migration; the schema layer supplies every default.
   constraints Json?
   updatedAt   DateTime                @updatedAt
   entries     RouterPreferenceEntry[]
@@ -400,48 +394,6 @@ model RouterPreferenceEntry {
   @@unique([profileId, scenario, kind, priority])
   @@index([profileId])
   @@index([profileId, scenario, kind])
-}
-
-// Saved snapshots of the Router config (the same nested shape that
-// RouterConfigSchema validates on the wire). Applying a preset to the
-// live routing is a client-side action — the editor loads the snapshot
-// into its draft state and the existing /api/config save path writes
-// it to RouterSlot on Save. So this table is intentionally decoupled
-// from RouterSlot: it just stores named blobs the user can switch
-// between. `name` is non-unique — the id (uuid) is the identity, so
-// duplicate labels are allowed.
-model RoutingPreset {
-  id        String   @id @default(uuid())
-  name      String
-  // Snapshot of the Router section (RouterConfigSchema) as JSONB.
-  // A snapshot may reference "provider,model" strings that no longer
-  // resolve at apply-time — the editor surfaces those as unresolved
-  // rather than erroring on load, so the user can rewire.
-  config    Json
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([updatedAt])
-}
-
-model RouterSlot {
-  id              String      @id @default(cuid())
-  scenario        ScenarioKey @unique
-  // Agent route primary — the model main-agent traffic routes to for this
-  // scenario. onDelete: Restrict means deleting a Model that's bound to a
-  // slot fails — configService null-s the slot first inside its transaction.
-  modelId         String?
-  model           Model?      @relation("RouterSlotAgentModel", fields: [modelId], references: [id], onDelete: Restrict)
-  // Subagent route primary — the model that requests carrying a
-  // <RIALTO-SUBAGENT-MODEL> tag route to for this scenario. Same Restrict
-  // semantics as the agent route.
-  subagentModelId String?
-  subagentModel   Model?      @relation("RouterSlotSubagentModel", fields: [subagentModelId], references: [id], onDelete: Restrict)
-  // Scenario-scoped params: `fallbacks` (agent chain), `subagentFallbacks`
-  // (subagent chain), `threshold` (longContext). JSONB keeps us from
-  // migrating every time a new knob lands.
-  params          Json?
-  updatedAt       DateTime    @updatedAt
 }
 
 // One row per client session. The id is the raw session token from

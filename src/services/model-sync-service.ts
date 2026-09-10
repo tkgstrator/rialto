@@ -26,7 +26,7 @@ import type { RefreshOutcomeSchema } from '../schemas/api/models'
 import type { ModelsCredential, ScrapedPriceEntry } from '../vendors/base'
 import { getVendorProvider, isScrapedVendor } from '../vendors/registry'
 import { modelApiStyleOverride } from './config'
-import { getActiveSubAccountAuth } from './subscription-account-sync/read'
+import { getUsableSubAccountAuth } from './subscription-account-sync/read'
 
 export type RefreshOutcome = z.infer<typeof RefreshOutcomeSchema>
 
@@ -261,7 +261,7 @@ async function syncDeprecationFlags(p: ProviderRow, allCurrentNames: string[]): 
  */
 const modelsCredentialFor = async (p: ProviderRow): Promise<ModelsCredential | undefined> => {
   if (p.authMode === AuthMode.subscription) {
-    const auth = await getActiveSubAccountAuth(p.name)
+    const auth = await getUsableSubAccountAuth(p.name)
     if (auth === null || auth.accessToken === null) return undefined
     return { kind: 'subscription', accessToken: auth.accessToken }
   }

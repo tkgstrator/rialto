@@ -19,6 +19,7 @@ import type { PipelineRequest } from '@/schemas/domain/pipeline'
 import { RecordSchema } from '@/schemas/primitives/record'
 import { type LlmsContext, type RouterRequest, routeScenario, type ScenarioType, type Transformer } from '../../llms'
 import { surfaceForPath } from '../../llms/inbound/surfaces'
+import { sessionIdFromRequest } from '../../llms/pipeline/session-id'
 import { passthroughDenial } from '../../services/inbound-surface-service'
 import { buildErrorEnvelope, errorShapeForPath } from './error-shape'
 
@@ -54,29 +55,54 @@ export interface RoutePlan {
   // for" next to "what was actually sent". Absent when the body had no
   // usable model string.
   requestedModel?: string
-  // Whether the request carried a <RIALTO-SUBAGENT-MODEL> tag. Selects the
-  // scenario's subagent route (vs agent) for the reactive failover chain,
-  // so it matches the route selectModel used for the primary.
+  // Whether the request carried a <RIALTO-SUBAGENT-MODEL> tag, i.e. which
+  // lane of the chain the primary came from. Recorded on the request log
+  // so Activity can tell the two apart.
   isSubagent: boolean
-  // Pre-resolved fallback chain: either a rule's own fallbacks (when a
-  // route rule matched inside selectModel) or the scenario's catch-all
-  // chain. buildFailoverChain reads this rather than re-looking-up so
-  // the reactive path walks the same chain the proactive path did.
+  // The rest of the chain after the primary, as the selector resolved
+  // it. buildFailoverChain reads this rather than re-looking-up so the
+  // reactive path walks the same chain the proactive path did.
   fallbacks: readonly string[]
-  // Subset of `fallbacks` auto-injected by the cross-provider peer
-  // expander. buildFailoverChain reads this to bypass the same-auth_mode
-  // gate on peer entries — the user opted into cross-auth-mode failover
-  // when they enabled CROSS_PROVIDER_FALLBACK. Empty when the toggle
-  // is off or no peers were injected.
-  peerTargets: ReadonlySet<string>
   path: string
   search: string
   // The AccessToken that authenticated this request, when one did.
   // Recorded on RequestLog so Activity can attribute spend to a client.
   accessTokenId?: string
+  // The key the subscription sub-account picker sticks on and the
+  // reactive 429 path releases. Always a string — see
+  // `resolveInboundSession` for why "no session" is not an option here.
+  accountSessionKey: string
 }
 
 // ─── Build path ────────────────────────────────────────────────────────
+
+/**
+ * The session key for this request — never undefined.
+ *
+ * Claude Code sends `x-claude-code-session-id`; an SDK posting to
+ * /v1/responses or /v1/chat/completions sends nothing of the sort, and a
+ * missing key is not a neutral default here. Both consumers treat it as
+ * "no session": the OAuth transformer skips `resolveAccountForSession`
+ * and falls back to the provider's stored active sub-account, and
+ * `tryRotateAccount` gives up before rotating. Between them, every
+ * header-less client is pinned to one account and keeps hitting it after
+ * it is rate-limited, while its peers sit unspent.
+ *
+ * The issued token is the next-best identity: stable, so a client keeps
+ * its prompt-cache affinity with whichever account it drains, and
+ * bounded, so the picker's in-process sticky maps cannot grow one entry
+ * per request the way a random id would. Requests authenticated by the
+ * envelope bootstrap key share the one anonymous bucket.
+ */
+function resolveInboundSession(
+  headers: Record<string, string>,
+  body: Record<string, unknown>,
+  tokenId: string | undefined
+): string {
+  const carried = sessionIdFromRequest(headers, body)
+  if (carried !== undefined) return carried
+  return tokenId !== undefined ? `token:${tokenId}` : 'anonymous'
+}
 
 /**
  * Fold request parameters a surface carries in the URL into the body.
@@ -137,13 +163,12 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   // body.model in place — this is the only point the original is visible.
   const requestedModel = typeof body.model === 'string' && body.model.length > 0 ? body.model : undefined
 
-  // Scenario routing: rewrite body.model to the resolved provider,model
-  // and stamp req.scenarioType. We keep the request object so we can read
-  // the scenario back — it selects the failover chain below.
+  // Chain routing: rewrite body.model to the resolved provider,model and
+  // stamp req.scenarioType. We keep the request object so we can read
+  // the scenario and the chain back below.
   const routeReq: RouterRequest = {
     body: body as PipelineRequest['body'] & { model: string },
     log: ctx.log,
-    sessionId: undefined,
     // The scenario router uses this to gate Anthropic-idiom mutations
     // (persona injection etc.) so OpenAI-compat callers on
     // /v1/chat/completions and /v1/responses get the exact request
@@ -158,10 +183,10 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   await routeScenario(routeReq, { config: ctx.config, tokenizers: ctx.tokenizers })
   const scenarioType: ScenarioType = routeReq.scenarioType !== undefined ? routeReq.scenarioType : 'default'
 
-  // Phase 4: quota-aware selector exhausted all candidates and the
-  // profile's `exhaustedBehavior` is '429'. Return the rate-limit
-  // response verbatim so no upstream dispatch happens. `Retry-After`
-  // carries the seconds until the earliest binding-window reset.
+  // The chain gated every candidate out and the profile's
+  // `exhaustedBehavior` is '429'. Return the rate-limit response verbatim
+  // so no upstream dispatch happens. `Retry-After` carries the seconds
+  // until the earliest binding-window reset.
   const retryAfter = routeReq.quotaExhaustedRetryAfterSec
   if (typeof retryAfter === 'number' && retryAfter > 0) {
     return new Response(
@@ -203,18 +228,17 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   return {
     routedBody: body,
     headers,
+    accountSessionKey: resolveInboundSession(headers, body, tokenId),
     transformersByName,
     defaultTransformer,
     scenarioType,
     primaryModel,
     requestedModel,
     isSubagent: routeReq.isSubagent === true,
-    // The fallback chain selectModel resolved for this request — a rule's
-    // own chain when a route rule fired, otherwise the scenario's
-    // catch-all. buildFailoverChain reads this directly so the reactive
-    // path walks the same chain the proactive path did.
+    // The rest of the chain the selector resolved for this request.
+    // buildFailoverChain reads this directly so the reactive path walks
+    // the same chain the proactive path did.
     fallbacks: Array.isArray(routeReq.resolvedFallbacks) ? routeReq.resolvedFallbacks : [],
-    peerTargets: routeReq.resolvedPeerTargets ?? new Set<string>(),
     path,
     search: url.search,
     accessTokenId: tokenId

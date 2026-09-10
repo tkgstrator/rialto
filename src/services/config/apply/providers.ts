@@ -8,13 +8,14 @@ import type { Provider } from '@/schemas/domain/provider'
 import { AuthMode, type Model as DbModel, type Provider as DbProvider } from '../../../generated/prisma/client'
 import { apiStyleForVendor } from '../api-style'
 import type { Tx } from '../apply'
+import { chainEntryCascadeWarning } from './chain-entries'
 import { apiKeyForStorage } from './fields'
 import { applyModelEnabledFlips, reconcileModelRows } from './model-rows'
 import { applySubscriptionAccountToggles } from './subscription-toggles'
 
-// Delete providers the UI no longer lists, clearing any RouterSlot
-// pointing at one of their models first (Restrict would otherwise
-// abort the transaction).
+// Delete providers the UI no longer lists. Their models cascade, and so
+// do the chain entries naming those models — counted first so the
+// operator is told which chains just got shorter.
 export async function deleteRemovedProviders(
   tx: Tx,
   existing: ReadonlyArray<DbProvider & { models: DbModel[] }>,
@@ -23,21 +24,8 @@ export async function deleteRemovedProviders(
 ): Promise<void> {
   for (const ex of existing) {
     if (incomingByName.has(ex.name)) continue
-    // Null both FK columns a slot can bind through this provider's models:
-    // the agent route (modelId) and the subagent route (subagentModelId).
-    // Restrict would otherwise abort the transaction on the provider delete.
-    const clearedAgent = await tx.routerSlot.updateMany({
-      where: { model: { providerId: ex.id } },
-      data: { modelId: null }
-    })
-    const clearedSubagent = await tx.routerSlot.updateMany({
-      where: { subagentModel: { providerId: ex.id } },
-      data: { subagentModelId: null }
-    })
-    const cleared = clearedAgent.count + clearedSubagent.count
-    if (cleared > 0) {
-      warnings.push(`Cleared ${cleared} router slot binding(s) bound to deleted provider "${ex.name}".`)
-    }
+    const cascade = await chainEntryCascadeWarning(tx, { providerId: ex.id }, `deleted provider "${ex.name}"`)
+    if (cascade !== null) warnings.push(cascade)
     await tx.provider.delete({ where: { id: ex.id } })
   }
 }
@@ -50,7 +38,7 @@ export async function deleteRemovedProviders(
  *
  * The distinction matters: this helper writes ONLY the incoming
  * provider row. It never looks at other providers, never deletes any
- * row, and never touches any RouterSlot binding. That is the cascade
+ * row, and never touches another provider's chain entries. That is the cascade
  * that `applyProviders`'s `deleteRemovedProviders` used to eat when the
  * CRUD path passed a single-element array — every other provider (and
  * their subscription accounts via onDelete: Cascade) got wiped on a

@@ -87,15 +87,31 @@ const recordAuthStatus = async (
   })
 }
 
-// Returns a count of rows updated / failed.
-export async function syncSubAccountProfiles(prisma: PrismaClient = getPrismaClient()): Promise<{
+export interface ProfileSyncScope {
+  // Skip providers that are switched off. Off by default: the auth-health
+  // job and POST /api/subscriptions/sync probe every account, so a
+  // provider's accounts are known to authenticate before it is turned on.
+  enabledProvidersOnly?: boolean
+}
+
+export interface ProfileSyncResult {
   updated: number
   failed: number
-}> {
+  // The accounts behind `failed`. The counts were enough for the scheduled
+  // job; a refresh a person clicked has to say which account it could not
+  // reach, or "1 failed" over a list of ten sends them checking all ten.
+  failedAccountIds: string[]
+}
+
+export async function syncSubAccountProfiles(
+  prisma: PrismaClient = getPrismaClient(),
+  scope: ProfileSyncScope = {}
+): Promise<ProfileSyncResult> {
   const key = encryptionKey()
-  const claudeProviders = await providersForKind(prisma, 'claude')
+  const inScope = (p: { enabled: boolean }): boolean => scope.enabledProvidersOnly !== true || p.enabled
+  const claudeProviders = (await providersForKind(prisma, 'claude')).filter(inScope)
   let updated = 0
-  let failed = 0
+  const failedAccountIds: string[] = []
 
   for (const p of claudeProviders) {
     const accounts = await prisma.subAccount.findMany({ where: { providerId: p.id } })
@@ -103,7 +119,7 @@ export async function syncSubAccountProfiles(prisma: PrismaClient = getPrismaCli
       const rawAccessToken = decryptString(account.accessTokenEnc, key)
       if (!rawAccessToken) {
         await recordAuthStatus(prisma, account.id, AuthStatus.invalid, 'No access token stored')
-        failed++
+        failedAccountIds.push(account.id)
         continue
       }
       const refreshToken = decryptString(account.refreshTokenEnc, key)
@@ -131,7 +147,7 @@ export async function syncSubAccountProfiles(prisma: PrismaClient = getPrismaCli
         if (profileStatus === 401 || profileStatus === 403) {
           await recordAuthStatus(prisma, account.id, AuthStatus.invalid, `Claude auth rejected (HTTP ${profileStatus})`)
         }
-        failed++
+        failedAccountIds.push(account.id)
         continue
       }
       await prisma.subAccount.update({
@@ -153,14 +169,14 @@ export async function syncSubAccountProfiles(prisma: PrismaClient = getPrismaCli
   }
 
   // Codex: call wham/usage for each account to get the live plan_type.
-  const codexProviders = await providersForKind(prisma, 'codex')
+  const codexProviders = (await providersForKind(prisma, 'codex')).filter(inScope)
   for (const p of codexProviders) {
     const accounts = await prisma.subAccount.findMany({ where: { providerId: p.id } })
     for (const account of accounts) {
       const rawAccessToken = decryptString(account.accessTokenEnc, key)
       if (!rawAccessToken) {
         await recordAuthStatus(prisma, account.id, AuthStatus.invalid, 'No access token stored')
-        failed++
+        failedAccountIds.push(account.id)
         continue
       }
       const accessToken = await ensureFreshCodexAccessToken(
@@ -191,7 +207,7 @@ export async function syncSubAccountProfiles(prisma: PrismaClient = getPrismaCli
           if (res.status === 401 || res.status === 403) {
             await recordAuthStatus(prisma, account.id, AuthStatus.invalid, `Codex auth rejected (HTTP ${res.status})`)
           }
-          failed++
+          failedAccountIds.push(account.id)
           continue
         }
         const raw = (await res.json()) as Record<string, unknown>
@@ -211,10 +227,10 @@ export async function syncSubAccountProfiles(prisma: PrismaClient = getPrismaCli
       } catch (err) {
         logger.warn({ err }, '[subaccount] codex wham/usage threw')
         // Network/transient error — leave the last known authStatus intact.
-        failed++
+        failedAccountIds.push(account.id)
       }
     }
   }
 
-  return { updated, failed }
+  return { updated, failed: failedAccountIds.length, failedAccountIds }
 }

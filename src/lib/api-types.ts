@@ -7,15 +7,6 @@
  * re-exports every name here, so `@/lib/api` remains the single import
  * path — nothing outside this pair should reference this module directly.
  */
-import type { RouterConfig } from '@/schemas/domain/router'
-export interface RoutingPresetItem {
-  id: string
-  name: string
-  config: RouterConfig
-  createdAt: string
-  updatedAt: string
-}
-
 export interface RequestLogItem {
   id: string
   sessionId: string
@@ -94,27 +85,6 @@ export interface SessionMessageItem {
   createdAt: string
 }
 
-// One actual upstream target a requested model was routed to.
-export interface ModelRoutingTarget {
-  provider: string
-  model: string
-  scenario: string | null
-  isSubagent: boolean
-  count: number
-}
-
-// All targets a single requested model fanned out to, with its total.
-// requestedModel is null for rows written before routing capture landed.
-export interface ModelRoutingRow {
-  requestedModel: string | null
-  total: number
-  targets: ModelRoutingTarget[]
-}
-
-export interface ModelRoutingResponse {
-  rows: ModelRoutingRow[]
-  total: number
-}
 export interface HealthResponse {
   status: 'ok' | 'degraded'
   version: string

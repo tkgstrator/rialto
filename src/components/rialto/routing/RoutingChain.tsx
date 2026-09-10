@@ -20,7 +20,6 @@ import { ChainTable } from './ChainTable'
 import { useEnabledTargets, usePreferences, useProfiles, useScheduler, useSurfaces } from './data'
 import { profileEntryCount, schedulerNotTickedYet, schedulerScoredNothing, weightIndex } from './derive'
 import { PassthroughPanel } from './PassthroughPanel'
-import { PresetsMenu } from './PresetsMenu'
 import { SurfaceBar } from './RoutingTabs'
 import { Segmented, SurfaceScopeBar } from './SurfaceModeBar'
 import type { EnabledTarget, Lane, PreferenceEntry, PreferenceProfile, ScenarioKey } from './types'
@@ -139,10 +138,10 @@ function ChainBand({
         ]}
         onChange={onLane}
       />
-      {/* Save alone. Presets and Add target moved under the table: five
-          scenario chips, a lane switch and three buttons was more than
-          one row should carry, and neither of those two acts on the
-          coordinate this band picks — they act on the list below it. */}
+      {/* Save alone. Add target moved under the table: five scenario
+          chips, a lane switch and two buttons was more than one row should
+          carry, and it does not act on the coordinate this band picks — it
+          acts on the list below it. */}
       <div className='ml-auto'>
         <RButton variant='primary' icon='ri-check-line' onClick={onSave} disabled={saveDisabled}>
           {t('common.save')}
@@ -153,7 +152,7 @@ function ChainBand({
 }
 
 /**
- * The total, under the thing it totals — with the two actions that add
+ * The total, under the thing it totals — with the one action that adds
  * to it.
  *
  * "Add target" appends a row to the table directly above, which is where
@@ -164,20 +163,18 @@ function ChainBand({
  * explained the Share column, which is where the explanation belongs —
  * it is a marker on that header now.
  *
- * This renders even when the lane is empty. Both buttons are the only
- * way out of an empty lane, so they cannot live inside the branch that
- * an empty lane skips.
+ * This renders even when the lane is empty. The button is the only way
+ * out of an empty lane, so it cannot live inside the branch that an
+ * empty lane skips.
  */
 function ChainFooter({
   entries,
   targets,
-  onAdd,
-  presets
+  onAdd
 }: {
   entries: readonly PreferenceEntry[]
   targets: readonly EnabledTarget[]
   onAdd: (target: string) => void
-  presets: React.ReactNode
 }) {
   const { t } = useTranslation()
   const disabled = entries.filter((e) => !e.enabled).length
@@ -190,7 +187,6 @@ function ChainFooter({
         {entries.length === 0 ? '' : ` · ${t('routing.chain.orderHint')}`}
       </span>
       <div className='ml-auto flex items-center gap-2'>
-        {presets}
         <AddTargetDialog targets={targets} taken={taken} onAdd={onAdd} />
       </div>
     </div>
@@ -198,10 +194,10 @@ function ChainFooter({
 }
 
 /**
- * A profile with no entries anywhere is unconfigured, not broken: the
- * request falls through to the scenario router. Saying "no targets" here
- * would read as "this traffic goes nowhere", which is the opposite of what
- * happens.
+ * A profile with no entries anywhere is unconfigured, not broken: each
+ * request passes through with the model the caller asked for. Saying "no
+ * targets" here would read as "this traffic goes nowhere", which is the
+ * opposite of what happens.
  */
 function UnconfiguredProfile({ surface }: { surface: InboundSurfaceWire }) {
   return (
@@ -230,7 +226,6 @@ interface RoutedBodyProps {
   weights: Map<string, RoutingSchedulerWeightEntry>
   onSave: () => void
   saveDisabled: boolean
-  onNotify: (text: string, ok: boolean) => void
 }
 
 function RoutedBody(props: RoutedBodyProps) {
@@ -266,19 +261,7 @@ function RoutedBody(props: RoutedBodyProps) {
       ) : (
         <ChainTable entries={entries} weights={props.weights} actions={actions} />
       )}
-      <ChainFooter
-        entries={entries}
-        targets={props.targets}
-        onAdd={addTarget}
-        presets={
-          <PresetsMenu
-            profileKey={props.surface.profileKey}
-            constraints={props.profile.constraints}
-            onApplied={props.setProfile}
-            onNotify={props.onNotify}
-          />
-        }
-      />
+      <ChainFooter entries={entries} targets={props.targets} onAdd={addTarget} />
       <ChainConstraints constraints={props.profile.constraints} />
     </>
   )
@@ -423,7 +406,6 @@ export function RoutingChain() {
               weights={weights}
               onSave={onSave}
               saveDisabled={saving || !dirty}
-              onNotify={notify}
             />
           ) : (
             <PassthroughPanel surface={surface} targets={targets} onSetDenied={setTargetAllowed} />

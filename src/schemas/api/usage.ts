@@ -89,6 +89,9 @@ export const UsageHistoryQuerySchema = z.object({
 })
 
 export const GetUsageInputSchema = z.object({
+  // Ask upstream for every account instead of serving the 5-minute cache.
+  // Only the Providers screen's Refresh button sets it; the poller and
+  // /api/usage keep the cache so a page load never becomes an upstream call.
   forceRefresh: z.boolean().default(false)
 })
 

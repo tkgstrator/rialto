@@ -6,30 +6,12 @@
  * can be reasoned about (and unit-tested) without React.
  */
 import type { CatalogEntry, CatalogModel } from '@/schemas/api/catalog'
-import type { RouterConfig } from '@/schemas/domain/router'
 import { planCapacityWeight, type SeatKind } from '@/shared/plan-capacity'
+import { hasAuthenticableAccount } from '@/shared/subscription-credential'
 import { transformerChain } from '@/shared/transformer-chain'
 import type { ApiStyle, Provider, ReasoningEffort, SubscriptionWire, TestStatus, Tier, TransformerWire } from './types'
 
 export type ProviderState = 'off' | 'live' | 'invalid' | 'unknown'
-
-/**
- * How many router bindings would be cleared by deleting this provider.
- *
- * Removing a provider cascades to its models and nulls every RouterSlot
- * that pointed at one, which the server reports only as a warning after
- * the fact. Counting them first is what lets the confirm say how much
- * routing the operator is about to lose.
- */
-export function routerBindingsFor(router: RouterConfig | undefined, providerName: string): number {
-  if (router === undefined) return 0
-  const prefix = `${providerName},`
-  const scenarios = [router.default, router.think, router.longContext, router.webSearch, router.image]
-  return scenarios
-    .flatMap((scenario) => [scenario.agent, scenario.subagent])
-    .flatMap((lane) => [lane.primary, ...lane.fallbacks])
-    .filter((target) => typeof target === 'string' && target.startsWith(prefix)).length
-}
 
 /** Models the operator has switched off. Mirrors the DB's Model.enabled. */
 export function disabledModelsOf(p: Provider): string[] {
@@ -106,13 +88,13 @@ export function apiStyleOverrideOf(p: Provider, model: string): ApiStyle | null 
 /**
  * Whether the provider holds something it could authenticate with.
  *
- * Mirrors the gate in `services/config/enabled-models.ts` deliberately:
- * a subscription needs an active account with a resolved plan, an
- * api_key provider needs a non-empty key. That gate is applied on top of
- * `Provider.enabled`, so a provider failing it is already unroutable no
- * matter how the switch is set — which is what makes it the right place
- * to lock the switch rather than let an operator set a flag that changes
- * nothing.
+ * Calls the SAME predicate as the gate in
+ * `services/config/enabled-models.ts`: a subscription needs at least one
+ * account with a resolved plan, an api_key provider needs a non-empty
+ * key. That gate is applied on top of `Provider.enabled`, so a provider
+ * failing it is already unroutable no matter how the switch is set —
+ * which is what makes it the right place to lock the switch rather than
+ * let an operator set a flag that changes nothing.
  *
  * Not the same question as `providerState() === 'live'`. Live is a
  * verdict on a probe: for an api_key provider it means a model test has
@@ -121,8 +103,7 @@ export function apiStyleOverrideOf(p: Provider, model: string): ApiStyle | null 
  */
 export function hasCredential(p: Provider, sub: SubscriptionWire | undefined): boolean {
   if (p.auth_mode === 'subscription') {
-    if (sub === undefined || sub.activeAccount === null) return false
-    return sub.activeAccount.plan !== null
+    return sub !== undefined && hasAuthenticableAccount(sub.accounts)
   }
   const key = p.api_key === null ? '' : p.api_key.trim()
   return key.length > 0

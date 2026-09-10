@@ -12,8 +12,8 @@
  * Plus per-preference-entry suggestions ("Fable never reached — check
  * the primary" and similar). The suggestions are documented in the
  * plan doc §Phase 7 and reused by the dashboard's "Suggested change"
- * cards. Suggestions carry a JSON diff instead of raw SQL (per plan
- * correction — L4 no longer edits RouterSlot).
+ * cards. Suggestions carry a JSON diff instead of raw SQL — they
+ * describe a chain edit for the operator to apply, never a write.
  */
 
 import { getPrismaClient } from '../db/client'

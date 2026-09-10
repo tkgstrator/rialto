@@ -43,7 +43,6 @@ const coerceEnvelopeValue = (key: EnvelopeEnvKey, value: string): unknown => {
     }
     case 'LOG':
     case 'NON_INTERACTIVE_MODE':
-    case 'CROSS_PROVIDER_FALLBACK':
     case 'CAPTURE_REQUESTS':
     case 'CAPTURE_MESSAGES':
     case 'REDACT_TOOL_ARGUMENTS':
@@ -134,7 +133,7 @@ const quarantineConfigFile = async (): Promise<void> => {
  * `APIKEY` above all: regenerating it locks out every configured client,
  * and a file that failed schema validation usually still holds a
  * perfectly good token. Personas are the other envelope-only data with
- * no copy anywhere else — Providers and Router live in the database.
+ * no copy anywhere else — Providers live in the database.
  */
 const salvageFromRaw = (raw: unknown): Partial<{ APIKEY: string; Personas: unknown[] }> => {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return {}
@@ -166,9 +165,8 @@ const createDefaultConfig = async (salvaged: ReturnType<typeof salvageFromRaw> =
     // invented.
     ...(salvaged.APIKEY === undefined ? {} : { APIKEY: salvaged.APIKEY }),
     Providers: [],
-    Router: {},
     // Ship a few ready-made personas in the default config so a fresh
-    // install has something to pick on the Router page out of the box.
+    // install has something to pick under Settings → Personas out of the box.
     Personas: salvaged.Personas === undefined ? SEED_PERSONAS : salvaged.Personas
   }
   await writeConfigFile(raw)

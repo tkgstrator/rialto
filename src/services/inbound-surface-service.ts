@@ -96,8 +96,8 @@ export async function listSurfaces(): Promise<ResolvedSurface[]> {
 /**
  * Give every registered surface a stored mode.
  *
- * Called once at boot, like `ensureRouterSlots`. Without it a surface's
- * mode would be half state and half fallback, which is what the old
+ * Called once at boot, like `ensurePreferenceProfile`. Without it a
+ * surface's mode would be half state and half fallback, which is what the old
  * `overridden` flag existed to explain — a value the operator could not
  * act on, describing a distinction that only mattered because the
  * fallback existed.
@@ -134,8 +134,8 @@ export async function resolveSurfaceForPath(path: string | undefined): Promise<R
 }
 
 /**
- * Whether the full scenario → rule → preference-chain → failover pipeline
- * applies to this path.
+ * Whether the chain — classification, selection, failover — applies to
+ * this path, or the caller's own model goes out as sent.
  *
  * An unknown path is treated as routed: that is what `/v1/messages` (the
  * only path the old code did not name) did, and the caller only reaches

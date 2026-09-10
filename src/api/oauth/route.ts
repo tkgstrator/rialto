@@ -61,7 +61,7 @@ import {
   storePendingFlow
 } from '../../services/oauth-flow-service'
 import { providersForKind } from '../../services/subscription-account-sync/persist'
-import { getActiveSubAccountAuth } from '../../services/subscription-account-sync/read'
+import { getUsableSubAccountAuth } from '../../services/subscription-account-sync/read'
 import { recordClaudeOAuthAccount, recordCodexOAuthAccount } from '../../services/subscription-account-sync-service'
 
 export const oauthRoute = new Hono()
@@ -329,11 +329,12 @@ oauthRoute.post('/api/oauth/export-credentials', async (c) => {
   }
 
   // Walk every provider that matches this vendor kind (usually one:
-  // claude-code / codex). Take the first one that has a live active
-  // account with a non-empty access token — that's what the proxy would
-  // use right now.
+  // claude-code / codex) and take the first account that can
+  // authenticate. With several connected accounts this exports one of
+  // them, not "the" one: nothing designates an account any more, and the
+  // proxy spreads traffic across all of them per request.
   for (const p of kindProviders) {
-    const auth = await getActiveSubAccountAuth(p.name, prisma)
+    const auth = await getUsableSubAccountAuth(p.name, prisma)
     if (!auth || !auth.accessToken) continue
 
     if (kind === 'claude') {

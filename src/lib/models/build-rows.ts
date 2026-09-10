@@ -24,9 +24,9 @@ export function buildModelRows(providers: Provider[], planByProvider: Record<str
     const ctxMap = provider.modelContextWindows ?? {}
     const priceMap = provider.modelPrices ?? {}
     // Deprecated models are dropped from the dashboard entirely — an
-    // operator who wants to route to one still can via the Router
-    // editor, but the browsing surface stays a short list of things
-    // that are currently offered. Prior behaviour surfaced them with a
+    // operator who wants to route to one still can by adding it to a
+    // chain in Routing, but the browsing surface stays a short list of
+    // things that are currently offered. Prior behaviour surfaced them with a
     // "deprecated" badge, which cluttered the table without adding
     // decision value the operator could act on from this screen.
     return models.flatMap((model) => {

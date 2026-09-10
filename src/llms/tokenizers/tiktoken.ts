@@ -8,7 +8,7 @@
 
 import { get_encoding, type Tiktoken, type TiktokenEncoding } from 'tiktoken'
 import type { ProviderTokenizerConfig } from '@/schemas/domain/tokenizer'
-import { type TokenizeContentBlock, type TokenizeRequest, Tokenizer } from './base'
+import { isTokenizeContentBlock, type TokenizeContentBlock, type TokenizeRequest, Tokenizer } from './base'
 
 const DEFAULT_ENCODING: TiktokenEncoding = 'cl100k_base'
 
@@ -132,12 +132,27 @@ export class TiktokenTokenizer extends Tokenizer {
       const text = input !== undefined ? JSON.stringify(input) : ''
       return encoding.encode(text).length
     }
-    if (part.type === 'tool_result') {
-      const content = readBlockContent(part)
-      if (typeof content === 'string') return encoding.encode(content).length
-      const text = content !== undefined ? JSON.stringify(content) : ''
-      return encoding.encode(text).length
-    }
+    if (part.type === 'tool_result') return this.countToolResult(encoding, readBlockContent(part))
     return 0
+  }
+
+  // A tool_result's content is either a string or an array of blocks in
+  // the same vocabulary as a message's — text, image, document. Counting
+  // the array by JSON.stringify weighed a nested image's base64 payload
+  // as prose (one screenshot read as a million tokens and pushed every
+  // request after it into the longContext lane); walking it block by
+  // block counts the text and, like a top-level image block, weighs the
+  // media at 0. Anything else — an object a Responses caller returned
+  // as a tool output — is still serialised, since it is text-shaped.
+  private countToolResult(encoding: Tiktoken, content: unknown): number {
+    if (content === undefined) return 0
+    if (typeof content === 'string') return encoding.encode(content).length
+    if (Array.isArray(content)) {
+      return content.reduce<number>(
+        (n, item) => n + (isTokenizeContentBlock(item) ? this.countContentBlock(encoding, item) : 0),
+        0
+      )
+    }
+    return encoding.encode(JSON.stringify(content)).length
   }
 }

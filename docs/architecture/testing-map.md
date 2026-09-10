@@ -43,21 +43,20 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `configEnvelopeSchema.test.ts` | `ConfigEnvelopeSchema` の受理／拒否（特に `API_TIMEOUT_MS` の coercion） |
 | `config-salvage.test.ts` | 壊れた `config.json` から `APIKEY` / `Personas` を救い出す経路 |
 | `cloudflare-access.test.ts` | Access assertion の検証（署名 + audience） |
-| `explain-rule.test.ts` | ルール述語の判定理由（Rule Tester 画面が読む `ConditionVerdict`） |
-| `flatten-nested-router.test.ts` | ネストした Router 設定 → ランタイムのフラット形 |
+| `chain-target-state.test.ts` | Routing 画面のチェーン行で、スケジューラが測れなかった target（api_key など）の重みをどう見せるか |
 | `long-context-beta.test.ts` | `context-1m-*` beta ヘッダの取り回し |
 | `message-content.test.ts` | メッセージ本文の正規化 |
 | `models-build-rows.test.ts` | Providers 画面のモデル行の組み立て |
-| `persona-clear.test.ts` | 「ペルソナ無し」への戻し方（null / 空文字 / 欠落） |
+| `passthrough-denial.test.ts` | passthrough 面の `deniedTargets`。routed な面では判定しないこと（`body.model` は chain が置き換え済み） |
+| `persona-clear.test.ts` | 「ペルソナ無し」への戻し方（トップレベル `ActivePersona` の null / 空文字 / 欠落） |
 | `preference-router-schema.test.ts` | 選好ルーターのスキーマ契約 |
+| `provider-routable.test.ts` | `Provider.enabled` を Routing が絞る集合と Providers 画面の表示が一致すること |
 | `thinking-signature-filter.test.ts` | `rialto_` プレフィクスの thinking signature 濾過 |
 | `update-check.test.ts` | 更新チェック: バージョン比較（`v` 付きタグ・prerelease・読めないタグ）と、取得失敗を「最新です」に畳まないこと、成功だけをキャッシュすること |
-| `preset-form-logic.test.ts` | `src/lib/presets/form-logic.ts` の `evaluateCondition` とフィールドバリデータ（Presets 画面の required-input フォームを駆動する） |
 | `rialto/format.test.ts` | 表示フォーマッタ（金額の有効数字など） |
 | `rialto/redact-tool-arguments.test.ts` | `REDACT_TOOL_ARGUMENTS` の除去処理 |
 | `rialto/settings/access-config.test.ts`<br/>`rialto/settings/access-tokens.test.ts`<br/>`rialto/settings/envelope.test.ts` | Settings 画面の各フォームのロジック |
-| `rialto/settings-content/persona.test.ts`<br/>`rialto/settings-content/presets.test.ts`<br/>`rialto/settings-content/statusline.test.ts` | Settings のサブ画面のロジック |
-| `routing-map/build-graph.test.ts`<br/>`routing-map/edit-actions.test.ts` | Routing → Map のグラフ構築と編集操作 |
+| `rialto/settings-content/persona.test.ts`<br/>`rialto/settings-content/statusline.test.ts` | Settings のサブ画面のロジック |
 
 ### `__tests__/db` — DB を張った統合テスト
 
@@ -65,8 +64,9 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 
 | ファイル | 担保しているもの |
 |---|---|
-| `config-service.test.ts` | `applyUiConfig` / `composeUiConfig` の往復整合、Provider/Model 削除時の RouterSlot 整合、警告、永続化 |
-| `upsert-provider.test.ts` | Provider の upsert（重複名・モデル差分） |
+| `config-service.test.ts` | `applyUiConfig` / `composeUiConfig` の往復整合、Provider/Model 削除で cascade するチェーン entry の警告、退役キー（`Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK`）を警告付きで捨て・ディスクから剥がすこと、トップレベル `ActivePersona` の往復、永続化 |
+| `upsert-provider.test.ts` | Provider の upsert（重複名・モデル差分）と、Provider / Model 削除がチェーン entry を profile / scenario / lane 単位で数えて警告すること |
+| `disabled-targets.test.ts` | 無効な Provider / Model がどの経路からも送られないこと — チェーン entry（`loadRoutableProfile` の折り込み）、passthrough の `provider,model`（registry に無い pair を `resolveInvocationForModel` が拒否）、bare 名の解決、サブスクリプションのアカウントプール |
 | `access-token-service.test.ts` | トークンの発行・解決・失効。保存は sha256 のみ |
 | `inbound-surface-service.test.ts` | 面ごとの `routingMode` / `profileKey` の解決と `ensureInboundSurfaces` の冪等性 |
 | `passthrough-profile.test.ts` | passthrough 面のプロファイル解決 |
@@ -85,12 +85,14 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `request-log-events-auth.test.ts` | EventSource 用の `apikey` クエリ例外が**この 1 パスだけ**であること |
 | `error-shape.test.ts` | 3 種のエラー封筒の出し分け |
 | `upstream-error.test.ts` | `PROVIDER_ERR_RE` の逆パースと verbatim 転送 |
-| `route-plan.test.ts` | `buildRoutePlan`（body parse、面解決、transformer 引き当て） |
-| `candidate-chain.test.ts` | `buildFailoverChain` の auth_mode ゲート・同 provider drop・重複排除 |
-| `cross-provider-fallback.test.ts` | ピア注入の範囲・順序・重複排除・ゲートバイパス |
+| `route-plan.test.ts` | `buildRoutePlan`（body parse、面解決、transformer 引き当て、chain の primary / fallbacks が plan に載ること） |
+| `candidate-chain.test.ts` | `buildFailoverChain` — chain の順序をそのまま辿ること（subscription primary が api_key fallback を保つ、同 provider も通る）、重複排除、exhausted 除外と全滅時の順序維持 |
+| `router-preferences.test.ts` | `constraints.longContextThreshold` の受理（正の整数か null）と `/api/router-preferences` での往復 |
+| `chain-failover-cooldown.test.ts` | 429 後の枯渇マークと cooldown |
 | `openai-models.test.ts` | `GET /v1/models` の envelope と `provider,model` id |
 | `access-log-request-id.test.ts` | アクセスログの `reqId` |
 | `oauth-export-credentials.test.ts` | 認証情報エクスポート |
+| `subscriptions-refresh.test.ts` | `POST /api/subscriptions/refresh`（Subscriptions 一覧の Refresh）。プロファイル再同期と 5 分キャッシュを迂回した usage 取得が `SubAccountQuota` / `SubAccountUsage` に着地し、`UsageSnapshot` には書かないこと。無効プロバイダのアカウントを呼ばないこと、失敗アカウントを名指しして行を触らないこと、同時呼び出しが 1 回の上流パスに合流すること、`/sync` の契約が変わらないこと |
 | `routing-scheduler-state.test.ts` / `solver-input.test.ts` | スケジューラ状態とソルバ入力の API |
 
 ### `__tests__/llms` — ルーティングと変換
@@ -98,9 +100,13 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | ファイル | 担保しているもの |
 |---|---|
 | `inbound-surfaces.test.ts` | 面レジストリ。登録済み transformer 全件について「旧分岐が返す関数 === 記述子の `aggregateSse`」を突き合わせる |
-| `scenario-router.test.ts` | シナリオ分類とレーン選択 |
+| `route-scenario-chain.test.ts` | `routeScenario` の通し契約。chain に primary があれば `body.model` と fallbacks が置き換わる／空レーン・全ゲート落ち（`exhaustedBehavior` の両値）・chain 読込失敗・例外では呼び出し側の `body.model` が触られない／`exhaustedBehavior='429'` は Retry-After を stamp して書き換えない／無効な target は primary にも fallback にもならない／token の `passthrough` profile と passthrough 面は chain を飛ばす |
+| `chain-fixture.ts` | 上記と parity テストが DB 無しで chain を seed するための fixture（`__setPreferencesForTests` に渡す profile を組む） |
+| `chain-scenario-gate.test.ts` | 分類がレーンの entry 有無で gate されること、`chainRoutingOf` の射影（全 OFF のレーンは未設定扱い、先頭 entry の window、constraint の threshold）、`effectiveLongContextThreshold` の解決順（constraint → window × 0.7 → 128k） |
+| `scenario-router.test.ts` | `candidateUsable` / `applyProactiveFailover`（枯渇マーク・capability ゲート）/ `isHeavyRequest` / `classifyRequest` の effort・tier・thinking 分岐 |
+| `openai-surface-signals.test.ts` | OpenAI 形のリクエストから routing signal（thinking / tools / トークン数）を読むこと |
 | `subagent-tag.test.ts` | タグの**有無**でレーンが決まること、タグが in-place で除去されること、旧綴りも受理されること |
-| `peer-fallback.test.ts` | 同一モデルのピア展開 |
+| `tokenizers/tool-result-image.test.ts` | `tool_result` に入れ子になった image が base64 長ではなくテキスト分として数えられること（tiktoken / huggingface 両方） |
 | `provider-registry-chain.test.ts` | `apiStyle` + `authMode` からの chain 導出と、chain 無しプロバイダの登録拒否 |
 | `sse-aggregate.test.ts` | 4 つのワイヤ語彙それぞれの SSE→JSON 畳み込みと、その手前のガード（`findSseStreamDefect`）— 使えるイベントが 0 のストリームと上流エラーイベントを畳まず拒否し、単に途中で切れただけのストリームは従来どおり畳むこと |
 | `bypass-header-strip.test.ts` | bypass 時の hop-by-hop ヘッダ除去 |
@@ -121,6 +127,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `failover-state.test.ts` | 枯渇マークとその失効 |
 | `session-account-router.test.ts` | ハードリミット除外 → sticky → balancingScore の 4 段 |
 | `usage-headroom.test.ts` | `drainTarget` / `getKindWindowHeadroom` の算術。**現在のルーティング経路からは呼ばれない関数のテスト**（UI と将来の再利用のために残してある） |
+| `usage-fetch-force.test.ts` | usage 取得の `forceRefresh`（TTL 内のキャッシュを迂回して上流を呼び、再キャッシュする）と `enabledProvidersOnly`。既定の経路が変わらずキャッシュを返し、失敗時は直前の値を残してアカウントを `failed` に名指しすること |
 | `subscription-account-sync-service.test.ts` / `subscription-account-sync/crypto.test.ts` | サブアカウント同期と `RIALTO_ACCOUNT_ENCRYPTION_KEY` による暗号化 |
 | `codex-auth.test.ts` | Codex のトークンリフレッシュ |
 | `router-preference-service.test.ts` / `router-utilization-service.test.ts` | 選好チェーンと利用率 |
@@ -139,7 +146,9 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 4 つの受け口が同じ振る舞いをすることを、面をまたいだマトリクスで確認する。軸ごとの実体が
 `streaming` / `non-stream-aggregate` / `tool-use` / `thinking` / `image-input` /
 `system-prompt` / `cache-tokens` / `usage-record` / `error-envelope` / `failover-429` /
-`routing-mode` / `gemini-request-conversion` の各ファイル。
+`routing-mode` / `routing-lanes` / `gemini-request-conversion` の各ファイル。`routing-mode` と
+`routing-lanes` は `__setPreferencesForTests` で chain を seed して routed / passthrough の両方を
+4 面で確かめる — seed しなければ「chain が読めない」経路を試すことになるため。
 
 `matrix.test.ts` は**ドキュメントを検査するテスト**である。`docs/architecture/inbound-parity.md`
 を実際に読み、面の列が `INBOUND_SURFACES` と一致しているか、全セルがラベルで埋まっているか、
@@ -172,20 +181,17 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 `JsonObjectSchema` の方はこのテスト以外に読み手がいない。
 
 かつてここにあった manifest スキーマ（`PresetFileSchema` / `PresetMetadataSchema` /
-`ConditionSchema`）と条件評価のテストは、対象だった `src/shared/preset/` が
-`src/lib/presets/form-logic.ts` の死んだ双子だったため削除され、条件評価のカバレッジは
-生きている側の `__tests__/lib/preset-form-logic.test.ts` へ移った。**ファイルのパスは
+`ConditionSchema`）と条件評価のテストは、対象のコードごと削除された。**ファイルのパスは
 変えていない**ので `bun run test` のグロブ（`__tests__/preset`）はそのままで正しい。
 
-UI の Settings → Presets が扱うライブな `RoutingPreset` 機能とは**別物**なので混同しないこと。
-「preset」と呼ばれるものの整理は `CLAUDE.md` の `## Presets` にある。
+「preset」と呼ばれる機能はもう無い（`RoutingPreset` も、Settings → Presets も、
+`src/lib/presets/` も）。経緯は `CLAUDE.md` の `## Presets` にある。
 
 ## 未カバー領域
 
 | 領域 | 状況 |
 |---|---|
 | UI コンポーネントのレンダリング | ロジックは `__tests__/lib/rialto/` で切り出してテストしているが、レンダリング自体は `ui-mock-diff` スキルのスクリーンショット差分に委ねている |
-| `custom-router` | ランタイムの読み手が無いので、テストする対象が無い |
 | Redis / BullMQ ジョブ | 起動が fire-and-forget なので、ジョブ本体の統合テストは無い |
 
 ## 関連

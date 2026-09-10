@@ -8,7 +8,7 @@
  *     full encrypt→store→decrypt roundtrip via the DB helpers.
  *
  *  2. DB (require HAS_DB): recordCodexOAuthAccount, recordClaudeOAuthAccount
- *     (with mocked fetchClaudeProfile), getActiveSubAccountAuth, and
+ *     (with mocked fetchClaudeProfile), getUsableSubAccountAuth, and
  *     updateSubAccountAccessToken.
  */
 
@@ -16,8 +16,7 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { createCipheriv, randomBytes } from 'node:crypto'
 import {
   decryptString,
-  getActiveSubAccountAuth,
-  reconcileActiveSubAccounts,
+  getUsableSubAccountAuth,
   recordClaudeOAuthAccount,
   recordCodexOAuthAccount,
   updateSubAccountAccessToken
@@ -192,11 +191,9 @@ describe.skipIf(!HAS_DB)('subscription-account-sync-service (DB)', () => {
       expect(accounts[0].accessTokenEnc).not.toBeNull()
       expect(accounts[0].accessTokenEnc).not.toBe('codex-at')
 
-      // Provider should have this account as active.
-      const provider = await db.provider.findFirst({
-        include: { activeSubscriptionAccount: true }
-      })
-      expect(provider?.activeSubscriptionAccount?.id).toBe(accounts[0].id)
+      // The account is a candidate the moment it is written — nothing
+      // has to promote it into a designated slot.
+      expect(accounts[0].enabled).toBe(true)
     })
 
     test('decrypted tokens match originals', async () => {
@@ -374,22 +371,49 @@ describe.skipIf(!HAS_DB)('subscription-account-sync-service (DB)', () => {
   })
 
   // -------------------------------------------------------------------------
-  // getActiveSubAccountAuth
+  // getUsableSubAccountAuth
   // -------------------------------------------------------------------------
 
-  describe('getActiveSubAccountAuth', () => {
+  describe('getUsableSubAccountAuth', () => {
     test('returns null when no subscription provider exists', async () => {
-      const result = await getActiveSubAccountAuth('nonexistent')
+      const result = await getUsableSubAccountAuth('nonexistent')
       expect(result).toBeNull()
     })
 
-    test('returns null when provider has no active account', async () => {
+    test('returns null when the provider has no account at all', async () => {
       await createSubProvider('codex')
-      const result = await getActiveSubAccountAuth('codex-oauth')
+      const result = await getUsableSubAccountAuth('codex-oauth')
       expect(result).toBeNull()
     })
 
-    test('returns decrypted tokens for the active account', async () => {
+    test('skips a disabled account and takes an enabled peer', async () => {
+      const provider = await createSubProvider('codex')
+      const db = prisma()
+      await recordCodexOAuthAccount({
+        accessToken: 'off-at',
+        refreshToken: 'off-rt',
+        idToken: makeCodexIdToken()
+      })
+      // Disable the only synced account and add a second, enabled one.
+      // The reader must answer with the account that can actually serve,
+      // not with whichever row a binding used to point at.
+      await db.subAccount.updateMany({ where: { providerId: provider.id }, data: { enabled: false } })
+      await db.subAccount.create({
+        data: {
+          providerId: provider.id,
+          sourcePath: 'oauth:codex:peer',
+          label: 'codex:peer',
+          enabled: true,
+          accessTokenEnc: encryptForTest('peer-at', TEST_KEY_HEX),
+          refreshTokenEnc: encryptForTest('peer-rt', TEST_KEY_HEX)
+        }
+      })
+
+      const auth = await getUsableSubAccountAuth('codex-oauth')
+      expect(auth?.accessToken).toBe('peer-at')
+    })
+
+    test('returns decrypted tokens for a usable account', async () => {
       await createSubProvider('codex')
       await recordCodexOAuthAccount({
         accessToken: 'live-at',
@@ -397,7 +421,7 @@ describe.skipIf(!HAS_DB)('subscription-account-sync-service (DB)', () => {
         idToken: makeCodexIdToken()
       })
 
-      const auth = await getActiveSubAccountAuth('codex-oauth')
+      const auth = await getUsableSubAccountAuth('codex-oauth')
       expect(auth).not.toBeNull()
       expect(auth!.accessToken).toBe('live-at')
       expect(auth!.refreshToken).toBe('live-rt')
@@ -419,7 +443,7 @@ describe.skipIf(!HAS_DB)('subscription-account-sync-service (DB)', () => {
         idToken: makeCodexIdToken()
       })
 
-      const before = await getActiveSubAccountAuth('codex-oauth')
+      const before = await getUsableSubAccountAuth('codex-oauth')
       expect(before!.accessToken).toBe('old-at')
 
       await updateSubAccountAccessToken(before!.subAccountId, {
@@ -428,7 +452,7 @@ describe.skipIf(!HAS_DB)('subscription-account-sync-service (DB)', () => {
         expiresAt: new Date(Date.now() + 3600_000)
       })
 
-      const after = await getActiveSubAccountAuth('codex-oauth')
+      const after = await getUsableSubAccountAuth('codex-oauth')
       expect(after!.accessToken).toBe('new-at')
       expect(after!.refreshToken).toBe('new-rt')
     })
@@ -441,122 +465,12 @@ describe.skipIf(!HAS_DB)('subscription-account-sync-service (DB)', () => {
         idToken: makeCodexIdToken()
       })
 
-      const before = await getActiveSubAccountAuth('codex-oauth')
+      const before = await getUsableSubAccountAuth('codex-oauth')
       await updateSubAccountAccessToken(before!.subAccountId, { accessToken: 'new-at' })
 
-      const after = await getActiveSubAccountAuth('codex-oauth')
+      const after = await getUsableSubAccountAuth('codex-oauth')
       expect(after!.accessToken).toBe('new-at')
       expect(after!.refreshToken).toBe('keep-rt')
-    })
-  })
-
-  // -------------------------------------------------------------------------
-  // reconcileActiveSubAccounts — boot-time self-heal for providers whose
-  // active-account binding was orphaned by older toggle code that nulled
-  // it without promoting a successor.
-  // -------------------------------------------------------------------------
-
-  describe('reconcileActiveSubAccounts', () => {
-    const seedAccount = async (providerId: string, sourcePath: string, enabled: boolean) => {
-      const db = prisma()
-      return db.subAccount.create({
-        data: {
-          providerId,
-          sourcePath,
-          label: `claude-code:${sourcePath}`,
-          enabled,
-          userName: 'Tester',
-          userEmail: `${sourcePath}@example.com`,
-          plan: 'claude_max'
-        }
-      })
-    }
-
-    test('promotes oldest enabled account when active binding is null', async () => {
-      const provider = await createSubProvider('claude')
-      const db = prisma()
-      // Mirror the bug case: a disabled "old" account, an enabled "new"
-      // one, and no active binding.
-      await seedAccount(provider.id, 'oauth:claude:disabled', false)
-      const enabled = await seedAccount(provider.id, 'oauth:claude:enabled', true)
-
-      await reconcileActiveSubAccounts()
-
-      const after = await db.provider.findUnique({
-        where: { id: provider.id },
-        select: { activeSubscriptionAccountId: true }
-      })
-      expect(after?.activeSubscriptionAccountId).toBe(enabled.id)
-    })
-
-    test('promotes when active points at a now-disabled account', async () => {
-      const provider = await createSubProvider('claude')
-      const db = prisma()
-      const stale = await seedAccount(provider.id, 'oauth:claude:stale', false)
-      const fresh = await seedAccount(provider.id, 'oauth:claude:fresh', true)
-      await db.provider.update({
-        where: { id: provider.id },
-        data: { activeSubscriptionAccountId: stale.id }
-      })
-
-      await reconcileActiveSubAccounts()
-
-      const after = await db.provider.findUnique({
-        where: { id: provider.id },
-        select: { activeSubscriptionAccountId: true }
-      })
-      expect(after?.activeSubscriptionAccountId).toBe(fresh.id)
-    })
-
-    test('leaves binding null when no enabled account is available', async () => {
-      const provider = await createSubProvider('claude')
-      const db = prisma()
-      await seedAccount(provider.id, 'oauth:claude:only', false)
-
-      await reconcileActiveSubAccounts()
-
-      const after = await db.provider.findUnique({
-        where: { id: provider.id },
-        select: { activeSubscriptionAccountId: true }
-      })
-      expect(after?.activeSubscriptionAccountId).toBeNull()
-    })
-
-    test('clears stale active binding when no enabled candidate remains', async () => {
-      const provider = await createSubProvider('claude')
-      const db = prisma()
-      const stale = await seedAccount(provider.id, 'oauth:claude:stale', false)
-      await db.provider.update({
-        where: { id: provider.id },
-        data: { activeSubscriptionAccountId: stale.id }
-      })
-
-      await reconcileActiveSubAccounts()
-
-      const after = await db.provider.findUnique({
-        where: { id: provider.id },
-        select: { activeSubscriptionAccountId: true }
-      })
-      expect(after?.activeSubscriptionAccountId).toBeNull()
-    })
-
-    test('leaves a healthy active binding untouched', async () => {
-      const provider = await createSubProvider('claude')
-      const db = prisma()
-      const live = await seedAccount(provider.id, 'oauth:claude:live', true)
-      await seedAccount(provider.id, 'oauth:claude:other', true)
-      await db.provider.update({
-        where: { id: provider.id },
-        data: { activeSubscriptionAccountId: live.id }
-      })
-
-      await reconcileActiveSubAccounts()
-
-      const after = await db.provider.findUnique({
-        where: { id: provider.id },
-        select: { activeSubscriptionAccountId: true }
-      })
-      expect(after?.activeSubscriptionAccountId).toBe(live.id)
     })
   })
 })
