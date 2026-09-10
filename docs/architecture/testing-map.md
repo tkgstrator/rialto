@@ -92,6 +92,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `openai-models.test.ts` | `GET /v1/models` の envelope と `provider,model` id |
 | `access-log-request-id.test.ts` | アクセスログの `reqId` |
 | `oauth-export-credentials.test.ts` | 認証情報エクスポート |
+| `subscriptions-refresh.test.ts` | `POST /api/subscriptions/refresh`（Subscriptions 一覧の Refresh）。プロファイル再同期と 5 分キャッシュを迂回した usage 取得が `SubAccountQuota` / `SubAccountUsage` に着地し、`UsageSnapshot` には書かないこと。無効プロバイダのアカウントを呼ばないこと、失敗アカウントを名指しして行を触らないこと、同時呼び出しが 1 回の上流パスに合流すること、`/sync` の契約が変わらないこと |
 | `routing-scheduler-state.test.ts` / `solver-input.test.ts` | スケジューラ状態とソルバ入力の API |
 
 ### `__tests__/llms` — ルーティングと変換
@@ -126,6 +127,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `failover-state.test.ts` | 枯渇マークとその失効 |
 | `session-account-router.test.ts` | ハードリミット除外 → sticky → balancingScore の 4 段 |
 | `usage-headroom.test.ts` | `drainTarget` / `getKindWindowHeadroom` の算術。**現在のルーティング経路からは呼ばれない関数のテスト**（UI と将来の再利用のために残してある） |
+| `usage-fetch-force.test.ts` | usage 取得の `forceRefresh`（TTL 内のキャッシュを迂回して上流を呼び、再キャッシュする）と `enabledProvidersOnly`。既定の経路が変わらずキャッシュを返し、失敗時は直前の値を残してアカウントを `failed` に名指しすること |
 | `subscription-account-sync-service.test.ts` / `subscription-account-sync/crypto.test.ts` | サブアカウント同期と `RIALTO_ACCOUNT_ENCRYPTION_KEY` による暗号化 |
 | `codex-auth.test.ts` | Codex のトークンリフレッシュ |
 | `router-preference-service.test.ts` / `router-utilization-service.test.ts` | 選好チェーンと利用率 |

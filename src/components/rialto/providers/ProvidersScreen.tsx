@@ -23,7 +23,8 @@ import { toast } from 'sonner'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import { SectionHead } from '@/components/rialto/settings/fields'
-import { refreshPrices } from './actions'
+import type { SubscriptionRefreshResponse } from '@/schemas/api/subscriptions'
+import { refreshPrices, refreshSubscriptions } from './actions'
 import { BusyOverlay } from './BusyOverlay'
 import { enabledCountOf, listedModelsOf, providerState } from './derive'
 import { type ListedProvider, ProviderTable } from './ProviderTable'
@@ -80,6 +81,31 @@ function summary(entries: ListedProvider[], kind: Kind, t: TFunction): string {
   return t('providers.list.apiKeysSummary', { providers: entries.length, enabled, models, keyless })
 }
 
+/**
+ * Narrate a refresh. A failure is named, not counted — the list shows
+ * accounts by label, so "could not refresh anna" points at a row where
+ * "1 of 3 failed" would not. Zero accounts gets its own line: on an
+ * install whose only subscription provider is switched off, "Refreshed 0
+ * accounts" reads as a failure it is not.
+ */
+function toastRefreshOutcome(outcome: SubscriptionRefreshResponse, t: TFunction): void {
+  if (outcome.attempted === 0) {
+    toast.info(t('providers.screen.subscriptionsRefreshedNone'))
+    return
+  }
+  if (outcome.failed.length === 0) {
+    toast.success(t('providers.screen.subscriptionsRefreshed', { count: outcome.refreshed }))
+    return
+  }
+  const message = t('providers.screen.subscriptionsRefreshPartial', {
+    refreshed: outcome.refreshed,
+    attempted: outcome.attempted,
+    names: outcome.failed.map((f) => f.label).join(', ')
+  })
+  if (outcome.refreshed === 0) toast.error(message)
+  else toast.warning(message)
+}
+
 export function ProvidersScreen({ kind }: { kind: Kind }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -101,6 +127,19 @@ export function ProvidersScreen({ kind }: { kind: Kind }) {
       .finally(() => setPending(null))
   }, [reload, t])
 
+  // Subscriptions only: the quota column is a five-minute-old reading and
+  // this asks upstream for it now. The API keys list has nothing that
+  // ages the same way — its rows change through the catalog pair. The
+  // toast waits for `reload` so it lands on a list already showing what
+  // it reports.
+  const refreshAccounts = useCallback(() => {
+    setPending(t('providers.screen.refreshingSubscriptions'))
+    refreshSubscriptions()
+      .then((outcome) => reload().then(() => toastRefreshOutcome(outcome, t)))
+      .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
+      .finally(() => setPending(null))
+  }, [reload, t])
+
   const entries = data === null ? [] : listOf(data, kind)
 
   return (
@@ -114,6 +153,16 @@ export function ProvidersScreen({ kind }: { kind: Kind }) {
           <RButton variant='ghost' icon='ri-price-tag-3-line' onClick={refresh} disabled={pending !== null || loading}>
             {t('providers.screen.refreshPrices')}
           </RButton>
+          {kind === 'subscription' ? (
+            <RButton
+              variant='ghost'
+              icon='ri-refresh-line'
+              onClick={refreshAccounts}
+              disabled={pending !== null || loading}
+            >
+              {t('providers.screen.refreshSubscriptions')}
+            </RButton>
+          ) : null}
           <RButton variant='primary' icon='ri-add-line' onClick={goAdd}>
             {t(copy.add)}
           </RButton>
