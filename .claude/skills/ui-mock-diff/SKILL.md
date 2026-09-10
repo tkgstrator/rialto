@@ -77,8 +77,9 @@ bun run mocks:shoot -- --screen routing --theme dark
 reported as skipped — say so and ask, do not start one. (`mocks:serve` is a
 different, purpose-built process and is fine to start.)
 
-The impl side needs to get past `ProtectedRoute`. Export `RIALTO_UI_API_KEY`
-(or `APIKEY`) and the capture seeds `localStorage.apiKey` before first paint.
+The impl side gets past `ProtectedRoute` with no credential: the capture runs
+on the same machine as the dev server, and a browser there is exempt from the
+admin gate.
 
 ### 4. Diff
 

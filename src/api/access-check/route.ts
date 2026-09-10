@@ -2,13 +2,11 @@
  * POST /api/access-check — dry-run a Cloudflare Access configuration.
  *
  * Exists because the settings that enable Access are the settings that
- * can lock you out of the screen you set them on. `adminAuth`
- * deliberately does not fall back to the bootstrap token when an
- * assertion is present but fails to verify — falling back there would
- * let anyone holding that token bypass Access while appearing verified.
- * The cost of that correctness is that a mistyped team domain or AUD,
- * once saved, rejects every browser request forever, and the only way
- * back is editing the config file by hand.
+ * can lock you out of the screen you set them on. `adminAuth` has
+ * nothing to fall back on when an assertion fails to verify — there is
+ * no admin secret — so a mistyped team domain or AUD, once saved, rejects
+ * every remote browser request, and the only way back is a browser on the
+ * host itself or editing the config file by hand.
  *
  * So: check first, save second. Nothing here is persisted.
  */

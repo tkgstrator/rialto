@@ -50,7 +50,6 @@ function normalizeConfig(data: Config): Config {
     CLAUDE_PATH: typeof data.CLAUDE_PATH === 'string' ? data.CLAUDE_PATH : '',
     HOST: typeof data.HOST === 'string' ? data.HOST : '127.0.0.1',
     PORT: typeof data.PORT === 'number' ? data.PORT : 3456,
-    APIKEY: typeof data.APIKEY === 'string' ? data.APIKEY : '',
     API_TIMEOUT_MS: typeof data.API_TIMEOUT_MS === 'number' ? data.API_TIMEOUT_MS : 600000,
     PROXY_URL: typeof data.PROXY_URL === 'string' ? data.PROXY_URL : '',
     Providers: Array.isArray(data.Providers) ? data.Providers : [],
@@ -102,7 +101,6 @@ const emptyConfig = (): Config => ({
   CLAUDE_PATH: '',
   HOST: '127.0.0.1',
   PORT: 3456,
-  APIKEY: '',
   API_TIMEOUT_MS: 600000,
   PROXY_URL: '',
   Providers: [],
@@ -117,35 +115,10 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
   const [error, setError] = useState<Error | null>(null)
   const [hasFetched, setHasFetched] = useState<boolean>(false)
   const [authFailed, setAuthFailed] = useState<boolean>(false)
-  const [apiKey, setApiKey] = useState<string | null>(localStorage.getItem('apiKey'))
 
-  // Listen for localStorage changes
-  useEffect(() => {
-    const handleStorageChange = () => {
-      setApiKey(localStorage.getItem('apiKey'))
-    }
-
-    window.addEventListener('storage', handleStorageChange)
-    return () => {
-      window.removeEventListener('storage', handleStorageChange)
-    }
-  }, [])
-
-  useEffect(() => {
-    // Nothing here is async — this only resets fetch state so the effect
-    // below re-runs for the new key. It used to be wrapped in an async
-    // function and called as a floating promise, which read as if it
-    // awaited something.
-    setHasFetched(false)
-    setConfig(null)
-    setError(null)
-    setAuthFailed(false)
-  }, [apiKey])
-
-  // api.ts strips the stored key and emits this on an auth failure.
-  // The 401 path never resolves the fetch (config stays null), so this
-  // is what releases the loading gate below and lets the router show
-  // /access-denied.
+  // api.ts emits this on an auth failure. The 401 path never resolves the
+  // fetch (config stays null), so this is what releases the loading gate
+  // below and lets the router show /access-denied.
   useEffect(() => {
     const onUnauthorized = () => setAuthFailed(true)
     window.addEventListener('unauthorized', onUnauthorized)
@@ -188,7 +161,7 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
     // / `authFailed`. `void` says that rather than leaving a bare call that
     // reads like an oversight.
     void fetchConfig()
-  }, [hasFetched, apiKey, reloadConfig])
+  }, [hasFetched, reloadConfig])
 
   // Hold the whole app on a single loading screen until the first
   // config fetch settles, so no page ever renders against a null or

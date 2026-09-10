@@ -20,13 +20,19 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { toast } from 'sonner'
-import { downloadCsv, fetchUsage, fetchUsageHistory, type UsageCostResponse } from '@/components/rialto/activity/data'
+import {
+  fetchSubscriptions,
+  fetchUsage,
+  fetchUsageHistory,
+  type UsageCostResponse
+} from '@/components/rialto/activity/data'
 import { FilterSelect, ScreenMessage } from '@/components/rialto/activity/shared'
 import {
-  accountWindows,
+  type AccountWindows,
   bucketSamples,
   type ChartPoint,
-  chartCsvRows,
+  type ProviderWindows,
+  providerWindows,
   seriesOf,
   type TokenUsageRow,
   tokenUsageRows,
@@ -37,6 +43,7 @@ import {
 } from '@/components/rialto/activity/usage-derive'
 import { useActivityCounts } from '@/components/rialto/activity/use-activity-counts'
 import { Meter, Pill, RButton, SurfaceScope } from '@/components/rialto/primitives'
+import type { SubscriptionsResponse, SubscriptionWire } from '@/components/rialto/providers/types'
 import { Screen } from '@/components/rialto/Screen'
 import { type AccessTokenWire, api, type InboundSurfaceWire } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
@@ -52,6 +59,8 @@ const DEFAULT_RANGE_DAYS = 7
 // minutes, so a raw week is ~2000 points — more than the plot has pixels
 // and more than recharts should be asked to lay out.
 const CHART_BUCKETS = 120
+
+const EMPTY_SUBSCRIPTIONS: SubscriptionsResponse = { subscriptions: [] }
 
 /**
  * Series colours, validated rather than chosen by eye.
@@ -81,6 +90,14 @@ const SERIES_DOT = [
   'bg-teal-600 dark:bg-teal-500'
 ] as const
 
+// The vendor mark beside a provider's name — the same glyphs the Add
+// provider rail draws. A hand-added provider has no vendor to draw.
+const KIND_ICON: Record<ProviderWindows['kind'], string> = {
+  claude: 'ri-sparkling-line',
+  codex: 'ri-terminal-line',
+  other: 'ri-plug-line'
+}
+
 /**
  * One tick per local midnight inside the plotted range.
  *
@@ -104,11 +121,13 @@ const seriesClass = (index: number): string =>
   index < SERIES_STROKE.length ? SERIES_STROKE[index] : 'text-muted-foreground'
 const dotClass = (index: number): string => (index < SERIES_DOT.length ? SERIES_DOT[index] : 'bg-muted-foreground')
 
-function SectionHead({ title, meta, action }: { title: string; meta: string; action?: React.ReactNode }) {
+// The meta beside a title is the range the section covers, and only that.
+// Where the numbers came from is not something the reader acts on.
+function SectionHead({ title, meta, action }: { title: string; meta?: string; action?: React.ReactNode }) {
   return (
     <div className='flex items-baseline gap-3 border-t border-border px-6 pt-6 pb-3'>
       <h2 className='text-sm font-semibold'>{title}</h2>
-      <span className='text-xs text-muted-foreground/70'>{meta}</span>
+      {meta === undefined ? null : <span className='text-xs text-muted-foreground/70'>{meta}</span>}
       {action === undefined ? null : <div className='ml-auto'>{action}</div>}
     </div>
   )
@@ -134,6 +153,66 @@ function WindowLine({ row, now }: { row: WindowRow; now: number }) {
       <span className='w-20 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
         {fmtUntil(row.resetsAt, now) === null ? t('overview.resetsDue') : fmtUntil(row.resetsAt, now)}
       </span>
+    </div>
+  )
+}
+
+/**
+ * An account's name, its plan, and its windows.
+ *
+ * The plan pill carries the multiplier because the multiplier is the plan:
+ * "Max" and "Pro" are each two plans, and a 20x at 60% has four times the
+ * headroom of a 5x at 60%, so a pill that cannot tell them apart makes
+ * every meter under it unreadable.
+ */
+function AccountBlock({ account, now }: { account: AccountWindows; now: number }) {
+  const { t } = useTranslation()
+  return (
+    <div className='min-w-0'>
+      <div className='flex items-baseline gap-2 px-6 pb-1'>
+        <span className='truncate text-xs font-medium'>{account.account}</span>
+        {account.plan === null ? null : <Pill tone='info'>{account.plan}</Pill>}
+        <span className='ml-auto text-[12px] text-muted-foreground/70'>{t('activity.usage.resetsIn')}</span>
+      </div>
+      {account.windows.map((row) => (
+        <WindowLine key={`${row.label}-${row.scope}`} row={row} now={now} />
+      ))}
+    </div>
+  )
+}
+
+/**
+ * One provider's accounts, under its name.
+ *
+ * Grouped rather than flowed through one grid: flattened, a Claude account
+ * and a Codex account shared a row with nothing on either saying which
+ * vendor it was, and "5-hour 88%" reads the same under both. The row name
+ * sits beside the label only when it says something the label does not —
+ * nothing stops two subscription providers on one vendor, and "Claude
+ * Code" alone would not tell them apart.
+ */
+function ProviderGroup({ group, now }: { group: ProviderWindows; now: number }) {
+  const { t } = useTranslation()
+  return (
+    <div className='border-t border-border/60 pt-3 first:border-t-0 first:pt-0'>
+      <div className='flex items-center gap-2 px-6 pb-2'>
+        <i className={`${KIND_ICON[group.kind]} text-sm leading-none text-muted-foreground`} />
+        <span className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>{group.label}</span>
+        {group.name === null ? null : <span className='font-mono text-[12px] text-muted-foreground'>{group.name}</span>}
+        <span className='text-[12px] text-muted-foreground/70'>
+          {t('activity.usage.accountCount', { count: group.accounts.length })}
+        </span>
+      </div>
+      {/* Two accounts per row once there is room, one below xl. Given the
+          whole width each meter became 800px of track carrying one figure,
+          with "resets in" a screen away from the percentage it qualifies.
+          An odd account leaves its column empty rather than stretching to
+          fill the row — and never lends it to the next provider. */}
+      <div className='grid grid-cols-1 gap-x-px pb-3 xl:grid-cols-2'>
+        {group.accounts.map((account) => (
+          <AccountBlock key={account.subAccountId} account={account} now={now} />
+        ))}
+      </div>
     </div>
   )
 }
@@ -175,12 +254,13 @@ function ChartTooltip({
 }
 
 function UtilizationChart({ points, series }: { points: ChartPoint[]; series: readonly UsageSeries[] }) {
-  const { t } = useTranslation()
   const ticks = useMemo(() => dayTicks(points), [points])
   return (
     <>
       {/* Identity never rests on colour alone: the legend names every
-          series, and four or fewer are the case this screen has. */}
+          series, and four or fewer are the case this screen has. No note
+          on how the samples were taken beside it — the sampling rate is
+          the collector's business, not the reader's. */}
       <div className='flex items-center gap-4 px-6 pb-3'>
         {series.map((s, index) => (
           <span key={s.metric} className='flex items-center gap-1.5 text-[12px] text-muted-foreground'>
@@ -188,7 +268,6 @@ function UtilizationChart({ points, series }: { points: ChartPoint[]; series: re
             {s.label}
           </span>
         ))}
-        <span className='ml-auto text-[12px] text-muted-foreground/70'>{t('activity.usage.chartNote')}</span>
       </div>
       <div className='px-6 pb-5' style={{ height: 200 }}>
         <ResponsiveContainer width='100%' height='100%'>
@@ -284,6 +363,7 @@ function TokenRow({
 /** All three panels' fetches. Kept out of the screen so it stays a layout. */
 function useUsageData(days: number) {
   const [usage, setUsage] = useState<UsageWire | null>(null)
+  const [subscriptions, setSubscriptions] = useState<SubscriptionWire[]>([])
   const [samples, setSamples] = useState<UsageHistorySample[]>([])
   const [tokens, setTokens] = useState<AccessTokenWire[]>([])
   const [surfaces, setSurfaces] = useState<InboundSurfaceWire[]>([])
@@ -293,9 +373,18 @@ function useUsageData(days: number) {
   const load = useCallback(() => {
     setLoading(true)
 
-    Promise.all([fetchUsage(), fetchUsageHistory(days), api.getAccessTokens(), api.getInboundSurfaces()])
-      .then(([usageRes, historyRes, tokenRes, surfaceRes]) => {
+    Promise.all([
+      fetchUsage(),
+      fetchUsageHistory(days),
+      api.getAccessTokens(),
+      api.getInboundSurfaces(),
+      // Grouping and plan names only. A failed read leaves each account
+      // under its vendor rather than taking the whole screen down with it.
+      fetchSubscriptions().catch(() => EMPTY_SUBSCRIPTIONS)
+    ])
+      .then(([usageRes, historyRes, tokenRes, surfaceRes, subscriptionRes]) => {
         setUsage(usageRes)
+        setSubscriptions(subscriptionRes.subscriptions)
         setSamples(historyRes.samples)
         setTokens(tokenRes.tokens)
         setSurfaces(surfaceRes.surfaces)
@@ -307,7 +396,7 @@ function useUsageData(days: number) {
 
   useEffect(load, [load])
 
-  return { usage, samples, tokens, surfaces, error, loading, reload: load }
+  return { usage, subscriptions, samples, tokens, surfaces, error, loading, reload: load }
 }
 
 export function ActivityUsage() {
@@ -315,7 +404,7 @@ export function ActivityUsage() {
   const navigate = useNavigate()
   const _counts = useActivityCounts()
   const [days, setDays] = useState<number>(DEFAULT_RANGE_DAYS)
-  const { usage, samples, tokens, surfaces, error, loading, reload } = useUsageData(days)
+  const { usage, subscriptions, samples, tokens, surfaces, error, loading, reload } = useUsageData(days)
   // One clock for the whole render, so two rows cannot disagree about how
   // long until the same reset.
   const [now, setNow] = useState(() => Date.now())
@@ -325,7 +414,11 @@ export function ActivityUsage() {
     return () => clearInterval(timer)
   }, [])
 
-  const accounts = useMemo(() => (usage === null ? [] : accountWindows(usage, t)), [usage, t])
+  const groups = useMemo(
+    () => (usage === null ? [] : providerWindows(usage, subscriptions, t)),
+    [usage, subscriptions, t]
+  )
+  const accountTotal = groups.reduce((sum, group) => sum + group.accounts.length, 0)
   const series = useMemo(() => seriesOf(samples, t), [samples, t])
   const points = useMemo(() => bucketSamples(samples, CHART_BUCKETS), [samples])
   const rows = useMemo(() => tokenUsageRows(tokens), [tokens])
@@ -337,13 +430,15 @@ export function ActivityUsage() {
 
   return (
     <Screen
-      subtitle={t('activity.usage.subtitle', { accounts: accounts.length, days })}
+      subtitle={t('activity.usage.subtitle', { accounts: accountTotal, days })}
       actions={
         <RButton variant='outline' icon='ri-refresh-line' onClick={refresh} disabled={loading}>
           {t('activity.usage.refresh')}
         </RButton>
       }
     >
+      {/* The range and nothing beside it: the section heads already say
+          what each part of the screen answers. */}
       <div className='flex flex-wrap items-center gap-2 border-b border-border px-6 py-3'>
         <FilterSelect
           label={t('activity.usage.range')}
@@ -351,52 +446,24 @@ export function ActivityUsage() {
           options={RANGE_DAYS.map((n) => ({ id: String(n), label: t('activity.usage.rangeDays', { n }) }))}
           onChange={(id) => setDays(Number.parseInt(id, 10))}
         />
-        <p className='ml-auto max-w-md text-right text-[12px] leading-snug text-muted-foreground'>
-          {t('activity.usage.explainer')}
-        </p>
       </div>
 
       {error !== null ? <ScreenMessage tone='bad'>{error}</ScreenMessage> : null}
 
-      <SectionHead title={t('activity.usage.windowsTitle')} meta={t('activity.usage.windowsMeta')} />
-      {accounts.length === 0 ? (
+      <SectionHead title={t('activity.usage.windowsTitle')} />
+      {groups.length === 0 ? (
         <ScreenMessage>{loading ? t('common.loading') : t('activity.usage.noAccounts')}</ScreenMessage>
       ) : (
-        // Two accounts per row once there is room, one below xl. Given the
-        // whole width each meter became 800px of track carrying one figure,
-        // with "resets in" a screen away from the percentage it qualifies.
-        // An odd account leaves its column empty rather than stretching to
-        // fill the row.
-        <div className='grid grid-cols-1 gap-x-px pb-2 xl:grid-cols-2'>
-          {accounts.map((account) => (
-            <div key={account.subAccountId} className='min-w-0'>
-              <div className='flex items-baseline gap-2 px-6 pb-1'>
-                <span className='truncate text-xs font-medium'>{account.account}</span>
-                {account.plan === null ? null : <Pill tone='mute'>{account.plan}</Pill>}
-                <span className='ml-auto text-[12px] text-muted-foreground/70'>{t('activity.usage.resetsIn')}</span>
-              </div>
-              {account.windows.map((row) => (
-                <WindowLine key={`${row.label}-${row.scope}`} row={row} now={now} />
-              ))}
-            </div>
+        <div className='pb-2'>
+          {groups.map((group) => (
+            <ProviderGroup key={group.key} group={group} now={now} />
           ))}
         </div>
       )}
 
-      <SectionHead
-        title={t('activity.usage.chartTitle')}
-        meta={t('activity.usage.chartMeta', { days })}
-        action={
-          <RButton
-            variant='ghost'
-            icon='ri-download-line'
-            disabled={points.length === 0}
-            onClick={() => downloadCsv(`rialto-utilization-${days}d.csv`, chartCsvRows(points, series))}
-          >
-            {t('activity.usage.exportCsv')}
-          </RButton>
-        }
-      />
+      {/* No Export CSV: the chart is read here, and the screens hand out
+          no files. */}
+      <SectionHead title={t('activity.usage.chartTitle')} meta={t('activity.usage.chartMeta', { days })} />
       {points.length === 0 ? (
         <ScreenMessage>{loading ? t('common.loading') : t('activity.usage.noHistory')}</ScreenMessage>
       ) : (

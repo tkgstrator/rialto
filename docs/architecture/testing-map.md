@@ -41,7 +41,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | ファイル | 担保しているもの |
 |---|---|
 | `configEnvelopeSchema.test.ts` | `ConfigEnvelopeSchema` の受理／拒否（特に `API_TIMEOUT_MS` の coercion） |
-| `config-salvage.test.ts` | 壊れた `config.json` から `APIKEY` / `Personas` を救い出す経路 |
+| `config-salvage.test.ts` | 壊れた `config.json` から `Personas` を救い出す経路（`APIKEY` はもう救わない）と、資格情報を決して生成しないこと |
 | `cloudflare-access.test.ts` | Access assertion の検証（署名 + audience） |
 | `chain-target-state.test.ts` | Routing 画面のチェーン行で、スケジューラが測れなかった target（api_key など）の重みをどう見せるか |
 | `long-context-beta.test.ts` | `context-1m-*` beta ヘッダの取り回し |
@@ -64,7 +64,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 
 | ファイル | 担保しているもの |
 |---|---|
-| `config-service.test.ts` | `applyUiConfig` / `composeUiConfig` の往復整合、Provider/Model 削除で cascade するチェーン entry の警告、退役キー（`Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK`）を警告付きで捨て・ディスクから剥がすこと、トップレベル `ActivePersona` の往復、永続化 |
+| `config-service.test.ts` | `applyUiConfig` / `composeUiConfig` の往復整合、Provider/Model 削除で cascade するチェーン entry の警告、退役キー（`APIKEY` / `Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK`）を警告付きで捨て・ディスクから剥がし、`GET /api/config` にも出さないこと、トップレベル `ActivePersona` の往復、永続化 |
 | `upsert-provider.test.ts` | Provider の upsert（重複名・モデル差分）と、Provider / Model 削除がチェーン entry を profile / scenario / lane 単位で数えて警告すること |
 | `disabled-targets.test.ts` | 無効な Provider / Model がどの経路からも送られないこと — チェーン entry（`loadRoutableProfile` の折り込み）、passthrough の `provider,model`（registry に無い pair を `resolveInvocationForModel` が拒否）、bare 名の解決、サブスクリプションのアカウントプール |
 | `access-token-service.test.ts` | トークンの発行・解決・失効。保存は sha256 のみ |
@@ -78,11 +78,11 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 
 | ファイル | 担保しているもの |
 |---|---|
-| `health.test.ts` | `/health` が APIKEY ゲートの外にあること、db / redis の両チェックを報告すること、`summarizeHealth` の切り分け（必須依存の失敗だけが 503。redis 落ちは degraded だが 200）、Redis プローブが未設定なら `skip`・到達不能なら hang せず `fail` |
+| `health.test.ts` | `/health` が管理ゲート（`adminAuth`）の外にあること、db / redis の両チェックを報告すること、`summarizeHealth` の切り分け（必須依存の失敗だけが 503。redis 落ちは degraded だが 200）、Redis プローブが未設定なら `skip`・到達不能なら hang せず `fail` |
 | `local-access.test.ts` | ローカルブラウザ免除の判定（トンネル背後で常に loopback に見える問題込み） |
 | `openai-bearer-auth.test.ts` | OpenAI 面が Bearer のみを受けること |
 | `google-surface-auth.test.ts` | Gemini 面の `x-goog-api-key` / `?key=` |
-| `request-log-events-auth.test.ts` | EventSource 用の `apikey` クエリ例外が**この 1 パスだけ**であること |
+| `request-log-events-auth.test.ts` | `/api/request-logs/events` がもう `?apikey=` を受けないこと — それを付けたリモートのリクエストは 401、ホスト上からのリクエストは通る |
 | `error-shape.test.ts` | 3 種のエラー封筒の出し分け |
 | `upstream-error.test.ts` | `PROVIDER_ERR_RE` の逆パースと verbatim 転送 |
 | `route-plan.test.ts` | `buildRoutePlan`（body parse、面解決、transformer 引き当て、chain の primary / fallbacks が plan に載ること） |
@@ -140,6 +140,8 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 |---|---|
 | `transformer-chain.test.ts` | `apiStyle` × `authMode` → chain の写像。サーバとフロントが**同じ関数**を読むので、この 1 本が両方を守る |
 | `constants.test.ts` | `HOME_DIR` の解決（`RIALTO_HOME_DIR` の優先） |
+| `plan-capacity.test.ts` | `planCapacityWeight` の席の重み。Claude は `rate_limit_tier` から Max 5x / 20x を読み、Codex は `plan_type` の `prolite` を 5・`pro` を 20 と数える。Providers 画面の Quota 列とスケジューラのプール予算が同じ関数を読むので、この 1 本が両方を守る |
+| `plan-label.test.ts` | プランの表示名。Claude は `rate_limit_tier` から「Max 5x」/「Max 20x」、基本プランは「Pro」。Codex は `plan_type` の `prolite` を「Pro 5x」、`pro` を「Pro 20x」、基本プランは「Plus」。Activity → Usage がアカウントごとに出す名前 |
 
 ### `__tests__/parity` — 面ごとの挙動パリティ
 

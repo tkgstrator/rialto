@@ -7,6 +7,7 @@
  */
 import type { CatalogEntry, CatalogModel } from '@/schemas/api/catalog'
 import { planCapacityWeight, type SeatKind } from '@/shared/plan-capacity'
+import { planLabel } from '@/shared/plan-label'
 import { hasAuthenticableAccount } from '@/shared/subscription-credential'
 import { transformerChain } from '@/shared/transformer-chain'
 import type { ApiStyle, Provider, ReasoningEffort, SubscriptionWire, TestStatus, Tier, TransformerWire } from './types'
@@ -143,14 +144,18 @@ export function providerState(p: Provider, sub: SubscriptionWire | undefined): P
   return 'unknown'
 }
 
-/** `claude_max` / `codex_pro` carry a vendor prefix nobody needs to read. */
-export const formatPlan = (plan: string): string => plan.replace(/^(claude|codex)_/i, '')
-
+/**
+ * The provider's plan as the Plan column names it — "Max 20x", "Pro 5x".
+ *
+ * Read off the first account that reports one. `planLabel` does the
+ * naming, because the stored strings (`claude_max`, `prolite`) cannot say
+ * on their own which of a vendor's two top plans a seat is on.
+ */
 export function planOf(sub: SubscriptionWire | undefined): string | null {
   if (sub === undefined) return null
-  const withPlan = sub.accounts.find((a) => a.plan !== null)
-  if (withPlan === undefined || withPlan.plan === null) return null
-  return formatPlan(withPlan.plan)
+  const withPlan = sub.accounts.find((a) => a.plan !== null || a.rateLimitTier !== null)
+  if (withPlan === undefined) return null
+  return planLabel(sub.kind === 'other' ? null : sub.kind, withPlan.plan, withPlan.rateLimitTier)
 }
 
 /** Most human-readable handle we hold for an account. */

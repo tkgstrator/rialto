@@ -59,7 +59,7 @@ describe('readConfigFile', () => {
   })
 
   test('parses standard JSON', async () => {
-    await writeConfig(JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info', APIKEY: 'test-key' }))
+    await writeConfig(JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info' }))
     const cfg = await readConfigFile()
     expect(cfg.PORT).toBe(3456)
     expect(cfg.LOG).toBe(false)
@@ -71,7 +71,6 @@ describe('readConfigFile', () => {
       PORT: 3456,
       LOG: true, // trailing comma
       LOG_LEVEL: 'info',
-      APIKEY: 'test-key',
     }`)
     const cfg = await readConfigFile()
     expect(cfg.PORT).toBe(3456)
@@ -79,18 +78,16 @@ describe('readConfigFile', () => {
   })
 
   test('interpolates $VAR_NAME', async () => {
-    process.env.TEST_RIALTO_KEY = 'sk-real'
-    await writeConfig(JSON.stringify({ LOG: false, LOG_LEVEL: 'info', APIKEY: '$TEST_RIALTO_KEY' }))
+    process.env.TEST_RIALTO_PROXY = 'http://proxy.internal:3128'
+    await writeConfig(JSON.stringify({ LOG: false, LOG_LEVEL: 'info', PROXY_URL: '$TEST_RIALTO_PROXY' }))
     const cfg = await readConfigFile()
-    expect(cfg.APIKEY).toBe('sk-real')
-    delete process.env.TEST_RIALTO_KEY
+    expect(cfg.PROXY_URL).toBe('http://proxy.internal:3128')
+    delete process.env.TEST_RIALTO_PROXY
   })
 
   test('interpolates ${VAR_NAME}', async () => {
     process.env.TEST_RIALTO_HOST = '0.0.0.0'
-    await writeConfig(
-      JSON.stringify({ HOST: '${TEST_RIALTO_HOST}', LOG: false, LOG_LEVEL: 'info', APIKEY: 'test-key' })
-    )
+    await writeConfig(JSON.stringify({ HOST: '${TEST_RIALTO_HOST}', LOG: false, LOG_LEVEL: 'info' }))
     const cfg = await readConfigFile()
     expect(cfg.HOST).toBe('0.0.0.0')
     delete process.env.TEST_RIALTO_HOST
@@ -98,9 +95,9 @@ describe('readConfigFile', () => {
 
   test('keeps literal when env var is unset', async () => {
     delete process.env.UNSET_RIALTO_VAR
-    await writeConfig(JSON.stringify({ LOG: false, LOG_LEVEL: 'info', APIKEY: '$UNSET_RIALTO_VAR' }))
+    await writeConfig(JSON.stringify({ LOG: false, LOG_LEVEL: 'info', PROXY_URL: '$UNSET_RIALTO_VAR' }))
     const cfg = await readConfigFile()
-    expect(cfg.APIKEY).toBe('$UNSET_RIALTO_VAR')
+    expect(cfg.PROXY_URL).toBe('$UNSET_RIALTO_VAR')
   })
 
   test('interpolates env vars inside nested objects and arrays', async () => {
@@ -109,7 +106,6 @@ describe('readConfigFile', () => {
       JSON.stringify({
         LOG: false,
         LOG_LEVEL: 'info',
-        APIKEY: 'test-key',
         Providers: [{ name: 'test', api_base_url: '$TEST_RIALTO_BASE' }]
       })
     )
@@ -125,6 +121,12 @@ describe('readConfigFile', () => {
     // Fresh installs ship with the seed persona library.
     expect(cfg.Personas).toEqual(SEED_PERSONAS)
   })
+
+  test('a fresh config carries no credential', async () => {
+    // It used to mint an APIKEY: a master key for /api/* on every install.
+    const cfg = await readConfigFile()
+    expect(cfg.APIKEY).toBeUndefined()
+  })
 })
 
 describe('readConfigFile — API_TIMEOUT_MS handling', () => {
@@ -138,67 +140,65 @@ describe('readConfigFile — API_TIMEOUT_MS handling', () => {
     // Pre-fix configs written by the old UI stored API_TIMEOUT_MS as a string.
     // z.coerce.number() ensures those files survive startup rather than being
     // wiped and recreated as a default config (which loses all other settings).
-    await writeConfig(
-      JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info', APIKEY: 'key', API_TIMEOUT_MS: '30000' })
-    )
+    await writeConfig(JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'debug', API_TIMEOUT_MS: '30000' }))
     const cfg = await readConfigFile()
     // readConfigFile returns the schema-parsed envelope, so API_TIMEOUT_MS
     // is coerced to a number. The important guarantee is that the file does
-    // NOT fall back to createDefaultConfig() — APIKEY is preserved.
-    expect(cfg.APIKEY).toBe('key')
+    // NOT fall back to createDefaultConfig() — LOG_LEVEL is preserved.
+    expect(cfg.LOG_LEVEL).toBe('debug')
     expect(cfg.PORT).toBe(3456)
     expect(cfg.API_TIMEOUT_MS).toBe(30000)
   })
 
   test('number API_TIMEOUT_MS is accepted and returned as-is', async () => {
-    await writeConfig(
-      JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info', APIKEY: 'key', API_TIMEOUT_MS: 30000 })
-    )
+    await writeConfig(JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info', API_TIMEOUT_MS: 30000 }))
     const cfg = await readConfigFile()
     expect(cfg.API_TIMEOUT_MS).toBe(30000)
   })
 
   test('absent API_TIMEOUT_MS is valid (field is optional)', async () => {
-    await writeConfig(JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info', APIKEY: 'key' }))
+    await writeConfig(JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'debug' }))
     const cfg = await readConfigFile()
     expect(cfg.API_TIMEOUT_MS).toBeUndefined()
     // Config was NOT recreated — original settings are preserved.
-    expect(cfg.APIKEY).toBe('key')
+    expect(cfg.LOG_LEVEL).toBe('debug')
   })
 
   // These two used to assert that a rejected config "is lost, but a new
-  // one is generated" — the behaviour that rotated an operator's
-  // bootstrap token because one field failed validation, locking out
-  // every configured client. The invalid field is still dropped; what
-  // must survive is the credential.
-  test('a negative API_TIMEOUT_MS is dropped without taking the token with it', async () => {
-    await writeConfig(JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info', APIKEY: 'key', API_TIMEOUT_MS: -1 }))
-    const cfg = await readConfigFile()
-    expect(cfg.API_TIMEOUT_MS).toBeUndefined()
-    expect(cfg.APIKEY).toBe('key')
-  })
-
-  test('a non-numeric API_TIMEOUT_MS is dropped without taking the token with it', async () => {
+  // one is generated". The file is moved aside rather than deleted now,
+  // and the persona library — stored nowhere else — is carried into the
+  // rebuilt one.
+  test('a negative API_TIMEOUT_MS is dropped without taking the persona library with it', async () => {
+    const personas = [{ id: 'p1', name: 'Mine', prompt: 'hello' }]
     await writeConfig(
-      JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info', APIKEY: 'key', API_TIMEOUT_MS: 'fast' })
+      JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info', API_TIMEOUT_MS: -1, Personas: personas })
     )
     const cfg = await readConfigFile()
-    expect(cfg.APIKEY).toBe('key')
+    expect(cfg.API_TIMEOUT_MS).toBeUndefined()
+    expect(cfg.Personas).toEqual(personas)
+  })
+
+  test('a non-numeric API_TIMEOUT_MS is dropped without taking the persona library with it', async () => {
+    const personas = [{ id: 'p1', name: 'Mine', prompt: 'hello' }]
+    await writeConfig(
+      JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info', API_TIMEOUT_MS: 'fast', Personas: personas })
+    )
+    const cfg = await readConfigFile()
+    expect(cfg.Personas).toEqual(personas)
   })
 
   test('"600000" (old UI default value as string) does not destroy config', async () => {
-    const originalApikey = 'my-production-apikey'
     await writeConfig(
       JSON.stringify({
         PORT: 3456,
         LOG: true,
         LOG_LEVEL: 'debug',
-        APIKEY: originalApikey,
+        HOST: '0.0.0.0',
         API_TIMEOUT_MS: '600000'
       })
     )
     const cfg = await readConfigFile()
-    expect(cfg.APIKEY).toBe(originalApikey)
+    expect(cfg.HOST).toBe('0.0.0.0')
     expect(cfg.LOG).toBe(true)
     expect(cfg.LOG_LEVEL).toBe('debug')
     // The string value is coerced to a number on the returned envelope.
@@ -213,68 +213,59 @@ describe('readConfigFile — env overlay (12-factor)', () => {
     await deleteConfig()
   })
 
-  test('process.env value overrides the disk envelope APIKEY', async () => {
-    process.env.APIKEY = 'from-env'
-    await writeConfig(JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info', APIKEY: 'from-disk' }))
+  test('process.env value overrides the disk envelope', async () => {
+    process.env.HOST = '0.0.0.0'
+    await writeConfig(JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info', HOST: '127.0.0.1' }))
     const cfg = await readConfigFile()
-    expect(cfg.APIKEY).toBe('from-env')
-    delete process.env.APIKEY
+    expect(cfg.HOST).toBe('0.0.0.0')
   })
 
   test('empty-string env value does NOT override the disk envelope', async () => {
-    // A stray `APIKEY=` in a .env file should not silently disable auth
-    // by overwriting a real disk-stored key.
-    process.env.APIKEY = ''
-    await writeConfig(JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info', APIKEY: 'from-disk' }))
+    // A stray `ACCESS_AUD=` in a .env file must not blank the value on
+    // disk — for the Access pair, that would silently turn it off.
+    process.env.ACCESS_AUD = ''
+    await writeConfig(JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info', ACCESS_AUD: 'from-disk' }))
     const cfg = await readConfigFile()
-    expect(cfg.APIKEY).toBe('from-disk')
-    delete process.env.APIKEY
+    expect(cfg.ACCESS_AUD).toBe('from-disk')
   })
 
   test('numeric envelope keys from env are coerced to numbers before schema parse', async () => {
     process.env.PORT = '9999'
     process.env.API_TIMEOUT_MS = '15000'
-    await writeConfig(JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info', APIKEY: 'k' }))
+    await writeConfig(JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info' }))
     const cfg = await readConfigFile()
     expect(cfg.PORT).toBe(9999)
     expect(cfg.API_TIMEOUT_MS).toBe(15000)
-    delete process.env.PORT
-    delete process.env.API_TIMEOUT_MS
   })
 
   test('boolean envelope keys accept "true" / "1" from env', async () => {
     process.env.LOG = 'true'
     process.env.NON_INTERACTIVE_MODE = '1'
-    await writeConfig(JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info', APIKEY: 'k' }))
+    await writeConfig(JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info' }))
     const cfg = await readConfigFile()
     expect(cfg.LOG).toBe(true)
     expect(cfg.NON_INTERACTIVE_MODE).toBe(true)
-    delete process.env.LOG
-    delete process.env.NON_INTERACTIVE_MODE
   })
 
-  test('env APIKEY satisfies the required field when disk config omits it', async () => {
-    // The docker-compose deployment pattern: mount a minimal config
-    // that leaves APIKEY unset and pass it purely via env. Without the
-    // overlay the schema would fail (nonempty required) and the file
-    // would get wiped by the fall-back-to-defaults path.
-    process.env.APIKEY = 'from-env-only'
-    await writeConfig(JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info' }))
+  test('env wins over the default config written for a fresh container', async () => {
+    // No config file on disk. The default-config path writes PORT 3456;
+    // the deploy's environment still decides the returned runtime value.
+    process.env.PORT = '4000'
     const cfg = await readConfigFile()
-    expect(cfg.APIKEY).toBe('from-env-only')
-    // Config was NOT wiped: the original PORT survived.
-    expect(cfg.PORT).toBe(3456)
-    delete process.env.APIKEY
+    expect(cfg.PORT).toBe(4000)
   })
 
-  test('env APIKEY wins over the generated random APIKEY on default-config creation', async () => {
-    // No config file on disk (fresh container). The default-config path
-    // usually generates a random APIKEY; env should still override the
-    // returned runtime value.
-    process.env.APIKEY = 'deploy-provided'
-    const cfg = await readConfigFile()
-    expect(cfg.APIKEY).toBe('deploy-provided')
-    delete process.env.APIKEY
+  test('an APIKEY in the environment is not overlaid — the key is retired', async () => {
+    // A compose file written for an older build may still pass one.
+    // Nothing reads it, so it must not reappear on the envelope either.
+    process.env.APIKEY = 'from-an-old-compose-file'
+    try {
+      await writeConfig(JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info' }))
+      const cfg = await readConfigFile()
+      expect(cfg.APIKEY).toBeUndefined()
+    } finally {
+      delete process.env.APIKEY
+    }
   })
 })
 
@@ -294,25 +285,32 @@ describe('readConfigFile — envelope catchall accepts JSON with empty-string va
       JSON.stringify({
         PORT: 3456,
         LOG: false,
-        LOG_LEVEL: 'info',
-        APIKEY: 'k',
+        LOG_LEVEL: 'debug',
         OperatorNotes: {
           entries: [{ label: '', body: 'kept for later', tags: [] }]
         }
       })
     )
     const cfg = await readConfigFile()
-    expect(cfg.APIKEY).toBe('k')
+    expect(cfg.LOG_LEVEL).toBe('debug')
     // Config was NOT wiped: the original PORT survived.
     expect(cfg.PORT).toBe(3456)
   })
 })
 
 describe('applyEnvelopeToEnv', () => {
+  afterEach(restoreEnvelopeEnv)
+
   test('mirrors string scalar keys onto process.env', () => {
-    applyEnvelopeToEnv({ HOST: '127.0.0.1', APIKEY: 'key123' })
+    applyEnvelopeToEnv({ HOST: '127.0.0.1', ACCESS_TEAM_DOMAIN: 'team.cloudflareaccess.com' })
     expect(process.env.HOST).toBe('127.0.0.1')
-    expect(process.env.APIKEY).toBe('key123')
+    expect(process.env.ACCESS_TEAM_DOMAIN).toBe('team.cloudflareaccess.com')
+  })
+
+  test('does not mirror a retired APIKEY left on disk', () => {
+    delete process.env.APIKEY
+    applyEnvelopeToEnv({ APIKEY: 'left-on-disk' })
+    expect(process.env.APIKEY).toBeUndefined()
   })
 
   test('coerces number and boolean to string', () => {

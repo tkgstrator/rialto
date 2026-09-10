@@ -9,12 +9,14 @@
  *      401 bodies, and /v1/messages still accepting both headers with
  *      an Anthropic-shaped 401.
  *
- *   2. Which credential opens them. That changed: the envelope APIKEY
- *      is no longer accepted on /v1 at all. At the edge this path is a
- *      Bypass policy, so whatever passes here is the only thing in
- *      front of the operator's credits — and a master key there could
- *      not be revoked without cutting off every client, and no request
- *      log could say whose it was.
+ *   2. Which credential opens them: an issued access token, and nothing
+ *      else. The envelope APIKEY was accepted here once, and has since
+ *      been retired everywhere; a value an older install left in its
+ *      environment must still open nothing. At the edge this path is a
+ *      Bypass policy, so whatever passes here is the only thing in front
+ *      of the operator's credits — and a master key there could not be
+ *      revoked without cutting off every client, and no request log
+ *      could say whose it was.
  *
  * Built as a minimal Hono app in-process so no server needs to start.
  */
@@ -27,7 +29,7 @@ import { INBOUND_MOUNT_PREFIXES } from '../../src/llms/inbound/surfaces'
 import { invalidateTokenCache, issueAccessToken } from '../../src/services/access-token-service'
 import { HAS_DB, teardownPrisma } from '../db/helpers'
 
-const BOOTSTRAP = 'bootstrap-key-12345'
+const LEFTOVER = 'leftover-key-12345'
 const prevKey = process.env.APIKEY
 
 function buildApp(): Hono {
@@ -53,7 +55,7 @@ describe.skipIf(!HAS_DB)('/v1 auth', () => {
   let token = ''
 
   beforeEach(async () => {
-    process.env.APIKEY = BOOTSTRAP
+    process.env.APIKEY = LEFTOVER
     await getPrismaClient().accessToken.deleteMany({})
     invalidateTokenCache()
     token = (await issueAccessToken({ name: 'test' })).plaintext
@@ -72,12 +74,12 @@ describe.skipIf(!HAS_DB)('/v1 auth', () => {
       expect(res.status).toBe(200)
     })
 
-    test('the envelope bootstrap key does not', async () => {
+    test('a leftover APIKEY value does not', async () => {
       // The regression this file exists to catch. A master key here
       // would be unrevocable and unattributable.
       const app = buildApp()
-      expect((await call(app, '/v1/chat/completions', { authorization: `Bearer ${BOOTSTRAP}` })).status).toBe(401)
-      expect((await call(app, '/v1/messages', { 'x-api-key': BOOTSTRAP })).status).toBe(401)
+      expect((await call(app, '/v1/chat/completions', { authorization: `Bearer ${LEFTOVER}` })).status).toBe(401)
+      expect((await call(app, '/v1/messages', { 'x-api-key': LEFTOVER })).status).toBe(401)
     })
 
     test('a token scoped to one surface is refused on another', async () => {

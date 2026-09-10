@@ -35,7 +35,7 @@ Web 界面（默认在端口 **3456** 提供服务）让你全面掌控网关的
 | **Providers** | `/providers` | 两个列表——`/providers/subscriptions` 与 `/providers/api-keys`——外加用于添加的 `/providers/connect`，以及查看模型、价格、上下文窗口、连接测试和只读推导请求形状的 `/providers/<name>` |
 | **Access tokens** | `/access-tokens` | 签发、限定范围、轮换和吊销客户端在 `/v1/*` 上使用的令牌 |
 | **Activity** | `/activity` | 会话、逐请求日志（`/activity/requests`）、订阅用量（`/activity/usage`）与服务器日志（`/activity/logs`）|
-| **Settings** | `/settings` | Server、Access（管理访问：Cloudflare Access 与应急 `APIKEY`）、Logging、Personas、Status line、Advanced（配置文档、健康状态）|
+| **Settings** | `/settings` | Server、Access（管理访问：Cloudflare Access，以及它出故障时如何重新进入）、Logging、Personas、Status line、Advanced（配置文档、健康状态）|
 
 首次启动会落到 `/setup`。
 
@@ -55,26 +55,13 @@ curl -fsSL https://raw.githubusercontent.com/tkgstrator/rialto/master/compose.ya
 
 该 compose 文件会连同 PostgreSQL 与 Redis 一起运行 `ghcr.io/tkgstrator/rialto:latest`，发布端口 `3456`，并把 `./rialto-config` 绑定挂载为容器的 `~/.rialto`——宿主机上的 `config.json` 就放在这个目录。它还会挂载 `~/.claude` 与 `~/.codex` 以供 CLI 凭据文件使用；如果只用 API Key 型提供商，删掉这两行即可。
 
-**步骤 2 — （可选）设置应急管理密钥：**
+配置文件会在首次启动时自动创建，启动前无需编写任何内容。envelope 中的每个标量值也可以作为 `rialto` 服务的环境变量提供（`PORT`、`LOG_LEVEL` 等）；已设置的环境变量优先于文件。
 
-配置文件会在首次启动时自动创建。只有当你需要一个应急管理密钥时，才需要自己写一份：
-
-```shell
-mkdir -p rialto-config
-cat > rialto-config/config.json << 'EOF'
-{
-  "APIKEY": "your-secret-key"
-}
-EOF
-```
-
-envelope 中的每个标量值也可以作为 `rialto` 服务的环境变量提供（`APIKEY`、`PORT`、`LOG_LEVEL` 等）；已设置的环境变量优先于文件。
-
-> **`APIKEY` 是可选的，并且不再自动生成。** 运行 Rialto 那台机器上的浏览器不受管理网关限制，远程管理访问则应当经由 Cloudflare Access。只有当你希望在 Access 故障时仍有一条恢复通路时，才有意识地设置它——它只保护 `/api/*`。
+> **没有管理密钥。** 运行 Rialto 那台机器上的浏览器不受管理网关限制，远程管理访问经由 Cloudflare Access。Access 出故障时，SSH 登录宿主机并转发端口即可——见[对外公开部署](#-对外公开部署)。
 >
-> **它永远不能用于 `/v1/*` 的认证。** 客户端使用你在 **Access tokens** 页面签发的*访问令牌*连接。令牌可单独吊销、可按请求归因，并可限定到若干入口面与一条路由配置链。一个令牌都没签发的部署无法代理任何请求。
+> **`/v1/*` 只接受访问令牌。** 客户端使用你在 **Access tokens** 页面签发的*访问令牌*连接。令牌可单独吊销、可按请求归因，并可限定到若干入口面与一条路由配置链。一个令牌都没签发的部署无法代理任何请求。
 
-**步骤 3 — 启动服务：**
+**步骤 2 — 启动服务：**
 
 ```shell
 docker compose up -d
@@ -82,7 +69,7 @@ docker compose up -d
 
 入口脚本会在服务器启动前应用待执行的 Prisma 迁移和种子数据。随后服务器在 `http://127.0.0.1:3456` 监听。用浏览器打开该地址，在 **Providers** 与 **Routing** 页面完成配置，然后在 **Access tokens** 签发一个令牌——客户端要用的就是它。
 
-**步骤 4 — 把 Claude Code 指向网关：**
+**步骤 3 — 把 Claude Code 指向网关：**
 
 ```shell
 ANTHROPIC_BASE_URL=http://127.0.0.1:3456 ANTHROPIC_AUTH_TOKEN=rialto_your-access-token claude
@@ -95,7 +82,7 @@ export ANTHROPIC_BASE_URL=http://127.0.0.1:3456
 export ANTHROPIC_AUTH_TOKEN=rialto_your-access-token
 ```
 
-**步骤 5 — 为你使用的入口面开启路由：**
+**步骤 4 — 为你使用的入口面开启路由：**
 
 所有入口面出厂时都是 `passthrough` 模式，直接沿用调用方自己的 `body.model`。当你有了可路由的目标之后，在 **Routing** 页面把 `/v1/messages`（或你实际调用的那个面）切换为 `routed`。参见下文的[入口面](#-入口面inbound-surface)。
 
@@ -144,7 +131,7 @@ Rialto 不只是 Claude Code 的代理。入口处接收四种线路格式，每
 
 `GET /v1/models` 与 `POST /v1/messages/count_tokens` 是目录读取而非补全面，因此不属于这四个面——但它们按调用方 SDK 的凭据约定和错误信封作答，限定到部分入口面的令牌仍可调用它们。
 
-无论请求落在哪个入口面，凭据都必须是**签发的访问令牌**。envelope 中的 `APIKEY` 仅在 `/api/*` 上被接受。
+无论请求落在哪个入口面，凭据都必须是**签发的访问令牌**，不接受其他任何凭据。
 
 ### 路由模式
 
@@ -165,7 +152,6 @@ Rialto 不只是 Claude Code 的代理。入口处接收四种线路格式，每
 
 | 键 | 说明 |
 |----|------|
-| `APIKEY` | `/api/*` 的可选应急密钥，通过 `x-api-key` 或 `Authorization: Bearer` 发送。`/v1/*` 永不接受。不会自动生成 |
 | `HOST` | 监听地址（默认：`127.0.0.1`）|
 | `PORT` | 监听端口（默认：`3456`）|
 | `ACCESS_TEAM_DOMAIN` | Cloudflare Access 团队域名。与 `ACCESS_AUD` 一起校验 `/api/*` 的 assertion |
@@ -187,7 +173,7 @@ Rialto 不只是 Claude Code 的代理。入口处接收四种线路格式，每
 
 上表中的标量键（除 `Personas`、`ActivePersona`、`StatusLine` 之外）也可以作为进程环境变量提供——例如 Docker 的 `environment:` 条目——已设置的环境变量优先于文件。
 
-旧版本为已不存在的路由机制写下的键一律忽略。`Router`、`CUSTOM_ROUTER_PATH`、`LiveRoutingName` 与 `CROSS_PROVIDER_FALLBACK` 会在每次读取时被剔除；`POST /api/config` 会带着警告丢弃它们，下一次保存时把它们从文件中清掉。`ROUTER_MODE` 只是作为未知键留在文件里，没有任何代码读取它。
+旧版本为已不存在的机制写下的键一律忽略。`Router`、`CUSTOM_ROUTER_PATH`、`LiveRoutingName`、`CROSS_PROVIDER_FALLBACK` 以及已废弃的管理密钥 `APIKEY` 会在每次读取时被剔除；`POST /api/config` 会带着警告丢弃它们，下一次保存时把它们从文件中清掉。`APIKEY` 环境变量同样不会被读取。`ROUTER_MODE` 只是作为未知键留在文件里，没有任何代码读取它。
 
 ### 提供商、模型与链（数据库）
 
@@ -314,7 +300,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="http://localhost:3456/v1",
-    api_key="rialto_your-access-token",   # Access tokens 页面签发，不是 APIKEY
+    api_key="rialto_your-access-token",   # Access tokens 页面签发
 )
 
 # 1. 列出可路由的模型
@@ -366,6 +352,14 @@ for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.
 ## 🌐 对外公开部署
 
 通过隧道公开 Rialto 时，`/api/*` 与 `/v1/*` 必须区别对待——前者置于 Cloudflare Access 之后，后者在边缘放行、仅由签发的令牌把守。完整的配置步骤，以及会让 CLI 客户端卡在登录页的那些失败模式，见 [docs/guides/public-deployment.md](docs/guides/public-deployment.md)（日文）。
+
+**被锁在门外时**（Access 故障或配置错误、`config.json` 被隔离、Postgres 宕机），没有可以依靠的管理密钥——也不需要。SSH 登录宿主机并转发端口，然后打开 `http://localhost:3456`：
+
+```shell
+ssh -L 3456:localhost:3456 <host>
+```
+
+在宿主机本机发出的请求不受管理网关限制，而这项判断既不读取 Access，也不读取数据库。使用 Docker 时，把端口发布到宿主机上（回环地址即可），做法相同。唯一会关上这扇门的设置是 `RIALTO_TRUST_LOCAL=false`。
 
 ## ⬆️ 从改名前的版本升级
 

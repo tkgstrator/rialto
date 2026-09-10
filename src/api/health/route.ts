@@ -1,7 +1,7 @@
 /**
  * GET /health — public monitoring endpoint.
  *
- * Deliberately outside the APIKEY gate so uptime probes and k8s
+ * Deliberately outside the admin gate so uptime probes and k8s
  * liveness/readiness checks don't need to carry a secret. Runs one
  * cheap reachability check per dependency, in parallel; each one skips
  * itself (`'skip'`) when the dependency isn't wired at all (test /

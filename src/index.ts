@@ -43,6 +43,7 @@ import { v1Route } from './api/v1/route'
 import { INBOUND_MOUNT_PREFIXES } from './llms/inbound/surfaces'
 import { logger, syncLoggerFromEnv } from './logger'
 import { startAuthHealthCheck } from './services/auth-health-job'
+import { readAccessConfig } from './services/cloudflare-access'
 import { initConfig, initDir } from './services/config/envelope'
 import { migrateHomeDir } from './services/config/migrate-home-dir'
 import { ensureInboundSurfaces } from './services/inbound-surface-service'
@@ -86,15 +87,14 @@ const envelope = await initConfig()
 // instance is constructed at import time before initConfig() has
 // mirrored config.json's LOG_LEVEL onto process.env.
 syncLoggerFromEnv()
-// Whether a break-glass token is configured, never its value: log files
-// live on disk, are readable from the Logging screen, and outlive the
-// secret. Absent is the default and is not a problem — a browser on this
-// machine is exempt, and everything else authenticates through
-// Cloudflare Access or an issued token.
-logger.info(
-  { bootstrapToken: (process.env.APIKEY ?? '').length > 0 ? 'configured' : 'not set' },
-  'admin credential status'
-)
+// Nothing can reach /api/* when the local exemption is switched off and
+// Cloudflare Access is not configured: there is no admin secret to fall
+// back on. Said once at boot, because the UI itself can only answer 401.
+if (process.env.RIALTO_TRUST_LOCAL === 'false' && readAccessConfig() === null) {
+  logger.warn(
+    'RIALTO_TRUST_LOCAL=false and Cloudflare Access is not configured — nothing can reach /api/*. Set ACCESS_TEAM_DOMAIN and ACCESS_AUD, or unset RIALTO_TRUST_LOCAL.'
+  )
+}
 // Give every inbound surface an explicit stored routing mode, so no
 // read has to fall back to a per-surface default.
 await ensureInboundSurfaces()
@@ -114,10 +114,11 @@ startRoutingScheduler()
 
 const app = new OpenAPIHono()
 
-// Gate everything that hits the paid subscriptions or mutates config
-// behind the envelope APIKEY (seed mints one on first run). The static
-// SPA at `/` stays open so the UI can load and prompt for the key; its
-// own /api calls then carry it.
+// Gate everything that hits the paid subscriptions or mutates config.
+// /api/* admits a browser on this machine or a verified Cloudflare Access
+// assertion, and nothing else; /v1/* admits issued access tokens only.
+// The static SPA at `/` stays open so a refused browser can still load
+// /access-denied and read why.
 //
 // The OAuth callback lives at the root path `/callback` (not under
 // /api/*) because Anthropic's OAuth client only whitelists the
@@ -128,7 +129,7 @@ const app = new OpenAPIHono()
 // visible too — otherwise a wrong-key probe leaves no trace at all.
 // GET /health mounts BEFORE the auth middleware and BEFORE the SPA
 // catch-all so uptime probes hit a machine-readable JSON body without
-// carrying an APIKEY. Registered here (not inside the /api/* tree) so
+// carrying a credential. Registered here (not inside the /api/* tree) so
 // the outer accessLog / auth gates don't apply to it.
 app.route('/', healthRoute)
 

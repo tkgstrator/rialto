@@ -112,8 +112,8 @@ export const PipelineRequestSchema = z.object({
   // tell /v1/chat/completions from /v1/responses.
   surface: z.enum(['anthropic-messages', 'openai-chat', 'openai-responses', 'gemini-generate']).optional(),
   // Which AccessToken authenticated the request, so Activity can answer
-  // "which client burned this". Absent when the envelope bootstrap
-  // token was used.
+  // "which client burned this". /v1 admits issued tokens only, so this
+  // is absent only on a request that never went through that gate.
   accessTokenId: z.string().nonempty().optional(),
   sessionId: z.string().nonempty().optional(),
   // The key the subscription sub-account picker sticks on, resolved once

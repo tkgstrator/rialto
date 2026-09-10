@@ -58,9 +58,9 @@ const coerceEnvelopeValue = (key: EnvelopeEnvKey, value: string): unknown => {
 // 12-factor overlay: for each envelope scalar the user could reasonably
 // deploy through docker-compose / systemd env, let a set process.env
 // value replace whatever the disk envelope carries. Empty-string env
-// values are ignored so `APIKEY=` in a stray .env line can't lock the
-// server open. Runs BEFORE ConfigEnvelopeSchema parsing so an env value
-// can satisfy a required field the disk file left empty (e.g. APIKEY).
+// values are ignored so a stray `ACCESS_AUD=` line in a .env file cannot
+// blank a value the disk file sets. Runs BEFORE ConfigEnvelopeSchema
+// parsing so an env value is validated exactly like a disk one.
 const overlayEnvOnRaw = (raw: unknown): unknown => {
   if (raw === null || typeof raw !== 'object') return raw
   const out: Record<string, unknown> = { ...(raw as Record<string, unknown>) }
@@ -113,9 +113,10 @@ const confirm = async (query: string): Promise<boolean> => {
  * A config that fails to parse or validate is still the operator's only
  * copy of their settings, and there are no backups. Unlinking it meant a
  * single bad key — including one arriving from a stray environment
- * variable — destroyed the file and rotated the bootstrap token, locking
- * out every client. Renaming keeps the boot path working while leaving
- * the original recoverable.
+ * variable — destroyed the file and every setting in it, the Cloudflare
+ * Access pair included, which locks a tunnelled install's remote browsers
+ * out. Renaming keeps the boot path working while leaving the original
+ * recoverable.
  */
 const quarantineConfigFile = async (): Promise<void> => {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
@@ -131,40 +132,30 @@ const quarantineConfigFile = async (): Promise<void> => {
 /**
  * Values worth carrying out of a config that failed to load.
  *
- * `APIKEY` above all: regenerating it locks out every configured client,
- * and a file that failed schema validation usually still holds a
- * perfectly good token. Personas are the other envelope-only data with
- * no copy anywhere else — Providers live in the database.
+ * Personas are the one envelope-only object with no copy anywhere else —
+ * Providers live in the database — so they survive the rebuild. Nothing
+ * else is carried: the rest is recoverable from the file moved aside.
  */
-const salvageFromRaw = (raw: unknown): Partial<{ APIKEY: string; Personas: unknown[] }> => {
+const salvageFromRaw = (raw: unknown): Partial<{ Personas: unknown[] }> => {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return {}
   const obj: Record<string, unknown> = { ...raw }
-  const salvaged: Partial<{ APIKEY: string; Personas: unknown[] }> = {}
-  if (typeof obj.APIKEY === 'string' && obj.APIKEY.length > 0) salvaged.APIKEY = obj.APIKEY
-  if (Array.isArray(obj.Personas) && obj.Personas.length > 0) salvaged.Personas = obj.Personas
-  return salvaged
+  return Array.isArray(obj.Personas) && obj.Personas.length > 0 ? { Personas: obj.Personas } : {}
 }
 
 /**
- * A fresh install has no bootstrap token.
+ * The config a fresh install — or a quarantined one — boots with.
  *
- * It used to mint one, which meant every install carried a master key
- * for /api/* that bypasses Cloudflare Access for anyone who obtains it —
- * from config.json, a backup, or shell history. Nothing needs it now: a
+ * It carries no credential, because there is no admin secret to mint: a
  * browser on this machine is exempt, remote admin access goes through
- * Access, and /v1 takes issued tokens only.
- *
- * Setting APIKEY by hand still works, as a deliberate break-glass for
- * remote admin access when Access itself is broken. Opting in to a
- * master key is a different decision from being handed one.
+ * Cloudflare Access, and /v1 takes issued tokens only. This used to mint
+ * an APIKEY, which meant every install shipped a master key for /api/*
+ * that got past Access for anyone who read it out of config.json, a backup
+ * or shell history.
  */
 const createDefaultConfig = async (salvaged: ReturnType<typeof salvageFromRaw> = {}): Promise<ConfigEnvelope> => {
   await initDir()
   const raw = {
     PORT: 3456,
-    // Preserved when recovering a config that failed to load; never
-    // invented.
-    ...(salvaged.APIKEY === undefined ? {} : { APIKEY: salvaged.APIKEY }),
     Providers: [],
     // Ship a few ready-made personas in the default config so a fresh
     // install has something to pick under Settings → Personas out of the box.
@@ -174,9 +165,9 @@ const createDefaultConfig = async (salvaged: ReturnType<typeof salvageFromRaw> =
   logger.info({ path: CONFIG_FILE }, 'Created default configuration file')
   // Parse through the schema so callers receive a fully-defaulted
   // ConfigEnvelope (HOST, LOG, LOG_LEVEL, PROXY_URL, …) instead of just
-  // the four scalars we persist on first run. Env overlay is applied to
-  // the runtime value (not written to disk) so a deploy setting APIKEY
-  // via env still wins over the generated random default.
+  // the scalars we persist on first run. Env overlay is applied to the
+  // runtime value (not written to disk) so a deploy that sets PORT or the
+  // Access pair through the environment still wins.
   return ConfigEnvelopeSchema.parse(overlayEnvOnRaw(raw))
 }
 
@@ -215,16 +206,15 @@ export const readConfigFile = async (): Promise<ConfigEnvelope> => {
     }
 
     // Env overlay runs before schema validation so a docker-compose
-    // deploy can satisfy required fields (APIKEY) purely via env, even
-    // when the mounted config.json omits them.
+    // deploy can supply a scalar purely via env, and have it validated
+    // like one read from disk.
     const overlaid = overlayEnvOnRaw(parsed)
     const result = ConfigEnvelopeSchema.safeParse(overlaid)
     if (!result.success) {
       logger.error({ err: result.error }, 'Config file failed schema validation')
       await quarantineConfigFile()
       // The file parsed as JSON — one key failing validation is no
-      // reason to rotate a working bootstrap token or drop the persona
-      // library, neither of which is stored anywhere else.
+      // reason to drop the persona library, which is stored nowhere else.
       return createDefaultConfig(salvageFromRaw(parsed))
     }
 

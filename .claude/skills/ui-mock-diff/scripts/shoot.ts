@@ -107,19 +107,18 @@ const main = async (): Promise<void> => {
         deviceScaleFactor: config.deviceScaleFactor,
         colorScheme: theme === 'dark' ? 'dark' : 'light'
       })
-      // next-themes reads localStorage.theme; the UI reads localStorage.apiKey
-      // to get past ProtectedRoute. Seeded before any script runs so the
-      // app never renders the Login screen we did not ask for.
+      // next-themes reads localStorage.theme, seeded before any script
+      // runs. No credential is seeded: the capture runs on the machine the
+      // dev server does, and a browser there is exempt from the admin gate.
       await context.addInitScript(
-        ({ t, key }) => {
+        ({ t }) => {
           try {
             localStorage.setItem('theme', t)
-            if (key) localStorage.setItem('apiKey', key)
           } catch {
             /* storage unavailable — the page still renders */
           }
         },
-        { t: theme, key: process.env.RIALTO_UI_API_KEY ?? process.env.APIKEY ?? '' }
+        { t: theme }
       )
       const page = await context.newPage()
 

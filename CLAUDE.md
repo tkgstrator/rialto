@@ -256,8 +256,11 @@ directory (`src/llms/transformers/anthropic/`, `.../openai/`, `.../gemini/`), be
 the event vocabularies do not line up.
 
 **Server → browser** — `src/api/request-logs/sse.ts` pushes new-log notifications to
-the UI. Its auth is deliberately odd: `EventSource` cannot set headers, so `adminAuth`
-accepts an `apikey` query parameter on that one path.
+the UI. It sits behind the ordinary `adminAuth` with no exception. `EventSource` cannot
+set headers, and it does not need to: neither way into `/api/*` is a header the page
+sets — the local exemption reads the `Host` the browser sends anyway, and Cloudflare
+Access injects its assertion at the edge. The `?apikey=` query parameter this path used
+to accept went with `APIKEY`.
 
 ### 5. Configuration Management
 
@@ -276,7 +279,7 @@ longer read**. Anything still using one has to be updated.
 
 Configuration is split across two stores:
 
-- **Disk envelope**: `~/.rialto/config.json`. The whitelist is `ConfigEnvelopeSchema` in `src/schemas/domain/config.ts` — read that, not a list here, because it is what boot actually parses. It carries the boot-time scalars (`HOST` / `PORT` / `APIKEY` / `LOG` / `LOG_LEVEL` / `LOG_MAX_MB` / `PROXY_URL` / `API_TIMEOUT_MS` / `CLAUDE_PATH` / `NON_INTERACTIVE_MODE`), the archive switches (`CAPTURE_REQUESTS` / `CAPTURE_MESSAGES` / `REDACT_TOOL_ARGUMENTS`), the Cloudflare Access pair (`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD`), the scheduler tick (`ROUTING_SCHEDULER_INTERVAL_MS`), the active persona's id (`ActivePersona` — also a top-level key on the `/api/config` wire and on the `ConfigStore`), and the disk-resident objects (`Personas`, `StatusLine`). Keys the schema does not declare are preserved by its `.catchall`, not dropped — except the retired routing keys (`Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK`), which `RETIRED_ENVELOPE_KEYS` strips on every read and prunes on the next save.
+- **Disk envelope**: `~/.rialto/config.json`. The whitelist is `ConfigEnvelopeSchema` in `src/schemas/domain/config.ts` — read that, not a list here, because it is what boot actually parses. It carries the boot-time scalars (`HOST` / `PORT` / `LOG` / `LOG_LEVEL` / `LOG_MAX_MB` / `PROXY_URL` / `API_TIMEOUT_MS` / `CLAUDE_PATH` / `NON_INTERACTIVE_MODE`), the archive switches (`CAPTURE_REQUESTS` / `CAPTURE_MESSAGES` / `REDACT_TOOL_ARGUMENTS`), the Cloudflare Access pair (`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD`), the scheduler tick (`ROUTING_SCHEDULER_INTERVAL_MS`), the active persona's id (`ActivePersona` — also a top-level key on the `/api/config` wire and on the `ConfigStore`), and the disk-resident objects (`Personas`, `StatusLine`). Keys the schema does not declare are preserved by its `.catchall`, not dropped — except the retired keys, the routing ones (`Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK`) and the removed admin key `APIKEY`, which `RETIRED_ENVELOPE_KEYS` strips on every read and prunes on the next save.
 - **PostgreSQL** (via Prisma, `src/prisma/schema.prisma`): everything else. `DATABASE_URL` is loaded from `.env` (`.devcontainer/compose.yaml` provides `postgres` and `redis`).
 
 The schema is well past the three tables the first PR shipped; the column comments in
@@ -310,11 +313,17 @@ older build left on disk is stripped on read and pruned on the next save.
 `loadFullConfig()` (`src/services/config/compose.ts`) is still there; it is called
 lazily by `buildLlmsContext`, not at boot.
 
-**A fresh install mints no `APIKEY`.** `createDefaultConfig` used to generate one,
-which meant every install shipped a master key for `/api/*` that bypasses Cloudflare
-Access for whoever finds it. Nothing needs one now — a browser on this machine is
-exempt, remote admin goes through Access, and `/v1/*` takes issued tokens. Setting
-`APIKEY` by hand is still supported as a deliberate break-glass.
+**There is no admin secret.** `APIKEY` — the bootstrap / break-glass key for `/api/*` —
+is gone: `ConfigEnvelopeSchema` does not declare it, it is neither mirrored onto nor
+overlaid from `process.env`, and quarantining a broken `config.json` salvages only
+`Personas`. It was a master key that got past Cloudflare Access for anyone who read it
+out of `config.json`, a backup or shell history, and the outages it was kept for
+already have a way back in that needs no secret. **Locked out** (Access broken,
+`config.json` quarantined, Postgres down): `ssh -L 3456:localhost:3456 <host>` and open
+`http://localhost:3456` — a request made on the host is exempt, and that check reads
+neither Access nor the database. On Docker, publish the port on the host (loopback is
+enough). `curl` run on the host against `http://localhost:3456/api/...` needs no
+credential header either.
 
 DDL is not created at boot either: `entrypoint.sh` runs `prisma migrate deploy` and
 `prisma db seed` before exec'ing the process.
@@ -322,7 +331,7 @@ DDL is not created at boot either: `entrypoint.sh` runs `prisma migrate deploy` 
 Config API (`src/api/config/route.ts`, service in `src/services/config/`):
 
 - `GET /api/config` returns `composeUiConfig()` (envelope on disk + DB-resident config).
-- `POST /api/config` calls `applyUiConfig(body)`: diffs the incoming UI payload inside a single Prisma transaction and returns `{ success, warnings[] }`. A removed model or provider takes its chain entries with it (`RouterPreferenceEntry.model` cascades), so the apply layer counts them **before** the delete and warns with the number per profile / scenario / lane; the retired keys (`Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK`) are dropped with a warning and never stored. `ActivePersona` is an ordinary top-level key: `''` / `null` clears it, absent leaves it alone. Envelope keys land on disk via `writeConfigFile` after the DB transaction commits, and `applyEnvelopeToEnv` re-mirrors them onto `process.env` — so envelope changes are hot, without a restart.
+- `POST /api/config` calls `applyUiConfig(body)`: diffs the incoming UI payload inside a single Prisma transaction and returns `{ success, warnings[] }`. A removed model or provider takes its chain entries with it (`RouterPreferenceEntry.model` cascades), so the apply layer counts them **before** the delete and warns with the number per profile / scenario / lane; the retired keys (`Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK` / `APIKEY`) are dropped with a warning and never stored. `ActivePersona` is an ordinary top-level key: `''` / `null` clears it, absent leaves it alone. Envelope keys land on disk via `writeConfigFile` after the DB transaction commits, and `applyEnvelopeToEnv` re-mirrors them onto `process.env` — so envelope changes are hot, without a restart.
 
 Key features (disk envelope):
 - Environment variable interpolation (`$VAR_NAME` or `${VAR_NAME}`)
@@ -336,11 +345,14 @@ There is no `rialto restart`, and no CLI at all. A Docker deployment restarts wi
 through `POST /api/config` do not need either.
 
 `HOST` defaults to `127.0.0.1` and there is **no validation coupling `Providers` to
-`HOST`/`APIKEY`** — that check does not exist. What actually gates access:
-`/api/*` takes Cloudflare Access (when `ACCESS_TEAM_DOMAIN` + `ACCESS_AUD` are both
-set) or the envelope `APIKEY`, and exempts a browser on the machine itself
-(`src/api/local-access.ts`). `/v1/*` takes **issued `AccessToken`s only** — the
-`APIKEY` is rejected there, so an install with no token issued cannot proxy.
+`HOST`** — that check does not exist. What actually gates access: `/api/*` admits
+exactly two things — a request made on the host itself (`src/api/local-access.ts`: a
+loopback `Host` and no forwarding headers; `RIALTO_TRUST_LOCAL=false` turns it off) and
+a verified Cloudflare Access assertion (when `ACCESS_TEAM_DOMAIN` + `ACCESS_AUD` are
+both set). There is no `x-api-key` / `Authorization: Bearer` admin credential. With
+`RIALTO_TRUST_LOCAL=false` and Access unconfigured nothing can reach `/api/*`, so boot
+logs a warning. `/v1/*` takes **issued `AccessToken`s only**, so an install with no
+token issued cannot proxy.
 
 Database tooling (`bun run`, from the repo root — there is no `packages/`):
 

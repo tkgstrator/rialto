@@ -10,6 +10,9 @@
 
 const CODEX_PLAN_PRICES: Record<string, number> = {
   plus: 20,
+  // Pro 5x. OpenAI split Pro in two in April 2026 and kept `pro` for the
+  // 20x seat, so the new $100 plan arrives under its own identifier.
+  prolite: 100,
   pro: 200
 }
 

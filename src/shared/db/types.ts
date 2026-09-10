@@ -33,7 +33,6 @@ export const SCENARIO_KEYS = ['default', 'think', 'longContext', 'webSearch', 'i
 export const ENVELOPE_ENV_KEYS = [
   'HOST',
   'PORT',
-  'APIKEY',
   'LOG',
   'LOG_LEVEL',
   // Rotation size. syncLoggerFromEnv re-reads it after a save, so a change

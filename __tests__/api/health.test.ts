@@ -1,7 +1,7 @@
 /**
  * GET /health — public monitoring surface.
  *
- * Verifies the endpoint responds without an APIKEY (uptime probes
+ * Verifies the endpoint responds without a credential (uptime probes
  * don't carry one) and returns a machine-readable JSON envelope
  * rather than the SPA HTML that used to catch this path.
  */

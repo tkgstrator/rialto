@@ -105,13 +105,13 @@ describe.skipIf(!HAS_DB)('configService', () => {
   })
 
   test('API_TIMEOUT_MS number is written to disk and read back via composeUiConfig', async () => {
-    await applyUiConfig({ Providers: [], APIKEY: 'test-key', API_TIMEOUT_MS: 30000 })
+    await applyUiConfig({ Providers: [], API_TIMEOUT_MS: 30000 })
     const ui = await composeUiConfig()
     expect(ui.API_TIMEOUT_MS).toBe(30000)
   })
 
   test('API_TIMEOUT_MS is preserved alongside Providers changes', async () => {
-    await applyUiConfig({ Providers: [openai(['gpt-5'])], APIKEY: 'test-key', API_TIMEOUT_MS: 45000 })
+    await applyUiConfig({ Providers: [openai(['gpt-5'])], API_TIMEOUT_MS: 45000 })
     const ui = await composeUiConfig()
     expect(ui.API_TIMEOUT_MS).toBe(45000)
     expect(ui.Providers[0].name).toBe('openai')
@@ -122,24 +122,22 @@ describe.skipIf(!HAS_DB)('configService', () => {
     // envelope so a partial POST does not wipe fields it did not send.
     // Previously the second write would drop API_TIMEOUT_MS from disk
     // because writeConfigFile only saw the incoming keys and rewrote
-    // the whole file — the same overwrite that used to null APIKEY out
-    // of a "single-toggle" POST.
-    await applyUiConfig({ Providers: [], APIKEY: 'test-key', API_TIMEOUT_MS: 30000 })
-    await applyUiConfig({ Providers: [], APIKEY: 'test-key' })
+    // the whole file — the same overwrite that used to wipe every other
+    // scalar out of a "single-toggle" POST.
+    await applyUiConfig({ Providers: [], API_TIMEOUT_MS: 30000 })
+    await applyUiConfig({ Providers: [] })
     const ui = await composeUiConfig()
     expect(ui.API_TIMEOUT_MS).toBe(30000)
   })
 
-  test('partial POST preserves envelope scalars the payload does not send (APIKEY, PORT, HOST)', async () => {
+  test('partial POST preserves envelope scalars the payload does not send (PORT, HOST)', async () => {
     // Regression: a curl-style single-key write used to clobber every
     // other envelope scalar on disk — the disk file was rewritten from
-    // just the payload keys — and in particular wiped APIKEY, locking
-    // the caller out of the server on the next request.
-    await applyUiConfig({ Providers: [], APIKEY: 'sensitive-key', PORT: 3499, HOST: '0.0.0.0' })
+    // just the payload keys.
+    await applyUiConfig({ Providers: [], PORT: 3499, HOST: '0.0.0.0' })
     // Partial POST touching only one other envelope scalar.
     await applyUiConfig({ ROUTING_SCHEDULER_INTERVAL_MS: 120_000 })
     const ui = await composeUiConfig()
-    expect(ui.APIKEY).toBe('sensitive-key')
     expect(ui.PORT).toBe(3499)
     expect(ui.HOST).toBe('0.0.0.0')
     expect(ui.ROUTING_SCHEDULER_INTERVAL_MS).toBe(120_000)
@@ -151,8 +149,8 @@ describe.skipIf(!HAS_DB)('configService', () => {
     // disk at boot but never refreshed on UI writes. As a result a
     // saved LOG_LEVEL was clobbered by the boot-time value on the very
     // next GET, so users saw the field snap back to 'info' on reload.
-    await applyUiConfig({ Providers: [], APIKEY: 'test-key', LOG_LEVEL: 'info' })
-    await applyUiConfig({ Providers: [], APIKEY: 'test-key', LOG_LEVEL: 'debug' })
+    await applyUiConfig({ Providers: [], LOG_LEVEL: 'info' })
+    await applyUiConfig({ Providers: [], LOG_LEVEL: 'debug' })
     const ui = await composeUiConfig()
     expect(ui.LOG_LEVEL).toBe('debug')
   })
@@ -160,7 +158,6 @@ describe.skipIf(!HAS_DB)('configService', () => {
   test('Personas and the top-level ActivePersona round-trip through apply then compose', async () => {
     await applyUiConfig({
       Providers: [],
-      APIKEY: 'test-key',
       ActivePersona: 'pirate',
       Personas: [
         { name: 'pirate', prompt: 'Talk like a pirate.' },
@@ -177,8 +174,8 @@ describe.skipIf(!HAS_DB)('configService', () => {
 
   test('an empty ActivePersona clears the active persona (composed as null), and null does too', async () => {
     const personas = [{ name: 'pirate', prompt: 'Talk like a pirate.' }]
-    await applyUiConfig({ Providers: [], ActivePersona: 'pirate', APIKEY: 'test-key', Personas: personas })
-    await applyUiConfig({ Providers: [], ActivePersona: '', APIKEY: 'test-key', Personas: personas })
+    await applyUiConfig({ Providers: [], ActivePersona: 'pirate', Personas: personas })
+    await applyUiConfig({ Providers: [], ActivePersona: '', Personas: personas })
     expect((await composeUiConfig()).ActivePersona).toBeNull()
 
     await applyUiConfig({ ActivePersona: 'pirate' })
@@ -200,31 +197,32 @@ describe.skipIf(!HAS_DB)('configService', () => {
 
   test('retired keys are dropped with a warning and never written', async () => {
     const result = await applyUiConfig({
+      LOG_LEVEL: 'debug',
       APIKEY: 'k',
       Router: { default: { agent: { primary: 'openai,gpt-5' } }, persona: 'pirate' },
       CUSTOM_ROUTER_PATH: '/tmp/router.js',
       LiveRoutingName: 'Work',
       CROSS_PROVIDER_FALLBACK: true
     })
+    const retired = ['APIKEY', 'Router', 'CUSTOM_ROUTER_PATH', 'LiveRoutingName', 'CROSS_PROVIDER_FALLBACK']
     expect(result.warnings).toHaveLength(1)
-    for (const key of ['Router', 'CUSTOM_ROUTER_PATH', 'LiveRoutingName', 'CROSS_PROVIDER_FALLBACK']) {
+    for (const key of retired) {
       expect(result.warnings[0]).toContain(key)
     }
 
     const raw = await readRawConfigFile()
-    expect(raw.APIKEY).toBe('k')
-    expect('Router' in raw).toBe(false)
-    expect('CUSTOM_ROUTER_PATH' in raw).toBe(false)
-    expect('LiveRoutingName' in raw).toBe(false)
-    expect('CROSS_PROVIDER_FALLBACK' in raw).toBe(false)
+    // The live scalar beside them still lands.
+    expect(raw.LOG_LEVEL).toBe('debug')
+    for (const key of retired) {
+      expect(key in raw).toBe(false)
+    }
     // The persona nested under the retired key is not lifted either.
     expect('ActivePersona' in raw).toBe(false)
 
     const ui = await composeUiConfig()
-    expect('Router' in ui).toBe(false)
-    expect('CUSTOM_ROUTER_PATH' in ui).toBe(false)
-    expect('LiveRoutingName' in ui).toBe(false)
-    expect('CROSS_PROVIDER_FALLBACK' in ui).toBe(false)
+    for (const key of retired) {
+      expect(key in ui).toBe(false)
+    }
   })
 
   test('a retired key left on disk by an older build is hidden from the wire and pruned on the next save', async () => {
@@ -239,12 +237,15 @@ describe.skipIf(!HAS_DB)('configService', () => {
     const before = await composeUiConfig()
     expect('Router' in before).toBe(false)
     expect('CROSS_PROVIDER_FALLBACK' in before).toBe(false)
-    expect(before.APIKEY).toBe('k')
+    // For APIKEY the stale copy is a plaintext secret, which must not
+    // reach GET /api/config.
+    expect('APIKEY' in before).toBe(false)
 
     await applyUiConfig({ LOG_LEVEL: 'debug' })
     const raw = await readRawConfigFile()
-    expect(raw.APIKEY).toBe('k')
     expect(raw.LOG_LEVEL).toBe('debug')
+    expect(raw.PORT).toBe(3456)
+    expect('APIKEY' in raw).toBe(false)
     expect('Router' in raw).toBe(false)
     expect('CROSS_PROVIDER_FALLBACK' in raw).toBe(false)
     expect('LiveRoutingName' in raw).toBe(false)
