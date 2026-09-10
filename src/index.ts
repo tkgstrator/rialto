@@ -25,7 +25,6 @@ import { refreshModelsRoute } from './api/refresh-models/route'
 import { requestLogsRoute } from './api/request-logs/route'
 import { routerPreferencesRoute } from './api/router-preferences/route'
 import { routerUtilizationRoute } from './api/router-utilization/route'
-import { routingPresetsRoute } from './api/routing-presets/route'
 import { routingSchedulerStateRoute } from './api/routing-scheduler-state/route'
 import { scrapePricesRoute } from './api/scrape-prices/[vendor]/route'
 import { solverInputRoute } from './api/solver-input/route'
@@ -109,8 +108,8 @@ void startUsageCapture()
 void startAuthHealthCheck()
 // Routing scheduler. It computes the weights the chain routes on — the
 // operator picks the models and their order, this decides how much of
-// the traffic each one takes. It used to be gated on ROUTER_MODE and sat
-// idle under the other selector; there is no other selector.
+// the traffic each one takes. The chain is the only selector, so the
+// scheduler always has a consumer and always runs.
 startRoutingScheduler()
 
 const app = new OpenAPIHono()
@@ -185,7 +184,6 @@ app.route('/', modelTestRoute)
 app.route('/', modelTestAllRoute)
 app.route('/', scrapePricesRoute)
 app.route('/', requestLogsRoute)
-app.route('/', routingPresetsRoute)
 app.route('/', routerPreferencesRoute)
 app.route('/', routerUtilizationRoute)
 app.route('/', routingSchedulerStateRoute)

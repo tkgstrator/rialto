@@ -26,8 +26,8 @@ export const ProviderListResponseSchema = z.array(ProviderSchema).openapi('Provi
 
 // Wire shape returned by POST/PATCH /api/providers and
 // PATCH /api/providers/:name. Carries the round-tripped Provider plus
-// any non-fatal warnings the apply layer produced (e.g. RouterSlots
-// nulled out because a removed model was bound).
+// any non-fatal warnings the apply layer produced (e.g. chain entries
+// the cascade removed because a model they named was dropped).
 export const ProviderUpsertResponseSchema = z
   .object({
     success: z.literal(true),
@@ -36,7 +36,15 @@ export const ProviderUpsertResponseSchema = z
   })
   .openapi('ProviderUpsertResponse')
 
-export const ProviderDeleteResponseSchema = z.object({ success: z.literal(true) }).openapi('ProviderDeleteResponse')
+// Same `warnings` convention: deleting a provider cascades to every
+// chain entry naming one of its models, and the count is reported here
+// rather than silently swallowed.
+export const ProviderDeleteResponseSchema = z
+  .object({
+    success: z.literal(true),
+    warnings: z.array(z.string().nonempty()).optional()
+  })
+  .openapi('ProviderDeleteResponse')
 
 // 404 / 5xx error envelope used by the providers + provider/model
 // CRUD endpoints when the resource was not found or the underlying

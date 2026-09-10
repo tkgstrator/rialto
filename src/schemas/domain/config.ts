@@ -3,9 +3,9 @@
  * the app owns rather than serves.
  *
  * ConfigEnvelopeSchema is the whitelist of what may stay in
- * ~/.rialto/config.json now that Providers and Router live
- * in the DB, so it is read at boot before any HTTP surface exists. The
- * /api/config wire shapes derived from it are in api/config.ts.
+ * ~/.rialto/config.json now that Providers live in the DB, so it is read
+ * at boot before any HTTP surface exists. The /api/config wire shapes
+ * derived from it are in api/config.ts.
  */
 
 import { z } from '@hono/zod-openapi'
@@ -14,7 +14,7 @@ import { JsonValueSchema } from './preset'
 
 // A single persona in the library. `id` is the stable uuid key every
 // reference points at — the URL (/personas/view|edit/:id), the active
-// selection (Router.persona), and the server-side prompt lookup — so the
+// selection (`ActivePersona`), and the server-side prompt lookup — so the
 // `name` is a free-form display label and need not be unique. `id` is
 // optional in the schema only for back-compat: configs written before
 // the uuid migration have personas without one; the boot migration
@@ -29,8 +29,7 @@ export const PersonaSchema = z
 export type Persona = z.infer<typeof PersonaSchema>
 
 // Whitelist of what is allowed to stay on disk in
-// ~/.rialto/config.json once Providers / Router have been
-// moved into the DB.
+// ~/.rialto/config.json once Providers have been moved into the DB.
 export const ConfigEnvelopeSchema = z
   .object({
     HOST: z.string().default('127.0.0.1'),
@@ -63,17 +62,11 @@ export const ConfigEnvelopeSchema = z
     ACCESS_TEAM_DOMAIN: z.string().default(''),
     ACCESS_AUD: z.string().default(''),
 
-    // Disk-only backing store for the active persona's id (surfaced on
-    // the wire as `Router.persona`, not as a top-level field). Absent /
-    // empty means "no persona". Round-trips through the disk envelope
-    // like the other optional scalars (see CUSTOM_ROUTER_PATH).
+    // The active persona's id. Absent / empty means "no persona". It is
+    // a top-level key on the wire too (/api/config `ActivePersona`), and
+    // round-trips through the disk envelope like the other optional
+    // scalars.
     ActivePersona: z.string().optional(),
-    // User-editable display name for the live routing (the RouterSlot
-    // rows). Presented on the Routing Library grid + Live editor. Absent
-    // / empty → UI falls back to the "Live" i18n label. Auto-populated
-    // when a preset is applied to Live so the card reads as "Work"
-    // instead of the generic "Live".
-    LiveRoutingName: z.string().optional(),
 
     // Object-shaped envelope members: they stay on disk rather than
     // moving to the DB, and are never mirrored onto process.env.
@@ -81,26 +74,15 @@ export const ConfigEnvelopeSchema = z
     Personas: z.array(PersonaSchema).default([]),
     StatusLine: JsonValueSchema.optional(),
 
-    // ROUTER_MODE / ROUTER_SHADOW / ROUTER_ROLLOUT_PCT are gone. They
-    // existed to move traffic from the scenario router onto the chain a
-    // percentage at a time, and to run the two side by side while that
-    // happened. With one selector left they described a migration that
-    // is over. A stale value on disk is preserved by the `.catchall`
-    // below and read by nothing.
-    //
     // Scheduler tick interval. Default 5 min matches the usage-cache
     // TTL; faster ticks just spin the weight recompute since upstream
-    // /usage endpoints are cached. Lower bound 60s is for
-    // shadow/staging; production should stay >= 300_000.
-    ROUTING_SCHEDULER_INTERVAL_MS: z.coerce.number().int().min(60_000).max(3_600_000).default(300_000),
-    // When true, the failover walker auto-appends peer entries with the
-    // same Model.name on OpenAI-family providers (apiStyle openai_chat /
-    // openai_responses) after each explicit chain entry. Off by default
-    // — enable when you have the same model surfaced by multiple
-    // OpenAI-compatible providers and want a 429 on one to hop to the
-    // peer without hand-writing the chain.
-    CROSS_PROVIDER_FALLBACK: z.coerce.boolean().default(false)
+    // /usage endpoints are cached. Lower bound 60s is for staging;
+    // production should stay >= 300_000.
+    ROUTING_SCHEDULER_INTERVAL_MS: z.coerce.number().int().min(60_000).max(3_600_000).default(300_000)
   })
-  // Any other keys we don't know about — keep them, don't drop them.
+  // Any other keys we don't know about — keep them, don't drop them. A
+  // key a retired feature wrote (`Router`, `CROSS_PROVIDER_FALLBACK`,
+  // `CUSTOM_ROUTER_PATH`, `LiveRoutingName`, `ROUTER_MODE`) survives a
+  // read this way and is read by nothing; the next save prunes it.
   .catchall(JsonValueSchema)
 export type ConfigEnvelope = z.infer<typeof ConfigEnvelopeSchema>

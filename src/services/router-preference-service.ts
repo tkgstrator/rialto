@@ -1,5 +1,5 @@
 /**
- * Read / write the singleton RouterPreferenceProfile.
+ * Read / write a RouterPreferenceProfile — the chain.
  *
  * The apply path is dedicated (not routed through ApplyConfigPayload)
  * so unknown keys can't quietly land on disk via the envelope
@@ -12,6 +12,13 @@
  * `entriesByScenario` object with a key for every scenario, each mapping
  * to `{ agent: [], subagent: [] }` so the UI can render an empty
  * sub-tab without hitting a "missing" branch.
+ *
+ * Two reads, one row: `loadRouterPreferences` is what the editor sees —
+ * every entry with its own toggle and, separately, whether its target is
+ * switched on. `loadRoutableProfile` is what the request path walks —
+ * the same rows with the two folded together, so the selector, the
+ * classifier's lane gate and the scheduler agree on which entries can
+ * actually serve.
  */
 
 import { getPrismaClient } from '../db/client'
@@ -42,7 +49,7 @@ interface DbEntryRow {
   kind: PrismaKind
   priority: number
   enabled: boolean
-  model: { name: string; manualTier: string | null; provider: { name: string } }
+  model: { name: string; manualTier: string | null; enabled: boolean; provider: { name: string; enabled: boolean } }
 }
 
 const ALLOWED_TIERS = new Set(['fable', 'opus', 'sonnet', 'haiku'])
@@ -52,8 +59,8 @@ const narrowTier = (raw: string | null | undefined): CanonicalTier | null => {
   return ALLOWED_TIERS.has(raw) ? (raw as CanonicalTier) : null
 }
 
-// Name-inference fallback that mirrors the private tierOf() in
-// scenario-router/model-selection.ts. Duplicated here (rather than
+// Name-inference fallback that mirrors tierOf() in
+// scenario-router/request-signals.ts. Duplicated here (rather than
 // imported cross-service) so bun's test-file loader doesn't hit the
 // same "Export named not found" quirk we saw with scopedMetricKey.
 const inferTier = (modelName: string): CanonicalTier | null => {
@@ -72,6 +79,10 @@ const dbEntryToWire = (row: DbEntryRow): RouterPreferenceEntry => {
     priority: row.priority,
     target: `${row.model.provider.name},${row.model.name}`,
     enabled: row.enabled,
+    // The Providers screen's switches, read alongside the entry's own so
+    // the Routing screen can show an entry whose target is off without
+    // pretending the operator turned the entry itself off.
+    targetEnabled: row.model.enabled && row.model.provider.enabled,
     resolvedTier: resolved
   }
 }
@@ -85,6 +96,8 @@ const emptyEntriesByScenario = (): PreferenceEntriesByScenario => ({
   webSearch: emptyByKind(),
   image: emptyByKind()
 })
+
+const emptyProfile = (): RouterPreferenceProfile => ({ entriesByScenario: emptyEntriesByScenario(), constraints: null })
 
 /**
  * The profile every surface uses until it is pointed somewhere else.
@@ -112,15 +125,47 @@ export const DEFAULT_PROFILE_KEY = 'live'
  */
 export const PASSTHROUGH_PROFILE_KEY = 'passthrough'
 
+// Profiles seeded by a test in place of the database. `null` means "read
+// the database", which is the only state production ever sees.
+type SeededProfiles = Partial<Record<string, RouterPreferenceProfile | Error>>
+const seeded: { value: SeededProfiles | null } = { value: null }
+
+/**
+ * Seed the profiles the request path reads, for tests that exercise the
+ * router without a database.
+ *
+ * The chain is what routes, so a test that cannot set one is asserting
+ * whatever happens when the chain fails to load — which is how a whole
+ * suite came to pass on the silent fallback of a selector that no
+ * longer exists. Mirrors `__setSurfacesForTests`. A key mapped to an
+ * `Error` makes the load throw, which is how "the database is away" is
+ * described; an absent key reads as a profile nobody has configured.
+ * Pass `null` to go back to the database.
+ */
+export function __setPreferencesForTests(profiles: SeededProfiles | null): void {
+  seeded.value = profiles
+}
+
 // Load one profile with entries in priority order, grouped by scenario
 // then by kind. Returns an empty per-scenario map + null constraints
 // when the row hasn't been created yet — which is also what a surface
 // pointed at a profile nobody has configured should see.
+//
+// `prisma` is resolved inside rather than as a default parameter: a
+// default runs before the body, and a seeded test has no database for
+// `getPrismaClient()` to find.
 export async function loadRouterPreferences(
-  prisma: PrismaClient = getPrismaClient(),
+  prisma?: PrismaClient,
   profileKey: string = DEFAULT_PROFILE_KEY
 ): Promise<RouterPreferenceProfile> {
-  const profile = await prisma.routerPreferenceProfile.findUnique({
+  const fromTest = seeded.value
+  if (fromTest !== null) {
+    const found = fromTest[profileKey]
+    if (found instanceof Error) throw found
+    return found === undefined ? emptyProfile() : found
+  }
+  const client = prisma === undefined ? getPrismaClient() : prisma
+  const profile = await client.routerPreferenceProfile.findUnique({
     where: { key: profileKey },
     include: {
       entries: {
@@ -147,13 +192,45 @@ export async function loadRouterPreferences(
   return { entriesByScenario, constraints }
 }
 
+// An entry can serve only when it is switched on AND its target is: a
+// model the Providers screen has turned off, or a provider that is off
+// altogether, must not be reachable through a chain that still names
+// it. Entries a test seeds without `targetEnabled` count as on.
+const routableEntry = (entry: RouterPreferenceEntry): RouterPreferenceEntry => ({
+  ...entry,
+  enabled: entry.enabled && entry.targetEnabled !== false
+})
+
+/**
+ * The profile as the request path sees it: every entry's `enabled`
+ * folded with its target's. One fold, read by the classifier's lane gate,
+ * the selector and the scheduler alike, so the three cannot disagree on
+ * whether a disabled model is still "in the chain".
+ */
+export function foldTargetEnabled(profile: RouterPreferenceProfile): RouterPreferenceProfile {
+  const entriesByScenario = emptyEntriesByScenario()
+  for (const scenario of ALL_SCENARIOS) {
+    for (const kind of ALL_KINDS) {
+      entriesByScenario[scenario][kind] = profile.entriesByScenario[scenario][kind].map(routableEntry)
+    }
+  }
+  return { entriesByScenario, constraints: profile.constraints }
+}
+
+export async function loadRoutableProfile(
+  profileKey: string = DEFAULT_PROFILE_KEY,
+  prisma?: PrismaClient
+): Promise<RouterPreferenceProfile> {
+  return foldTargetEnabled(await loadRouterPreferences(prisma, profileKey))
+}
+
 // Helper the selector uses at request time — pick the chain for a
 // single (scenario, kind). Loads the whole profile then returns one
 // slice; the caller is expected to already need `constraints` anyway.
 export async function loadPreferenceChain(
   scenario: ScenarioKey,
   kind: PreferenceKind,
-  prisma: PrismaClient = getPrismaClient(),
+  prisma?: PrismaClient,
   profileKey: string | undefined = DEFAULT_PROFILE_KEY
 ): Promise<{ entries: readonly RouterPreferenceEntry[]; constraints: Record<string, unknown> | null }> {
   const key = profileKey === undefined ? DEFAULT_PROFILE_KEY : profileKey
@@ -252,7 +329,8 @@ export async function applyRouterPreferences(
     const flat: Prisma.RouterPreferenceEntryCreateManyInput[] = []
     for (const scenario of ALL_SCENARIOS) {
       for (const kind of ALL_KINDS) {
-        const rows = resolvedPerChain.get(chainKey(scenario, kind)) ?? []
+        const rows = resolvedPerChain.get(chainKey(scenario, kind))
+        if (rows === undefined) continue
         rows.forEach((r, idx) => {
           flat.push({
             profileId: profile.id,

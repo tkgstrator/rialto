@@ -215,8 +215,8 @@ export function profileTargets(byScenario: PreferenceByScenario): string[] {
  * Total entries across every scenario and lane.
  *
  * Zero means the profile has never been configured, which is not the same
- * as a chain that routes nowhere: the request falls through to the
- * scenario router instead. The two need different empty states.
+ * as a chain that routes nowhere: the request passes through with the
+ * model the caller asked for. The two need different empty states.
  */
 export function profileEntryCount(byScenario: PreferenceByScenario): number {
   return SCENARIOS.reduce(

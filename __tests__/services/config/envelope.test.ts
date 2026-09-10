@@ -285,10 +285,10 @@ describe('readConfigFile — envelope catchall accepts JSON with empty-string va
     await deleteConfig()
   })
 
-  test('config.json with Router.default.agent.rules[0].name = "" survives schema parse', async () => {
+  test('config.json with an operator key holding an empty string survives schema parse', async () => {
     // Regression: the disk envelope catchall used JsonPrimitiveSchema
-    // which required strings be nonempty. A rule freshly added via the
-    // UI (emptyRule -> name: '') would blow up the entire config read
+    // which required strings be nonempty. A nested "" anywhere in a key
+    // the schema does not declare would blow up the entire config read
     // and get the file wiped.
     await writeConfig(
       JSON.stringify({
@@ -296,14 +296,8 @@ describe('readConfigFile — envelope catchall accepts JSON with empty-string va
         LOG: false,
         LOG_LEVEL: 'info',
         APIKEY: 'k',
-        Router: {
-          default: {
-            agent: {
-              primary: 'anthropic,claude-sonnet',
-              fallbacks: [],
-              rules: [{ name: '', when: {}, target: null }]
-            }
-          }
+        OperatorNotes: {
+          entries: [{ label: '', body: 'kept for later', tags: [] }]
         }
       })
     )

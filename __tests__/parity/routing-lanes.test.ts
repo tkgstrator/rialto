@@ -8,10 +8,10 @@
  * reach a lane other than default?**
  *
  * It did not. The mode became a per-surface setting, but the classifier
- * and the rule predicates read **Anthropic's vocabulary directly** —
- * `body.thinking`, `body.output_config.effort`, `tools[].type` — so the
- * other three fell to `default` forever even when routed. The settings
- * screen was not lying; there was simply no road to the lane behind it.
+ * read **Anthropic's vocabulary directly** — `body.thinking`,
+ * `body.output_config.effort`, `tools[].type` — so the other three fell
+ * to `default` forever even when routed. The settings screen was not
+ * lying; there was simply no road to the lane behind it.
  *
  * Each surface's request is written **in the spelling that surface's
  * clients actually send**. Normalisation is the job of
@@ -19,13 +19,15 @@
  * the Anthropic shape verifies nothing.
  */
 
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import pino from 'pino'
 import { ConfigStore } from '../../src/llms/registry/config'
 import { TokenizerRegistry } from '../../src/llms/registry/tokenizer'
 import { routeScenario } from '../../src/llms/scenario-router'
 import type { RouterRequest } from '../../src/llms/scenario-router/types'
 import { __setSurfacesForTests } from '../../src/services/inbound-surface-service'
+import { __setPreferencesForTests } from '../../src/services/router-preference-service'
+import { profileWith } from '../llms/chain-fixture'
 
 const log = pino({ level: 'silent' })
 
@@ -41,18 +43,15 @@ const PROVIDERS = [
 
 // Every lane gets a distinct target so a mis-classification shows up as
 // the wrong model rather than as a passing test.
-const ROUTER = {
-  default: 'anthropic,claude-sonnet-5',
-  agent: {
-    default: 'anthropic,claude-sonnet-5',
-    think: 'anthropic,claude-opus-4-7',
-    webSearch: 'anthropic,claude-haiku-4-5',
-    longContext: 'anthropic,claude-opus-4-7'
-  }
-}
+const CHAIN = profileWith({
+  'default.agent': ['anthropic,claude-sonnet-5'],
+  'think.agent': ['anthropic,claude-opus-4-7'],
+  'webSearch.agent': ['anthropic,claude-haiku-4-5'],
+  'longContext.agent': ['anthropic,claude-opus-4-7']
+})
 
 async function run(path: string, body: Record<string, unknown>): Promise<RouterRequest> {
-  const config = new ConfigStore({ Providers: PROVIDERS, providers: PROVIDERS, Router: ROUTER })
+  const config = new ConfigStore({ Providers: PROVIDERS, providers: PROVIDERS })
   const tokenizers = new TokenizerRegistry(log)
   await tokenizers.initialize()
   const req: RouterRequest = {
@@ -78,6 +77,12 @@ beforeEach(() => {
     'openai-responses': 'routed',
     'gemini-generate': 'routed'
   })
+  __setPreferencesForTests({ live: CHAIN })
+})
+
+afterEach(() => {
+  __setSurfacesForTests({})
+  __setPreferencesForTests(null)
 })
 
 describe('the think lane is reachable from all four surfaces', () => {

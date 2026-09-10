@@ -21,7 +21,7 @@ import { SettingsLayout } from './SettingsLayout'
 import { useUnsavedGuard } from './use-unsaved-guard'
 
 const activeFromConfig = (config: Config): string | null =>
-  typeof config.Router.persona === 'string' && config.Router.persona !== '' ? config.Router.persona : null
+  typeof config.ActivePersona === 'string' && config.ActivePersona !== '' ? config.ActivePersona : null
 
 function PersonasEditor({ config }: { config: Config }) {
   const { t } = useTranslation()
@@ -95,10 +95,11 @@ function PersonasEditor({ config }: { config: Config }) {
   const save = useCallback(async () => {
     setSaving(true)
     try {
-      // `persona` goes out as an explicit null when nothing is active:
-      // the server tells "clear it" from "this save didn't touch it" by
-      // whether the key is present, and JSON.stringify drops undefined.
-      await api.updateConfig({ ...config, Personas: drafts, Router: { ...config.Router, persona: activeId } })
+      // `ActivePersona` goes out as an explicit null when nothing is
+      // active: the server tells "clear it" from "this save didn't touch
+      // it" by whether the key is present, and JSON.stringify drops
+      // undefined.
+      await api.updateConfig({ ...config, Personas: drafts, ActivePersona: activeId })
       await reloadConfig()
       toast.success(t('settings.personas.saved'))
     } catch (err) {

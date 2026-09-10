@@ -13,7 +13,7 @@
  * anything.
  */
 
-import type { TokenizeRequest } from '@/schemas/domain/tokenizer'
+import type { TokenizeContentBlock, TokenizeRequest } from '@/schemas/domain/tokenizer'
 
 // Re-export the schema-derived request types so tokenizer implementations
 // can `import { Tokenizer, TokenizeRequest, ... } from './base'` without
@@ -25,6 +25,16 @@ export type {
   TokenizeSystem,
   TokenizeTool
 } from '@/schemas/domain/tokenizer'
+
+/**
+ * Whether an unknown value is a content block the tokenizers know how
+ * to weigh. A `tool_result` carries its content as `unknown` — the wire
+ * lets it be a string, a block array, or any JSON — so walking that
+ * array needs a guard before each item can be counted as a block.
+ */
+export function isTokenizeContentBlock(value: unknown): value is TokenizeContentBlock {
+  return value !== null && typeof value === 'object' && 'type' in value && typeof value.type === 'string'
+}
 /**
  * Minimum surface every concrete tokenizer must implement. Kept as an
  * abstract class (rather than a bare interface) so concrete classes get

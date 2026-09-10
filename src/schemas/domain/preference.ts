@@ -45,10 +45,11 @@ export const PreferenceConstraintsSchema = z
     // candidates ever match.
     allowEscalation: z.boolean().default(true),
     allowDemotion: z.boolean().default(true),
-    // Skip a candidate when its cached usage percentage is >= this
-    // threshold (0-100). Reads through the existing `getCachedUsagePct`
-    // shim so the L4 selector can gate without waiting for the
-    // scheduler's weight snapshot.
+    // Intended to skip a candidate whose usage percentage is >= this
+    // threshold (0-100). Stored and shown on the Routing screen, but
+    // nothing on the request path reads it yet: the selector's
+    // exhaustion gate reads only the scheduler's weight snapshot
+    // (`buildIsExhausted` in quota-router/runtime.ts).
     quotaSkipPct: z.number().min(0).max(100).default(100),
     // Skip a candidate whose observed 5-min error rate is >= this
     // threshold (0-1). Zero disables the check.
@@ -113,23 +114,33 @@ export const QuotaAwareConstraintsSchema = PreferenceConstraintsSchema.extend({
   // What to do when every enabled candidate is exhausted. '429'
   // returns a rate_limit_error with Retry-After (Open Question 2
   // decision); 'passthrough' keeps the client's own model.
-  exhaustedBehavior: z.enum(['429', 'passthrough']).default('429')
+  exhaustedBehavior: z.enum(['429', 'passthrough']).default('429'),
+  // Token count above which a request is classified into the
+  // `longContext` lane. `null` means "auto": the classifier derives the
+  // threshold from the context window of the chain's top default/agent
+  // target (× 0.7, leaving headroom for the reply), and falls back to
+  // 128k when that model has no scraped window. A number pins it.
+  longContextThreshold: z.number().int().positive().nullable().default(null)
 }).openapi('QuotaAwareConstraints')
 export type QuotaAwareConstraints = z.infer<typeof QuotaAwareConstraintsSchema>
 
-// One entry in the preference chain. `target` is the same
-// "providerName,modelName" the RouterSlot layer uses so downstream code
-// paths and log lines stay uniform. `priority` is 1-based, 1 = most
-// preferred. `enabled` is a soft toggle — the row stays in the DB (and
-// its priority slot) but the selector skips the entry when false.
-// `subagentTiers` is an empty array by default (no restriction) and,
-// when populated, restricts subagent calls to candidates whose tier is
-// in the list (Open Question 11 decision).
+// One entry in the preference chain. `target` is the "providerName,modelName"
+// string the failover walker and the log lines use, so every code path
+// names a model the same way. `priority` is 1-based, 1 = most preferred.
+// `enabled` is a soft toggle — the row stays in the DB (and its priority
+// slot) but the selector skips the entry when false.
 export const RouterPreferenceEntrySchema = z
   .object({
     priority: z.number().int().positive(),
     target: z.string().nonempty(),
     enabled: z.boolean().default(true),
+    // Server-populated on read: whether the entry's model AND its
+    // provider are enabled. Separate from `enabled` so the Routing
+    // screen can tell "entry switched off" from "target switched off"
+    // — the first is its own toggle, the second is the Providers
+    // screen's. The request path folds the two together
+    // (`loadRoutableProfile`); the apply path ignores this field.
+    targetEnabled: z.boolean().optional(),
     // Per-entry tier-substitution overrides. When set they take
     // precedence over the global `constraints.allowEscalation` /
     // `allowDemotion` for THIS candidate only, letting operators pin
@@ -185,8 +196,8 @@ export type PreferenceEntriesByScenario = z.infer<typeof PreferenceEntriesByScen
 
 // Full preference profile as seen on the wire. `constraints` is a
 // permissive object because it round-trips through JSONB; the selector
-// parses it into `PreferenceConstraintsSchema` /
-// `QuotaAwareConstraintsSchema` at boot depending on ROUTER_MODE.
+// parses it through `QuotaAwareConstraintsSchema` per request, so a
+// knob added to the schema needs no migration.
 export const RouterPreferenceProfileSchema = z
   .object({
     entriesByScenario: PreferenceEntriesByScenarioSchema,

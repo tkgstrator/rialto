@@ -16,16 +16,16 @@
 const { renderShell, pill, btn, surfacePill, navTo, sortTh, pager } = window.Shell
 
 // One row per upstream call (RequestLog), vs Sessions which groups them.
-// The columns that did not exist before are `Requested` / `Sent`, `Rule`
-// and `Token` — the three answers to "why did this go there, and who
-// asked for it".
+// The columns that did not exist before are `Requested` / `Sent`,
+// `Scenario` and `Token` — the three answers to "why did this go there,
+// and who asked for it".
 //
 // The middle column is `Scenario`, not `Rule`. It was drawn as a rule name
-// ("Haiku passthrough"), but no rule name is persisted — RequestLog has no
-// matchedRule column and model-selection.ts only logs the match — so the
-// build could fill it with nothing but the ScenarioKey. Calling it Rule made
-// "think" read as a rule someone had written. Restore the rule name here
-// once a matchedRule column exists to stamp it into.
+// ("Haiku passthrough") when routing rules existed, but no rule name was
+// ever persisted, so the build could fill it with nothing but the
+// ScenarioKey — and calling it Rule made "think" read as a rule someone
+// had written. Rules are gone now: the chain is the only selector, and the
+// scenario it classified the request into is the whole answer.
 const REQS = [
   { t: '14:05:47', status: 200, requested: 'claude-haiku-4-5',  sent: 'claude-haiku-4-5', provider: 'claude-code',  surface: '/v1/messages',  rule: 'default', lane: 'subagent', token: 'MacBook — Claude Code', inTok: '3.10k', outTok: '412',  ms: '812',   cost: '$0.00412' },
   { t: '14:03:02', status: 200, requested: 'claude-sonnet-4-5', sent: 'claude-fable-5', provider: 'claude-code',    surface: '/v1/messages',  rule: '—', lane: 'agent',    token: 'MacBook — Claude Code', inTok: '48.2k', outTok: '2.10k', ms: '4,411', cost: '$0.0891' },
@@ -39,10 +39,11 @@ const REQS = [
 
 const statusPill = (s) => (s === 200 ? pill('200', 'ok') : s === 429 ? pill('429', 'warn') : pill(String(s), 'bad'))
 
-// Two cells name something that lives on another screen — the rule that
-// matched, and the credential the caller presented. A nested data-nav
-// wins over the row's, so those two cells lead to their own editor while
-// the rest of the row still opens the log group.
+// One cell names something that lives on another screen — the credential
+// the caller presented. A nested data-nav wins over the row's, so that
+// cell leads to its own editor while the rest of the row still opens the
+// session. Scenario is not linked: it is a classification, not a thing
+// with a page of its own.
 const linked = (text, href) => '<span ' + navTo(href) + '>' + text + '</span>'
 
 // The row leads to its SESSION, not to the log group: a request's log
@@ -70,9 +71,9 @@ const row = (r) => `
          is a qualifier of it (there is no lane without a scenario), it is
          "agent" on almost every row, and the column it cost belonged to
          the model pair, which was truncating both of its halves. -->
-    <td class="px-2 text-[12px] ${r.rule === '—' ? 'text-muted-foreground/50' : ''}">${
-      r.rule === '—' ? r.rule : linked(r.rule, 'routing-rules.html')
-    }${r.lane === 'agent' ? '' : `<span class="ml-1.5 text-muted-foreground">· ${r.lane}</span>`}</td>
+    <td class="px-2 text-[12px] ${r.rule === '—' ? 'text-muted-foreground/50' : ''}">${r.rule}${
+      r.lane === 'agent' ? '' : `<span class="ml-1.5 text-muted-foreground">· ${r.lane}</span>`
+    }</td>
     <td class="px-2 truncate text-[12px] text-muted-foreground">${linked(r.token, 'settings-access.html')}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums">${r.inTok}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums">${r.outTok}</td>

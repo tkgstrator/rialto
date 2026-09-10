@@ -222,7 +222,7 @@ Rialto は persona を `cache_control` を持つ system ブロックの**内側*
 **シナリオによる除外は無い。** `/v1/messages` 上では default / think / longContext / webSearch /
 image の**全シナリオ**が persona を継承する。かつて存在した `background` の除外は、
 `background` シナリオそのものが `20260728_router_rules_drop_background` で
-`default` 上の述語ルールに畳み込まれた時点で消えている。
+`default` に畳み込まれた時点で消えている。
 
 代わりに**受け口による制限**がある。persona 挿入が走るのは **`/v1/messages` だけ**である
 (`scenario-router.ts` の `req.inboundPath` 判定、テストは
@@ -231,8 +231,13 @@ image の**全シナリオ**が persona を継承する。かつて存在した 
 足すと codex が `Unsupported parameter: system` で 400 を返し、寛容な upstream でも
 ワイヤ形式がモデル化していないフィールドを見ることになるため。
 
-軽量な内部タスク（タイトル生成など）にキャラ性を出したくない場合は、Rules 画面で
-「そのリクエストは振り替えない」ルールを書くか、persona 側に抑制指示を入れる。
+もう一つの制限は**ルーティングモード**で、persona が付くのは routed なトラフィックだけである。
+passthrough の受け口、あるいは予約プロファイル `passthrough` に固定したアクセストークンは
+ルーターを丸ごと飛ばすので、persona も付かない。
+
+軽量な内部タスク（タイトル生成など）にキャラ性を出したくない場合は、persona 側に抑制指示を
+入れる。ルーティング側にリクエスト単位の除外は無い（ルール画面は廃止された）。どうしても
+外したいクライアントがあれば、`passthrough` プロファイルに固定したトークンを渡す。
 
 ### `<RIALTO-SUBAGENT-MODEL>` との合成
 

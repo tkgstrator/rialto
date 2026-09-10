@@ -41,7 +41,7 @@ flowchart TB
     direction TB
     R1[HTTP Hono<br/>POST /v1/*]
     R2[buildRoutePlan<br/>+ routeScenario<br/>+ applyProactiveFailover]
-    R3[buildFailoverChain<br/>auth_mode gate +<br/>exhausted 除外]
+    R3[buildFailoverChain<br/>exhausted 除外]
     R4[attemptChainEntry × N<br/>resolveInvocationForModel<br/>+ runPipeline<br/>+ tryRotateAccount on 429]
     R5[runPipeline<br/>request transformers →<br/>fetchProvider →<br/>response transformers]
     R6[captureUsage<br/>非ブロッキング]
@@ -77,10 +77,10 @@ flowchart TB
 | | failover-state | provider / sub-account 単位の枯渇フラグ。`until` 時刻 or default 5min で失効 | – | `src/services/failover-state.ts` |
 | | session-account-router | session → 選択 sub-account の sticky マップ | – | `src/services/session-account-router.ts` |
 | | usage-service | 5h / weekly ウィンドウのキャッシュ。背景 polling で更新。**ルーティング判断には使われない**（Overview / Subscriptions の表示とアカウント選択の材料） | DB → mem | `src/services/usage-service.ts` |
-| | Postgres | `Provider`/`Model`/`RouterSlot`/`Session`/`RequestLog`/`SubAccountUsage` ほか | – | `src/prisma/schema.prisma` |
+| | Postgres | `Provider`/`Model`/`RouterPreferenceProfile`/`RouterPreferenceEntry`/`InboundSurfaceConfig`/`Session`/`RequestLog`/`SubAccountUsage` ほか（`RouterSlot` / `RoutingPreset` は無い） | – | `src/prisma/schema.prisma` |
 | ③ Per-Request | HTTP | エンドポイント (`/v1/messages` 等) → 面記述子 → endpoint transformer 解決 | HTTP → ctx | `src/api/v1/route.ts` |
 | | RoutePlan | body parse + scenario routing + proactive failover + persona append | body → RoutePlan | `src/api/v1/route-plan.ts`<br/>`src/llms/scenario-router.ts` |
-| | FailoverChain | primary + fallbacks を auth_mode/exhausted で絞る | RoutePlan → string[] | `src/api/v1/candidate-chain.ts` |
+| | FailoverChain | primary + fallbacks を exhausted マークで絞る（auth_mode では絞らない） | RoutePlan → string[] | `src/api/v1/candidate-chain.ts` |
 | | ChainEntry loop | 各 entry を試し、429 ならアカウントを回し、それでも駄目なら次へ | string → Response | `src/api/v1/chain-failover.ts` |
 | | runPipeline | request transformers → fetch → response transformers の本処理 | invocation → Response | `src/llms/pipeline.ts` |
 | | captureUsage | **変換前の** response.clone() から usage を抽出、`RequestLog` に書く（非同期、応答ブロックしない） | Response → DB | `src/llms/pipeline/usage-extraction.ts` |
@@ -122,14 +122,14 @@ flowchart LR
     G1[—]
   end
 
-  REQ --> P1 --> P2 -.除外.-> P3
+  REQ --> P1 --> P2 --> P3
 ```
 
 - リクエストはまず **primary の provider** に入る
 - その provider 内で **未枯渇の sub-account** を 1 つ選んで試す（同 session は粘着、初回は balancingScore で選択）
 - 429 を受けたら **同 provider の別 account** に回す（最大 10 回）
 - 同 provider の peer が尽きたら **次の chain entry** へ
-- **auth_mode が違う provider（例: subscription→api_key）は最初から chain に入れない**
+- **chain の順序は operator が書いたとおり** — subscription の後ろに api_key（例: gemini）を書けば、そこへ落ちる。auth_mode で弾くゲートは無い
 
 ```mermaid
 flowchart LR
@@ -154,7 +154,7 @@ flowchart TD
   classDef terminal fill:#d8f5d0,stroke:#2e7d32,color:#000
   classDef fail fill:#fde0e0,stroke:#c62828,color:#000
 
-  START([request 開始]) --> BC[buildFailoverChain<br/>primary + 同auth_mode の fallbacks<br/>exhausted 除外]
+  START([request 開始]) --> BC[buildFailoverChain<br/>primary + fallbacks<br/>exhausted 除外]
   BC --> OUTER{次の chain entry<br/>あり?}
   OUTER -- No --> FINAL{lastForwarded<br/>あり?}
   FINAL -- Yes --> R429[最後の 429 body を<br/>verbatim 返却]:::fail
@@ -164,7 +164,7 @@ flowchart TD
   INNERINIT --> ROTCHK{rotation ≤ 10?}
   ROTCHK -- No --> BREAK[break → 次 entry へ]
   ROTCHK -- Yes --> RI[resolveInvocationForModel]
-  RI --> RI1{provider<br/>登録済?}
+  RI --> RI1{provider と model が<br/>registry にある?<br/>= 有効なものだけ}
   RI1 -- No --> BREAK
   RI1 -- Yes --> ATT[attempt<br/>= runPipeline]
   ATT --> RES{結果}
@@ -193,18 +193,19 @@ flowchart TD
 **重要なルール:**
 
 1. **chain は最初に 1 回だけ作る** — `buildFailoverChain` は entry 開始時のスナップショット。途中で新しい fallback が現れることはない。
-2. **chain の auth_mode は primary に揃う** — primary が subscription なら fallbacks も subscription のみ残る。api_key 系は混じってても弾かれる。
-3. **同 provider の fallback は弾かれる** — 5h/weekly quota は **account 単位** で全 model 共通なので、同 provider の別 model に逃げても同じ account で 429 になる。`applyUiConfig` は保存時に drop + warning、`buildFailoverChain` は実行時にも drop（古い config 防御）。UI の dropdown でも primary と同じ provider の option は最初から出ない。
-4. **sub-account は OAuth transformer の `auth()` 内で選ばれる** — chain ループはアカウント名を知らない。429 が返ってきてから `getActiveAccountForSession(sessionId)` で「直前に何が選ばれたか」を逆引きする。
-5. **アカウント選択は 4 段** — `src/services/session-account-router.ts` の順序どおり:
+2. **chain の順序は operator の記述そのもの** — auth_mode gate は廃止された。primary が subscription でも、後ろに書いた api_key の fallback はそのまま走る。落としたくなければ chain に書かない。
+3. **同 provider の fallback も通る** — 枯渇マークは `(provider, model)` 単位なので、Fable の 429 で同 provider の Opus へ逃げるのは正当。ただし 5h/weekly quota は **account 単位** で全 model 共通なので、account が枯れた 429 では別 model でも同じ account で 429 になる（peer が尽きたときの `markProviderExhausted` は provider ごと塞ぐ）。
+4. **無効な provider / model は chain に載らない** — `loadRoutableProfile` が `Model.enabled && Provider.enabled` を entry に折り込み、registry も有効なものしか持たない。chain の entry でも passthrough の `provider,model` でも、無効な pair は `resolveInvocationForModel` が null を返して skip される。
+5. **sub-account は OAuth transformer の `auth()` 内で選ばれる** — chain ループはアカウント名を知らない。429 が返ってきてから `getActiveAccountForSession(sessionId)` で「直前に何が選ばれたか」を逆引きする。候補になるのは**有効な provider** の有効な account だけ（`getSubAccountTokensForKind` が `Provider.enabled` で絞る）。
+6. **アカウント選択は 4 段** — `src/services/session-account-router.ts` の順序どおり:
    1. in-process の枯渇マップが reactive に落としたアカウントを除外。
    2. **DB に記録された rate-limit 状態**で、常時拘束の窓が 100 % かつ `resetAt` が未来のアカウントを除外。claude なら 7d 全体・7d Opus・5h の3窓、codex なら primary 窓。どれか1つでも 100 % なら上流 429 が確定するので先回りで避ける。
    3. 生き残りの中に sticky マッピング（同じ `sessionId` = `x-claude-code-session-id`）が指すアカウントがあれば、それを再利用（prompt cache の連続性）。
    4. それも無ければ "weekly 窓の残り % ÷ リセットまでの残り時間" が **最高** のアカウント。一番余裕のあるアカウント優先ではなく、**消化を急ぐ必要があるアカウント** から優先する。
 
    1〜2 で全滅した場合は全候補に戻して「一番マシなもの」を返す。ここで null を返すとクライアントに 401 が出るが、送って 429 をもらう方が厳密に良い。
-6. **rotation 回数の上限は MAX_ACCOUNT_ROTATIONS = 10** — 同じ entry で 11 回 attempt しても駄目なら provider exhausted 扱い（防御的キャップ）。
-7. **exhausted の失効** — provider/account マークは `until` 時刻（429 レスポンスの実 resetAt）か、それが取れなければ **5 分** で自動失効。窓が転がれば自然に復活する。
+7. **rotation 回数の上限は MAX_ACCOUNT_ROTATIONS = 10** — 同じ entry で 11 回 attempt しても駄目なら provider exhausted 扱い（防御的キャップ）。
+8. **exhausted の失効** — provider/account マークは `until` 時刻（429 レスポンスの実 resetAt）か、それが取れなければ **5 分** で自動失効。窓が転がれば自然に復活する。
 
 ### sub-account のスコアリング詳細
 
@@ -227,20 +228,20 @@ score = (100 - 当該 weekly 窓の使用率%) / 窓のリセットまでの残�
 | `claude-code` | subscription | claude-sonnet-4-6, claude-opus-4-8 | A1, A2, A3 |
 | `gemini` | api_key | gemini-2.5-pro | – |
 
-**`Router`**
+**`live` profile の `default` / `agent` レーン**
 
-| slot | value |
+| priority | target |
 |------|-------|
-| `default` | `claude-code,claude-sonnet-4-6` |
-| `fallbacks.default` | `[claude-code,claude-opus-4-8, gemini,gemini-2.5-pro]` |
+| 1 | `claude-code,claude-sonnet-4-6` |
+| 2 | `claude-code,claude-opus-4-8` |
+| 3 | `gemini,gemini-2.5-pro` |
 
 **chain 構築結果**
 
 | step | 結果 |
 |------|------|
-| primary + fallbacks 並び | `[claude-code,sonnet-4-6, claude-code,opus-4-8, gemini,gemini-2.5-pro]` |
-| auth_mode gate (primary=subscription) | `gemini,...` を除外 → `[claude-code,sonnet-4-6, claude-code,opus-4-8]` |
-| exhausted 除外 | (どれも生きてれば) そのまま |
+| selector の primary + fallbacks | `[claude-code,sonnet-4-6, claude-code,opus-4-8, gemini,gemini-2.5-pro]` |
+| exhausted 除外 | (どれも生きてれば) そのまま。api_key の `gemini` も**そのまま残る** — auth_mode で弾くゲートは無い |
 
 #### ケース A: 何事もなく成功
 
@@ -306,7 +307,7 @@ sequenceDiagram
   T-->>W: 200 OK
 ```
 
-#### ケース C: provider 全アカ枯渇 → 同 provider の別 model へ → chain 全 exhaust
+#### ケース C: provider 全アカ枯渇 → 同 provider の別 model へ → api_key の gemini へ
 
 ```mermaid
 sequenceDiagram
@@ -340,10 +341,17 @@ sequenceDiagram
     W->>W: peer なし → break
   end
 
-  Note over W: chain 全 exhaust<br/>lastForwarded(最後の 429 body) を verbatim 返却
+  rect rgb(216,245,208)
+    Note over W: entry 3: gemini, gemini-2.5-pro (api_key)
+    W->>U: attempt #1
+    U-->>W: 200 OK
+  end
 ```
 
 > `session-account-router` は "全部 exhaust なら notExhausted 空 → fallback で全候補に戻す" 設計（401 を返すよりは送って 429 を素直にもらう方が良い、という判断）。そのため entry 2 でも 1 回は upstream を叩く。
+>
+> entry 3 の `gemini` は api_key provider だが、chain に書いてある以上そこへ落ちる。これが嫌なら chain に書かない。
+> `gemini` も枯れていれば chain 全 exhaust で、`lastForwarded`（最後の 429 body）を verbatim 返却する。
 
 #### ケース D: proactive failover が走るケース
 
@@ -382,15 +390,17 @@ sequenceDiagram
 
 | 勘違い | 実際 |
 |--------|------|
-| 「fallback の `gemini` (api_key) に流れる」 | auth_mode gate で弾かれる |
+| 「subscription の primary から api_key の fallback には落ちない」 | 落ちる。auth_mode gate は廃止され、chain の順序どおりに辿る。落としたくなければ chain に書かない |
 | 「sub-account は順番に A1 → A2 → A3 と試される」 | balancingScore でソート、同じ session は sticky |
 | 「429 出るたびに chain を作り直す」 | chain は entry 開始時 1 回スナップショット。途中で増減しない |
 | 「sticky は永続」 | アカが exhaust マークされた瞬間 `releaseAccountForSession` で破棄 |
 | 「provider exhausted は config 修正まで解けない」 | `until` 時刻 (default 5min / 実 resetAt) で自動失効 |
 | 「週次が減ってきたら先回りで切り替わる」 | weekly drain guard は廃止済み。上流の上限まで走り、実際の 429 で切り替わる |
-| 「bare な model 名を投げれば provider を探してくれる」 | `resolveByModelName` は削除済み。`routed` な面ではレーンとシナリオの設定値が使われ、`passthrough` な面では `provider,model` をこちらが指定する |
-| 「`<RIALTO-SUBAGENT-MODEL>` の中身のモデルに飛ぶ」 | 読むのはタグの**有無**だけ。中身は無視され、`subagent` レーンの設定が使われる |
-| 「同 provider 別 model を fallback に入れれば安心」 | 5h/weekly は account 単位の制限なので model を変えても同じ account で同様に 429。UI / applyUiConfig / buildFailoverChain の三層で弾く設計 |
+| 「bare な model 名を投げれば provider を探してくれる」 | `routed` な面では chain のレーン設定が使われる。chain に primary が無いとき、あるいは `passthrough` な面では、bare 名を**有効な**プロバイダがちょうど 1 つ hosts している場合に限りそこへ送る。曖昧・未知・無効なら skip |
+| 「`<RIALTO-SUBAGENT-MODEL>` の中身のモデルに飛ぶ」 | 読むのはタグの**有無**だけ。中身は無視され、`subagent` レーンの chain が使われる |
+| 「同 provider 別 model を fallback に入れれば安心」 | 入れてよいし、model 単位の 429（Fable だけ枯れた）には効く。ただし 5h/weekly は account 単位の制限なので、account が枯れた 429 では model を変えても同じ account で同様に 429 |
+| 「Providers 画面で model を OFF にしても、chain に残っていれば送られる」 | 送られない。`loadRoutableProfile` が entry を無効扱いにし、registry にも無いので `resolveInvocationForModel` が skip する。passthrough で手で名指ししても同じ |
+| 「chain が空なら 429 になる」 | ならない。entry が 1 件も無いレーンは `exhaustedBehavior` に関係なく呼び出し側の `body.model` を素通しする。429 は「entry はあるが全部ゲート落ち」かつ `exhaustedBehavior='429'` のときだけ |
 
 ---
 
@@ -404,11 +414,13 @@ sequenceDiagram
 4. `ensureInboundSurfaces()` — 全面に明示的な `routingMode` 行を入れる。
 5. `startUsageCapture()` / `startAuthHealthCheck()` / `startRoutingScheduler()` — 背景ジョブ。Redis 到達性などで boot をブロックしない。
 
-**`runJsonToDbMigration()` は存在しない。** 旧 `config.json` の `Providers` / `Router` を Postgres へ
+**`runJsonToDbMigration()` は存在しない。** 旧 `config.json` の `Providers` を Postgres へ
 lift する一回限りの移行は削除済みで、流れは逆向きになった: `syncToConfigFile()`
-（`src/services/config/sync-to-disk.ts`）が CRUD のたびに DB の `Providers` / `Router` を
-`config.json` へ**書き戻す**。ディスク上のこの2キーは読み取り専用のミラーであり、手で編集しても
-次の保存で上書きされる。
+（`src/services/config/sync-to-disk.ts`）が CRUD のたびに DB の `Providers` を
+`config.json` へ**書き戻す**。ディスク上のこのキーは読み取り専用のミラーであり、手で編集しても
+次の保存で上書きされる。`Router` はもうミラーされない — ミラーする実体（RouterSlot）が無い。
+旧ビルドが残した `Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK`
+は読み取り時に剥がされ（`RETIRED_ENVELOPE_KEYS`）、次の保存でディスクからも消える。
 
 `loadFullConfig()`（`src/services/config/compose.ts`）はいまも存在するが、起動時ではなく
 `buildLlmsContext` から遅延で呼ばれる。DDL とシード行もここでは作らない — `entrypoint.sh` が
@@ -426,7 +438,7 @@ lift する一回限りの移行は削除済みで、流れは逆向きになっ
 
 | メンバ | 中身 | 読まれる場所 |
 |--------|------|--------------|
-| `config: ConfigStore` | Providers / Router / 各種スカラを key で引ける薄いラッパ | routeScenario, buildFailoverChain |
+| `config: ConfigStore` | Providers（有効な provider の有効な model だけ）/ Personas / ActivePersona / 各種スカラを key で引ける薄いラッパ。`Router` は載らない | routeScenario, applyProactiveFailover, chain-failover |
 | `transformers: TransformerRegistry` | endpoint transformer 群 (`anthropic`, `openai`, `openai-responses`, `gemini`, `claude-code-oauth`, `codex-oauth`) | endpointTransformerMap |
 | `providers: ProviderRegistry` | name → ResolvedProvider Map。`api_base_url` / `api_key` 揃ったものだけ登録 | resolveInvocationForModel |
 | `tokenizers: TokenizerRegistry` | 既定は tiktoken (cl100k_base)。`@huggingface/tokenizers` を使うモデル精確なバックエンドと、API 集計バックエンドも登録できる（`src/llms/tokenizers/`） | scenario-router の token 数計上 |
@@ -484,79 +496,98 @@ v1Route.post('/v1/*', async (c) => {
 
 ## 3. RoutePlan 構築
 
-`src/api/v1/invocation.ts:buildRoutePlan`。
+`src/api/v1/route-plan.ts:buildRoutePlan`。
 
 ```mermaid
 flowchart TD
-  R[c.req] --> PARSE[body 安全 parse<br/>headers コピー]
-  PARSE --> RS[routeScenario]
-  subgraph RS_BOX[routeScenario]
-    SEL[selectModel<br/>subagent タグの有無 = レーン /<br/>longContext / webSearch /<br/>thinking / effort・tier /<br/>ルールスタック]
-    SEL --> APF[applyProactiveFailover<br/>exhausted マーク<br/>capability ゲート]
-  end
-  APF --> PERSONA[applyGlobalSystemPrompt<br/>active persona を<br/>cache-safe に append<br/>※ /v1/messages のみ]
+  R[c.req] --> PARSE[body 安全 parse<br/>headers コピー<br/>Gemini は URL の model/action を body へ]
+  PARSE --> MODE{routed な面?<br/>かつ token が passthrough<br/>profile を指していない?}
+  MODE -- No --> PT[passthrough<br/>body.model そのまま<br/>scenario=default, fallbacks=空]
+  MODE -- Yes --> PROF[profile 解決<br/>token → surface → live<br/>loadRoutableProfile]
+  PROF --> CLS[classifyRequest<br/>subagent タグの有無 = レーン /<br/>longContext / webSearch /<br/>thinking / effort・tier]
+  CLS --> SEL[resolveQuotaAwareSelection<br/>chain を歩く]
+  SEL --> HAS{primary?}
+  HAS -- 無し・全部ゲート落ち<br/>exhaustedBehavior=429 --> R429[429 + Retry-After<br/>upstream へ出さない]
+  HAS -- 無し --> KEEP[body.model そのまま<br/>fallbacks=空]
+  HAS -- あり --> APF[applyProactiveFailover<br/>exhausted マーク<br/>capability ゲート]
+  KEEP --> PERSONA[applyGlobalSystemPrompt<br/>ActivePersona を<br/>cache-safe に append<br/>※ /v1/messages のみ]
+  APF --> PERSONA
   PERSONA --> PLAN[(RoutePlan)]
+  PT --> DENY{passthrough 面の<br/>deniedTargets に該当?}
+  DENY -- Yes --> R400[400]
+  DENY -- No --> PLAN
 ```
 
-### selectModel の 3 ステージ
+### routeScenario の段階
 
-`src/llms/scenario-router/model-selection.ts`。**bare 名からプロバイダを逆引きする段は無い**
-（`resolveByModelName` は削除済み）。
+`src/llms/scenario-router.ts`。**bare 名からプロバイダを逆引きする段は無い** — それは chain walker
+側の `resolveInvocationForModel` が、chain に primary が無かった（あるいは passthrough の）ときに、
+有効なホストがちょうど 1 つあれば行う。
 
-**ステージ 1 — 呼び手の種別**
+**段階 0 — モード**
+面の `routingMode` が `passthrough`、または認証したトークンの `profileKey` が予約キー `passthrough`
+なら、ここで終わり。`body.model` は触らず、`scenarioType='default'` / `isSubagent=false` /
+`fallbacks=[]` を stamp して返る。persona も付かない。
+
+**段階 1 — profile**
+トークンの `profileKey` → 面の `profileKey` → `live`（`DEFAULT_PROFILE_KEY`）。`loadRoutableProfile`
+が 1 回だけ読み、各 entry の `enabled` に `Model.enabled && Provider.enabled` を折り込む。
+`chainRoutingOf` が同じ profile を分類器向けに射影する — どのレーンに使える entry があるか
+（`hasLane`）、default / agent レーン先頭の `contextWindow`、`constraints.longContextThreshold`。
+
+**段階 2 — 呼び手の種別**（`classifyRequest`）
 `stripSubagentTag(body.system)` が system[1] のタグの**有無**を返す。`RIALTO-SUBAGENT-MODEL` /
 `CCR-SUBAGENT-MODEL` のどちらでもよい。**タグの値は読まない** — 有無だけがレーン
 (`agent` / `subagent`) を決める。閉じたタグは in-place で除去され、内部マーカーが上流へ漏れない。
 
-**ステージ 2 — シナリオ分類** (`classifyScenario`、この優先順)
+**段階 3 — シナリオ分類** (`classifyScenario`、この優先順)
 
-1. **longContext（サイズ）** — `tokenCount > effectiveLongContextThreshold(router, chain)`。
+1. **longContext（サイズ）** — `tokenCount > effectiveLongContextThreshold(...)`。
 2. **webSearch** — `body.tools[]` に `type` が `web_search` で始まるものがある。
 3. **think** — `body.thinking.type` が `'enabled'` / `'adaptive'`。`'disabled'` は**除外**する
    （Claude Code は Plan Mode 以外の全リクエストに `disabled` を送るので、真偽値で見ると
-   安価な default トラフィックが丸ごと高価な think スロットへ流れる）。
+   安価な default トラフィックが丸ごと高価な think レーンへ流れる）。
 4. **effort/tier escalation** — `output_config.effort` が `high`/`xhigh`/`max`、あるいは effort が
    無くて `body.model` が opus ティア → `longContext` レーン。`low`/`medium` はティア昇格を明示的に抑制。
 5. それ以外 → `default`。
 
-いずれの分岐も、**そのレーンを担う設定が無ければ成立しない**（`scenarioConfigured`）。担い手は
-2 つあり、どちらか片方で足りる:
+いずれの分岐も、**そのレーンに使える entry が無ければ成立しない**（`chain.hasLane(kind, scenario)`。
+entry があっても全部 OFF、あるいは target が無効なら「無い」扱い）。担い手が無いレーンは素通りして
+`default` に落ちる。旧 haiku→background 分岐はここには無い — `20260728_router_rules_drop_background`
+により `default` に畳み込まれた。
 
-- RouterSlot の primary（Rules セレクタ側の設定）
-- 優先チェーンの当該レーンに **enabled なエントリが 1 件以上**あること
-  （Chain セレクタが走るリクエストのみ。`routeScenario` が `chainRoutingOf` で射影して
-  `selectModel` に渡す）
+**段階 4 — 選択**（`resolveQuotaAwareSelection`）
+`(scenario, kind)` の entries を `selectByPreference` が歩く（entry.enabled / tier / context_too_small /
+exhausted / error_rate）。結果と `body.model` の関係:
 
-チェーン側を数えるのは Chain セレクタが実際に走るときだけで、Rules セレクタのときは
-`chain` が `undefined` なので RouterSlot だけを見る従来どおりの判定になる。Rules モードで
-チェーンのレーンを数えてしまうと、そのレーンには誰も応答できず `req.body.model` へ落ちるため。
+| 結果 | `body.model` | fallbacks |
+|---|---|---|
+| primary あり | chain の primary（`applyProactiveFailover` 通過後） | chain の残り |
+| entries はあるが全部ゲート落ち、`exhaustedBehavior='429'`（既定） | 触らない | — `buildRoutePlan` が 429 + `Retry-After` を返し、upstream へ出さない |
+| 同上、`exhaustedBehavior='passthrough'` | 触らない | `[]` |
+| entries が 0 件 | 触らない。**`exhaustedBehavior` は見ない**（未設定のレーンは「意見無し」であって「全部枯渇」ではない） | `[]` |
+| chain の読込失敗（Postgres 不在）/ ルーティングが例外 | 触らない。error ログ、`scenarioType='default'`、`isSubagent` はタグから | `[]` |
 
-どちらの担い手も無いレーンは素通りして `default` に落ちる。旧 haiku→background 分岐はここには
-無い — `20260728_router_rules_drop_background` により `default` シナリオ上の述語ルールになった。
-
-> この 2 本立てになる前は RouterSlot だけを見ていたため、**チェーンだけを設定して RouterSlot を
-> 空にしたインストールは全リクエストが `default` に分類され**、think / longContext / webSearch の
-> チェーンが一度も参照されなかった。
-
-**ステージ 3 — 振り先解決** (`resolveTarget`)
-シナリオのルールスタックを先に歩き、述語が最初にマッチしたルールの `target` が primary になる
-（カスケードは ルール target → シナリオ primary → シナリオ fallbacks）。target を持たないルールが
-マッチした場合は「振り替えない」の意思表示で、`req.body.model` が使われる。どのルールもマッチ
-しなければシナリオの catch-all primary、それも未設定なら `req.body.model`。
+`body.model` が書き換わるのは chain の entry に置き換えるときだけ。振り先を捏造する経路は無い。
+テストは `__tests__/llms/route-scenario-chain.test.ts`。
 
 #### longContext しきい値の解決順
 
 `effectiveLongContextThreshold`:
 
-1. `Router.longContextThreshold` が正の数なら、それ。
-2. なければ default エージェントレーンを担うモデルの `contextWindow × 0.7`
+1. profile の `constraints.longContextThreshold` が正の整数なら、それ（`null` = auto。Routing 画面で
+   編集し、`/api/router-preferences` で往復する。旧 RouterSlot の数値はマイグレーションが `live`
+   profile へ写した）。
+2. なければ chain の default / agent レーン先頭の使える entry の `contextWindow × 0.7`
    （`LONG_CONTEXT_AUTO_RATIO`。応答と Rialto のラッパ分のヘッドルームを 30 % 残す）。
-   Chain セレクタが走るリクエストでは**チェーンの先頭 enabled エントリ**の window が優先され
-   （`chainRoutingOf` が解決）、それが無ければ RouterSlot の default primary 由来の
-   `defaultAgentContextWindow`。
 3. どちらも解決できないときだけ `DEFAULT_LONG_CONTEXT_THRESHOLD = 128_000`。
 
 **60_000 は現在の既定値ではない。**
+
+トークン数は `tool_result` の配列 content をブロック単位で数える。中に入れ子になった image /
+document の base64 は（トップレベルの image ブロックと同じく）0 として数える — 文字列化して
+数えていた頃はスクリーンショット 1 枚が 100 万トークンになり、以後のリクエストが全部
+`longContext` に分類された。
 
 ### applyProactiveFailover
 
@@ -588,8 +619,8 @@ flowchart TD
 | `primaryModel` | `provider,model` 文字列 |
 | `requestedModel` | クライアントが投げてきた元の `body.model`。`RequestLog` に「何を頼まれたか」を「何を送ったか」の隣に残すため |
 | `isSubagent` | サブエージェントタグの有無。reactive な failover chain が primary と同じレーンを歩くのに使う |
-| `fallbacks` | 事前解決済みのフォールバックチェーン（ルールが刺さったならそのカスケード、でなければシナリオの catch-all）。`buildFailoverChain` は引き直さずこれを読むので、reactive 経路と proactive 経路が必ず同じチェーンを歩く |
-| `peerTargets` | cross-provider peer 展開が注入したエントリ。同 `auth_mode` ゲートをこれだけバイパスさせるための印 |
+| `fallbacks` | selector が解決した chain の残り（primary の後ろ）。chain に primary が無かったときは空。`buildFailoverChain` は引き直さずこれを読むので、reactive 経路と proactive 経路が必ず同じチェーンを歩く |
+| `accountSessionKey` | サブアカウント picker が粘着するキー。ヘッダに session id が無ければ `token:<id>`、それも無ければ `anonymous` |
 | `accessTokenId` | このリクエストを認証した `AccessToken`。Activity がクライアント単位に支出を帰属させるため |
 | `path` / `search` | upstream に投げ直す URL 構築用 |
 
@@ -597,13 +628,15 @@ flowchart TD
 
 ## 4. Failover Chain
 
-`buildFailoverChain(plan, ctx)`:
+`buildFailoverChain(plan)`:
 
-- `plan.fallbacks`（`selectModel` が既に解決済みのチェーン — ルールが刺さったならそのカスケード、でなければシナリオの catch-all）を読む。ここで引き直さないのは、proactive 経路と reactive 経路が必ず同じチェーンを歩くようにするため。
+- `plan.fallbacks`（selector が既に解決済みの chain の残り）を読む。ここで引き直さないのは、proactive 経路と reactive 経路が必ず同じチェーンを歩くようにするため。
 - 先頭に primary、続けて fallbacks。重複排除。
-- **auth_mode gate** — primary が subscription なら subscription だけ残す（api_key が混じってても弾く）。
-- 既に exhausted な provider を除外。
+- 既に exhausted な `(provider, model)` を除外。
 - 全部 exhausted の場合は元の順序を返す（窓が転がってる可能性に賭ける）。
+
+**auth_mode gate も same-provider gate も無い。** chain の順序は operator の記述そのものであり、
+「subscription の後に api_key が来てよいか」は chain にそう書いたかどうかで決まる。
 
 ---
 
@@ -752,7 +785,7 @@ totalInputTokens  = rawInput + cacheWrite + cacheRead
 
 1. **HTTP** — `/v1/messages` → `anthropic` endpoint transformer マッチ。
 2. **RoutePlan** — `classifyScenario` が opus ティアを heavy と見て `longContext` レーンへ寄せ、そのレーンの primary（ここでは `claude-code,claude-opus-4-8`）を採る。`applyProactiveFailover` は枯渇マークが無いので primary をそのまま維持する（**窓の使用率は見ない**）。
-3. **buildFailoverChain** — `[claude-code,claude-opus-4-8]` + (subscription な fallbacks があれば追加)。api_key 系 fallback は auth_mode gate で除外。
+3. **buildFailoverChain** — `[claude-code,claude-opus-4-8]` + そのレーンの chain の残り（api_key の entry も書いてあればそのまま）。
 4. **attemptChainEntry** — `resolveInvocationForModel` で per-attempt body 用意。
 5. **runPipeline** (bypass) — `applyBypassAuth` が `claude-code-oauth.auth()` を呼んで、`.credentials.json` から bearer token を取得し `Authorization` ヘッダにセット。`anthropic-beta` から `context-1m-*` を落として `oauth-2025-04-20` を付加。
 6. **fetchProvider** — `api.anthropic.com/v1/messages` に POST、SSE で返ってくる。
@@ -765,7 +798,7 @@ totalInputTokens  = rawInput + cacheWrite + cacheRead
 9. **success** — 2 周目で別アカウントが取れたら 2xx で SSE 開始、captureUsage が裏で usage を記録。
 10. **client** — `formatResponse` が SSE をパススルー、`x-ratelimit-*` も中継。
 
-ピアアカウントが残っていなければ `markProviderExhausted(provider.name)` → 次 chain entry へ。同 auth_mode の fallback も全て exhaust なら、最後に拾った 429 body を verbatim 返す。
+ピアアカウントが残っていなければ `markProviderExhausted(provider.name)` → 次 chain entry へ。chain の残りも全て exhaust なら、最後に拾った 429 body を verbatim 返す。
 
 ---
 

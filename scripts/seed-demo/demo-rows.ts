@@ -6,10 +6,10 @@
  * delete exactly what it wrote and nothing else. Prisma's `@default(cuid())`
  * only applies when the id is omitted, so supplying one is free.
  *
- * Configuration rows that are singletons per key — RouterSlot, the `live`
- * preference profile, InboundSurfaceConfig — cannot carry a marker. Those
- * are written only when they are still unset, and are left alone by
- * `--clean`; see seedRouting().
+ * Configuration rows that are singletons per key — the `live` preference
+ * profile, InboundSurfaceConfig — cannot carry a marker. Those are
+ * written only when they are still unset, and are left alone by
+ * `--clean`; see seed-demo/routing.ts.
  */
 
 import type { PrismaClient } from '../../src/generated/prisma/client'
@@ -30,7 +30,6 @@ export interface CleanCounts {
   message: number
   requestLog: number
   session: number
-  routingPreset: number
   routingWeightChange: number
   accessToken: number
   usageSnapshot: number
@@ -48,7 +47,6 @@ export async function cleanDemoRows(prisma: PrismaClient): Promise<CleanCounts> 
   const message = await prisma.message.deleteMany({ where: { id: startsWithDemo } })
   const requestLog = await prisma.requestLog.deleteMany({ where: { id: startsWithDemo } })
   const session = await prisma.session.deleteMany({ where: { id: startsWithDemo } })
-  const routingPreset = await prisma.routingPreset.deleteMany({ where: { id: startsWithDemo } })
   const routingWeightChange = await prisma.routingWeightChange.deleteMany({ where: { id: startsWithDemo } })
   const accessToken = await prisma.accessToken.deleteMany({ where: { id: startsWithDemo } })
   const usageSnapshot = await prisma.usageSnapshot.deleteMany({ where: { id: startsWithDemo } })
@@ -62,7 +60,6 @@ export async function cleanDemoRows(prisma: PrismaClient): Promise<CleanCounts> 
     message: message.count,
     requestLog: requestLog.count,
     session: session.count,
-    routingPreset: routingPreset.count,
     routingWeightChange: routingWeightChange.count,
     accessToken: accessToken.count,
     usageSnapshot: usageSnapshot.count,

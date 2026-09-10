@@ -27,14 +27,12 @@ describeOrSkip('resolveQuotaAwareSelection (DB + snapshot)', () => {
   })
 
   test('empty per-scenario chain passes through regardless of exhaustedBehavior (not-configured shortcut)', async () => {
-    // An empty preference chain means the operator hasn't set up
-    // quota-aware routing for this scenario. Treat that as "no
-    // opinion" and pass through to the scenario router's answer,
-    // ignoring `exhaustedBehavior: '429'` — the 429 branch is meant
-    // for real chains whose candidates are all currently gated, not
-    // for the "nothing to route" case. Without this, a fresh install
-    // with ROUTER_MODE=quota-aware but no chain entries 429s every
-    // request instead of falling through to the scenario router.
+    // An empty preference chain means the operator hasn't set up this
+    // lane. Treat that as "no opinion" and keep the caller's own model,
+    // ignoring `exhaustedBehavior: '429'` — the 429 branch is meant for
+    // real chains whose candidates are all currently gated, not for
+    // the "nothing to route" case. Without this, a fresh install with a
+    // '429' profile and no chain entries 429s every request.
     const out = await resolveQuotaAwareSelection({
       requestedModel: 'claude-opus-5',
       isSubagent: false,
@@ -145,7 +143,7 @@ describeOrSkip('resolveQuotaAwareSelection (DB + snapshot)', () => {
       scenario: 'default'
     })
     expect(out.selection.primary).toBeNull()
-    // Empty chain in this scenario → passthrough (no Retry-After).
+    // Empty chain in this scenario → the caller's own model (no Retry-After).
     expect(out.retryAfterSec).toBeNull()
   })
 
@@ -187,7 +185,7 @@ describeOrSkip('resolveQuotaAwareSelection (DB + snapshot)', () => {
       isSubagent: true,
       scenario: 'default'
     })
-    // Subagent lane is empty for this scenario → passthrough
+    // Subagent lane is empty for this scenario → the caller's own model
     expect(subagentOut.selection.primary).toBeNull()
     expect(subagentOut.retryAfterSec).toBeNull()
   })

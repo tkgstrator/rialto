@@ -239,9 +239,7 @@ document.getElementById('root').innerHTML = `
     </button>
   </div>
 
-  <!-- Band 3 — which chain, and what you can do to it. Presets is one
-       control and lives here; it used to be a header button AND a list
-       in the right rail. -->
+  <!-- Band 3 — which chain, and what you can do to it. -->
   <div class="flex items-center gap-3 border-b border-border px-6 py-2.5">
     <!-- Equal columns rather than content width. "Long context" is twice
          "Think", so packed side by side the strip read as five different
@@ -256,10 +254,10 @@ document.getElementById('root').innerHTML = `
       <button class="rounded bg-foreground px-2.5 py-1 text-[12px] font-medium text-background">Agent</button>
       <button class="rounded px-2.5 py-1 text-[12px] text-muted-foreground hover:text-foreground">Subagent</button>
     </div>
-    <!-- Save alone. Presets and Add target moved under the table: five
-         scenario chips, a lane switch and three buttons was more than one
-         row should carry, and neither of those two acts on the coordinate
-         this band picks — they act on the list below it. -->
+    <!-- Save alone. Add target moved under the table: five scenario
+         chips, a lane switch and two buttons was more than one row should
+         carry, and it does not act on the coordinate this band picks — it
+         acts on the list below it. -->
     <div class="ml-auto">
       ${btn('Save', 'primary', 'ri-check-line')}
     </div>
@@ -267,14 +265,13 @@ document.getElementById('root').innerHTML = `
 
   ${chain}
 
-  <!-- The count reads as a total under the thing it counts, and the two
-       actions that add to that list sit with it. "Add target" appends a
+  <!-- The count reads as a total under the thing it counts, and the one
+       action that adds to that list sits with it. "Add target" appends a
        row to the table directly above, which is where a reader looks for
        it once they have read the last one. -->
   <div class="flex items-center gap-3 border-t border-border/60 px-6 py-2.5">
     <span class="text-[12px] text-muted-foreground">5 targets · 1 disabled · order is preference, top first</span>
     <div class="ml-auto flex items-center gap-2">
-      ${btn('Presets', 'ghost', 'ri-stack-line')}
       ${btn('Add target', 'outline', 'ri-add-line')}
     </div>
   </div>
@@ -282,9 +279,15 @@ document.getElementById('root').innerHTML = `
   <!-- Constraints, four-up, in the space the right rail used to leave
        empty. The rail ran the full page height for four rows while the
        chain beside it ended after 250px — a tall column next to a short
-       one, with the empty half carrying the content. Same four items,
-       same values; they stopped being a column and became a footer to
-       the chain they constrain. -->
+       one, with the empty half carrying the content. They stopped being
+       a column and became a footer to the chain they constrain.
+
+       All four are the profile's own constraints, which is what makes
+       them belong under this chain: the fourth cell used to show the
+       install-wide cross-provider switch, an envelope scalar that went
+       with the peer fallback it toggled. When the chain has no usable
+       target left, the third cell is the whole decision — answer 429,
+       or send the request on with the model the caller asked for. -->
   <div class="mt-6 border-t border-border">
     <div class="px-6 pt-4 pb-2">
       <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Constraints</h2>
@@ -292,14 +295,14 @@ document.getElementById('root').innerHTML = `
     <div class="grid grid-cols-4 gap-px bg-border/60">
       ${constraint('Tier respect', 'sonnet', 'never fall below this tier. Unknown tiers are not held by it.')}
       ${constraint('Healthiness floor', '95%', 'skip targets below this')}
-      ${constraint('When exhausted', 'next', 'next / wait / error')}
-      ${constraint('Cross-provider', 'on', 'allow different auth modes')}
+      ${constraint('When exhausted', '429', 'no usable target left: answer 429, or pass the request through with the caller’s own model')}
+      ${constraint('Quota skip', '100%', 'skip accounts the quota collector reports as spent')}
     </div>
   </div>`
 
-// No Presets button in the header, and no subtitle: the subtitle read
-// "Per inbound surface · scenario · lane", which described the strips
-// that used to sit underneath it.
+// No header actions, and no subtitle: the subtitle read "Per inbound
+// surface · scenario · lane", which described the strips that used to
+// sit underneath it.
 renderShell({
   active: 'routing',
   navMode: 'cloudflare',

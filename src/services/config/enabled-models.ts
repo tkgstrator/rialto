@@ -1,9 +1,12 @@
 /**
  * Every routable model, straight from the DB (Model.enabled is the
- * source of truth). Powers the Router selects — they render this list
- * verbatim, so disabled models never reach that UI and the frontend
- * does zero filtering. Separate from /api/config, which intentionally
- * returns the full catalog (ModelsDashboard needs the disabled ones).
+ * source of truth). Powers the Routing screen's target picker and
+ * `GET /v1/models` — both render this list verbatim, so disabled models
+ * never reach a client and the frontend does zero filtering. Separate
+ * from /api/config, which intentionally returns the full catalog
+ * (ModelsDashboard needs the disabled ones). The request path applies
+ * the same two switches when it builds the provider registry
+ * (`llms/context.ts`), so what is advertised here is what dispatches.
  */
 
 import { hasAuthenticableAccount } from '@/shared/subscription-credential'

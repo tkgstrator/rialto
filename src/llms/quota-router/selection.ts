@@ -48,9 +48,9 @@ export interface PreferenceSelectorInput {
   requestedTier: RequestedModelTier | undefined
   isSubagent: boolean
   // Predicate: does this account/model have zero remaining budget on
-  // any binding window? Callers back this with `getCachedUsagePct`
-  // and/or the Phase 2d scheduler snapshot. Trusts the caller — this
-  // module is pure.
+  // any binding window? The request path backs this with the
+  // scheduler's weight snapshot. Trusts the caller — this module is
+  // pure.
   isExhausted: (target: string) => boolean
   // Recent error rate (0-1). Callers back with the Phase 2e
   // model-health tracker; Phase 2c can pass `() => 0`.

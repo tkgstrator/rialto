@@ -1,7 +1,7 @@
 #!/bin/sh
 # Container entrypoint: apply pending Prisma migrations and seed the
 # DB BEFORE the server boots. src/index.ts assumes the schema and seed
-# rows (Providers, RouterSlot) already exist — against an unmigrated /
+# rows (Providers, the default preference profile) already exist — against an unmigrated /
 # unseeded database it would throw P2021 or render an empty UI.
 #
 # `prisma migrate deploy` and `prisma db seed` are both idempotent

@@ -16,7 +16,7 @@
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import { getPrismaClient } from '../../src/db/client'
-import { applyUiConfig, composeUiConfig, ensureRouterSlots } from '../../src/services/config'
+import { applyUiConfig, composeUiConfig, ensurePreferenceProfile } from '../../src/services/config'
 import { HAS_DB, resetDbTables, teardownPrisma } from './helpers'
 
 const MODELS = ['gpt-5', 'gpt-5-mini', 'gpt-4o', 'o3', 'gpt-5-nano']
@@ -44,7 +44,7 @@ const modelOrder = async (): Promise<string[]> => {
 describe.skipIf(!HAS_DB)('Provider.models ordering', () => {
   beforeEach(async () => {
     await resetDbTables()
-    await ensureRouterSlots()
+    await ensurePreferenceProfile()
     await applyUiConfig(seed())
   })
 

@@ -28,6 +28,8 @@ import { TokenizerRegistry } from '../../src/llms/registry/tokenizer'
 import { routeScenario } from '../../src/llms/scenario-router'
 import type { RouterRequest } from '../../src/llms/scenario-router/types'
 import { __setSurfacesForTests } from '../../src/services/inbound-surface-service'
+import { __setPreferencesForTests } from '../../src/services/router-preference-service'
+import { profileWith } from '../llms/chain-fixture'
 
 const log = pino({ level: 'silent' })
 
@@ -37,18 +39,12 @@ const PROVIDERS = [
     auth_mode: 'api_key' as const,
     api_key: 'sk-x',
     api_base_url: 'https://api.anthropic.com/v1/messages',
-    models: ['claude-sonnet-5']
+    models: ['claude-sonnet-5', 'claude-opus-4-7']
   }
 ]
 
-const ROUTER = {
-  default: 'anthropic,claude-sonnet-5',
-  agent: { default: 'anthropic,claude-sonnet-5' },
-  agentFallbacks: { default: ['anthropic,claude-sonnet-5'] }
-}
-
 async function run(path: string, body: Record<string, unknown>): Promise<RouterRequest> {
-  const config = new ConfigStore({ Providers: PROVIDERS, providers: PROVIDERS, Router: ROUTER })
+  const config = new ConfigStore({ Providers: PROVIDERS, providers: PROVIDERS })
   const tokenizers = new TokenizerRegistry(log)
   await tokenizers.initialize()
   const req: RouterRequest = {
@@ -67,24 +63,29 @@ const SURFACES: ReadonlyArray<[SurfaceId, string]> = [
   ['gemini-generate', '/v1beta/models/gemini-3-pro:generateContent']
 ]
 
-// The mode lands in a module-scope cache, so restore it on both sides.
-// These share a process with the other test files, and skipping the
-// cleanup leaves a neighbour where routing is mysteriously on.
+// The mode and the chain both land in module-scope caches, so restore
+// them on both sides. These share a process with the other test files,
+// and skipping the cleanup leaves a neighbour where routing is
+// mysteriously on.
 beforeEach(() => {
   __setSurfacesForTests({})
+  __setPreferencesForTests({
+    live: profileWith({ 'default.agent': ['anthropic,claude-sonnet-5', 'anthropic,claude-opus-4-7'] })
+  })
 })
 
 afterEach(() => {
   __setSurfacesForTests({})
+  __setPreferencesForTests(null)
 })
 
 describe('the mode takes effect on all four surfaces', () => {
   for (const [id, path] of SURFACES) {
-    test(`${id} — routed rewrites the model to the router's primary`, async () => {
+    test(`${id} — routed rewrites the model to the chain's primary`, async () => {
       __setSurfacesForTests({ [id]: 'routed' })
       const req = await run(path, { messages: [{ role: 'user', content: 'hi' }] })
       expect(req.body.model).toBe('anthropic,claude-sonnet-5')
-      expect(req.resolvedFallbacks).toEqual(['anthropic,claude-sonnet-5'])
+      expect(req.resolvedFallbacks).toEqual(['anthropic,claude-opus-4-7'])
     })
 
     test(`${id} — passthrough keeps the caller's model and leaves the chain empty`, async () => {

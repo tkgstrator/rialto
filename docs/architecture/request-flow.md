@@ -13,12 +13,17 @@
 - `src/api/v1/invocation.ts` — `resolveInvocationForModel`（候補1件 → 実行可能な invocation）
 - `src/api/v1/chain-failover.ts` — `attemptChainEntry` / `tryRotateAccount`
 - `src/llms/scenario-router.ts` — `routeScenario`
-- `src/llms/scenario-router/model-selection.ts` — `selectModel` / `classifyScenario` / `resolveTarget`
+- `src/llms/scenario-router/model-selection.ts` — `classifyRequest` / `classifyScenario` / `effectiveLongContextThreshold`
+- `src/llms/quota-router/runtime.ts` — `chainRoutingOf` / `resolveQuotaAwareSelection`（chain を歩く selector）
+- `src/services/router-preference-service.ts` — `loadRoutableProfile`（無効な target を entry に折り込んだ profile）
 - `src/llms/scenario-router/failover.ts` — `applyProactiveFailover`
 - `src/llms/pipeline.ts` — `runPipeline` / `handleProviderError`
 
-> **前提**: 以下は面の `routingMode` が `routed` のときの話である。`passthrough`（全面の初期値）
-> では `selectModel` 以降の段は丸ごとスキップされ、`body.model` がそのまま候補になる。
+> **前提**: 以下は面の `routingMode` が `routed` のときの話である。`passthrough`（全面の初期値）、
+> あるいは認証したトークンが予約プロファイル `passthrough` を指すときは、分類以降の段は丸ごと
+> スキップされ、`body.model` がそのまま候補になる（persona も付かない）。ルーティングの
+> 機構はこの **chain と passthrough の 2 つだけ**で、ルール・スロット・プリセット・カスタム
+> ルーターは存在しない。
 
 ## 全体フロー
 
@@ -29,19 +34,22 @@ flowchart TD
   BR --> BR1{endpoint<br/>transformer<br/>マッチ?}
   BR1 -- No --> R404[404 Not Found]
   BR1 -- Yes --> BR2[body 解析<br/>headers 取得]
-  BR2 --> RS[routeScenario]
 
-  subgraph RS_BOX[routeScenario]
+  subgraph RS_BOX[routeScenario — routed な面のみ]
     direction TB
-    SM[selectModel]
-    SM --> SM1[stripSubagentTag<br/>= agent / subagent レーン決定]
-    SM1 --> SM2{classifyScenario<br/>longContext / webSearch /<br/>think / effort・tier}
-    SM2 --> SM3[resolveTarget<br/>ルールスタック → catch-all primary]
-    SM3 --> APF
-    APF[applyProactiveFailover<br/>exhausted mark<br/>capability gate]
+    PROF[profile 解決<br/>token profileKey → surface profileKey → live<br/>loadRoutableProfile]
+    PROF --> CR1[stripSubagentTag<br/>= agent / subagent レーン決定]
+    CR1 --> CR2{classifyScenario<br/>longContext / webSearch /<br/>think / effort・tier<br/>※ そのレーンに entry がある場合のみ}
+    CR2 --> SEL[resolveQuotaAwareSelection<br/>chain を歩く: enabled / tier /<br/>context / exhausted / error-rate]
+    SEL --> HAS{primary?}
+    HAS -- 全 entry がゲート落ち<br/>かつ exhaustedBehavior=429 --> R429P[429 + Retry-After<br/>upstream へ出さない]
+    HAS -- 空レーン /<br/>exhaustedBehavior=passthrough /<br/>chain 読込失敗 --> KEEP[body.model は呼び出し側のまま<br/>fallbacks = 空]
+    HAS -- あり --> APF[applyProactiveFailover<br/>exhausted mark<br/>capability gate]
   end
 
-  RS --> CHAIN[buildFailoverChain<br/>primary + fallbacks<br/>exhausted除外]
+  BR2 --> PROF
+  KEEP --> CHAIN
+  APF --> CHAIN[buildFailoverChain<br/>primary + fallbacks<br/>exhausted除外]
 
   CHAIN --> LOOP{次の<br/>chain entry?}
   LOOP -- No --> EXH{lastForwarded<br/>あり?}
@@ -53,7 +61,7 @@ flowchart TD
   subgraph ACE_BOX[attemptChainEntry — 1 model]
     direction TB
     RV[resolveInvocation<br/>ForModel]
-    RV --> RV1{provider<br/>登録済み?}
+    RV --> RV1{provider と model が<br/>registry にある?<br/>= 有効なものだけ}
     RV1 -- No --> SKIP[skip → next entry]
     RV1 -- Yes --> ATT[attempt]
     ATT --> PIPE[runPipeline]
@@ -126,39 +134,45 @@ flowchart TD
 `src/api/v1/upstream-error.ts` の `forwardUpstreamError` が `PROVIDER_ERR_RE` で
 逆パースして upstream の生 body を verbatim 返す。
 
-## fallback の制約 (subscription only ユーザ向け)
+## fallback に掛かるゲート
 
-`Router.fallbacks` は二段ゲートで保護されている:
+`buildFailoverChain` が chain から落とすのは **枯渇マークの付いた候補だけ**である（全候補が枯渇して
+いれば元の順序をそのまま返す — 窓が転がっている可能性に賭ける）。かつてあった 2 つのゲートは廃止された。
 
-| ゲート | 効果 | 防御層 |
-|--------|------|--------|
-| **auth_mode gate** | primary と異なる auth_mode の fallback を除外 (subscription→api_key の意図しない流出を防ぐ) | `buildFailoverChain` |
-| **same-provider gate** | primary と同じ provider の fallback を除外 (5h/weekly quota は account 単位で全 model 共通なので、同 provider 別 model に逃げても無意味) | UI dropdown / `applyUiConfig` 保存時 / `buildFailoverChain` 実行時 |
+| かつてのゲート | いま |
+|--------|------|
+| **auth_mode gate**（primary と異なる auth_mode の fallback を除外） | **廃止。** chain の順序は operator が書いたとおりに辿る。subscription の primary の後ろに api_key の fallback を書けば、それは走る。走らせたくなければ書かない — chain の並び自体が「何の後に何が来てよいか」の意思表示である |
+| **same-provider gate**（primary と同じ provider の fallback を除外） | **廃止。** 枯渇は `(provider, model)` 単位でマークされるので、同 provider 別 model は正当な fallback。ただし 5h / weekly の窓は account 単位なので、account が枯れた 429 では別 model でも同じ account で 429 になる（peer が尽きたときの `markProviderExhausted` は provider ごと塞ぐ） |
+| **無効な provider / model** | そもそも chain に載らない。`loadRoutableProfile` が `Model.enabled && Provider.enabled` を entry の `enabled` に折り込み、registry も有効なものしか持たないので、`resolveInvocationForModel` は無効な pair を null で返して次へ進む |
 
 | 場面 | 挙動 |
 |------|------|
-| bare 名 `claude-opus-4-8` を受信 | **bare 名解決は廃止された。** `resolveByModelName` はもう存在しない。`selectModel` はモデル名でプロバイダを逆引きせず、レーンとシナリオを決めて設定済みの `provider,model` を返す。呼び出し側のモデル名が使われるのは、ルールにもシナリオ primary にもマッチしなかった最終フォールバックのときだけ。 |
-| primary が subscription で 429 | `buildFailoverChain` が **同 auth_mode かつ別 provider** の fallback だけ残す。subscription primary なら api_key fallback も同 provider 別 model も chain から除外される。 |
-| primary が subscription で 429、別 provider の subscription fallback なし | チェーンは primary 1 件のみ。`tryRotateAccount` で peer サブアカへ回って終了、回せなければ 429 を verbatim 返却。 |
-| primary が api_key で 429 | 同 auth_mode (api_key) かつ別 provider の fallback を順に試す。 |
-| 「サブスク 5h 枯渇したら api_key にフォールバック」を **明示的に** したい | api_key を別 scenario slot の primary として設定し、Claude Code 側で scenario tag (or `output_config.effort`) を切り替える。同一 scenario の `fallbacks` には混在させない。 |
+| bare 名 `claude-opus-4-8` を受信 | `routed` な面では chain のレーン設定が使われる。chain に primary が無ければ `body.model` はそのまま通り、`resolveInvocationForModel` が**有効な**プロバイダをちょうど 1 つ見つけたときだけそこへ送る（0 件・複数件はスキップ → 400）。`passthrough` な面でも同じ解決 |
+| primary が subscription で 429 | `tryRotateAccount` で peer サブアカへ回し、尽きたら `markProviderExhausted` → chain の**次のエントリ**へ。それが api_key でも同 provider 別 model でも、書いてあれば試す |
+| primary が subscription で 429、fallback 無し | チェーンは primary 1 件のみ。回せなければ 429 を verbatim 返却 |
+| primary が api_key で 429 | provider ごと枯渇マーク → 次のエントリへ |
+| 「サブスク 5h 枯渇したら api_key にフォールバック」を **明示的に** したい | そのレーンの chain で、subscription エントリの後ろに api_key エントリを書く。それだけ |
+| chain の全 entry がゲート落ちで、profile の `exhaustedBehavior` が `'429'`（既定） | `buildRoutePlan` が 429 + `Retry-After` を返し、upstream へは出さない |
+| レーンに entry が 1 件も無い | `exhaustedBehavior` に関係なく 429 にはならない。呼び出し側の `body.model` がそのまま通る（未設定のレーンは「意見無し」であって「全部枯渇」ではない） |
+| chain が読めない（Postgres 不在）/ ルーティングが例外 | `body.model` は触らない。error ログ、`scenarioType='default'`、`isSubagent` はタグから、fallbacks 空 |
 
 ## 代表シナリオ早見表
 
 | # | 状況 | 流れ |
 |---|------|------|
-| 1 | claude-code (sub) `claude-sonnet-4-6` で正常応答 | `selectModel` → `attemptChainEntry` → 2xx → SSE 返却 |
+| 1 | claude-code (sub) `claude-sonnet-4-6` で正常応答 | `classifyRequest` → `resolveQuotaAwareSelection` → `attemptChainEntry` → 2xx → SSE 返却 |
 | 2 | 同上で **5h 窓 429**、サブアカ 3 つあり 1 つだけ枯渇 | 429 → `tryRotateAccount` で当該アカ exhaust → 同 entry 再試行 → peer アカで成功 |
 | 3 | 全サブアカが 5h 枯渇 | 429 → 全アカ exhaust → `markProviderExhausted` → 次 fallback (例 `gemini,gemini-2.5-pro`) |
 | 4 | 直前のリクエストで 429 を食って provider / model に exhausted マークが付いている | `applyProactiveFailover` が投げる前に primary を捨てて次の候補へ。マークは 429 レスポンスの実 resetAt（無ければ 5 分）で自動失効する |
-| 5 | model 名 bare で `claude-opus-4-8` 指定 | bare 名では**解決しない**。`classifyScenario` が effort/tier シグナル（opus → heavy）で `longContext` レーンに寄せ、そのレーンの設定値が使われる。どのレーンにも primary が無ければ `body.model` がそのまま通る |
-| 6 | 同じ model を api_key の `anthropic` も hosts している | どちらが選ばれるかは Routing の設定次第。モデル名から provider を逆引きする経路は無い |
-| 7 | subscription primary が 429、fallback に api_key 混在 | auth_mode gate で api_key fallback は弾かれる。subscription fallback のみ試行 → 全部枯渇なら 429 verbatim |
+| 5 | model 名 bare で `claude-opus-4-8` 指定 | `classifyScenario` が effort/tier シグナル（opus → heavy）で `longContext` レーンに寄せ（そのレーンに entry があれば）、chain の設定値が使われる。レーンに primary が無ければ `body.model` がそのまま通り、chain walker が唯一の有効なホストへ解決する |
+| 6 | 同じ model を api_key の `anthropic` も hosts している | chain に書いてある方が選ばれる。bare 名のまま通った場合はホストが 2 つあるので曖昧としてスキップ（→ 400） |
+| 7 | subscription primary が 429、fallback に api_key 混在 | chain の順どおりに api_key fallback も試す。全部枯渇なら最後の 429 を verbatim 返却 |
 | 8 | `anthropic` provider が **api_key 未設定** | router がこの provider をスキップ＋registry が warn 出力 |
 | 9 | inbound `body.model` に `provider,model` 形式（コンマ）が来た | `routed` な面では素通りしてシナリオルーティング（最終的に `default` レーン）に落ちる。`passthrough` な面では `provider,model` がそのまま宛先として使われる — OpenAI 互換面が `/v1/models` の id をそのまま投げ返せるのはこの経路。※ `provider,model` は router 出力〜下流の内部表現としても引き続き使用 |
 | 10 | upstream が 401/403 (subscription) | `handleProviderError` が「OAuth 期限切れ → CLI 再ログイン」と warn、HTTPException として上に伝播 → 429 ではないので verbatim 返却（rotate なし）|
 | 11 | upstream が 400 で `effort` 不一致 | `attempt` 内で `bestSupportedLevel` を読んで effort 差し替え → 同 model に 1 回だけ retry |
 | 12 | 全 fallback exhaust | `lastForwarded` (最後の 429 body) を verbatim 返却 |
+| 13 | chain の entry、または passthrough の `provider,model` が Providers 画面で無効化した model / provider を指す | registry に無いので `resolveInvocationForModel` が null → skip。全 entry が該当すれば 400 `No usable model`。手で名指ししても転送されない |
 
 ## 関連する状態ストア
 

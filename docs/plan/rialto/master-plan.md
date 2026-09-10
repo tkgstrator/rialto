@@ -244,6 +244,7 @@ if (req.inboundPath === '/v1/chat/completions' || req.inboundPath === '/v1/respo
 - `<CCR-SUBAGENT-MODEL>` タグは**外部契約**（ユーザーのサブエージェントプロンプトに書かれている）。`<RIALTO-SUBAGENT-MODEL>` を新名として受け付けつつ、旧タグも当面受理する
 - GHCR は `ghcr.io/${{ github.repository }}` を使っているのでリポジトリ改名でイメージパスが変わる。旧パスに deprecation 用の最終タグを残す
 - `~/.claude/projects/<id>/claude-code-router.json`（プロジェクト単位のルーティング上書き）も外部契約。新名 `rialto.json` を優先し旧名もフォールバック
+  - **追記（2026-09、chain / passthrough 一本化）:** この上書き機構ごと廃止した。`src/llms/scenario-router/project-config.ts` と `ProjectRouterFileSchema` は削除され、`rialto.json` も `claude-code-router.json` も読まれない。上書きしていた `Router` オブジェクト自体（RouterSlot）が無くなったため、上書きする対象が無い。プロジェクトごとに振り先を変えたい用途は、アクセストークン × `profileKey` で置き換える。`docs/guides/migration-v3.md` §8-8
 - Prismaのスキーマコメント / locales 3言語 / README 3言語 / `docs/**` も対象
 
 完了条件（達成済み）:

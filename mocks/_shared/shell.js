@@ -174,7 +174,7 @@ const subNavGroup = (kids, sub) => `
  * Every screen but Overview sits under one of the five sections, and three
  * of them nest a level further — a provider, a settings section, one
  * session. A bare title could not say which: "Access", "Requests" and
- * "Presets" all read as top-level screens when they are not, and the
+ * "Personas" all read as top-level screens when they are not, and the
  * titles had already drifted into saying different things at different
  * depths ("Activity" on one Activity screen, "Logs" on the next).
  *
@@ -578,12 +578,6 @@ const SETTINGS_RAIL = [
 ]
 
 /**
- * Button. `href` renders the same box as an <a> instead of a <button> —
- * an action that names another screen ("Live map", "Add provider",
- * "Manage tokens") should reach it, and only the tag changes, so the two
- * forms are pixel-identical.
- */
-/**
  * What sits one level under each of the five sections.
  *
  * Today these live in three different places — a 13rem rail (Settings), a
@@ -592,9 +586,9 @@ const SETTINGS_RAIL = [
  * sidebar proposals below can render the same tree without each one
  * re-declaring it.
  *
- * Routing is absent on purpose: the chain IS that screen now that it is
- * the default selector, and Map and Rules are the views around it,
- * reached from the chain's own header.
+ * Routing is absent on purpose: the chain IS that screen — the only
+ * selector there is — and the surface, scenario and lane it edits are
+ * selectors inside the page, not sub-views.
  */
 const SUBNAV = {
   // Two lists, not two screens' worth of settings: a subscription and an
@@ -832,6 +826,12 @@ const expandedAside = (opts) => `
     </div>
   </aside>`
 
+/**
+ * Button. `href` renders the same box as an <a> instead of a <button> —
+ * an action that names another screen ("Add provider", "Manage tokens",
+ * "Live tail") should reach it, and only the tag changes, so the two
+ * forms are pixel-identical.
+ */
 const btn = (label, variant = 'ghost', icon = '', href = '') => {
   const variants = {
     primary: 'bg-primary text-primary-foreground hover:bg-primary/90',
@@ -864,20 +864,6 @@ const activityTabs = (active) =>
     ],
     active
   )
-
-/**
- * Which of the two selectors decides a request at all.
- *
- * `ROUTER_MODE` is one envelope scalar for the whole install, so it sits
- * above the surface tabs on every Routing screen — it is a wider fact than
- * any surface, scenario or lane below it. Until it was on screen the Rules
- * editor and the Chain editor looked equally live while only ever one of
- * them ran, and the Rules screen is where that hurts: in `chain` mode a
- * rule only applies where its scenario's chain is empty.
- *
- * One stored value, so all four Routing mocks show the same one.
- */
-
 
 /**
  * Providers master rail, shared by both detail mocks.

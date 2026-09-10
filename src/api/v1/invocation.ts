@@ -84,7 +84,9 @@ export interface ResolvedInvocation {
 // null with a warning when multiple providers host it (ambiguous —
 // can't pick without operator intent). Callers use this to pass a
 // bare-model request through to the sole hosting provider when the
-// scenario router had no primary configured for the request.
+// chain had no primary for the request. The registry lists only
+// enabled models of enabled providers, so a switched-off model never
+// hosts anything here.
 function providerHostingModel(ctx: LlmsContext, bareModel: string): string | null {
   const hosts: string[] = []
   for (const p of ctx.providers.getAll()) {
@@ -99,8 +101,9 @@ function providerHostingModel(ctx: LlmsContext, bareModel: string): string | nul
 }
 
 // Resolve one "provider,model" string into a ready-to-run invocation, or
-// null when the model can't be used (malformed string / unknown
-// provider) — the caller skips a null and moves to the next chain entry.
+// null when the model can't be used (malformed string / unknown or
+// disabled provider / unknown or disabled model) — the caller skips a
+// null and moves to the next chain entry.
 export function resolveInvocationForModel(
   plan: RoutePlan,
   modelString: string,
@@ -113,6 +116,17 @@ export function resolveInvocationForModel(
   const provider = ctx.providers.get(providerName)
   if (!provider) {
     ctx.log.warn({ providerName }, 'failover: provider not found; skipping')
+    return null
+  }
+
+  // The registry carries only the models the operator has switched on,
+  // so a pair outside it is a model that is off (or was never
+  // registered). Refusing it here is what makes the Providers screen's
+  // toggle mean the same thing to a passthrough caller naming the pair
+  // by hand as it does to the chain — and `/v1/models` advertises the
+  // same set, so the menu and the door agree.
+  if (!Array.isArray(provider.models) || !provider.models.includes(model)) {
+    ctx.log.warn({ providerName, model }, 'failover: model is not enabled on this provider; skipping')
     return null
   }
 
@@ -170,8 +184,8 @@ export function resolveInvocationForModel(
 /**
  * Split a chain entry into provider + model.
  *
- * A bare model (no "provider," prefix) means the scenario router had no
- * primary configured and left `body.model` untouched, so the chain
+ * A bare model (no "provider," prefix) means the chain had no primary
+ * for this request and left `body.model` untouched, so the chain
  * carries the raw name the client asked for. A unique host in the
  * registry acts as the pass-through target; ambiguous or unknown names
  * are skipped by the caller.

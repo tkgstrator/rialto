@@ -45,8 +45,8 @@ export class ProviderRegistry {
       // strings already; this is a defence-in-depth check for callers that
       // hand us pre-parse-equivalent data. Surface the skip so a missing
       // api_key doesn't silently translate to "provider not found" later
-      // in the chain walker — scenario-router also filters these out, but
-      // the warn is the loudest signal that the row needs an api_key.
+      // in the chain walker — the warn is the loudest signal that the row
+      // needs an api_key.
       if (!config.name || !config.api_base_url || !config.api_key) {
         const missing = [
           !config.name && 'name',

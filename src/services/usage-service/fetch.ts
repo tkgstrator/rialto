@@ -231,15 +231,3 @@ export async function fetchUsageSnapshotWithAccountIds(): Promise<{
   }
   return { claude, codex }
 }
-
-// Returns the most relevant current usage percent for a given subAccountId
-// without triggering a live fetch — reads the existing in-memory cache only.
-// Returns 0 when no cached data exists (treat unknown = available).
-export function getCachedUsagePct(subAccountId: string, kind: 'claude' | 'codex'): number {
-  if (kind === 'claude') {
-    const c = claudeCache.get(subAccountId)
-    return c ? (c.value.fiveHour?.utilization ?? 0) : 0
-  }
-  const c = codexCache.get(subAccountId)
-  return c ? (c.value.primary?.usedPercent ?? 0) : 0
-}

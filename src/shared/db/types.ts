@@ -4,29 +4,24 @@
  * `@/schemas/domain/router` (ScenarioKeySchema), `@/schemas/primitives/env`
  * (LogLevelSchema), and `@/schemas/domain/config` (ConfigEnvelopeSchema).
  *
- * - `SCENARIO_KEYS` mirrors the Prisma `ScenarioKey` enum and the legacy
- *   `Router.*` keys; its iteration order is the order used by the
- *   JSON-to-DB migration when seeding RouterSlot rows.
+ * - `SCENARIO_KEYS` mirrors the Prisma `ScenarioKey` enum; every chain
+ *   is split on it.
  * - `ENVELOPE_ENV_KEYS` is the whitelist of envelope scalars that may be
  *   mirrored onto `process.env` at boot.
- * - `DB_OWNED_CONFIG_KEYS` lists the keys PR #1 moves out of config.json
- *   into the database; `migrateFromJson` strips them after a successful
- *   seed.
  */
 
-import type { ConfigEnvelope, ScenarioKey } from '@/schemas/domain'
+import type { ConfigEnvelope } from '@/schemas/domain'
 
-// Re-export the relocated types so legacy `from '@/shared/db/types'`
+// Re-export the relocated type so legacy `from '@/shared/db/types'`
 // imports keep working without churn.
-export type { ConfigEnvelope, ScenarioKey }
+export type { ConfigEnvelope }
 
 // --- Scenario key -----------------------------------------------------------
 
-// Order matters: this is the iteration order used by the JSON-to-DB
-// migration when seeding RouterSlot rows. The `background` scenario was
-// removed in favour of a rules[] predicate on `default` — see
-// `RouteRuleSchema`. Historical `RequestLog.scenario` rows may still
-// carry the string 'background' but the enum no longer accepts it.
+// The order the Routing screen lists the lanes in. The `background`
+// scenario was folded into `default`. Historical `RequestLog.scenario`
+// rows may still carry the string 'background' but the enum no longer
+// accepts it.
 export const SCENARIO_KEYS = ['default', 'think', 'longContext', 'webSearch', 'image'] as const
 
 // --- Config envelope --------------------------------------------------------
@@ -45,17 +40,11 @@ export const ENVELOPE_ENV_KEYS = [
   'API_TIMEOUT_MS',
   'CLAUDE_PATH',
   'NON_INTERACTIVE_MODE',
-  // Mirrored onto process.env so the router reads the fresh value on the
-  // next request without a full restart. ROUTER_MODE / ROUTER_SHADOW /
-  // ROUTER_ROLLOUT_PCT sat here for the same reason and went with the
-  // selector they switched between.
-  'CROSS_PROVIDER_FALLBACK',
-  // Archive capture switches. Mirrored onto process.env for the same
-  // reason as the router knobs: the request-log writer reads them per
-  // request, so turning capture off takes effect on the next call
-  // rather than at the next restart — which matters, because the
-  // reason to turn it off is usually that something is being recorded
-  // right now that should not be.
+  // Archive capture switches. Mirrored onto process.env so the
+  // request-log writer, which reads them per request, sees a change on
+  // the next call rather than at the next restart — which matters,
+  // because the reason to turn capture off is usually that something is
+  // being recorded right now that should not be.
   'CAPTURE_REQUESTS',
   'CAPTURE_MESSAGES',
   'REDACT_TOOL_ARGUMENTS',
@@ -67,8 +56,3 @@ export const ENVELOPE_ENV_KEYS = [
   'ACCESS_AUD'
 ] as const
 export type EnvelopeEnvKey = (typeof ENVELOPE_ENV_KEYS)[number]
-
-// Keys that PR #1 moves out of config.json into the database. Used by
-// migrateFromJson to strip them after a successful seed.
-export const DB_OWNED_CONFIG_KEYS = ['Providers', 'providers', 'Router'] as const
-export type DbOwnedConfigKey = (typeof DB_OWNED_CONFIG_KEYS)[number]

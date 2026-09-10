@@ -87,7 +87,7 @@ async function buildContext(): Promise<LlmsContext> {
   const providers = new ProviderRegistry(transformers, log)
   providers.registerFromConfig(PROVIDERS)
   const tokenizers = new TokenizerRegistry(log)
-  const config = new ConfigStore({ Providers: PROVIDERS, providers: PROVIDERS, Router: {} })
+  const config = new ConfigStore({ Providers: PROVIDERS, providers: PROVIDERS })
   return { config, transformers, providers, tokenizers, log }
 }
 
@@ -100,9 +100,9 @@ const planFor = (path: string): RoutePlan => ({
   primaryModel: 'p,m',
   isSubagent: false,
   fallbacks: [],
-  peerTargets: new Set<string>(),
   path,
-  search: ''
+  search: '',
+  accountSessionKey: 'anonymous'
 })
 
 describe('surface attribution — every surface stamps its own inboundType and surface', () => {

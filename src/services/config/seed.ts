@@ -1,10 +1,11 @@
 /**
- * Database seeding: ensure all six RouterSlot rows exist, and top-up
- * the Provider table from the bundled llm-prices snapshot / subscription
- * presets so the UI's Add-Provider dropdown is non-empty out of the box.
+ * Database seeding: ensure the default preference profile exists, and
+ * top-up the Provider table from the bundled llm-prices snapshot /
+ * subscription presets so the UI's Add-Provider dropdown is non-empty
+ * out of the box.
  */
 
-import { buildSeedProviders, SCENARIO_KEYS } from '@/shared'
+import { buildSeedProviders } from '@/shared'
 import { isDeprecatedModel, OFFICIAL_VENDOR_PRICES, SUBSCRIPTION_PRESETS } from '@/shared/data'
 import { getPrismaClient } from '../../db/client'
 import {
@@ -17,21 +18,7 @@ import {
 import { apiStyleForVendor, modelApiStyleOverride } from './api-style'
 import { syncDeprecationFlags, type Tx } from './apply'
 
-// Seed the 6 RouterSlot rows with null modelId if they're missing. Used
-// by the JSON-to-DB migration and as a safety net for fresh databases.
-export async function ensureRouterSlots(prisma: PrismaClient = getPrismaClient()): Promise<void> {
-  await Promise.all(
-    SCENARIO_KEYS.map((scenario) =>
-      prisma.routerSlot.upsert({
-        where: { scenario },
-        update: {},
-        create: { scenario, modelId: null }
-      })
-    )
-  )
-}
-
-// Seed the singleton preference profile (docs/plan/quota-aware-preference-router.md
+// Seed the default preference profile (docs/plan/quota-aware-preference-router.md
 // §6.3). Idempotent — upserts by the unique `key = 'live'` discriminator.
 // `constraints` stays NULL until the user (or a migration) populates it;
 // the schema layer treats missing constraints as "all defaults", so a

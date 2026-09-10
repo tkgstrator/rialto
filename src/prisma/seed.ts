@@ -8,15 +8,15 @@
  * Provider rows. The Providers page reads the static catalog
  * (VENDOR_DEFAULTS + SUBSCRIPTION_PRESETS + OFFICIAL_VENDOR_PRICES) via
  * /api/catalog and only writes to the Provider / Model tables when the
- * user enables a vendor. Router slot rows still ship pre-created so
- * the composeUiConfig path always has the six expected scenarios.
+ * user enables a vendor. The default preference profile ships
+ * pre-created so every surface has a chain row to point at, empty
+ * until the operator fills it in.
  */
 
 import { logger } from '../logger'
-import { ensurePreferenceProfile, ensureRouterSlots } from '../services/config/seed'
+import { ensurePreferenceProfile } from '../services/config/seed'
 
 async function main(): Promise<void> {
-  await ensureRouterSlots()
   await ensurePreferenceProfile()
   logger.info('prisma seed complete')
 }

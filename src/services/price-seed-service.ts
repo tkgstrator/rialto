@@ -6,11 +6,10 @@
  *
  * Behaviour: for each of openai / anthropic / google (api_key auth
  * only), the Model catalog is reconciled to exactly the scraped set —
- * models the scrape no longer lists are deleted (their RouterSlot
- * binding nulled first so the FK Restrict doesn't abort), and every
- * scraped model is upserted with its USD/1M input+output price,
- * `deprecated` (from the deprecations registry) and `legacy` (from the
- * scrape) flags.
+ * models the scrape no longer lists are deleted (any chain entry naming
+ * one cascades away, and is logged), and every scraped model is
+ * upserted with its USD/1M input+output price, `deprecated` (from the
+ * deprecations registry) and `legacy` (from the scrape) flags.
  *
  * Subscription providers (claude-code / codex, authMode=subscription)
  * are intentionally untouched — their pricing is plan-based, not
@@ -21,8 +20,10 @@ import type { z } from '@hono/zod-openapi'
 import { isDeprecatedModel, OFFICIAL_VENDOR_PRICES, VENDOR_DEFAULTS } from '@/shared/data'
 import { getPrismaClient } from '../db/client'
 import { AuthMode, type Prisma, type PrismaClient } from '../generated/prisma/client'
+import { logger } from '../logger'
 import type { PriceSeedOutcomeSchema } from '../schemas/api/price'
 import { apiStyleForVendor, modelApiStyleOverride } from './config'
+import { chainEntryCascadeWarning } from './config/apply/chain-entries'
 
 const OFFICIAL_VENDORS = ['openai', 'anthropic', 'google'] as const
 type OfficialVendor = (typeof OFFICIAL_VENDORS)[number]
@@ -61,14 +62,17 @@ const ensureProviderRow = async (tx: Tx, vendor: OfficialVendor): Promise<Provid
   })
 }
 
-// Delete model rows the scrape no longer lists, nulling any RouterSlot
-// pointing at them first so the FK Restrict can't abort the transaction.
+// Delete model rows the scrape no longer lists. A chain entry naming one
+// cascades away with it; there is no request to attach a warning to
+// here, so the count goes to the log instead.
 const deleteStaleModels = async (tx: Tx, providerId: string, stale: string[]): Promise<number> => {
   if (stale.length === 0) return 0
-  await tx.routerSlot.updateMany({
-    where: { model: { providerId, name: { in: stale } } },
-    data: { modelId: null }
-  })
+  const cascade = await chainEntryCascadeWarning(
+    tx,
+    { providerId, name: { in: stale } },
+    `model(s) the price scrape no longer lists (${stale.join(', ')})`
+  )
+  if (cascade !== null) logger.warn({ providerId, stale }, `[price-seed] ${cascade}`)
   const res = await tx.model.deleteMany({
     where: { providerId, name: { in: stale } }
   })

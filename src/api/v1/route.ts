@@ -286,7 +286,7 @@ const handleInbound = async (c: Context): Promise<Response> => {
   if (planOrResponse instanceof Response) return planOrResponse
   const plan = planOrResponse
 
-  const chain = buildFailoverChain(plan, ctx)
+  const chain = buildFailoverChain(plan)
   const providers = ctx.config.get<SubscriptionKindProvider[]>('providers', [])
   const sessionId = plan.accountSessionKey
 

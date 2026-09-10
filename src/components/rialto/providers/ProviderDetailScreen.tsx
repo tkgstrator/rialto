@@ -17,10 +17,8 @@ import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
-import { useConfig } from '@/components/ConfigProvider'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
-import type { RouterConfig } from '@/schemas/domain/router'
 import {
   refreshPrices,
   removeProvider,
@@ -33,7 +31,7 @@ import {
   toggleProvider
 } from './actions'
 import { BusyOverlay } from './BusyOverlay'
-import { disabledModelsOf, enabledCountOf, listedModelsOf, providerState, routerBindingsFor } from './derive'
+import { disabledModelsOf, enabledCountOf, listedModelsOf, providerState } from './derive'
 import { ProviderDetail } from './ProviderDetail'
 import type { Provider } from './types'
 import { useProvidersData } from './useProvidersData'
@@ -43,20 +41,14 @@ import { vendorBrand, vendorLabel } from './vendor-labels'
  * What deleting this provider costs, as a sentence to confirm.
  *
  * Removal cascades to every model, the stored key or OAuth account, and
- * any router slot pointing at one of them — the server reports the
- * cleared slots only as an after-the-fact warning. Revoking an access
+ * any chain entry naming one of those models — the server reports the
+ * dropped entries only as an after-the-fact warning. Revoking an access
  * token already asks first, and this is the more destructive of the two.
  */
-function removeConfirmMessage(
-  provider: Provider,
-  label: string,
-  router: RouterConfig | undefined,
-  t: TFunction
-): string {
+function removeConfirmMessage(provider: Provider, label: string, t: TFunction): string {
   return t('providers.detail.removeConfirm', {
     name: label,
-    models: listedModelsOf(provider).length,
-    bindings: routerBindingsFor(router, provider.name)
+    models: listedModelsOf(provider).length
   })
 }
 
@@ -64,9 +56,6 @@ export function ProviderDetailScreen() {
   const { t } = useTranslation()
   const { name } = useParams<{ name: string }>()
   const navigate = useNavigate()
-  // Only for the removal confirm's blast radius — the screen's own data
-  // comes from useProvidersData.
-  const { config } = useConfig()
   const { data, error, loading, reload } = useProvidersData()
   const [busy, setBusy] = useState(false)
   // Label of the action currently running, or null when nothing needs a
@@ -132,7 +121,6 @@ export function ProviderDetailScreen() {
   const vendor = entry === undefined ? new URL(provider.api_base_url).hostname : vendorBrand(entry.name, entry.vendor)
   const subscription = data.subscriptions.get(provider.name)
   const subscriptionKind = provider.auth_mode === 'subscription'
-  const router = config === null ? undefined : config.Router
   // The list this provider came from, so the breadcrumb leads back to the
   // half of Providers it belongs to rather than to the section root.
   const listCrumb = subscriptionKind
@@ -195,7 +183,7 @@ export function ProviderDetailScreen() {
               done: t('providers.detail.modelsSynced')
             })
           }
-          removeConfirm={removeConfirmMessage(provider, label, router, t)}
+          removeConfirm={removeConfirmMessage(provider, label, t)}
           onRemove={() =>
             run(async () => {
               await removeProvider(provider.name)

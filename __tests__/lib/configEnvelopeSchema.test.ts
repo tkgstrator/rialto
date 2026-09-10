@@ -139,16 +139,18 @@ describe('ConfigEnvelopeSchema — LOG_LEVEL', () => {
 })
 
 describe('ConfigEnvelopeSchema — catchall', () => {
-  test('passes through unknown keys', () => {
+  test('passes through unknown keys, including a retired one still on disk', () => {
+    // `Router` is no longer declared; a copy left on disk by an older
+    // build survives the parse (and is read by nothing) rather than
+    // taking the whole config down.
     const result = ConfigEnvelopeSchema.safeParse({ ...BASE, Providers: [], Router: {} })
     expect(result.success).toBe(true)
   })
 })
 
-// ActivePersona is the disk-only backing key for the active persona; on
-// the wire it surfaces as Router.persona (see config-service tests), but
-// in the envelope it stays a top-level optional scalar.
-describe('ConfigEnvelopeSchema — Personas / ActivePersona (disk backing key)', () => {
+// ActivePersona is the active persona's id: a top-level key on the wire
+// and the same top-level optional scalar in the envelope.
+describe('ConfigEnvelopeSchema — Personas / ActivePersona', () => {
   test('defaults Personas to [] when absent', () => {
     const result = ConfigEnvelopeSchema.safeParse({ ...BASE })
     expect(result.success).toBe(true)

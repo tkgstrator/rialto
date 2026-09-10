@@ -4,8 +4,8 @@
  * All of them go through `POST /api/providers`, which upserts by name —
  * the PATCH and DELETE verbs on the CRUD routes are not reachable from
  * the browser client, and the full-config round trip is the sanctioned
- * path for a delete (its diff clears the RouterSlot bindings that would
- * otherwise abort the transaction).
+ * path for a delete (its diff drops the chain entries that named the
+ * provider's models and reports them as warnings).
  */
 import { api } from '@/lib/api'
 import { setModelDisabled } from '@/lib/providers/provider-edits'
