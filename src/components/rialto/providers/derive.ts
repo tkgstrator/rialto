@@ -384,26 +384,43 @@ export interface AccountQuota {
 export type QuotaIndex = Map<string, AccountQuota[]>
 
 /**
- * The quota window worth showing for one account: the weekly ceiling when
- * the collector has it, else the five-hour one. Both windows bind, but the
- * weekly is the one an operator plans around.
+ * Every window one account is under, shortest first.
+ *
+ * The panel used to show one — the weekly, because it is the one an
+ * operator plans around — and label it "weekly". All of them bind: an
+ * account at 0% for the week is still unroutable while its 5-hour window
+ * is spent, and the per-model row is the only place a Fable ceiling is
+ * visible at all. Showing one made the other two look like they did not
+ * exist.
+ *
+ * Ordered rather than left as the collector emitted it: 5h, then the
+ * account's own 7d, then the per-model rows under it. `windowRank` keeps
+ * a scoped '7d' behind the account-wide one it is a share of.
  */
-export function quotaForAccount(index: QuotaIndex, accountId: string): AccountQuota | null {
+const windowRank = (row: AccountQuota): number => {
+  if (row.window === '5h') return 0
+  return row.scope === null ? 1 : 2
+}
+
+export function quotaForAccount(index: QuotaIndex, accountId: string): AccountQuota[] {
   const mine = index.get(accountId)
-  if (mine === undefined || mine.length === 0) return null
-  // Scoped rows are '7d' too, and taking one of those would label a single
-  // model's share as the account's whole week.
-  const weekly = mine.find((q) => q.window === '7d' && q.scope === null)
-  return weekly === undefined ? mine[0] : weekly
+  if (mine === undefined) return []
+  return [...mine].sort((a, b) => {
+    const byRank = windowRank(a) - windowRank(b)
+    if (byRank !== 0) return byRank
+    // Two per-model rows: alphabetical, so the list does not reshuffle
+    // between polls.
+    return (a.scope === null ? '' : a.scope).localeCompare(b.scope === null ? '' : b.scope)
+  })
 }
 
 export function indexQuota(
   rows: ReadonlyArray<{ subAccountId: string; windows: readonly AccountQuota[] }>
 ): QuotaIndex {
   const out: QuotaIndex = new Map()
-  // Flattened back out: this screen wants one window per account, and
-  // `quotaForAccount` below picks which. Overview groups because it shows
-  // them all; the provider rail shows one.
+  // Flattened back out and re-grouped per account: the accounts panel
+  // draws every window an account is under, and `providerQuotaPct` folds
+  // the same rows into the rail's single number.
   for (const account of rows) {
     for (const row of account.windows) {
       const bucket = out.get(account.subAccountId)

@@ -282,9 +282,10 @@
       "empty": "接続済みのアカウントがありません。「プロバイダーを追加」からサインインしてください。",
       "active": "使用中",
       "auth": "認証 {{status}}",
-      "weekly": "週次",
-      "resetsIn": "{{window}} の枠は {{until}} でリセット",
-      "resetsDue": "{{window}} リセット中 — 次回の取得待ち"
+      "resetsIn": "リセットまで",
+      "windowFiveHour": "5時間",
+      "windowSevenDay": "7日",
+      "windowScoped": "7日 · {{model}}"
     },
     "shape": {
       "title": "リクエスト形式",

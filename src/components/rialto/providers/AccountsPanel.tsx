@@ -1,16 +1,23 @@
 /**
  * Subscription accounts for the selected provider.
  *
- * Absorbs SubscriptionAccountsPanel. The percentage and the reset clock
+ * Absorbs SubscriptionAccountsPanel. The percentages and the reset clocks
  * come from the quota collector (GET /api/overview), not from the
  * credentials — an account can authenticate fine and still be out of
- * budget, and that is the distinction the row has to make legible.
+ * budget, and that is the distinction the rows have to make legible.
+ *
+ * Every window the account is under is drawn, not just the weekly one.
+ * All of them bind: an account at 0% for the week is still unroutable
+ * while its 5-hour window is spent, and the per-model row is the only
+ * place a Fable ceiling is visible at all. This panel used to show the
+ * weekly alone, labelled "weekly", which made the other two look like
+ * they did not exist.
  */
 import { useTranslation } from 'react-i18next'
 import { Meter, Pill } from '@/components/rialto/primitives'
 import { fmtUntil } from '@/lib/rialto/format'
 import { cn } from '@/lib/utils'
-import { accountLabel, formatPlan, type QuotaIndex, quotaForAccount } from './derive'
+import { type AccountQuota, accountLabel, formatPlan, type QuotaIndex, quotaForAccount } from './derive'
 import type { AuthStatus, SubAccountWire, SubscriptionWire } from './types'
 
 // Same three states the provider rail labels, so an account and its
@@ -20,6 +27,41 @@ const AUTH_STATUS_KEYS: Record<AuthStatus, string> = {
   live: 'providers.rail.stateLive',
   invalid: 'providers.rail.stateInvalid'
 }
+
+/**
+ * One window: label, bar, percentage, reset clock.
+ *
+ * The bar keeps the slack and the rest are fixed widths, so three windows
+ * line up as a small table rather than three ragged lines. `5h` and `7d`
+ * are the collector's own names for the account-wide windows; a scoped
+ * row is that model's share of the same week, so it is named after the
+ * week and the model together.
+ */
+function WindowLine({ row, now }: { row: AccountQuota; now: number }) {
+  const { t } = useTranslation()
+  const label =
+    row.scope === null
+      ? t(row.window === '7d' ? 'providers.accounts.windowSevenDay' : 'providers.accounts.windowFiveHour')
+      : t('providers.accounts.windowScoped', { model: row.scope })
+  const until = fmtUntil(row.resetAt, now)
+  return (
+    <div className='mt-1.5 flex items-center gap-2'>
+      <span className='w-24 shrink-0 truncate text-[12px] text-muted-foreground'>{label}</span>
+      <div className='min-w-0 flex-1'>
+        <Meter pct={row.pct} />
+      </div>
+      <span className='w-9 shrink-0 text-right font-mono text-[12px] tabular-nums'>{`${row.pct}%`}</span>
+      {/* A duration is a number: mono and tabular so the column lines up.
+          "4h 06m" and "4d 01h" are different widths otherwise. An account
+          the collector has not seen spend yet has no reset time at all. */}
+      <span className='w-14 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
+        {until === null ? DASH : until}
+      </span>
+    </div>
+  )
+}
+
+const DASH = '—'
 
 function AccountRow({
   account,
@@ -33,11 +75,8 @@ function AccountRow({
   now: number
 }) {
   const { t } = useTranslation()
-  const used = quotaForAccount(quota, account.id)
+  const windows = quotaForAccount(quota, account.id)
   const plan = account.plan === null ? null : formatPlan(account.plan)
-  // '7d' is the weekly ceiling; '5h' and friends are rolling burst windows
-  // whose own label is already the clearest name for them.
-  const window = used === null ? '' : used.window === '7d' ? t('providers.accounts.weekly') : used.window
   return (
     <div
       className={cn(
@@ -50,27 +89,17 @@ function AccountRow({
         <span className='text-xs font-medium'>{accountLabel(account)}</span>
         {plan === null ? null : <Pill tone='info'>{plan}</Pill>}
         {active ? <Pill tone='ok'>{t('providers.accounts.active')}</Pill> : null}
-        {used === null ? null : <span className='ml-auto font-mono text-[12px] tabular-nums'>{used.pct}%</span>}
+        {windows.length === 0 ? null : (
+          <span className='ml-auto text-[12px] text-muted-foreground/70'>{t('providers.accounts.resetsIn')}</span>
+        )}
       </div>
-      {used === null ? null : (
-        <div className='mt-2'>
-          <Meter pct={used.pct} />
-        </div>
-      )}
-      <div className='mt-1.5 flex items-center gap-2 text-[12px] text-muted-foreground'>
+      {windows.map((row) => (
+        <WindowLine key={`${row.window}-${row.scope}`} row={row} now={now} />
+      ))}
+      <div className='mt-2 flex items-center gap-2 text-[12px] text-muted-foreground'>
         {/* The rail translates this same enum; interpolating it raw here
             printed "認証 live" beside the rail's 稼働中. */}
         <span>{t('providers.accounts.auth', { status: t(AUTH_STATUS_KEYS[account.authStatus]) })}</span>
-        {used === null ? null : (
-          <>
-            <span className='opacity-40'>·</span>
-            <span>
-              {fmtUntil(used.resetAt, now) === null
-                ? t('providers.accounts.resetsDue', { window })
-                : t('providers.accounts.resetsIn', { window, until: fmtUntil(used.resetAt, now) })}
-            </span>
-          </>
-        )}
       </div>
       {account.authError === null ? null : (
         <p className='mt-1.5 font-mono text-[12px] leading-relaxed text-destructive'>{account.authError}</p>

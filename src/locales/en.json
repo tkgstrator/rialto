@@ -282,9 +282,10 @@
       "empty": "No accounts connected yet. Use Add provider to sign in.",
       "active": "active",
       "auth": "auth {{status}}",
-      "weekly": "weekly",
-      "resetsIn": "{{window}} resets in {{until}}",
-      "resetsDue": "{{window}} resetting — waiting for the next poll"
+      "resetsIn": "resets in",
+      "windowFiveHour": "5-hour",
+      "windowSevenDay": "7-day",
+      "windowScoped": "7-day · {{model}}"
     },
     "shape": {
       "title": "Request shape",

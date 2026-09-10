@@ -119,13 +119,25 @@ describe('providerQuotaPct', () => {
 })
 
 describe('quotaForAccount', () => {
-  test('prefers the account-wide weekly over a per-model row of the same window', () => {
-    const idx = index([['a', [w('5h', 5), w('7d', 40), w('7d', 95, 'Fable')]]])
-    expect(quotaForAccount(idx, 'a')).toEqual(w('7d', 40))
+  test('returns every window the account is under, shortest first', () => {
+    // The panel drew the weekly alone and labelled it "weekly", which made
+    // the 5-hour and per-model ceilings look like they did not exist. All
+    // of them bind.
+    const idx = index([['a', [w('7d', 40), w('7d', 95, 'Fable'), w('5h', 5)]]])
+    expect(quotaForAccount(idx, 'a')).toEqual([w('5h', 5), w('7d', 40), w('7d', 95, 'Fable')])
   })
 
-  test('falls back to the first window when the collector has no weekly', () => {
-    const idx = index([['a', [w('5h', 5)]]])
-    expect(quotaForAccount(idx, 'a')).toEqual(w('5h', 5))
+  test('keeps a per-model row behind the account-wide week it is a share of', () => {
+    const idx = index([['a', [w('7d', 95, 'Fable'), w('7d', 40)]]])
+    expect(quotaForAccount(idx, 'a').map((q) => q.scope)).toEqual([null, 'Fable'])
+  })
+
+  test('orders two per-model rows by name, so the list does not reshuffle between polls', () => {
+    const idx = index([['a', [w('7d', 12, 'Sonnet'), w('7d', 95, 'Fable')]]])
+    expect(quotaForAccount(idx, 'a').map((q) => q.scope)).toEqual(['Fable', 'Sonnet'])
+  })
+
+  test('an account the collector has not reached has no windows, not a zero', () => {
+    expect(quotaForAccount(index([]), 'a')).toEqual([])
   })
 })
