@@ -7,7 +7,6 @@
 
 import { requestLogsRoute } from './app'
 import './logs-crud'
-import './model-routing'
 import './session-detail'
 import './sessions'
 import './sse'

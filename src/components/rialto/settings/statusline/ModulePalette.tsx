@@ -1,9 +1,9 @@
 /**
  * The "add a module" column.
  *
- * Only the types `rialto statusline` can actually render are listed —
- * offering a type the renderer drops would produce a line that silently
- * loses a segment.
+ * Only the types `createModuleForType` knows how to build are listed.
+ * This build ships no `rialto statusline` renderer, so the list feeds the
+ * editor and its preview, not a live status bar.
  */
 import { useTranslation } from 'react-i18next'
 import { MODULE_TYPES } from '@/lib/rialto/settings-content/statusline'

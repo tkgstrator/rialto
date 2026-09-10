@@ -31,16 +31,21 @@ import { tierOf } from '../scenario-router/model-selection'
 import type { ConfigProvider } from '../scenario-router/types'
 import { type PreferenceSelection, selectByPreference } from './selection'
 
-// Consult the scheduler snapshot's weight for the target. Returns true
-// when the candidate is unusable *right now*. Without a snapshot yet
-// (cold start) nothing is exhausted — the gate defers to the error-rate
-// check and the reactive 429 path.
-const buildIsExhausted = (): ((target: string) => boolean) => {
+// Consult the scheduler snapshot for the target. Returns true when the
+// candidate is unusable *right now*: its weight has dropped to zero, or
+// the budget the snapshot last saw is used at or past the profile's
+// `quotaSkipPct`. A target whose budget is unknown (api_key providers, a
+// subscription the collector has not reached yet) is not gated on usage.
+// Without a snapshot yet (cold start) nothing is exhausted — the gate
+// defers to the error-rate check and the reactive 429 path.
+const buildIsExhausted = (quotaSkipPct: number): ((target: string) => boolean) => {
   const snapshot = getRoutingSnapshot()
   return (target: string): boolean => {
     if (snapshot === null) return false
     const entry = snapshot.weights.get(target)
-    return entry !== undefined && entry.weight <= 0
+    if (entry === undefined) return false
+    if (entry.weight <= 0) return true
+    return entry.remainingBudgetPct !== null && 100 - entry.remainingBudgetPct >= quotaSkipPct
   }
 }
 
@@ -210,7 +215,7 @@ export async function resolveQuotaAwareSelection(input: QuotaAwareSelectionInput
     constraints: l4Constraints,
     requestedTier,
     isSubagent: input.isSubagent,
-    isExhausted: buildIsExhausted(),
+    isExhausted: buildIsExhausted(constraints.quotaSkipPct),
     errorRate: buildErrorRate(),
     contextWindowOf: buildContextWindowOf(),
     requestTokenCount: input.requestTokenCount,
