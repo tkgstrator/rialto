@@ -95,11 +95,9 @@
     },
     "session": {
       "title": "会话",
-      "subtitle": "{{sessionId}} · {{inbound}} · {{turns}} 轮",
-      "backToActivity": "返回活动",
+      "subtitle": "{{sessionId}} · {{inbound}}",
       "previous": "上一个",
       "rawJson": "原始 JSON",
-      "loadOlder": "加载更早的轮次",
       "upstreamCalls": "上游调用",
       "inputTokens": "输入 token",
       "outputTokens": "输出 token",
@@ -108,10 +106,7 @@
       "cost": "费用",
       "duration": "时长",
       "routingTrace": "路由轨迹",
-      "showAllCalls": "显示全部 {{calls}} 次调用",
-      "showFewer": "收起",
-      "chars": "{{n}} 字符",
-      "codePlain": "代码"
+      "noCalls": "该会话没有记录到上游调用。"
     },
     "logs": {
       "title": "日志",

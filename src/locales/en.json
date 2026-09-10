@@ -95,11 +95,9 @@
     },
     "session": {
       "title": "Session",
-      "subtitle": "{{sessionId}} · {{inbound}} · {{turns}} turns",
-      "backToActivity": "Back to Activity",
+      "subtitle": "{{sessionId}} · {{inbound}}",
       "previous": "Previous",
       "rawJson": "Raw JSON",
-      "loadOlder": "Load older turns",
       "upstreamCalls": "Upstream calls",
       "inputTokens": "Input tokens",
       "outputTokens": "Output tokens",
@@ -108,10 +106,7 @@
       "cost": "Cost",
       "duration": "Duration",
       "routingTrace": "Routing trace",
-      "showAllCalls": "Show all {{calls}} calls",
-      "showFewer": "Show fewer",
-      "chars": "{{n}} chars",
-      "codePlain": "code"
+      "noCalls": "No upstream calls recorded for this session."
     },
     "logs": {
       "title": "Logs",

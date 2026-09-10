@@ -95,11 +95,9 @@
     },
     "session": {
       "title": "セッション",
-      "subtitle": "{{sessionId}} · {{inbound}} · {{turns}} ターン",
-      "backToActivity": "アクティビティに戻る",
+      "subtitle": "{{sessionId}} · {{inbound}}",
       "previous": "前へ",
       "rawJson": "生 JSON",
-      "loadOlder": "以前のターンを読み込む",
       "upstreamCalls": "上流への呼び出し",
       "inputTokens": "入力トークン",
       "outputTokens": "出力トークン",
@@ -108,10 +106,7 @@
       "cost": "コスト",
       "duration": "所要時間",
       "routingTrace": "ルーティングの経路",
-      "showAllCalls": "{{calls}} 件すべてを表示",
-      "showFewer": "表示を減らす",
-      "chars": "{{n}} 文字",
-      "codePlain": "コード"
+      "noCalls": "このセッションには記録された上流呼び出しがありません。"
     },
     "logs": {
       "title": "ログ",
