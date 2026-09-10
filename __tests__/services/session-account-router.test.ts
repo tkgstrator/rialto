@@ -13,7 +13,7 @@
  * `NOW` constant so the time terms don't drift.
  */
 
-import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
+import { afterAll, afterEach, beforeEach, expect, mock, test } from 'bun:test'
 import dayjs from '../../src/lib/dayjs'
 import { clearAccountExhaustion, markAccountExhausted } from '../../src/services/failover-state'
 import type { SubAccountTokenInfo } from '../../src/services/subscription-account-sync-service'
@@ -66,6 +66,12 @@ let perAccountUsage: Map<string, AccountUsageMap> = new Map()
 // The import has to resolve out here — doing it inside the factory re-enters
 // the module being mocked and spins the runner.
 const realSyncService = await import('../../src/services/subscription-account-sync-service')
+// Value snapshots, taken before the mock lands. The namespace above is a
+// live view, and the mock writes through the barrel's re-export into the
+// implementation module's own binding — so once it is in place there is
+// no import path left that still yields the real function. These are what
+// the afterAll below puts back.
+const realTokensForKind = realSyncService.getSubAccountTokensForKind
 
 mock.module('../../src/services/subscription-account-sync-service', () => ({
   ...realSyncService,
@@ -74,6 +80,7 @@ mock.module('../../src/services/subscription-account-sync-service', () => ({
 }))
 
 const realUsageStore = await import('../../src/services/subaccount-usage-store')
+const realPerAccountUsage = realUsageStore.getPerAccountUsage
 
 mock.module('../../src/services/subaccount-usage-store', () => ({
   ...realUsageStore,
@@ -152,6 +159,21 @@ afterEach(() => {
   clearAccountExhaustion('solo')
   clearAccountExhaustion('c1')
   clearAccountExhaustion('c2')
+})
+
+// Put both bindings back for the files that run after this one. Without
+// this, a DB-backed test of anything that lists accounts — the usage
+// poller, the subscriptions refresh — reads this file's leftover fixtures
+// (`token-a1`, `token-a2`) instead of the rows it seeded.
+afterAll(() => {
+  mock.module('../../src/services/subscription-account-sync-service', () => ({
+    ...realSyncService,
+    getSubAccountTokensForKind: realTokensForKind
+  }))
+  mock.module('../../src/services/subaccount-usage-store', () => ({
+    ...realUsageStore,
+    getPerAccountUsage: realPerAccountUsage
+  }))
 })
 
 test('returns null when no accounts exist', async () => {

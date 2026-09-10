@@ -104,7 +104,9 @@ export interface SubAccountTokenInfo {
 // vendor kind on enabled providers. This is the pool the per-request
 // account picker and the reactive 429 rotation draw from, so a provider
 // the operator switched off contributes nothing to it — the same
-// switch that keeps its models out of the registry.
+// switch that keeps its models out of the registry. The usage poller and
+// the Subscriptions list's Refresh read the same pool, so a switched-off
+// provider is neither routed to nor polled.
 export async function getSubAccountTokensForKind(
   kind: 'claude' | 'codex',
   prisma: PrismaClient = getPrismaClient()

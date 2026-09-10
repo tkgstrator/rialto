@@ -53,6 +53,29 @@ export const SubscriptionsResponseSchema = z
   })
   .openapi('SubscriptionsResponse')
 
+// A failure names the account rather than counting it: the Providers list
+// shows accounts by label, and "1 of 10 failed" would send the operator
+// checking all ten.
+const SubscriptionRefreshFailureSchema = z
+  .object({
+    subAccountId: z.string().nonempty(),
+    label: z.string().nonempty(),
+    providerName: z.string().nonempty()
+  })
+  .openapi('SubscriptionRefreshFailure')
+
+export const SubscriptionRefreshResponseSchema = z
+  .object({
+    // Accounts on enabled subscription providers the refresh was pointed at.
+    attempted: z.number().int().nonnegative(),
+    // Of those, the accounts whose profile sync and usage fetch both answered.
+    refreshed: z.number().int().nonnegative(),
+    failed: z.array(SubscriptionRefreshFailureSchema)
+  })
+  .openapi('SubscriptionRefreshResponse')
+
+export type SubscriptionRefreshResponse = z.infer<typeof SubscriptionRefreshResponseSchema>
+
 export const EnabledModelSchema = z
   .object({
     provider: z.string().nonempty(),

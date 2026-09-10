@@ -462,6 +462,20 @@ can recover comes from three sources that must not be conflated:
 Every write is "update what the vendor confirmed, leave the rest alone", so a thin
 scrape degrades coverage rather than nulling existing rows.
 
+**Refreshing subscriptions** is a third button, on the Subscriptions list only:
+"Refresh" (`POST /api/subscriptions/refresh`, `src/services/subscription-refresh-service.ts`).
+It is not a catalog operation and touches no model or price. It re-syncs every account
+on an **enabled** subscription provider the way `POST /api/subscriptions/sync` does,
+then polls usage with `forceRefresh` past the 5-minute cache in
+`src/services/usage-service/cache.ts`, and rewrites the two current-state tables —
+`SubAccountUsage` (the account picker) and `SubAccountQuota` (the routing scheduler,
+and the list's quota column via `/api/overview`). It deliberately writes no
+`UsageSnapshot` row, so the Usage chart stays on the usage job's 5-minute grid; skips
+accounts on disabled providers; leaves an account's rows alone when its upstream call
+failed and names it in `failed[]` instead; and coalesces concurrent calls into one
+upstream pass — there is no cooldown beyond that. `/sync` is unchanged: it still probes
+every provider, disabled ones included, because that is what the auth-health job runs.
+
 
 There is no dependency graph to learn — this is one package. Two rules matter:
 

@@ -40,10 +40,10 @@ const upsertAccount = async (
 export const providersForKind = async (
   prisma: PrismaClient,
   kind: 'claude' | 'codex'
-): Promise<{ id: string; name: string }[]> => {
+): Promise<{ id: string; name: string; enabled: boolean }[]> => {
   const all = await prisma.provider.findMany({
     where: { authMode: AuthMode.subscription },
-    select: { id: true, name: true, apiBaseUrl: true }
+    select: { id: true, name: true, enabled: true, apiBaseUrl: true }
   })
   return all.filter((p) => {
     if (kind === 'claude') return p.apiBaseUrl.includes('anthropic.com')
