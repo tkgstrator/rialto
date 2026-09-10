@@ -7,7 +7,11 @@ on:
   workflow_dispatch:
 
 env:
-  DOCKER_IMAGE: tkgling/rialto
+  # GHCR only. The Docker Hub half (tkgling/rialto) was dropped: it needed
+  # DOCKER_USERNAME / DOCKER_PASSWORD secrets to publish what GITHUB_TOKEN
+  # already publishes for free, and two registries meant two places a tag
+  # could silently go missing. Images through v2.78.4 remain on Docker Hub
+  # for anyone pinned there; nothing new lands.
   GHCR_IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
@@ -25,12 +29,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@v4
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
       - name: Login to GHCR
         uses: docker/login-action@v4
         with:
@@ -42,13 +40,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          # Publish the same tag set to both Docker Hub and GHCR so
-          # downstream users can pull from whichever registry they
-          # prefer. metadata-action expands each `type=` rule against
-          # every image in the list.
-          images: |
-            ${{ env.DOCKER_IMAGE }}
-            ${{ env.GHCR_IMAGE }}
+          images: ${{ env.GHCR_IMAGE }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}

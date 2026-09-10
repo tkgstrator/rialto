@@ -379,14 +379,17 @@ const surfaceChip = (path, on) => `
  * opens this screen for.
  */
 const ACCESS_TOKENS = [
-  { name: 'MacBook — Claude Code', prefix: 'rialto_a91f4c', surfaces: ['/v1/messages'], used: '2m ago', reqs: '12.4k', cost: '$41.2', expires: 'never' },
+  { name: 'MacBook — Claude Code', prefix: 'rialto_a91f4c', surfaces: ['/v1/messages'], used: '2m ago', reqs: '12.4k', cost: '$41.2', tin: '84.2M', tout: '1.90M', expires: 'never' },
   // Two surfaces on one row. Codex speaks /v1/responses and
   // /v1/chat/completions, so a single-surface pin could only be expressed
   // by giving it no scope at all.
-  { name: 'MacBook — Codex', prefix: 'rialto_7c02b8', surfaces: ['/v1/responses', '/v1/chat/completions'], used: '19m ago', reqs: '2.71k', cost: '$18.6', expires: 'never' },
-  { name: 'Gemini CLI', prefix: 'rialto_be44d1', surfaces: ['/v1beta/models/*'], used: '1h ago', reqs: '486', cost: '–', expires: '2026-12-01' },
-  { name: 'CI — nightly evals', prefix: 'rialto_0d18e9', surfaces: [], used: '6h ago', reqs: '3.10k', cost: '$9.14', expires: '2026-10-08' },
-  { name: 'Old laptop', prefix: 'rialto_2b9047', surfaces: ['/v1/messages'], used: '41d ago', reqs: '88.1k', cost: '–', expires: 'never', revoked: true }
+  { name: 'MacBook — Codex', prefix: 'rialto_7c02b8', surfaces: ['/v1/responses', '/v1/chat/completions'], used: '19m ago', reqs: '2.71k', cost: '$18.6', tin: '18.4M', tout: '412k', expires: 'never' },
+  // Unpriced but not untracked: a subscription model logs its token counts
+  // and has no per-request price, so a dash under Cost beside real In/Out
+  // figures is a state the screen has to read correctly.
+  { name: 'Gemini CLI', prefix: 'rialto_be44d1', surfaces: ['/v1beta/models/*'], used: '1h ago', reqs: '486', cost: '–', tin: '3.11M', tout: '77.4k', expires: '2026-12-01' },
+  { name: 'CI — nightly evals', prefix: 'rialto_0d18e9', surfaces: [], used: '6h ago', reqs: '3.10k', cost: '$9.14', tin: '9.80M', tout: '204k', expires: '2026-10-08' },
+  { name: 'Old laptop', prefix: 'rialto_2b9047', surfaces: ['/v1/messages'], used: '41d ago', reqs: '88.1k', cost: '–', tin: '–', tout: '–', expires: 'never', revoked: true }
 ]
 
 /**
@@ -428,6 +431,8 @@ const tokenRow = (t) => `
     <td class="px-3">${tokenScopeCell(t.surfaces)}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${t.reqs}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${t.cost}</td>
+    <td class="px-3 text-right font-mono text-xs tabular-nums">${t.tin}</td>
+    <td class="px-3 text-right font-mono text-xs tabular-nums">${t.tout}</td>
     <td class="px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${t.used}</td>
     <td class="px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${t.expires}</td>
     <td class="py-2.5 pl-3 pr-6">
@@ -438,13 +443,15 @@ const tokenRow = (t) => `
 /** The live tokens, as the list screen and both issuing states draw them. */
 const tokenTable = () => `
   <table class="w-full table-fixed">
-    <colgroup><col><col class="w-48"><col class="w-20"><col class="w-28"><col class="w-28"><col class="w-24"><col class="w-10"></colgroup>
+    <colgroup><col><col class="w-48"><col class="w-20"><col class="w-28"><col class="w-20"><col class="w-20"><col class="w-28"><col class="w-24"><col class="w-10"></colgroup>
     <thead>
       <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         ${sortTh('Token', 'pl-6 pr-3')}
         ${sortTh('Endpoint', 'px-3')}
         ${sortTh('Requests', 'px-3', 'right')}
         ${sortTh('Cost 30d', 'px-3', 'right')}
+        ${sortTh('In 30d', 'px-3', 'right')}
+        ${sortTh('Out 30d', 'px-3', 'right')}
         ${sortTh('Last used', 'px-3', 'right', true, 'desc')}
         ${sortTh('Expires', 'px-3', 'right')}
         <th class="pl-3 pr-6"></th>

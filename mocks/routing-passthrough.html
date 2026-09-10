@@ -13,7 +13,7 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, btn, navTo } = window.Shell
+const { renderShell, pill, navTo } = window.Shell
 
 // The other half of the Routing screen: what a surface looks like when
 // the router does NOT apply. This used to be hardcoded for
@@ -28,17 +28,22 @@ const SURFACES = [
 ]
 const ACTIVE_SURFACE = 'responses'
 
+// Same bands as routing.html — see the comments there. Every tab is the
+// same shape so the row never reflows, and the selected surface's
+// controls sit in a scope strip under it that names the surface it
+// writes to.
 const surfaceTab = (s) => {
   const on = s.id === ACTIVE_SURFACE
   const href = s.mode === 'routed' ? 'routing.html' : 'routing-passthrough.html'
+  const dot = s.mode === 'routed'
+    ? '<span class="size-1.5 shrink-0 rounded-full bg-emerald-500"></span>'
+    : '<span class="size-1.5 shrink-0 rounded-full border border-muted-foreground/50"></span>'
   return `
-    <button ${navTo(href)} class="relative flex flex-col items-start gap-0.5 border-b-2 px-4 py-2.5 text-left transition-colors ${
+    <button ${navTo(href)} class="flex items-center gap-2 border-b-2 px-3 py-2.5 transition-colors ${
       on ? 'border-b-foreground' : 'border-b-transparent hover:bg-muted/50'
     }">
-      <span class="font-mono text-xs ${on ? 'text-foreground' : 'text-muted-foreground'}">${s.label}</span>
-      <span class="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-        ${s.hint} · ${s.mode === 'routed' ? '<span class="text-emerald-600 dark:text-emerald-400">routed</span>' : 'passthrough'}
-      </span>
+      ${dot}
+      <span class="whitespace-nowrap font-mono text-xs ${on ? 'text-foreground' : 'text-muted-foreground'}">${s.label}</span>
     </button>`
 }
 
@@ -46,11 +51,14 @@ const surfaceTab = (s) => {
 // strings a caller may send. Showing the reachable set is the useful
 // content here — the chain editor would be misleading.
 const REACHABLE = [
-  { target: 'codex,gpt-5.5',                  tier: 'opus',   state: 'ready' },
-  { target: 'codex,gpt-5.4',                  tier: 'sonnet', state: 'ready' },
-  { target: 'openai,gpt-5.5',                 tier: 'opus',   state: 'ready' },
-  { target: 'openai,gpt-5.4-mini',            tier: 'haiku',  state: 'ready' },
-  { target: 'openai,gpt-5.3-codex',           tier: 'opus',   state: 'ready' }
+  { target: 'codex,gpt-5.5',                  tier: 'opus',   on: true },
+  { target: 'codex,gpt-5.4',                  tier: 'sonnet', on: true },
+  { target: 'openai,gpt-5.5',                 tier: 'opus',   on: true },
+  // Off for THIS surface. The model is still served — it is on in
+  // Providers and reachable from every chain — a caller just may not name
+  // it here.
+  { target: 'openai,gpt-5.4-mini',            tier: 'haiku',  on: false },
+  { target: 'openai,gpt-5.3-codex',           tier: 'opus',   on: true }
 ]
 
 // A reachable target is a "provider,model" a caller may name, so the row
@@ -60,10 +68,20 @@ const providerHref = (t) =>
   SUBSCRIPTION_PROVIDERS.includes(t.split(',')[0]) ? 'provider-subscription.html' : 'provider-apikey.html'
 
 const row = (e) => `
-  <tr ${navTo(providerHref(e.target))} class="border-t border-border/60 transition-colors hover:bg-muted/50">
+  <tr ${navTo(providerHref(e.target))} class="border-t border-border/60 transition-colors hover:bg-muted/50 ${e.on ? '' : 'opacity-45'}">
     <td class="py-2.5 pl-6 pr-2 font-mono text-xs">${e.target}</td>
     <td class="px-2">${pill(e.tier, 'mute')}</td>
-    <td class="px-2">${pill(e.state, 'ok')}</td>
+    <!-- Per surface, and that is the whole point of the column: it
+         writes InboundSurfaceConfig.deniedTargets ("may a caller name
+         this here"), not Model.enabled ("does the provider serve this at
+         all"), which is shared by every surface and every chain and is
+         edited in Providers. A denied target answers 400 in this
+         surface's own error envelope rather than reaching an upstream. -->
+    <td class="px-2 text-right">
+      <span class="inline-flex h-4 w-7 items-center rounded-full ${e.on ? 'bg-foreground' : 'bg-muted-foreground/30'} px-0.5">
+        <span class="size-3 rounded-full bg-background ${e.on ? 'translate-x-3' : ''}"></span>
+      </span>
+    </td>
     <td class="py-2.5 pl-2 pr-6 text-right">
       <button class="text-muted-foreground/60 hover:text-foreground"><i class="ri-file-copy-line text-sm"></i></button>
     </td>
@@ -71,46 +89,38 @@ const row = (e) => `
 
 document.getElementById('root').innerHTML = `
 
-  <div class="flex items-stretch gap-0 border-b border-border px-2">
+  <!-- Band 1 — which surface. -->
+  <div class="flex items-center gap-1 border-b border-border pl-4 pr-6">
     ${SURFACES.map(surfaceTab).join('')}
   </div>
 
-  <div class="flex items-center gap-4 border-b border-border bg-muted/30 px-6 py-3">
-    <div class="flex items-center gap-2">
-      <span class="text-xs text-muted-foreground">Routing</span>
-      <div class="flex rounded-md border border-border p-0.5">
-        <button ${navTo('routing.html')} class="rounded px-2.5 py-1 text-[12px] text-muted-foreground hover:text-foreground">Routed</button>
-        <button class="rounded bg-foreground px-2.5 py-1 text-[12px] font-medium text-background">Passthrough</button>
-      </div>
+  <!-- Band 2 — the selected surface's own settings, named. No Profile:
+       a passthrough surface draws from no chain. -->
+  <div class="flex items-center gap-3 border-b border-border bg-muted/30 px-6 py-2.5">
+    <span class="whitespace-nowrap font-mono text-xs">/v1/responses</span>
+    <span class="whitespace-nowrap text-[12px] text-muted-foreground">Codex CLI</span>
+    <span class="mx-1 h-4 w-px shrink-0 bg-border"></span>
+    <div class="flex rounded-md border border-border p-0.5">
+      <button ${navTo('routing.html')} class="rounded px-2.5 py-1 text-[12px] text-muted-foreground hover:text-foreground">Routed</button>
+      <button class="rounded bg-foreground px-2.5 py-1 text-[12px] font-medium text-background">Passthrough</button>
     </div>
-    <p class="ml-auto max-w-md text-right text-[12px] leading-snug text-muted-foreground">
-      The caller's <span class="font-mono">provider,model</span> goes upstream unchanged.
-      Scenario classification, the chain and failover are all skipped.
-    </p>
   </div>
 
-  <!-- The amber "this was the only behaviour before v3.0.0" notice that
-       used to sit here is gone. It said passthrough defaulted to the old
-       behaviour "so nothing changes on upgrade", and that stopped being
-       true when per-surface defaults were removed: every surface now
-       carries an explicit mode and none is more default than another.
-       The history also does not earn a block on every visit — what the
-       operator needs is what passthrough does, which the header
-       explainer and the footer hint already say. -->
-
-  <div class="flex items-center gap-3 px-6 pt-6 pb-3">
+  <div class="flex items-center gap-3 border-b border-border px-6 py-2.5">
     <h2 class="text-sm font-semibold">Reachable targets</h2>
     <span class="text-[12px] text-muted-foreground">what a caller may put in <span class="font-mono">body.model</span></span>
-    <div class="ml-auto">${btn('Copy as list', 'outline', 'ri-file-copy-line')}</div>
   </div>
 
   <table class="w-full table-fixed">
-    <colgroup><col><col class="w-24"><col class="w-24"><col class="w-16"></colgroup>
+    <!-- Two columns and a copy affordance. State went with the chain
+         table's: a passthrough surface is never scored, so the pill read
+         "unknown" on every row of every install. -->
+    <colgroup><col><col class="w-24"><col class="w-20"><col class="w-16"></colgroup>
     <thead>
       <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         <th class="pl-6 pr-2 text-left font-medium">Target</th>
         <th class="px-2 text-left font-medium">Tier</th>
-        <th class="px-2 text-left font-medium">State</th>
+        <th class="px-2 text-right font-medium">On</th>
         <th class="pl-2 pr-6"></th>
       </tr>
     </thead>
@@ -131,10 +141,7 @@ document.getElementById('root').innerHTML = `
 renderShell({
   active: 'routing',
   navMode: 'cloudflare',
-  crumbs: ['Chain'],
-  subtitle: '/v1/responses · passthrough',
-  actions:
-    btn('Presets', 'ghost', 'ri-stack-line')
+  crumbs: ['Chain']
 })
 </script>
 </body>

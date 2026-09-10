@@ -102,7 +102,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `subagent-tag.test.ts` | タグの**有無**でレーンが決まること、タグが in-place で除去されること、旧綴りも受理されること |
 | `peer-fallback.test.ts` | 同一モデルのピア展開 |
 | `provider-registry-chain.test.ts` | `apiStyle` + `authMode` からの chain 導出と、chain 無しプロバイダの登録拒否 |
-| `sse-aggregate.test.ts` | 4 つのワイヤ語彙それぞれの SSE→JSON 畳み込み |
+| `sse-aggregate.test.ts` | 4 つのワイヤ語彙それぞれの SSE→JSON 畳み込みと、その手前のガード（`findSseStreamDefect`）— 使えるイベントが 0 のストリームと上流エラーイベントを畳まず拒否し、単に途中で切れただけのストリームは従来どおり畳むこと |
 | `bypass-header-strip.test.ts` | bypass 時の hop-by-hop ヘッダ除去 |
 | `session-id.test.ts` | `thread_id` / `x-claude-code-session-id` / ランダム UUID の解決順 |
 | `persona-inbound-gate.test.ts` | ペルソナ挿入が `/v1/messages` **だけ**で走ること |

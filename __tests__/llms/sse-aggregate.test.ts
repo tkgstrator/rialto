@@ -7,9 +7,11 @@
 
 import { describe, expect, test } from 'bun:test'
 import {
+  aggregateAnthropicSseToJson,
   aggregateGeminiSseToJson,
   aggregateOpenAiChatSseToJson,
-  aggregateOpenAiResponsesSseToJson
+  aggregateOpenAiResponsesSseToJson,
+  findSseStreamDefect
 } from '../../src/llms/utils/sse-aggregate'
 
 const sseResponse = (body: string): Response =>
@@ -259,5 +261,91 @@ describe('aggregateGeminiSseToJson', () => {
   test('an empty stream yields an empty candidate list, not a crash', async () => {
     const result = await aggregateGeminiSseToJson(sseResponse(''))
     expect(result.candidates).toEqual([])
+  })
+})
+
+/**
+ * The guard in front of the fold.
+ *
+ * The aggregators above are forgiving by design, and a truncated stream
+ * should stay forgiven. What must NOT be forgiven is a stream that
+ * carried nothing to fold, or one that ended in an upstream error:
+ * those used to reach the caller as a 200 whose body no SDK could
+ * parse — Claude Code reports it as "API returned an empty or malformed
+ * response (HTTP 200)" and cannot retry, because a 200 is a success.
+ */
+describe('findSseStreamDefect', () => {
+  const ev = (payload: Record<string, unknown>): string => `data: ${JSON.stringify(payload)}\n\n`
+
+  test('an empty stream is a defect, and folding it alone would have produced a husk', async () => {
+    expect(findSseStreamDefect('')).toEqual({ reason: 'no-events' })
+    // The husk that used to be served with the upstream's 200: JSON,
+    // but not a Message.
+    const husk = await aggregateAnthropicSseToJson(sseResponse(''))
+    expect(husk).toEqual({ content: [] })
+    expect(husk.type).toBeUndefined()
+  })
+
+  test('a body of nothing but malformed events counts as no events', () => {
+    expect(findSseStreamDefect('data: {not json\n\ndata: also not json\n\n')).toEqual({ reason: 'no-events' })
+  })
+
+  test("anthropic's overloaded_error becomes a 529 so the client backs off rather than giving up", () => {
+    const body =
+      ev({ type: 'ping' }) + ev({ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } })
+    expect(findSseStreamDefect(body)).toEqual({
+      reason: 'upstream-error',
+      status: 529,
+      body: { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }
+    })
+  })
+
+  test('a mid-stream rate_limit_error keeps its 429', () => {
+    const body = ev({ type: 'error', error: { type: 'rate_limit_error', message: 'slow down' } })
+    expect(findSseStreamDefect(body)?.status).toBe(429)
+  })
+
+  test("google's error.code is an HTTP status and is used verbatim", () => {
+    const body = ev({ error: { code: 503, message: 'The model is overloaded.', status: 'UNAVAILABLE' } })
+    expect(findSseStreamDefect(body)?.status).toBe(503)
+  })
+
+  test('an error event that classifies neither way falls back to 502', () => {
+    const body = ev({ error: { message: 'upstream exploded' } })
+    expect(findSseStreamDefect(body)).toEqual({
+      reason: 'upstream-error',
+      status: 502,
+      body: { error: { message: 'upstream exploded' } }
+    })
+  })
+
+  test('an error event anywhere in the stream is found, not just the last one', () => {
+    const body =
+      ev({ type: 'message_start', message: { id: 'msg_1', type: 'message', role: 'assistant' } }) +
+      ev({ type: 'error', error: { type: 'api_error', message: 'died mid-flight' } })
+    expect(findSseStreamDefect(body)?.reason).toBe('upstream-error')
+  })
+
+  test('healthy streams in all three vocabularies are not defects', () => {
+    const anthropic =
+      ev({ type: 'message_start', message: { id: 'msg_1', type: 'message', role: 'assistant' } }) +
+      ev({ type: 'message_stop' })
+    const openai = ev({ id: 'chatcmpl-1', choices: [{ index: 0, delta: { content: 'hi' } }] }) + 'data: [DONE]\n\n'
+    const gemini = ev({ candidates: [{ content: { parts: [{ text: 'hi' }] }, index: 0 }] })
+    expect(findSseStreamDefect(anthropic)).toBeNull()
+    expect(findSseStreamDefect(openai)).toBeNull()
+    expect(findSseStreamDefect(gemini)).toBeNull()
+  })
+
+  test('a merely truncated stream stays forgiven — the fold still has something to say', async () => {
+    // This is the line between the two behaviours: message_start landed,
+    // so the client gets a real Message with empty content rather than
+    // an error. Only "nothing usable at all" is a defect.
+    const body = ev({
+      type: 'message_start',
+      message: { id: 'msg_1', type: 'message', role: 'assistant', content: [], usage: { input_tokens: 3 } }
+    })
+    expect(findSseStreamDefect(body)).toBeNull()
+    expect((await aggregateAnthropicSseToJson(sseResponse(body))).type).toBe('message')
   })
 })

@@ -39,6 +39,17 @@ export interface AccessTokenRow {
   // retention and this is not, so pairing them would invite reading a
   // pruned window as a cheaper client.
   costUsd: number | null
+  // Input / output tokens this token's traffic moved over the SAME
+  // trailing window the cost above is priced from — not over its
+  // lifetime, for exactly the reason `costUsd` is not. Null when the
+  // window holds no rows for this token at all (no traffic, capture off,
+  // or the rows aged out of retention); a token that did serve traffic
+  // the logs still remember reports a real number, and 0 then means 0.
+  // Kept separate from `costUsd`'s null, which additionally covers
+  // "logged but unpriceable" — a subscription model has token counts and
+  // no price.
+  inputTokens: number | null
+  outputTokens: number | null
   expiresAt: string | null
   revokedAt: string | null
   // When the current secret was minted, if it is not the original one.
@@ -103,7 +114,7 @@ const toWire = (
     rotatedAt: Date | null
     createdAt: Date
   },
-  costUsd: number | null = null
+  totals: TokenWindowTotals | undefined = undefined
 ): AccessTokenRow => ({
   id: row.id,
   name: row.name,
@@ -112,7 +123,9 @@ const toWire = (
   profileKey: row.profileKey,
   lastUsedAt: row.lastUsedAt === null ? null : row.lastUsedAt.toISOString(),
   requestCount: row.requestCount,
-  costUsd,
+  costUsd: totals === undefined ? null : totals.costUsd,
+  inputTokens: totals === undefined ? null : totals.inputTokens,
+  outputTokens: totals === undefined ? null : totals.outputTokens,
   expiresAt: row.expiresAt === null ? null : row.expiresAt.toISOString(),
   revokedAt: row.revokedAt === null ? null : row.revokedAt.toISOString(),
   rotatedAt: row.rotatedAt === null ? null : row.rotatedAt.toISOString(),
@@ -162,14 +175,55 @@ export function sumSpendByToken(
   return totals
 }
 
-// Per-token spend over the trailing window. Two queries regardless of
+/**
+ * What one token's traffic did over the trailing window.
+ *
+ * Cost and token counts are carried together because they come out of
+ * one scan, but their nulls do not line up: a subscription model logs
+ * token counts and prices to null, so a row can have real counts and no
+ * cost. Splitting them into two maps and joining on presence would have
+ * lost that distinction.
+ */
+export interface TokenWindowTotals {
+  costUsd: number | null
+  inputTokens: number
+  outputTokens: number
+}
+
+/**
+ * Input / output totals per access token.
+ *
+ * Unlike the spend sum this discards nothing: a group with no price
+ * still moved tokens, and that is the number being asked for. Cache
+ * reads and writes are deliberately not folded in — they are priced
+ * separately and adding them into `inputTokens` would double-count
+ * against the cost column sitting next to it.
+ */
+export function sumTokensByToken(
+  groups: readonly TokenSpendGroup[]
+): Map<string, { inputTokens: number; outputTokens: number }> {
+  const totals = new Map<string, { inputTokens: number; outputTokens: number }>()
+  for (const group of groups) {
+    if (group.accessTokenId === null) continue
+    const running = totals.get(group.accessTokenId)
+    if (running === undefined) {
+      totals.set(group.accessTokenId, { inputTokens: group.inputTokens, outputTokens: group.outputTokens })
+      continue
+    }
+    running.inputTokens += group.inputTokens
+    running.outputTokens += group.outputTokens
+  }
+  return totals
+}
+
+// Per-token usage over the trailing window. Two queries regardless of
 // how many tokens exist: one grouped scan of the window, one price
 // lookup for the distinct models it touched.
 //
 // `onlyId` narrows the scan to one token for the detail screen. The
 // grouping and the pricing are otherwise identical, so a token's cost
 // cannot read one way in the table and another on its own page.
-async function spendByToken(onlyId?: string): Promise<Map<string, number>> {
+async function spendByToken(onlyId?: string): Promise<Map<string, TokenWindowTotals>> {
   const since = dayjs().subtract(SPEND_WINDOW_DAYS, 'day').toDate()
   const groups = await getPrismaClient().requestLog.groupBy({
     by: ['accessTokenId', 'provider', 'model'],
@@ -190,7 +244,17 @@ async function spendByToken(onlyId?: string): Promise<Map<string, number>> {
     cacheWriteTokens: g._sum.cacheWriteTokens === null ? 0 : g._sum.cacheWriteTokens
   }))
   const priceMap = await buildPriceMap(getPrismaClient(), [...new Set(rows.map((r) => `${r.provider}||${r.model}`))])
-  return sumSpendByToken(rows, priceMap)
+  const spend = sumSpendByToken(rows, priceMap)
+  const tokens = sumTokensByToken(rows)
+  const totals = new Map<string, TokenWindowTotals>()
+  // Keyed off the token sums, not the spend sums: every token with rows
+  // in the window belongs in the map, including the ones whose traffic
+  // priced to null.
+  for (const [id, counts] of tokens) {
+    const cost = spend.get(id)
+    totals.set(id, { costUsd: cost === undefined ? null : cost, ...counts })
+  }
+  return totals
 }
 
 export async function listAccessTokens(): Promise<AccessTokenRow[]> {
@@ -198,10 +262,7 @@ export async function listAccessTokens(): Promise<AccessTokenRow[]> {
     getPrismaClient().accessToken.findMany({ orderBy: { createdAt: 'desc' } }),
     spendByToken()
   ])
-  return rows.map((row) => {
-    const cost = spend.get(row.id)
-    return toWire(row, cost === undefined ? null : cost)
-  })
+  return rows.map((row) => toWire(row, spend.get(row.id)))
 }
 
 /** One token by id, priced the same way the list prices it. */
@@ -211,8 +272,7 @@ export async function getAccessToken(id: string): Promise<AccessTokenRow | null>
     .catch(() => null)
   if (row === null) return null
   const spend = await spendByToken(id)
-  const cost = spend.get(id)
-  return toWire(row, cost === undefined ? null : cost)
+  return toWire(row, spend.get(id))
 }
 
 export interface IssueInput {

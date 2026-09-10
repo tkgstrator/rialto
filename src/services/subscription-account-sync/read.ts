@@ -93,9 +93,15 @@ export async function getSubAccountTokensForKind(
   kind: 'claude' | 'codex',
   prisma: PrismaClient = getPrismaClient()
 ): Promise<SubAccountTokenInfo[]> {
+  // Ordered explicitly because session-account-router's tie-break used to
+  // fall through to this list's order, and an unordered findMany returns
+  // Postgres heap order — which shifts every time a row is UPDATEd (a
+  // token refresh rewrites accessTokenEnc), so "the first account" was
+  // neither stable nor anyone's decision.
   const all = await prisma.provider.findMany({
     where: { authMode: AuthMode.subscription },
-    include: { subscriptionAccounts: { where: { enabled: true } } }
+    orderBy: { name: 'asc' },
+    include: { subscriptionAccounts: { where: { enabled: true }, orderBy: { id: 'asc' } } }
   })
   const matched = all.filter((p) => {
     if (kind === 'claude') return p.apiBaseUrl.includes('anthropic.com')

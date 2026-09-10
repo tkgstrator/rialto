@@ -21,6 +21,7 @@ import {
   rotateAccessToken,
   SPEND_WINDOW_DAYS,
   sumSpendByToken,
+  sumTokensByToken,
   type TokenSpendGroup,
   updateAccessToken
 } from '../../src/services/access-token-service'
@@ -54,6 +55,34 @@ describe('sumSpendByToken', () => {
     const totals = sumSpendByToken([group({ inputTokens: 1_000_000 }), group({ outputTokens: 1_000_000 })], priceMap)
     // 1M input at $3 + 1M output at $15.
     expect(totals.get('tok1')).toBeCloseTo(18, 6)
+  })
+
+  test('token counts total across groups and keep tokens apart', () => {
+    const totals = sumTokensByToken([
+      group({ inputTokens: 10, outputTokens: 1 }),
+      group({ inputTokens: 5, outputTokens: 2 }),
+      group({ accessTokenId: 'tok2', inputTokens: 7, outputTokens: 3 }),
+      // Traffic that presented no token belongs to no token.
+      group({ accessTokenId: null, inputTokens: 999, outputTokens: 999 })
+    ])
+    expect(totals.get('tok1')).toEqual({ inputTokens: 15, outputTokens: 3 })
+    expect(totals.get('tok2')).toEqual({ inputTokens: 7, outputTokens: 3 })
+    expect(totals.size).toBe(2)
+  })
+
+  test('token counts survive a model with no price', () => {
+    // `sumSpendByToken` drops this group; the counts must not follow it
+    // out, or every subscription client would read as having sent nothing.
+    const totals = sumTokensByToken([group({ model: 'unpriced-model', inputTokens: 42, outputTokens: 8 })])
+    expect(sumSpendByToken([group({ model: 'unpriced-model', inputTokens: 42 })], priceMap).size).toBe(0)
+    expect(totals.get('tok1')).toEqual({ inputTokens: 42, outputTokens: 8 })
+  })
+
+  test('cache tokens are not folded into the input count', () => {
+    // They are priced on their own line, so adding them here would put a
+    // number in the column that does not explain the cost beside it.
+    const totals = sumTokensByToken([group({ inputTokens: 100, cacheReadTokens: 5_000, cacheWriteTokens: 900 })])
+    expect(totals.get('tok1')?.inputTokens).toBe(100)
   })
 
   test('keeps two tokens apart', () => {
@@ -121,10 +150,75 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
     expect(listed.costUsd).toBeCloseTo(3, 6)
   })
 
+  test('the window token counts ride alongside the cost', async () => {
+    const { token } = await issueAccessToken({ name: 'counted' })
+    const prisma = getPrismaClient()
+    const session = await prisma.session.create({ data: { id: 'sess-tokens' } })
+    await prisma.requestLog.createMany({
+      data: [
+        {
+          sessionId: session.id,
+          accessTokenId: token.id,
+          provider: 'anthropic',
+          model: 'claude-sonnet',
+          inputTokens: 1_000_000,
+          outputTokens: 250_000,
+          createdAt: dayjs().subtract(1, 'day').toDate()
+        },
+        // Outside the window, like the cost case above: the columns share
+        // a span, so a row the cost ignores must not land in the counts.
+        {
+          sessionId: session.id,
+          accessTokenId: token.id,
+          provider: 'anthropic',
+          model: 'claude-sonnet',
+          inputTokens: 5_000_000,
+          outputTokens: 5_000_000,
+          createdAt: dayjs()
+            .subtract(SPEND_WINDOW_DAYS + 2, 'day')
+            .toDate()
+        }
+      ]
+    })
+
+    const [listed] = await listAccessTokens()
+    expect(listed.inputTokens).toBe(1_000_000)
+    expect(listed.outputTokens).toBe(250_000)
+  })
+
+  test('an unpriced model still reports its token counts', async () => {
+    const { token } = await issueAccessToken({ name: 'subscription' })
+    const prisma = getPrismaClient()
+    const session = await prisma.session.create({ data: { id: 'sess-unpriced' } })
+    await prisma.requestLog.create({
+      data: {
+        sessionId: session.id,
+        accessTokenId: token.id,
+        // No scraped price for this pair, which is every subscription
+        // model. The cost is unknowable; the token counts are not, and
+        // reporting them as absent would hide real traffic.
+        provider: 'claude-code',
+        model: 'claude-sonnet-5',
+        inputTokens: 900,
+        outputTokens: 100
+      }
+    })
+
+    const [listed] = await listAccessTokens()
+    expect(listed.costUsd).toBeNull()
+    expect(listed.inputTokens).toBe(900)
+    expect(listed.outputTokens).toBe(100)
+  })
+
   test('a token with no priced traffic reports null, not zero', async () => {
     await issueAccessToken({ name: 'unused' })
     const [listed] = await listAccessTokens()
     expect(listed.costUsd).toBeNull()
+    // Same distinction on the counts: no rows in the window is an absent
+    // answer, and 0 would read as "this client sent nothing" about a
+    // client whose logs simply aged out.
+    expect(listed.inputTokens).toBeNull()
+    expect(listed.outputTokens).toBeNull()
   })
 
   test('the plaintext is returned once and never stored', async () => {

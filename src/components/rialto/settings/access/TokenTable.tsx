@@ -18,6 +18,7 @@ import type { InboundSurfaceWire } from '@/lib/api'
 import { fmtAgo, fmtCount } from '@/lib/rialto/format'
 import {
   type AccessTokenWire,
+  fmtTokenCount,
   sortTokens,
   TOKEN_STATE_PILL,
   type TokenState,
@@ -37,7 +38,7 @@ interface TokenRow {
   surfacePaths: string[]
 }
 
-type TokenSortKey = 'name' | 'surface' | 'requests' | 'cost' | 'lastUsed' | 'expires'
+type TokenSortKey = 'name' | 'surface' | 'requests' | 'cost' | 'inputTokens' | 'outputTokens' | 'lastUsed' | 'expires'
 
 /**
  * Each column sorts on the value behind its own cell. The two date
@@ -57,6 +58,11 @@ const tokenSortValue = (row: TokenRow, key: TokenSortKey): SortValue => {
   // Unpriced traffic is a null, not a zero — it sorts last in both
   // directions rather than claiming the token was free.
   if (key === 'cost') return row.token.costUsd
+  // Same null-is-absent rule as cost, for a different reason: a token
+  // with no rows left in the window has no count to compare, and zero
+  // would rank it below a token that genuinely moved nothing.
+  if (key === 'inputTokens') return row.token.inputTokens
+  if (key === 'outputTokens') return row.token.outputTokens
   if (key === 'lastUsed') return row.token.lastUsedAt === null ? null : Date.parse(row.token.lastUsedAt)
   // A null expiry is "never", which is not a missing value — it is the
   // furthest-out one there is. Passing null would park the permanent
@@ -87,6 +93,8 @@ function Row({ row, now, onOpen }: { row: TokenRow; now: number; onOpen: () => v
       </td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCount(token.requestCount)}</td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCost(token.costUsd)}</td>
+      <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtTokenCount(token.inputTokens)}</td>
+      <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtTokenCount(token.outputTokens)}</td>
       {/* Dates and durations are numbers: mono and tabular so the column
           lines up. In the proportional face "3h ago" and "41d ago" are
           different widths and cannot be compared down the column. */}
@@ -163,6 +171,10 @@ export function TokenTable({
             wraps makes the whole row two lines tall next to tables whose
             headers are one. */}
         <col className='w-28' />
+        {/* In / Out: same width as Requests. `fmtTokens` caps at "18.4M",
+            so these never need the room "Cost 30d" does. */}
+        <col className='w-20' />
+        <col className='w-20' />
         <col className='w-28' />
         <col className='w-24' />
         {/* Just the chevron now that the row actions have moved to the
@@ -182,6 +194,12 @@ export function TokenTable({
           </SortTh>
           <SortTh sortKey='cost' sort={sort} className='whitespace-nowrap px-3 text-right' align='right'>
             {t('settings.access.colCost')}
+          </SortTh>
+          <SortTh sortKey='inputTokens' sort={sort} className='whitespace-nowrap px-3 text-right' align='right'>
+            {t('settings.access.colInputTokens')}
+          </SortTh>
+          <SortTh sortKey='outputTokens' sort={sort} className='whitespace-nowrap px-3 text-right' align='right'>
+            {t('settings.access.colOutputTokens')}
           </SortTh>
           <SortTh sortKey='lastUsed' sort={sort} className='whitespace-nowrap px-3 text-right' align='right'>
             {t('settings.access.colLastUsed')}

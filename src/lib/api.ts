@@ -298,6 +298,9 @@ class ApiClient {
     surface: SurfaceId
     routingMode: RoutingMode
     profileKey?: string | null
+    // Omit to leave the stored list alone — the mode and profile writers
+    // do, and must not blank it by saying nothing.
+    deniedTargets?: string[]
   }): Promise<{ surfaces: InboundSurfaceWire[] }> {
     return this.post<{ surfaces: InboundSurfaceWire[] }>('/inbound-surfaces', body)
   }
