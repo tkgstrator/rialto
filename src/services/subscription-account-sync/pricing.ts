@@ -29,20 +29,3 @@ export const codexMonthlyPrice = (planType: string | null): number | null => {
   if (!planType) return null
   return CODEX_PLAN_PRICES[planType.toLowerCase()] ?? null
 }
-
-// Capacity multiplier for cross-account budget aggregation.
-// Claude quotas scale as Pro:Max:Max20 = 1:5:20; the router weights each
-// account's remaining-budget ratio by this factor when averaging so a
-// large account's headroom counts proportionally more than a small one's.
-// rateLimitTier is the definitive signal — the "20x" fragment appears
-// exclusively on Max 20x organizations. The plan string ("pro" comes from
-// Anthropic's organization_type, Codex uses "plus"/"pro") disambiguates
-// the remaining tiers. Codex ratios aren't publicly enumerated, so both
-// its tiers fall through to the default 1 — a Codex operator with mixed
-// accounts gets a plain average, which is still strictly better than
-// the previous "single account wins" behaviour.
-export const planCapacityWeight = (plan: string | null, rateLimitTier: string | null): number => {
-  if (rateLimitTier?.toLowerCase().includes('20x')) return 20
-  if (plan?.toLowerCase().includes('max')) return 5
-  return 1
-}

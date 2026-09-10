@@ -7,6 +7,7 @@
  */
 import type { CatalogEntry, CatalogModel } from '@/schemas/api/catalog'
 import type { RouterConfig } from '@/schemas/domain/router'
+import { planCapacityWeight, type SeatKind } from '@/shared/plan-capacity'
 import { transformerChain } from '@/shared/transformer-chain'
 import type { ApiStyle, Provider, ReasoningEffort, SubscriptionWire, TestStatus, Tier, TransformerWire } from './types'
 
@@ -337,9 +338,11 @@ export function buildModelRows(p: Provider, catalogEntry: CatalogEntry | undefin
 }
 
 /**
- * Which slice of a long model list to show. The default hides rows that
- * are neither switched on nor priced — on an 18-model vendor those are
- * the ones an operator has already decided against.
+ * Which slice of a long model list to show. The default is 'enabled' —
+ * on an 18-model vendor the five that are switched on are what the
+ * provider actually serves, and the other thirteen are decisions the
+ * operator has already made. 'priced' widens to what could be switched
+ * on; 'all' is the only one that reveals legacy rows.
  */
 export type ShowMode = 'priced' | 'enabled' | 'all'
 
@@ -367,6 +370,13 @@ export const passesShow = (row: ModelRow, mode: ShowMode): boolean => {
 export interface AccountQuota {
   /** '5h' or '7d' — the window the percentage and reset belong to. */
   window: string
+  /**
+   * The per-model weekly rows carry the model's name here; an account's
+   * own window carries null. Both arrive as '7d', so this is the only
+   * thing that tells "the account's weekly ceiling" from "Fable's share
+   * of it".
+   */
+  scope: string | null
   pct: number
   resetAt: string | null
 }
@@ -381,7 +391,9 @@ export type QuotaIndex = Map<string, AccountQuota[]>
 export function quotaForAccount(index: QuotaIndex, accountId: string): AccountQuota | null {
   const mine = index.get(accountId)
   if (mine === undefined || mine.length === 0) return null
-  const weekly = mine.find((q) => q.window === '7d')
+  // Scoped rows are '7d' too, and taking one of those would label a single
+  // model's share as the account's whole week.
+  const weekly = mine.find((q) => q.window === '7d' && q.scope === null)
   return weekly === undefined ? mine[0] : weekly
 }
 
@@ -395,7 +407,7 @@ export function indexQuota(
   for (const account of rows) {
     for (const row of account.windows) {
       const bucket = out.get(account.subAccountId)
-      const entry = { window: row.window, pct: row.pct, resetAt: row.resetAt }
+      const entry = { window: row.window, scope: row.scope, pct: row.pct, resetAt: row.resetAt }
       if (bucket === undefined) out.set(account.subAccountId, [entry])
       else bucket.push(entry)
     }
@@ -403,15 +415,50 @@ export function indexQuota(
   return out
 }
 
+/** '5h', or '7d' / '7d:fable' — one window across every account. */
+const windowKey = (row: AccountQuota): string => (row.scope === null ? row.window : `${row.window}:${row.scope}`)
+
+/** What the aggregate needs off an account: which quota rows, and how big a seat. */
+export interface QuotaAccount {
+  id: string
+  plan: string | null
+  rateLimitTier: string | null
+}
+
 /**
- * Rail-level headroom for a provider: the worst percentage across every
- * account and window it owns. A provider is as constrained as its most
- * exhausted window, so the maximum is the honest single number.
+ * Rail-level headroom for a provider, over every account it owns.
+ *
+ * Combined per window, then the fullest window wins. Not the worst
+ * account: accounts fail over to one another, so a provider holding one
+ * exhausted account and one untouched one still has budget left, and
+ * reporting 100% there calls a healthy provider dead. Windows stay
+ * separate from each other because they reset on different clocks — a 5h
+ * burst averaged into the week hides both.
+ *
+ * Seats are weighted by `planCapacityWeight`, the same 1 / 5 / 20 the
+ * routing scheduler weights its own pool budget by, because a percentage
+ * is a ratio and ratios over different denominators do not average. A
+ * spent Max 5x beside a fresh Max 20x is 20% of the pool gone, not half
+ * of it — and the column has to agree with the scheduler that is about to
+ * route on the same numbers. `kind` rides along because a plan called
+ * "pro" is the unit on Claude and a Max-class seat on Codex.
  */
-export function providerQuotaPct(index: QuotaIndex, accountIds: readonly string[]): number | null {
-  const pcts = accountIds.flatMap((id) => {
-    const rows = index.get(id)
-    return rows === undefined ? [] : rows.map((r) => r.pct)
-  })
+export function providerQuotaPct(index: QuotaIndex, kind: SeatKind, accounts: readonly QuotaAccount[]): number | null {
+  const byWindow = new Map<string, { used: number; weight: number }>()
+  for (const account of accounts) {
+    const rows = index.get(account.id)
+    if (rows === undefined) continue
+    const weight = planCapacityWeight(kind, account.plan, account.rateLimitTier)
+    for (const row of rows) {
+      const key = windowKey(row)
+      const prev = byWindow.get(key)
+      const seat = { used: row.pct * weight, weight }
+      if (prev === undefined) byWindow.set(key, seat)
+      else byWindow.set(key, { used: prev.used + seat.used, weight: prev.weight + seat.weight })
+    }
+  }
+  // Only the accounts that reported a window are folded into it: an
+  // account the collector has not reached yet is unknown, not empty.
+  const pcts = [...byWindow.values()].map((w) => Math.round(w.used / w.weight))
   return pcts.length === 0 ? null : Math.max(...pcts)
 }

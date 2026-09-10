@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { Meter, Pill } from '@/components/rialto/primitives'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
+import type { SeatKind } from '@/shared/plan-capacity'
 import {
   enabledCountOf,
   listedModelsOf,
@@ -25,7 +26,7 @@ import {
   providerQuotaPct,
   type QuotaIndex
 } from './derive'
-import type { Provider, SubscriptionWire } from './types'
+import type { Provider, SubAccountWire, SubscriptionWire } from './types'
 
 const STATE_TONE = { off: 'mute', live: 'ok', invalid: 'bad', unknown: 'mute' } as const
 
@@ -48,8 +49,15 @@ export interface ListedProvider {
 
 type SortKey = 'provider' | 'plan' | 'accounts' | 'quota' | 'key' | 'models' | 'state'
 
-const accountIdsOf = (sub: SubscriptionWire | undefined): string[] =>
-  sub === undefined ? [] : sub.accounts.map((a) => a.id)
+// The whole account, not its id: the quota aggregate weights each seat by
+// its plan, so a Max 20x counts for twenty Pros.
+const accountsOf = (sub: SubscriptionWire | undefined): SubAccountWire[] => (sub === undefined ? [] : sub.accounts)
+
+// Which vendor's plan names these seats carry. 'other' is a hand-added
+// subscription provider whose plan strings follow no vendor convention —
+// null, so the weighting reads only the fragments it can trust.
+const seatKindOf = (sub: SubscriptionWire | undefined): SeatKind =>
+  sub === undefined || sub.kind === 'other' ? null : sub.kind
 
 /** The host a key is spent against — the second line of an api_key row. */
 const hostOf = (provider: Provider): string => new URL(provider.api_base_url).host
@@ -110,8 +118,8 @@ function Row({
   const navigate = useNavigate()
   const { provider, subscription } = entry
   const plan = planOf(subscription)
-  const accounts = accountIdsOf(subscription)
-  const pct = providerQuotaPct(quota, accounts)
+  const accounts = accountsOf(subscription)
+  const pct = providerQuotaPct(quota, seatKindOf(subscription), accounts)
   const open = () => navigate(`/providers/${encodeURIComponent(provider.name)}`)
   return (
     // A row rather than a Link: a `<tr>` cannot legally hold one, and the
@@ -191,9 +199,9 @@ export function ProviderTable({
       case 'plan':
         return planOf(entry.subscription)
       case 'accounts':
-        return accountIdsOf(entry.subscription).length
+        return accountsOf(entry.subscription).length
       case 'quota':
-        return providerQuotaPct(quota, accountIdsOf(entry.subscription))
+        return providerQuotaPct(quota, seatKindOf(entry.subscription), accountsOf(entry.subscription))
       case 'key':
         return hasKey(entry.provider) ? hostOf(entry.provider) : null
       case 'models':
