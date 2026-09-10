@@ -55,10 +55,10 @@ const tags = (value: string): string[] =>
  *
  * Two kinds only: vocabulary the product itself defines and that appears
  * verbatim in config, logs and docs (`routed` / `passthrough`, the
- * `agent` / `subagent` lanes, `APIKEY`), and proper nouns or example
- * values that would be wrong to localise (Cloudflare Access, Redis,
- * Powerline, Markdown, a sample hostname). Translating either half would
- * make the UI disagree with the thing it is describing.
+ * `agent` / `subagent` lanes), and proper nouns or example values that
+ * would be wrong to localise (Cloudflare Access, Redis, Powerline,
+ * Markdown, a sample hostname). Translating either half would make the
+ * UI disagree with the thing it is describing.
  */
 const SHARED_VOCABULARY = new Set([
   'activity.requests.laneAgent',
@@ -79,7 +79,6 @@ const SHARED_VOCABULARY = new Set([
   'routing.common.laneSubagent',
   'routing.common.modePassthrough',
   'routing.common.modeRouted',
-  'settings.access.apikey',
   'settings.access.badgeConfigured',
   'settings.access.guardAccessTitle',
   'settings.access.issueNamePlaceholder',

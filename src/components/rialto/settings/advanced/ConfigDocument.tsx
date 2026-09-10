@@ -31,16 +31,15 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
  * rendered, and swap it back on save.
  *
  * Every other screen masks these — the Providers key field hides behind
- * Reveal, Settings -> Server masks APIKEY — and this one printed them in
- * a textarea, which is the screen most likely to be screen-shared or
- * pasted into a bug report. Saving restores whatever the operator did
- * not touch, so masking costs them nothing: a value still equal to the
- * mask means "unchanged", not "set it to bullets".
+ * Reveal — and this one printed them in a textarea, which is the screen
+ * most likely to be screen-shared or pasted into a bug report. Saving
+ * restores whatever the operator did not touch, so masking costs them
+ * nothing: a value still equal to the mask means "unchanged", not "set
+ * it to bullets".
  */
 const maskSecrets = (doc: unknown): unknown => {
   if (!isRecord(doc)) return doc
   const out: Record<string, unknown> = { ...doc }
-  if (typeof out.APIKEY === 'string' && out.APIKEY.length > 0) out.APIKEY = SECRET_MASK
   if (Array.isArray(out.Providers)) {
     out.Providers = out.Providers.map((entry) => {
       if (!isRecord(entry)) return entry

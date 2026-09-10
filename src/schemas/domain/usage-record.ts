@@ -120,8 +120,8 @@ export const UsageRecordSchema = z.object({
   // surfaces, which `inboundType` collapses into one bucket. Null for
   // pre-migration rows and for paths outside the registry.
   surface: z.string().nonempty().nullable(),
-  // Which AccessToken authenticated the request. Null for traffic on the
-  // envelope bootstrap token and for rows predating tokens.
+  // Which AccessToken authenticated the request. Null for rows predating
+  // tokens, and for traffic on the since-removed envelope bootstrap token.
   accessTokenId: z.string().nonempty().nullable(),
   // Whether the request took the subagent lane (a <RIALTO-SUBAGENT-MODEL>
   // tag was present). Always known at write — the route builder stamps

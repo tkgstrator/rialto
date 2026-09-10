@@ -70,7 +70,7 @@ flowchart TB
 |---|---|---|---|---|
 | ① Bootstrap | 0. migrateHomeDir | 旧 `~/.claude-code-router` を `~/.rialto` へコピー→検証→旧削除。**必ず最初**（`~/.rialto` が先にできると恒久 no-op になる） | disk → disk | `src/services/config/migrate-home-dir.ts` |
 | | 1. initDir | `~/.rialto/` などホーム作成 | – | `src/services/config/envelope.ts` |
-| | 2. initConfig | disk envelope を読み、HOST/PORT/APIKEY/LOG_LEVEL/PROXY_URL を `process.env` に反映。直後に `syncLoggerFromEnv()` が LOG_LEVEL を既存 pino に再適用 | disk → env | `src/services/config/envelope.ts`<br/>`src/logger.ts` |
+| | 2. initConfig | disk envelope を読み、HOST/PORT/LOG_LEVEL/PROXY_URL を `process.env` に反映。直後に `syncLoggerFromEnv()` が LOG_LEVEL を既存 pino に再適用 | disk → env | `src/services/config/envelope.ts`<br/>`src/logger.ts` |
 | | 3. ensureInboundSurfaces | 全面に明示的な `routingMode` 行を入れる（既存行は不変） | – → DB | `src/services/inbound-surface-service.ts` |
 | | 4. 背景ジョブ | usage capture / auth health / routing scheduler。いずれも fire-and-forget で boot をブロックしない | – | `src/services/usage-job.ts` ほか |
 | ② State | LlmsContext | 4 registries を 1 個に束ねた lazy singleton。DB-backed config 変更時に `resetLlmsContext()` で再生成 | AppConfig → ctx | `src/llms/context.ts` |
@@ -410,7 +410,7 @@ sequenceDiagram
 
 1. `migrateHomeDir()` — 旧 `~/.claude-code-router` を `~/.rialto` へ移す。**この文が最初でなければならない**: 移行の冪等条件が「宛先が既に存在する」なので、`initDir()` でも logger の初回ファイル書き込みでも、先に `~/.rialto` を作った時点でコピーは恒久的な no-op になり、運用者は無言で空の設定から始まってしまう。`RIALTO_HOME_DIR` でホームが別の場所に固定されているときはスキップする。
 2. `initDir()` — `~/.rialto/` などのホームディレクトリ確保。
-3. `initConfig()` — disk envelope を読んで `HOST` / `PORT` / `APIKEY` / `LOG_LEVEL` / `PROXY_URL` などを `process.env` に反映。続けて `syncLoggerFromEnv()` が、import 時に構築済みの pino インスタンスへ `LOG_LEVEL` を再適用する。
+3. `initConfig()` — disk envelope を読んで `HOST` / `PORT` / `LOG_LEVEL` / `PROXY_URL` などを `process.env` に反映。続けて `syncLoggerFromEnv()` が、import 時に構築済みの pino インスタンスへ `LOG_LEVEL` を再適用する。
 4. `ensureInboundSurfaces()` — 全面に明示的な `routingMode` 行を入れる。
 5. `startUsageCapture()` / `startAuthHealthCheck()` / `startRoutingScheduler()` — 背景ジョブ。Redis 到達性などで boot をブロックしない。
 
@@ -420,7 +420,8 @@ lift する一回限りの移行は削除済みで、流れは逆向きになっ
 `config.json` へ**書き戻す**。ディスク上のこのキーは読み取り専用のミラーであり、手で編集しても
 次の保存で上書きされる。`Router` はもうミラーされない — ミラーする実体（RouterSlot）が無い。
 旧ビルドが残した `Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK`
-は読み取り時に剥がされ（`RETIRED_ENVELOPE_KEYS`）、次の保存でディスクからも消える。
+は読み取り時に剥がされ（`RETIRED_ENVELOPE_KEYS`）、次の保存でディスクからも消える。廃止された管理キー
+`APIKEY` も同じ扱いで、`process.env` へは反映されない。
 
 `loadFullConfig()`（`src/services/config/compose.ts`）はいまも存在するが、起動時ではなく
 `buildLlmsContext` から遅延で呼ばれる。DDL とシード行もここでは作らない — `entrypoint.sh` が

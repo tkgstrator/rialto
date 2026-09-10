@@ -5,24 +5,10 @@ import {
   formatJson,
   isValidJson,
   lineNumbers,
-  maskSecret,
   orUnset,
   parseCount,
-  SECRET_MASK,
   totalBytes
 } from '../../../../src/lib/rialto/settings/envelope'
-
-describe('maskSecret', () => {
-  test('masks at a constant width so the real length never leaks', () => {
-    expect(maskSecret('short')).toBe(SECRET_MASK)
-    expect(maskSecret('a-very-much-longer-bootstrap-token')).toBe(SECRET_MASK)
-  })
-
-  test('distinguishes an unset key from a masked one', () => {
-    expect(maskSecret('')).toBe('not set')
-    expect(maskSecret(undefined)).toBe('not set')
-  })
-})
 
 describe('orUnset', () => {
   test('passes a present value through', () => {

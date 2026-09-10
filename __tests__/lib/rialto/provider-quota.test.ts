@@ -70,8 +70,8 @@ describe('providerQuotaPct', () => {
   })
 
   test('weighs a Codex pool by its own plan names', () => {
-    // Plus is the unit and Pro a Max-class seat, so the spent Plus is a
-    // sixth of this pool — not half of it.
+    // Plus is the unit and a bare Pro the 20x seat, so the spent Plus is a
+    // twenty-first of this pool — not half of it.
     const idx = index([
       ['a', [w('7d', 60)]],
       ['b', [w('7d', 0)]]
@@ -79,6 +79,19 @@ describe('providerQuotaPct', () => {
     const codexPool: QuotaAccount[] = [
       { id: 'a', plan: 'codex_plus', rateLimitTier: 'default' },
       { id: 'b', plan: 'codex_pro', rateLimitTier: 'default' }
+    ]
+    expect(providerQuotaPct(idx, 'codex', codexPool)).toBe(3)
+  })
+
+  test('and a Pro 5x seat as five of that unit', () => {
+    // `prolite` is the $100 seat, so here the spent Plus is a sixth.
+    const idx = index([
+      ['a', [w('7d', 60)]],
+      ['b', [w('7d', 0)]]
+    ])
+    const codexPool: QuotaAccount[] = [
+      { id: 'a', plan: 'plus', rateLimitTier: null },
+      { id: 'b', plan: 'prolite', rateLimitTier: null }
     ]
     expect(providerQuotaPct(idx, 'codex', codexPool)).toBe(10)
   })

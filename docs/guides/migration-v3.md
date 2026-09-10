@@ -239,19 +239,20 @@ manifest を parse するコードは無かったので、失われた互換性�
 
 **移行後、既存のクライアントは全部 401 になる。** これが最も刺さる非互換点である。
 
-- envelope の `APIKEY` は `/v1/*` では**受理されない**。効くのは `/api/*` だけ。
-- `APIKEY` は**新規インストールでは生成もされない**（以前は初回起動時に自動生成していた）。
+- 旧来の `APIKEY` は `/v1/*` では**受理されない**。`/api/*` でも受理されなくなった（§8-9）。
 - クライアントには **Access tokens** で発行するトークンを配る。
 
 ```shell
 export ANTHROPIC_AUTH_TOKEN=rialto_xxxxxxxx
 ```
 
-UI から締め出されている場合は API から直接発行できる（`APIKEY` を設定している場合）:
+UI を開けない場合は、**ホスト上で**資格情報ヘッダ無しに API を叩けば発行できる
+（ホスト上からのリクエストは管理ゲートを免除される）:
 
 ```shell
-curl -s -X POST http://127.0.0.1:3456/api/access-tokens \
-  -H "X-API-Key: $APIKEY" -H 'content-type: application/json' \
+# ホスト上で実行する
+curl -s -X POST http://localhost:3456/api/access-tokens \
+  -H 'content-type: application/json' \
   -d '{"name":"claude-code"}' | jq -r .plaintext
 ```
 
@@ -349,6 +350,31 @@ products" である。Rialto はゲートウェイなので**通るのは自分�
 移行後にまずやること: Routing 画面で、使うシナリオ × レーンのチェーンを書き、受け口を
 `routed` に切り替える。それまでは全リクエストが呼び出し側のモデルで素通しされる。
 
+### 8-9. `APIKEY`（管理キー）は削除された
+
+`/api/*` の bootstrap token / 緊急脱出キーだった envelope の `APIKEY` は**無くなった**。
+`/api/*` を通れるのは、ホスト上からのリクエスト（ローカル免除）と、検証済みの Cloudflare Access
+assertion の 2 つだけである。
+
+| 既存インストールで起きること | 対処 |
+|---|---|
+| 設定済みの `APIKEY` が効かなくなる。`config.json` の値は無視され、次の保存で消える（`POST /api/config` が警告を出す）。環境変数の `APIKEY` も読まれない | 不要（手で消してもよい） |
+| リモートから `X-API-Key` / `Authorization: Bearer` で `/api/*` を叩いていたクライアントやスクリプトは **401** になる | Access 経由にするか、ホスト上で実行する（ホスト上からなら資格情報ヘッダは要らない） |
+
+理由: Access を迂回できる `/api/*` のマスターキーであり、`config.json`・バックアップ・シェル履歴から
+読み取った者なら誰でも使えた。それを残していた理由の障害には、秘密を要らない入り直し方が既にある。
+
+締め出されたとき（Access の障害や設定ミス、`config.json` の退避、Postgres の停止）は、ホストへ SSH して
+ポートを転送し、手元のブラウザで `http://localhost:3456` を開く:
+
+```shell
+ssh -L 3456:localhost:3456 <host>
+```
+
+ホスト上からのリクエストは免除され、その判定は Access も DB も読まない。Docker ではポートをホストに
+publish しておくこと（ループバックで足りる）。`RIALTO_TRUST_LOCAL=false` で免除を切っていて Access も
+未設定なら `/api/*` には何も届かない（起動時に警告が出る）。詳細は `docs/guides/public-deployment.md`。
+
 ---
 
 ## 9. チェックリスト
@@ -359,6 +385,7 @@ products" である。Rialto はゲートウェイなので**通るのは自分�
 - [ ] `CCR_HOME_DIR` / `CCR_DEBUG_OAUTH` を使っていたなら新名に直した
 - [ ] `bun run scripts/rename-dev-database.ts` を流し、`DATABASE_URL` / `TEST_DATABASE_URL` を更新し、`--verify` が通った
 - [ ] Access tokens でアクセストークンを発行し、クライアントの `ANTHROPIC_AUTH_TOKEN` を差し替えた
+- [ ] リモートから `X-API-Key` で `/api/*` を叩くスクリプトがあれば、Access 経由かホスト上での実行に置き換えた（`APIKEY` は削除された — §8-9）
 - [ ] Routing 画面で、使うシナリオ × レーンのチェーンを書き、使っている受け口を `routed` に切り替えた（旧 RouterSlot の振り先は自動では移らない — §8-8）
 - [ ] チェーンで subscription の後ろに api_key を並べている箇所が、本当にそう落としてよい並びか確認した（auth_mode ゲートは無い）
 - [ ] `~/.rialto/<project>/` のプロジェクト別 Router 上書きファイルに頼っていたなら、アクセストークン × プロファイルで置き換えた

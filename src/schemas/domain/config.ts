@@ -34,9 +34,6 @@ export const ConfigEnvelopeSchema = z
   .object({
     HOST: z.string().default('127.0.0.1'),
     PORT: z.number().int().positive().default(3456),
-    // Optional break-glass credential for /api/*. Absent on a fresh
-    // install; an operator sets it deliberately or not at all.
-    APIKEY: z.string().default(''),
     LOG: z.boolean().default(false),
     LOG_LEVEL: LogLevelSchema.default('info'),
     // Size in MB at which the log file rotates. Declared, and mirrored onto
@@ -87,7 +84,8 @@ export const ConfigEnvelopeSchema = z
   })
   // Any other keys we don't know about — keep them, don't drop them. A
   // key a retired feature wrote (`Router`, `CROSS_PROVIDER_FALLBACK`,
-  // `CUSTOM_ROUTER_PATH`, `LiveRoutingName`, `ROUTER_MODE`) survives a
-  // read this way and is read by nothing; the next save prunes it.
+  // `CUSTOM_ROUTER_PATH`, `LiveRoutingName`, `ROUTER_MODE`, the `APIKEY`
+  // bootstrap token) survives a read this way and is read by nothing; the
+  // next save prunes it.
   .catchall(JsonValueSchema)
 export type ConfigEnvelope = z.infer<typeof ConfigEnvelopeSchema>

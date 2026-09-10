@@ -25,7 +25,7 @@ Access app C:  rialto.example.com/health Bypass (Everyone)  → 外形監視（�
 
 パスの深い方（`/v1`）が先に評価されるよう、アプリの順序に注意する。
 
-`/health` は APIKEY ゲートの外にある監視用エンドポイントなので、外形監視を当てているなら
+`/health` は管理ゲートの外にある監視用エンドポイントなので、外形監視を当てているなら
 同様に Bypass しておく。覆ったままだと監視が Access のログインHTMLを掴んで常時赤になる。
 
 ### Allow (Everyone) と Bypass は別物
@@ -41,7 +41,8 @@ Access app C:  rialto.example.com/health Bypass (Everyone)  → 外形監視（�
 ここは Bypass でなければならない。
 
 逆に UI 側（`/`）を Bypass にすると assertion が注入されなくなり、Rialto から見て
-「Access が居ない」状態になって `APIKEY` 頼み（未設定ならローカル免除頼み）に落ちる。
+「Access が居ない」状態になる。`/api/*` を通れるのはホスト上からのリクエストだけになり、
+リモートのブラウザは締め出される。
 
 Bypass の条件は Everyone でなくてもよい。クライアントの出口IPが固定なら送信元IPで絞れる。
 変動するなら Everyone とし、防御は Rialto の発行済みトークン（個別失効・面スコープ）に委ねる。
@@ -54,7 +55,7 @@ Bypass の条件は Everyone でなくてもよい。クライアントの出口
 > **Policy ID と間違えないこと。** ポリシー一覧に出る `a26eca84-65d8-4b67-...` のような
 > **ハイフン区切りUUID**は Policy ID であって AUD ではない。AUD は**64桁の16進数**（ハイフン無し）で、
 > ポリシーではなく**アプリケーション**に属する。Policy ID を入れると署名は通っても audience 検証で落ち、
-> assertion がある以上 `APIKEY` にフォールバックしないので**ブラウザから締め出される**。
+> 代わりに通す門も無いので**ブラウザから締め出される**（入り直し方は「締め出されたとき」）。
 >
 > 迷ったら、Access 経由で開いた状態で `GET /api/access-check/detect` を叩けば、
 > そのリクエストの assertion から両方の値が読める。
@@ -73,9 +74,9 @@ ACCESS_AUD=<AUD tag>
 audience を見ないと、**同じチームの別アプリのトークンで入れてしまう**ため、意図的に
 「半端な設定は無効」にしてある。
 
-設定後 `GET /api/identity` の `accessConfigured` が `true` になり、`mode` が
-`cloudflare_access`、`email` に検証済みのアドレスが入る。ここが `token` のままなら
-Access は効いていない。
+設定後 `GET /api/identity` の `accessConfigured` が `true` になり、トンネル越しに開くと `mode` が
+`cloudflare_access`、`email` に検証済みのアドレスが入る（ホスト上のブラウザから開くと `mode` は
+`local` で、Access が効いているかはそこでは確かめられない）。
 
 ## 3. `/v1/*` 用のトークンを発行する
 
@@ -89,11 +90,12 @@ export ANTHROPIC_BASE_URL=https://rialto.example.com
 export ANTHROPIC_AUTH_TOKEN=rialto_xxxxxxxx
 ```
 
-UI がまだ無い / 締め出された場合は API から直接発行できる（`APIKEY` は `/api/*` では有効）:
+UI を開けない場合は、**ホスト上で**資格情報ヘッダ無しに API を叩いて発行できる（ホスト上からの
+リクエストはローカル免除で `/api/*` を通る。この節の `curl` はすべてホスト上で実行する前提）:
 
 ```bash
-curl -s -X POST https://rialto.example.com/api/access-tokens \
-  -H "X-API-Key: $APIKEY" -H 'content-type: application/json' \
+curl -s -X POST http://localhost:3456/api/access-tokens \
+  -H 'content-type: application/json' \
   -d '{"name":"claude-code"}' | jq -r .plaintext
 ```
 
@@ -105,8 +107,8 @@ curl -s -X POST https://rialto.example.com/api/access-tokens \
 単一指定しかできなかった頃は「どちらかが 401 になる」か「面の指定を外す」かの二択だった。
 
 ```bash
-curl -s -X POST https://rialto.example.com/api/access-tokens \
-  -H "X-API-Key: $APIKEY" -H 'content-type: application/json' \
+curl -s -X POST http://localhost:3456/api/access-tokens \
+  -H 'content-type: application/json' \
   -d '{"name":"codex","surfaces":["openai-responses","openai-chat"]}' | jq -r .plaintext
 ```
 
@@ -137,8 +139,7 @@ Rotate は**行を残したまま値だけ差し替える**:
 キャッシュも同時にクリアされるので、TTL（30 秒）の分だけ生き残ることもない。
 
 ```bash
-curl -s -X POST https://rialto.example.com/api/access-tokens/$ID/rotate \
-  -H "X-API-Key: $APIKEY" | jq -r .plaintext
+curl -s -X POST http://localhost:3456/api/access-tokens/$ID/rotate | jq -r .plaintext
 ```
 
 失効済み / 期限切れの行は **409 で拒否される**。新しい値を載せても `revokedAt` と
@@ -152,9 +153,9 @@ Revoke は行を残して無効化し、Delete は行ごと消す。Delete が�
 ## 4. オリジンを直接叩けなくする
 
 **Access はエッジでしか効かない。** オリジン（このプロセス）に直接到達できる経路が残っていると、
-`Cf-Access-Jwt-Assertion` ヘッダを偽造されても検証は通らないものの、`/api/*` は
-`APIKEY` だけが門になる。cloudflared 経由のみで到達するようにし、
-`HOST` を loopback に寄せるか、ファイアウォールで塞ぐ。
+`Cf-Access-Jwt-Assertion` ヘッダを偽造されても検証は通らないものの、`Host` をループバック名にして
+転送ヘッダを付けないリクエストは次節のローカル免除で `/api/*` を通ってしまう。cloudflared 経由のみで
+到達するようにし、`HOST` を loopback に寄せるか、ファイアウォールで塞ぐ。
 
 ## ローカル免除は「peer が loopback か」では判定していない
 
@@ -173,23 +174,32 @@ loopback から到着する。peer アドレスだけを信じる実装は、ト
 | 転送ヘッダが 1 つも無い | `cf-connecting-ip` / `cf-ray` / `cf-access-jwt-assertion` / `x-forwarded-*` / `x-real-ip` / `forwarded` のいずれかがあれば、そのリクエストはこのマシン発ではない |
 
 免除を完全に切りたい場合は `RIALTO_TRUST_LOCAL=false`（プロセス環境変数。config envelope の
-キーではない）。ローカルでも必ず資格情報を要求するようになる。
+キーではない）。ローカルからのリクエストにも Access の assertion を要求するようになる。つまり
+Access を設定していないまま切ると `/api/*` には何も届かなくなり（起動時に警告が出る）、
+「締め出されたとき」の入り直し方も使えなくなる。
 
 この判定が**防いでいないもの**: そのポートに TCP 接続を張り、任意のヘッダを立てられる何か。
 loopback 上ではそれはマシン上のプロセスであり、設定ファイルを読んでトークンを取れる。
 マシン外からなら、それはオリジンに直接到達できているということ — 本節が「やるな」と言っている
 状態そのもので、ヘッダ検査では直せない。
 
-## `APIKEY` の適用範囲
+## 管理用の共有シークレットは無い
 
-envelope の `APIKEY` が効くのは **`/api/*` だけ**。`/v1/*` では受理されない。
+`/api/*` を通れるのは次の 2 つだけで、`x-api-key` / `Authorization: Bearer` で送る管理用の
+資格情報は存在しない。
 
-**新規インストールでは生成されない。** 以前は初回起動時に自動生成していたが、それは
-「Access を迂回できるマスターキーが、config.json・バックアップ・シェル履歴のどこかに必ず
-存在する」状態を全インストールに配ることを意味していた。いまは誰も必要としていない —
-このマシン上のブラウザは免除され、リモートの管理アクセスは Access を通り、`/v1` は発行済み
-トークンだけを受ける。手で設定することは引き続きできる。**マスターキーを持たされること**と
-**持つことを自分で選ぶこと**は別の判断である。
+| 門 | 条件 |
+|---|---|
+| ホスト上からのリクエスト | 前節のローカル免除（`Host` がループバック名 AND 転送ヘッダ無し）。`RIALTO_TRUST_LOCAL=false` で切れる |
+| Cloudflare Access | `ACCESS_TEAM_DOMAIN` と `ACCESS_AUD` が両方あり、assertion の検証が通ること |
+
+**以前あった envelope の `APIKEY`（bootstrap token / 緊急脱出用の管理キー）は削除した。**
+Access を迂回できる `/api/*` のマスターキーで、`config.json`・バックアップ・シェル履歴のどこかから
+読み取った者なら誰でも使えた。残していた理由の障害 — Access 側の障害で管理UIから締め出される、
+Postgres が落ちて AccessToken を引けない（＝UIからトークンを発行できない）— には、秘密を要らない
+入り直し方が既にある（「締め出されたとき」）。`config.json` に残った `APIKEY` は無視され、次の保存で
+消える（`POST /api/config` が警告を出す）。環境変数の `APIKEY` も読まれない。EventSource のために
+`/api/request-logs/events` だけが受けていた `?apikey=` クエリも無くなった。
 
 `/v1/*` はエッジで Bypass にする以上、このミドルウェアが通すものが
 **課金経路の前に立つ唯一の門**になる。そこにマスターキーを残すと、
@@ -201,13 +211,23 @@ envelope の `APIKEY` が効くのは **`/api/*` だけ**。`/v1/*` では受理
 これは意図した形で、「管理キーを持っている者なら誰でも通れる」より
 「誰が呼んでよいかを決めるまで閉じている」を選んでいる。
 
-`/api/*` に `APIKEY` を残しているのは**復旧経路**のため:
+## 締め出されたとき
 
-- Access 側の障害で管理UIから締め出される
-- Postgres が落ちて AccessToken を引けない（＝UIからトークンを発行できない）
+Access の障害や設定ミス、`config.json` が壊れて退避された、Postgres が落ちた — どの場合も
+**ホストへ SSH してポートを転送する**:
 
-公開運用では `APIKEY` を強い値にし、配らないこと。クライアントに配るのは
-発行したトークン、`APIKEY` は手元に置く。
+```bash
+ssh -L 3456:localhost:3456 <host>
+# 手元のブラウザで http://localhost:3456 を開く
+```
+
+転送されたリクエストは `Host` がループバック名で転送ヘッダも無いので、ホスト上からのリクエストとして
+ローカル免除を通る。この判定は Access も DB も読まないので、両方が壊れていても効く。Docker では
+ポートをホストに publish しておくこと（`127.0.0.1:3456:3456` のループバックだけで足りる）。
+同じコマンドは Settings → Access の「If Access breaks」の行にも出ている。
+
+UI を開かずにトークンを発行・ローテートしたいときは、ホスト上で `http://localhost:3456/api/...` を
+資格情報ヘッダ無しに叩く（「3. `/v1/*` 用のトークンを発行する」の例）。
 
 ## サブスクリプションのサインイン（Claude / Codex）
 
@@ -243,10 +263,4 @@ initiate は、redirect_uri に Anthropic 自身の表示用コールバック
 
 ## 現状の制限
 
-- `GET /api/config` は `APIKEY` を平文で返す。Access で守られた管理者しか到達できない前提。
 - Access のグループ／ポリシー一覧の表示は未実装（Zero Trust API 連携が必要）。
-- `APIKEY` 専用のローテーションエンドポイントは無い。Settings 経由（`POST /api/config`）か
-  `config.json` の書き換えで変える。**新しい値を入れる分には再起動は要らない** —
-  保存後に `applyEnvelopeToEnv` が `process.env` へ即時反映する。ただし
-  `applyEnvelopeToEnv` は空の値をスキップするので、`APIKEY` を**消す**方向の変更だけは
-  プロセス再起動まで効かない。

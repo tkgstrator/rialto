@@ -7,10 +7,11 @@
  *   - Google's own two conventions (`x-goog-api-key`, `?key=`) must
  *     open it with an issued token, because that is what a Gemini
  *     client sends and nothing else will do.
- *   - The envelope bootstrap token must NOT, exactly as on the other
- *     /v1 surfaces. At the edge this path is a Bypass policy, so the
- *     gate here is the only thing in front of the operator's credits,
- *     and a master key there is unrevocable and unattributable.
+ *   - A value left in the environment as the retired envelope APIKEY must
+ *     NOT, exactly as on the other /v1 surfaces. At the edge this path is
+ *     a Bypass policy, so the gate here is the only thing in front of the
+ *     operator's credits, and a master key there is unrevocable and
+ *     unattributable.
  *   - Surface scoping must hold on a globbed path, which is the one
  *     place it could quietly stop working: the scope check resolves the
  *     surface from the request path, and gemini's is a prefix match.
@@ -29,7 +30,7 @@ import { INBOUND_MOUNT_PREFIXES } from '../../src/llms/inbound/surfaces'
 import { invalidateTokenCache, issueAccessToken, revokeAccessToken } from '../../src/services/access-token-service'
 import { HAS_DB, teardownPrisma } from '../db/helpers'
 
-const BOOTSTRAP = 'bootstrap-key-12345'
+const LEFTOVER = 'leftover-key-12345'
 const GENERATE = '/v1beta/models/gemini-3-pro:generateContent'
 const prevKey = process.env.APIKEY
 
@@ -51,7 +52,7 @@ describe.skipIf(!HAS_DB)('/v1beta auth', () => {
   let token = ''
 
   beforeEach(async () => {
-    process.env.APIKEY = BOOTSTRAP
+    process.env.APIKEY = LEFTOVER
     await getPrismaClient().accessToken.deleteMany({})
     invalidateTokenCache()
     token = (await issueAccessToken({ name: 'gemini test' })).plaintext
@@ -90,12 +91,12 @@ describe.skipIf(!HAS_DB)('/v1beta auth', () => {
       expect((await call(buildApp(), GENERATE)).status).toBe(401)
     })
 
-    test('the envelope bootstrap token', async () => {
+    test('a leftover APIKEY value', async () => {
       // The regression this file exists to catch, and the reason the
       // gemini surface could not simply reuse the admin gate.
       const app = buildApp()
-      expect((await call(app, GENERATE, { 'x-goog-api-key': BOOTSTRAP })).status).toBe(401)
-      expect((await call(app, GENERATE, { authorization: `Bearer ${BOOTSTRAP}` })).status).toBe(401)
+      expect((await call(app, GENERATE, { 'x-goog-api-key': LEFTOVER })).status).toBe(401)
+      expect((await call(app, GENERATE, { authorization: `Bearer ${LEFTOVER}` })).status).toBe(401)
     })
 
     test('a revoked token', async () => {

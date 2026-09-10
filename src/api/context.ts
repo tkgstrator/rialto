@@ -12,11 +12,12 @@ import type { ResolvedToken } from '../services/access-token-service'
 /**
  * How an /api request got past the gate.
  *
- * Three distinct answers, and the screen that reports them was
- * conflating two: `local` means no credential was presented or needed,
- * which is not the same as one having been checked.
+ * Two answers, and they are not interchangeable: `local` means no
+ * credential was presented or needed, which is not the same as an Access
+ * assertion having been checked. There is no third — the envelope
+ * bootstrap token that used to be one is gone.
  */
-export type AuthVia = 'local' | 'cloudflare_access' | 'token'
+export type AuthVia = 'local' | 'cloudflare_access'
 
 declare module 'hono' {
   interface ContextVariableMap {

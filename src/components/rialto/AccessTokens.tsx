@@ -9,8 +9,8 @@
  * time is operations, not configuration.
  *
  * Settings → Access keeps the half that really is configuration — who
- * may administer this install, via Cloudflare Access or the bootstrap
- * token.
+ * may administer this install: through Cloudflare Access, or from the
+ * host itself.
  */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'

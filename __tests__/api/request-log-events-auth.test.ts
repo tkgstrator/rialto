@@ -2,22 +2,22 @@
  * The live-updates stream authenticates like every other /api route.
  *
  * It used to carry its own inline check against the envelope key,
- * because EventSource cannot set headers and the credential arrives as a
+ * because EventSource cannot set headers and the credential arrived as a
  * query parameter. That copy knew nothing about the local exemption or
  * Cloudflare Access, so on a machine where every other /api call
- * succeeded, live updates alone returned 401 — and it would have broken
- * outright once the bootstrap token stopped being minted.
+ * succeeded, live updates alone returned 401.
  *
- * `adminAuth` already permits the `apikey` parameter on this one path,
- * so the stream carries no gate of its own. These tests pin that it is
- * still gated, by the shared one.
+ * The key is gone now, and with it the `apikey` query parameter this one
+ * path used to accept. These tests pin that the stream is gated by the
+ * shared gate, and that a key left over from an older install opens
+ * nothing.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { adminAuth } from '../../src/api/api-key-auth'
 import { requestLogsRoute } from '../../src/api/request-logs/route'
 
-const BOOTSTRAP = 'bootstrap-key-for-events'
+const LEFTOVER = 'a-key-left-in-the-environment'
 const PATH = '/api/request-logs/events'
 const saved = { key: process.env.APIKEY, trust: process.env.RIALTO_TRUST_LOCAL }
 
@@ -38,7 +38,9 @@ async function status(url: string, headers: Record<string, string> = {}): Promis
 }
 
 beforeEach(() => {
-  process.env.APIKEY = BOOTSTRAP
+  // An install upgraded from a build that accepted the key may still
+  // have one in its environment.
+  process.env.APIKEY = LEFTOVER
   delete process.env.RIALTO_TRUST_LOCAL
 })
 
@@ -56,29 +58,27 @@ describe('GET /api/request-logs/events', () => {
     expect(await status(PATH, { host: 'localhost:16175' })).not.toBe(401)
   })
 
-  test('accepts the credential as a query parameter, since EventSource cannot send headers', async () => {
-    expect(await status(`${PATH}?apikey=${BOOTSTRAP}`, { host: 'rialto.example.com' })).not.toBe(401)
-  })
-
   test('rejects a remote request with no credential', async () => {
     expect(await status(PATH, { host: 'rialto.example.com' })).toBe(401)
   })
 
-  test('rejects a wrong query parameter', async () => {
-    expect(await status(`${PATH}?apikey=nope`, { host: 'rialto.example.com' })).toBe(401)
+  test('the old query parameter opens nothing, even carrying the old key', async () => {
+    expect(await status(`${PATH}?apikey=${LEFTOVER}`, { host: 'rialto.example.com' })).toBe(401)
+  })
+
+  test('nor does the old key as a header', async () => {
+    expect(await status(PATH, { host: 'rialto.example.com', 'x-api-key': LEFTOVER })).toBe(401)
+    expect(await status(PATH, { host: 'rialto.example.com', authorization: `Bearer ${LEFTOVER}` })).toBe(401)
   })
 
   test('a tunnelled request is not local even when the Host says localhost', async () => {
     expect(await status(PATH, { host: 'localhost:16175', 'cf-connecting-ip': '203.0.113.7' })).toBe(401)
   })
 
-  test('is still gated when no bootstrap token is configured at all', async () => {
-    // The default after this change: nothing to fall back to, so remote
-    // access depends entirely on Access.
-    delete process.env.APIKEY
-    expect(await status(PATH, { host: 'rialto.example.com' })).toBe(401)
-    expect(await status(`${PATH}?apikey=anything`, { host: 'rialto.example.com' })).toBe(401)
-    // ...and a local browser still gets through, which is the point.
-    expect(await status(PATH, { host: 'localhost:16175' })).not.toBe(401)
+  test('with the local exemption switched off, a browser on this machine is refused too', async () => {
+    // RIALTO_TRUST_LOCAL=false with Access unconfigured leaves nothing
+    // that can reach /api/* — the state boot warns about.
+    process.env.RIALTO_TRUST_LOCAL = 'false'
+    expect(await status(PATH, { host: 'localhost:16175' })).toBe(401)
   })
 })

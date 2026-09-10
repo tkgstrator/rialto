@@ -17,7 +17,6 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { downloadText } from '@/components/rialto/activity/data'
 import { LogBody } from '@/components/rialto/activity/LogBody'
 import { type LogLine, parseLogLines } from '@/components/rialto/activity/log-lines'
 import { chipFor, LEVEL_CHIPS, type LevelChip } from '@/components/rialto/activity/log-view'
@@ -205,31 +204,23 @@ export function ActivityLogs() {
 
   const lines = useMemo(() => parseLogLines(rawLines), [rawLines])
 
-  const download = () => {
-    if (file === null) return
-    downloadText(file.name, rawLines.join('\n'), 'application/x-ndjson')
-  }
-
+  // No Download. The screens hand out no files: the log is read here, or
+  // on the host it is written to.
   return (
     <Screen
       subtitle={
         file === null ? undefined : t('activity.logs.subtitle', { file: file.name, size: formatFileSize(file.size) })
       }
       actions={
-        <>
-          <RButton
-            variant='outline'
-            icon='ri-broadcast-line'
-            aria-pressed={follow}
-            onClick={() => setFollow((v) => !v)}
-            className={follow ? 'bg-muted/60' : ''}
-          >
-            {t('activity.logs.follow')}
-          </RButton>
-          <RButton variant='ghost' icon='ri-download-line' onClick={download} disabled={rawLines.length === 0}>
-            {t('activity.logs.download')}
-          </RButton>
-        </>
+        <RButton
+          variant='outline'
+          icon='ri-broadcast-line'
+          aria-pressed={follow}
+          onClick={() => setFollow((v) => !v)}
+          className={follow ? 'bg-muted/60' : ''}
+        >
+          {t('activity.logs.follow')}
+        </RButton>
       }
     >
       {error !== null ? (

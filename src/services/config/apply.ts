@@ -77,9 +77,7 @@ export async function applyUiConfig(payload: Record<string, unknown>): Promise<A
   const { envelope, incomingProviders, droppedKeys } = splitPayload(payload)
   const warnings: string[] = []
   if (droppedKeys.length > 0) {
-    warnings.push(
-      `Ignored retired config key(s): ${droppedKeys.join(', ')}. Routing is configured as a chain under Routing; nothing was stored for them.`
-    )
+    warnings.push(`Ignored retired config key(s): ${droppedKeys.join(', ')}. Nothing was stored for them.`)
   }
 
   const prisma = getPrismaClient()

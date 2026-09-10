@@ -183,9 +183,9 @@ export interface AccessTokenWire {
 
 export interface IdentityResponse {
   /** `local` = no credential presented or needed (a browser on the host). */
-  mode: 'local' | 'cloudflare_access' | 'token'
+  mode: 'local' | 'cloudflare_access'
   email: string | null
-  // False means /api/* is gated by the single bootstrap token alone.
+  // False means nothing but a browser on the host can reach /api/*.
   accessConfigured: boolean
 }
 

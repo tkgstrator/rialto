@@ -122,7 +122,7 @@
       "mock": "activity-usage.html",
       "route": "/activity/usage",
       "group": "Activity",
-      "note": "Usage tab. Subscription windows including the per-model weekly ones Overview drops, utilization over time, and per-token spend — previously visible only inside Settings -> Access. Reads /api/usage and /api/usage/history, neither of which had a UI reader before this. KNOWN DIFF ~5% light / ~6% dark: the mock draws two subscription accounts (six windows); a one-account install renders three, and the missing rows shift every section below them. Data, not design — the section order, heads and column layout line up."
+      "note": "Usage tab. Subscription windows grouped by provider, each account's plan with its multiplier (Max 5x / Max 20x, Codex Pro 5x / Pro 20x), including the per-model weekly windows Overview drops; utilization over time; per-token spend. No export. Reads /api/usage, /api/usage/history and /api/subscriptions (provider grouping and rate_limit_tier). KNOWN DIFF: the mock draws two providers and five accounts; an install with fewer renders fewer rows, and the missing rows shift every section below them. Data, not design — the section order, heads and column layout line up."
     },
     {
       "name": "activity-session",
@@ -150,7 +150,7 @@
       "mock": "settings-access.html",
       "route": "/settings/access",
       "group": "Settings",
-      "note": "Admin access: Cloudflare Access and the bootstrap token. The per-client /v1 tokens moved to their own top-level section. KNOWN DIFF: the mock depicts an install with Cloudflare Access configured (signed-in email, populated policy rows); an install without it correctly renders the other state, including an exposure warning the mock is never in a position to show."
+      "note": "Admin access: Cloudflare Access, and the way back in when it breaks — a browser on the host, reached over an SSH port-forward. There is no bootstrap token (APIKEY is gone). The per-client /v1 tokens moved to their own top-level section. KNOWN DIFF: the mock depicts an install with Cloudflare Access configured (signed-in email, populated policy rows); an install without it correctly renders the other state, including the notice that remote admin access is closed, which the mock is never in a position to show."
     },
     {
       "name": "settings-logging",

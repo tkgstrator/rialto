@@ -19,7 +19,7 @@ const { renderShell, pill, btn, tabs } = window.Shell
 // behind it, while the implementation ships a whole panel.
 //
 // The probe is `GET /health` at the ROOT, not under /api: uptime checks
-// must not need the bootstrap token. That also puts it outside the Vite
+// must not need a credential. That also puts it outside the Vite
 // dev server's default passthrough, which is why it is listed explicitly
 // in the exclude list — without that entry the SPA shell answers and every
 // check reads unreachable.
@@ -75,22 +75,10 @@ document.getElementById('root').innerHTML = `
 
     <div class="flex items-baseline gap-3 border-t border-border px-6 pt-6 pb-3">
       <h2 class="text-sm font-semibold">Checks</h2>
-      <span class="text-xs text-muted-foreground/70">unedited, in the order the probe returns them</span>
     </div>
     ${CHECKS.map(checkRow).join('')}
 
-    <div class="px-6 py-4">
-      <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
-        <i class="ri-information-line mr-1 align-[-1px]"></i>
-        <span class="font-mono">skip</span> is not a failure — it is a check for something this
-        install has not configured, and colouring it red would cost the one badge that has to mean
-        something. The <span class="font-mono">scheduler</span> row is the shape that matters here:
-        the proxy keeps serving with a stale set of weights, so nothing 500s and nothing tells you,
-        which is exactly why this panel exists.
-      </div>
-    </div>
-
-    <div class="flex items-center gap-3 border-t border-border px-6 pt-5 pb-3">
+    <div class="mt-4 flex items-center gap-3 border-t border-border px-6 pt-5 pb-3">
       <h2 class="text-sm font-semibold">Danger zone</h2>
     </div>
     <!-- Same rows as the config tab, and for the same reason: three

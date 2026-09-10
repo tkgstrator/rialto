@@ -6,6 +6,7 @@
  * from the Prisma row. That one field is declared here rather than added
  * to lib/api.ts, which the Rialto migration keeps frozen.
  */
+import type { SubscriptionsResponse } from '@/components/rialto/providers/types'
 import { api, type RequestLogItem } from '@/lib/api'
 import type { UsageHistorySample, UsageWire } from './usage-derive'
 
@@ -107,6 +108,16 @@ export function fetchUsageHistory(days: number): Promise<{ samples: UsageHistory
   return api.get<{ samples: UsageHistorySample[] }>(`/usage/history?days=${days}`)
 }
 
+/**
+ * Which provider owns each subscription account, and the plan strings
+ * its name is read from. `/api/usage` carries neither: it is one list per
+ * vendor, and Claude's `rate_limit_tier` — the only thing that tells Max
+ * 5x from Max 20x — lives only here.
+ */
+export function fetchSubscriptions(): Promise<SubscriptionsResponse> {
+  return api.get<SubscriptionsResponse>('/subscriptions')
+}
+
 export interface WindowTotals {
   requests: number
   tokens: number
@@ -142,22 +153,3 @@ export function percentile(ascending: number[], p: number): number | null {
 }
 
 export const TREND_BUCKETS = 7
-
-function csvCell(value: string): string {
-  return /[",\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value
-}
-
-/** Hand the browser a generated file. */
-export function downloadText(filename: string, text: string, mime: string): void {
-  const url = URL.createObjectURL(new Blob([text], { type: mime }))
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  URL.revokeObjectURL(url)
-}
-
-/** Client-side CSV export for the rows currently in view. */
-export function downloadCsv(filename: string, rows: string[][]): void {
-  downloadText(filename, rows.map((r) => r.map(csvCell).join(',')).join('\n'), 'text/csv;charset=utf-8')
-}

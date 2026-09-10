@@ -97,7 +97,9 @@ const ACCOUNTS = [
   // were shortened to survive a 288px-narrower pane; drawn short, the
   // panel looked comfortable at a width it never had.
   {
-    label: 'tkgstrator@gmail.com', plan: 'Max', auth: 'live',
+    // "Max 20x", not "Max": Max is two plans, and which one decides how
+    // much headroom the meters below are a percentage of.
+    label: 'tkgstrator@gmail.com', plan: 'Max 20x', auth: 'live',
     windows: [
       { label: '5-hour',        pct: 0,   resets: '—' },
       { label: '7-day',         pct: 100, resets: '2d 09h' },

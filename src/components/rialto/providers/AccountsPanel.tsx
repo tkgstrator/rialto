@@ -17,7 +17,9 @@ import { useTranslation } from 'react-i18next'
 import { Meter, Pill } from '@/components/rialto/primitives'
 import { fmtUntil } from '@/lib/rialto/format'
 import { cn } from '@/lib/utils'
-import { type AccountQuota, accountLabel, formatPlan, type QuotaIndex, quotaForAccount } from './derive'
+import type { SeatKind } from '@/shared/plan-capacity'
+import { planLabel } from '@/shared/plan-label'
+import { type AccountQuota, accountLabel, type QuotaIndex, quotaForAccount } from './derive'
 import type { AuthStatus, SubAccountWire, SubscriptionWire } from './types'
 
 // Same three states the provider rail labels, so an account and its
@@ -63,10 +65,22 @@ function WindowLine({ row, now }: { row: AccountQuota; now: number }) {
 
 const DASH = '—'
 
-function AccountRow({ account, quota, now }: { account: SubAccountWire; quota: QuotaIndex; now: number }) {
+function AccountRow({
+  account,
+  kind,
+  quota,
+  now
+}: {
+  account: SubAccountWire
+  kind: SeatKind
+  quota: QuotaIndex
+  now: number
+}) {
   const { t } = useTranslation()
   const windows = quotaForAccount(quota, account.id)
-  const plan = account.plan === null ? null : formatPlan(account.plan)
+  // "Max 20x", not "max": the stored plan cannot say which of two plans
+  // the seat is on, and the meters below are a share of that plan.
+  const plan = planLabel(kind, account.plan, account.rateLimitTier)
   return (
     <div className={cn('px-4 py-3 transition-colors hover:bg-muted/50', account.enabled ? '' : 'opacity-45')}>
       <div className='flex items-center gap-2'>
@@ -102,6 +116,9 @@ export function AccountsPanel({
 }) {
   const { t } = useTranslation()
   const accounts = subscription === undefined ? [] : subscription.accounts
+  // A hand-added provider's plan strings follow no vendor convention, so
+  // they are read without one.
+  const kind: SeatKind = subscription === undefined || subscription.kind === 'other' ? null : subscription.kind
   return (
     <div className='border-r border-border'>
       <div className='px-6 pt-5 pb-2'>
@@ -112,7 +129,7 @@ export function AccountsPanel({
       ) : (
         <div className='px-2 pb-4'>
           {accounts.map((a) => (
-            <AccountRow key={a.id} account={a} quota={quota} now={now} />
+            <AccountRow key={a.id} account={a} kind={kind} quota={quota} now={now} />
           ))}
         </div>
       )}

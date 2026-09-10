@@ -56,7 +56,6 @@ document.getElementById('root').innerHTML = `
 
       ${field('Host', '0.0.0.0', 'Bind address. Put Cloudflare Access in front before exposing beyond loopback.')}
       ${field('Port', '3456', '')}
-      ${field('Bootstrap token', '••••••••••••••••••••', 'Gates /api/* and /v1/*. Minted on first run. Manage per-client tokens under <a href="settings-access.html" class="underline underline-offset-2">Access</a>.')}
       ${field('Request timeout', '600000', 'Milliseconds. Applies to every upstream call.')}
       ${field('Proxy URL', 'unset', 'Routes upstream traffic through an HTTPS proxy.')}
       ${field('Non-interactive', false, 'Skip prompts that expect a TTY.', 'toggle')}

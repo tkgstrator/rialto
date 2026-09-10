@@ -875,8 +875,11 @@ const activityTabs = (active) =>
  * provider-subscription.html and every key row on provider-apikey.html.
  */
 const PROVIDER_ROWS = [
-  { id: 'claude-code', label: 'Claude Code', vendor: 'Anthropic', auth: 'subscription', plan: 'Max',    accounts: 2, key: null, models: '6 / 7',  quota: 71, state: 'live' },
-  { id: 'codex',       label: 'Codex',       vendor: 'OpenAI',    auth: 'subscription', plan: 'Pro',    accounts: 1, key: null, models: '1 / 4',  quota: 88, state: 'live' },
+  // The plan carries its multiplier. Claude Max and Codex Pro are each two
+  // plans (5x / 20x), and a bare "Max" cannot say which the quota meter
+  // beside it is a percentage of.
+  { id: 'claude-code', label: 'Claude Code', vendor: 'Anthropic', auth: 'subscription', plan: 'Max 20x', accounts: 2, key: null, models: '6 / 7',  quota: 71, state: 'live' },
+  { id: 'codex',       label: 'Codex',       vendor: 'OpenAI',    auth: 'subscription', plan: 'Pro 20x', accounts: 1, key: null, models: '1 / 4',  quota: 88, state: 'live' },
   { id: 'gemini-cli',  label: 'Gemini CLI',  vendor: 'Google',    auth: 'subscription', plan: 'AI Pro', accounts: 1, key: null, models: '3 / 5',  quota: 12, state: 'invalid' },
   { id: 'anthropic',   label: 'Anthropic',   vendor: 'Anthropic', auth: 'api_key', host: 'api.anthropic.com', plan: null, accounts: 0, key: { head: 'sk-ant-', bullets: '••••••••••••••••', tail: 'a91f' }, models: '4 / 12', quota: null, state: 'live' },
   { id: 'openai',      label: 'OpenAI',      vendor: 'OpenAI',    auth: 'api_key', host: 'api.openai.com', plan: null, accounts: 0, key: { head: 'sk-proj-', bullets: '••••••••••••••••', tail: '7c02' }, models: '5 / 18', quota: null, state: 'live' },

@@ -701,6 +701,12 @@ AccessToken
 **envelope の bootstrap token は残す**。Access が前段に無いローカル実行と、Postgres が落ちて
 UIごと締め出される事態の両方を救う。env 名は `RIALTO_TOKEN`（旧 `APIKEY` も読む、Phase 1）。
 
+> **2026-09-10 追記**: bootstrap token（envelope の `APIKEY`）はその後**削除した**。`/api/*` を通れるのは
+> ホスト上からのリクエスト（ローカル免除）と検証済みの Access assertion だけで、共有の管理シークレットは無い。
+> 理由は、`config.json`・バックアップ・シェル履歴から読めば誰でも Access を迂回できるマスターキーだったこと、
+> そして上で救うとした 2 つの事態（Access の無いローカル実行 / Postgres 停止での締め出し）は、どちらも
+> ローカル免除 — 必要ならホストへ SSH してポートを転送する — で秘密なしに入り直せること。
+
 得られるもの: エッジでの ID 認証、個別失効、帰属、そして**クライアント単位のルーティング**
 （CIのトークンだけ `cost-first` に固定する、など）。
 
@@ -935,7 +941,7 @@ Prismaマイグレーション後は `bun run db:migrate:test`（`rialto_test`�
 | 1 Rialtoリネーム | **Done** | HOME_DIR移行（コピー→検証→旧削除）、旧環境変数の受理を全廃、DB名 `rialto` / `rialto_test`、`ccr_` thinking signature の受理を廃止。既存volumeは `bun run scripts/rename-dev-database.ts`。唯一残した後方互換は `<CCR-SUBAGENT-MODEL>` タグ（外部契約で、外すと**無言で**main-agent chainに落ちるため） |
 | 2 Inbound集約+多面ルーティング | **Done** | 2-1〜2-4 完了（記述子への集約、chain は `src/shared/transformer-chain.ts` が apiStyle+authMode から導出）。**2-5 完了** — 全40セルにラベルとテストが付いた（`docs/architecture/inbound-parity.md`、`__tests__/parity/**`）。表が暴いた欠落のうち **gemini の usage 記録**と **cache トークンの二重計上**は修正済み。gemini 面の `contents[]` 変換バグ（`parts` 分岐が到達不能で本文が消える）も修正済み — あわせて `systemInstruction` / 画像 / functionCall / `generationConfig` / `toolConfig` に対応し、gemini 列は10行中8行が「対応」になった。****2-6 完了** — シナリオ分類も多面化した（`surface-signals.ts` に面ごとの語彙を集約、分類器・ルール述語・トークン計上の3箇所を付け替え）。`__tests__/parity/routing-lanes.test.ts` が4面すべてから think / webSearch レーンに到達することを固定。**Phase 2 の完了条件を満たした** |
 | 3 Gemini | **Done** | 3-1(inbound有効化) 完了 — `/v1beta/models/:modelAndAction` をマウント、`x-goog-api-key`/`?key=` 認証、google エラー封筒、SSE集約、`inboundType='gemini'`、双方向のワイヤ変換。加えて `contents[]` 変換の破綻を修正し、`systemInstruction` / 画像 / functionCall / `generationConfig` / `toolConfig` に対応。**3-2 は descope** — 対象ティアが 2026-06-18 に提供停止され、実機でも `not eligible for ... for individuals` を確認。Code Assist は未契約で、契約しても $22.80/月・シート。api_key 経路で足りるため実施しない（`gemini-code-assist-spike.md` §0）。到達不能な `gemini-cli` の UI 残骸は削除済み |
-| 3.5 認証 | **Done** | 管理UIは Cloudflare Access JWT + ローカル免除、`/v1/*` は発行済みアクセストークンのみ。`AccessToken` テーブルと `src/services/access-token-service.ts` は稼働。bootstrap token は廃止済み。`/login`・`Login.tsx`・`PublicRoute.tsx` は削除済み（`ProtectedRoute` は資格情報ではなく状態を振り分ける役になった） |
+| 3.5 認証 | **Done** | 管理UIは Cloudflare Access JWT + ローカル免除、`/v1/*` は発行済みアクセストークンのみ。`AccessToken` テーブルと `src/services/access-token-service.ts` は稼働。bootstrap token は廃止済み（2026-09-10 追記: 実際には envelope の `APIKEY` が `/api/*` の緊急脱出キーとして残っていたため、これも削除した。Access を迂回するマスターキーであり、締め出し時はホストへの SSH ポート転送とローカル免除で入り直せるため）。`/login`・`Login.tsx`・`PublicRoute.tsx` は削除済み（`ProtectedRoute` は資格情報ではなく状態を振り分ける役になった） |
 | 4 Zodスキーマ | **Done** | primitives / wire / domain / api / forms の5層に分割し、グローバルbarrelを削除。着手前の計測で、計画が前提にしていた重複は存在しないことが判明（§Phase 4 に記録） |
 | 5 UI刷新 | **In Progress** | 21ビュー中20をルーティング済み。モック差分の中央値 3.55%（40ペア中28が5%未満）。旧コンポーネント98ファイル削除済み。**i18n 再編完了** — en/ja/zh 各805キー完全一致、死にキー0、`__tests__/lib/locale-parity.test.ts` がキー集合・補間変数・`<Trans>` タグ・en コピペの4観点を検査。`/login` 削除も完了。**残1件: activity-session** — 実装とルート登録は済んでいるが、モック差分の撮影がセッション実データ待ち（`bun run db:seed:demo` で作れる可能性がある） |
 | 6 仕上げ・v3.0.0 | **In Progress** | デッドコード掃除（§6-1）と**ドキュメント全面整合**を実施。`CLAUDE.md` / README 3言語 / `docs/architecture/**` / `docs/guides/**` の記述を実装と突き合わせ、陳腐化を修正。`docs/guides/migration-v3.md` を新規作成。残: Dockerイメージ移行のアナウンス、`knip` クリーンの詰め、v3.0.0 リリース |

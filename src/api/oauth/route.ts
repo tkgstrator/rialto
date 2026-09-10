@@ -1,7 +1,7 @@
 /**
  * Web-UI OAuth flow for subscription providers (loopback).
  *
- *   POST /api/oauth/initiate/:provider   (gated by APIKEY)
+ *   POST /api/oauth/initiate/:provider   (admin gate)
  *     → { authorizeUrl, state }
  *     UI opens the URL in a NEW TAB. claude / codex's consent page
  *     redirects the browser back to the loopback callback the
@@ -16,7 +16,7 @@
  *     token exchange + credentials writer, then trigger the
  *     SubAccount sync.
  *
- *   POST /api/oauth/manual-callback   (gated by APIKEY)
+ *   POST /api/oauth/manual-callback   (admin gate)
  *     For every deployment where the browser cannot reach the loopback
  *     callback: a remote host, a tunnel, a container that does not
  *     publish the port. The UI instructs the user to copy the redirect
@@ -27,12 +27,12 @@
  *     so any install the operator does not sit in front of has no other
  *     way through.
  *
- *   POST /api/oauth/import-credentials   (gated by APIKEY)
+ *   POST /api/oauth/import-credentials   (admin gate)
  *     Accepts a raw credentials payload (or a parsed ~/.claude/.credentials.json
  *     / ~/.codex/auth.json object) and upserts the SubAccount directly,
  *     bypassing the OAuth dance entirely.
  *
- *   POST /api/oauth/export-credentials   (gated by APIKEY)
+ *   POST /api/oauth/export-credentials   (admin gate)
  *     Symmetric to import-credentials — decrypts the ACTIVE SubAccount's
  *     tokens for the given kind and returns them in the on-disk file
  *     shape (claudeAiOauth wrapper for claude, tokens {access_token,

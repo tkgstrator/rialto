@@ -81,7 +81,7 @@ Hono はマッチする middleware を**すべて**走らせるので、OpenAI �
 |---|---|
 | モデルと action が **URL** にあり body に無い | 記述子の `extractModel` / `extractStream` が `body.model` / `body.stream` に畳み込む。下流（scenario router / failover chain / pipeline / JSON-vs-SSE 判定）はすべて body を読むので、ここが2つのワイヤ規約の合流点 |
 | transformer の `endPoint` が `/v1beta/models/:modelAndAction` で、実パスと一致しない | `buildRoutePlan` は `surface.endpoint` で transformer を引く（実パス一致ではない） |
-| 認証ヘッダが `x-goog-api-key` / `?key=` | `createProxyAuth({ credential: 'google' })`。**bootstrap token は受理しない**（他の /v1 面と同じ） |
+| 認証ヘッダが `x-goog-api-key` / `?key=` | `createProxyAuth({ credential: 'google' })`。受理するのは発行済みアクセストークンだけ（他の /v1 面と同じ） |
 | エラー封筒が3種目 `{ error: { code, message, status } }` | `buildErrorEnvelope` の `google` 分岐。`status` は google.rpc.Code 名 |
 | bypass 時の outbound URL | provider の `api_base_url` はコレクション（`.../v1beta/models/`）までしか指さないので、`GeminiTransformer.auth` が `<model>:<action>` を付けて URL を組み立てる。同時に `model` / `stream` を body から除去する（Google は未知のトップレベルフィールドを INVALID_ARGUMENT で弾く） |
 | gemini 以外の provider に振られたとき | `GeminiTransformer.transformResponseIn` が内部の OpenAI 形を Gemini 形へ戻す。無いと 200 のまま `candidates` を欠いた body が返り、Google SDK は「空の応答」として解釈する（エラーにすらならない） |

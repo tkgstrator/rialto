@@ -1,32 +1,32 @@
 /**
  * Shaping behind Activity › Usage.
  *
- * Three claims worth pinning, because each fails silently on screen:
- * the per-model weekly windows survive the flattening (they are the whole
- * reason the panel exists — Overview drops them); the history downsample
- * keeps peaks rather than averaging them away; and the per-token share
- * column divides by the priced total, so it cannot report a share of
- * money that was never priced.
+ * The claims worth pinning, because each fails silently on screen:
+ * accounts land under the provider that owns them, named by a plan that
+ * says which of a vendor's two top plans the seat is on; the per-model
+ * weekly windows survive the flattening (they are the whole reason the
+ * panel exists — Overview drops them); the history downsample keeps peaks
+ * rather than averaging them away; and the per-token share column divides
+ * by the priced total, so it cannot report a share of money that was
+ * never priced.
  */
 
 import { describe, expect, test } from 'bun:test'
 import {
-  accountWindows,
   bucketSamples,
-  chartCsvRows,
   metricLabel,
+  providerWindows,
   seriesOf,
   tokenUsageRows,
   type UsageHistorySample,
   type UsageWire
 } from '../../src/components/rialto/activity/usage-derive'
+import type { SubAccountWire, SubscriptionWire } from '../../src/components/rialto/providers/types'
 import type { AccessTokenWire } from '../../src/lib/api'
 
 // The label lookup is i18n's job; the shaping is what these test. Echoing
 // the key keeps assertions about structure readable.
 const t = (key: string): string => key
-
-const emptyUsage = (): UsageWire => ({ claude: [], codex: [] })
 
 const claudeAccount = (over: Partial<UsageWire['claude'][number]> = {}): UsageWire['claude'][number] => ({
   subAccountId: 'sa1',
@@ -41,18 +41,148 @@ const claudeAccount = (over: Partial<UsageWire['claude'][number]> = {}): UsageWi
   ...over
 })
 
-describe('accountWindows', () => {
-  test('keeps the per-model weekly windows Overview drops', () => {
+const codexAccount = (over: Partial<UsageWire['codex'][number]> = {}): UsageWire['codex'][number] => ({
+  subAccountId: 'sa2',
+  accountLabel: 'ops',
+  planType: 'pro',
+  primary: { usedPercent: 88, resetAt: null, windowSeconds: 18_000 },
+  secondary: { usedPercent: 22, resetAt: null, windowSeconds: 604_800 },
+  capturedAt: '2026-09-04T01:20:00Z',
+  ...over
+})
+
+const seat = (id: string, over: Partial<SubAccountWire> = {}): SubAccountWire => ({
+  id,
+  label: id,
+  sourcePath: `oauth:${id}`,
+  enabled: true,
+  userName: null,
+  userEmail: null,
+  userId: null,
+  plan: null,
+  rateLimitTier: null,
+  monthlyPriceUsd: null,
+  expiresAt: null,
+  subscriptionEndsAt: null,
+  authStatus: 'live',
+  authCheckedAt: null,
+  authError: null,
+  scopes: [],
+  ...over
+})
+
+const provider = (
+  providerName: string,
+  kind: SubscriptionWire['kind'],
+  accounts: SubAccountWire[]
+): SubscriptionWire => ({ providerName, kind, enabled: true, accounts })
+
+// The window shaping does not depend on grouping, so these read the one
+// account an unlisted usage response produces.
+const windowsOf = (usage: UsageWire) => providerWindows(usage, [], t)[0].accounts[0].windows
+
+describe('providerWindows — grouping', () => {
+  test('accounts land under the provider that owns them, never interleaved', () => {
+    // The regression: Claude's accounts then Codex's flowed through one
+    // grid, so a row could hold one of each with nothing saying which.
     const usage: UsageWire = {
-      claude: [
-        claudeAccount({
-          weeklyScoped: [{ modelName: 'Fable', utilization: 11, resetsAt: '2026-09-05T15:00:00Z' }]
-        })
-      ],
+      claude: [claudeAccount({ subAccountId: 'c1' }), claudeAccount({ subAccountId: 'c2' })],
+      codex: [codexAccount({ subAccountId: 'x1' })]
+    }
+    const groups = providerWindows(
+      usage,
+      [provider('claude-code', 'claude', [seat('c1'), seat('c2')]), provider('codex', 'codex', [seat('x1')])],
+      t
+    )
+    expect(groups.map((g) => [g.key, g.accounts.map((a) => a.subAccountId)])).toEqual([
+      ['claude-code', ['c1', 'c2']],
+      ['codex', ['x1']]
+    ])
+  })
+
+  test('two providers on one vendor stay apart, and the row name is what tells them apart', () => {
+    const usage: UsageWire = {
+      claude: [claudeAccount({ subAccountId: 'a' }), claudeAccount({ subAccountId: 'b' })],
       codex: []
     }
-    const [account] = accountWindows(usage, t)
-    const scoped = account.windows.filter((w) => w.scope !== null)
+    const groups = providerWindows(
+      usage,
+      [provider('claude-code', 'claude', [seat('a')]), provider('claude-work', 'claude', [seat('b')])],
+      t
+    )
+    // A hand-added provider's label is its row name, so it is not repeated.
+    expect(groups.map((g) => [g.label, g.name])).toEqual([
+      ['Claude Code', 'claude-code'],
+      ['claude-work', null]
+    ])
+  })
+
+  test('a provider with nothing in the usage response is left out', () => {
+    const groups = providerWindows(
+      { claude: [], codex: [codexAccount({ subAccountId: 'x1' })] },
+      [provider('claude-code', 'claude', [seat('c1')]), provider('codex', 'codex', [seat('x1')])],
+      t
+    )
+    expect(groups.map((g) => g.key)).toEqual(['codex'])
+  })
+
+  test('an account no provider lists is still shown, under its vendor', () => {
+    // The subscriptions read failed, or the account went between the two
+    // reads. Dropping it would hide a window that is really being spent.
+    const groups = providerWindows({ claude: [claudeAccount({ subAccountId: 'lost' })], codex: [] }, [], t)
+    expect(groups).toHaveLength(1)
+    expect(groups[0].label).toBe('Claude')
+    expect(groups[0].accounts.map((a) => a.subAccountId)).toEqual(['lost'])
+  })
+
+  test('no connected accounts is an empty list, not a throw', () => {
+    expect(providerWindows({ claude: [], codex: [] }, [], t)).toEqual([])
+  })
+})
+
+describe('providerWindows — plan names', () => {
+  test('Claude Max takes its multiplier from the rate limit tier', () => {
+    const usage: UsageWire = { claude: [claudeAccount({ subAccountId: 'c1' })], codex: [] }
+    const [group] = providerWindows(
+      usage,
+      [
+        provider('claude-code', 'claude', [seat('c1', { plan: 'claude_max', rateLimitTier: 'default_claude_max_20x' })])
+      ],
+      t
+    )
+    expect(group.accounts[0].plan).toBe('Max 20x')
+  })
+
+  test('Codex reads the live plan_type over the stored plan', () => {
+    // The stored plan dates from the last sign-in; a seat moved to Pro 5x
+    // since then shows the answer the vendor gives now.
+    const usage: UsageWire = { claude: [], codex: [codexAccount({ subAccountId: 'x1', planType: 'prolite' })] }
+    const [group] = providerWindows(usage, [provider('codex', 'codex', [seat('x1', { plan: 'pro' })])], t)
+    expect(group.accounts[0].plan).toBe('Pro 5x')
+  })
+
+  test('Codex falls back to the stored plan when the usage response carries none', () => {
+    const usage: UsageWire = { claude: [], codex: [codexAccount({ subAccountId: 'x1', planType: null })] }
+    const [group] = providerWindows(usage, [provider('codex', 'codex', [seat('x1', { plan: 'pro' })])], t)
+    expect(group.accounts[0].plan).toBe('Pro 20x')
+  })
+
+  test('an account that reports no plan gets no pill rather than an empty one', () => {
+    const usage: UsageWire = { claude: [claudeAccount({ subAccountId: 'c1' })], codex: [] }
+    const [group] = providerWindows(usage, [provider('claude-code', 'claude', [seat('c1')])], t)
+    expect(group.accounts[0].plan).toBeNull()
+  })
+})
+
+describe('providerWindows — windows', () => {
+  test('keeps the per-model weekly windows Overview drops', () => {
+    const windows = windowsOf({
+      claude: [
+        claudeAccount({ weeklyScoped: [{ modelName: 'Fable', utilization: 11, resetsAt: '2026-09-05T15:00:00Z' }] })
+      ],
+      codex: []
+    })
+    const scoped = windows.filter((w) => w.scope !== null)
     expect(scoped).toHaveLength(1)
     expect(scoped[0].scope).toBe('Fable')
     expect(scoped[0].pct).toBe(11)
@@ -61,53 +191,43 @@ describe('accountWindows', () => {
   test('account-wide windows come before the scoped ones', () => {
     // Scanning for "am I near the wall" reads the account-wide limit
     // first; a per-model row above it answers a narrower question.
-    const usage: UsageWire = {
+    const windows = windowsOf({
       claude: [claudeAccount({ weeklyScoped: [{ modelName: 'Fable', utilization: 11, resetsAt: null }] })],
       codex: []
-    }
-    const [account] = accountWindows(usage, t)
-    expect(account.windows.map((w) => w.scope)).toEqual([null, null, 'Fable'])
+    })
+    expect(windows.map((w) => w.scope)).toEqual([null, null, 'Fable'])
   })
 
   test('an absent window is omitted rather than drawn as 0%', () => {
     // Null means the vendor did not report the window. A 0% meter would
     // claim the opposite — that it is reported and untouched.
-    const usage: UsageWire = { claude: [claudeAccount({ fiveHour: null })], codex: [] }
-    const [account] = accountWindows(usage, t)
-    expect(account.windows).toHaveLength(1)
-    expect(account.windows[0].label).toBe('activity.usage.windowSevenDay')
+    const windows = windowsOf({ claude: [claudeAccount({ fiveHour: null })], codex: [] })
+    expect(windows).toHaveLength(1)
+    expect(windows[0].label).toBe('activity.usage.windowSevenDay')
   })
 
   test('the legacy sonnet/opus fields render as scoped windows when present', () => {
-    const usage: UsageWire = {
+    const windows = windowsOf({
       claude: [claudeAccount({ sevenDayOpus: { utilization: 64, resetsAt: null } })],
       codex: []
-    }
-    const [account] = accountWindows(usage, t)
-    expect(account.windows.map((w) => w.scope)).toEqual([null, null, 'Opus'])
+    })
+    expect(windows.map((w) => w.scope)).toEqual([null, null, 'Opus'])
   })
 
-  test('codex accounts carry their plan and both windows', () => {
-    const usage: UsageWire = {
+  test("Codex windows are named by their length, the way Claude's are", () => {
+    // Codex calls them primary and secondary. Beside Claude's 5-hour and
+    // 7-day rows, that made the same two limits look like different ones.
+    const windows = windowsOf({ claude: [], codex: [codexAccount()] })
+    expect(windows.map((w) => w.label)).toEqual(['activity.usage.windowFiveHour', 'activity.usage.windowSevenDay'])
+    expect(windows.map((w) => w.pct)).toEqual([88, 22])
+  })
+
+  test('a Codex window of any other length keeps its rank', () => {
+    const windows = windowsOf({
       claude: [],
-      codex: [
-        {
-          subAccountId: 'sa2',
-          accountLabel: 'ops',
-          planType: 'pro',
-          primary: { usedPercent: 88, resetAt: null, windowSeconds: null },
-          secondary: { usedPercent: 22, resetAt: null, windowSeconds: null },
-          capturedAt: '2026-09-04T01:20:00Z'
-        }
-      ]
-    }
-    const [account] = accountWindows(usage, t)
-    expect(account.plan).toBe('pro')
-    expect(account.windows.map((w) => w.pct)).toEqual([88, 22])
-  })
-
-  test('no connected accounts is an empty list, not a throw', () => {
-    expect(accountWindows(emptyUsage(), t)).toEqual([])
+      codex: [codexAccount({ primary: { usedPercent: 5, resetAt: null, windowSeconds: 3_600 }, secondary: null })]
+    })
+    expect(windows.map((w) => w.label)).toEqual(['activity.usage.windowPrimary'])
   })
 })
 
@@ -185,30 +305,6 @@ describe('seriesOf', () => {
       { metric: 'claude.seven_day', percent: 2, t: '2026-09-01T00:05:00Z', resetAt: null }
     ]
     expect(seriesOf(samples, t).map((s) => s.metric)).toEqual(['claude.five_hour', 'claude.seven_day'])
-  })
-})
-
-describe('chartCsvRows', () => {
-  const series = [
-    { metric: 'a', label: '5-hour' },
-    { metric: 'b', label: '7-day' }
-  ]
-
-  test('exports the plotted buckets, headed by the legend labels', () => {
-    const rows = chartCsvRows([{ t: Date.UTC(2026, 8, 1), a: 10, b: 20 }], series)
-    expect(rows[0]).toEqual(['time', '5-hour', '7-day'])
-    expect(rows[1]).toEqual(['2026-09-01T00:00:00.000Z', '10', '20'])
-  })
-
-  test('an unmeasured bucket exports empty, not zero', () => {
-    // Same reason the line breaks there: nobody measured it, and a 0
-    // in a spreadsheet is a measurement.
-    const rows = chartCsvRows([{ t: Date.UTC(2026, 8, 1), a: null, b: 20 }], series)
-    expect(rows[1]).toEqual(['2026-09-01T00:00:00.000Z', '', '20'])
-  })
-
-  test('a header-only export is what an empty chart produces', () => {
-    expect(chartCsvRows([], series)).toEqual([['time', '5-hour', '7-day']])
   })
 })
 

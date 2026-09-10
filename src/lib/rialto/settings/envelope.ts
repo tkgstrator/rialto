@@ -18,7 +18,6 @@ export const LOG_LEVELS: readonly LogLevel[] = ['fatal', 'error', 'warn', 'info'
 export interface EnvelopeWire {
   HOST?: string
   PORT?: number
-  APIKEY?: string
   LOG?: boolean
   LOG_LEVEL?: string
   /** Rotation size cap in megabytes; absent on disk means the logger's built-in default. */
@@ -69,15 +68,6 @@ export const DEFAULT_LOG_MAX_MB = 10
 
 /** Fixed-width stand-in for a secret. Never derived from the secret's length. */
 export const SECRET_MASK = '••••••••••••••••••••'
-
-/**
- * A secret's masked form. The mask is a constant so it never leaks the
- * real length, and an unset key reads as unset rather than as a
- * plausible-looking row of dots.
- */
-export function maskSecret(secret: string | undefined): string {
-  return typeof secret === 'string' && secret.length > 0 ? SECRET_MASK : 'not set'
-}
 
 /** Optional scalar for a read-only field: the value, or the word `unset`. */
 export function orUnset(value: string | null | undefined): string {
