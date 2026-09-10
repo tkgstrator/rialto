@@ -136,7 +136,7 @@ function ExportBlock({ baseUrl, plaintext }: { baseUrl: string; plaintext: strin
           >
             {t(copied ? 'settings.access.tokenCopiedShort' : 'common.copy')}
           </RButton>
-          <span className='text-[12px] leading-relaxed text-muted-foreground'>
+          <span className='pt-1.5 text-[12px] leading-relaxed text-muted-foreground'>
             {clipboardError === null ? t('system.setup.shownOnce') : clipboardError}
           </span>
         </div>
@@ -257,10 +257,14 @@ export function SetupScreen() {
           <ExportBlock baseUrl={baseUrl} plaintext={issued} />
           {issued === null ? (
             <div className='mt-2 flex items-start gap-2'>
+              {/* items-start, not items-center: the note wraps once tokens
+                  exist, and a centered button would drift to the middle of
+                  it. The note's pt-1.5 puts its first line on the button
+                  label instead — (32px h-8 − one 19.5px line) / 2 ≈ 6px. */}
               <RButton variant='outline' icon='ri-key-2-line' className='shrink-0' onClick={issue} disabled={issuing}>
                 {t(issuing ? 'system.setup.issuing' : 'system.setup.issueToken')}
               </RButton>
-              <span className='text-[12px] leading-relaxed text-muted-foreground'>
+              <span className='pt-1.5 text-[12px] leading-relaxed text-muted-foreground'>
                 {live === 0 ? t('system.setup.nothingCanCall') : t('system.setup.alreadyHave', { n: live })}
               </span>
             </div>
