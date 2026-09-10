@@ -206,7 +206,7 @@ export function ActivitySessions() {
           label={t('activity.sessions.filterModel')}
           value={modelFilter}
           options={options(
-            rows.flatMap((r) => r.session.models),
+            rows.flatMap((r) => r.session.models.map((m) => m.name)),
             t('activity.common.all')
           )}
           onChange={setModelFilter}

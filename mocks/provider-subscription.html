@@ -76,13 +76,53 @@ const models = `
     <tbody>${MODELS.map(modelRow).join('')}</tbody>
   </table>`
 
+// Every window the account is under, not just the weekly one.
+//
+// This drew one meter and called it the account, picking the 7-day
+// because it is the one an operator plans around. But all of them bind:
+// an account at 0% for the week is still unroutable while its 5-hour
+// window is spent, and the per-model row is the only place a Fable
+// ceiling is visible at all. Showing one and labelling it "weekly" made
+// the other two look like they did not exist.
+//
+// The first account is this install's, from GET /api/usage: 5-hour 0%
+// with no reset time yet, 7-day at 100%, and the weeklyScoped row the
+// collector reports, which on this account is Fable. The second is
+// invented so the panel shows an inactive row — its windows are the same
+// three, because those are the ones Claude actually publishes.
 const ACCOUNTS = [
   // Full addresses, not the elided ones this fixture used to carry. They
   // were shortened to survive a 288px-narrower pane; drawn short, the
   // panel looked comfortable at a width it never had.
-  { label: 'tkgstrator@gmail.com',      plan: 'Max', active: true,  auth: 'live',    used: 71, resets: '3d 04h' },
-  { label: 'second.account@gmail.com',  plan: 'Pro', active: false, auth: 'live',    used: 22, resets: '3d 04h' }
+  {
+    label: 'tkgstrator@gmail.com', plan: 'Max', active: true, auth: 'live',
+    windows: [
+      { label: '5-hour',        pct: 0,   resets: '—' },
+      { label: '7-day',         pct: 100, resets: '2d 09h' },
+      { label: '7-day · Fable', pct: 9,   resets: '2d 09h' }
+    ]
+  },
+  {
+    label: 'second.account@gmail.com', plan: 'Pro', active: false, auth: 'live',
+    windows: [
+      { label: '5-hour',        pct: 12, resets: '1h 47m' },
+      { label: '7-day',         pct: 22, resets: '3d 04h' },
+      { label: '7-day · Fable', pct: 4,  resets: '3d 04h' }
+    ]
+  }
 ]
+
+// One row per window: label, bar, percentage, and the clock it resets on.
+// The bar is what carries the shape at a glance, so it keeps the slack;
+// the label and the two numbers are fixed so three rows line up as a
+// small table rather than three ragged lines.
+const windowLine = (w) => `
+  <div class="mt-1.5 flex items-center gap-2">
+    <span class="w-24 shrink-0 truncate text-[12px] text-muted-foreground">${w.label}</span>
+    <div class="min-w-0 flex-1">${meter(w.pct)}</div>
+    <span class="w-9 shrink-0 text-right font-mono text-[12px] tabular-nums">${w.pct}%</span>
+    <span class="w-14 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${w.resets}</span>
+  </div>`
 
 // An account's meters are a snapshot; the history behind them is Usage.
 const accountRow = (a) => `
@@ -91,12 +131,10 @@ const accountRow = (a) => `
       <span class="text-xs font-medium">${a.label}</span>
       ${pill(a.plan, 'info')}
       ${a.active ? pill('active', 'ok') : ''}
-      <span class="ml-auto font-mono text-[12px] tabular-nums">${a.used}%</span>
+      <span class="ml-auto text-[12px] text-muted-foreground/70">resets in</span>
     </div>
-    <div class="mt-2">${meter(a.used)}</div>
-    <div class="mt-1.5 flex items-center gap-2 text-[12px] text-muted-foreground">
-      <span>auth ${a.auth}</span><span class="opacity-40">·</span><span>weekly resets in ${a.resets}</span>
-    </div>
+    ${a.windows.map(windowLine).join('')}
+    <div class="mt-2 text-[12px] text-muted-foreground">auth ${a.auth}</div>
   </div>`
 
 document.getElementById('root').innerHTML = `

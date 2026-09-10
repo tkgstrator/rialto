@@ -1,34 +1,45 @@
 /**
- * Activity › Logs — the pino file tail, grouped by request id.
+ * Activity › Logs — the pino file tail, newest first.
  *
- * Absorbs LogViewer and its four sub-components. Same three-pane shape as
- * before, but the middle pane is a list of requests rather than a flat
- * tail: once two clients are active the interleaved lines of a failover
- * read as two half-stories, and the 429 and the retry that succeeded
- * belong to one.
+ * One pane, not three. The file rail and the request rail were 34rem of
+ * chrome standing beside the lines for the whole life of the screen, on
+ * the premise that one request produces a story worth opening. It does
+ * not: Rialto writes exactly two lines carrying a reqId — the access
+ * log's `POST /v1/messages 200 4411ms` and, at debug only,
+ * provider-fetch's `final request`. Everything else in the file is boot,
+ * OAuth, sync jobs and vendor scrapes, which have no request at all. So a
+ * "group" was one line behind a disclosure arrow, reached through two
+ * rails.
+ *
+ * What is left is the file, the level filter, the search and the lines.
+ * Where a request was routed, and why, is Activity › Requests, which
+ * reads the archive rather than the log.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { downloadText } from '@/components/rialto/activity/data'
 import { LogBody } from '@/components/rialto/activity/LogBody'
-import { FileRail, GroupRail } from '@/components/rialto/activity/LogRails'
-import { groupByRequest, type LogLine, parseLogLines } from '@/components/rialto/activity/log-lines'
-import { chipFor, groupKey, type LevelChip } from '@/components/rialto/activity/log-view'
-import { ScreenMessage } from '@/components/rialto/activity/shared'
+import { type LogLine, parseLogLines } from '@/components/rialto/activity/log-lines'
+import { chipFor, LEVEL_CHIPS, type LevelChip } from '@/components/rialto/activity/log-view'
+import { FilterSelect, NoteBox, ScreenMessage } from '@/components/rialto/activity/shared'
 import { useActivityCounts } from '@/components/rialto/activity/use-activity-counts'
+import { Pager } from '@/components/rialto/Pager'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import { api } from '@/lib/api'
 import { formatFileSize } from '@/lib/log-viewer/format'
 import type { LogFile } from '@/lib/log-viewer/types'
+import { cn } from '@/lib/utils'
 
 const FOLLOW_INTERVAL_MS = 5000
 
+/** Lines per page. A tail is read from the top, not scrolled to the end. */
+const PAGE = 100
+
 /**
  * File list + line fetch. Split out of the screen so the screen itself
- * stays a layout: the fetch has four states and the layout has three
- * panes, and holding both in one function pushed it past the complexity
- * ceiling.
+ * stays a layout: the fetch has four states, and holding both in one
+ * function pushed it past the complexity ceiling.
  */
 function useLogFiles() {
   const [files, setFiles] = useState<LogFile[]>([])
@@ -62,8 +73,25 @@ function useLogFiles() {
   return { files, file, setFile, rawLines, error, loadLines }
 }
 
-/** The three panes. Owns the reading state (level, selection, search). */
-function LogPanes({
+/** One level, on or off. Off is the absence of a border, not a grey pill. */
+function LevelChipButton({ level, on, onToggle }: { level: LevelChip; on: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type='button'
+      aria-pressed={on}
+      onClick={onToggle}
+      className={cn(
+        'h-7 rounded-md border px-2.5 text-xs transition-colors',
+        on ? 'border-border bg-muted/60' : 'border-transparent text-muted-foreground hover:bg-muted/50'
+      )}
+    >
+      {level}
+    </button>
+  )
+}
+
+/** The toolbar and the lines. Owns the reading state (file, level, search, page). */
+function LogPane({
   files,
   file,
   onSelectFile,
@@ -74,48 +102,91 @@ function LogPanes({
   onSelectFile: (next: LogFile) => void
   lines: LogLine[]
 }) {
-  const [levels, setLevels] = useState<Set<LevelChip>>(new Set(['error', 'warn', 'info']))
-  const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const { t } = useTranslation()
+  // debug is on: with the rails gone there is nothing else competing for
+  // the space, and `final request` is the only line that says which
+  // upstream a request actually reached.
+  const [levels, setLevels] = useState<Set<LevelChip>>(new Set(LEVEL_CHIPS))
   const [query, setQuery] = useState('')
-  const [showRaw, setShowRaw] = useState(false)
+  const [page, setPage] = useState(0)
 
-  const groups = useMemo(() => groupByRequest(lines.filter((l) => levels.has(chipFor(l.level)))), [lines, levels])
+  const needle = query.trim().toLowerCase()
+  // Newest first, the way a tail is read. The file arrives in write order.
+  const shown = useMemo(
+    () =>
+      lines
+        .filter((l) => levels.has(chipFor(l.level)) && (needle === '' || l.raw.toLowerCase().includes(needle)))
+        .reverse(),
+    [lines, levels, needle]
+  )
 
-  const found = groups.find((g) => groupKey(g) === selectedKey)
-  const active = found === undefined ? (groups.length === 0 ? null : groups[0]) : found
+  // The filters rebuild the list under the cursor, so a page index past
+  // the new end has to fall back rather than render nothing.
+  const pageCount = Math.max(1, Math.ceil(shown.length / PAGE))
+  const current = Math.min(page, pageCount - 1)
+  const offset = current * PAGE
 
   const toggleLevel = (level: LevelChip) => {
     const next = new Set(levels)
     if (next.has(level)) next.delete(level)
     else next.add(level)
     setLevels(next)
+    setPage(0)
   }
 
   return (
-    <div className='grid h-full grid-cols-[14rem_20rem_1fr]'>
-      <FileRail
-        files={files}
-        activePath={file.path}
-        onSelect={onSelectFile}
-        levels={levels}
-        onToggleLevel={toggleLevel}
-      />
-      <GroupRail
-        groups={groups}
-        activeKey={active === null ? '' : groupKey(active)}
-        onSelect={(key) => {
-          setSelectedKey(key)
-          setQuery('')
-        }}
-      />
-      <LogBody
-        fileName={file.name}
-        group={active}
-        query={query}
-        onQuery={setQuery}
-        raw={showRaw}
-        onToggleRaw={() => setShowRaw((v) => !v)}
-      />
+    // Capped, not stretched, and left-aligned so the toolbar and the lines
+    // under it share one left edge. A log line has a natural length; a
+    // wider window should not pull the message away from the fields that
+    // qualify it.
+    <div className='min-w-0'>
+      <div className='max-w-[64rem]'>
+        <div className='flex flex-wrap items-center gap-2 border-b border-border px-6 py-3'>
+          {/* The file is a control, not a rail: it is chosen once per
+              visit and then never looked at again. */}
+          <FilterSelect
+            label={t('activity.logs.file')}
+            value={file.path}
+            options={files.map((f) => ({ id: f.path, label: `${f.name} · ${formatFileSize(f.size)}` }))}
+            onChange={(path) => {
+              const next = files.find((f) => f.path === path)
+              if (next !== undefined) onSelectFile(next)
+            }}
+          />
+          <span className='mx-1 h-4 w-px bg-border' />
+          {LEVEL_CHIPS.map((level) => (
+            <LevelChipButton key={level} level={level} on={levels.has(level)} onToggle={() => toggleLevel(level)} />
+          ))}
+          <div className='ml-auto flex h-7 w-44 items-center gap-2 rounded-md border border-border px-2.5 text-xs text-muted-foreground'>
+            <i className='ri-search-line text-sm' />
+            <input
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value)
+                setPage(0)
+              }}
+              placeholder={t('activity.logs.search')}
+              className='min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground'
+            />
+          </div>
+        </div>
+
+        <LogBody lines={shown.slice(offset, offset + PAGE)} />
+
+        <Pager
+          page={current}
+          pageSize={PAGE}
+          loaded={Math.min(PAGE, Math.max(0, shown.length - offset))}
+          total={shown.length}
+          onPage={setPage}
+        />
+
+        <div className='px-6 py-4'>
+          <NoteBox>{t('activity.logs.note')}</NoteBox>
+        </div>
+
+        <div className='h-6' />
+      </div>
     </div>
   )
 }
@@ -166,8 +237,8 @@ export function ActivityLogs() {
       ) : file === null ? (
         <ScreenMessage>{t('activity.logs.noFiles')}</ScreenMessage>
       ) : (
-        // Remount per file so the selected request and search box reset with it.
-        <LogPanes key={file.path} files={files} file={file} onSelectFile={setFile} lines={lines} />
+        // Remount per file so the level filter, search and page reset with it.
+        <LogPane key={file.path} files={files} file={file} onSelectFile={setFile} lines={lines} />
       )}
     </Screen>
   )

@@ -13,6 +13,11 @@ import { z } from '@hono/zod-openapi'
 export const InboundTypeSchema = z.enum(['anthropic', 'openai', 'gemini'])
 export type InboundType = z.infer<typeof InboundTypeSchema>
 
+export const SessionModelUsageSchema = z.object({
+  name: z.string().nonempty(),
+  requests: z.number().int().positive()
+})
+
 export const SessionSummarySchema = z.object({
   sessionId: z.string().nonempty(),
   // Which wire format the session first came in on. Null on
@@ -25,7 +30,11 @@ export const SessionSummarySchema = z.object({
   surface: z.string().nonempty().nullable(),
   requestCount: z.number().int().nonnegative(),
   providers: z.array(z.string().nonempty()),
-  models: z.array(z.string().nonempty()),
+  // Every model the session used and how many of its requests each
+  // carried, busiest first. Not one model: routing moves a session
+  // between them turn by turn, and the list used to be an unordered set
+  // whose first element the UI showed as "the" model.
+  models: z.array(SessionModelUsageSchema),
   totalInputTokens: z.number().int().nonnegative(),
   totalOutputTokens: z.number().int().nonnegative(),
   totalCacheReadTokens: z.number().int().nonnegative(),

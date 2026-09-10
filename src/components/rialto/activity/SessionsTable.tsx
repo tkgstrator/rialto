@@ -60,6 +60,29 @@ const sessionSortValue = (row: Enriched, key: SessionSortKey): SortValue => {
 const cacheHitPct = (session: SessionSummary): number =>
   session.totalInputTokens === 0 ? 0 : Math.round((session.totalCacheReadTokens / session.totalInputTokens) * 100)
 
+/**
+ * The session's model, and the fact that it is not the only one.
+ *
+ * A session moves between models turn by turn — most of them use two or
+ * more — so a lone name was a coin flip dressed as a fact. The busiest
+ * one is still the useful handle, and the `+N` beside it says how much
+ * of the session it is not accounting for. The full split is in the
+ * tooltip, and on the session's own page.
+ */
+function ModelCell({ row }: { row: Enriched }) {
+  const { t } = useTranslation()
+  if (row.model === null) return <span className='text-muted-foreground/50'>{t('activity.common.untracked')}</span>
+  const breakdown = row.session.models.map((m) => `${m.name} × ${m.requests}`).join('\n')
+  return (
+    <span className='flex items-baseline gap-1.5' title={breakdown}>
+      <span className='truncate font-mono text-[12px] text-muted-foreground'>{row.model}</span>
+      {row.otherModels === 0 ? null : (
+        <span className='shrink-0 font-mono text-[12px] tabular-nums text-muted-foreground/60'>+{row.otherModels}</span>
+      )}
+    </span>
+  )
+}
+
 function SessionRow({ row }: { row: Enriched }) {
   const { session } = row
   const title = titleOf(session)
@@ -73,7 +96,9 @@ function SessionRow({ row }: { row: Enriched }) {
       <td className='px-3'>
         <SurfaceCell path={row.surfacePath} />
       </td>
-      <td className='truncate px-3 font-mono text-[12px] text-muted-foreground'>{row.model}</td>
+      <td className='min-w-0 px-3'>
+        <ModelCell row={row} />
+      </td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{session.requestCount}</td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtTokens(session.totalInputTokens)}</td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtTokens(session.totalOutputTokens)}</td>

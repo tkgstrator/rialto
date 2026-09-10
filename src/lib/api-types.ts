@@ -54,6 +54,12 @@ import type { InboundType } from '@/schemas/api/request-log'
 
 export type { InboundType }
 
+/** One model's share of a session. A session is rarely just one. */
+export interface SessionModelUsage {
+  name: string
+  requests: number
+}
+
 export interface SessionSummary {
   sessionId: string
   // Wire format the session first came in on. Null on pre-migration
@@ -63,7 +69,8 @@ export interface SessionSummary {
   surface: string | null
   requestCount: number
   providers: string[]
-  models: string[]
+  /** Every model the session used and how many requests each carried, busiest first. */
+  models: SessionModelUsage[]
   totalInputTokens: number
   totalOutputTokens: number
   totalCacheReadTokens: number

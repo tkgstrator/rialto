@@ -13,12 +13,22 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, btn, navTo, pager } = window.Shell
+const { renderShell, pill, btn, pager } = window.Shell
 
-// Absorbs LogViewer + its four sub-components (LogFileList, Breadcrumbs,
-// RequestGroupList, LogEditor). Same three-pane shape as today, but the
-// middle pane groups lines by request id instead of showing a flat tail —
-// a flat pino tail is unreadable once two clients are active at once.
+// A tail, in order. Nothing to open.
+//
+// This screen used to be three panes — a file rail, a rail of request
+// groups, and a body — on the premise that one request produces a story
+// worth opening. It does not. Rialto writes exactly two lines that carry a
+// reqId: the access log's `POST /v1/messages 200 4411ms`, and, at debug
+// only, provider-fetch's `final request`. Everything else in the file is
+// boot, OAuth, sync jobs and vendor scrapes, which have no request at all.
+// So a "group" was one line with a disclosure arrow in front of it, and
+// two rails of chrome to reach it.
+//
+// What is left is the file, the level filter, and the lines. The width
+// caps at 64rem: a log line has a natural length, and a wider window
+// should not pull the message away from the fields that qualify it.
 
 const FILES = [
   { name: 'rialto-2026-08-31.log', size: '4.2 MB', active: true },
@@ -27,125 +37,93 @@ const FILES = [
   { name: 'rialto-2026-08-28.log', size: '6.7 MB' }
 ]
 
-const GROUPS = [
-  { id: 'req_9f21c4', t: '14:05:47', level: 'info',  lines: 12, summary: 'POST /v1/messages → claude-code,claude-haiku-4-5', active: false },
-  { id: 'req_71bd08', t: '14:03:02', level: 'warn',  lines: 24, summary: 'POST /v1/messages → codex,gpt-5.5 (429, failed over)', active: true },
-  { id: 'req_04c79a', t: '14:02:33', level: 'info',  lines: 11, summary: 'POST /v1/messages → claude-code,claude-opus-4-8', active: false },
-  { id: 'req_ba512f', t: '13:58:10', level: 'info',  lines: 9,  summary: 'POST /v1/responses → codex,gpt-5.5', active: false },
-  { id: 'req_3d907b', t: '13:40:22', level: 'error', lines: 18, summary: 'POST /v1/chat/completions → openai,gpt-5.4-mini (400)', active: false },
-  { id: '—',          t: '13:35:00', level: 'info',  lines: 4,  summary: 'routing scheduler tick — 2 weights changed', active: false }
-]
-
-const levelTone = { info: 'mute', warn: 'warn', error: 'bad', debug: 'mute' }
-
-const fileRow = (f) => `
-  <button class="flex w-full items-center gap-2 border-l-2 px-4 py-2 text-left transition-colors ${
-    f.active ? 'border-l-foreground bg-muted/60' : 'border-l-transparent hover:border-l-border hover:bg-muted/50'
-  }">
-    <i class="ri-file-text-line text-sm text-muted-foreground"></i>
-    <span class="truncate font-mono text-[12px]">${f.name}</span>
-    <span class="ml-auto shrink-0 font-mono text-[12px] text-muted-foreground">${f.size}</span>
-  </button>`
-
-const groupRow = (g) => `
-  <button class="block w-full border-l-2 px-4 py-2.5 text-left transition-colors ${
-    g.active ? 'border-l-foreground bg-muted/60' : 'border-l-transparent hover:border-l-border hover:bg-muted/50'
-  }">
-    <div class="flex items-center gap-2">
-      <span class="font-mono text-[12px] tabular-nums text-muted-foreground">${g.t}</span>
-      ${pill(g.level, levelTone[g.level])}
-      <span class="ml-auto font-mono text-[12px] text-muted-foreground">${g.lines} lines</span>
-    </div>
-    <div class="mt-1 truncate text-[12px]">${g.summary}</div>
-    <div class="mt-0.5 font-mono text-[12px] text-muted-foreground">${g.id}</div>
-  </button>`
-
-// Log body. Levels are colour-coded on the gutter only — colouring the
-// whole line makes a 24-line group unreadable.
+// Real messages, taken from the source. `POST … 200 4411ms` is
+// api/access-log.ts; `final request` is llms/provider-fetch.ts and only
+// appears at LOG_LEVEL=debug; the rest are the services that actually
+// log. A GET on /api/* that succeeded is demoted to debug, which is why
+// the UI's own polling is not on top of everything else here.
 const LINES = [
-  { lv: 'info',  t: '14:03:02.104', msg: 'incoming POST /v1/messages', kv: 'surface=anthropic session=ses_9fa2…c41 token=rlt_a91f…' },
-  { lv: 'debug', t: '14:03:02.106', msg: 'scenario classified', kv: 'scenario=default tokens=48210 threshold=60000' },
-  { lv: 'debug', t: '14:03:02.107', msg: 'rule stack evaluated', kv: 'matched=none rules=4' },
-  { lv: 'info',  t: '14:03:02.108', msg: 'preference chain resolved', kv: 'chain=[claude-opus-4-8,claude-fable-5,gpt-5.5,gemini-3.1-pro]' },
-  { lv: 'debug', t: '14:03:02.109', msg: 'target selected', kv: 'target=codex,gpt-5.5 weight=1.00 reason=quota_headroom' },
-  { lv: 'warn',  t: '14:03:04.882', msg: 'upstream rate limited', kv: 'provider=codex status=429 retry_after=2760' },
-  { lv: 'warn',  t: '14:03:04.883', msg: 'marking target exhausted', kv: 'target=codex,gpt-5.5 until=2026-08-31T14:49:04Z' },
-  { lv: 'info',  t: '14:03:04.884', msg: 'failing over', kv: 'from=codex,gpt-5.5 to=claude-code,claude-fable-5 attempt=2' },
-  { lv: 'debug', t: '14:03:04.901', msg: 'oauth token refreshed', kv: 'account=tkgstrator@… expires_in=3600' },
-  { lv: 'info',  t: '14:03:09.295', msg: 'upstream ok', kv: 'status=200 duration_ms=4411 in=48210 out=2104 cache_read=37882' },
-  { lv: 'info',  t: '14:03:09.297', msg: 'usage recorded', kv: 'cost_usd=0.0891 cache_hit=78.6%' }
+  { lv: 'info',  t: '14:05:47.882', msg: 'POST /v1/messages 200 4411ms', kv: 'reqId=req_9f21c4 status=200 durationMs=4411' },
+  { lv: 'debug', t: '14:05:43.471', msg: 'final request', kv: 'reqId=req_9f21c4 requestUrl=https://api.anthropic.com/v1/messages bodyLength=48210' },
+  { lv: 'warn',  t: '14:03:04.883', msg: 'POST /v1/messages 429 2140ms', kv: 'reqId=req_71bd08 status=429 durationMs=2140' },
+  { lv: 'debug', t: '14:03:02.741', msg: 'final request', kv: 'reqId=req_71bd08 requestUrl=https://chatgpt.com/backend-api/codex/responses bodyLength=48210' },
+  { lv: 'info',  t: '14:02:33.104', msg: 'POST /v1/messages 200 3806ms', kv: 'reqId=req_04c79a status=200 durationMs=3806' },
+  { lv: 'warn',  t: '13:58:10.220', msg: '[codex] wham/usage non-OK', kv: 'status=401 body={"detail":"token_expired"}' },
+  { lv: 'info',  t: '13:58:09.004', msg: '[codex-oauth] token refresh failed', kv: 'account=tkgstrator@… attempt=1' },
+  { lv: 'error', t: '13:40:22.518', msg: 'POST /v1/chat/completions 500 812ms', kv: 'reqId=req_3d907b status=500 durationMs=812' },
+  { lv: 'warn',  t: '13:35:00.913', msg: 'google scrape: no priced Gemini sections found', kv: '' },
+  { lv: 'warn',  t: '13:35:00.902', msg: 'vendor pricing fetch: non-2xx', kv: 'url=https://ai.google.dev/gemini-api/docs/pricing status=503' },
+  { lv: 'info',  t: '13:20:41.660', msg: '[routing-scheduler] armed', kv: 'intervalMs=60000' },
+  { lv: 'debug', t: '13:20:41.655', msg: 'GET /api/config 200 12ms', kv: 'reqId=req_ba512f status=200 durationMs=12' },
+  { lv: 'info',  t: '13:20:40.118', msg: 'log config applied', kv: 'LOG_LEVEL=info LOG=true LOG_MAX_MB=10' },
+  { lv: 'info',  t: '13:20:40.106', msg: 'Created default configuration file', kv: 'path=/home/vscode/.rialto/config.json' }
 ]
 
+// Levels are colour-coded on the gutter only — colouring the whole line
+// makes a long tail unreadable.
 const gutter = { info: 'bg-transparent', debug: 'bg-transparent', warn: 'bg-amber-500', error: 'bg-destructive' }
 
 const line = (l) => `
-  <div class="group flex gap-0 hover:bg-muted/50">
+  <div class="flex gap-0 border-b border-border/40 hover:bg-muted/50">
     <span class="w-0.5 shrink-0 ${gutter[l.lv]}"></span>
-    <span class="w-28 shrink-0 py-1 pl-3 font-mono text-[12px] tabular-nums text-muted-foreground">${l.t}</span>
-    <span class="w-16 shrink-0 py-1 pl-2 font-mono text-[12px] uppercase ${
+    <span class="w-28 shrink-0 py-1.5 pl-6 font-mono text-[12px] tabular-nums text-muted-foreground">${l.t}</span>
+    <span class="w-16 shrink-0 py-1.5 pl-2 font-mono text-[12px] uppercase ${
       l.lv === 'warn' ? 'text-amber-600 dark:text-amber-400' : l.lv === 'error' ? 'text-destructive' : 'text-muted-foreground/60'
     }">${l.lv}</span>
-    <span class="min-w-0 flex-1 py-1 pr-4">
+    <span class="min-w-0 flex-1 py-1.5 pr-6">
       <span class="font-mono text-[12px]">${l.msg}</span>
-      <span class="ml-2 font-mono text-[12px] text-muted-foreground">${l.kv}</span>
+      ${l.kv ? `<span class="ml-2 font-mono text-[12px] text-muted-foreground">${l.kv}</span>` : ''}
     </span>
   </div>`
 
+const chip = (label, on) => `
+  <button class="h-7 rounded-md border px-2.5 text-xs transition-colors ${
+    on ? 'border-border bg-muted/60' : 'border-transparent text-muted-foreground hover:bg-muted/50'
+  }">${label}</button>`
+
 document.getElementById('root').innerHTML = `
+  <div class="min-w-0">
 
-  <div class="grid h-full grid-cols-[14rem_20rem_1fr]">
+    <!-- Capped, not stretched, and left-aligned so the toolbar and the
+         lines under it share one left edge. -->
+    <div class="max-w-[64rem]">
 
-    <aside class="min-w-0 overflow-y-auto border-r border-border">
-      <div class="flex items-center gap-2 px-4 pt-5 pb-2">
-        <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Files</h2>
-      </div>
-      ${FILES.map(fileRow).join('')}
-      <div class="border-t border-border px-4 py-3">
-        <div class="text-[12px] text-muted-foreground">Level</div>
-        <div class="mt-1.5 flex flex-wrap gap-1">
-          ${['error', 'warn', 'info', 'debug'].map((l, i) => `
-            <button class="rounded border px-1.5 py-0.5 text-[12px] transition-colors ${
-              i < 3 ? 'border-foreground/40 bg-muted/60' : 'border-border text-muted-foreground hover:bg-muted/50'
-            }">${l}</button>`).join('')}
-        </div>
-      </div>
-    </aside>
-
-    <aside class="min-w-0 overflow-y-auto border-r border-border">
-      <div class="flex items-center gap-2 px-4 pt-5 pb-2">
-        <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Requests</h2>
-        <span class="ml-auto font-mono text-[12px] text-muted-foreground">6</span>
-      </div>
-      ${GROUPS.map(groupRow).join('')}
-      <!-- The request rail is the unbounded list on this screen: a busy
-           hour is hundreds of groups, and it was rendering whatever the
-           read returned. Compact form because the rail is too narrow for
-           the worded controls the full-width lists use. -->
-      ${pager({ first: 1, last: 6, total: 214, hasPrev: false, compact: true })}
-    </aside>
-
-    <div class="min-w-0 overflow-y-auto">
-      <div class="flex items-center gap-2 border-b border-border px-4 py-2.5">
-        <span class="font-mono text-[12px] text-muted-foreground">rialto-2026-08-31.log</span>
-        <i class="ri-arrow-right-s-line text-sm text-muted-foreground/50"></i>
-        <span ${navTo('activity-requests.html')} class="font-mono text-[12px]">req_71bd08</span>
-        ${pill('warn', 'warn')}
+      <!-- The file is a control, not a rail: it is chosen once per visit
+           and then never looked at again. -->
+      <div class="flex flex-wrap items-center gap-2 border-b border-border px-6 py-3">
+        <button class="flex h-7 items-center gap-2 rounded-md border border-border px-2.5 transition-colors hover:bg-muted/50">
+          <i class="ri-file-text-line text-sm text-muted-foreground"></i>
+          <span class="font-mono text-[12px]">${FILES[0].name}</span>
+          <span class="font-mono text-[12px] text-muted-foreground">${FILES[0].size}</span>
+          <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i>
+        </button>
+        <span class="mx-1 h-4 w-px bg-border"></span>
+        ${chip('error', true)}${chip('warn', true)}${chip('info', true)}${chip('debug', true)}
+        <!-- No Copy and no Raw. Both belonged to the group pane: Copy took
+             the open group's lines, and Raw swapped the rendered group for
+             its JSON. With one flat list there is no group to take, and the
+             whole file is one click away under Download. -->
         <div class="ml-auto flex items-center gap-2">
           <div class="flex h-7 w-44 items-center gap-2 rounded-md border border-border px-2.5 text-xs text-muted-foreground">
-            <i class="ri-search-line text-sm"></i> Search in group
+            <i class="ri-search-line text-sm"></i> Search
           </div>
-          ${btn('Copy', 'ghost', 'ri-file-copy-line')}
-          ${btn('Raw', 'ghost', 'ri-code-line')}
         </div>
       </div>
-      <div class="py-1">${LINES.map(line).join('')}</div>
-      <div class="px-4 py-4">
+
+      ${LINES.map(line).join('')}
+
+      ${pager({ first: 1, last: 14, total: 214, hasPrev: false })}
+
+      <div class="px-6 py-4">
         <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
           <i class="ri-information-line mr-1 align-[-1px]"></i>
-          Grouped by request id, so a failover reads as one story instead of two interleaved ones.
-          The 429 and the retry that succeeded are the same group.
+          Newest first, and one line per event — the way the file is written.
+          A request appears here as its access-log line; what it was routed to,
+          and why, is in <span class="font-medium text-foreground">Requests</span>,
+          which reads the archive rather than the log.
         </div>
       </div>
+
       <div class="h-6"></div>
     </div>
 
@@ -156,7 +134,7 @@ renderShell({
   navMode: 'cloudflare',
   sub: 'logs',
   crumbs: ['Logs'],
-  subtitle: 'rialto-2026-08-31.log · 4.2 MB · grouped by request',
+  subtitle: 'rialto-2026-08-31.log · 4.2 MB · newest first',
   actions: btn('Follow', 'outline', 'ri-broadcast-line') + btn('Download', 'ghost', 'ri-download-line')
 })
 </script>
