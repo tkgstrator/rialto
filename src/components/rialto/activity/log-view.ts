@@ -1,18 +1,13 @@
 /**
- * The vocabulary the three Logs panes agree on.
+ * The vocabulary the Logs screen and its lines agree on.
  *
- * Extracted from the screen because a chip's tone, its gutter colour and
- * its text colour are three tables keyed by the same four values, read
- * from three different panes. Split them across those panes and a fifth
- * level — or a renamed one — has to be found in three places; here it is
- * one edit and the compiler names the rest.
- *
- * `groupKey` rides along for the same reason: a group with no request id
- * is keyed as '' by the rail that lists it and by the screen that tracks
- * the selection, and those two have to agree or nothing stays selected.
+ * Extracted from the screen because a chip's gutter colour and its text
+ * colour are two tables keyed by the same four values, read from the
+ * toolbar and from the rows. Split them and a fifth level — or a renamed
+ * one — has to be found in two places; here it is one edit and the
+ * compiler names the rest.
  */
-import type { LogGroup, LogLevel } from '@/components/rialto/activity/log-lines'
-import type { Tone } from '@/components/rialto/primitives'
+import type { LogLevel } from '@/components/rialto/activity/log-lines'
 
 // The four levels an operator actually filters on. `fatal` folds into
 // error and `trace` into debug so no line can hide from every chip.
@@ -27,8 +22,6 @@ export const chipFor = (level: LogLevel): LevelChip => {
   return 'debug'
 }
 
-export const LEVEL_TONE: Record<LevelChip, Tone> = { error: 'bad', warn: 'warn', info: 'mute', debug: 'mute' }
-
 export const GUTTER: Record<LevelChip, string> = {
   error: 'bg-destructive',
   warn: 'bg-amber-500',
@@ -42,5 +35,3 @@ export const LEVEL_TEXT: Record<LevelChip, string> = {
   info: 'text-muted-foreground/60',
   debug: 'text-muted-foreground/60'
 }
-
-export const groupKey = (group: LogGroup): string => (group.id === null ? '' : group.id)

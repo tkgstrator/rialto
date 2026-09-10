@@ -110,18 +110,14 @@
     },
     "logs": {
       "title": "日志",
-      "subtitle": "{{file}} · {{size}} · 按请求分组",
+      "subtitle": "{{file}} · {{size}} · 最新在前",
       "follow": "跟随",
       "download": "下载",
       "noFiles": "还没有日志文件。未启用 LOG 时不会写入文件日志。",
-      "railFiles": "文件",
-      "railLevel": "级别",
-      "railRequests": "请求",
-      "lineCount": "{{n}} 行",
-      "searchInGroup": "在分组内搜索",
-      "copy": "复制",
-      "raw": "原始",
-      "note": "按请求 ID 分组，因此一次故障转移读起来是一个完整的故事，而不是两段互相穿插的片段。429 和随后成功的重试属于同一组。"
+      "note": "最新在前，每个事件一行 — 与文件写入的方式一致。请求在这里表现为它的访问日志行；它被路由到哪里、为什么，在 Requests 中（读取归档而非日志）。",
+      "file": "文件",
+      "search": "搜索",
+      "noLines": "没有符合当前级别筛选的行。"
     },
     "usage": {
       "title": "用量",

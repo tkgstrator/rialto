@@ -362,7 +362,12 @@ export function ActivityUsage() {
       {accounts.length === 0 ? (
         <ScreenMessage>{loading ? t('common.loading') : t('activity.usage.noAccounts')}</ScreenMessage>
       ) : (
-        <div className='grid grid-cols-2 gap-x-px pb-2'>
+        // Two accounts per row once there is room, one below xl. Given the
+        // whole width each meter became 800px of track carrying one figure,
+        // with "resets in" a screen away from the percentage it qualifies.
+        // An odd account leaves its column empty rather than stretching to
+        // fill the row.
+        <div className='grid grid-cols-1 gap-x-px pb-2 xl:grid-cols-2'>
           {accounts.map((account) => (
             <div key={account.subAccountId} className='min-w-0'>
               <div className='flex items-baseline gap-2 px-6 pb-1'>

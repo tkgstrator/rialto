@@ -110,18 +110,14 @@
     },
     "logs": {
       "title": "Logs",
-      "subtitle": "{{file}} · {{size}} · grouped by request",
+      "subtitle": "{{file}} · {{size}} · newest first",
       "follow": "Follow",
       "download": "Download",
       "noFiles": "No log files yet. File logging is off unless LOG is enabled.",
-      "railFiles": "Files",
-      "railLevel": "Level",
-      "railRequests": "Requests",
-      "lineCount": "{{n}} lines",
-      "searchInGroup": "Search in group",
-      "copy": "Copy",
-      "raw": "Raw",
-      "note": "Grouped by request id, so a failover reads as one story instead of two interleaved ones. The 429 and the retry that succeeded are the same group."
+      "note": "Newest first, and one line per event — the way the file is written. A request appears here as its access-log line; what it was routed to, and why, is in Requests, which reads the archive rather than the log.",
+      "file": "File",
+      "search": "Search",
+      "noLines": "No lines match the current level filter."
     },
     "usage": {
       "title": "Usage",
