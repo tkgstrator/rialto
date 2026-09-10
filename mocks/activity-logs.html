@@ -99,12 +99,14 @@ document.getElementById('root').innerHTML = `
         </button>
         <span class="mx-1 h-4 w-px bg-border"></span>
         ${chip('error', true)}${chip('warn', true)}${chip('info', true)}${chip('debug', true)}
+        <!-- No Copy and no Raw. Both belonged to the group pane: Copy took
+             the open group's lines, and Raw swapped the rendered group for
+             its JSON. With one flat list there is no group to take, and the
+             whole file is one click away under Download. -->
         <div class="ml-auto flex items-center gap-2">
           <div class="flex h-7 w-44 items-center gap-2 rounded-md border border-border px-2.5 text-xs text-muted-foreground">
             <i class="ri-search-line text-sm"></i> Search
           </div>
-          ${btn('Copy', 'ghost', 'ri-file-copy-line')}
-          ${btn('Raw', 'ghost', 'ri-code-line')}
         </div>
       </div>
 
