@@ -47,6 +47,12 @@ const filter = (label, value) => `
 // A 5-hour window with no reset time is also real: the collector only
 // learns `resetsAt` once the window has been touched, so a quiet account
 // shows 0% and no clock rather than a made-up one.
+// The first account is this install's, verbatim. The three below it are
+// invented so the grid has something to fold — but only their numbers are
+// invented: every window here is one the collector actually writes.
+// Claude gets 5-hour, 7-day and whatever `weeklyScoped` reports (Fable, on
+// the account we can see); Codex gets primary and secondary and nothing
+// else, because `mapCodexToQuota` has no per-model windows to write.
 const ACCOUNTS = [
   {
     name: 'Yuki Minakami', vendor: 'Claude Max 20x', tone: 'ok',
@@ -54,6 +60,28 @@ const ACCOUNTS = [
       { label: '5-hour',        scope: '',      pct: 0,   resets: '—' },
       { label: '7-day',         scope: '',      pct: 100, resets: '2d 09h' },
       { label: '7-day · model', scope: 'Fable', pct: 9,   resets: '2d 09h' }
+    ]
+  },
+  {
+    name: 'ops@example.com', vendor: 'Claude Max 5x', tone: 'ok',
+    windows: [
+      { label: '5-hour',        scope: '',      pct: 34, resets: '2h 41m' },
+      { label: '7-day',         scope: '',      pct: 62, resets: '4d 02h' },
+      { label: '7-day · model', scope: 'Fable', pct: 18, resets: '4d 02h' }
+    ]
+  },
+  {
+    name: 'ci@example.com', vendor: 'Codex Pro', tone: 'warn',
+    windows: [
+      { label: 'primary',   scope: '', pct: 88, resets: '46m' },
+      { label: 'secondary', scope: '', pct: 22, resets: '2d 06h' }
+    ]
+  },
+  {
+    name: 'nightly@example.com', vendor: 'Claude Pro', tone: 'mute',
+    windows: [
+      { label: '5-hour', scope: '', pct: 7,  resets: '3h 18m' },
+      { label: '7-day',  scope: '', pct: 12, resets: '5d 21h' }
     ]
   }
 ]
@@ -265,9 +293,8 @@ document.getElementById('root').innerHTML = `
   <!-- Two accounts per row once there is room, one below xl. An account is
        a name and its windows; given the whole width each bar became 800px
        of track carrying one figure, with "resets in" a screen away from
-       the percentage it qualifies. The column an unpaired account leaves
-       empty is the point, not a gap to fill: this install has one
-       subscription, and stretching it across 1160px does not make it two. -->
+       the percentage it qualifies. An odd account leaves its column empty
+       rather than stretching to fill the row. -->
   <div class="grid grid-cols-1 gap-x-px pb-2 xl:grid-cols-2">
     ${ACCOUNTS.map(accountBlock).join('')}
   </div>
@@ -284,7 +311,7 @@ renderShell({
   navMode: 'cloudflare',
   sub: 'usage',
   crumbs: ['Usage'],
-  subtitle: '1 subscription account · last 7 days',
+  subtitle: '4 subscription accounts · last 7 days',
   actions: btn('Refresh', 'outline', 'ri-refresh-line')
 })
 </script>
