@@ -17,7 +17,7 @@
 | DB `ccr` / `ccr_test` | `rialto` / `rialto_test` | 手作業（`scripts/rename-dev-database.ts`） |
 | `tkgling/claude-code-router` | `ghcr.io/tkgstrator/rialto` | 手作業（`compose.yaml`）。v2.78.4 以降 Docker Hub には push していない |
 | `ccr_` thinking signature | `rialto_` | 移行不能。該当する会話は作り直す |
-| `ccrVersion`（preset manifest） | `rialtoVersion` | 不要。両方読める |
+| `ccrVersion`（preset manifest） | `rialtoVersion` | 不要。manifest スキーマ自体が削除され、どちらも読まれない |
 | `<CCR-SUBAGENT-MODEL>` | `<RIALTO-SUBAGENT-MODEL>` | 不要。旧綴りは受理し続ける（ただし**意味が変わった**、後述） |
 
 ---
@@ -219,17 +219,14 @@ Anthropic に対しては同じく使い物にならないので落とされる�
 
 ## 7. preset manifest の `ccrVersion`
 
-**何もしなくてよい。** `src/schemas/domain/preset.ts` の `PresetMetadataSchema` は
-`rialtoVersion` と `ccrVersion` の両方を optional として受ける。
+**何もしなくてよい。** `ccrVersion` / `rialtoVersion` を読んでいた manifest スキーマ
+（`PresetMetadataSchema` など）は `src/schemas/domain/preset.ts` から削除された。もともと
+manifest を parse するコードは無かったので、失われた互換性も無い。同ファイルに残っているのは
+`JsonValueSchema`（`schemas/api/config.ts` と `schemas/domain/config.ts` の `.catchall`）だけ。
 
-ただし正確に言うと、**その manifest スキーマを読むコードは現在1つも無い**ので、この
-後方互換は現時点では理論上のものである。同ファイルで本番経路から読まれているのは
-`JsonValueSchema` だけ（`schemas/api/config.ts` と `schemas/domain/config.ts` の
-`.catchall`）。
-
-`src/shared/preset/`（廃止された CLI プリセットインストーラの残骸）は削除済みで、生きている
-動的入力ロジックは `src/lib/presets/` に一本化された。UI の Settings → Presets が扱う
-`RoutingPreset` とは**別物**である。混同しないこと。
+「preset」と呼ばれていた機能は全部無い — `src/shared/preset/`（CLI プリセットインストーラ）、
+`src/lib/presets/` と Settings → Presets 画面、そして Routing 設定のスナップショットだった
+`RoutingPreset`（§8-8）。
 
 ---
 
@@ -272,12 +269,12 @@ Routing 画面で `/v1/messages` を `routed` に切り替えること。詳細�
 ### 8-3. `background` シナリオが無い
 
 `ScenarioKey` は `default` / `think` / `longContext` / `webSearch` / `image` の5つ。
-`background` はマイグレーション `20260728_router_rules_drop_background` で `default` 上の
-述語ルールに畳み込まれた。旧「haiku トラフィックを安いモデルへ」の設定は、固定スロットでは
-なく Rules 画面（`/routing/rules`）のルールとして生き残っている。
+`background` はマイグレーション `20260728_router_rules_drop_background` で `default` に
+畳み込まれた。旧「haiku トラフィックを安いモデルへ」に相当する設定を残したいなら、`default`
+レーンのチェーンの並びで表現する（ルール画面はもう無い — §8-8）。
 
 ペルソナの `background` 除外も消えた。いまの除外は**受け口単位**で、`/v1/messages` 以外では
-ペルソナが挿入されない。
+ペルソナが挿入されない（routed なトラフィックに限る — passthrough はルーターごと飛ばす）。
 
 ### 8-4. weekly drain guard が無い
 
@@ -288,18 +285,18 @@ Routing 画面で `/v1/messages` を `routed` に切り替えること。詳細�
 いまはサブスクリプションを上流の上限まで走らせ、実際に返ってきた 429 に反応して
 サブアカウントをローテーションする。
 
-### 8-5. bare なモデル名からプロバイダを逆引きしない
+### 8-5. bare なモデル名の扱い
 
-`resolveByModelName` は削除された。`routed` な面では、モデルはレーンとシナリオの設定から
-決まる。`passthrough` な面では `provider,model` をこちらが指定する
-（`GET /v1/models` が返す id をそのまま使える）。
+`routed` な面では、モデルはチェーンのレーン設定から決まる。チェーンに primary が無いとき、
+および `passthrough` な面では、`provider,model` を指定するのが確実
+（`GET /v1/models` が返す id をそのまま使える）。bare なモデル名は、**有効な**プロバイダが
+ちょうど1つだけそのモデルを提供している場合に限りそこへ解決される。0件や複数件なら送られない。
 
-### 8-6. `CUSTOM_ROUTER_PATH` は動かない
+### 8-6. `CUSTOM_ROUTER_PATH` は削除された
 
-エンベロープと Settings フォームには残っていて設定値も往復するが、**リクエスト時に
-モジュールを読み込んで呼ぶコードが存在しない**。カスタムルーターに依存していたなら、
-その判断ロジックを Rules 画面の述語（モデルティア / モデル名 glob / thinking / トークン数の
-範囲 / ツール型 glob / effort）へ移すこと。
+以前は「設定は往復するが読まれない」状態だったが、いまはキー自体が退役した。ディスクに
+残っていても無視され、次の保存で消える（§8-8）。カスタムルーターに依存していた判断ロジックは、
+シナリオ × レーンごとのチェーンの並びで表現する。それで表現できないものは、いまの Rialto には無い。
 
 ### 8-7. Gemini の API キーに期限がある（Rialto 由来ではない）
 
@@ -332,6 +329,26 @@ AI Studio 上で `Blocked` タグが付いているので、そこでも判別�
 products" である。Rialto はゲートウェイなので**通るのは自分のコードとプロンプトそのもの**に
 なる。業務コードを流すなら従量課金にしておくこと。
 
+### 8-8. ルーティングは Chain と Passthrough だけになった
+
+マイグレーション `20260910095324_drop_router_slot_and_routing_preset` で、チェーン以外の
+ルーティング機構がすべて消えた。運用者が知っておくべきことは次のとおり。
+
+| 項目 | 何が起きるか |
+|---|---|
+| `RouterSlot`（シナリオごとの primary / fallbacks / ルール） | **テーブルごと削除される。** チェーンへの自動移行は**しない** — 運用者が書いていないチェーンは運用者のものではないし、空のレーンは呼び出し側のモデルを素通しするので、未設定のインストールとしては正しい挙動になる。旧スロットの振り先を残したければ、Routing 画面でチェーンとして書き直す |
+| `RoutingPreset`（Routing 設定のスナップショット） | テーブル・`/api/routing-presets`・Routing 画面の Presets メニュー・組み込みプリセットがすべて消える。保存済みスナップショットは失われる |
+| `longContext` の手動しきい値 | 旧 `longContext` スロットの `params.threshold` が**数値なら**、`live` プロファイルの `constraints.longContextThreshold` へ写される。`null`（auto）だったなら何もしない。Routing 画面の制約で編集できる |
+| `config.json` の `Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK` | 読まれない。`POST /api/config` はこれらを警告付きで捨て、次の保存でディスクからも剥がす。`ROUTER_MODE` 系も同様 |
+| `~/.rialto/<project>/` のプロジェクト単位・セッション単位の Router 上書きファイル | 読まれない。`rialto.json` も `claude-code-router.json` も無視される。プロジェクトごとに違うモデルを当てたいなら、アクセストークンを分けてそれぞれ別のプロファイルに固定する |
+| アクティブなペルソナ | `Router.persona` ではなく、トップレベルの `ActivePersona` キー（ディスクと `/api/config` の両方）。ディスク上の値はもともと `ActivePersona` だったので、設定の書き換えは要らない |
+| 認証モードをまたぐフォールバック | **auth_mode ゲートが無くなった。** チェーンに subscription の後ろに api_key を書いてあれば、そのとおりに落ちる。以前はゲートが黙って落としていた並びが、いまは実際に走る — 従量課金へこぼしたくないなら、チェーンからその entry を外すこと |
+| 無効化した Provider / Model | どの経路からも送られない。チェーンの entry に残っていても飛ばされ、passthrough で `provider,model` を手で指定しても拒否され、無効化したサブスクリプションプロバイダのアカウントは候補にならない。以前は chain の entry と passthrough の指定が無効化を素通りしていた |
+| チェーンに何も無いとき | レーンに entry が 1 件も無ければ呼び出し側の `body.model` がそのまま通る（429 にはならない）。entry はあるが全部ゲート落ちのときだけ、プロファイルの `exhaustedBehavior`（既定 `'429'`）に従う |
+
+移行後にまずやること: Routing 画面で、使うシナリオ × レーンのチェーンを書き、受け口を
+`routed` に切り替える。それまでは全リクエストが呼び出し側のモデルで素通しされる。
+
 ---
 
 ## 9. チェックリスト
@@ -342,8 +359,9 @@ products" である。Rialto はゲートウェイなので**通るのは自分�
 - [ ] `CCR_HOME_DIR` / `CCR_DEBUG_OAUTH` を使っていたなら新名に直した
 - [ ] `bun run scripts/rename-dev-database.ts` を流し、`DATABASE_URL` / `TEST_DATABASE_URL` を更新し、`--verify` が通った
 - [ ] Access tokens でアクセストークンを発行し、クライアントの `ANTHROPIC_AUTH_TOKEN` を差し替えた
-- [ ] Routing 画面で、使っている受け口を `routed` に切り替えた
-- [ ] 旧 `background` スロットに設定していた振り先を、Rules 画面のルールとして再現した
+- [ ] Routing 画面で、使うシナリオ × レーンのチェーンを書き、使っている受け口を `routed` に切り替えた（旧 RouterSlot の振り先は自動では移らない — §8-8）
+- [ ] チェーンで subscription の後ろに api_key を並べている箇所が、本当にそう落としてよい並びか確認した（auth_mode ゲートは無い）
+- [ ] `~/.rialto/<project>/` のプロジェクト別 Router 上書きファイルに頼っていたなら、アクセストークン × プロファイルで置き換えた
 - [ ] `ccr restart` などを叩くスクリプトを `docker compose restart` に置き換えた
 - [ ] Gemini を使っているなら、AI Studio の API キーが auth key であることを確認した（standard key は 2026年9月に拒否される — §8-7）
 

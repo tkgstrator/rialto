@@ -93,8 +93,9 @@ Google のワイヤ規約に代替が無いのでこの面だけ受理する。`
 
 ## routingMode — 「messages専用に見える」問題の正体
 
-`routed` は シナリオ分類 → ルール → 選好チェーン → quota-aware選択 → failover の全段を通す。
+`routed` は シナリオ分類 → 選好チェーン（quota-aware 選択）→ failover の全段を通す。
 `passthrough` は呼び出し側が `provider,model` を自分で指定する前提で、**全段をスキップ**する。
+ルーティングの機構はこの 2 つだけである（ルール・スロット・プリセットは無い）。
 
 この分岐自体は妥当だった（OpenAI互換クライアントは自分でモデルを選ぶ）。問題は
 `scenario-router.ts` に**ハードコードされていて、UIから見えず、切り替えられない**ことだった。
@@ -129,7 +130,7 @@ export const INITIAL_ROUTING_MODE: RoutingMode = 'passthrough'
 seed 値を返すので、「面ごとの既定値」を発明する必要がどこにも無い。
 
 **passthrough が seed なのは、未設定のインストールでルーティングを走らせても何も起きないから。**
-選好チェーンもルールも無い状態では、セレクタは呼び出し側の model に素通りする。ルーティングは
+選好チェーンが無い状態では、セレクタは呼び出し側の model に素通りする。ルーティングは
 振り先が揃ってから面ごとに有効化するものである。
 
 つまり **新規インストールは `/v1/messages` すらルーティングしない**。旧ビルドからの移行では
@@ -208,8 +209,6 @@ DBマイグレーションは不要（`InboundSurfaceConfig` は行が無けれ�
 | Overview | `/overview` | 1.76% / 1.85% |
 | Routing — Chain | `/routing` | 3.51% / 3.82% |
 | Routing — Chain (passthrough) | `/routing?surface=openai-responses` | 2.45% / 3.55% |
-| Routing — Map | `/routing/map` | 1.68% / 1.68% |
-| Routing — Rules | `/routing/rules` | 2.97% / 4.87% |
 | Providers — subscription | `/providers/:name` | 3.89% / 7.75% |
 | Providers — api_key | `/providers/:name` | 3.83% / 7.15% |
 | Providers — connect | `/providers/connect` | 7.22% / 14.66% ※1 |
@@ -221,13 +220,14 @@ DBマイグレーションは不要（`InboundSurfaceConfig` は行が無けれ�
 | Settings — Logging | `/settings/logging` | 2.28% / 2.29% |
 | Settings — Personas | `/settings/personas` | 4.73% / 5.63% |
 | Settings — Status line | `/settings/statusline` | 2.24% / 3.03% |
-| Settings — Presets | `/settings/presets` | 7.22% / 8.33% |
 | Settings — Advanced | `/settings/advanced` | 4.23% / 4.36% |
 | First run | `/setup` | 2.85% / 3.01% |
 | System states | `/access-denied` ほか | 3.22% / 9.53% |
 | Session detail | `/activity/sessions/:sessionId` | セッション実データが無く撮影できない（ルート自体は登録済み） |
 
 差分の大半は**モックのダミー値と実データの差**である（このインストールには provider が3件、モックのフィクスチャには7件、など）。
+当時測った Routing — Map / Routing — Rules / Settings — Presets の3画面は、その後ルートごと廃止された
+（ルーティングは chain と passthrough だけになった）ので、表から外してある。
 
 10% を超える2画面は、どちらも**モックと実機が別の状態を描いている**ことによる既知差分で、実装の欠落ではない。
 コピーや構造をいじっても下がらないので、追わないこと。

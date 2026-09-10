@@ -86,7 +86,6 @@ const SHARED_VOCABULARY = new Set([
   'settings.access.teamDomainPlaceholder',
   'settings.logging.levelHint',
   'settings.personas.markdown',
-  'settings.presets.repoPlaceholder',
   'settings.server.redis',
   'settings.statusline.stylePowerline',
   'shell.identityAccess'

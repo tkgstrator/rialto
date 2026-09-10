@@ -150,12 +150,7 @@
   },
   "routing": {
     "common": {
-      "presets": "预设",
-      "apply": "应用",
-      "presetUnresolved": "{{name}} 的所有 tier 都没有已启用的模型，请先连接 provider。",
       "notConfigured": "未配置",
-      "presetApplied": "已应用预设“{{name}}”。",
-      "presetAppliedWithWarnings": "已应用预设「{{name}}」（{{count}} 个 target 因未知被忽略）。",
       "modeRouted": "routed",
       "modePassthrough": "passthrough",
       "laneAgent": "Agent",
@@ -192,14 +187,14 @@
       "moveUp": "上移",
       "moveDown": "下移",
       "enableTarget": "启用 {{target}}",
-      "unconfiguredProfile": "配置档 <mono>{{profile}}</mono> 没有任何条目，因此 <mono>{{path}}</mono> 上的请求会交给场景路由器处理。若想在这里决定，请添加一个 target。",
+      "unconfiguredProfile": "配置档 <mono>{{profile}}</mono> 没有任何条目，因此 <mono>{{path}}</mono> 上的请求会按调用方自己的模型直接透传。若想在这里决定，请添加一个 target。",
       "constraints": "约束",
       "tierSubstitution": "档位约束",
       "tierSubstitutionHint": "不低于该档位",
       "weightFloor": "健康度下限",
       "weightFloorHint": "低于此值的 target 会被跳过",
       "whenExhausted": "配额耗尽时",
-      "whenExhaustedHint": "继续下一个，或返回 429",
+      "whenExhaustedHint": "没有可用 target 时：返回 429，或按调用方自己的模型透传请求",
       "quotaSkip": "配额跳过",
       "quotaSkipHint": "跳过配额采集器判定为已用尽的账号",
       "substitutionUpDown": "可升可降",
@@ -211,7 +206,7 @@
       "copyTarget": "复制 {{target}}",
       "allowTarget": "在该端点上允许 {{target}}",
       "noSurfaces": "尚未配置任何入口。",
-      "passthroughNote": "把该入口切换为 <mono>Routed</mono>，即可让 {{client}} 获得与 Claude Code 相同的配额感知故障转移。调用方仍然照常发送自己的模型名，只是它会作为规则匹配用的 <mono>requestedModel</mono>，而不再直接当作最终 target。",
+      "passthroughNote": "把该入口切换为 <mono>Routed</mono>，即可让 {{client}} 获得与 Claude Code 相同的配额感知故障转移。调用方仍然照常发送自己的模型名，只是它会作为链在尊重档位时参考的 <mono>requestedModel</mono>，而不再直接当作最终 target。",
       "schedulerNoChain": "路由调度器正在运行，但没有可评分的优先级链，因此不会为该端点发布实时读数。请在该端点的路由配置中添加条目以查看。",
       "schedulerNotTicked": "路由调度器尚未发布快照，因此下方的实时读数为空。它们会在第一次调度后填充 — 默认在服务器启动后五分钟内。"
     }
@@ -255,7 +250,7 @@
       "routable": "可路由",
       "toggleProvider": "切换 {{provider}}",
       "routableNeedsCredential": "需要可用的凭据才能接收流量",
-      "removeConfirm": "要删除 {{name}} 吗？这会删除它的 {{models}} 个模型和已保存的凭据，并清空指向它的 {{bindings}} 个路由槽位。此操作无法撤销。",
+      "removeConfirm": "要删除 {{name}} 吗？这会删除它的 {{models}} 个模型和已保存的凭据，并从所有引用它的路由链中移除对应条目。此操作无法撤销。",
       "notFound": "未找到提供方",
       "notFoundBody": "没有名为“{{name}}”的提供方，可能已被删除。"
     },

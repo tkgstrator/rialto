@@ -76,9 +76,8 @@ function candidateFitsContext(candidate: string, tokenCount: number, providers: 
  * cannot fit) we keep the primary and let the upstream / reactive 429
  * path take over.
  *
- * `fallbacks` is the chain pre-resolved by selectModel (a rule-matched
- * chain when a route rule fired, otherwise the scenario's catch-all
- * chain). `scenarioType` is retained for log observability only.
+ * `fallbacks` is the rest of the chain the selector resolved, after the
+ * primary. `scenarioType` is retained for log observability only.
  *
  * Exported for unit tests so the exhaustion mark and capability gate
  * can be exercised directly with a seeded state and ConfigStore.

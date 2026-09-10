@@ -3,7 +3,6 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import { useTranslation } from 'react-i18next'
 import { ApiUnreachableScreen } from '@/components/rialto/system/ApiUnreachable'
 import { api } from '@/lib/api'
-import { type RouteRule, RouteRuleSchema } from '@/schemas/domain/router'
 import type { Config } from '@/types'
 
 interface ConfigContextType {
@@ -40,86 +39,8 @@ interface ConfigProviderProps {
   children: ReactNode
 }
 
-// Coerce the per-scenario fallback chains off the raw wire shape into
-// the full { scenario: string[] } object the form expects. A missing /
-// malformed list normalizes to an empty array.
-function asStringArray(v: unknown): string[] {
-  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
-}
-
-// The UI-facing shape of one route target: catch-all primary + fallback
-// chain, plus any predicated rules that survived a round-trip through
-// the server. Rules are opaque to the current UI (Phase 4 will surface
-// them); we preserve them verbatim so saving doesn't nuke a rule the
-// migration or a future rule editor wrote.
-type RouteTargetForm = { primary: string | null; fallbacks: string[]; rules: RouteRule[] }
-
-// Coerce one route target's raw wire object into the shape the form
-// binds to. Defensive against a partial / stale wire object. Rules pass
-// through the same Zod schema the server writes so malformed entries
-// are dropped rather than crashing the form binding.
-function normalizeRouteTarget(raw: unknown): RouteTargetForm {
-  const obj = raw !== null && typeof raw === 'object' ? raw : {}
-  const primary = Reflect.get(obj, 'primary')
-  const rawRules = Reflect.get(obj, 'rules')
-  const rules: RouteRule[] = Array.isArray(rawRules)
-    ? rawRules.flatMap((r) => {
-        const parsed = RouteRuleSchema.safeParse(r)
-        return parsed.success ? [parsed.data] : []
-      })
-    : []
-  return {
-    primary: typeof primary === 'string' && primary !== '' ? primary : null,
-    fallbacks: asStringArray(Reflect.get(obj, 'fallbacks')),
-    rules
-  }
-}
-
-// Coerce one scenario's raw route into the nested { agent, subagent }
-// shape (two route targets per scenario). Defensive against a partial /
-// stale wire object — a missing agent/subagent route defaults to unset.
-function normalizeScenario(raw: unknown): {
-  agent: RouteTargetForm
-  subagent: RouteTargetForm
-} {
-  const obj = raw !== null && typeof raw === 'object' ? raw : {}
-  return {
-    agent: normalizeRouteTarget(Reflect.get(obj, 'agent')),
-    subagent: normalizeRouteTarget(Reflect.get(obj, 'subagent'))
-  }
-}
-
-// Longcontext threshold rides as `number | null` on the wire; null means
-// "auto" (the runtime derives an effective value from the default
-// agent primary's contextWindow). numberOrNull collapses anything that
-// isn't a number to null so a missing/invalid field lands on auto
-// rather than silently pinning 128k.
-function numberOrNull(raw: unknown): number | null {
-  return typeof raw === 'number' ? raw : null
-}
-
-// Build the nested Config['Router'] from the raw wire object. Each
-// scenario nests its agent + subagent routes (primary + fallback chain);
-// the sole scenario-scoped knob (threshold on longContext) rides on its
-// owning scenario.
-function normalizeRouter(raw: unknown): Config['Router'] {
-  const obj = raw !== null && typeof raw === 'object' ? raw : {}
-  const get = (k: string): unknown => Reflect.get(obj, k)
-  const longContextRaw = get('longContext')
-  const lcObj = longContextRaw !== null && typeof longContextRaw === 'object' ? longContextRaw : {}
-  const persona = get('persona')
-  return {
-    default: normalizeScenario(get('default')),
-    think: normalizeScenario(get('think')),
-    longContext: { ...normalizeScenario(longContextRaw), threshold: numberOrNull(Reflect.get(lcObj, 'threshold')) },
-    webSearch: normalizeScenario(get('webSearch')),
-    image: normalizeScenario(get('image')),
-    persona: typeof persona === 'string' && persona !== '' ? persona : undefined
-  }
-}
-
-// Coerce the raw /api/config wire shape (which now carries explicit
-// nulls for unset api_key / path scalars / router slots) into the typed
+// Coerce the raw /api/config wire shape (which carries explicit nulls
+// for unset api_key / path scalars / the active persona) into the typed
 // Config the app's controlled inputs expect (non-null strings, arrays).
 // Centralized so both the mount fetch and reloadConfig stay in sync.
 function normalizeConfig(data: Config): Config {
@@ -157,18 +78,12 @@ function normalizeConfig(data: Config): Config {
             default: { modules: [] },
             powerline: { modules: [] }
           },
-    Router: normalizeRouter(data.Router),
-    CUSTOM_ROUTER_PATH: typeof data.CUSTOM_ROUTER_PATH === 'string' ? data.CUSTOM_ROUTER_PATH : '',
-    // Envelope scalars edited from the Settings page. Optional on the
-    // wire (Config schema) — leave them undefined when absent so the
-    // form's default-value fallback decides the initial UI value.
-    // Copying them through here is what makes save-then-reload actually
-    // round-trip; without this the wire value gets dropped and the form
-    // always re-initialises to the default.
-    CROSS_PROVIDER_FALLBACK: data.CROSS_PROVIDER_FALLBACK,
-    LiveRoutingName: data.LiveRoutingName,
+    // The active persona's id. Null is the wire's "none"; an empty string
+    // collapses to the same so the Personas screen's Active switch never
+    // has to tell the two apart.
+    ActivePersona: typeof data.ActivePersona === 'string' && data.ActivePersona !== '' ? data.ActivePersona : null,
     // Guarantee every persona carries a stable uuid `id` (the key the URL
-    // and Router.persona reference). The server's boot migration backfills
+    // and ActivePersona reference). The server's boot migration backfills
     // ids on disk; this is the defensive UI mirror for any persona that
     // still arrives without one.
     Personas: Array.isArray(data.Personas)
@@ -181,9 +96,6 @@ function normalizeConfig(data: Config): Config {
   }
 }
 
-// A fresh, unassigned route target for the empty-config literal.
-const emptyRouteTarget = (): RouteTargetForm => ({ primary: null, fallbacks: [], rules: [] })
-
 const emptyConfig = (): Config => ({
   LOG: false,
   LOG_LEVEL: 'info',
@@ -195,15 +107,7 @@ const emptyConfig = (): Config => ({
   PROXY_URL: '',
   Providers: [],
   StatusLine: undefined,
-  Router: {
-    default: { agent: emptyRouteTarget(), subagent: emptyRouteTarget() },
-    think: { agent: emptyRouteTarget(), subagent: emptyRouteTarget() },
-    longContext: { agent: emptyRouteTarget(), subagent: emptyRouteTarget(), threshold: null },
-    webSearch: { agent: emptyRouteTarget(), subagent: emptyRouteTarget() },
-    image: { agent: emptyRouteTarget(), subagent: emptyRouteTarget() },
-    persona: undefined
-  },
-  CUSTOM_ROUTER_PATH: '',
+  ActivePersona: null,
   Personas: []
 })
 

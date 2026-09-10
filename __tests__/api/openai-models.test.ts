@@ -14,13 +14,13 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import { v1ModelsRoute } from '../../src/api/v1/models-list'
 import { getPrismaClient } from '../../src/db/client'
-import { applyUiConfig, ensureRouterSlots } from '../../src/services/config'
+import { applyUiConfig, ensurePreferenceProfile } from '../../src/services/config'
 import { HAS_DB, resetDbTables, teardownPrisma } from '../db/helpers'
 
 describe.skipIf(!HAS_DB)('GET /v1/models', () => {
   beforeEach(async () => {
     await resetDbTables()
-    await ensureRouterSlots()
+    await ensurePreferenceProfile()
   })
 
   afterAll(async () => {
@@ -47,8 +47,7 @@ describe.skipIf(!HAS_DB)('GET /v1/models', () => {
           auth_mode: 'api_key',
           models: ['gpt-5-mini', 'gpt-4.1']
         }
-      ],
-      Router: {}
+      ]
     })
     // applyUiConfig only inserts models with enabled=false by default —
     // flip them on so getEnabledModels returns something.
@@ -88,8 +87,7 @@ describe.skipIf(!HAS_DB)('GET /v1/models', () => {
           auth_mode: 'api_key',
           models: ['claude-haiku']
         }
-      ],
-      Router: {}
+      ]
     })
     const prisma = getPrismaClient()
     await prisma.model.updateMany({ data: { enabled: true } })

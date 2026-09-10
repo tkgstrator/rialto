@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { Tokenizer as HFTokenizer } from '@huggingface/tokenizers'
 import type { Logger } from 'pino'
 import type { ProviderTokenizerConfig } from '@/schemas/domain/tokenizer'
-import { type TokenizeContentBlock, type TokenizeRequest, Tokenizer } from './base'
+import { isTokenizeContentBlock, type TokenizeContentBlock, type TokenizeRequest, Tokenizer } from './base'
 
 export type HuggingFaceTokenizerOptions = {
   /** Network timeout (ms) when downloading vocab files. Defaults to 30s. */
@@ -228,12 +228,24 @@ export class HuggingFaceTokenizer extends Tokenizer {
       const input: unknown = Reflect.get(block, 'input')
       return input === undefined ? '' : JSON.stringify(input)
     }
-    if (block.type === 'tool_result') {
-      const content: unknown = Reflect.get(block, 'content')
-      if (content === undefined) return ''
-      return typeof content === 'string' ? content : JSON.stringify(content)
-    }
+    if (block.type === 'tool_result') return this.flattenToolResult(Reflect.get(block, 'content'))
     return ''
+  }
+
+  // Same rule as the tiktoken backend: a block array inside a tool_result
+  // is walked block by block so an image's base64 payload is not read as
+  // prose, while any other JSON shape is still serialised.
+  private flattenToolResult(content: unknown): string {
+    if (content === undefined) return ''
+    if (typeof content === 'string') return content
+    if (Array.isArray(content)) {
+      return content
+        .filter(isTokenizeContentBlock)
+        .map((item) => this.flattenContentBlock(item))
+        .filter((text) => text.length > 0)
+        .join(' ')
+    }
+    return JSON.stringify(content)
   }
 }
 

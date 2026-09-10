@@ -11,10 +11,10 @@
 ## ✨ Features
 
 - **Four inbound surfaces** — Anthropic Messages (`/v1/messages`), OpenAI Chat Completions, OpenAI Responses, and Gemini `generateContent`. Everything a surface needs is one descriptor, so all four get the same auth, error envelopes, streaming and request history.
-- **Task-based routing** — assign different models to five built-in scenarios: `default`, `think` (Plan Mode), `longContext`, `webSearch`, and `image`. Each scenario has two independent lanes, `agent` and `subagent`.
-- **Predicated routing rules** — per-scenario ordered rule stacks; the first rule whose predicate matches supplies the target and its own fallback chain.
-- **Fallback chains with account rotation** — every slot takes an ordered `provider,model` fallback list. A 429 rotates to a peer subscription account first, then walks the chain.
-- **Personas** — append a named system prompt to every `/v1/messages` request without touching Claude Code. Manage the library under Settings → Personas; pick the active one on the Routing page.
+- **Chain routing** — an ordered `provider,model` chain per scenario (`default`, `think` (Plan Mode), `longContext`, `webSearch`, `image`) and per lane (`agent` / `subagent`). The selector walks it, skipping targets that are exhausted or switched off, and the rest of the chain is the failover list.
+- **Passthrough** — or let the caller pick: a surface (or a single access token) in passthrough mode sends the caller's own `body.model` upstream untouched.
+- **Failover with account rotation** — a 429 rotates to a peer subscription account first, then walks the rest of the chain. The chain's order is honoured as written, a subscription primary falling back to an api_key entry included.
+- **Personas** — append a named system prompt to every `/v1/messages` request without touching Claude Code. Manage the library and pick the active one under Settings → Personas.
 - **Multi-provider support** — connect API-key providers (Anthropic, OpenAI, DeepSeek, Gemini, Groq, OpenRouter, …) or subscription-based providers (Claude Code OAuth, OpenAI Codex).
 - **Subscription monitoring** — track rate-limit windows and compare actual API spend against subscription cost.
 - **Usage & cost dashboard** — per-provider and per-model cost breakdown with daily cost charts.
@@ -32,10 +32,10 @@ The web UI (served on port **3456** by default) gives you full control over ever
 | Screen | Route | Purpose |
 |--------|-------|---------|
 | **Overview** | `/overview` | Traffic, spend, and subscription-window health at a glance |
-| **Routing** | `/routing` | The live chain per scenario and lane. Sub-tabs: **Map** (`/routing/map`) and **Rules** (`/routing/rules`) |
+| **Routing** | `/routing` | The chain per scenario and lane, each surface's routing mode and profile, and the profile's constraints (including the `longContext` threshold) |
 | **Providers** | `/providers` | Add, edit, or remove API-key and subscription providers; per-provider models, pricing, context windows, connectivity tests, and the read-only derived request shape |
 | **Activity** | `/activity` | Sessions, per-request logs (`/activity/requests`), and server logs (`/activity/logs`) |
-| **Settings** | `/settings` | Server, **Access** (issue `/v1/*` tokens), Logging, Personas, Status line, Presets, Advanced |
+| **Settings** | `/settings` | Server, **Access** (issue `/v1/*` tokens), Logging, Personas, Status line, Advanced |
 
 First run lands on `/setup`.
 
@@ -158,10 +158,10 @@ Each surface has one stored mode:
 
 | Mode | Behaviour |
 |---|---|
-| `passthrough` | The caller picked the model. Scenario classification, rules, the preference chain and failover are all skipped. |
-| `routed` | The full selector runs: scenario classification → rules → preference chain → failover. |
+| `passthrough` | The caller picked the model. Scenario classification, the chain and proactive failover are all skipped. |
+| `routed` | The chain runs: scenario classification → chain walk → failover. |
 
-**Every surface starts in `passthrough`.** Routing an unconfigured install does nothing useful — with no chain and no rules the selector falls straight through to the caller's own model — so routing is something you switch on, per surface, once there is something to route to. Each surface can also be pinned to its own routing profile, which is how you fix, say, a CI client's surface on a cost-first chain.
+**Every surface starts in `passthrough`.** Routing an unconfigured install does nothing useful — with no chain the selector falls straight through to the caller's own model — so routing is something you switch on, per surface, once there is something to route to. Each surface can also be pinned to its own routing profile, which is how you fix, say, a CI client's surface on a cost-first chain. See [Chain and passthrough](#chain-and-passthrough) for what each mode does with `body.model`.
 
 ## ⚙️ Configuration
 
@@ -185,20 +185,29 @@ Boot-time scalars and disk-resident objects live here. Environment-variable inte
 | `CAPTURE_REQUESTS` | Record a `RequestLog` row per request (default `true`) |
 | `CAPTURE_MESSAGES` | Archive conversation transcripts (default `true`) |
 | `REDACT_TOOL_ARGUMENTS` | Strip tool-call arguments from the archive (default `false` — turning it on loses information that cannot be recovered later) |
-| `ROUTER_MODE` | `scenario` (default) / `preference` / `quota-aware` — which selector routes `/v1` traffic |
-| `ROUTER_SHADOW` | `off` (default) / `preference` / `quota-aware` — run a second selector in parallel and log its would-be decision without affecting routing |
-| `ROUTER_ROLLOUT_PCT` | Percentage of sessions the non-`scenario` mode applies to (default `100`, session-hash bucketed) |
 | `ROUTING_SCHEDULER_INTERVAL_MS` | Scheduler tick, 60 000–3 600 000 (default `300000`) |
-| `CROSS_PROVIDER_FALLBACK` | `true` to auto-append same-`Model.name` peer entries on other OpenAI-family providers. Off by default. See "Cross-provider peer fallback" below |
-| `CUSTOM_ROUTER_PATH` | Not declared by `ConfigEnvelopeSchema` — it survives on disk through the schema's `.catchall` and round-trips through the Settings form, but **nothing reads it at request time**. See "Custom JavaScript router" below |
 | `Personas` | The persona library (array) |
-| `ActivePersona` | Disk-side backing store for the active persona's id; surfaced on the wire as `Router.persona` |
+| `ActivePersona` | The active persona's uuid id; `null` / absent / empty means none. Also a top-level key on the `/api/config` wire |
 | `StatusLine` | Status-line configuration object |
-| `LiveRoutingName` | Display name for the live routing configuration |
 
-### Providers, Models, and Router (database)
+Keys an older build wrote for routing mechanisms that no longer exist — `Router`, `CUSTOM_ROUTER_PATH`, `LiveRoutingName`, `CROSS_PROVIDER_FALLBACK`, `ROUTER_MODE` — are ignored. `POST /api/config` drops them with a warning, and the next save removes them from the file.
 
-Providers, models, and router slots live in PostgreSQL and are managed through the web UI or `POST /api/config`. The `Providers` and `Router` keys **inside** `config.json` are a one-way mirror written back from the database after each save — editing them by hand has no effect and is overwritten on the next write.
+### Providers, models and the chain (database)
+
+Providers, models, the preference chains and each surface's routing mode live in PostgreSQL and are managed through the web UI (`POST /api/config`, `PUT /api/router-preferences`, `POST /api/inbound-surfaces`). The `Providers` key **inside** `config.json` is a one-way mirror written back from the database after each save — editing it by hand has no effect and is overwritten on the next write. Nothing about routing is mirrored to disk any more.
+
+### Chain and passthrough
+
+Those are the only two things Rialto does with `body.model`.
+
+**Chain** (`routed`). The request is classified into a scenario and a lane, and the selector walks that lane's ordered `provider,model` chain from the profile the request resolves to — the access token's profile if it names one, otherwise the surface's, otherwise `live`. The first entry that is switched on, not exhausted and able to hold the request becomes `body.model`; the rest of the chain rides along as the failover list. Two things on the profile decide what happens when the walk finds nothing:
+
+- `exhaustedBehavior` — the lane has entries but every one of them is gated out. `429` (the default) answers the client with a `rate_limit_error` and a `Retry-After` header without touching any upstream; `passthrough` sends the caller's own `body.model` instead, with no fallbacks.
+- A lane with **no entries at all** never 429s, whatever `exhaustedBehavior` says: an unconfigured lane is "no opinion", and the caller's own model goes out as sent. The same happens if the chain cannot be loaded or routing fails for any other reason — Rialto never invents a target, it only ever replaces `body.model` with a chain entry.
+
+**Passthrough** (`passthrough`, or an access token pinned to the reserved `passthrough` profile). The caller's `body.model` goes upstream as sent: `provider,model`, or a bare model name that exactly one enabled provider hosts. A surface can deny specific `provider,model` pairs in this mode.
+
+Either way, a provider or model switched off on the Providers page is never dispatched — not from a chain entry, not from a passthrough request, not as a failover target, and not through a disabled subscription provider's accounts. Naming one by hand is refused rather than forwarded.
 
 ### Routing scenarios
 
@@ -212,51 +221,38 @@ Configure which model to use for each scenario on the **Routing** page:
 | `webSearch` | The request carries a `web_search*` tool |
 | `image` | Image-related tasks |
 
-There is **no `background` scenario.** It was folded into a predicated rule on `default` by the `20260728_router_rules_drop_background` migration, so the old "route haiku traffic somewhere cheap" behaviour is now an editable rule on the Rules page instead of a fixed slot.
+There is **no `background` scenario.** It was folded into `default` by the `20260728_router_rules_drop_background` migration.
 
-Each scenario has two lanes — `agent` for ordinary traffic and `subagent` for requests carrying a subagent tag — and each lane has its own primary, fallbacks, and rule stack.
+Each scenario has two lanes — `agent` for ordinary traffic and `subagent` for requests carrying a subagent tag — and each lane has its own ordered chain. A scenario is only chosen when its lane holds at least one usable entry; otherwise the request lands on `default`.
 
-**The `longContext` threshold is not a fixed number.** A configured `Router.longContextThreshold` wins outright. With no configured value it is 70 % of the default agent primary's declared context window, leaving headroom for the reply. If neither resolves, it falls back to 128 000 tokens.
+**The `longContext` threshold is not a fixed number.** A threshold set on the profile's constraints (Routing page) wins outright. With no configured value it is 70 % of the declared context window of the chain's first `default` / `agent` entry, leaving headroom for the reply. If neither resolves, it falls back to 128 000 tokens.
 
 ### Effort, tier, and fallbacks
 
 Beyond the scenario triggers above, the router grades each request and walks an ordered fallback list:
 
 - **Grading signals** — `output_config.effort` (`high`/`xhigh`/`max` → heavy → `longContext`; `low`/`medium` → explicitly light) and the requested model tier from `body.model` (opus → heavy). Tier is read only when effort is absent so older Claude Code traffic still grades correctly; an explicit low/medium effort suppresses the tier escalation so callers can downgrade an opus request.
-- **Rule stack first** — the scenario's rules are walked before its catch-all primary. A matched rule supplies the target *and* its own cascade (rule target → scenario primary → scenario fallbacks). A rule that matches with no target is a legitimate "do not reroute these" block.
 - **Per-scenario fallback chains** — the router walks `[primary, ...fallbacks]` and picks the first candidate that is not marked exhausted and whose declared `contextWindow` can hold the request.
 - **Capability gate** — fail-over never lands on a model whose declared `contextWindow` cannot hold the request. Models with no declared window are allowed (unknown = allow, conservative default).
 - **Account rotation on 429** — for a subscription provider, a 429 marks that sub-account exhausted (until the real `resetAt`, or five minutes if the upstream did not say) and retries the same chain entry on a peer account, up to ten rotations. Only when no peer is left does the whole provider get marked and the walker move to the next chain entry.
-- **`auth_mode` gate** — a chain never mixes auth modes. If the primary is a subscription provider, api_key fallbacks are dropped, and vice versa. Same-provider fallbacks are dropped too: 5 h and weekly quotas are per account and shared across that account's models, so hopping to another model on the same provider changes nothing.
+- **Chain order is honoured as written** — there is no `auth_mode` gate. A subscription primary keeps the api_key fallbacks listed after it, and a same-provider fallback is walked too, because exhaustion is marked per `(provider, model)`. If you do not want a subscription to spill onto per-token billing, do not put the api_key entry after it.
 - **Multi-account balancing** — with several enabled SubAccounts on the same provider, the session router drops accounts whose recorded hard-limit windows are already at 100 %, reuses the sticky session→account mapping when it still points at a survivor, and otherwise picks the account with the highest `remaining % ÷ time until reset` — the one most at risk of leaving quota unspent.
 
 Decisions are logged structurally: a proactive drop logs `{ from, to, scenario, tokenCount, trace }`, and a dead-chain warning fires when every candidate is rejected so you can see what was tried and why. Each `trace` entry carries one of `kept` / `exhausted` / `capability` / `malformed`.
 
 > **There is no weekly drain guard.** Earlier builds pre-empted a subscription provider once its weekly window crossed a linear drain target, tuned by a `Router.weeklyDrainMarginPct` knob. Both are gone. Subscription providers now run to their upstream limit and are rotated reactively on the 429 that actually happens, which is the signal that is never wrong.
 
-### Cross-provider peer fallback
-
-When the same `Model.name` is served by more than one OpenAI-compatible provider (a common setup: `gpt-5.6-luna` on both the subscription `codex` provider and an api_key `openai` provider), enabling `CROSS_PROVIDER_FALLBACK` on the Settings page (or via the env var) tells the router to **auto-inject the peer entries into every failover chain** — no need to duplicate the fallbacks by hand per scenario.
-
-- **Scope** — only providers whose `apiStyle` is `openai_chat` or `openai_responses` are considered peers. Anthropic and Gemini providers are never mixed in because their wire formats differ.
-- **Ordering** — peers appear directly after the entry that pulled them in, sorted by the quota-aware scheduler's healthiness score (highest first). Unknown scores collapse to a neutral 0.5.
-- **Dedup** — an explicitly configured fallback wins. If you already listed `openai,gpt-5.6-luna` in the chain, the expander does not add a duplicate.
-- **`auth_mode` bypass** — peer-injected entries skip the "primary and fallback must share `auth_mode`" gate. Turning the toggle on is an explicit opt-in to letting a subscription (codex) primary fall over onto an api_key (openai) peer of the same model. Explicit fallbacks you wrote by hand still respect the gate.
-- **Observability** — every request that gets peers appended emits `[cross-provider-fallback] injected same-model peers into chain` with the primary, the peer list, and the resulting chain size.
-
-The toggle is off by default so existing setups behave exactly as before.
-
 ### Personas
 
 A *persona* is a named system-prompt fragment appended to every user-facing request after scenario routing. Use them to give Claude Code a consistent voice / role / set of working rules without editing Claude Code itself.
 
 - **Library** — `Personas` is a top-level array on the disk envelope. Each entry has a stable uuid `id`, a free-form `name` (display label, need not be unique), and the `prompt` text. New installs ship with a small starter library; existing installs keep what they have on disk.
-- **Active selection** — exactly one persona is active per Router. The active persona's uuid id rides on `Router.persona` (round-tripped through the disk-only `ActivePersona` envelope key). `null` / absent / empty string means "no persona". Per-project and per-session router-override files also accept `Router.persona`.
+- **Active selection** — exactly one persona is active per install. Its uuid id is the top-level `ActivePersona` key, on the disk envelope and on the `/api/config` wire alike. `null` / absent / empty string means "no persona". There are no per-project or per-session override files.
 - **Injection** — when the router resolves a scenario, the active persona's `prompt` is appended to the LAST system block carrying `cache_control` (falling back to the last string text block). This keeps the persona *inside* the cached prefix, so it consumes no extra cache breakpoint and stays byte-stable across requests (preserving Anthropic's prompt cache). String and undefined `system` values are concatenated; multi-block array systems are mutated in place.
-- **Surface restriction** — persona injection runs on **`/v1/messages` only**. The OpenAI-compat and Gemini surfaces reject an enriched `system` field outright (Codex answers `Unsupported parameter: system`), so the enrichment is skipped there rather than breaking the request. Every scenario on `/v1/messages` inherits the active persona — there is no per-scenario exclusion.
+- **Surface restriction** — persona injection runs on **`/v1/messages` only**, and only on routed traffic: a passthrough surface, or a token pinned to the `passthrough` profile, skips the router and the persona with it. The OpenAI-compat and Gemini surfaces reject an enriched `system` field outright (Codex answers `Unsupported parameter: system`), so the enrichment is skipped there rather than breaking the request. Every scenario on `/v1/messages` inherits the active persona — there is no per-scenario exclusion.
 - **Subagent interaction** — persona injection runs *after* subagent-tag handling, so a subagent's per-call system content composes with — rather than clobbers — the persona.
 
-Manage the library under **Settings → Personas** (`/settings/personas`); switch the active persona on the **Routing** page. Setting it to "no persona" is the no-op default.
+Both the library and the active selection live under **Settings → Personas** (`/settings/personas`). "No persona" is the no-op default.
 
 For authoring high-fidelity personas (structural patterns, anti-pattern cataloguing, thought-process control for `think` requests), see [docs/guides/persona-authoring.md](docs/guides/persona-authoring.md).
 
@@ -287,12 +283,6 @@ An Anthropic provider needs no conversion step because the request is already in
 A model whose own API style disagrees with its provider's — a Codex-family model hosted on the regular OpenAI provider — gets that conversion step appended for its own requests only.
 
 `provider.transformer.use` is no longer read: a `use` block left over in an older config is dropped on load. The Providers page shows the derived chain read-only under **Request shape**, which is the first thing worth checking when a request misbehaves.
-
-### Custom JavaScript router
-
-> **Not wired up.** `CUSTOM_ROUTER_PATH` survives in the config envelope and the Settings form and round-trips correctly, but **nothing loads or calls the module at request time**. `custom-router.example.js` in the repository root documents the intended contract — an `async` function returning `"provider,model"` or `null` — and is kept for when the hook is reinstated. Treat the setting as unimplemented, not as a feature.
-
-For routing logic beyond the built-in scenarios today, use the **Rules** page (`/routing/rules`). A rule's predicate can combine requested model tier, an exact-match model glob, thinking on/off, a token-count range, a tool-type glob, and the effort level — which covers most of what a code hook was reached for, without one.
 
 ### Subagent routing
 
@@ -366,7 +356,7 @@ for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.
 
 Any client that supports overriding `base_url` / `baseURL` works the same way.
 
-**What applies on these surfaces.** Failover, account rotation, and the `provider,model` addressing always apply. Scenario routing and rules apply only once you switch the surface from `passthrough` to `routed`. Persona injection does **not** apply — it is `/v1/messages` only (see Personas above).
+**What applies on these surfaces.** Failover, account rotation, and the `provider,model` addressing always apply. Chain routing applies only once you switch the surface from `passthrough` to `routed`. Persona injection does **not** apply — it is `/v1/messages` only (see Personas above).
 
 ## 📊 Logging
 
@@ -445,7 +435,7 @@ bunx knip                 # dead-code inventory
 | `bun run db:migrate:deploy` | Apply existing migrations (production / CI) |
 | `bun run db:migrate:test` | Apply migrations to the separate `rialto_test` database |
 | `bun run db:reset` | Drop and recreate the schema (destructive) |
-| `bun run db:seed` | Idempotent seed — router slots and the preference profile |
+| `bun run db:seed` | Idempotent seed — the `live` preference profile |
 | `bun run db:studio` | Open Prisma Studio |
 
 Always go through Prisma migrations — never edit DDL directly. **After any migration, run `db:migrate:test` as well**, or CI will fail against the test database.

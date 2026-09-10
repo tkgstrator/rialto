@@ -115,7 +115,7 @@
       "mock": "activity-requests.html",
       "route": "/activity/requests",
       "group": "Activity",
-      "note": "Per-request log with Requested → Sent, matched rule and token attribution."
+      "note": "Per-request log with Requested → Sent, scenario and token attribution."
     },
     {
       "name": "activity-usage",

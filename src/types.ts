@@ -11,8 +11,6 @@ export {
   ProviderSchema,
   type ProviderTransformer,
   ProviderTransformerSchema,
-  type RouterConfig,
-  RouterConfigSchema,
   type StatusLineConfig,
   StatusLineConfigSchema,
   type StatusLineModuleConfig,

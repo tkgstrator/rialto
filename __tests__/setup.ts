@@ -9,7 +9,7 @@
  *     CONFIG_FILE (services/config/envelope.test.ts, db/migrateFromJson.test.ts)
  *     would otherwise clobber the developer's real
  *     ~/.rialto/config.json.
- *  2. DB-backed tests TRUNCATE Provider/Model/RouterSlot/... in
+ *  2. DB-backed tests TRUNCATE Provider/Model/RouterPreferenceProfile/... in
  *     whatever DATABASE_URL points to. Routing them through
  *     TEST_DATABASE_URL keeps the dev DB intact; if TEST_DATABASE_URL
  *     is unset we drop DATABASE_URL entirely so HAS_DB evaluates false

@@ -101,8 +101,10 @@ export interface SubAccountTokenInfo {
 }
 
 // Return decrypted tokens for all enabled SubAccounts of the given
-// vendor kind. Used by usage-service to poll per-account usage APIs
-// without going through the proxy hot path.
+// vendor kind on enabled providers. This is the pool the per-request
+// account picker and the reactive 429 rotation draw from, so a provider
+// the operator switched off contributes nothing to it — the same
+// switch that keeps its models out of the registry.
 export async function getSubAccountTokensForKind(
   kind: 'claude' | 'codex',
   prisma: PrismaClient = getPrismaClient()
@@ -113,7 +115,7 @@ export async function getSubAccountTokensForKind(
   // token refresh rewrites accessTokenEnc), so "the first account" was
   // neither stable nor anyone's decision.
   const all = await prisma.provider.findMany({
-    where: { authMode: AuthMode.subscription },
+    where: { authMode: AuthMode.subscription, enabled: true },
     orderBy: { name: 'asc' },
     include: { subscriptionAccounts: { where: { enabled: true }, orderBy: { id: 'asc' } } }
   })

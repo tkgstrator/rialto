@@ -45,5 +45,4 @@ compose.yaml
 README*.md
 CLAUDE.md
 LICENSE
-custom-router.example.js
 __tests__

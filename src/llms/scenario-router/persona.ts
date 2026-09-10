@@ -1,16 +1,15 @@
 /**
  * Persona / global system-prompt injection.
  *
- * Resolves the active persona's prompt text for a resolved router config
- * and appends it to the request's `system` field cache-safely (inside
- * the last `cache_control`-bearing block, so the append doesn't cost an
- * extra Anthropic cache breakpoint).
+ * Resolves the active persona's prompt text and appends it to the
+ * request's `system` field cache-safely (inside the last
+ * `cache_control`-bearing block, so the append doesn't cost an extra
+ * Anthropic cache breakpoint).
  */
 
 import type { Persona } from '@/schemas/domain/config'
 import type { ConfigStore } from '../registry/config'
 import type { TokenizeSystem } from '../tokenizers/base'
-import type { RouterConfig } from './types'
 
 // Whether a system block carries a truthy `cache_control` discriminator.
 // TokenizeSystemBlock doesn't model `cache_control` (the tokenizer
@@ -31,22 +30,22 @@ function stringTextOf(block: unknown): string | undefined {
 }
 
 /**
- * Resolve the active persona's prompt text for the resolved router.
+ * Resolve the active persona's prompt text.
  *
- * Reads `router.persona` (the active persona's uuid id, carried on the
- * possibly project/session-overridden router) and looks it up in the
- * top-level `Personas` library, returning the matching persona's
- * `prompt`. Falls back to a name match so a pre-migration config that
- * still stores a name keeps resolving. Returns '' when the router is
- * undefined, no persona is active, nothing matches, or the prompt is
- * empty — applyGlobalSystemPrompt treats '' as a no-op so the cached
+ * Reads the top-level `ActivePersona` (the active persona's uuid id) off
+ * the ConfigStore and looks it up in the `Personas` library, returning
+ * the matching persona's `prompt`. Falls back to a name match so a
+ * pre-migration config that still stores a name keeps resolving.
+ * Returns '' when no persona is active, nothing matches, or the prompt
+ * is empty — applyGlobalSystemPrompt treats '' as a no-op so the cached
  * prefix stays byte-stable.
  */
-export function resolveActivePersonaPrompt(router: RouterConfig | undefined, config: ConfigStore): string {
-  const active = router?.persona
+export function resolveActivePersonaPrompt(config: ConfigStore): string {
+  const active = config.get<unknown>('ActivePersona')
   if (typeof active !== 'string' || active.length === 0) return ''
   const personas = config.get<Persona[]>('Personas', [])
-  const match = personas.find((p) => p.id === active) ?? personas.find((p) => p.name === active)
+  const byId = personas.find((p) => p.id === active)
+  const match = byId !== undefined ? byId : personas.find((p) => p.name === active)
   return match !== undefined ? match.prompt : ''
 }
 
@@ -59,7 +58,7 @@ export function resolveActivePersonaPrompt(router: RouterConfig | undefined, con
  * The append is deterministic — same prompt yields the same bytes every
  * request — which is what preserves Anthropic's prompt cache.
  *
- * Array blocks are mutated in place (matching extractSubagentModel);
+ * Array blocks are mutated in place (matching stripSubagentTag);
  * string / undefined system values can't be mutated in place, so the
  * new value is returned and the caller assigns it back.
  */

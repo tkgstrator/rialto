@@ -72,8 +72,8 @@ const deleteProviderRoute = createRoute({
 providerByNameRoute.openapi(deleteProviderRoute, async (c) => {
   const { name } = c.req.valid('param')
   try {
-    await deleteProviderByName(name)
-    return c.json({ success: true as const }, 200)
+    const { warnings } = await deleteProviderByName(name)
+    return c.json({ success: true as const, ...(warnings.length > 0 ? { warnings } : {}) }, 200)
   } catch (err) {
     return c.json({ success: false as const, error: err instanceof Error ? err.message : String(err) }, 404)
   }

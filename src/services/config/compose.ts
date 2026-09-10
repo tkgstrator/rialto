@@ -1,12 +1,11 @@
 /**
  * Read-side composition: join the on-disk envelope with the DB-resident
- * Providers / Router tables into the `AppConfig` shape consumed by the
- * API / UI.
+ * Providers table into the `AppConfig` shape consumed by the API / UI.
  */
 
 import type { AppConfig } from '@/schemas/api/config'
-import { type Provider, type RouteRule, RouteRuleSchema, type Router } from '@/schemas/domain'
-import type { ConfigEnvelope, ScenarioKey } from '@/shared'
+import type { Provider } from '@/schemas/domain'
+import type { ConfigEnvelope } from '@/shared'
 import { getPrismaClient } from '../../db/client'
 import {
   type ApiStyle,
@@ -16,80 +15,6 @@ import {
   ModelTestStatus
 } from '../../generated/prisma/client'
 import { readConfigFile } from './envelope'
-import { isJsonObject } from './transformer'
-
-// A fresh, unassigned route target: no primary, empty fallback chain, no
-// rules. Rules default to [] so a slot with no advanced routing is
-// indistinguishable from the pre-rules shape on the wire.
-const emptyRoute = (): { primary: null; fallbacks: []; rules: [] } => ({
-  primary: null,
-  fallbacks: [],
-  rules: []
-})
-
-// Every scenario starts unassigned: both the agent and subagent routes
-// have a null primary (not '' — "no model bound" reads the same on the
-// wire as everywhere else) and an empty fallback chain, so composeUiConfig
-// can fill each route in place without a guard. Scenario-scoped knobs sit
-// on their owning scenario (currently only threshold on longContext) at
-// their policy defaults.
-export const emptyRouter = (): Router => ({
-  default: { agent: emptyRoute(), subagent: emptyRoute() },
-  think: { agent: emptyRoute(), subagent: emptyRoute() },
-  longContext: { agent: emptyRoute(), subagent: emptyRoute(), threshold: null },
-  webSearch: { agent: emptyRoute(), subagent: emptyRoute() },
-  image: { agent: emptyRoute(), subagent: emptyRoute() },
-  persona: null
-})
-
-export const formatSlot = (
-  provider: DbProvider | null | undefined,
-  model: DbModel | null | undefined
-): string | null => (provider && model ? `${provider.name},${model.name}` : null)
-
-// Read `threshold` off a routerSlot.params JSON column without casting.
-export const thresholdFromParams = (params: unknown): number | null => {
-  if (!isJsonObject(params)) return null
-  const t = params.threshold
-  return typeof t === 'number' ? t : null
-}
-
-// Read a named ordered "provider,model" list off a routerSlot.params JSON
-// column. Returns the strings in order, or null when the key is absent /
-// empty (so callers can skip the assignment entirely).
-const stringListFromParams = (params: unknown, key: 'fallbacks' | 'subagentFallbacks'): string[] | null => {
-  if (!isJsonObject(params)) return null
-  const raw = params[key]
-  if (!Array.isArray(raw)) return null
-  const list = raw.filter((v): v is string => typeof v === 'string' && v.length > 0)
-  return list.length > 0 ? list : null
-}
-
-// Agent-route fallback chain (the existing `fallbacks` key, reused).
-export const fallbacksFromParams = (params: unknown): string[] | null => stringListFromParams(params, 'fallbacks')
-
-// Subagent-route fallback chain (`subagentFallbacks`).
-export const subagentFallbacksFromParams = (params: unknown): string[] | null =>
-  stringListFromParams(params, 'subagentFallbacks')
-
-// Read a rules list off a routerSlot.params JSON column. Any entry
-// failing schema validation is skipped rather than aborting the whole
-// slot — a malformed rule shouldn't take the router offline. Returns []
-// when the key is absent or fully invalid.
-const rulesFromParams = (params: unknown, key: 'agentRules' | 'subagentRules'): RouteRule[] => {
-  if (!isJsonObject(params)) return []
-  const raw = params[key]
-  if (!Array.isArray(raw)) return []
-  const out: RouteRule[] = []
-  for (const item of raw) {
-    const parsed = RouteRuleSchema.safeParse(item)
-    if (parsed.success) out.push(parsed.data)
-  }
-  return out
-}
-
-export const agentRulesFromParams = (params: unknown): RouteRule[] => rulesFromParams(params, 'agentRules')
-export const subagentRulesFromParams = (params: unknown): RouteRule[] => rulesFromParams(params, 'subagentRules')
 
 export type ProviderWithModels = DbProvider & {
   models: DbModel[]
@@ -196,10 +121,23 @@ export const toProvider = (p: ProviderWithModels): Provider => {
 export const optionalScalarOrNull = (raw: unknown): string | null =>
   typeof raw === 'string' && raw.length > 0 ? raw : null
 
-// Strip the DB-resident keys out of an on-disk envelope read so the
-// composed result reflects the DB, not stale disk content.
+// Envelope keys a retired feature used to write: the RouterSlot mirror,
+// the custom-router hook that nothing ever read, the routing display
+// name, and the cross-provider peer toggle. They are read by nothing.
+// Stripped on every read so a stale copy on disk cannot reach the wire,
+// and dropped from every save so the next write leaves them off disk.
+export const RETIRED_ENVELOPE_KEYS = [
+  'Router',
+  'CUSTOM_ROUTER_PATH',
+  'LiveRoutingName',
+  'CROSS_PROVIDER_FALLBACK'
+] as const
+
+// Strip the DB-resident and retired keys out of an on-disk envelope read
+// so the composed result reflects the DB, not stale disk content.
 export const stripDbKeys = (envelope: ConfigEnvelope): ConfigEnvelope => {
-  const { Providers: _p, Router: _r, ...rest } = envelope
+  const { Providers: _p, ...rest } = envelope
+  for (const key of RETIRED_ENVELOPE_KEYS) delete rest[key]
   return rest
 }
 
@@ -208,71 +146,32 @@ export async function composeUiConfig(): Promise<AppConfig> {
   const envelopeOnly = stripDbKeys(envelope)
 
   const prisma = getPrismaClient()
-  const [providers, slots] = await Promise.all([
-    prisma.provider.findMany({
-      include: {
-        // Ordered for the same reason subscriptionAccounts is: a relation
-        // with no orderBy comes back in whatever order Postgres feels like,
-        // and an UPDATE moves the row. Toggling a model on the Providers
-        // screen therefore reshuffled the table under the operator's
-        // cursor. createdAt is the seed/insert order the UI was built
-        // around; name breaks the ties, because a createMany batch stamps
-        // every row with the same instant.
-        models: { orderBy: [{ createdAt: 'asc' }, { name: 'asc' }] },
-        subscriptionAccounts: { orderBy: { createdAt: 'asc' } }
-      },
-      orderBy: { createdAt: 'asc' }
-    }),
-    prisma.routerSlot.findMany({
-      include: {
-        model: { include: { provider: true } },
-        subagentModel: { include: { provider: true } }
-      }
-    })
-  ])
+  const providers = await prisma.provider.findMany({
+    include: {
+      // Ordered for the same reason subscriptionAccounts is: a relation
+      // with no orderBy comes back in whatever order Postgres feels like,
+      // and an UPDATE moves the row. Toggling a model on the Providers
+      // screen therefore reshuffled the table under the operator's
+      // cursor. createdAt is the seed/insert order the UI was built
+      // around; name breaks the ties, because a createMany batch stamps
+      // every row with the same instant.
+      models: { orderBy: [{ createdAt: 'asc' }, { name: 'asc' }] },
+      subscriptionAccounts: { orderBy: { createdAt: 'asc' } }
+    },
+    orderBy: { createdAt: 'asc' }
+  })
 
-  const router = emptyRouter()
-  for (const slot of slots) {
-    // slot.scenario is the Prisma ScenarioKey enum; assignable to the
-    // local ScenarioKey union without a cast.
-    const key: ScenarioKey = slot.scenario
-    const route = router[key]
-    // Agent route primary from modelId; subagent route primary from
-    // subagentModelId. Each is null when the FK is unbound.
-    route.agent.primary = formatSlot(slot.model?.provider, slot.model)
-    route.subagent.primary = formatSlot(slot.subagentModel?.provider, slot.subagentModel)
-    const agentFallbacks = fallbacksFromParams(slot.params)
-    if (agentFallbacks) route.agent.fallbacks = agentFallbacks
-    const subagentFallbacks = subagentFallbacksFromParams(slot.params)
-    if (subagentFallbacks) route.subagent.fallbacks = subagentFallbacks
-    route.agent.rules = agentRulesFromParams(slot.params)
-    route.subagent.rules = subagentRulesFromParams(slot.params)
-    if (key === 'longContext') {
-      const threshold = thresholdFromParams(slot.params)
-      if (threshold !== null) router.longContext.threshold = threshold
-    }
-  }
-
-  // Fold the active persona into the composed Router from its disk-only
-  // backing key (ActivePersona). Emit null when unset so the wire shows
-  // "no persona" the same way the path scalars show "no value"; a present
-  // name rides on Router.persona. The persona library stays top-level.
-  router.persona = optionalScalarOrNull(envelopeOnly.ActivePersona)
-
-  // Drop the disk-only persona backing key so it never leaks onto the
-  // wire as a top-level field — it surfaces solely as Router.persona.
-  const { ActivePersona: _activePersona, ...envelopeWithoutPersona } = envelopeOnly
-
-  // Optional path/url scalars: emit null when absent / '' on disk so
-  // the JSON editor / wire shows "no value" consistently.
+  // Optional scalars: emit null when absent / '' on disk so the JSON
+  // editor / wire shows "no value" consistently. The active persona is
+  // one of them — a top-level key on the wire, backed by the same key
+  // on disk.
   return {
-    ...envelopeWithoutPersona,
+    ...envelopeOnly,
     CLAUDE_PATH: optionalScalarOrNull(envelopeOnly.CLAUDE_PATH),
     PROXY_URL: optionalScalarOrNull(envelopeOnly.PROXY_URL),
-    CUSTOM_ROUTER_PATH: optionalScalarOrNull(envelopeOnly.CUSTOM_ROUTER_PATH),
+    ActivePersona: optionalScalarOrNull(envelopeOnly.ActivePersona),
     Personas: envelopeOnly.Personas,
-    Providers: providers.map(toProvider),
-    Router: router
+    Providers: providers.map(toProvider)
   }
 }
 

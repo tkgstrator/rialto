@@ -55,21 +55,14 @@ export interface RoutePlan {
   // for" next to "what was actually sent". Absent when the body had no
   // usable model string.
   requestedModel?: string
-  // Whether the request carried a <RIALTO-SUBAGENT-MODEL> tag. Selects the
-  // scenario's subagent route (vs agent) for the reactive failover chain,
-  // so it matches the route selectModel used for the primary.
+  // Whether the request carried a <RIALTO-SUBAGENT-MODEL> tag, i.e. which
+  // lane of the chain the primary came from. Recorded on the request log
+  // so Activity can tell the two apart.
   isSubagent: boolean
-  // Pre-resolved fallback chain: either a rule's own fallbacks (when a
-  // route rule matched inside selectModel) or the scenario's catch-all
-  // chain. buildFailoverChain reads this rather than re-looking-up so
-  // the reactive path walks the same chain the proactive path did.
+  // The rest of the chain after the primary, as the selector resolved
+  // it. buildFailoverChain reads this rather than re-looking-up so the
+  // reactive path walks the same chain the proactive path did.
   fallbacks: readonly string[]
-  // Subset of `fallbacks` auto-injected by the cross-provider peer
-  // expander. buildFailoverChain reads this to bypass the same-auth_mode
-  // gate on peer entries — the user opted into cross-auth-mode failover
-  // when they enabled CROSS_PROVIDER_FALLBACK. Empty when the toggle
-  // is off or no peers were injected.
-  peerTargets: ReadonlySet<string>
   path: string
   search: string
   // The AccessToken that authenticated this request, when one did.
@@ -170,13 +163,12 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   // body.model in place — this is the only point the original is visible.
   const requestedModel = typeof body.model === 'string' && body.model.length > 0 ? body.model : undefined
 
-  // Scenario routing: rewrite body.model to the resolved provider,model
-  // and stamp req.scenarioType. We keep the request object so we can read
-  // the scenario back — it selects the failover chain below.
+  // Chain routing: rewrite body.model to the resolved provider,model and
+  // stamp req.scenarioType. We keep the request object so we can read
+  // the scenario and the chain back below.
   const routeReq: RouterRequest = {
     body: body as PipelineRequest['body'] & { model: string },
     log: ctx.log,
-    sessionId: undefined,
     // The scenario router uses this to gate Anthropic-idiom mutations
     // (persona injection etc.) so OpenAI-compat callers on
     // /v1/chat/completions and /v1/responses get the exact request
@@ -191,10 +183,10 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   await routeScenario(routeReq, { config: ctx.config, tokenizers: ctx.tokenizers })
   const scenarioType: ScenarioType = routeReq.scenarioType !== undefined ? routeReq.scenarioType : 'default'
 
-  // Phase 4: quota-aware selector exhausted all candidates and the
-  // profile's `exhaustedBehavior` is '429'. Return the rate-limit
-  // response verbatim so no upstream dispatch happens. `Retry-After`
-  // carries the seconds until the earliest binding-window reset.
+  // The chain gated every candidate out and the profile's
+  // `exhaustedBehavior` is '429'. Return the rate-limit response verbatim
+  // so no upstream dispatch happens. `Retry-After` carries the seconds
+  // until the earliest binding-window reset.
   const retryAfter = routeReq.quotaExhaustedRetryAfterSec
   if (typeof retryAfter === 'number' && retryAfter > 0) {
     return new Response(
@@ -243,12 +235,10 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
     primaryModel,
     requestedModel,
     isSubagent: routeReq.isSubagent === true,
-    // The fallback chain selectModel resolved for this request — a rule's
-    // own chain when a route rule fired, otherwise the scenario's
-    // catch-all. buildFailoverChain reads this directly so the reactive
-    // path walks the same chain the proactive path did.
+    // The rest of the chain the selector resolved for this request.
+    // buildFailoverChain reads this directly so the reactive path walks
+    // the same chain the proactive path did.
     fallbacks: Array.isArray(routeReq.resolvedFallbacks) ? routeReq.resolvedFallbacks : [],
-    peerTargets: routeReq.resolvedPeerTargets ?? new Set<string>(),
     path,
     search: url.search,
     accessTokenId: tokenId

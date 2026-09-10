@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 /**
  * Dev-only: fill an install with demo data so all five screens have
- * something to render — providers and models, routing chains and slots,
- * saved presets, scheduler weight history, subscription quota, access
- * tokens, and a month of traffic behind Activity and Overview.
+ * something to render — providers and models, routing chains, scheduler
+ * weight history, subscription quota, access tokens, and a month of
+ * traffic behind Activity and Overview.
  *
  * NOT wired into `prisma db seed`: running that in production must stay
  * side-effect free. Invoke explicitly:
@@ -16,10 +16,10 @@
  *
  *   - Rows in tables that also hold real data carry a `demo-` id, so a
  *     re-run replaces exactly its own output and `--clean` removes it.
- *   - Live configuration that cannot carry a marker (RouterSlot, the
- *     `live` preference chain, surface routing modes, an account's quota)
- *     is written ONLY while still unset. Running this against a
- *     configured install adds traffic without re-pointing anything.
+ *   - Live configuration that cannot carry a marker (the `live`
+ *     preference chain, surface routing modes, an account's quota) is
+ *     written ONLY while still unset. Running this against a configured
+ *     install adds traffic without re-pointing anything.
  */
 
 import 'dotenv/config'
@@ -27,14 +27,7 @@ import { getPrismaClient } from '../src/db/client'
 import { seedAccounts } from './seed-demo/accounts'
 import { cleanDemoRows } from './seed-demo/demo-rows'
 import { createRandom } from './seed-demo/random'
-import {
-  buildChains,
-  seedPreferences,
-  seedRouterSlots,
-  seedRoutingPresets,
-  seedSurfaceModes,
-  seedWeightChanges
-} from './seed-demo/routing'
+import { buildChains, seedPreferences, seedSurfaceModes, seedWeightChanges } from './seed-demo/routing'
 import { resolveTargets } from './seed-demo/targets'
 import { seedAccessTokens } from './seed-demo/tokens'
 import { seedTraffic } from './seed-demo/traffic'
@@ -80,7 +73,7 @@ async function main(): Promise<void> {
     for (const [table, count] of Object.entries(removed)) {
       if (count > 0) line(table, count)
     }
-    console.error('\nRouterSlot bindings, the `live` preference chain and surface modes are left as they are —')
+    console.error('\nThe `live` preference chain and surface modes are left as they are —')
     console.error('the seed only ever writes those while unset, so it has nothing of its own to take back.')
     await prisma.$disconnect()
     return
@@ -95,9 +88,7 @@ async function main(): Promise<void> {
   }
 
   const chains = buildChains(targets)
-  const slots = await seedRouterSlots(prisma, chains)
   const preferences = await seedPreferences(prisma, targets)
-  const presets = await seedRoutingPresets(prisma, targets)
   const weights = await seedWeightChanges(prisma, targets, random, now)
   const surfaces = await seedSurfaceModes(prisma)
   const accounts = await seedAccounts(prisma, random, now)
@@ -110,9 +101,7 @@ async function main(): Promise<void> {
 
   console.error(`demo data seeded (replaced ${removedTotal} rows from a previous run)\n`)
   line('routable targets', `${targets.length}${registeredVendors ? ' (fallback catalog registered)' : ''}`)
-  line('router slots', `${slots.written.length} written, ${slots.skipped.length} already configured`)
   line('preference chains', `live: ${preferences.live}, ${preferences.demoProfile}: written`)
-  line('routing presets', presets)
   line('weight changes', weights)
   line('surface modes', `${surfaces.updated.length} set, ${surfaces.skipped.length} left as configured`)
   line('subscription accounts', `${accounts.createdAccounts} created`)

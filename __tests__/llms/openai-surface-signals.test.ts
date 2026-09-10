@@ -23,6 +23,8 @@ import { routeScenario } from '../../src/llms/scenario-router'
 import { readSignals } from '../../src/llms/scenario-router/surface-signals'
 import type { RouterRequest, RouterRequestBody } from '../../src/llms/scenario-router/types'
 import { __setSurfacesForTests } from '../../src/services/inbound-surface-service'
+import { __setPreferencesForTests } from '../../src/services/router-preference-service'
+import { profileWith } from './chain-fixture'
 
 const CHAT = '/v1/chat/completions'
 const RESPONSES = '/v1/responses'
@@ -272,18 +274,19 @@ const PROVIDERS = [
 // A small explicit threshold keeps the longContext case to a fixture the
 // eye can check rather than 60k tokens of lorem ipsum.
 const LANES = { default: 'p,fast', think: 'p,thinker', webSearch: 'p,searcher', longContext: 'p,big' }
-const ROUTER = { default: 'p,fast', longContextThreshold: 500, agent: LANES }
+
+const chainOf = (agent: Partial<typeof LANES>) =>
+  profileWith(Object.fromEntries(Object.entries(agent).map(([scenario, target]) => [`${scenario}.agent`, [target]])), {
+    longContextThreshold: 500
+  })
 
 async function route(
   path: string,
   body: Record<string, unknown>,
   agent: Partial<typeof LANES> = LANES
 ): Promise<RouterRequest> {
-  const config = new ConfigStore({
-    Providers: PROVIDERS,
-    providers: PROVIDERS,
-    Router: { ...ROUTER, agent }
-  })
+  __setPreferencesForTests({ live: chainOf(agent) })
+  const config = new ConfigStore({ Providers: PROVIDERS, providers: PROVIDERS })
   const tokenizers = new TokenizerRegistry(log)
   await tokenizers.initialize()
   const req: RouterRequest = { body: { model: 'caller,own', ...body }, log, inboundPath: path }
@@ -291,14 +294,15 @@ async function route(
   return req
 }
 
-// Surface modes live in a module-scoped cache shared with every other
-// test file in this process, so reset on both sides.
+// Surface modes and the seeded chain live in module-scoped caches shared
+// with every other test file in this process, so reset on both sides.
 beforeEach(() => {
   __setSurfacesForTests({ 'openai-chat': 'routed', 'openai-responses': 'routed' })
 })
 
 afterEach(() => {
   __setSurfacesForTests({})
+  __setPreferencesForTests(null)
 })
 
 describe('the lanes are reachable from an OpenAI surface', () => {
