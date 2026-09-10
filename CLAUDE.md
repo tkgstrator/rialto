@@ -276,7 +276,7 @@ longer read**. Anything still using one has to be updated.
 
 Configuration is split across two stores:
 
-- **Disk envelope**: `~/.rialto/config.json`. The whitelist is `ConfigEnvelopeSchema` in `src/schemas/domain/config.ts` — read that, not a list here, because it is what boot actually parses. It carries the boot-time scalars (`HOST` / `PORT` / `APIKEY` / `LOG` / `LOG_LEVEL` / `PROXY_URL` / `API_TIMEOUT_MS` / `CLAUDE_PATH` / `NON_INTERACTIVE_MODE`), the archive switches (`CAPTURE_REQUESTS` / `CAPTURE_MESSAGES` / `REDACT_TOOL_ARGUMENTS`), the Cloudflare Access pair (`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD`), the scheduler tick (`ROUTING_SCHEDULER_INTERVAL_MS`), the active persona's id (`ActivePersona` — also a top-level key on the `/api/config` wire and on the `ConfigStore`), and the disk-resident objects (`Personas`, `StatusLine`). Keys the schema does not declare are preserved by its `.catchall`, not dropped — except the retired routing keys (`Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK`), which `RETIRED_ENVELOPE_KEYS` strips on every read and prunes on the next save.
+- **Disk envelope**: `~/.rialto/config.json`. The whitelist is `ConfigEnvelopeSchema` in `src/schemas/domain/config.ts` — read that, not a list here, because it is what boot actually parses. It carries the boot-time scalars (`HOST` / `PORT` / `APIKEY` / `LOG` / `LOG_LEVEL` / `LOG_MAX_MB` / `PROXY_URL` / `API_TIMEOUT_MS` / `CLAUDE_PATH` / `NON_INTERACTIVE_MODE`), the archive switches (`CAPTURE_REQUESTS` / `CAPTURE_MESSAGES` / `REDACT_TOOL_ARGUMENTS`), the Cloudflare Access pair (`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD`), the scheduler tick (`ROUTING_SCHEDULER_INTERVAL_MS`), the active persona's id (`ActivePersona` — also a top-level key on the `/api/config` wire and on the `ConfigStore`), and the disk-resident objects (`Personas`, `StatusLine`). Keys the schema does not declare are preserved by its `.catchall`, not dropped — except the retired routing keys (`Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK`), which `RETIRED_ENVELOPE_KEYS` strips on every read and prunes on the next save.
 - **PostgreSQL** (via Prisma, `src/prisma/schema.prisma`): everything else. `DATABASE_URL` is loaded from `.env` (`.devcontainer/compose.yaml` provides `postgres` and `redis`).
 
 The schema is well past the three tables the first PR shipped; the column comments in
@@ -296,7 +296,7 @@ Boot sequence — top-level statements in `src/index.ts`, not a `getServer()`:
 
 1. `migrateHomeDir()` — carry a pre-rename `~/.claude-code-router` over to `~/.rialto`. **Must run first**: the migration is idempotent by "the destination already exists", so any earlier `mkdir` of `~/.rialto` makes the copy a permanent no-op. Skipped when `RIALTO_HOME_DIR` pins the home elsewhere.
 2. `initDir()` — ensure home directories.
-3. `initConfig()` — read the envelope from disk, mirror scalar keys onto `process.env` via `applyEnvelopeToEnv`, then `syncLoggerFromEnv()` re-applies `LOG_LEVEL` to the already-constructed pino instance.
+3. `initConfig()` — read the envelope from disk, mirror scalar keys onto `process.env` via `applyEnvelopeToEnv`, then `syncLoggerFromEnv()` re-applies `LOG_LEVEL` and `LOG_MAX_MB` to the already-constructed pino instance.
 4. `ensureInboundSurfaces()` — give every registered surface an explicit stored routing mode.
 5. `startUsageCapture()` / `startAuthHealthCheck()` / `startRoutingScheduler()` — fire-and-forget background jobs; none of them may block boot.
 

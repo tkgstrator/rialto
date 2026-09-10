@@ -39,6 +39,8 @@ export const ConfigSchema = z.object({
   StatusLine: StatusLineConfigSchema.optional(),
   LOG: z.boolean(),
   LOG_LEVEL: z.string().nonempty(),
+  // Absent when the operator never set it; the logger then uses 10.
+  LOG_MAX_MB: z.number().positive().optional(),
   CLAUDE_PATH: z.string().nonempty(),
   HOST: z.string().nonempty(),
   PORT: z.number().int().positive(),

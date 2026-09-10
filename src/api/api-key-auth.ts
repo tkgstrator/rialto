@@ -67,7 +67,7 @@ function unauthorizedResponse(
 }
 
 const PROXY_UNAUTHORIZED =
-  'Invalid, revoked or expired access token. Issue one under Settings → Access and send it as Authorization: Bearer <token>.'
+  'Invalid, revoked or expired access token. Issue one on the Access tokens page and send it as Authorization: Bearer <token>.'
 
 const PROXY_WRONG_SURFACE = 'This access token is not scoped to this endpoint.'
 

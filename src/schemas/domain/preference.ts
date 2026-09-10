@@ -45,11 +45,12 @@ export const PreferenceConstraintsSchema = z
     // candidates ever match.
     allowEscalation: z.boolean().default(true),
     allowDemotion: z.boolean().default(true),
-    // Intended to skip a candidate whose usage percentage is >= this
-    // threshold (0-100). Stored and shown on the Routing screen, but
-    // nothing on the request path reads it yet: the selector's
-    // exhaustion gate reads only the scheduler's weight snapshot
-    // (`buildIsExhausted` in quota-router/runtime.ts).
+    // Skip a candidate whose budget is used at or past this percentage
+    // (0-100), as the scheduler snapshot last saw it: `100 -
+    // remainingBudgetPct`, checked in `buildIsExhausted`
+    // (quota-router/runtime.ts). A target with no known budget — api_key
+    // providers — is never skipped on usage. 100 only skips a spent
+    // budget, which the snapshot's zero weight already covers.
     quotaSkipPct: z.number().min(0).max(100).default(100),
     // Skip a candidate whose observed 5-min error rate is >= this
     // threshold (0-1). Zero disables the check.

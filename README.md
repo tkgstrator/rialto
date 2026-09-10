@@ -39,7 +39,7 @@ The web UI (served on port **3456** by default) gives you full control over ever
 
 First run lands on `/setup`.
 
-> Screenshots are being re-captured for the current interface; the ones under `docs/images/` show the retired pre-Rialto UI and have been removed from this page rather than left in place as a wrong picture of the product.
+> There are no screenshots of the current interface yet. The images that used to live under `docs/images/` showed the retired pre-Rialto UI and have been deleted rather than left in place as a wrong picture of the product.
 
 ## 🚀 Quick Start with Docker (Recommended)
 
@@ -172,6 +172,7 @@ Boot-time scalars and disk-resident objects live here. Environment-variable inte
 | `ACCESS_AUD` | Access application AUD tag. Both must be set — one alone enables nothing |
 | `LOG` | `true` to write log files (default `false`) |
 | `LOG_LEVEL` | `fatal` / `error` / `warn` / `info` / `debug` / `trace` (default `info`) |
+| `LOG_MAX_MB` | Size in MB at which a log file rotates (default `10`) |
 | `PROXY_URL` | HTTP proxy for upstream API requests |
 | `API_TIMEOUT_MS` | Bun's per-request idle timeout, in ms: converted to seconds and clamped to 1–255 s (default 255 s). It is not an upstream call timeout |
 | `CLAUDE_PATH` | Declared and editable, but nothing in this build reads it — there is no CLI |

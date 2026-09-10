@@ -12,8 +12,9 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:password@postgres:5432/rialto
       REDIS_URL: redis://redis:6379
-      # Optional: pin the API key. If unset, one is minted on first boot
-      # and written into the config volume below.
+      # Optional break-glass key for /api/*. Nothing is generated when it is
+      # unset; /v1/* takes the access tokens you issue on the Access tokens
+      # page, never this key.
       # APIKEY: change-me
     ports:
       # The server listens on the envelope PORT (default 3456). Map it to

@@ -39,6 +39,11 @@ export const ConfigEnvelopeSchema = z
     APIKEY: z.string().default(''),
     LOG: z.boolean().default(false),
     LOG_LEVEL: LogLevelSchema.default('info'),
+    // Size in MB at which the log file rotates. Declared, and mirrored onto
+    // process.env with the other scalars, because the logger reads it from
+    // there: left to the catchall, a save reached the disk and never the
+    // logger. Absent means the logger's own default (10).
+    LOG_MAX_MB: z.coerce.number().positive().optional(),
     PROXY_URL: z.string().default(''),
     API_TIMEOUT_MS: z.coerce.number().int().nonnegative().optional(),
     CLAUDE_PATH: z.string().default(''),

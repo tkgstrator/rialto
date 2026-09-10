@@ -525,14 +525,14 @@ model RequestLog {
   // What the client (Claude Code) asked for in body.model BEFORE scenario
   // routing rewrote it, and which routing lane it fell into. Both null for
   // rows written before this landed (backfill is not possible — the
-  // original request is gone), so the model-routing report labels null as
-  // "untracked". `model`/`provider` above stay the actual upstream target.
+  // original request is gone), so readers treat null as "untracked".
+  // `model`/`provider` above stay the actual upstream target.
   requestedModel   String?
   scenario         String?
   // Whether the request carried a <RIALTO-SUBAGENT-MODEL> tag and was routed
   // through the subagent lane. Null for rows written before this column
-  // landed (untracked); true / false thereafter. Kept nullable so the
-  // model-routing report can distinguish "no data" from "data says agent".
+  // landed (untracked); true / false thereafter. Kept nullable so a reader
+  // can distinguish "no data" from "data says agent".
   isSubagent       Boolean?
   // Which wire format the client came in on: 'anthropic' for
   // /v1/messages (Claude Code), 'openai' for /v1/chat/completions and

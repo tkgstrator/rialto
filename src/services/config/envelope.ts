@@ -37,7 +37,8 @@ const interpolateEnvVars = (obj: any): any => {
 const coerceEnvelopeValue = (key: EnvelopeEnvKey, value: string): unknown => {
   switch (key) {
     case 'PORT':
-    case 'API_TIMEOUT_MS': {
+    case 'API_TIMEOUT_MS':
+    case 'LOG_MAX_MB': {
       const n = Number(value)
       return Number.isFinite(n) ? n : value
     }
