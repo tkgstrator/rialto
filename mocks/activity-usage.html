@@ -58,13 +58,19 @@ const ACCOUNTS = [
   }
 ]
 
+// Two per row once there is room. A window is a label, a bar and two
+// numbers; given the whole width the bar became 800px of track carrying
+// one figure, and the "resets in" column ended up a screen away from the
+// percentage it qualifies. The grid folds at xl (1280px viewport, ~1050px
+// of content) — below that a single column is already the right shape,
+// and a half-width bar would be too short to read.
 const windowRow = (w) => `
   <div ${navTo('provider-subscription.html')} class="flex items-center gap-3 border-t border-border/60 px-6 py-2.5 transition-colors hover:bg-muted/50">
     <span class="w-24 shrink-0 truncate text-xs">${w.label}</span>
     <span class="w-12 shrink-0">${w.scope ? mono(w.scope) : ''}</span>
     <div class="min-w-0 flex-1">${meter(w.pct)}</div>
     <span class="w-10 shrink-0 text-right font-mono text-xs tabular-nums">${w.pct}%</span>
-    <span class="w-20 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${w.resets}</span>
+    <span class="w-16 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${w.resets}</span>
   </div>`
 
 const accountBlock = (a) => `
@@ -72,9 +78,11 @@ const accountBlock = (a) => `
     <div class="flex items-baseline gap-2 px-6 pb-1">
       <span class="text-xs font-medium">${a.name}</span>
       ${pill(a.vendor, a.tone)}
-      <span class="ml-auto text-[12px] text-muted-foreground/70">resets in</span>
+      <span class="ml-auto pr-6 text-[12px] text-muted-foreground/70">resets in</span>
     </div>
-    ${a.windows.map(windowRow).join('')}
+    <div class="grid grid-cols-1 xl:grid-cols-2">
+      ${a.windows.map(windowRow).join('')}
+    </div>
   </div>`
 
 // ─── Utilization over time ────────────────────────────────────────────
