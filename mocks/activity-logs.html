@@ -125,6 +125,13 @@ document.getElementById('root').innerHTML = `
     </aside>
 
     <div class="min-w-0 overflow-y-auto">
+      <!-- Capped, not stretched. A log line is a time, a level and a
+           message with a key=value tail; on a wide monitor this pane is
+           the column that absorbs every spare pixel, and the tail ends up
+           an arm's length from the message it belongs to. Left-aligned
+           rather than centred — the pane's left edge is the rail it was
+           opened from. -->
+      <div class="max-w-[80rem]">
       <div class="flex items-center gap-2 border-b border-border px-4 py-2.5">
         <span class="font-mono text-[12px] text-muted-foreground">rialto-2026-08-31.log</span>
         <i class="ri-arrow-right-s-line text-sm text-muted-foreground/50"></i>
@@ -147,6 +154,7 @@ document.getElementById('root').innerHTML = `
         </div>
       </div>
       <div class="h-6"></div>
+      </div>
     </div>
 
   </div>`

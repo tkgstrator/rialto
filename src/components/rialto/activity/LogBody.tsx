@@ -65,44 +65,51 @@ export function LogBody({
   }
   return (
     <div className='min-w-0 overflow-y-auto'>
-      <div className='flex items-center gap-2 border-b border-border px-4 py-2.5'>
-        <span className='font-mono text-[12px] text-muted-foreground'>{fileName}</span>
-        <i className='ri-arrow-right-s-line text-sm text-muted-foreground/50' />
-        <span className='font-mono text-[12px]'>{group === null ? '—' : shortReqId(group.id)}</span>
-        {group === null ? null : <Pill tone={LEVEL_TONE[chipFor(group.level)]}>{chipFor(group.level)}</Pill>}
-        <div className='ml-auto flex items-center gap-2'>
-          <div className='flex h-7 w-44 items-center gap-2 rounded-md border border-border px-2.5 text-xs text-muted-foreground'>
-            <i className='ri-search-line text-sm' />
-            <input
-              value={query}
-              onChange={(e) => onQuery(e.target.value)}
-              placeholder={t('activity.logs.searchInGroup')}
-              className='min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground'
-            />
+      {/* Capped, not stretched. A log line is a time, a level and a message
+          with a key=value tail; on a wide monitor this pane is the column
+          that absorbs every spare pixel, and the tail ends up an arm's
+          length from the message it belongs to. Left-aligned rather than
+          centred — the pane's left edge is the rail it was opened from. */}
+      <div className='max-w-[80rem]'>
+        <div className='flex items-center gap-2 border-b border-border px-4 py-2.5'>
+          <span className='font-mono text-[12px] text-muted-foreground'>{fileName}</span>
+          <i className='ri-arrow-right-s-line text-sm text-muted-foreground/50' />
+          <span className='font-mono text-[12px]'>{group === null ? '—' : shortReqId(group.id)}</span>
+          {group === null ? null : <Pill tone={LEVEL_TONE[chipFor(group.level)]}>{chipFor(group.level)}</Pill>}
+          <div className='ml-auto flex items-center gap-2'>
+            <div className='flex h-7 w-44 items-center gap-2 rounded-md border border-border px-2.5 text-xs text-muted-foreground'>
+              <i className='ri-search-line text-sm' />
+              <input
+                value={query}
+                onChange={(e) => onQuery(e.target.value)}
+                placeholder={t('activity.logs.searchInGroup')}
+                className='min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground'
+              />
+            </div>
+            <RButton variant='ghost' icon='ri-file-copy-line' onClick={copy} disabled={lines.length === 0}>
+              {t('activity.logs.copy')}
+            </RButton>
+            <RButton variant='ghost' icon='ri-code-line' aria-pressed={raw} onClick={onToggleRaw}>
+              {t('activity.logs.raw')}
+            </RButton>
           </div>
-          <RButton variant='ghost' icon='ri-file-copy-line' onClick={copy} disabled={lines.length === 0}>
-            {t('activity.logs.copy')}
-          </RButton>
-          <RButton variant='ghost' icon='ri-code-line' aria-pressed={raw} onClick={onToggleRaw}>
-            {t('activity.logs.raw')}
-          </RButton>
         </div>
-      </div>
-      {raw ? (
-        <pre className='overflow-x-auto px-4 py-2 font-mono text-[12px] leading-relaxed'>
-          {shown.map((l) => l.raw).join('\n')}
-        </pre>
-      ) : (
-        <div className='py-1'>
-          {shown.map((line) => (
-            <LogRow key={line.key} line={line} />
-          ))}
+        {raw ? (
+          <pre className='overflow-x-auto px-4 py-2 font-mono text-[12px] leading-relaxed'>
+            {shown.map((l) => l.raw).join('\n')}
+          </pre>
+        ) : (
+          <div className='py-1'>
+            {shown.map((line) => (
+              <LogRow key={line.key} line={line} />
+            ))}
+          </div>
+        )}
+        <div className='px-4 py-4'>
+          <NoteBox>{t('activity.logs.note')}</NoteBox>
         </div>
-      )}
-      <div className='px-4 py-4'>
-        <NoteBox>{t('activity.logs.note')}</NoteBox>
+        <div className='h-6' />
       </div>
-      <div className='h-6' />
     </div>
   )
 }
