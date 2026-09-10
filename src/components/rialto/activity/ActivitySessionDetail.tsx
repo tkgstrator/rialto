@@ -114,11 +114,19 @@ function TurnRow({ turn }: { turn: Turn }) {
   )
 }
 
-function Kv({ label, value }: { label: string; value: ReactNode }) {
+/**
+ * One figure, with its name above it.
+ *
+ * The strip reads left to right, so the label sits on top rather than
+ * opposite: a row of nine `label ... value` pairs turned into a column
+ * of ragged gaps the moment it stopped being 22rem wide.
+ */
+function Stat({ label, value, children }: { label: string; value: ReactNode; children?: ReactNode }) {
   return (
-    <div className='flex items-baseline gap-3 px-4 py-1.5'>
-      <span className='text-[12px] text-muted-foreground'>{label}</span>
-      <span className='ml-auto font-mono text-[12px] tabular-nums'>{value}</span>
+    <div className='min-w-0'>
+      <div className='text-[12px] text-muted-foreground'>{label}</div>
+      <div className='mt-0.5 font-mono text-xs tabular-nums'>{value}</div>
+      {children}
     </div>
   )
 }
@@ -150,49 +158,36 @@ function CallRow({ call }: { call: ActivityRequestLog }) {
   )
 }
 
-function SummaryPane({
-  summary,
-  turns,
-  inboundPath
-}: {
-  summary: SessionSummary
-  turns: number
-  inboundPath: string | null
-}) {
+/**
+ * The session's numbers, across the top.
+ *
+ * These were nine rows down the right rail, above the routing trace,
+ * on a screen whose subject is the transcript beside them. Read left to
+ * right they cost one line, and the rail goes to the trace — the pane
+ * that actually grows with the session. Inbound and turns are not here
+ * because the subtitle already says both.
+ */
+function StatStrip({ summary }: { summary: SessionSummary }) {
   const { t } = useTranslation()
   const totalInput = summary.totalInputTokens
   const cacheRate = totalInput === 0 ? null : summary.totalCacheReadTokens / totalInput
   const cachePct = cacheRate === null ? 0 : Math.round(cacheRate * 100)
   return (
-    <>
-      <div className='px-4 pt-5 pb-2'>
-        <h2 className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>
-          {t('activity.session.summary')}
-        </h2>
-      </div>
-      <Kv
-        label={t('activity.session.inbound')}
-        value={inboundPath === null ? t('activity.common.untracked') : inboundPath}
-      />
-      <Kv label={t('activity.session.turns')} value={turns} />
-      <Kv label={t('activity.session.upstreamCalls')} value={summary.requestCount} />
-      <Kv label={t('activity.session.inputTokens')} value={summary.totalInputTokens.toLocaleString()} />
-      <Kv label={t('activity.session.outputTokens')} value={summary.totalOutputTokens.toLocaleString()} />
-      <Kv label={t('activity.session.cacheRead')} value={summary.totalCacheReadTokens.toLocaleString()} />
-      <Kv label={t('activity.session.cacheHit')} value={fmtRate(cacheRate)} />
-      <Kv label={t('activity.session.cost')} value={fmtCost(summary.totalCostUsd)} />
-      <Kv label={t('activity.session.duration')} value={fmtAgo(summary.firstAt, Date.parse(summary.lastAt))} />
-
-      <div className='px-4 pb-3 pt-3'>
-        <div className='mb-1.5 flex items-baseline'>
-          <span className='text-[12px] text-muted-foreground'>{t('activity.session.cacheEfficiency')}</span>
-          <span className='ml-auto font-mono text-[12px] tabular-nums'>{cachePct}%</span>
-        </div>
+    <div className='flex flex-wrap items-start gap-x-10 gap-y-3 border-b border-border px-6 py-3'>
+      <Stat label={t('activity.session.upstreamCalls')} value={summary.requestCount} />
+      <Stat label={t('activity.session.inputTokens')} value={summary.totalInputTokens.toLocaleString()} />
+      <Stat label={t('activity.session.outputTokens')} value={summary.totalOutputTokens.toLocaleString()} />
+      <Stat label={t('activity.session.cacheRead')} value={summary.totalCacheReadTokens.toLocaleString()} />
+      <Stat label={t('activity.session.cacheHit')} value={fmtRate(cacheRate)}>
         {/* Explicit `ok`: a high cache hit is the good end of the scale, the
             inverse of the utilization meters the auto tone is built for. */}
-        <Meter pct={cachePct} tone='ok' />
-      </div>
-    </>
+        <div className='mt-1.5 w-24'>
+          <Meter pct={cachePct} tone='ok' />
+        </div>
+      </Stat>
+      <Stat label={t('activity.session.cost')} value={fmtCost(summary.totalCostUsd)} />
+      <Stat label={t('activity.session.duration')} value={fmtAgo(summary.firstAt, Date.parse(summary.lastAt))} />
+    </div>
   )
 }
 
@@ -202,7 +197,7 @@ function TracePane({ calls }: { calls: ActivityRequestLog[] }) {
   const shown = expanded ? calls : calls.slice(-TRACE_PREVIEW)
   return (
     <>
-      <div className='border-t border-border px-4 pt-5 pb-2'>
+      <div className='px-4 pt-5 pb-2'>
         <h2 className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>
           {t('activity.session.routingTrace')}
         </h2>
@@ -343,52 +338,54 @@ export function ActivitySessionDetail() {
       ) : data === null ? (
         <ScreenMessage>{t('common.loading')}</ScreenMessage>
       ) : (
-        <div className='grid h-full grid-cols-[1fr_22rem]'>
-          <div className='min-w-0 overflow-y-auto border-r border-border'>
-            <div className='flex items-center gap-2 border-b border-border px-6 py-3'>
-              <Link
-                to='/activity'
-                className='text-muted-foreground hover:text-foreground'
-                aria-label={t('activity.session.backToActivity')}
-              >
-                <i className='ri-arrow-left-line text-base' />
-              </Link>
-              <div className='min-w-0'>
-                <div className='truncate text-xs font-medium'>{title}</div>
-                <div className='font-mono text-[12px] text-muted-foreground'>{sessionId}</div>
-              </div>
-              <div className='ml-auto flex gap-2'>
-                <RButton variant='ghost' icon='ri-code-line' onClick={downloadRaw}>
-                  {t('activity.session.rawJson')}
-                </RButton>
-                {/* No Archive button: there is no per-session archive route
+        <div className='flex h-full min-h-0 flex-col'>
+          <StatStrip summary={data.summary} />
+          <div className='grid min-h-0 flex-1 grid-cols-[1fr_22rem]'>
+            <div className='min-w-0 overflow-y-auto border-r border-border'>
+              <div className='flex items-center gap-2 border-b border-border px-6 py-3'>
+                <Link
+                  to='/activity'
+                  className='text-muted-foreground hover:text-foreground'
+                  aria-label={t('activity.session.backToActivity')}
+                >
+                  <i className='ri-arrow-left-line text-base' />
+                </Link>
+                <div className='min-w-0'>
+                  <div className='truncate text-xs font-medium'>{title}</div>
+                  <div className='font-mono text-[12px] text-muted-foreground'>{sessionId}</div>
+                </div>
+                <div className='ml-auto flex gap-2'>
+                  <RButton variant='ghost' icon='ri-code-line' onClick={downloadRaw}>
+                    {t('activity.session.rawJson')}
+                  </RButton>
+                  {/* No Archive button: there is no per-session archive route
                     (only POST /request-logs/sessions/archive, which takes all
                     of them), so this was permanently disabled behind a tooltip
                     blaming the session for "still receiving calls" — shown
                     just the same on one last seen three days ago. */}
+                </div>
               </div>
+              {data.nextCursor === null ? null : (
+                <div className='px-6 pt-4'>
+                  <button
+                    type='button'
+                    onClick={loadOlder}
+                    className='w-full rounded-md border border-dashed border-border py-2 text-[12px] text-muted-foreground transition-colors hover:bg-muted/50'
+                  >
+                    {t('activity.session.loadOlder')}
+                  </button>
+                </div>
+              )}
+              {turns.map((turn) => (
+                <TurnRow key={turn.id} turn={turn} />
+              ))}
+              <div className='h-10' />
             </div>
-            {data.nextCursor === null ? null : (
-              <div className='px-6 pt-4'>
-                <button
-                  type='button'
-                  onClick={loadOlder}
-                  className='w-full rounded-md border border-dashed border-border py-2 text-[12px] text-muted-foreground transition-colors hover:bg-muted/50'
-                >
-                  {t('activity.session.loadOlder')}
-                </button>
-              </div>
-            )}
-            {turns.map((turn) => (
-              <TurnRow key={turn.id} turn={turn} />
-            ))}
-            <div className='h-10' />
-          </div>
 
-          <aside className='min-w-0 overflow-y-auto'>
-            <SummaryPane summary={data.summary} turns={turns.length} inboundPath={inboundPath} />
-            <TracePane calls={data.calls} />
-          </aside>
+            <aside className='min-w-0 overflow-y-auto'>
+              <TracePane calls={data.calls} />
+            </aside>
+          </div>
         </div>
       )}
     </Screen>

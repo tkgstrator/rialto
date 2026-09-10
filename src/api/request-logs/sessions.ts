@@ -38,6 +38,28 @@ function latestSurface(logs: Array<{ surface: string | null; createdAt: Date }>)
   return newest.surface
 }
 
+/**
+ * Which models a session used, busiest first.
+ *
+ * A session is not one model — routing moves it between them turn by
+ * turn, and on a demo install 45 of 56 sessions used two or more. This
+ * used to be `[...new Set(logs.map(l => l.model))]` over an include with
+ * no `orderBy`, so the entry the list screen displayed as "the" model
+ * was whichever row Postgres happened to return first, and could differ
+ * between two loads of the same page. Ties break on the name so the
+ * order is total.
+ */
+export const modelUsage = (logs: ReadonlyArray<{ model: string }>): Array<{ name: string; requests: number }> => {
+  const counts = new Map<string, number>()
+  for (const log of logs) {
+    const prev = counts.get(log.model)
+    counts.set(log.model, prev === undefined ? 1 : prev + 1)
+  }
+  return [...counts]
+    .map(([name, requests]) => ({ name, requests }))
+    .sort((a, b) => (b.requests === a.requests ? a.name.localeCompare(b.name) : b.requests - a.requests))
+}
+
 // ── GET /api/request-logs/sessions ───────────────────────────────────────────
 
 const getSessionsRoute = createRoute({
@@ -128,7 +150,7 @@ requestLogsRoute.openapi(getSessionsRoute, async (c) => {
   const sessions = sessionRows.map((s) => {
     const logs = s.logs
     const providers = [...new Set(logs.map((l) => l.provider))]
-    const models = [...new Set(logs.map((l) => l.model))]
+    const models = modelUsage(logs)
     const totalInputTokens = logs.reduce((a, l) => a + l.totalInputTokens, 0)
     const totalOutputTokens = logs.reduce((a, l) => a + l.outputTokens, 0)
     const totalCacheReadTokens = logs.reduce((a, l) => a + l.cacheReadTokens, 0)
@@ -201,7 +223,7 @@ requestLogsRoute.openapi(getSessionSummaryRoute, async (c) => {
   const [priceMap, previewMap] = await Promise.all([buildPriceMap(prisma, pairs), loadPreviews([sessionId])])
 
   const providers = [...new Set(logs.map((l) => l.provider))]
-  const models = [...new Set(logs.map((l) => l.model))]
+  const models = modelUsage(logs)
   const totalInputTokens = logs.reduce((a, l) => a + l.totalInputTokens, 0)
   const totalOutputTokens = logs.reduce((a, l) => a + l.outputTokens, 0)
   const totalCacheReadTokens = logs.reduce((a, l) => a + l.cacheReadTokens, 0)
