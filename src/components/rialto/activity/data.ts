@@ -19,9 +19,39 @@ export interface RequestLogPage {
   total: number
 }
 
-/** Newest-first page of upstream calls. The endpoint has no time filter. */
-export function fetchRequestLogs(limit: number, offset = 0): Promise<RequestLogPage> {
-  return api.get<RequestLogPage>(`/request-logs?limit=${limit}&offset=${offset}`)
+/**
+ * Newest-first page of upstream calls within a window.
+ *
+ * `sinceHours` of 0 is the whole archive, which is what callers that
+ * only want `total` as an archive size pass. The Requests screen passes
+ * its selected range instead, so the page and the total it is quoted
+ * against describe the same population.
+ */
+export function fetchRequestLogs(limit: number, offset = 0, sinceHours = 0): Promise<RequestLogPage> {
+  return api.get<RequestLogPage>(`/request-logs?limit=${limit}&offset=${offset}&sinceHours=${sinceHours}`)
+}
+
+/** Status mix and latency spread across a window. */
+export interface RequestLogStats {
+  total: number
+  ok: number
+  rateLimited: number
+  failed: number
+  /** Null when no row in the window reached an upstream. */
+  p50: number | null
+  p95: number | null
+}
+
+/**
+ * The stat tiles' numbers, aggregated in Postgres over the whole window.
+ *
+ * Not derived from the page: a window can hold far more rows than one
+ * request should carry, so folding it in the browser means folding a cap
+ * — which is what made the tiles describe 25 rows under a "last 24h"
+ * label.
+ */
+export function fetchRequestLogStats(sinceHours: number): Promise<RequestLogStats> {
+  return api.get<RequestLogStats>(`/request-logs/stats?sinceHours=${sinceHours}`)
 }
 
 export function fetchSessionRequestLogs(sessionId: string): Promise<{ items: ActivityRequestLog[] }> {

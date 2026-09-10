@@ -27,13 +27,7 @@ import {
 } from '../../services/failover-state'
 import { recordModelFailure, recordModelSuccess } from '../../services/routing-scheduler/model-health'
 import { getActiveAccountForSession, releaseAccountForSession } from '../../services/session-account-router'
-import {
-  type AccountUsageMap,
-  CLAUDE_METRICS,
-  CODEX_METRICS,
-  getPerAccountUsage,
-  type Metric
-} from '../../services/subaccount-usage-store'
+import { type AccountUsageMap, getPerAccountUsage, windowBinds } from '../../services/subaccount-usage-store'
 import { getSubAccountTokensForKind } from '../../services/subscription-account-sync-service'
 import { errorShapeForPath } from './error-shape'
 import { type ResolvedInvocation, resolveInvocationForModel } from './invocation'
@@ -204,34 +198,47 @@ export async function attemptChainEntry(chain: ChainCtx, model: string): Promise
   return { kind: 'next', forwarded: lastForwarded }
 }
 
-// Always-binding windows per kind (mirrors session-account-router's
-// HARD_LIMIT_METRICS — when a 429 fires, one of these windows is what
-// the upstream is enforcing). Used to extract the earliest reset time
-// from the DB row so the exhaustion mark naturally clears when the
-// upstream window actually rolls.
-const HARD_LIMIT_METRICS: Record<'claude' | 'codex', Metric[]> = {
-  claude: [CLAUDE_METRICS.five_hour, CLAUDE_METRICS.seven_day, CLAUDE_METRICS.seven_day_opus],
-  codex: [CODEX_METRICS.primary]
-}
+// How full a window has to be before the 429 we just saw is credited to
+// it. Below this the window has headroom and cannot be what the upstream
+// is enforcing, so reading its reset would park the account for a limit
+// it never hit.
+const NEAR_LIMIT_PCT = 90
 
-// Pick the earliest future resetAt from the windows known to be near or
-// at limit. The 429 we just observed means at least one of them is
-// pinned — that window's resetAt is when the account becomes usable
-// again. Returns undefined when no eligible window has a future resetAt
-// (DB row missing / stale across reset / upstream omitted), in which
-// case the caller falls back to the default 5-min cooldown.
-const earliestResetUntil = (usage: AccountUsageMap, kind: 'claude' | 'codex', now: number): number | undefined => {
-  let earliest: number | undefined
-  for (const metric of HARD_LIMIT_METRICS[kind]) {
-    const w = usage.get(metric)
-    if (!w || w.resetAt === null) continue
-    const t = w.resetAt.valueOf()
-    if (t <= now) continue
-    // Only the windows likely responsible for the 429 — at or near limit.
-    if (w.percent < 90) continue
-    if (earliest === undefined || t < earliest) earliest = t
+/**
+ * Pick the earliest future resetAt among the windows that could be
+ * holding this account down, so the exhaustion mark clears exactly when
+ * the upstream window rolls rather than after the default 5 minutes.
+ *
+ * Which windows count is decided by `windowBinds` against the model the
+ * failed request asked for — the same function the account picker uses.
+ * This used to walk a pinned key list of always-binding metrics, which
+ * meant the per-model weekly windows were never consulted: Anthropic
+ * meters Fable's allowance in `claude.seven_day_scoped.fable`, so a
+ * Fable 429 matched nothing, fell through to the 5-minute default, and
+ * the account was re-probed every 5 minutes for the rest of the week.
+ * (The pinned list also named `seven_day_opus`, which most plans stopped
+ * reporting, leaving it effectively two entries.)
+ *
+ * Returns undefined when no binding window is both near limit and has a
+ * future reset — DB row missing, stale across its own reset, or the
+ * upstream omitted the reset — in which case the caller keeps the
+ * default cooldown.
+ */
+export function earliestResetUntil(
+  usage: AccountUsageMap,
+  kind: 'claude' | 'codex',
+  requestedModel: string | undefined,
+  now: number
+): number | undefined {
+  const resets: number[] = []
+  for (const [metric, w] of usage) {
+    if (!windowBinds(metric, kind, requestedModel)) continue
+    if (w.percent < NEAR_LIMIT_PCT) continue
+    if (w.resetAt === null) continue
+    const at = w.resetAt.valueOf()
+    if (at > now) resets.push(at)
   }
-  return earliest
+  return resets.length === 0 ? undefined : Math.min(...resets)
 }
 
 // One rotation step: when the failed invocation landed on a subscription
@@ -258,7 +265,9 @@ async function tryRotateAccount(
   // until its window genuinely rolls.
   const usageByAcct = await getPerAccountUsage([failedAcct])
   const usage = usageByAcct.get(failedAcct)
-  const until = usage !== undefined ? earliestResetUntil(usage, kind, Date.now()) : undefined
+  // The model matters: it decides which per-model weekly windows are
+  // candidates for having caused this 429.
+  const until = usage !== undefined ? earliestResetUntil(usage, kind, inv.request.model, Date.now()) : undefined
   markAccountExhausted(failedAcct, until)
   releaseAccountForSession(sessionId, failedAcct)
 

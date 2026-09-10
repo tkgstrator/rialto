@@ -6,8 +6,9 @@
  *     drives the chart in the Usage view.
  *   - `SubAccountUsage` (this file) — latest state per (subAccountId,
  *     metric), no history. The router consults this to make 429-avoidance
- *     decisions: skip an account whose `percent >= 100` while `resetAt`
- *     is still in the future.
+ *     decisions: skip an account whose `percent` has reached
+ *     `HARD_LIMIT_PCT` (session-account-router) while `resetAt` is still
+ *     in the future.
  *
  * The poller (`usage-job` → `usage-history-service.recordUsageSnapshots`)
  * also calls `recordPerAccountUsage()` so both tables refresh on the same
@@ -167,6 +168,66 @@ export async function recordPerAccountUsage(
 // each routing decision. Missing entries (no row in the table yet) are
 // modelled as `null` so callers can branch on "no data" the same way
 // the in-memory cache layer already does.
+/**
+ * An account's windows are not all about the same thing, and which ones
+ * speak for a given request depends on the model it asks for.
+ *
+ *   - Account-wide (claude 5h / 7d, codex primary / secondary): bind for
+ *     every model.
+ *   - Per-model (`claude.seven_day_scoped.<model>`, plus the legacy flat
+ *     seven_day_sonnet / seven_day_opus): bind ONLY for that model.
+ *     Anthropic meters Fable's weekly allowance separately, so a spent
+ *     Fable window is no reason to skip an account for a Sonnet call —
+ *     and, the other way round, a fresh account-wide 7d is no reason to
+ *     send a Fable call to an account whose Fable window is gone.
+ *
+ * Which keys exist is the vendor's call, not ours: Anthropic stopped
+ * populating the flat `seven_day_opus` field for most plans and now
+ * reports the per-model limits through `limits[]`. Matching on the shape
+ * of the metric rather than a pinned key is what keeps that from reading
+ * as "no data" on every account.
+ *
+ * Lives here rather than next to either caller because two of them ask
+ * the same question and must not answer it differently: the account
+ * picker decides whether a window disqualifies a candidate, and the
+ * reactive 429 path decides whether that same window is the one holding
+ * the account down. A pinned key list in the second is exactly how a
+ * Fable 429 came to be cooled down for five minutes instead of until the
+ * weekly reset.
+ */
+const belongsToKind = (metric: Metric, kind: 'claude' | 'codex'): boolean =>
+  kind === 'claude' ? metric.startsWith('claude.') : metric.startsWith('codex.')
+
+// The model slug a per-model window is about, or null when the window is
+// account-wide.
+const perModelSlugOf = (metric: Metric): string | null => {
+  if (metric === CLAUDE_METRICS.seven_day_sonnet) return 'sonnet'
+  if (metric === CLAUDE_METRICS.seven_day_opus) return 'opus'
+  return scopedMetricModel(metric)
+}
+
+// The metric key is a slug of the vendor's `display_name` ("Fable" →
+// `fable`) while the request carries an API id ("claude-fable-5-1"), so
+// both sides are stripped to alphanumerics before the containment test.
+// Same heuristic the routing-scheduler uses in quota-math.ts.
+const squash = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, '')
+
+/**
+ * Does this window bind for the model the request asks for?
+ *
+ * An unknown model falls back to account-wide windows only: guessing
+ * wrong either parks a usable account or picks one guaranteed to 429,
+ * whereas the account-wide windows are never the wrong answer, only an
+ * incomplete one.
+ */
+export function windowBinds(metric: Metric, kind: 'claude' | 'codex', requestedModel: string | undefined): boolean {
+  if (!belongsToKind(metric, kind)) return false
+  const slug = perModelSlugOf(metric)
+  if (slug === null) return true
+  if (requestedModel === undefined) return false
+  return squash(requestedModel).includes(squash(slug))
+}
+
 export type AccountUsageMap = Map<Metric, { percent: number; resetAt: Date | null }>
 
 // Batch read the per-account usage for a set of accounts. Returns a
