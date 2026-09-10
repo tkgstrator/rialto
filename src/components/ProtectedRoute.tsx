@@ -14,10 +14,10 @@ import { isFreshInstall, setupAlreadyOffered } from '@/components/rialto/system/
  *
  * What is left are the two states the operator can still act on:
  *
- * - `/api/*` answered 401. Either an Access assertion failed to verify or
- *   the bootstrap-token gate refused this browser; nothing inside the app
- *   can fix either, so `/access-denied` names what to change rather than
- *   rendering a shell with no data in it.
+ * - `/api/*` answered 401: the request came neither from this machine nor
+ *   with an Access assertion that verified. Nothing inside the app can fix
+ *   that, so `/access-denied` names what to change rather than rendering a
+ *   shell with no data in it.
  * - The database holds no providers at all. `/setup` is then the only
  *   page with anything to say, and it is offered once per tab so its own
  *   "Skip setup" link still works.

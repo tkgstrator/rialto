@@ -8,8 +8,11 @@
  * 140% — so it lives here where a test can hold it.
  */
 
+import type { SubscriptionWire } from '@/components/rialto/providers/types'
+import { vendorLabel } from '@/components/rialto/providers/vendor-labels'
 import type { AccessTokenWire } from '@/lib/api'
-import dayjs from '@/lib/dayjs'
+import type { SeatKind } from '@/shared/plan-capacity'
+import { planLabel } from '@/shared/plan-label'
 
 // ---- Subscription windows -------------------------------------------
 
@@ -26,9 +29,21 @@ export interface WindowRow {
 export interface AccountWindows {
   subAccountId: string
   account: string
-  /** Plan / vendor line beside the account name. Null when unknown. */
+  /** The plan with its multiplier — "Max 20x", "Pro 5x". Null when unknown. */
   plan: string | null
   windows: WindowRow[]
+}
+
+/** One subscription provider and its accounts, as the panel groups them. */
+export interface ProviderWindows {
+  /** Stable React key: the Provider row name, or the vendor for unclaimed accounts. */
+  key: string
+  /** Display name — "Claude Code" for `claude-code`, the slug itself for a hand-added one. */
+  label: string
+  /** The Provider row name, when it says something the label does not. */
+  name: string | null
+  kind: 'claude' | 'codex' | 'other'
+  accounts: AccountWindows[]
 }
 
 /** `/api/usage` as the browser consumes it. Mirrors schemas/api/usage.ts. */
@@ -124,34 +139,149 @@ const claudeWindows = (account: ClaudeUsageWire, t: Translate): WindowRow[] => {
   return windows
 }
 
+const FIVE_HOURS_S = 5 * 60 * 60
+const SEVEN_DAYS_S = 7 * 24 * 60 * 60
+
+/**
+ * A Codex window named by its length when the wire says it, by rank when
+ * it does not.
+ *
+ * Codex calls its two windows primary and secondary, and they are the same
+ * 5-hour and 7-day limits Claude publishes. Naming one vendor's pair by
+ * duration and the other's by rank made the same two limits look like
+ * different ones. `windowSeconds` is what says which is which; a length
+ * that is neither keeps the rank rather than being forced into one.
+ */
+const codexWindowLabel = (seconds: number | null, rank: string, t: Translate): string => {
+  if (seconds === FIVE_HOURS_S) return t(WINDOW_LABEL_KEYS.fiveHour)
+  if (seconds === SEVEN_DAYS_S) return t(WINDOW_LABEL_KEYS.sevenDay)
+  return rank
+}
+
 const codexWindows = (account: CodexUsageWire, t: Translate): WindowRow[] => {
   const flat: [CodexUsageWire['primary'], string][] = [
     [account.primary, t(WINDOW_LABEL_KEYS.primary)],
     [account.secondary, t(WINDOW_LABEL_KEYS.secondary)]
   ]
   const windows: WindowRow[] = []
-  for (const [value, label] of flat) {
-    if (value !== null) windows.push({ label, scope: null, pct: value.usedPercent, resetsAt: value.resetAt })
+  for (const [value, rank] of flat) {
+    if (value !== null) {
+      windows.push({
+        label: codexWindowLabel(value.windowSeconds, rank, t),
+        scope: null,
+        pct: value.usedPercent,
+        resetsAt: value.resetAt
+      })
+    }
   }
   return windows
 }
 
-/** Flatten `/api/usage` into per-account window lists, Claude then Codex. */
-export function accountWindows(usage: UsageWire, t: Translate): AccountWindows[] {
-  return [
-    ...usage.claude.map((account) => ({
-      subAccountId: account.subAccountId,
-      account: account.accountLabel,
-      plan: null,
-      windows: claudeWindows(account, t)
-    })),
-    ...usage.codex.map((account) => ({
-      subAccountId: account.subAccountId,
-      account: account.accountLabel,
-      plan: account.planType,
-      windows: codexWindows(account, t)
-    }))
-  ]
+/** One account from `/api/usage`, before it is placed under a provider. */
+interface UsageSeat {
+  subAccountId: string
+  account: string
+  vendor: 'claude' | 'codex'
+  /** Codex's `plan_type`, read live on every poll. Claude's usage response has none. */
+  livePlan: string | null
+  windows: WindowRow[]
+}
+
+const usageSeats = (usage: UsageWire, t: Translate): UsageSeat[] => [
+  ...usage.claude.map(
+    (a): UsageSeat => ({
+      subAccountId: a.subAccountId,
+      account: a.accountLabel,
+      vendor: 'claude',
+      livePlan: null,
+      windows: claudeWindows(a, t)
+    })
+  ),
+  ...usage.codex.map(
+    (a): UsageSeat => ({
+      subAccountId: a.subAccountId,
+      account: a.accountLabel,
+      vendor: 'codex',
+      livePlan: a.planType,
+      windows: codexWindows(a, t)
+    })
+  )
+]
+
+const seatKindOf = (kind: ProviderWindows['kind']): SeatKind => (kind === 'other' ? null : kind)
+
+/** Vendor names for accounts no provider claimed. Proper nouns, not copy. */
+const VENDOR_NAME = { claude: 'Claude', codex: 'Codex' } as const
+
+/** One provider's accounts, in the order `/api/subscriptions` lists them. */
+const providerGroup = (sub: SubscriptionWire, seats: ReadonlyMap<string, UsageSeat>): ProviderWindows => {
+  const accounts = sub.accounts.flatMap((account): AccountWindows[] => {
+    const seat = seats.get(account.id)
+    if (seat === undefined) return []
+    // Codex's live `plan_type` over the stored one, which dates from the
+    // last sign-in. Claude's tier only ever arrives through the stored row.
+    const plan = seat.livePlan === null ? account.plan : seat.livePlan
+    return [
+      {
+        subAccountId: seat.subAccountId,
+        account: seat.account,
+        plan: planLabel(seatKindOf(sub.kind), plan, account.rateLimitTier),
+        windows: seat.windows
+      }
+    ]
+  })
+  const label = vendorLabel(sub.providerName, sub.providerName)
+  return {
+    key: sub.providerName,
+    label,
+    name: label === sub.providerName ? null : sub.providerName,
+    kind: sub.kind,
+    accounts
+  }
+}
+
+/**
+ * `/api/usage`, grouped by the provider each account belongs to.
+ *
+ * `/api/usage` is one list per vendor, and the panel used to flow Claude's
+ * accounts then Codex's through one two-column grid, so a row could hold
+ * one of each with nothing on either saying which vendor it was — and
+ * "5-hour 88%" reads the same under both. `/api/subscriptions` knows which
+ * Provider row owns each account, in the order the Providers screen lists
+ * them, so the panel groups by that instead. A provider with no account
+ * in the usage response has nothing to draw and is left out.
+ *
+ * An account the subscriptions list does not name — its read failed, or
+ * the account went between the two reads — is still shown, under its
+ * vendor. Dropping it would hide a window that is really being spent.
+ */
+export function providerWindows(
+  usage: UsageWire,
+  subscriptions: readonly SubscriptionWire[],
+  t: Translate
+): ProviderWindows[] {
+  const seats = new Map(usageSeats(usage, t).map((seat) => [seat.subAccountId, seat]))
+  const listed = new Set(subscriptions.flatMap((sub) => sub.accounts.map((account) => account.id)))
+  const grouped = subscriptions.map((sub) => providerGroup(sub, seats)).filter((group) => group.accounts.length > 0)
+  const unclaimed = (['claude', 'codex'] as const).flatMap((vendor): ProviderWindows[] => {
+    const orphans = [...seats.values()].filter((seat) => seat.vendor === vendor && !listed.has(seat.subAccountId))
+    if (orphans.length === 0) return []
+    return [
+      {
+        key: `vendor:${vendor}`,
+        label: VENDOR_NAME[vendor],
+        name: null,
+        kind: vendor,
+        accounts: orphans.map((seat) => ({
+          subAccountId: seat.subAccountId,
+          account: seat.account,
+          plan: planLabel(vendor, seat.livePlan, null),
+          windows: seat.windows
+        }))
+      }
+    ]
+  })
+  return [...grouped, ...unclaimed]
 }
 
 // ---- Utilization over time ------------------------------------------
@@ -267,28 +397,6 @@ export function seriesOf(samples: readonly UsageHistorySample[], t: Translate): 
   return [...new Set(samples.map((s) => s.metric))]
     .sort((a, b) => a.localeCompare(b))
     .map((metric) => ({ metric, label: metricLabel(metric, t) }))
-}
-
-/**
- * The plotted points as CSV rows: an ISO timestamp column plus one column
- * per series, in the order the legend shows them.
- *
- * Exports what is on screen — the bucketed peaks, not the raw 5-minute
- * samples. Handing back a different dataset than the one the operator is
- * looking at is how a spreadsheet ends up disagreeing with the chart it
- * was taken from. An unmeasured bucket exports as an empty cell rather
- * than a zero, for the same reason the line breaks there.
- */
-export function chartCsvRows(points: readonly ChartPoint[], series: readonly UsageSeries[]): string[][] {
-  const header = ['time', ...series.map((s) => s.label)]
-  const rows = points.map((point) => [
-    dayjs(point.t).toISOString(),
-    ...series.map((s) => {
-      const value = point[s.metric]
-      return typeof value === 'number' ? String(value) : ''
-    })
-  ])
-  return [header, ...rows]
 }
 
 // ---- Per-token spend -------------------------------------------------

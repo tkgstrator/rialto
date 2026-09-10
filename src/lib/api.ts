@@ -23,34 +23,15 @@ import type { Config } from '@/types'
 // shapes it returns.
 export type * from '@/lib/api-types'
 
-// Browser-side API client. Fetches under `${baseUrl}<endpoint>` with the
-// envelope APIKEY (mirrored onto X-API-Key) attached automatically. The
-// temp key from `?tempApiKey=` lets the integrated `rialto ui` flow open the
-// UI pre-authenticated without persisting the long-lived key.
+// Browser-side API client. Fetches under `${baseUrl}<endpoint>` and
+// attaches no credential: the admin gate admits a browser on the host
+// itself, or a request Cloudflare Access has already authenticated at the
+// edge, and neither needs anything from this side.
 class ApiClient {
   private baseUrl: string
-  private apiKey: string
-  private tempApiKey: string | null
 
-  constructor(baseUrl: string = '/api', apiKey: string = '') {
+  constructor(baseUrl: string = '/api') {
     this.baseUrl = baseUrl
-    this.apiKey = apiKey || localStorage.getItem('apiKey') || ''
-    this.tempApiKey = new URLSearchParams(window.location.search).get('tempApiKey')
-  }
-
-  setApiKey(apiKey: string) {
-    this.apiKey = apiKey
-    if (apiKey) {
-      localStorage.setItem('apiKey', apiKey)
-    } else {
-      localStorage.removeItem('apiKey')
-    }
-  }
-
-  private authHeader(): Record<string, string> {
-    if (this.tempApiKey) return { 'X-Temp-API-Key': this.tempApiKey }
-    if (this.apiKey) return { 'X-API-Key': this.apiKey }
-    return {}
   }
 
   private async apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -59,22 +40,19 @@ class ApiClient {
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
-        ...this.authHeader(),
         ...options.headers
       }
     })
 
     if (response.status === 401) {
-      // 401 invalidates the stored key. The event tells the shell to send
-      // the operator to the login screen; the throw is what stops every
-      // caller here.
+      // The event sends the operator to /access-denied; the throw is what
+      // stops every caller here.
       //
       // This used to `return new Promise(() => {})` — a promise that
       // never settles — on the theory that navigation would unmount the
       // caller anyway. It does not: a hanging promise means no `.catch`
       // and no `.finally` ever runs, so every screen that fetched sat on
       // its loading state forever with nothing on screen to explain why.
-      localStorage.removeItem('apiKey')
       window.dispatchEvent(new CustomEvent('unauthorized'))
       throw new Error('Unauthorized')
     }

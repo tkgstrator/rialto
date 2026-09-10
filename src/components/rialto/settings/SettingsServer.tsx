@@ -23,7 +23,7 @@ import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
 import { useAppVersion } from '@/hooks/use-app-version'
 import { api, type HealthResponse, type UpdateCheckResponse } from '@/lib/api'
 import { fmtAgo, fmtUptime } from '@/lib/rialto/format'
-import { type EnvelopeWire, maskSecret, parseCount } from '@/lib/rialto/settings/envelope'
+import { type EnvelopeWire, parseCount } from '@/lib/rialto/settings/envelope'
 
 /** Every editable scalar as text, so a half-typed number never becomes NaN. */
 interface ServerDraft {
@@ -196,15 +196,7 @@ function DataSection() {
   )
 }
 
-function ServerFields({
-  draft,
-  wire,
-  onChange
-}: {
-  draft: ServerDraft
-  wire: EnvelopeWire
-  onChange: (next: ServerDraft) => void
-}) {
+function ServerFields({ draft, onChange }: { draft: ServerDraft; onChange: (next: ServerDraft) => void }) {
   const { t } = useTranslation()
   const set = <K extends keyof ServerDraft>(key: K, value: ServerDraft[K]) => onChange({ ...draft, [key]: value })
   return (
@@ -221,17 +213,6 @@ function ServerFields({
         value={draft.PORT}
         inputMode='numeric'
         onChange={(v) => set('PORT', v)}
-      />
-      <StaticField
-        label={t('settings.server.bootstrapToken')}
-        hint={t('settings.server.bootstrapTokenHint')}
-        // maskSecret's own fallback is the English literal 'not set';
-        // the Access screen already has a translated key for the same word.
-        value={
-          typeof wire.APIKEY === 'string' && wire.APIKEY.length > 0
-            ? maskSecret(wire.APIKEY)
-            : t('providers.credentials.notSet')
-        }
       />
       <TextField
         label={t('settings.server.requestTimeout')}
@@ -334,7 +315,7 @@ export function SettingsServer() {
       ) : draft === null || wire === null ? (
         <div className='px-6 py-6 text-xs text-muted-foreground'>{t('common.loading')}</div>
       ) : (
-        <ServerFields draft={draft} wire={wire} onChange={setDraft} />
+        <ServerFields draft={draft} onChange={setDraft} />
       )}
 
       <DataSection />

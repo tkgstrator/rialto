@@ -39,11 +39,17 @@ describe('planCapacityWeight — Codex', () => {
     expect(planCapacityWeight('codex', 'codex_plus', 'default')).toBe(1)
   })
 
-  test('Pro is a Max-class seat, not the unit Claude Pro is', () => {
-    // The same bare string means opposite ends of the range, which is why
-    // the vendor has to be passed in.
-    expect(planCapacityWeight('codex', 'pro', null)).toBe(5)
+  test('a bare pro is the 20x seat, not the unit Claude Pro is', () => {
+    // OpenAI split Pro in April 2026 and kept `pro` for the $200 seat. The
+    // same bare string means opposite ends of the range on the two
+    // vendors, which is why the vendor has to be passed in.
+    expect(planCapacityWeight('codex', 'pro', null)).toBe(20)
     expect(planCapacityWeight('claude', 'pro', null)).toBe(1)
+  })
+
+  test('prolite is the 5x seat', () => {
+    // It contains "pro", so it has to be read before the bare one is.
+    expect(planCapacityWeight('codex', 'prolite', null)).toBe(5)
   })
 
   test('a Pro that names its level takes it, the way Claude Max does', () => {

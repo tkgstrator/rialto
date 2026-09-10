@@ -313,12 +313,13 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
     expect(await resolveAccessToken(plaintext)).toBeNull()
   })
 
-  test('the bootstrap token is not an access token', async () => {
+  test('a leftover APIKEY value is not an access token', async () => {
     // /v1/* is a Bypass path at the edge, so whatever resolves here is
-    // the only thing in front of the operator's credits. The envelope
-    // key must not be a second, unrevocable way in.
-    process.env.APIKEY = 'bootstrap-value-that-must-not-work'
-    expect(await resolveAccessToken('bootstrap-value-that-must-not-work')).toBeNull()
+    // the only thing in front of the operator's credits. An install that
+    // still has the retired envelope key set must not gain a second,
+    // unrevocable way in.
+    process.env.APIKEY = 'leftover-value-that-must-not-work'
+    expect(await resolveAccessToken('leftover-value-that-must-not-work')).toBeNull()
   })
 
   test('deletion also takes effect immediately', async () => {

@@ -32,8 +32,8 @@ export type AppConfig = z.infer<typeof AppConfigSchema>
 
 // UI-side config shape consumed by components. Differs from
 // AppConfigSchema in that it requires the envelope scalars (LOG,
-// LOG_LEVEL, HOST, PORT, APIKEY, API_TIMEOUT_MS). Kept distinct because
-// the frontend types this directly off the JSON it receives.
+// LOG_LEVEL, HOST, PORT, API_TIMEOUT_MS). Kept distinct because the
+// frontend types this directly off the JSON it receives.
 export const ConfigSchema = z.object({
   Providers: z.array(ProviderSchema),
   StatusLine: StatusLineConfigSchema.optional(),
@@ -44,7 +44,6 @@ export const ConfigSchema = z.object({
   CLAUDE_PATH: z.string().nonempty(),
   HOST: z.string().nonempty(),
   PORT: z.number().int().positive(),
-  APIKEY: z.string(),
   API_TIMEOUT_MS: z.number().int().nonnegative(),
   PROXY_URL: z.url(),
   // Archive capture switches. Optional here so an envelope written

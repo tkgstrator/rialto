@@ -91,8 +91,8 @@ export interface RoutePlan {
  * The issued token is the next-best identity: stable, so a client keeps
  * its prompt-cache affinity with whichever account it drains, and
  * bounded, so the picker's in-process sticky maps cannot grow one entry
- * per request the way a random id would. Requests authenticated by the
- * envelope bootstrap key share the one anonymous bucket.
+ * per request the way a random id would. A call with no token id shares
+ * the one anonymous bucket.
  */
 function resolveInboundSession(
   headers: Record<string, string>,

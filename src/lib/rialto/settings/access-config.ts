@@ -1,13 +1,12 @@
 /**
  * Gate logic for the two settings that can lock an operator out.
  *
- * `adminAuth` does not fall back to the bootstrap token once an
- * assertion is present but fails to verify — correct, because falling
- * back would let anyone holding that token bypass Access. The cost is
- * that a wrong team domain or AUD, once saved, rejects every browser
- * request forever and the only cure is editing config.json by hand. So
- * the save is gated on a dry run, and this module decides what a given
- * dry-run result permits.
+ * `adminAuth` has nothing to fall back on once an assertion is present but
+ * fails to verify: there is no admin secret. So a wrong team domain or
+ * AUD, once saved, rejects every remote browser request, and the only way
+ * back is a browser on the host itself or editing config.json by hand. The
+ * save is therefore gated on a dry run, and this module decides what a
+ * given dry-run result permits.
  *
  * Kept pure and separate from the component because "may this be saved"
  * is exactly the decision worth pinning in tests.
@@ -63,7 +62,7 @@ const NEEDS_CHECK =
   'Check these settings before saving. A wrong value here rejects every browser request, including yours.'
 
 const TURNS_OFF =
-  'Both fields are empty, so saving turns Access off and /api/* falls back to the bootstrap token alone.'
+  'Both fields are empty, so saving turns Access off — afterwards only a browser on this machine can reach /api/*.'
 
 /**
  * May this draft be saved?
@@ -81,8 +80,8 @@ export function accessSaveGate(
   const hasDomain = draft.teamDomain.length > 0
   const hasAud = draft.aud.length > 0
 
-  // Turning Access off cannot lock anyone out — it is the recovery
-  // direction — so it needs no dry run.
+  // Turning Access off cannot lock anyone out of the host — it is the
+  // recovery direction — so it needs no dry run.
   if (!hasDomain && !hasAud) return { allowed: true, caveat: TURNS_OFF }
   if (!hasDomain || !hasAud) return { allowed: false, reason: BOTH_REQUIRED }
 

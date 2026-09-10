@@ -35,7 +35,7 @@ Web UI（デフォルトでポート **3456** で提供）でゲートウェイ�
 | **Providers** | `/providers` | 2 つの一覧 — `/providers/subscriptions` と `/providers/api-keys` — に加え、追加用の `/providers/connect` と、モデル・価格・コンテキストウィンドウ・接続テスト・導出された Request shape（読み取り専用）を見る `/providers/<name>` |
 | **Access tokens** | `/access-tokens` | クライアントが `/v1/*` で使うトークンの発行・スコープ設定・ローテート・失効 |
 | **Activity** | `/activity` | セッション、リクエスト単位のログ（`/activity/requests`）、サブスクリプション使用量（`/activity/usage`）、サーバーログ（`/activity/logs`）|
-| **Settings** | `/settings` | Server、Access（管理アクセス：Cloudflare Access と緊急脱出用 `APIKEY`）、Logging、Personas、Status line、Advanced（設定ドキュメント、ヘルス）|
+| **Settings** | `/settings` | Server、Access（管理アクセス：Cloudflare Access と、それが壊れたときの入り直し方）、Logging、Personas、Status line、Advanced（設定ドキュメント、ヘルス）|
 
 初回起動は `/setup` に着地します。
 
@@ -55,26 +55,13 @@ curl -fsSL https://raw.githubusercontent.com/tkgstrator/rialto/master/compose.ya
 
 この compose ファイルは `ghcr.io/tkgstrator/rialto:latest` を PostgreSQL・Redis と一緒に起動し、ポート `3456` を公開し、`./rialto-config` をコンテナの `~/.rialto` としてバインドマウントします — ホスト側で `config.json` が置かれるのはこのディレクトリです。CLI の認証情報ファイル用に `~/.claude` と `~/.codex` もマウントしますが、API キー型プロバイダーしか使わないならその 2 行は削って構いません。
 
-**ステップ 2 — （任意）緊急脱出用の管理キーを設定：**
+設定ファイルは初回起動時に自動生成されるので、起動前に書くものはありません。エンベロープのスカラー値は `rialto` サービスの環境変数（`PORT`、`LOG_LEVEL` など）としても渡せます。環境変数が設定されていればファイルより優先されます。
 
-設定ファイルは初回起動時に自動生成されます。自分で書く必要があるのは、緊急脱出用の管理キーを置きたい場合だけです：
-
-```shell
-mkdir -p rialto-config
-cat > rialto-config/config.json << 'EOF'
-{
-  "APIKEY": "your-secret-key"
-}
-EOF
-```
-
-エンベロープのスカラー値は `rialto` サービスの環境変数（`APIKEY`、`PORT`、`LOG_LEVEL` など）としても渡せます。環境変数が設定されていればファイルより優先されます。
-
-> **`APIKEY` は任意であり、自動生成されなくなりました。** Rialto が動いているマシン上のブラウザは管理ゲートを免除されますし、リモートからの管理アクセスは Cloudflare Access を通す設計です。Access が落ちたときの復旧経路が欲しいときにだけ、意図的に設定してください。効くのは `/api/*` だけです。
+> **管理キーはありません。** Rialto が動いているマシン上のブラウザは管理ゲートを免除され、リモートからの管理アクセスは Cloudflare Access を通ります。Access が壊れたときは、ホストへ SSH してポートを転送します — [外部公開](#-外部公開) を参照。
 >
-> **`/v1/*` の認証には決して使えません。** クライアントは **Access tokens** 画面で発行する*アクセストークン*で接続します。個別に失効でき、リクエスト単位で帰属が取れ、受け口とルーティングプロファイルにスコープできます。トークンを 1 本も発行していないインストールはプロキシを通せません。
+> **`/v1/*` を通すのはアクセストークンだけです。** クライアントは **Access tokens** 画面で発行する*アクセストークン*で接続します。個別に失効でき、リクエスト単位で帰属が取れ、受け口とルーティングプロファイルにスコープできます。トークンを 1 本も発行していないインストールはプロキシを通せません。
 
-**ステップ 3 — サービスを起動：**
+**ステップ 2 — サービスを起動：**
 
 ```shell
 docker compose up -d
@@ -82,7 +69,7 @@ docker compose up -d
 
 エントリポイントがサーバー起動前に未適用の Prisma マイグレーションとシードを適用します。その後サーバーが `http://127.0.0.1:3456` で待ち受けます。ブラウザで開き、**Providers** ページと **Routing** ページで設定を完了します。続けて **Access tokens** でトークンを発行してください — クライアントが認証に使うのはこちらです。
 
-**ステップ 4 — Claude Code からゲートウェイに接続：**
+**ステップ 3 — Claude Code からゲートウェイに接続：**
 
 ```shell
 ANTHROPIC_BASE_URL=http://127.0.0.1:3456 ANTHROPIC_AUTH_TOKEN=rialto_your-access-token claude
@@ -95,7 +82,7 @@ export ANTHROPIC_BASE_URL=http://127.0.0.1:3456
 export ANTHROPIC_AUTH_TOKEN=rialto_your-access-token
 ```
 
-**ステップ 5 — 使う受け口のルーティングを有効化：**
+**ステップ 4 — 使う受け口のルーティングを有効化：**
 
 すべての受け口は `passthrough` モードで出荷され、呼び出し側の `body.model` がそのまま使われます。振り先が揃ったら、**Routing** ページで `/v1/messages`（あるいは実際に叩く受け口）を `routed` に切り替えてください。後述の [受け口](#-受け口inbound-surface) を参照。
 
@@ -144,7 +131,7 @@ Rialto は Claude Code 専用プロキシではありません。受け口で 4 
 
 `GET /v1/models` と `POST /v1/messages/count_tokens` は完了リクエストの面ではなくカタログ読み出しなので、4 面には含まれません。ただし呼び手の SDK に合わせた認証規約とエラー封筒で返し、一部の受け口にスコープされたトークンからも呼べます。
 
-どの受け口に来たリクエストでも、認証情報は**発行済みアクセストークン**でなければなりません。エンベロープの `APIKEY` が受理されるのは `/api/*` だけです。
+どの受け口に来たリクエストでも、認証情報は**発行済みアクセストークン**でなければなりません。それ以外は受理されません。
 
 ### ルーティングモード
 
@@ -165,7 +152,6 @@ Rialto は Claude Code 専用プロキシではありません。受け口で 4 
 
 | キー | 説明 |
 |------|------|
-| `APIKEY` | `/api/*` 用の任意の緊急脱出シークレット。`x-api-key` または `Authorization: Bearer` で送信。`/v1/*` では決して受理されません。自動生成もされません |
 | `HOST` | リスニングアドレス（デフォルト：`127.0.0.1`）|
 | `PORT` | リスニングポート（デフォルト：`3456`）|
 | `ACCESS_TEAM_DOMAIN` | Cloudflare Access のチームドメイン。`ACCESS_AUD` と併せて `/api/*` の assertion を検証します |
@@ -187,7 +173,7 @@ Rialto は Claude Code 専用プロキシではありません。受け口で 4 
 
 上記のスカラーキー（`Personas`・`ActivePersona`・`StatusLine` 以外）はプロセスの環境変数 — たとえば Docker の `environment:` — としても渡せ、環境変数が設定されていればファイルより優先されます。
 
-旧ビルドが、もう存在しないルーティング機構のために書いたキーは無視されます。`Router`、`CUSTOM_ROUTER_PATH`、`LiveRoutingName`、`CROSS_PROVIDER_FALLBACK` は読み込みのたびに取り除かれ、`POST /api/config` は警告を出してこれらを捨て、次の保存でファイルからも消えます。`ROUTER_MODE` は未知のキーとして残るだけで、何も読みません。
+旧ビルドが、もう存在しない機構のために書いたキーは無視されます。`Router`、`CUSTOM_ROUTER_PATH`、`LiveRoutingName`、`CROSS_PROVIDER_FALLBACK`、そして廃止された管理キー `APIKEY` は読み込みのたびに取り除かれ、`POST /api/config` は警告を出してこれらを捨て、次の保存でファイルからも消えます。環境変数の `APIKEY` も読まれません。`ROUTER_MODE` は未知のキーとして残るだけで、何も読みません。
 
 ### プロバイダー・モデル・チェーン（データベース）
 
@@ -314,7 +300,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="http://localhost:3456/v1",
-    api_key="rialto_your-access-token",   # Access tokens 画面で発行。APIKEY ではありません
+    api_key="rialto_your-access-token",   # Access tokens 画面で発行
 )
 
 # 1. ルーティング可能なモデルを列挙
@@ -366,6 +352,14 @@ for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.
 ## 🌐 外部公開
 
 トンネル越しに Rialto を公開する場合、`/api/*` と `/v1/*` は別扱いが必要です — 前者は Cloudflare Access の背後に、後者はエッジで Bypass して発行済みトークンだけを門にします。設定手順と、CLI クライアントがログイン画面で詰む失敗モードは [docs/guides/public-deployment.md](docs/guides/public-deployment.md) にまとめてあります。
+
+**締め出されたとき**（Access の障害や設定ミス、`config.json` の退避、Postgres の停止）に頼る管理キーはありません — そして要りません。ホストへ SSH してポートを転送し、`http://localhost:3456` を開きます：
+
+```shell
+ssh -L 3456:localhost:3456 <host>
+```
+
+ホスト上から来たリクエストは管理ゲートを免除され、その判定は Access もデータベースも読みません。Docker ではポートをホストに公開したうえで（ループバックで十分）同じ手順です。この入口を塞ぐ設定は `RIALTO_TRUST_LOCAL=false` だけです。
 
 ## ⬆️ リネーム前ビルドからの移行
 

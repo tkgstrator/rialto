@@ -17,7 +17,7 @@
 import { type ReactNode, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
-import { type ActivityRequestLog, downloadText, fetchSessionRequestLogs } from '@/components/rialto/activity/data'
+import { type ActivityRequestLog, fetchSessionRequestLogs } from '@/components/rialto/activity/data'
 import { LANE_KEYS, lane as laneOf } from '@/components/rialto/activity/requests-rows'
 import { DASH, ScreenMessage, StatusPill } from '@/components/rialto/activity/shared'
 import { useSurfaces } from '@/components/rialto/activity/use-surfaces'
@@ -210,11 +210,6 @@ export function ActivitySessionDetail() {
   const prev = index > 0 ? neighbours[index - 1] : null
   const next = index >= 0 && index < neighbours.length - 1 ? neighbours[index + 1] : null
 
-  const downloadRaw = () => {
-    if (data === null) return
-    downloadText(`${sessionId}.json`, JSON.stringify(data, null, 2), 'application/json')
-  }
-
   const title = data === null ? sessionId : preferredTitle(data.summary, sessionId)
   const subtitle =
     data === null
@@ -263,16 +258,13 @@ export function ActivitySessionDetail() {
               neither of them can carry — the session's own title. */}
           <div className='flex items-center gap-2 border-b border-border px-6 py-3'>
             <div className='min-w-0 truncate text-xs font-medium'>{title}</div>
-            <div className='ml-auto flex gap-2'>
-              <RButton variant='ghost' icon='ri-code-line' onClick={downloadRaw}>
-                {t('activity.session.rawJson')}
-              </RButton>
-              {/* No Archive button: there is no per-session archive route
-                  (only POST /request-logs/sessions/archive, which takes all
-                  of them), so this was permanently disabled behind a tooltip
-                  blaming the session for "still receiving calls" — shown
-                  just the same on one last seen three days ago. */}
-            </div>
+            {/* No Raw JSON: it handed the session out as a file, and the
+                screens hand out no files. No Archive button either: there
+                is no per-session archive route (only POST
+                /request-logs/sessions/archive, which takes all of them), so
+                it sat permanently disabled behind a tooltip blaming the
+                session for "still receiving calls" — shown just the same
+                on one last seen three days ago. */}
           </div>
           <StatStrip summary={data.summary} />
           <div className='px-6 pt-5 pb-1'>

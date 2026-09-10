@@ -1,11 +1,11 @@
 /**
- * The Health tab: whatever `GET /health` says, unedited.
+ * The Health tab: what `GET /health` returned.
  *
  * The probe lives at the root rather than under `/api` so uptime checks
- * do not need the bootstrap token. That also puts it outside the Vite
- * dev-server's default passthrough, so it is listed explicitly in the
- * dev-server exclude list — without that entry the SPA shell answers and
- * every check reads unreachable.
+ * need no credential. That also puts it outside the Vite dev-server's
+ * default passthrough, so it is listed explicitly in the dev-server
+ * exclude list — without that entry the SPA shell answers and every
+ * check reads unreachable.
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -57,7 +57,9 @@ export function HealthPanel() {
           </div>
         }
       />
-      <SettingsField label={t('settings.advanced.status')} hint={t('settings.advanced.statusHint')}>
+      {/* No hints under these labels. Each value says what it is, and the
+          prose that explained them read as noise beside a status pill. */}
+      <SettingsField label={t('settings.advanced.status')}>
         {!reachable ? (
           <Pill tone='bad'>{t('settings.advanced.unreachable')}</Pill>
         ) : health === null ? (
@@ -68,15 +70,15 @@ export function HealthPanel() {
           <Pill tone='warn'>{t('settings.advanced.degraded')}</Pill>
         )}
       </SettingsField>
-      <SettingsField label={t('settings.advanced.reportedVersion')} hint={t('settings.advanced.reportedVersionHint')}>
+      <SettingsField label={t('settings.advanced.reportedVersion')}>
         <span className='font-mono text-xs'>{health === null ? '–' : `v${health.version}`}</span>
       </SettingsField>
-      <SettingsField label={t('settings.advanced.uptime')} hint={t('settings.advanced.uptimeHint')}>
+      <SettingsField label={t('settings.advanced.uptime')}>
         <span className='font-mono text-xs tabular-nums'>
           {health === null ? '–' : fmtUptime(health.uptime_seconds)}
         </span>
       </SettingsField>
-      <SettingsField label={t('settings.advanced.dependencyChecks')} hint={t('settings.advanced.dependencyChecksHint')}>
+      <SettingsField label={t('settings.advanced.dependencyChecks')}>
         {health === null ? (
           <span className='text-[12px] text-muted-foreground'>{t('settings.advanced.nothingReported')}</span>
         ) : (

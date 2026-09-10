@@ -4,21 +4,20 @@
  * Two independent gates, and the screen's job is to make it obvious
  * which one is actually load-bearing:
  *
- *   /api/*  — Cloudflare Access when ACCESS_TEAM_DOMAIN + ACCESS_AUD are
- *             set (the assertion is verified against the team JWKS
- *             before any handler runs), otherwise the bootstrap token
- *             alone.
- *   /v1/*   — per-client access tokens, and only those: the bootstrap
- *             token is deliberately refused here, so a leaked master
- *             key cannot spend the subscription unattributably. This
- *             path has to be a Bypass app at the edge, because Claude
- *             Code, Codex and Gemini CLI cannot complete an interactive
- *             Access login. No tokens issued means no proxying at all.
+ *   /api/*  — a browser on this machine, which presents nothing, or a
+ *             Cloudflare Access assertion once ACCESS_TEAM_DOMAIN +
+ *             ACCESS_AUD are set (verified against the team JWKS before
+ *             any handler runs). Nothing else: there is no admin secret.
+ *   /v1/*   — per-client access tokens, and only those. This path has to
+ *             be a Bypass app at the edge, because Claude Code, Codex and
+ *             Gemini CLI cannot complete an interactive Access login. No
+ *             tokens issued means no proxying at all.
  *
- * `accessConfigured: false` on a deployment reachable from the internet
- * means one shared secret is the only thing in front of the admin API,
- * so it is stated at the top of the page rather than inferred from a
- * missing pill.
+ * `accessConfigured: false` means the admin API is closed to everything
+ * but this machine, so it is stated at the top of the page rather than
+ * inferred from a missing pill. And because a broken Access configuration
+ * shuts remote browsers out with no key to fall back on, the page says how
+ * to come in from the host before anyone needs to know.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
@@ -27,7 +26,6 @@ import { toast } from 'sonner'
 import { Pill, RButton } from '@/components/rialto/primitives'
 import { AccessConfigSection } from '@/components/rialto/settings/access/AccessConfigSection'
 import { GuardsCard } from '@/components/rialto/settings/access/GuardsCard'
-import { SectionHead } from '@/components/rialto/settings/fields'
 import { SettingsField, SettingsLayout } from '@/components/rialto/settings/SettingsLayout'
 import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
 import { api, type IdentityResponse } from '@/lib/api'
@@ -38,13 +36,17 @@ import {
   normalizeAccessInput,
   sameAccessInput
 } from '@/lib/rialto/settings/access-config'
-import { type EnvelopeWire, SECRET_MASK } from '@/lib/rialto/settings/envelope'
+import type { EnvelopeWire } from '@/lib/rialto/settings/envelope'
 
 const ZERO_TRUST_URL = 'https://one.dash.cloudflare.com/'
 
-// Three ways in, and they are not interchangeable. Reporting a local
-// request as "bootstrap token" claimed a credential had been checked
-// when none was presented at all.
+// ConfigEnvelopeSchema's own PORT default, for the recovery command while
+// the envelope has not loaded yet.
+const DEFAULT_PORT = 3456
+
+// Two ways in, and they are not interchangeable. Reporting a local
+// request as a verified identity would claim a credential had been
+// checked when none was presented at all.
 const VIA = {
   cloudflare_access: {
     icon: 'ri-shield-check-line text-sm text-emerald-600 dark:text-emerald-400',
@@ -57,12 +59,6 @@ const VIA = {
     fallbackKey: 'settings.access.viaThisMachine',
     pillTone: 'mute',
     pillKey: 'settings.access.pillNoCredential'
-  },
-  token: {
-    icon: 'ri-key-2-line text-sm text-muted-foreground',
-    fallbackKey: 'settings.access.viaBootstrapToken',
-    pillTone: 'mute',
-    pillKey: 'settings.access.pillNoIdentity'
   }
 } as const
 
@@ -82,40 +78,22 @@ function SignedInAs({ identity }: { identity: IdentityResponse | null }) {
 }
 
 /**
- * The exposure statement.
+ * The closed statement.
  *
  * One line by design: the mock has nothing in this position, so a block
- * here displaces the whole page. The sentence that earns the space is
- * "anyone holding it has full administrative control" — what that covers
- * is spelled out in the guards card below.
+ * here displaces the whole page. With Access unconfigured nothing is
+ * exposed — only this machine can reach /api/* — so it reads as a lock,
+ * not a warning.
  */
-function ExposureNotice({ identity, apiKey }: { identity: IdentityResponse; apiKey: string }) {
+function ClosedNotice({ identity }: { identity: IdentityResponse }) {
   if (identity.accessConfigured) return null
-  // Which sentence is true depends on whether a bootstrap token exists.
-  // With none — the fresh-install default, since createDefaultConfig
-  // stopped minting one — warning that "the bootstrap token alone gates
-  // /api/*" describes a credential that is not there, and points the
-  // operator at Cloudflare setup when nothing is actually exposed.
-  const exposed = apiKey.length > 0
   return (
     <div className='px-6 pt-1 pb-3'>
-      <div
-        className={
-          exposed
-            ? 'flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-2 text-[12px] leading-relaxed'
-            : 'flex items-center gap-2 rounded-md border border-border px-4 py-2 text-[12px] leading-relaxed text-muted-foreground'
-        }
-      >
-        <i
-          className={
-            exposed
-              ? 'ri-alert-line shrink-0 text-sm text-amber-600 dark:text-amber-400'
-              : 'ri-lock-line shrink-0 text-sm'
-          }
-        />
+      <div className='flex items-center gap-2 rounded-md border border-border px-4 py-2 text-[12px] leading-relaxed text-muted-foreground'>
+        <i className='ri-lock-line shrink-0 text-sm' />
         <span>
           <Trans
-            i18nKey={exposed ? 'settings.access.exposureNotice' : 'settings.access.closedNotice'}
+            i18nKey='settings.access.closedNotice'
             components={{ strong: <span className='font-medium' />, mono: <span className='font-mono' /> }}
           />
         </span>
@@ -124,51 +102,40 @@ function ExposureNotice({ identity, apiKey }: { identity: IdentityResponse; apiK
   )
 }
 
-function BootstrapTokenSection({ apiKey }: { apiKey: string }) {
+/**
+ * The way back in when Access itself is what broke.
+ *
+ * A bootstrap token used to sit here, kept for exactly that outage. It was
+ * a master key for /api/* that got past Access for whoever read it out of
+ * config.json, a backup or shell history, and the outage already had a way
+ * in that needs no secret: a request made on the host skips the gate, and
+ * that check reads neither Access nor the database. So the row says how to
+ * be on the host instead of holding a key.
+ */
+function RecoveryPath({ port }: { port: number }) {
   const { t } = useTranslation()
-  const [revealed, setRevealed] = useState(false)
-  const present = apiKey.length > 0
-
-  const copy = () => {
-    navigator.clipboard
-      .writeText(apiKey)
-      .then(() => toast.success(t('settings.access.tokenCopied')))
-      .catch(() => toast.error(t('settings.access.clipboardRefused')))
-  }
-
   return (
-    <>
-      <SectionHead
-        title={t('settings.access.bootstrapTitle')}
-        lead={<Pill tone='mute'>{t('settings.access.envelope')}</Pill>}
-        meta={t('settings.access.bootstrapMeta')}
-      />
-      <SettingsField label={t('settings.access.apikey')} hint={t('settings.access.apikeyHint')}>
-        <div className='flex items-center gap-2'>
-          <div className='flex h-8 max-w-md flex-1 items-center overflow-hidden rounded-md border border-border px-3 font-mono text-xs'>
-            {!present ? t('providers.credentials.notSet') : revealed ? apiKey : SECRET_MASK}
-          </div>
-          <RButton
-            variant='ghost'
-            icon={revealed ? 'ri-eye-off-line' : 'ri-eye-line'}
-            onClick={() => setRevealed(!revealed)}
-            disabled={!present}
-          >
-            {revealed ? t('providers.credentials.hide') : t('providers.credentials.reveal')}
-          </RButton>
-          <RButton variant='ghost' icon='ri-file-copy-line' onClick={copy} disabled={!present}>
-            {t('common.copy')}
-          </RButton>
+    <SettingsField label={t('settings.access.recoveryTitle')} hint={t('settings.access.recoveryHint')}>
+      <div className='space-y-1.5'>
+        <div className='flex h-8 max-w-md items-center rounded-md border border-border px-3 font-mono text-xs'>
+          {`ssh -L ${port}:localhost:${port} <host>`}
         </div>
-      </SettingsField>
-    </>
+        <p className='text-[12px] leading-relaxed text-muted-foreground'>
+          <Trans
+            i18nKey='settings.access.recoveryBody'
+            values={{ port }}
+            components={{ mono: <span className='font-mono' /> }}
+          />
+        </p>
+      </div>
+    </SettingsField>
   )
 }
 
 function PolicyCoverage() {
   const { t } = useTranslation()
   return (
-    <SettingsField label={t('settings.access.policyCoverage')} hint={t('settings.access.policyCoverageHint')}>
+    <SettingsField label={t('settings.access.policyCoverage')}>
       <div className='space-y-2'>
         <div className='rounded-md border border-dashed border-border px-3 py-1.5 text-[12px] text-muted-foreground'>
           <i className='ri-tools-line mr-1 align-[-1px]' />
@@ -192,7 +159,7 @@ export function SettingsAccess() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [identity, setIdentity] = useState<IdentityResponse | null>(null)
-  const [apiKey, setApiKey] = useState('')
+  const [port, setPort] = useState(DEFAULT_PORT)
   const [saved, setSaved] = useState<AccessInput | null>(null)
   const [draft, setDraft] = useState<AccessInput>({ teamDomain: '', aud: '' })
   const [check, setCheck] = useState<AccessCheckResponse | null>(null)
@@ -206,7 +173,7 @@ export function SettingsAccess() {
     api
       .get<EnvelopeWire>('/config')
       .then((res) => {
-        setApiKey(typeof res.APIKEY === 'string' ? res.APIKEY : '')
+        setPort(typeof res.PORT === 'number' ? res.PORT : DEFAULT_PORT)
         const next: AccessInput = {
           teamDomain: typeof res.ACCESS_TEAM_DOMAIN === 'string' ? res.ACCESS_TEAM_DOMAIN : '',
           aud: typeof res.ACCESS_AUD === 'string' ? res.ACCESS_AUD : ''
@@ -326,9 +293,11 @@ export function SettingsAccess() {
         </div>
       }
     >
-      {identity === null ? null : <ExposureNotice identity={identity} apiKey={apiKey} />}
+      {identity === null ? null : <ClosedNotice identity={identity} />}
 
-      <SettingsField label={t('settings.access.signedInAs')} hint={t('settings.access.signedInAsHint')}>
+      {/* No hint under the label: how the caller was verified is the
+          gate's business, and the pill beside the name already says it. */}
+      <SettingsField label={t('settings.access.signedInAs')}>
         <SignedInAs identity={identity} />
       </SettingsField>
 
@@ -349,7 +318,7 @@ export function SettingsAccess() {
 
       <PolicyCoverage />
 
-      <BootstrapTokenSection apiKey={apiKey} />
+      <RecoveryPath port={port} />
 
       <div className='px-6 pb-2'>
         <GuardsCard />

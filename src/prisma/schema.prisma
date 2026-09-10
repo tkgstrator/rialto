@@ -548,9 +548,9 @@ model RequestLog {
   // and Overview / Activity break traffic down per surface. Null on rows
   // written before this landed (untracked, not backfillable).
   surface          String?
-  // Which AccessToken served the request, when one did. Null for
-  // traffic authenticated by the envelope bootstrap token and for rows
-  // written before tokens existed. Not a foreign key: a token may be
+  // Which AccessToken served the request, when one did. Null for rows
+  // written before tokens existed, and for traffic on the since-removed
+  // envelope bootstrap token. Not a foreign key: a token may be
   // deleted outright, and losing the attribution is worse than keeping
   // a dangling id that still tells you the requests came from one
   // client.

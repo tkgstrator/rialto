@@ -24,7 +24,7 @@ function newRoot(): string {
 function seedLegacy(root: string): string {
   const legacy = join(root, LEGACY_HOME_DIR_NAME)
   mkdirSync(join(legacy, 'logs'), { recursive: true })
-  writeFileSync(join(legacy, 'config.json'), JSON.stringify({ PORT: 3456, APIKEY: 'keep-me' }))
+  writeFileSync(join(legacy, 'config.json'), JSON.stringify({ PORT: 3456, LOG_LEVEL: 'debug' }))
   writeFileSync(join(legacy, 'logs', 'ccr-2026-08-31.log'), 'line\n')
   return legacy
 }
@@ -43,7 +43,7 @@ describe('migrateHomeDir', () => {
     expect(result.outcome).toBe('moved')
     expect(result.fileCount).toBe(2)
     const moved = JSON.parse(readFileSync(join(root, HOME_DIR_NAME, 'config.json'), 'utf-8'))
-    expect(moved.APIKEY).toBe('keep-me')
+    expect(moved.LOG_LEVEL).toBe('debug')
     expect(existsSync(join(root, HOME_DIR_NAME, 'logs', 'ccr-2026-08-31.log'))).toBe(true)
   })
 
@@ -61,14 +61,14 @@ describe('migrateHomeDir', () => {
     const root = newRoot()
     seedLegacy(root)
     mkdirSync(join(root, HOME_DIR_NAME))
-    writeFileSync(join(root, HOME_DIR_NAME, 'config.json'), JSON.stringify({ APIKEY: 'current' }))
+    writeFileSync(join(root, HOME_DIR_NAME, 'config.json'), JSON.stringify({ LOG_LEVEL: 'warn' }))
 
     const result = await migrateHomeDir(root)
 
     expect(result.outcome).toBe('already-migrated')
     // The live config must survive: overwriting it with an older copy
     // would be the migration destroying the thing it exists to preserve.
-    expect(JSON.parse(readFileSync(join(root, HOME_DIR_NAME, 'config.json'), 'utf-8')).APIKEY).toBe('current')
+    expect(JSON.parse(readFileSync(join(root, HOME_DIR_NAME, 'config.json'), 'utf-8')).LOG_LEVEL).toBe('warn')
   })
 
   test('is idempotent — running twice changes nothing the second time', async () => {

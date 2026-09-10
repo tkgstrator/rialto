@@ -1,11 +1,11 @@
 /**
  * Regression: bypass-mode header passthrough used to forward the
  * client's own `Authorization` (which for Rialto is the caller's Rialto
- * APIKEY, not any upstream credential). buildRequestHeaders set
+ * access token, not any upstream credential). buildRequestHeaders set
  * `Authorization: Bearer <provider.api_key>` first, then spread the
  * inbound header set on top — the lowercase `authorization` in the
  * spread overwrote the correct default, so OpenAI upstream received
- * the Rialto APIKEY as its Bearer and 400'd with "Incorrect API key".
+ * the Rialto credential as its Bearer and 400'd with "Incorrect API key".
  *
  * The strip now also targets x-api-key (Anthropic idiom) for the
  * same reason. content-length + accept-encoding stripping (hop-by-hop

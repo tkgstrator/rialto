@@ -7,8 +7,7 @@
  *
  * There is no Copy and no Raw here any more. Both belonged to the group
  * pane: Copy took the open group's lines and Raw swapped the rendered
- * group for its JSON. With one flat list there is no group to take, and
- * the whole file is one click away under Download.
+ * group for its JSON. With one flat list there is no group to take.
  */
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'

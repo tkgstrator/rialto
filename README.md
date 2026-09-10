@@ -35,7 +35,7 @@ The web UI (served on port **3456** by default) gives you full control over ever
 | **Providers** | `/providers` | Two lists — `/providers/subscriptions` and `/providers/api-keys` — plus `/providers/connect` to add one and `/providers/<name>` for models, prices, context windows, connectivity tests and the read-only derived request shape |
 | **Access tokens** | `/access-tokens` | Issue, scope, rotate and revoke the tokens clients use on `/v1/*` |
 | **Activity** | `/activity` | Sessions, per-request logs (`/activity/requests`), subscription usage (`/activity/usage`), and server logs (`/activity/logs`) |
-| **Settings** | `/settings` | Server, Access (admin access: Cloudflare Access and the break-glass `APIKEY`), Logging, Personas, Status line, Advanced (config document, health) |
+| **Settings** | `/settings` | Server, Access (admin access: Cloudflare Access, and how to get back in if it breaks), Logging, Personas, Status line, Advanced (config document, health) |
 
 First run lands on `/setup`.
 
@@ -55,26 +55,13 @@ curl -fsSL https://raw.githubusercontent.com/tkgstrator/rialto/master/compose.ya
 
 The compose file runs `ghcr.io/tkgstrator/rialto:latest` with PostgreSQL and Redis, publishes port `3456`, and bind-mounts `./rialto-config` as the container's `~/.rialto` — that directory is where `config.json` lives on the host. It also mounts `~/.claude` and `~/.codex` for the CLI credential files; drop those two lines if you only use API-key providers.
 
-**Step 2 — (Optional) Set a break-glass admin key:**
+A config file is created for you on first boot, so there is nothing to write before starting. Every envelope scalar can also be supplied as an environment variable on the `rialto` service (`PORT`, `LOG_LEVEL`, …); a set environment value wins over the file.
 
-A config file is created for you on first boot. You only need to write one yourself if you want a break-glass admin key:
-
-```shell
-mkdir -p rialto-config
-cat > rialto-config/config.json << 'EOF'
-{
-  "APIKEY": "your-secret-key"
-}
-EOF
-```
-
-Every envelope scalar can also be supplied as an environment variable on the `rialto` service (`APIKEY`, `PORT`, `LOG_LEVEL`, …); a set environment value wins over the file.
-
-> **`APIKEY` is optional and no longer generated for you.** A browser on the machine Rialto runs on is exempt from the admin gate, and remote admin access is meant to go through Cloudflare Access. Set `APIKEY` deliberately when you want a recovery path that survives an Access outage — it guards `/api/*` only.
+> **There is no admin key.** A browser on the machine Rialto runs on is exempt from the admin gate, and remote admin access goes through Cloudflare Access. If Access breaks, SSH to the host and forward the port — see [Public deployment](#-public-deployment).
 >
-> **It never authenticates `/v1/*`.** Clients call the proxy with an *access token* you issue under **Access tokens** — individually revocable, attributable per request, and scopeable to surfaces and a routing profile. An install with no tokens issued cannot proxy.
+> **`/v1/*` takes access tokens only.** Clients call the proxy with an *access token* you issue under **Access tokens** — individually revocable, attributable per request, and scopeable to surfaces and a routing profile. An install with no tokens issued cannot proxy.
 
-**Step 3 — Start the services:**
+**Step 2 — Start the services:**
 
 ```shell
 docker compose up -d
@@ -82,7 +69,7 @@ docker compose up -d
 
 The entrypoint applies pending Prisma migrations and the seed before the server starts. The server then listens at `http://127.0.0.1:3456`. Open that URL in a browser and use the **Providers** and **Routing** pages to finish configuration. Then issue a token under **Access tokens** — that is what your clients authenticate with.
 
-**Step 4 — Point Claude Code at the gateway:**
+**Step 3 — Point Claude Code at the gateway:**
 
 ```shell
 ANTHROPIC_BASE_URL=http://127.0.0.1:3456 ANTHROPIC_AUTH_TOKEN=rialto_your-access-token claude
@@ -95,7 +82,7 @@ export ANTHROPIC_BASE_URL=http://127.0.0.1:3456
 export ANTHROPIC_AUTH_TOKEN=rialto_your-access-token
 ```
 
-**Step 5 — Turn routing on for the surface you use:**
+**Step 4 — Turn routing on for the surface you use:**
 
 Every surface ships in `passthrough` mode, where the caller's own `body.model` is used verbatim. Switch `/v1/messages` (or whichever surface you point at) to `routed` on the **Routing** page once you have something to route to. See [Inbound surfaces](#-inbound-surfaces) below.
 
@@ -144,7 +131,7 @@ Rialto is not only a Claude Code proxy. Four wire formats are accepted on the fr
 
 `GET /v1/models` and `POST /v1/messages/count_tokens` are catalog reads rather than completion surfaces, so they are not among the four — but they answer in the calling SDK's credential convention and error envelope, and a token scoped to some surfaces may still call them.
 
-Whichever surface a request arrives on, the credential must be an **issued access token**. The envelope `APIKEY` is accepted on `/api/*` only.
+Whichever surface a request arrives on, the credential must be an **issued access token**. Nothing else is accepted.
 
 ### Routing mode
 
@@ -165,7 +152,6 @@ Boot-time scalars and disk-resident objects live here. Environment-variable inte
 
 | Key | Description |
 |-----|-------------|
-| `APIKEY` | Optional break-glass secret for `/api/*`. Sent as `x-api-key` or `Authorization: Bearer`. Never accepted on `/v1/*`. Not generated for you |
 | `HOST` | Listen address (default: `127.0.0.1`) |
 | `PORT` | Listen port (default: `3456`) |
 | `ACCESS_TEAM_DOMAIN` | Cloudflare Access team domain. With `ACCESS_AUD`, verifies the Access assertion on `/api/*` |
@@ -187,7 +173,7 @@ Boot-time scalars and disk-resident objects live here. Environment-variable inte
 
 The scalar keys above (everything but `Personas`, `ActivePersona` and `StatusLine`) can also be supplied as process environment variables — a Docker `environment:` entry, for instance — and a set environment value wins over the file.
 
-Keys an older build wrote for routing mechanisms that no longer exist are ignored. `Router`, `CUSTOM_ROUTER_PATH`, `LiveRoutingName` and `CROSS_PROVIDER_FALLBACK` are stripped on every read; `POST /api/config` drops them with a warning, and the next save removes them from the file. `ROUTER_MODE` merely survives as an unknown key and is read by nothing.
+Keys an older build wrote for mechanisms that no longer exist are ignored. `Router`, `CUSTOM_ROUTER_PATH`, `LiveRoutingName`, `CROSS_PROVIDER_FALLBACK` and the retired admin key `APIKEY` are stripped on every read; `POST /api/config` drops them with a warning, and the next save removes them from the file. An `APIKEY` environment variable is not read either. `ROUTER_MODE` merely survives as an unknown key and is read by nothing.
 
 ### Providers, models and the chain (database)
 
@@ -314,7 +300,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="http://localhost:3456/v1",
-    api_key="rialto_your-access-token",   # Access tokens screen. NOT the APIKEY.
+    api_key="rialto_your-access-token",   # Access tokens screen
 )
 
 # 1. Discover routable models
@@ -366,6 +352,14 @@ The files are readable from **Activity → Logs** in the UI. There is no separat
 ## 🌐 Public deployment
 
 Exposing Rialto through a tunnel needs `/api/*` and `/v1/*` treated differently — the first behind Cloudflare Access, the second bypassed at the edge and guarded by issued tokens alone. The full setup, and the failure modes that make CLI clients hang on a login page, are in [docs/guides/public-deployment.md](docs/guides/public-deployment.md) (Japanese).
+
+**If you get locked out** (Access broken or misconfigured, `config.json` quarantined, Postgres down), there is no admin key to fall back on — and none is needed. SSH to the host, forward the port, and open `http://localhost:3456`:
+
+```shell
+ssh -L 3456:localhost:3456 <host>
+```
+
+A request made on the host is exempt from the admin gate, and that check reads neither Access nor the database. On Docker, publish the port on the host (loopback is enough) and do the same. The one setting that closes this door is `RIALTO_TRUST_LOCAL=false`.
 
 ## ⬆️ Upgrading from the pre-rename build
 

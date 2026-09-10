@@ -1,24 +1,9 @@
-import { createHash, timingSafeEqual } from 'node:crypto'
 import type { MiddlewareHandler } from 'hono'
 import './context'
 import { catalogPathFor, type SurfaceAuth, type SurfaceErrorShape, surfaceForPath } from '../llms/inbound/surfaces'
 import { noteTokenUse, resolveAccessToken } from '../services/access-token-service'
 import { readAccessConfig, verifyAccessJwt } from '../services/cloudflare-access'
 import { isLocalRequest } from './local-access'
-
-// SHA-256 both sides before comparing: fixed-length digests make
-// timingSafeEqual safe (it throws on length mismatch and would
-// otherwise leak the secret's length).
-const digest = (s: string): Buffer => createHash('sha256').update(s).digest()
-
-// Routes that accept the API key as an `apikey` URL query parameter in
-// addition to the standard `x-api-key` / `Authorization: Bearer` headers.
-// EventSource cannot send custom headers so SSE endpoints have to take
-// the key on the URL, but exposing it on every route would mean
-// accidental leakage via access logs, browser history, and the Referer
-// header. Keep this allow-list as narrow as possible — only the
-// EventSource endpoints that genuinely need it.
-const ALLOW_API_KEY_QUERY_PARAM = new Set<string>(['/api/request-logs/events'])
 
 interface ApiKeyAuthOptions {
   // Which credential convention this surface accepts. Deliberately one
@@ -41,7 +26,7 @@ function unauthorizedResponse(
   // The proxy and the admin API fail for different reasons and have
   // different remedies, and the operator reads this text in a CLI where
   // it is the only diagnostic they get.
-  message = 'Invalid or missing API key'
+  message: string
 ): {
   status: 401
   body: Record<string, unknown>
@@ -71,50 +56,53 @@ const PROXY_UNAUTHORIZED =
 
 const PROXY_WRONG_SURFACE = 'This access token is not scoped to this endpoint.'
 
+// There is no admin credential a caller could have sent instead, so the
+// refusal names the two ways in rather than asking for a key.
+const ADMIN_UNAUTHORIZED =
+  'Not a request from the machine Rialto runs on, and no verified Cloudflare Access assertion. Open Rialto on that machine, or through your Access application.'
+
 // Pull the presented secret off whichever header this surface accepts.
 // Fails closed: an absent or unreadable credential returns the empty
 // string, which matches nothing.
 //
 // Bearer is read on every convention: it is the one header all three
-// client families can send, and it is what the admin gate has always
-// taken. The convention only decides which ADDITIONAL header is read —
-// `x-api-key` for Anthropic callers, `x-goog-api-key` / `?key=` for
-// Google ones — so a caller never gets in by presenting a neighbouring
-// surface's header.
+// client families can send. The convention only decides which ADDITIONAL
+// header is read — `x-api-key` for Anthropic callers, `x-goog-api-key` /
+// `?key=` for Google ones — so a caller never gets in by presenting a
+// neighbouring surface's header.
 function presentedSecret(c: Parameters<MiddlewareHandler>[0], credential: SurfaceAuth): string {
   const bearer = c.req.header('authorization')?.replace(/^Bearer\s+/i, '')
-  const queryKey = ALLOW_API_KEY_QUERY_PARAM.has(c.req.path) ? c.req.query('apikey') : undefined
   const xApiKey = credential === 'x-api-key' ? c.req.header('x-api-key') : undefined
   // Google's own SDKs send `x-goog-api-key`; its REST docs send `?key=`.
-  // The query form is only read on this surface for that reason — see
-  // ALLOW_API_KEY_QUERY_PARAM above for why URL-borne secrets are
-  // otherwise refused. `accessLog` logs `c.req.path`, never the query,
-  // so the token does not reach the log file from here.
+  // The query form is read on this surface only: a URL-borne secret leaks
+  // through access logs, browser history and the Referer header, and
+  // Google's convention is the one that leaves no alternative. `accessLog`
+  // logs `c.req.path`, never the query, so the token does not reach the
+  // log file from here.
   const googKey = credential === 'google' ? (c.req.header('x-goog-api-key') ?? c.req.query('key')) : undefined
-  return (xApiKey ?? googKey ?? bearer ?? queryKey ?? '').trim()
-}
-
-// Does the presented value match the envelope bootstrap token?
-function matchesBootstrapToken(provided: string): boolean {
-  const expected = (process.env.APIKEY ?? '').trim()
-  return expected.length > 0 && provided.length > 0 && timingSafeEqual(digest(provided), digest(expected))
+  return (xApiKey ?? googKey ?? bearer ?? '').trim()
 }
 
 /**
  * Gate for /api/* — the admin surface.
  *
- * Cloudflare Access is the intended front door once ACCESS_TEAM_DOMAIN
- * and ACCESS_AUD are set: the edge authenticates a human and forwards a
- * signed assertion, which is verified here against the team JWKS. The
- * header is never trusted on its own, because an origin reachable
- * directly can be handed a forged one.
+ * Two ways in, and no credential of its own:
  *
- * The bootstrap token stays as a second path, deliberately. Access in
- * front of a tunnel is one outage away from locking the operator out of
- * their own admin UI, and Postgres being down must not do the same. It
- * is the recovery path, not the primary one.
+ * - A request made on the machine Rialto runs on (`local-access.ts`),
+ *   which presents nothing.
+ * - A Cloudflare Access assertion, once ACCESS_TEAM_DOMAIN and ACCESS_AUD
+ *   are set: the edge authenticates a human and forwards a signed
+ *   assertion, which is verified here against the team JWKS. The header is
+ *   never trusted on its own, because an origin reachable directly can be
+ *   handed a forged one.
  *
- * With Access unconfigured this is exactly the previous behaviour.
+ * There used to be a third, the envelope `APIKEY`, kept as the way back in
+ * when Access or Postgres was down. It was a master key for /api/* that
+ * got past Access for whoever read it out of config.json, a backup or
+ * shell history — and both outages already have a way back in that needs
+ * no secret. The local exemption reads neither Access nor the database, so
+ * an operator who can reach the host (an SSH port-forward will do) can
+ * always reach the admin UI.
  */
 export const adminAuth: MiddlewareHandler = async (c, next) => {
   // A browser on the machine Rialto runs on does not have to
@@ -126,48 +114,33 @@ export const adminAuth: MiddlewareHandler = async (c, next) => {
   }
 
   const config = readAccessConfig()
-  if (config !== null) {
-    const assertion = c.req.header('cf-access-jwt-assertion')
-    if (typeof assertion === 'string' && assertion.length > 0) {
-      const identity = await verifyAccessJwt(assertion, config)
-      if (identity !== null) {
-        c.set('authVia', 'cloudflare_access')
-        c.set('accessEmail', identity.email)
-        return next()
-      }
-      // A present-but-invalid assertion is an attempt, not a fallback.
-      // Falling through to the bootstrap token here would let anyone who
-      // learned the token bypass Access entirely while looking like a
-      // verified user.
-      const err = unauthorizedResponse('anthropic')
-      return c.json(err.body, err.status)
+  const assertion = c.req.header('cf-access-jwt-assertion')
+  if (config !== null && typeof assertion === 'string' && assertion.length > 0) {
+    const identity = await verifyAccessJwt(assertion, config)
+    if (identity !== null) {
+      c.set('authVia', 'cloudflare_access')
+      c.set('accessEmail', identity.email)
+      return next()
     }
   }
 
-  // The admin gate is not a surface: it takes `x-api-key` or Bearer,
-  // which is what every /api client has always sent.
-  if (!matchesBootstrapToken(presentedSecret(c, 'x-api-key'))) {
-    const err = unauthorizedResponse('anthropic')
-    return c.json(err.body, err.status)
-  }
-  c.set('authVia', 'token')
-  return next()
+  const err = unauthorizedResponse('anthropic', ADMIN_UNAUTHORIZED)
+  return c.json(err.body, err.status)
 }
 
 /**
  * Gate for /v1/* — the billable proxy. Issued tokens only.
  *
- * The envelope bootstrap token is deliberately NOT accepted here. At
- * the edge this path is a Bypass policy, because CLI clients cannot do
+ * At the edge this path is a Bypass policy, because CLI clients cannot do
  * an interactive Access login — so whatever this middleware accepts is
  * the only thing standing in front of the operator's subscription and
- * API credits. A master key that also works here would be a second
- * route to that: unrevocable without cutting off every client at once,
- * and unattributable, which is the whole reason issued tokens exist.
+ * API credits. An issued token can be revoked on its own and is recorded
+ * against every request it makes, which is the whole reason tokens exist;
+ * nothing else opens this path.
  *
  * The consequence is that a fresh install cannot proxy until a token is
  * issued. That is the intended shape: closed until someone decides who
- * may call, rather than open to whoever holds the admin key.
+ * may call.
  *
  * The resolved token is stashed on the context for the route to record
  * against the request and to read its routing scope from.
