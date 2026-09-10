@@ -4,6 +4,7 @@
 
 import { createRoute } from '@hono/zod-openapi'
 import { getPrismaClient } from '../../db/client'
+import dayjs from '../../lib/dayjs'
 import {
   RequestLogIdParamSchema,
   RequestLogsDeleteOneResponseSchema,
@@ -31,11 +32,16 @@ const getRequestLogsRoute = createRoute({
 })
 
 requestLogsRoute.openapi(getRequestLogsRoute, async (c) => {
-  const { limit, offset } = c.req.valid('query')
+  const { limit, offset, sinceHours } = c.req.valid('query')
   const prisma = getPrismaClient()
+  // `total` counts the same population the page is drawn from, so the
+  // screen can say "25 of 18,742 in the last 24h" without the two halves
+  // of that sentence coming from different windows. Rides
+  // `@@index([createdAt])`.
+  const where = sinceHours === 0 ? {} : { createdAt: { gte: dayjs().subtract(sinceHours, 'hour').toDate() } }
   const [total, logs] = await Promise.all([
-    prisma.requestLog.count(),
-    prisma.requestLog.findMany({ orderBy: { createdAt: 'desc' }, take: limit, skip: offset })
+    prisma.requestLog.count({ where }),
+    prisma.requestLog.findMany({ where, orderBy: { createdAt: 'desc' }, take: limit, skip: offset })
   ])
   const pairs = [...new Set(logs.map((l) => `${l.provider}||${l.model}`))]
   const priceMap = await buildPriceMap(prisma, pairs)

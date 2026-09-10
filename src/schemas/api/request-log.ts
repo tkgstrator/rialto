@@ -72,10 +72,45 @@ export const RequestLogItemSchema = z.object({
   totalCostUsd: z.number().nullable()
 })
 
-// Paginated list/sessions query params: ?limit&offset.
+// Paginated list query params: ?limit&offset&sinceHours.
 export const RequestLogsListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(200),
-  offset: z.coerce.number().int().min(0).default(0)
+  offset: z.coerce.number().int().min(0).default(0),
+  // Only return rows created within the last N hours (0 = no time
+  // limit). Defaults to 0 so callers that just want the archive's size
+  // keep the answer they had; the Requests screen passes its selected
+  // range, which is what makes `total` a count of the window rather
+  // than of everything ever logged.
+  sinceHours: z.coerce.number().int().min(0).max(8760).default(0)
+})
+
+// Window aggregate query params: ?sinceHours (0 = the whole archive).
+export const RequestLogStatsQuerySchema = z.object({
+  sinceHours: z.coerce.number().int().min(0).max(8760).default(24)
+})
+
+/**
+ * Status mix and latency spread over a time window.
+ *
+ * Separate from the list response because the two answer different
+ * questions and are read at different sizes: the list hands back one
+ * page, this summarises every row in the window. Computing it in the
+ * browser from the page — which is what the Requests screen used to do —
+ * produced tiles that described 25 rows while claiming to describe the
+ * last 24 hours.
+ *
+ * `p50` / `p95` are null when the window holds no row with a measured
+ * duration: a 429 never reaches an upstream, so it has no latency to
+ * contribute, and a window of nothing but 429s has no percentile rather
+ * than a zero one.
+ */
+export const RequestLogStatsResponseSchema = z.object({
+  total: z.number().int().nonnegative(),
+  ok: z.number().int().nonnegative(),
+  rateLimited: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  p50: z.number().nullable(),
+  p95: z.number().nullable()
 })
 
 export const RequestLogsSessionsQuerySchema = z.object({

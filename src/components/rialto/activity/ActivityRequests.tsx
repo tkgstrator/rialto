@@ -10,7 +10,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { useConfig } from '@/components/ConfigProvider'
-import { type ActivityRequestLog, downloadCsv, fetchRequestLogs, percentile } from '@/components/rialto/activity/data'
+import {
+  type ActivityRequestLog,
+  fetchRequestLogStats,
+  fetchRequestLogs,
+  type RequestLogStats
+} from '@/components/rialto/activity/data'
 import { COLUMNS, type ColumnId, ColumnMenu, RequestsTable } from '@/components/rialto/activity/RequestsTable'
 import {
   applyFilters,
@@ -19,6 +24,7 @@ import {
   options,
   RANGES,
   type Row,
+  rangeHours,
   statusOptions
 } from '@/components/rialto/activity/requests-rows'
 import { FilterSelect, NoteBox, ScreenMessage, StatTile } from '@/components/rialto/activity/shared'
@@ -49,31 +55,19 @@ const tokenNameOf = (id: string | null, names: Map<string, string>, fallback: st
 // One refetch per burst: a busy stream fires an event per completed call.
 const LIVE_REFRESH_MS = 2000
 
-interface Counts {
-  total: number
-  ok: number
-  rateLimited: number
-  failed: number
-  p50: number | null
-  p95: number | null
-}
-
-function summarise(rows: Row[]): Counts {
-  const statuses = rows.map((r) => r.log.status)
-  const durations = rows.filter((r) => r.log.durationMs > 0).map((r) => r.log.durationMs)
-  durations.sort((a, b) => a - b)
-  return {
-    total: rows.length,
-    ok: statuses.filter((s) => s >= 200 && s < 300).length,
-    rateLimited: statuses.filter((s) => s === 429).length,
-    failed: statuses.filter((s) => s >= 400 && s !== 429).length,
-    p50: percentile(durations, 50),
-    p95: percentile(durations, 95)
-  }
-}
-
-function StatsRow({ counts, rangeLabel }: { counts: Counts; rangeLabel: string }) {
+/**
+ * The window's numbers, not the page's.
+ *
+ * `summarise` used to fold these out of the rows the table was showing,
+ * so every tile described one page — 25 rows — while the first one was
+ * labelled with the selected range. The aggregate now comes from the
+ * server, which can see the whole window.
+ *
+ * `stats` is null only until the first response lands.
+ */
+function StatsRow({ stats, rangeLabel }: { stats: RequestLogStats | null; rangeLabel: string }) {
   const { t } = useTranslation()
+  const counts: RequestLogStats = stats === null ? EMPTY_STATS : stats
   const share = (n: number): string => (counts.total === 0 ? '–' : fmtRate(n / counts.total))
   return (
     <div className='grid grid-cols-5 gap-px border-b border-border px-6 py-4'>
@@ -101,12 +95,14 @@ function StatsRow({ counts, rangeLabel }: { counts: Counts; rangeLabel: string }
   )
 }
 
+const EMPTY_STATS: RequestLogStats = { total: 0, ok: 0, rateLimited: 0, failed: 0, p50: null, p95: null }
+
 export function ActivityRequests() {
   const { t } = useTranslation()
   const [page, setPage] = useState<{ items: ActivityRequestLog[]; total: number } | null>(null)
+  const [stats, setStats] = useState<RequestLogStats | null>(null)
   const [pageIndex, setPageIndex] = useState(0)
   const [error, setError] = useState<string | null>(null)
-  const [now, setNow] = useState(Date.now())
   // The mock ships this screen tailing: a request log that does not move
   // while requests are being served is the wrong default.
   const [live, setLive] = useState(true)
@@ -142,15 +138,24 @@ export function ActivityRequests() {
   }, [])
   const _tabCounts = useActivityCounts()
 
+  const hours = rangeHours(filters.range)
+
   const load = useCallback(() => {
-    fetchRequestLogs(PAGE_SIZE, pageIndex * PAGE_SIZE)
+    // Two calls, one window. The page is what the table draws; the
+    // aggregate is what the tiles claim, and it has to come from the
+    // server because the window is bigger than any page.
+    fetchRequestLogs(PAGE_SIZE, pageIndex * PAGE_SIZE, hours)
       .then((res) => {
         setPage(res)
-        setNow(Date.now())
         setError(null)
       })
       .catch((e: Error) => setError(e.message))
-  }, [pageIndex])
+    fetchRequestLogStats(hours)
+      .then(setStats)
+      // A missing aggregate leaves the tiles at their last good values
+      // rather than replacing the table's error with a second one.
+      .catch(() => {})
+  }, [pageIndex, hours])
 
   useEffect(load, [load])
 
@@ -199,8 +204,7 @@ export function ActivityRequests() {
     }))
   }, [page, surfaces.pathOf, surfaces.clientOf, tokenNames])
 
-  const visible = useMemo(() => applyFilters(rows, filters, now), [rows, filters, now])
-  const counts = useMemo(() => summarise(visible), [visible])
+  const visible = useMemo(() => applyFilters(rows, filters), [rows, filters])
   const columns = useMemo(() => COLUMNS.filter((c) => !hidden.has(c.id)), [hidden])
 
   const range = RANGES.find((r) => r.id === filters.range)
@@ -215,29 +219,10 @@ export function ActivityRequests() {
     page === null
       ? undefined
       : t('activity.requests.subtitle', {
-          shown: fmtCount(counts.total),
+          shown: fmtCount(visible.length),
           logged: fmtCount(page.total),
           range: rangeLabel
         })
-
-  const exportCsv = () => {
-    downloadCsv('rialto-requests.csv', [
-      ['time', 'status', 'endpoint', 'requested', 'sent', 'rule', 'lane', 'input', 'output', 'ms', 'costUsd'],
-      ...visible.map((r) => [
-        r.log.createdAt,
-        String(r.log.status),
-        r.surfacePath === null ? '' : r.surfacePath,
-        r.log.requestedModel === null ? '' : r.log.requestedModel,
-        `${r.log.provider},${r.log.model}`,
-        r.rule === null ? '' : r.rule,
-        r.lane,
-        String(r.log.totalInputTokens),
-        String(r.log.outputTokens),
-        String(r.log.durationMs),
-        r.log.totalCostUsd === null ? '' : String(r.log.totalCostUsd)
-      ])
-    ])
-  }
 
   return (
     <Screen
@@ -289,7 +274,13 @@ export function ActivityRequests() {
           label={t('activity.requests.filterRange')}
           value={filters.range}
           options={RANGES.map((r) => ({ id: r.id, label: t(r.labelKey) }))}
-          onChange={(next) => setFilters((f) => ({ ...f, range: next }))}
+          onChange={(next) => {
+            // A narrower window may not have the page the viewer is
+            // standing on, and an offset past the end returns nothing at
+            // all — which reads as "no requests" rather than "wrong page".
+            setPageIndex(0)
+            setFilters((f) => ({ ...f, range: next }))
+          }}
         />
         <div className='ml-auto flex items-center gap-2'>
           {live ? (
@@ -297,13 +288,10 @@ export function ActivityRequests() {
               <span className='size-1.5 animate-pulse rounded-full bg-emerald-500' /> {t('activity.requests.live')}
             </span>
           ) : null}
-          <RButton variant='ghost' icon='ri-download-line' onClick={exportCsv} disabled={visible.length === 0}>
-            {t('activity.requests.export')}
-          </RButton>
         </div>
       </div>
 
-      <StatsRow counts={counts} rangeLabel={rangeLabel} />
+      <StatsRow stats={stats} rangeLabel={rangeLabel} />
 
       {error !== null ? (
         <ScreenMessage tone='bad'>{error}</ScreenMessage>
