@@ -1,9 +1,9 @@
 /**
  * Pure helpers for the Status line settings section.
  *
- * The module types here are the ones `rialto statusline` actually renders
- * (see `createModuleForType`); the icon/label pairs are the presentation
- * the editor needs and the runtime does not.
+ * The module types here are the ones `createModuleForType` builds. This
+ * build ships no `rialto statusline` renderer, so they drive the editor and
+ * its preview only; the icon/label pairs are that presentation.
  */
 import { PREVIEW_VARIABLES, replaceVariables } from '@/lib/statusline/preview'
 import type { StatusLineModuleConfig } from '@/types'

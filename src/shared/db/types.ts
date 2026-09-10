@@ -36,6 +36,9 @@ export const ENVELOPE_ENV_KEYS = [
   'APIKEY',
   'LOG',
   'LOG_LEVEL',
+  // Rotation size. syncLoggerFromEnv re-reads it after a save, so a change
+  // from Settings → Logging re-sizes the file sink without a restart.
+  'LOG_MAX_MB',
   'PROXY_URL',
   'API_TIMEOUT_MS',
   'CLAUDE_PATH',

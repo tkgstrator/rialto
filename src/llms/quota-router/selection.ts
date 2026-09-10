@@ -17,8 +17,9 @@
  *        client asked for that tier — candidate must be same tier.
  *      - subagent call: candidate's tier must be in
  *        `entry.subagentTiers` if that list is non-empty.
- *   3. Cached usage: `isExhausted(target)` returns true when the account
- *      is out of budget on any binding window.
+ *   3. Usage: `isExhausted(target)` returns true when the target's weight
+ *      has dropped to zero or its known budget is used at or past the
+ *      profile's `quotaSkipPct`.
  *   4. Recent error rate: `errorRate(target)` must be below the
  *      constraint's `errorRateSkipPct`; the check requires at least
  *      `minHealthSamples` recent samples (handled by the caller — this
@@ -47,10 +48,10 @@ export interface PreferenceSelectorInput {
   constraints: PreferenceConstraints
   requestedTier: RequestedModelTier | undefined
   isSubagent: boolean
-  // Predicate: does this account/model have zero remaining budget on
-  // any binding window? The request path backs this with the
-  // scheduler's weight snapshot. Trusts the caller — this module is
-  // pure.
+  // Predicate: is this target out of usable budget right now? The request
+  // path backs it with the scheduler snapshot — a zero weight, or a known
+  // budget used at or past `quotaSkipPct`. Trusts the caller — this module
+  // is pure.
   isExhausted: (target: string) => boolean
   // Recent error rate (0-1). Callers back with the Phase 2e
   // model-health tracker; Phase 2c can pass `() => 0`.
