@@ -42,14 +42,24 @@ export const ALL = 'all'
 export interface Enriched {
   session: SessionSummary
   surfacePath: string | null
+  /**
+   * The model most of the session's turns ran on. Named rather than
+   * counted because it is the one an operator recognises the session by
+   * — but it is a majority, not the whole story, which is what
+   * `otherModels` says out loud.
+   */
   model: string | null
+  /** How many further models the session also used. */
+  otherModels: number
 }
 
 export function enrich(sessions: SessionSummary[], pathOf: (id: string | null) => string | null): Enriched[] {
   return sessions.map((session) => ({
     session,
     surfacePath: pathOf(session.surface),
-    model: session.models.length === 0 ? null : session.models[0]
+    // The server orders these busiest first.
+    model: session.models.length === 0 ? null : session.models[0].name,
+    otherModels: Math.max(0, session.models.length - 1)
   }))
 }
 
@@ -65,7 +75,7 @@ export function applyFilters(
   return rows.filter((row) => {
     if (filters.surface !== ALL && row.surfacePath !== filters.surface) return false
     if (filters.provider !== ALL && !row.session.providers.includes(filters.provider)) return false
-    return filters.model === ALL || row.session.models.includes(filters.model)
+    return filters.model === ALL || row.session.models.some((m) => m.name === filters.model)
   })
 }
 

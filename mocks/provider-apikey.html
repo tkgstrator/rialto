@@ -85,14 +85,15 @@ const models = `
         ${sortTh('On', 'pl-2 pr-6', 'right')}
       </tr>
     </thead>
-    <!-- Legacy rows are filtered out here, not styled down. They are
-         still priced, so "Enabled + priced" kept every one of them — rows
-         of vendor history above the models anyone actually routes to, and
-         a decision already made. All models is where they live now. A
-         legacy model that is switched ON stays, because that is a live
-         routing target and a list that hides one cannot be trusted to say
-         what this provider serves. -->
-    <tbody>${MODELS.filter((m) => !m.legacy || m.on).map(modelRow).join('')}</tbody>
+    <!-- "Enabled only" is the default: what this provider actually
+         serves is the question the table is opened with. Everything else
+         — priced-but-off models, and the legacy rows that are still
+         priced and so rode along under "Enabled + priced" — is one click
+         away under the wider slices. A legacy model that is switched ON
+         still shows, because that is a live routing target and a list
+         that hides one cannot be trusted to say what this provider
+         serves. -->
+    <tbody>${MODELS.filter((m) => m.on).map(modelRow).join('')}</tbody>
   </table>`
 
 document.getElementById('root').innerHTML = `
@@ -173,7 +174,7 @@ document.getElementById('root').innerHTML = `
         <span class="text-[12px] text-muted-foreground">5 of 18 enabled</span>
         <div class="ml-auto flex items-center gap-2">
           <button class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-muted/60">
-            <span class="text-muted-foreground">Show</span> Enabled + priced
+            <span class="text-muted-foreground">Show</span> Enabled only
             <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i>
           </button>
           <div class="flex h-7 w-44 items-center gap-2 rounded-md border border-border px-2.5 text-xs text-muted-foreground">
@@ -203,7 +204,7 @@ document.getElementById('root').innerHTML = `
            that only ever grows. Revealing in steps means a 61-model
            vendor ends as one 61-row table with no way back up, and the
            button can never say where you are — this footer does both. -->
-      ${pager({ first: 1, last: 8, total: 16, hasPrev: false })}
+      ${pager({ first: 1, last: 5, total: 5, hasPrev: false, hasNext: false })}
       <div class="h-6"></div>
   </div>`
 

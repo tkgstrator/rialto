@@ -174,8 +174,11 @@ describe('locale parity', () => {
       const copied = [...EN.entries()]
         .filter(([key, value]) => other.get(key) === value && !SHARED_VOCABULARY.has(key))
         // A value with no run of latin letters carries no prose to
-        // translate — a bare number, an arrow, a `·` separator.
-        .filter(([, value]) => /[a-zA-Z]{4,}/.test(value))
+        // translate — a bare number, an arrow, a `·` separator. The
+        // placeholder names are stripped first: `{{sessionId}} · {{inbound}}`
+        // is punctuation and two variable names, and demanding a different
+        // spelling of it in each locale would mean renaming the variables.
+        .filter(([, value]) => /[a-zA-Z]{4,}/.test(value.replace(/\{\{[^}]*\}\}/g, '')))
         .map(([key]) => key)
       expect(copied).toEqual([])
     })

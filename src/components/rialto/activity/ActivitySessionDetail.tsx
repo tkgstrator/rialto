@@ -1,124 +1,79 @@
 /**
- * Activity › Session — one conversation, with the routing trace beside it.
+ * Activity › Session — what one session cost, and where each of its calls went.
  *
  * The trace is the part the old build could not answer: "why did this turn
  * go to that model" was written to the request log but only readable by
- * grepping. Requested → sent, per call, next to the turn it served.
+ * grepping. Requested → sent, per call, in the order they happened.
+ *
+ * The archived transcript used to sit beside it in the wider column. It is
+ * gone: a real Claude Code session is mostly tool traffic and injected
+ * context, so the pane spent a screen's width rendering material nobody
+ * came here to read, and the routing trace — the one thing this screen
+ * knows that no other screen does — was squeezed into a 22rem rail that
+ * could only show its last five rows. The messages are still archived and
+ * still reachable at GET /api/request-logs/sessions/:id/messages; what
+ * capture feeds in the UI now is the session's title.
  */
-import { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import { toast } from 'sonner'
-import { CodeBlock } from '@/components/rialto/activity/CodeBlock'
+import { useNavigate, useParams } from 'react-router-dom'
 import { type ActivityRequestLog, downloadText, fetchSessionRequestLogs } from '@/components/rialto/activity/data'
 import { LANE_KEYS, lane as laneOf } from '@/components/rialto/activity/requests-rows'
 import { DASH, ScreenMessage, StatusPill } from '@/components/rialto/activity/shared'
 import { useSurfaces } from '@/components/rialto/activity/use-surfaces'
 import { Meter, Pill, RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
-import { api, type SessionMessageItem, type SessionSummary } from '@/lib/api'
+import { api, type SessionSummary } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
 import { fmtAgo, fmtRate } from '@/lib/rialto/format'
-import { splitTurn } from '@/lib/sessions/code'
-import { fmtChars, fmtCost } from '@/lib/sessions/format'
-import { normaliseContent } from '@/lib/sessions/message-content'
-import { cn } from '@/lib/utils'
-
-const MESSAGE_PAGE_SIZE = 50
-
-// How much of the trace opens by default. A long session has hundreds of
-// calls and the rail is 22rem wide.
-const TRACE_PREVIEW = 5
-
-interface Turn {
-  id: string
-  role: string
-  text: string
-  tools: string[]
-  chars: number
-}
+import { fmtCost } from '@/lib/sessions/format'
 
 /**
- * Fold one archived message into a rendered turn.
+ * One figure, with its name above it.
  *
- * `system_text` blocks are Claude Code's injected reminders and file dumps;
- * they are the bulk of a real transcript by volume and none of it by
- * meaning, so they never reach the pane.
+ * The strip reads left to right, so the label sits on top rather than
+ * opposite: a row of nine `label ... value` pairs turned into a column
+ * of ragged gaps the moment it stopped being 22rem wide.
  */
-function toTurn(message: SessionMessageItem): Turn {
-  const blocks = normaliseContent(message.content)
-  const text = blocks
-    .filter((b) => b.kind === 'text')
-    .map((b) => b.text)
-    .join('\n\n')
-  const counts = new Map<string, number>()
-  for (const block of blocks) {
-    if (block.kind === 'tool_use') {
-      const seen = counts.get(block.name)
-      counts.set(block.name, seen === undefined ? 1 : seen + 1)
-    }
-  }
-  return {
-    id: message.id,
-    role: message.role,
-    text,
-    tools: [...counts.entries()].map(([name, n]) => (n === 1 ? name : `${name} × ${n}`)),
-    chars: text.length
-  }
-}
-
-function TurnRow({ turn }: { turn: Turn }) {
-  const { t } = useTranslation()
-  const isUser = turn.role === 'user'
+function Stat({ label, value, children }: { label: string; value: ReactNode; children?: ReactNode }) {
   return (
-    <div
-      className={cn(
-        'border-l-2 px-6 py-4 transition-colors hover:bg-muted/50',
-        isUser ? 'border-l-foreground/30' : 'border-l-transparent'
-      )}
-    >
-      <div className='flex items-baseline gap-2'>
-        <span
-          className={cn(
-            'text-[12px] font-medium uppercase tracking-wider',
-            isUser ? 'text-foreground' : 'text-muted-foreground'
-          )}
-        >
-          {turn.role}
-        </span>
-        {turn.tools.map((tool) => (
-          <Pill key={tool} tone='mute'>
-            {tool}
-          </Pill>
-        ))}
-        <span className='ml-auto font-mono text-[12px] tabular-nums text-muted-foreground'>
-          {t('activity.session.chars', { n: fmtChars(turn.chars) })}
-        </span>
-      </div>
-      {/* Prose and fenced code are rendered apart. As one paragraph the
-          code wrapped with the sentences around it, which is unreadable
-          exactly where it matters — the code is usually why the session
-          was opened. */}
-      {splitTurn(turn.text).map((segment, index) =>
-        segment.kind === 'text' ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: segments are an ordered split of one string
-          <p key={`text-${index}`} className='mt-1.5 whitespace-pre-wrap text-xs leading-relaxed'>
-            {segment.text}
-          </p>
-        ) : (
-          // biome-ignore lint/suspicious/noArrayIndexKey: segments are an ordered split of one string
-          <CodeBlock key={`code-${index}`} lang={segment.lang} body={segment.body} />
-        )
-      )}
+    <div className='min-w-0'>
+      <div className='text-[12px] text-muted-foreground'>{label}</div>
+      <div className='mt-0.5 font-mono text-xs tabular-nums'>{value}</div>
+      {children}
     </div>
   )
 }
 
-function Kv({ label, value }: { label: string; value: ReactNode }) {
+/**
+ * The session's numbers, across the top.
+ *
+ * These were nine rows down the right rail, above the routing trace, on a
+ * screen whose subject was the transcript beside them. Read left to right
+ * they cost one line, and the width goes to the trace — the part that
+ * grows with the session. Inbound is not here because the subtitle
+ * already says it.
+ */
+function StatStrip({ summary }: { summary: SessionSummary }) {
+  const { t } = useTranslation()
+  const totalInput = summary.totalInputTokens
+  const cacheRate = totalInput === 0 ? null : summary.totalCacheReadTokens / totalInput
+  const cachePct = cacheRate === null ? 0 : Math.round(cacheRate * 100)
   return (
-    <div className='flex items-baseline gap-3 px-4 py-1.5'>
-      <span className='text-[12px] text-muted-foreground'>{label}</span>
-      <span className='ml-auto font-mono text-[12px] tabular-nums'>{value}</span>
+    <div className='flex flex-wrap items-start gap-x-10 gap-y-3 border-b border-border px-6 py-3'>
+      <Stat label={t('activity.session.upstreamCalls')} value={summary.requestCount} />
+      <Stat label={t('activity.session.inputTokens')} value={summary.totalInputTokens.toLocaleString()} />
+      <Stat label={t('activity.session.outputTokens')} value={summary.totalOutputTokens.toLocaleString()} />
+      <Stat label={t('activity.session.cacheRead')} value={summary.totalCacheReadTokens.toLocaleString()} />
+      <Stat label={t('activity.session.cacheHit')} value={fmtRate(cacheRate)}>
+        {/* Explicit `ok`: a high cache hit is the good end of the scale, the
+            inverse of the utilization meters the auto tone is built for. */}
+        <div className='mt-1.5 w-24'>
+          <Meter pct={cachePct} tone='ok' />
+        </div>
+      </Stat>
+      <Stat label={t('activity.session.cost')} value={fmtCost(summary.totalCostUsd)} />
+      <Stat label={t('activity.session.duration')} value={fmtAgo(summary.firstAt, Date.parse(summary.lastAt))} />
     </div>
   )
 }
@@ -127,108 +82,94 @@ function CallRow({ call }: { call: ActivityRequestLog }) {
   const { t } = useTranslation()
   const requested = call.requestedModel === null ? t('activity.common.untracked') : call.requestedModel
   return (
-    <div className='border-t border-border/60 px-4 py-2.5 transition-colors hover:bg-muted/50'>
-      <div className='flex items-baseline gap-2'>
-        <span className='font-mono text-[12px] tabular-nums text-muted-foreground'>
-          {dayjs(call.createdAt).format('HH:mm:ss')}
-        </span>
+    <tr className='border-t border-border/60 transition-colors hover:bg-muted/50'>
+      <td className='py-2.5 pl-6 pr-3 font-mono text-[12px] tabular-nums text-muted-foreground'>
+        {dayjs(call.createdAt).format('HH:mm:ss')}
+      </td>
+      <td className='px-3'>
         <StatusPill status={call.status} />
-        <span className='ml-auto font-mono text-[12px] tabular-nums text-muted-foreground'>
-          {call.durationMs === 0 ? DASH : call.durationMs.toLocaleString()} ms
-        </span>
-      </div>
-      <div className='mt-1.5 flex items-center gap-1.5 font-mono text-[12px]'>
-        <span className='text-muted-foreground'>{requested}</span>
-        <i className='ri-arrow-right-line text-xs text-muted-foreground/50' />
-        <span>{`${call.provider},${call.model}`}</span>
-      </div>
-      <div className='mt-1 flex gap-1.5'>
-        <Pill tone='mute'>{call.scenario === null ? t('activity.common.untracked') : call.scenario}</Pill>
-        <Pill tone='mute'>{t(LANE_KEYS[laneOf(call.isSubagent)])}</Pill>
-      </div>
-    </div>
+      </td>
+      <td className='truncate px-3 font-mono text-[12px] text-muted-foreground' title={requested}>
+        {requested}
+      </td>
+      <td className='truncate px-3 font-mono text-[12px]' title={`${call.provider},${call.model}`}>
+        {`${call.provider},${call.model}`}
+      </td>
+      <td className='px-3'>
+        <div className='flex gap-1.5'>
+          <Pill tone='mute'>{call.scenario === null ? t('activity.common.untracked') : call.scenario}</Pill>
+          <Pill tone='mute'>{t(LANE_KEYS[laneOf(call.isSubagent)])}</Pill>
+        </div>
+      </td>
+      <td className='px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
+        {call.totalInputTokens.toLocaleString()}
+      </td>
+      <td className='px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
+        {call.outputTokens.toLocaleString()}
+      </td>
+      <td className='px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
+        {call.durationMs === 0 ? DASH : call.durationMs.toLocaleString()}
+      </td>
+      <td className='py-2.5 pl-3 pr-6 text-right font-mono text-[12px] tabular-nums'>{fmtCost(call.totalCostUsd)}</td>
+    </tr>
   )
 }
 
-function SummaryPane({
-  summary,
-  turns,
-  inboundPath
-}: {
-  summary: SessionSummary
-  turns: number
-  inboundPath: string | null
-}) {
+/**
+ * Every upstream call the session made, oldest first.
+ *
+ * Chronological and unsorted on purpose: the trace is a story — this
+ * model was asked for, that one answered, then the next one did — and a
+ * sortable column would let the reader break the only ordering that
+ * carries meaning here. Nothing is folded away either; the rail showed
+ * the last five behind a "show all" because it was 22rem wide.
+ *
+ * Column labels are borrowed from the Requests screen. They name the same
+ * fields, and a second set of identical strings in three locales would
+ * only be a second thing to keep in step.
+ */
+function TraceTable({ calls }: { calls: ActivityRequestLog[] }) {
   const { t } = useTranslation()
-  const totalInput = summary.totalInputTokens
-  const cacheRate = totalInput === 0 ? null : summary.totalCacheReadTokens / totalInput
-  const cachePct = cacheRate === null ? 0 : Math.round(cacheRate * 100)
+  if (calls.length === 0) {
+    return <div className='px-6 py-6 text-xs text-muted-foreground'>{t('activity.session.noCalls')}</div>
+  }
   return (
-    <>
-      <div className='px-4 pt-5 pb-2'>
-        <h2 className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>
-          {t('activity.session.summary')}
-        </h2>
-      </div>
-      <Kv
-        label={t('activity.session.inbound')}
-        value={inboundPath === null ? t('activity.common.untracked') : inboundPath}
-      />
-      <Kv label={t('activity.session.turns')} value={turns} />
-      <Kv label={t('activity.session.upstreamCalls')} value={summary.requestCount} />
-      <Kv label={t('activity.session.inputTokens')} value={summary.totalInputTokens.toLocaleString()} />
-      <Kv label={t('activity.session.outputTokens')} value={summary.totalOutputTokens.toLocaleString()} />
-      <Kv label={t('activity.session.cacheRead')} value={summary.totalCacheReadTokens.toLocaleString()} />
-      <Kv label={t('activity.session.cacheHit')} value={fmtRate(cacheRate)} />
-      <Kv label={t('activity.session.cost')} value={fmtCost(summary.totalCostUsd)} />
-      <Kv label={t('activity.session.duration')} value={fmtAgo(summary.firstAt, Date.parse(summary.lastAt))} />
-
-      <div className='px-4 pb-3 pt-3'>
-        <div className='mb-1.5 flex items-baseline'>
-          <span className='text-[12px] text-muted-foreground'>{t('activity.session.cacheEfficiency')}</span>
-          <span className='ml-auto font-mono text-[12px] tabular-nums'>{cachePct}%</span>
-        </div>
-        {/* Explicit `ok`: a high cache hit is the good end of the scale, the
-            inverse of the utilization meters the auto tone is built for. */}
-        <Meter pct={cachePct} tone='ok' />
-      </div>
-    </>
-  )
-}
-
-function TracePane({ calls }: { calls: ActivityRequestLog[] }) {
-  const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(false)
-  const shown = expanded ? calls : calls.slice(-TRACE_PREVIEW)
-  return (
-    <>
-      <div className='border-t border-border px-4 pt-5 pb-2'>
-        <h2 className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>
-          {t('activity.session.routingTrace')}
-        </h2>
-      </div>
-      {shown.map((call) => (
-        <CallRow key={call.id} call={call} />
-      ))}
-      {calls.length <= TRACE_PREVIEW ? null : (
-        <div className='px-4 py-4'>
-          <button
-            type='button'
-            onClick={() => setExpanded((v) => !v)}
-            className='w-full rounded-md border border-dashed border-border py-2 text-[12px] text-muted-foreground transition-colors hover:bg-muted/50'
-          >
-            {expanded ? t('activity.session.showFewer') : t('activity.session.showAllCalls', { calls: calls.length })}
-          </button>
-        </div>
-      )}
-    </>
+    <table className='w-full table-fixed'>
+      <colgroup>
+        <col className='w-24' />
+        <col className='w-20' />
+        <col />
+        <col />
+        <col className='w-52' />
+        <col className='w-20' />
+        <col className='w-20' />
+        <col className='w-20' />
+        <col className='w-24' />
+      </colgroup>
+      <thead>
+        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2 [&>th]:font-medium'>
+          <th className='pl-6 pr-3 text-left'>{t('activity.requests.colTime')}</th>
+          <th className='px-3 text-left'>{t('activity.requests.colStatus')}</th>
+          <th className='px-3 text-left'>{t('activity.requests.colRequested')}</th>
+          <th className='px-3 text-left'>{t('activity.requests.colSent')}</th>
+          <th className='px-3 text-left'>{t('activity.requests.colRule')}</th>
+          <th className='px-3 text-right'>{t('activity.requests.colInput')}</th>
+          <th className='px-3 text-right'>{t('activity.requests.colOutput')}</th>
+          <th className='px-3 text-right'>{t('activity.requests.colMs')}</th>
+          <th className='pl-3 pr-6 text-right'>{t('activity.requests.colCost')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {calls.map((call) => (
+          <CallRow key={call.id} call={call} />
+        ))}
+      </tbody>
+    </table>
   )
 }
 
 interface Loaded {
   summary: SessionSummary
-  messages: SessionMessageItem[]
-  nextCursor: string | null
   calls: ActivityRequestLog[]
 }
 
@@ -243,19 +184,10 @@ export function ActivitySessionDetail() {
 
   useEffect(() => {
     setData(null)
-    Promise.all([
-      api.getSessionSummary(sessionId),
-      api.getSessionMessages(sessionId, { limit: MESSAGE_PAGE_SIZE }),
-      fetchSessionRequestLogs(sessionId)
-    ])
-      .then(([summary, messages, logs]) => {
+    Promise.all([api.getSessionSummary(sessionId), fetchSessionRequestLogs(sessionId)])
+      .then(([summary, logs]) => {
         // Logs arrive newest-first; the trace reads as a story forwards.
-        setData({
-          summary,
-          messages: messages.items,
-          nextCursor: messages.nextCursor,
-          calls: [...logs.items].reverse()
-        })
+        setData({ summary, calls: [...logs.items].reverse() })
         setError(null)
       })
       .catch((e: Error) => setError(e.message))
@@ -272,30 +204,11 @@ export function ActivitySessionDetail() {
       })
   }, [])
 
-  const turns = useMemo(() => (data === null ? [] : data.messages.map(toTurn)), [data])
-
   const inboundPath = data === null ? null : surfaces.pathOf(data.summary.surface)
 
   const index = neighbours.indexOf(sessionId)
   const prev = index > 0 ? neighbours[index - 1] : null
   const next = index >= 0 && index < neighbours.length - 1 ? neighbours[index + 1] : null
-
-  const loadOlder = () => {
-    if (data === null || data.nextCursor === null) return
-    void api
-      .getSessionMessages(sessionId, { before: data.nextCursor, limit: MESSAGE_PAGE_SIZE })
-      .then((res) =>
-        setData((prevData) =>
-          prevData === null
-            ? prevData
-            : { ...prevData, messages: [...res.items, ...prevData.messages], nextCursor: res.nextCursor }
-        )
-      )
-      // A toast rather than the screen's `error`: that slot replaces the
-      // whole transcript, so a failed page-back would take the turns
-      // already on screen down with it.
-      .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
-  }
 
   const downloadRaw = () => {
     if (data === null) return
@@ -308,8 +221,7 @@ export function ActivitySessionDetail() {
       ? undefined
       : t('activity.session.subtitle', {
           sessionId,
-          inbound: inboundPath === null ? t('activity.common.untracked') : inboundPath,
-          turns: turns.length
+          inbound: inboundPath === null ? t('activity.common.untracked') : inboundPath
         })
 
   return (
@@ -343,52 +255,33 @@ export function ActivitySessionDetail() {
       ) : data === null ? (
         <ScreenMessage>{t('common.loading')}</ScreenMessage>
       ) : (
-        <div className='grid h-full grid-cols-[1fr_22rem]'>
-          <div className='min-w-0 overflow-y-auto border-r border-border'>
-            <div className='flex items-center gap-2 border-b border-border px-6 py-3'>
-              <Link
-                to='/activity'
-                className='text-muted-foreground hover:text-foreground'
-                aria-label={t('activity.session.backToActivity')}
-              >
-                <i className='ri-arrow-left-line text-base' />
-              </Link>
-              <div className='min-w-0'>
-                <div className='truncate text-xs font-medium'>{title}</div>
-                <div className='font-mono text-[12px] text-muted-foreground'>{sessionId}</div>
-              </div>
-              <div className='ml-auto flex gap-2'>
-                <RButton variant='ghost' icon='ri-code-line' onClick={downloadRaw}>
-                  {t('activity.session.rawJson')}
-                </RButton>
-                {/* No Archive button: there is no per-session archive route
-                    (only POST /request-logs/sessions/archive, which takes all
-                    of them), so this was permanently disabled behind a tooltip
-                    blaming the session for "still receiving calls" — shown
-                    just the same on one last seen three days ago. */}
-              </div>
+        <div className='min-w-0'>
+          {/* No back arrow and no session id here: the breadcrumb above
+              says "Activity / Sessions / <id>" and the subtitle repeats
+              the id, so a third copy beside a second way back was the
+              header competing with itself. What is left is the one thing
+              neither of them can carry — the session's own title. */}
+          <div className='flex items-center gap-2 border-b border-border px-6 py-3'>
+            <div className='min-w-0 truncate text-xs font-medium'>{title}</div>
+            <div className='ml-auto flex gap-2'>
+              <RButton variant='ghost' icon='ri-code-line' onClick={downloadRaw}>
+                {t('activity.session.rawJson')}
+              </RButton>
+              {/* No Archive button: there is no per-session archive route
+                  (only POST /request-logs/sessions/archive, which takes all
+                  of them), so this was permanently disabled behind a tooltip
+                  blaming the session for "still receiving calls" — shown
+                  just the same on one last seen three days ago. */}
             </div>
-            {data.nextCursor === null ? null : (
-              <div className='px-6 pt-4'>
-                <button
-                  type='button'
-                  onClick={loadOlder}
-                  className='w-full rounded-md border border-dashed border-border py-2 text-[12px] text-muted-foreground transition-colors hover:bg-muted/50'
-                >
-                  {t('activity.session.loadOlder')}
-                </button>
-              </div>
-            )}
-            {turns.map((turn) => (
-              <TurnRow key={turn.id} turn={turn} />
-            ))}
-            <div className='h-10' />
           </div>
-
-          <aside className='min-w-0 overflow-y-auto'>
-            <SummaryPane summary={data.summary} turns={turns.length} inboundPath={inboundPath} />
-            <TracePane calls={data.calls} />
-          </aside>
+          <StatStrip summary={data.summary} />
+          <div className='px-6 pt-5 pb-1'>
+            <h2 className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>
+              {t('activity.session.routingTrace')}
+            </h2>
+          </div>
+          <TraceTable calls={data.calls} />
+          <div className='h-10' />
         </div>
       )}
     </Screen>

@@ -41,7 +41,8 @@ const STATE_LABEL_KEYS: Record<ProviderState, string> = {
   unknown: 'providers.rail.stateUnknown'
 }
 
-const NEXT_SHOW: Record<ShowMode, ShowMode> = { priced: 'enabled', enabled: 'all', all: 'priced' }
+// Each click widens the list from the default, then wraps.
+const NEXT_SHOW: Record<ShowMode, ShowMode> = { enabled: 'priced', priced: 'all', all: 'enabled' }
 
 /** Models per page on the api_key side. */
 const PAGE = 8
@@ -165,7 +166,10 @@ function ModelsSection({
 }) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
-  const [show, setShow] = useState<ShowMode>('priced')
+  // "Enabled only": what a provider is actually routing to is the
+  // question this table is opened with. The priced slice is one click
+  // away for the times the question is what else could be switched on.
+  const [show, setShow] = useState<ShowMode>('enabled')
   const [page, setPage] = useState(0)
   // Subscription side only. The api_key side reveals legacy rows through
   // its Show control; this side has none, and hiding a row with no way

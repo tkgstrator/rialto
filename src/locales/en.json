@@ -95,14 +95,9 @@
     },
     "session": {
       "title": "Session",
-      "subtitle": "{{sessionId}} · {{inbound}} · {{turns}} turns",
-      "backToActivity": "Back to Activity",
+      "subtitle": "{{sessionId}} · {{inbound}}",
       "previous": "Previous",
       "rawJson": "Raw JSON",
-      "loadOlder": "Load older turns",
-      "summary": "Summary",
-      "inbound": "Inbound",
-      "turns": "Turns",
       "upstreamCalls": "Upstream calls",
       "inputTokens": "Input tokens",
       "outputTokens": "Output tokens",
@@ -110,27 +105,19 @@
       "cacheHit": "Cache hit",
       "cost": "Cost",
       "duration": "Duration",
-      "cacheEfficiency": "Cache efficiency",
       "routingTrace": "Routing trace",
-      "showAllCalls": "Show all {{calls}} calls",
-      "showFewer": "Show fewer",
-      "chars": "{{n}} chars",
-      "codePlain": "code"
+      "noCalls": "No upstream calls recorded for this session."
     },
     "logs": {
       "title": "Logs",
-      "subtitle": "{{file}} · {{size}} · grouped by request",
+      "subtitle": "{{file}} · {{size}} · newest first",
       "follow": "Follow",
       "download": "Download",
       "noFiles": "No log files yet. File logging is off unless LOG is enabled.",
-      "railFiles": "Files",
-      "railLevel": "Level",
-      "railRequests": "Requests",
-      "lineCount": "{{n}} lines",
-      "searchInGroup": "Search in group",
-      "copy": "Copy",
-      "raw": "Raw",
-      "note": "Grouped by request id, so a failover reads as one story instead of two interleaved ones. The 429 and the retry that succeeded are the same group."
+      "note": "Newest first, and one line per event — the way the file is written. A request appears here as its access-log line; what it was routed to, and why, is in Requests, which reads the archive rather than the log.",
+      "file": "File",
+      "search": "Search",
+      "noLines": "No lines match the current level filter."
     },
     "usage": {
       "title": "Usage",
@@ -295,9 +282,10 @@
       "empty": "No accounts connected yet. Use Add provider to sign in.",
       "active": "active",
       "auth": "auth {{status}}",
-      "weekly": "weekly",
-      "resetsIn": "{{window}} resets in {{until}}",
-      "resetsDue": "{{window}} resetting — waiting for the next poll"
+      "resetsIn": "resets in",
+      "windowFiveHour": "5-hour",
+      "windowSevenDay": "7-day",
+      "windowScoped": "7-day · {{model}}"
     },
     "shape": {
       "title": "Request shape",

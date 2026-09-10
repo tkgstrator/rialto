@@ -15,16 +15,19 @@ import { AnthropicProvider } from './anthropic'
 import type { VendorProvider } from './base'
 import { DeepSeekProvider } from './deepseek'
 import { GenericProvider } from './generic'
+import { GoogleProvider } from './google'
 import { OpenAIProvider } from './openai'
 
 const anthropic = new AnthropicProvider()
 const openai = new OpenAIProvider()
 const deepseek = new DeepSeekProvider()
+const google = new GoogleProvider()
 
 const explicitRegistry = new Map<string, VendorProvider>()
 explicitRegistry.set('anthropic', anthropic)
 explicitRegistry.set('openai', openai)
 explicitRegistry.set('deepseek', deepseek)
+explicitRegistry.set('google', google)
 
 // Subscription providers borrow their api_key sibling's catalog +
 // price list directly:
@@ -43,7 +46,7 @@ const genericCache = new Map<string, VendorProvider>()
 // overrides scrape()). Callers use this to decide whether to bother
 // invoking scrape() at all — everyone else uses the generic fallback
 // whose scrape() returns [].
-const SCRAPED_VENDORS: readonly string[] = ['anthropic', 'openai', 'deepseek']
+const SCRAPED_VENDORS: readonly string[] = ['anthropic', 'openai', 'deepseek', 'google']
 const SCRAPED_VENDORS_SET = new Set(SCRAPED_VENDORS)
 
 export const scrapedVendors = (): readonly string[] => SCRAPED_VENDORS

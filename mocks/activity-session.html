@@ -15,160 +15,108 @@
 <script>
 const { renderShell, pill, meter, btn, navTo } = window.Shell
 
-// Drill-down from Activity. Two panes: the conversation on the left,
-// the per-request routing trace on the right. The trace is the part
-// that did not exist before — "why did this turn go to that model" was
-// only answerable by reading logs.
-const TURNS = [
-  { role: 'user',      text: 'Refactor the inbound surface registry so adding a surface is one descriptor.', tokens: '148' },
-  { role: 'assistant', text: 'I will start by reading the four places the surface knowledge is currently duplicated: errorShapeForPath, pickSseAggregator, the openaiBearerAuth path list, and inboundType.', tokens: '312', tool: 'Read × 4' },
-  { role: 'assistant', text: 'errorShapeForPath and pickSseAggregator both key off the same set of paths. Collapsing them into one InboundSurface record removes the drift risk.', tokens: '204' },
-  { role: 'user',      text: 'Good. Keep the Anthropic default for unknown paths.', tokens: '31' },
-  { role: 'assistant', text: 'Done — unknown paths fall back to the anthropic descriptor, matching the pre-existing behaviour.', tokens: '96', tool: 'Edit × 2' },
-  // A turn is not prose with a bit of code in it — it is prose AND code,
-  // and the code half is the half people came to read. Fenced blocks get
-  // their own treatment: monospace on a tinted ground, the language
-  // named, horizontal scroll of their own so a long line cannot widen
-  // the transcript, and highlighting so the shape is legible at a glance.
-  {
-    role: 'assistant',
-    tokens: '186',
-    text: 'The descriptor ends up as one record per surface:',
-    code: { lang: 'typescript', body: `export const SURFACES = {
-  // \`errorShape\` used to live in a switch three files away.
-  'anthropic-messages': {
-    path: '/v1/messages',
-    auth: 'x-api-key',
-    errorShape: 'anthropic',
-    aggregateSse: aggregateAnthropic
-  }
-} as const` }
-  }
-]
-
-// Highlighting is four token classes, not a theme: comment, string,
-// keyword, number. They are what makes a block skimmable; anything
-// finer is a second colour system to keep in step with the app's own.
-const codeBlock = (c) => `
-  <div class="mt-2 overflow-hidden rounded-md border border-border">
-    <div class="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-1.5">
-      <span class="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">${c.lang}</span>
-      <button class="ml-auto text-[11px] text-muted-foreground hover:text-foreground">Copy</button>
-    </div>
-    <pre class="overflow-x-auto px-3 py-2.5 font-mono text-[12px] leading-relaxed"><code>${highlight(c.body)}</code></pre>
-  </div>`
-
-// Mock-side approximation of the real highlighter, enough to show the
-// palette the implementation has to hit.
-const highlight = (src) =>
-  src
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/(\/\/[^\n]*)/g, '<span class="text-muted-foreground/70">$1</span>')
-    .replace(/('[^']*')/g, '<span class="text-emerald-600 dark:text-emerald-400">$1</span>')
-    .replace(/\b(export|const|as|from|import|return|function)\b/g, '<span class="text-sky-600 dark:text-sky-400">$1</span>')
-
-const turn = (t) => {
-  const isUser = t.role === 'user'
-  return `
-    <div class="border-l-2 ${isUser ? 'border-l-foreground/30' : 'border-l-transparent'} px-6 py-4 transition-colors hover:bg-muted/50">
-      <div class="flex items-baseline gap-2">
-        <span class="text-[12px] font-medium uppercase tracking-wider ${isUser ? 'text-foreground' : 'text-muted-foreground'}">${t.role}</span>
-        ${t.tool ? pill(t.tool, 'mute') : ''}
-        <span class="ml-auto font-mono text-[12px] tabular-nums text-muted-foreground">${t.tokens} tok</span>
-      </div>
-      <p class="mt-1.5 text-xs leading-relaxed">${t.text}</p>
-      ${t.code ? codeBlock(t.code) : ''}
-    </div>`
-}
+// Drill-down from Activity: what this session cost, and where each of its
+// calls went. The trace is the part that did not exist before — "why did
+// this turn go to that model" was only answerable by reading logs.
+//
+// The archived transcript used to hold the wide column with the trace
+// squeezed into a 22rem rail beside it, showing its last five rows behind
+// a "show all". A real Claude Code session is mostly tool traffic and
+// injected context, so that column spent the screen on material nobody
+// opens this page for, and hid the one thing the page knows that no other
+// page does. The messages are still archived — they are just not what
+// this screen is about.
 
 // One row per upstream call. `requested` vs `sent` is the routing
 // decision made visible — the old UI logged it but never showed it.
 const CALLS = [
-  { t: '14:02:11', requested: 'claude-sonnet-4-5', sent: 'claude-code,claude-opus-4-8', scenario: 'default', lane: 'agent', ms: '2,140', status: 200 },
-  { t: '14:02:33', requested: 'claude-sonnet-4-5', sent: 'claude-code,claude-opus-4-8', scenario: 'default', lane: 'agent', ms: '3,806', status: 200 },
-  { t: '14:03:02', requested: 'claude-sonnet-4-5', sent: 'codex,gpt-5.5',               scenario: 'default', lane: 'agent', ms: '—',     status: 429 },
-  { t: '14:03:02', requested: 'claude-sonnet-4-5', sent: 'claude-code,claude-fable-5',  scenario: 'default', lane: 'agent', ms: '4,411', status: 200 },
-  { t: '14:05:47', requested: 'claude-haiku-4-5',  sent: 'claude-code,claude-haiku-4-5', scenario: 'default', lane: 'subagent', ms: '812', status: 200 }
+  { t: '14:02:11', requested: 'claude-sonnet-4-5', sent: 'claude-code,claude-opus-4-8',  scenario: 'default', lane: 'agent',    in: '48,210', out: '1,204', ms: '2,140', cost: '$0.21', status: 200 },
+  { t: '14:02:33', requested: 'claude-sonnet-4-5', sent: 'claude-code,claude-opus-4-8',  scenario: 'default', lane: 'agent',    in: '52,884', out: '2,918', ms: '3,806', cost: '$0.34', status: 200 },
+  { t: '14:03:02', requested: 'claude-sonnet-4-5', sent: 'codex,gpt-5.5',                scenario: 'default', lane: 'agent',    in: '0',      out: '0',     ms: '—',     cost: '–',     status: 429 },
+  { t: '14:03:02', requested: 'claude-sonnet-4-5', sent: 'claude-code,claude-fable-5',   scenario: 'default', lane: 'agent',    in: '53,010', out: '3,442', ms: '4,411', cost: '$0.39', status: 200 },
+  { t: '14:05:47', requested: 'claude-haiku-4-5',  sent: 'claude-code,claude-haiku-4-5', scenario: 'default', lane: 'subagent', in: '9,118',  out: '402',   ms: '812',   cost: '$0.01', status: 200 }
 ]
 
+// A table, not the rail's stacked cards: at full width the same fields
+// line up into columns that can be scanned down. Chronological and
+// unsorted — the trace is a story, and a sortable column would let the
+// reader break the only ordering that carries meaning here. Nothing is
+// folded away either; the rail hid all but five because it was 22rem wide.
 const callRow = (c) => `
-  <div ${navTo('activity-logs.html')} class="border-t border-border/60 px-4 py-2.5 transition-colors hover:bg-muted/50">
-    <div class="flex items-baseline gap-2">
-      <span class="font-mono text-[12px] tabular-nums text-muted-foreground">${c.t}</span>
-      ${c.status === 200 ? pill('200', 'ok') : pill(String(c.status), 'bad')}
-      <span class="ml-auto font-mono text-[12px] tabular-nums text-muted-foreground">${c.ms} ms</span>
-    </div>
-    <div class="mt-1.5 flex items-center gap-1.5 font-mono text-[12px]">
-      <span class="text-muted-foreground">${c.requested}</span>
-      <i class="ri-arrow-right-line text-xs text-muted-foreground/50"></i>
-      <span>${c.sent}</span>
-    </div>
-    <div class="mt-1 flex gap-1.5">
-      ${pill(c.scenario, 'mute')}${pill(c.lane, 'mute')}
-    </div>
-  </div>`
+  <tr ${navTo('activity-logs.html')} class="border-t border-border/60 transition-colors hover:bg-muted/50">
+    <td class="py-2.5 pl-6 pr-3 font-mono text-[12px] tabular-nums text-muted-foreground">${c.t}</td>
+    <td class="px-3">${c.status === 200 ? pill('200', 'ok') : pill(String(c.status), 'bad')}</td>
+    <td class="truncate px-3 font-mono text-[12px] text-muted-foreground">${c.requested}</td>
+    <td class="truncate px-3 font-mono text-[12px]">${c.sent}</td>
+    <td class="px-3"><div class="flex gap-1.5">${pill(c.scenario, 'mute')}${pill(c.lane, 'mute')}</div></td>
+    <td class="px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${c.in}</td>
+    <td class="px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${c.out}</td>
+    <td class="px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${c.ms}</td>
+    <td class="py-2.5 pl-3 pr-6 text-right font-mono text-[12px] tabular-nums">${c.cost}</td>
+  </tr>`
 
-const kv = (k, v) => `
-  <div class="flex items-baseline gap-3 px-4 py-1.5">
-    <span class="text-[12px] text-muted-foreground">${k}</span>
-    <span class="ml-auto font-mono text-[12px] tabular-nums">${v}</span>
+const stat = (label, value, extra = '') => `
+  <div class="min-w-0">
+    <div class="text-[12px] text-muted-foreground">${label}</div>
+    <div class="mt-0.5 font-mono text-xs tabular-nums">${value}</div>
+    ${extra}
   </div>`
 
 document.getElementById('root').innerHTML = `
-  <div class="grid h-full grid-cols-[1fr_22rem]">
+  <div class="min-w-0">
 
-    <div class="min-w-0 overflow-y-auto border-r border-border">
-      <!-- No back arrow and no session id here any more: the breadcrumb
-           above says "Activity / Sessions / ses_9fa2…c41", and two ways
-           back plus the id printed twice was the header competing with
-           itself. What is left is the one thing the breadcrumb cannot
-           carry — the session's own title. -->
-      <div class="flex items-center gap-2 border-b border-border px-6 py-3">
-        <div class="min-w-0">
-          <div class="truncate text-xs font-medium">Refactor the inbound surface registry</div>
-        </div>
-        <div class="ml-auto flex gap-2">
-          ${btn('Raw JSON', 'ghost', 'ri-code-line')}
-          ${btn('Archive', 'ghost', 'ri-archive-line')}
-        </div>
+    <!-- No back arrow and no session id here: the breadcrumb above says
+         "Sessions / ses_9fa2…c41" and the subtitle repeats the id, so a
+         third copy beside a second way back was the header competing with
+         itself. What is left is the one thing neither of them carries —
+         the session's own title. -->
+    <div class="flex items-center gap-2 border-b border-border px-6 py-3">
+      <div class="min-w-0 truncate text-xs font-medium">Refactor the inbound surface registry</div>
+      <div class="ml-auto flex gap-2">
+        ${btn('Raw JSON', 'ghost', 'ri-code-line')}
       </div>
-      ${TURNS.map(turn).join('')}
-      <div class="h-10"></div>
     </div>
 
-    <aside class="min-w-0 overflow-y-auto">
-      <div class="px-4 pt-5 pb-2">
-        <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Summary</h2>
-      </div>
-      ${kv('Inbound', '/v1/messages')}
-      ${kv('Turns', '42')}
-      ${kv('Upstream calls', '58')}
-      ${kv('Input tokens', '284,102')}
-      ${kv('Output tokens', '34,118')}
-      ${kv('Cache read', '221,940')}
-      ${kv('Cache hit', '78.1%')}
-      ${kv('Cost', '$1.24')}
-      ${kv('Duration', '19m 04s')}
+    <!-- The summary reads across the top, not down a rail. Nine
+         label/value rows 22rem wide sat beside the trace; the strip costs
+         one line and gives that width back to the table below. Inbound is
+         not repeated here — the subtitle above already carries it. -->
+    <div class="flex flex-wrap items-start gap-x-10 gap-y-3 border-b border-border px-6 py-3">
+      ${stat('Upstream calls', '58')}
+      ${stat('Input tokens', '284,102')}
+      ${stat('Output tokens', '34,118')}
+      ${stat('of which cache read', '221,940')}
+      ${stat('Cache hit', '78.1%', `<div class="mt-1.5 w-24">${meter(78, 'ok')}</div>`)}
+      ${stat('Cost', '$1.24')}
+      ${stat('Duration', '19m 04s')}
+    </div>
 
-      <div class="px-4 pb-3 pt-3">
-        <div class="mb-1.5 flex items-baseline">
-          <span class="text-[12px] text-muted-foreground">Cache efficiency</span>
-          <span class="ml-auto font-mono text-[12px] tabular-nums">78%</span>
-        </div>
-        ${meter(78, 'ok')}
-      </div>
+    <div class="px-6 pt-5 pb-1">
+      <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Routing trace</h2>
+    </div>
 
-      <div class="border-t border-border px-4 pt-5 pb-2">
-        <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Routing trace</h2>
-      </div>
-      ${CALLS.map(callRow).join('')}
-      <div class="px-4 py-4">
-        <a href="activity-requests.html" class="block w-full rounded-md border border-dashed border-border py-2 text-center text-[12px] text-muted-foreground transition-colors hover:bg-muted/50">
-          Show all 58 calls
-        </a>
-      </div>
-    </aside>
+    <table class="w-full table-fixed">
+      <colgroup>
+        <col class="w-24"><col class="w-20"><col><col><col class="w-52">
+        <col class="w-20"><col class="w-20"><col class="w-20"><col class="w-24">
+      </colgroup>
+      <thead>
+        <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2 [&>th]:font-medium">
+          <th class="pl-6 pr-3 text-left">Time</th>
+          <th class="px-3 text-left">Status</th>
+          <th class="px-3 text-left">Requested</th>
+          <th class="px-3 text-left">Sent</th>
+          <th class="px-3 text-left">Scenario</th>
+          <th class="px-3 text-right">Input</th>
+          <th class="px-3 text-right">Output</th>
+          <th class="px-3 text-right">ms</th>
+          <th class="pl-3 pr-6 text-right">Cost</th>
+        </tr>
+      </thead>
+      <tbody>${CALLS.map(callRow).join('')}</tbody>
+    </table>
+
+    <div class="h-10"></div>
 
   </div>`
 
@@ -177,7 +125,7 @@ renderShell({
   navMode: 'cloudflare',
   sub: 'sessions',
   crumbs: [{ label: 'Sessions', href: 'activity.html' }, 'ses_9fa2…c41'],
-  subtitle: '/v1/messages · 42 turns',
+  subtitle: 'ses_9fa2…c41 · /v1/messages',
   actions: btn('Previous', 'ghost', 'ri-arrow-up-s-line') + btn('Next', 'ghost', 'ri-arrow-down-s-line')
 })
 </script>

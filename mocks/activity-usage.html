@@ -32,25 +32,56 @@ const filter = (label, value) => `
   </button>`
 
 // ─── Subscription windows, right now ──────────────────────────────────
-// Grouped by account rather than flattened, because "41%" means nothing
-// without knowing which subscription is 41% spent. The per-model weekly
-// rows are the ones Overview's quota array drops on the floor — they are
-// the reason this section exists rather than linking to Overview.
+// Grouped by account rather than flattened, because "100%" means nothing
+// without knowing which subscription is spent. The per-model weekly row
+// is the one Overview's quota array drops on the floor — it is the reason
+// this section exists rather than linking to Overview.
+//
+// Taken from GET /api/usage as it answers, not from a plausible-looking
+// invention. Which matters here more than anywhere: this drew a
+// `7-day · model / Opus` row, and there is no Opus window. Claude's wire
+// shape carries `seven_day_opus` and `seven_day_sonnet` as legacy flat
+// fields that come back null; the per-model windows that do exist arrive
+// under `weeklyScoped`, and on this account that is Fable alone.
+//
+// A 5-hour window with no reset time is also real: the collector only
+// learns `resetsAt` once the window has been touched, so a quiet account
+// shows 0% and no clock rather than a made-up one.
+// The first account is this install's, verbatim. The three below it are
+// invented so the grid has something to fold — but only their numbers are
+// invented: every window here is one the collector actually writes.
+// Claude gets 5-hour, 7-day and whatever `weeklyScoped` reports (Fable, on
+// the account we can see); Codex gets primary and secondary and nothing
+// else, because `mapCodexToQuota` has no per-model windows to write.
 const ACCOUNTS = [
   {
     name: 'Yuki Minakami', vendor: 'Claude Max 20x', tone: 'ok',
     windows: [
-      { label: '5-hour',        scope: '',       pct: 3,  resets: '4h 02m' },
-      { label: '7-day',         scope: '',       pct: 41, resets: '1d 14h' },
-      { label: '7-day · model', scope: 'Fable',  pct: 11, resets: '1d 14h' },
-      { label: '7-day · model', scope: 'Opus',   pct: 64, resets: '1d 14h' }
+      { label: '5-hour',        scope: '',      pct: 0,   resets: '—' },
+      { label: '7-day',         scope: '',      pct: 100, resets: '2d 09h' },
+      { label: '7-day · model', scope: 'Fable', pct: 9,   resets: '2d 09h' }
     ]
   },
   {
-    name: 'ops@example.com', vendor: 'Codex Pro', tone: 'warn',
+    name: 'ops@example.com', vendor: 'Claude Max 5x', tone: 'ok',
+    windows: [
+      { label: '5-hour',        scope: '',      pct: 34, resets: '2h 41m' },
+      { label: '7-day',         scope: '',      pct: 62, resets: '4d 02h' },
+      { label: '7-day · model', scope: 'Fable', pct: 18, resets: '4d 02h' }
+    ]
+  },
+  {
+    name: 'ci@example.com', vendor: 'Codex Pro', tone: 'warn',
     windows: [
       { label: 'primary',   scope: '', pct: 88, resets: '46m' },
       { label: 'secondary', scope: '', pct: 22, resets: '2d 06h' }
+    ]
+  },
+  {
+    name: 'nightly@example.com', vendor: 'Claude Pro', tone: 'mute',
+    windows: [
+      { label: '5-hour', scope: '', pct: 7,  resets: '3h 18m' },
+      { label: '7-day',  scope: '', pct: 12, resets: '5d 21h' }
     ]
   }
 ]
@@ -87,17 +118,17 @@ const SERIES = [
   {
     id: '5h', label: '5-hour', stroke: 'text-blue-600 dark:text-blue-500',
     dot: 'bg-blue-600 dark:bg-blue-500',
-    points: [4, 12, 31, 22, 8, 3, 17, 44, 61, 38, 12, 5, 9, 28, 55, 71, 49, 21, 6, 14, 33, 47, 26, 11, 5, 19, 40, 3]
+    points: [1, 6, 0, 20, 5, 27, 28, 5, 5, 17, 19, 0, 1, 19, 61, 29, 29, 0, 0, 2, 44, 81, 0, 0, 0, 0, 0, 0]
   },
   {
     id: '7d', label: '7-day', stroke: 'text-amber-600 dark:text-amber-600',
     dot: 'bg-amber-600',
-    points: [2, 5, 9, 12, 14, 15, 18, 23, 27, 29, 31, 32, 33, 35, 38, 42, 45, 47, 48, 49, 51, 54, 56, 57, 58, 39, 40, 41]
+    points: [39, 40, 40, 44, 52, 56, 17, 24, 24, 28, 29, 29, 29, 47, 57, 64, 70, 74, 74, 74, 92, 100, 100, 100, 100, 100, 100, 100]
   },
   {
     id: 'fable', label: '7-day · Fable', stroke: 'text-violet-600 dark:text-violet-500',
     dot: 'bg-violet-600 dark:bg-violet-500',
-    points: [0, 1, 2, 3, 3, 3, 4, 6, 7, 8, 8, 9, 9, 10, 11, 13, 14, 15, 15, 16, 17, 18, 19, 19, 20, 9, 10, 11]
+    points: [11, 11, 11, 17, 29, 36, 0, 0, 0, 0, 0, 0, 0, 6, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9]
   }
 ]
 
@@ -146,7 +177,9 @@ const line = (s) => {
 
 // Crosshair + readout, drawn at one sample so the static mock carries the
 // hover contract the implementation has to honour rather than leaving it
-// to be discovered later.
+// to be discovered later. The sample it names is the real one: index 15 of
+// a series running 2026-09-03T17:20Z → 2026-09-10T05:55Z lands on Monday
+// morning, so the readout says Mon, not a time picked to look plausible.
 const CROSS_I = 15
 const crosshair = `
   <line x1="${px(CROSS_I, 28)}" y1="${PAD_T}" x2="${px(CROSS_I, 28)}" y2="${H - PAD_B}"
@@ -156,7 +189,7 @@ const crosshair = `
 
 const tooltip = `
   <div class="pointer-events-none absolute left-[46%] top-6 w-44 rounded-md border border-border bg-background px-3 py-2 shadow-sm">
-    <div class="text-[12px] text-muted-foreground">Sun 18:00</div>
+    <div class="text-[12px] text-muted-foreground">Mon 07:00</div>
     ${SERIES.map((s) => `
       <div class="mt-1 flex items-center gap-2">
         <span class="h-1.5 w-1.5 shrink-0 rounded-full ${s.dot}"></span>
@@ -191,11 +224,18 @@ const chart = `
 // is where an operator asking "what is this costing me" does not think to
 // look. There they are decision support for Revoke; here they are the
 // answer to the question the screen is named after.
+// From GET /api/access-tokens. `cost: '—'` is not a placeholder: a token
+// whose requests were all served by a subscription provider has no dollar
+// figure to show, and `count-tokens-verify` genuinely spent nothing.
+// A token with no surface scope answers on every one of them, which is
+// why the Endpoint cell can be empty.
 const TOKENS = [
-  { name: 'MacBook — Claude Code', prefix: 'rialto_a91f…', surface: '/v1/messages',          reqs: '12.4k', cost: '$41.2', share: 64, used: '2m ago' },
-  { name: 'CI — nightly evals',    prefix: 'rialto_0d18…', surface: '/v1/chat/completions',  reqs: '3.10k', cost: '$18.6', share: 29, used: '6h ago' },
-  { name: 'MacBook — Codex',       prefix: 'rialto_7c02…', surface: '/v1/responses',         reqs: '2.71k', cost: '—',     share: 0,  used: '19m ago' },
-  { name: 'Gemini CLI',            prefix: 'rialto_be44…', surface: '/v1beta/models/*',      reqs: '486',   cost: '$4.51', share: 7,  used: '1h ago' }
+  { name: 'laptop (Claude Code)', prefix: 'rialto_06f0b5', surface: '',                      reqs: '1,284', cost: '$13.40', share: 33, used: '2d ago' },
+  { name: 'old laptop',           prefix: 'rialto_d0a856', surface: '',                      reqs: '903',   cost: '—',      share: 0,  used: 'revoked' },
+  { name: 'codex-cli',            prefix: 'rialto_4d540e', surface: '/v1/responses',         reqs: '738',   cost: '$3.50',  share: 9,  used: '2d ago' },
+  { name: 'ci-pipeline',          prefix: 'rialto_ecfd82', surface: '/v1/chat/completions',  reqs: '412',   cost: '$13.59', share: 33, used: '2d ago' },
+  { name: 'scratch script',       prefix: 'rialto_7f4740', surface: '',                      reqs: '27',    cost: '$11.00', share: 27, used: '2d ago' },
+  { name: 'count-tokens-verify',  prefix: 'rialto_0d1c9b', surface: '',                      reqs: '3',     cost: '—',      share: 0,  used: '9d ago' }
 ]
 
 const tokenRow = (t) => `
@@ -250,7 +290,12 @@ document.getElementById('root').innerHTML = `
   </div>
 
   ${sectionHead('Subscription windows', 'live, from each vendor’s usage API')}
-  <div class="grid grid-cols-2 gap-x-px pb-2">
+  <!-- Two accounts per row once there is room, one below xl. An account is
+       a name and its windows; given the whole width each bar became 800px
+       of track carrying one figure, with "resets in" a screen away from
+       the percentage it qualifies. An odd account leaves its column empty
+       rather than stretching to fill the row. -->
+  <div class="grid grid-cols-1 gap-x-px pb-2 xl:grid-cols-2">
     ${ACCOUNTS.map(accountBlock).join('')}
   </div>
 
@@ -266,7 +311,7 @@ renderShell({
   navMode: 'cloudflare',
   sub: 'usage',
   crumbs: ['Usage'],
-  subtitle: '2 subscription accounts · last 7 days',
+  subtitle: '4 subscription accounts · last 7 days',
   actions: btn('Refresh', 'outline', 'ri-refresh-line')
 })
 </script>
