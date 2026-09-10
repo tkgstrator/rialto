@@ -1,6 +1,6 @@
 {
   "name": "rialto",
-  "version": "2.80.1",
+  "version": "2.80.2",
   "description": "Use Claude Code without an Anthropics account and route it to another LLM provider",
   "scripts": {
     "dev": "vite --host --port 16175",
