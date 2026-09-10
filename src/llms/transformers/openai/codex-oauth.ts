@@ -17,6 +17,7 @@ import { arch } from 'node:os'
 import type { RuntimeProvider, TransformerContext, TransformerHookResult, UnifiedChatRequest } from '@/schemas/domain'
 import { type CodexRequestShape, PackageJsonSchema } from '@/schemas/wire'
 import { ensureFreshCodexAccessToken } from '../../../services/codex-auth/token'
+import { sessionIdFromRequest } from '../../pipeline/session-id'
 import { cloneResponse } from '../../utils/response-clone'
 import { OAuthTransformer, type SubscriptionTokenState } from '../oauth-base'
 
@@ -80,7 +81,9 @@ export class CodexOauthTransformer extends OAuthTransformer {
     provider: RuntimeProvider,
     context: TransformerContext
   ): Promise<TransformerHookResult> {
-    const sessionId = (context?.req?.headers?.['x-claude-code-session-id'] as string | undefined) ?? undefined
+    // See claude-code-oauth: resolved once per request by the route
+    // layer, absent only on probe contexts, which stay on the overlay.
+    const sessionId = context?.req?.accountSessionKey
     const { token, accountId } = await this.resolveSubscriptionAuth(provider, sessionId, 'codex', request)
     // biome-ignore plugin: CodexRequestShape adds optional Responses-API-specific fields (store/instructions/input/prompt_cache_key) on top of UnifiedChatRequest; the unified schema cannot model these without leaking codex-specific shape into the shared type.
     const req = request as CodexRequestShape
@@ -125,8 +128,12 @@ export class CodexOauthTransformer extends OAuthTransformer {
 
     // Reuse the inbound session ID so ChatGPT sees a stable session for
     // the lifetime of the Claude Code session (aids server-side caching).
-    // Fall back to a fresh UUID only when the client didn't send one.
-    const upstreamSessionId = sessionId ?? randomUUID()
+    // Fall back to a fresh UUID only when the client didn't send one —
+    // read from the request rather than from `sessionId` above, whose
+    // fallback is a Rialto-internal client identity ("token:<id>") that
+    // has no business being announced upstream as a thread id.
+    const carriedSessionId = sessionIdFromRequest(context?.req?.headers, context?.req?.body)
+    const upstreamSessionId = carriedSessionId !== undefined ? carriedSessionId : randomUUID()
     const threadId = upstreamSessionId
     const windowId = `${upstreamSessionId}:0`
 

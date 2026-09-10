@@ -47,15 +47,27 @@ function sessionFromBody(body: unknown): string | undefined {
   return undefined
 }
 
-export function resolveSessionId(context: TransformerContext): string {
-  const headers = context.req?.headers !== undefined ? context.req.headers : {}
-  const threadId = typeof headers.thread_id === 'string' ? headers.thread_id : undefined
+/**
+ * The session id the request carries on its own — headers first, then
+ * the body — or undefined when it carries none.
+ *
+ * Split out of `resolveSessionId` because the /v1 route layer asks the
+ * same question before any TransformerContext exists — it needs the
+ * carried id on its own, without the random per-context fallback, which
+ * would answer a different string on every call.
+ */
+export function sessionIdFromRequest(headers: Record<string, string> | undefined, body: unknown): string | undefined {
+  const h = headers !== undefined ? headers : {}
+  const threadId = typeof h.thread_id === 'string' ? h.thread_id : undefined
   if (threadId) return threadId
-  const ccSession =
-    typeof headers['x-claude-code-session-id'] === 'string' ? headers['x-claude-code-session-id'] : undefined
+  const ccSession = typeof h['x-claude-code-session-id'] === 'string' ? h['x-claude-code-session-id'] : undefined
   if (ccSession) return ccSession
-  const bodySession = sessionFromBody(context.req?.body)
-  if (bodySession) return bodySession
+  return sessionFromBody(body)
+}
+
+export function resolveSessionId(context: TransformerContext): string {
+  const carried = sessionIdFromRequest(context.req?.headers, context.req?.body)
+  if (carried) return carried
   const cached = randomSessionByContext.get(context)
   if (cached) return cached
   const fresh = randomUUID()

@@ -48,7 +48,6 @@ import { initConfig, initDir } from './services/config/envelope'
 import { migrateHomeDir } from './services/config/migrate-home-dir'
 import { ensureInboundSurfaces } from './services/inbound-surface-service'
 import { startRoutingScheduler } from './services/routing-scheduler'
-import { reconcileActiveSubAccounts } from './services/subscription-account-sync-service'
 import { startUsageCapture } from './services/usage-job'
 import { HOME_DIR } from './shared/constants'
 import { APP_VERSION } from './version'
@@ -97,10 +96,6 @@ logger.info(
   { bootstrapToken: (process.env.APIKEY ?? '').length > 0 ? 'configured' : 'not set' },
   'admin credential status'
 )
-// Self-heal subscription providers whose active account binding was
-// orphaned by older toggle code that nulled instead of promoting.
-// Idempotent: a no-op once every provider already has a valid active.
-await reconcileActiveSubAccounts()
 // Give every inbound surface an explicit stored routing mode, so no
 // read has to fall back to a per-surface default.
 await ensureInboundSurfaces()

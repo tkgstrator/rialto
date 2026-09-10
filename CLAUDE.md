@@ -225,7 +225,7 @@ The schema is well past the three tables the first PR shipped; the column commen
 
 | Table | Notes |
 |-------|-------|
-| `Provider` | unique `name`, `apiBaseUrl`, `apiKey`, `authMode`, `apiStyle`, `enabled`, `activeSubscriptionAccountId`. **There is no `transformer` column** — the chain is derived (see Transformer System) and the `transformer._disabledModels` the UI reads is synthesized from `Model.enabled` by `toWireTransformer` |
+| `Provider` | unique `name`, `apiBaseUrl`, `apiKey`, `authMode`, `apiStyle`, `enabled`. **No account is designated** — `activeSubscriptionAccountId` is gone (migration `20260910084500_drop_provider_active_subscription_account`); which SubAccount serves a request is decided per request, and "can this provider authenticate" is asked of its accounts as a set (`src/shared/subscription-credential.ts`). **There is no `transformer` column** — the chain is derived (see Transformer System) and the `transformer._disabledModels` the UI reads is synthesized from `Model.enabled` by `toWireTransformer` |
 | `Model` | FK to Provider with `onDelete: Cascade`, composite unique `(providerId, name)`, optional per-model `apiStyle` override. `enabled` is the per-model switch; `Provider.enabled` gates the whole provider above it |
 | `RouterSlot` | one row per `ScenarioKey` value — **five, not six** (`background` is gone) — with independent `agent` and `subagent` model references, each a nullable FK with `onDelete: Restrict` |
 | `SubAccount` / `SubAccountUsage` / `SubAccountQuota` | subscription accounts, their observed windows, and the exhaustion state the quota router reads |
@@ -239,9 +239,8 @@ Boot sequence — top-level statements in `src/index.ts`, not a `getServer()`:
 1. `migrateHomeDir()` — carry a pre-rename `~/.claude-code-router` over to `~/.rialto`. **Must run first**: the migration is idempotent by "the destination already exists", so any earlier `mkdir` of `~/.rialto` makes the copy a permanent no-op. Skipped when `RIALTO_HOME_DIR` pins the home elsewhere.
 2. `initDir()` — ensure home directories.
 3. `initConfig()` — read the envelope from disk, mirror scalar keys onto `process.env` via `applyEnvelopeToEnv`, then `syncLoggerFromEnv()` re-applies `LOG_LEVEL` to the already-constructed pino instance.
-4. `reconcileActiveSubAccounts()` — self-heal subscription providers whose active account binding was orphaned by older toggle code.
-5. `ensureInboundSurfaces()` — give every registered surface an explicit stored routing mode.
-6. `startUsageCapture()` / `startAuthHealthCheck()` / `startRoutingScheduler()` — fire-and-forget background jobs; none of them may block boot.
+4. `ensureInboundSurfaces()` — give every registered surface an explicit stored routing mode.
+5. `startUsageCapture()` / `startAuthHealthCheck()` / `startRoutingScheduler()` — fire-and-forget background jobs; none of them may block boot.
 
 There is **no `runJsonToDbMigration()`** and no `getServer()`. The one-shot lift of
 legacy `Providers` / `Router` out of `config.json` is gone. The flow now runs the

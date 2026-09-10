@@ -61,12 +61,10 @@ function normalizeEffort(body: Record<string, unknown>, model: string): void {
 // Resolve whether the target this request is about to hit has already
 // been refused the long-context entitlement. The sticky session→account
 // map is consulted so the answer is account-scoped whenever the pipeline
-// has picked one; without a session header it falls back to the coarser
-// provider-level mark.
-function longContextDeniedFor(headers: Record<string, string>, providerName: string): boolean {
-  const sessionId = headers['x-claude-code-session-id']
-  const account = typeof sessionId === 'string' && sessionId.length > 0 ? getActiveAccountForSession(sessionId) : null
-  return isLongContextDenied(providerName, account)
+// has picked one; a session that has not resolved an account yet falls
+// back to the coarser provider-level mark.
+function longContextDeniedFor(sessionId: string, providerName: string): boolean {
+  return isLongContextDenied(providerName, getActiveAccountForSession(sessionId))
 }
 
 // ─── Resolved invocation shape ─────────────────────────────────────────
@@ -148,7 +146,7 @@ export function resolveInvocationForModel(
   // Reshape the anthropic-beta header (add oauth beta; drop context-1m
   // only when this provider/account is known to lack the entitlement).
   if (typeof soleUseName === 'string' && soleUseName.endsWith('-oauth')) {
-    prepareSubscriptionBetas(headers, longContextDeniedFor(headers, providerName))
+    prepareSubscriptionBetas(headers, longContextDeniedFor(plan.accountSessionKey, providerName))
   }
 
   const request: PipelineRequest = {
@@ -162,7 +160,8 @@ export function resolveInvocationForModel(
     isSubagent: plan.isSubagent,
     inboundType: inboundTypeForPath(plan.path),
     surface: surfaceForPath(plan.path)?.id,
-    accessTokenId: plan.accessTokenId
+    accessTokenId: plan.accessTokenId,
+    accountSessionKey: plan.accountSessionKey
   }
 
   return { body, headers, request, provider, transformer }

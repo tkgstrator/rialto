@@ -41,7 +41,6 @@ export interface SubscriptionWire {
   kind: 'claude' | 'codex' | 'other'
   enabled: boolean
   accounts: SubAccountWire[]
-  activeAccount: SubAccountWire | null
 }
 
 export interface SubscriptionsResponse {

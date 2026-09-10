@@ -40,8 +40,10 @@ export const SubscriptionProviderInfoSchema = z
     // coding provider names.
     kind: z.enum(['claude', 'codex', 'other']),
     enabled: z.boolean(),
-    accounts: z.array(SubscriptionInfoSchema),
-    activeAccount: SubscriptionInfoSchema.nullable()
+    // Every connected account. No account is designated: the proxy
+    // picks one per request (session-account-router) and the gates ask
+    // whether ANY of these can authenticate (shared/subscription-credential).
+    accounts: z.array(SubscriptionInfoSchema)
   })
   .openapi('SubscriptionInfo')
 

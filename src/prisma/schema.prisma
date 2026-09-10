@@ -113,9 +113,12 @@ model Provider {
   // Defaults true because the blob's absence meant "enabled" — only an
   // explicit `providerEnabled: false` turned a provider off.
   enabled                     Boolean      @default(true)
-  // Selected account for subscription-auth providers. Null for api_key providers.
-  activeSubscriptionAccountId String?
-  activeSubscriptionAccount   SubAccount?  @relation("ProviderActiveSubscriptionAccount", fields: [activeSubscriptionAccountId], references: [id], onDelete: SetNull)
+  // No account is designated. A subscription provider's accounts are all
+  // candidates; which one serves a request is decided per request by
+  // session-account-router, and "can this provider authenticate" is asked
+  // of the accounts as a set (shared/subscription-credential.ts). The
+  // dropped `activeSubscriptionAccountId` made both answers hostage to
+  // one promoted row.
   subscriptionAccounts        SubAccount[] @relation("ProviderSubscriptionAccounts")
   models                      Model[]
   createdAt                   DateTime     @default(now())
@@ -127,10 +130,9 @@ model SubAccount {
   providerId         String
   provider           Provider   @relation("ProviderSubscriptionAccounts", fields: [providerId], references: [id], onDelete: Cascade)
   sourcePath         String
-  // User-facing on/off switch. The sync service treats only enabled
-  // accounts as candidates for activeSubscriptionAccountId, so a disabled
-  // row is effectively ignored at request time even though its tokens
-  // remain on disk.
+  // User-facing on/off switch. Only enabled accounts are candidates for
+  // the request-time picker, so a disabled row is ignored at request
+  // time even though its tokens remain on disk.
   enabled            Boolean    @default(true)
   label              String
   userName           String?
@@ -167,7 +169,6 @@ model SubAccount {
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
 
-  activeForProviders Provider[]        @relation("ProviderActiveSubscriptionAccount")
   usage              SubAccountUsage[]
   quota              SubAccountQuota?
 

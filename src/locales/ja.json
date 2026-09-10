@@ -280,7 +280,6 @@
     "accounts": {
       "title": "アカウント",
       "empty": "接続済みのアカウントがありません。「プロバイダーを追加」からサインインしてください。",
-      "active": "使用中",
       "auth": "認証 {{status}}",
       "resetsIn": "リセットまで",
       "windowFiveHour": "5時間",

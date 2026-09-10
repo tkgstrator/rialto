@@ -427,7 +427,11 @@ describe.skipIf(!HAS_DB)('configService', () => {
     expect(ui.Router.persona).toBeNull()
   })
 
-  test('disabling the active subscription account promotes another enabled one', async () => {
+  // Toggling an account used to have a second effect: it moved the
+  // provider's `activeSubscriptionAccountId` binding, promoting a peer or
+  // nulling the slot. That binding is gone — every enabled account is a
+  // candidate — so the toggle now writes exactly one thing.
+  test('disabling one subscription account leaves its peers alone', async () => {
     const prisma = getPrismaClient()
     const { AuthMode } = await import('../../src/generated/prisma/client')
     const provider = await prisma.provider.create({
@@ -437,7 +441,7 @@ describe.skipIf(!HAS_DB)('configService', () => {
         authMode: AuthMode.subscription
       }
     })
-    const active = await prisma.subAccount.create({
+    const first = await prisma.subAccount.create({
       data: {
         providerId: provider.id,
         sourcePath: 'oauth:claude:a',
@@ -455,10 +459,6 @@ describe.skipIf(!HAS_DB)('configService', () => {
         plan: 'claude_max'
       }
     })
-    await prisma.provider.update({
-      where: { id: provider.id },
-      data: { activeSubscriptionAccountId: active.id }
-    })
 
     await applyUiConfig({
       Providers: [
@@ -469,7 +469,7 @@ describe.skipIf(!HAS_DB)('configService', () => {
           auth_mode: 'subscription',
           models: [],
           subscription_accounts: [
-            { id: active.id, enabled: false },
+            { id: first.id, enabled: false },
             { id: spare.id, enabled: true }
           ]
         }
@@ -477,14 +477,18 @@ describe.skipIf(!HAS_DB)('configService', () => {
       Router: {}
     })
 
-    const after = await prisma.provider.findUnique({
-      where: { id: provider.id },
-      select: { activeSubscriptionAccountId: true }
+    const after = await prisma.subAccount.findMany({
+      where: { providerId: provider.id },
+      select: { id: true, enabled: true },
+      orderBy: { sourcePath: 'asc' }
     })
-    expect(after?.activeSubscriptionAccountId).toBe(spare.id)
+    expect(after).toEqual([
+      { id: first.id, enabled: false },
+      { id: spare.id, enabled: true }
+    ])
   })
 
-  test('disabling the last enabled subscription account nulls the binding', async () => {
+  test('disabling the last enabled subscription account is allowed', async () => {
     const prisma = getPrismaClient()
     const { AuthMode } = await import('../../src/generated/prisma/client')
     const provider = await prisma.provider.create({
@@ -503,10 +507,6 @@ describe.skipIf(!HAS_DB)('configService', () => {
         plan: 'claude_max'
       }
     })
-    await prisma.provider.update({
-      where: { id: provider.id },
-      data: { activeSubscriptionAccountId: only.id }
-    })
 
     await applyUiConfig({
       Providers: [
@@ -522,11 +522,8 @@ describe.skipIf(!HAS_DB)('configService', () => {
       Router: {}
     })
 
-    const after = await prisma.provider.findUnique({
-      where: { id: provider.id },
-      select: { activeSubscriptionAccountId: true }
-    })
-    expect(after?.activeSubscriptionAccountId).toBeNull()
+    const after = await prisma.subAccount.findUnique({ where: { id: only.id }, select: { enabled: true } })
+    expect(after?.enabled).toBe(false)
   })
 
   test('unknown router scenarios are dropped', async () => {

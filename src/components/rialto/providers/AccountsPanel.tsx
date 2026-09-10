@@ -63,32 +63,15 @@ function WindowLine({ row, now }: { row: AccountQuota; now: number }) {
 
 const DASH = '—'
 
-function AccountRow({
-  account,
-  active,
-  quota,
-  now
-}: {
-  account: SubAccountWire
-  active: boolean
-  quota: QuotaIndex
-  now: number
-}) {
+function AccountRow({ account, quota, now }: { account: SubAccountWire; quota: QuotaIndex; now: number }) {
   const { t } = useTranslation()
   const windows = quotaForAccount(quota, account.id)
   const plan = account.plan === null ? null : formatPlan(account.plan)
   return (
-    <div
-      className={cn(
-        'border-l-2 px-4 py-3 transition-colors hover:bg-muted/50',
-        active ? 'border-l-foreground' : 'border-l-transparent',
-        account.enabled ? '' : 'opacity-45'
-      )}
-    >
+    <div className={cn('px-4 py-3 transition-colors hover:bg-muted/50', account.enabled ? '' : 'opacity-45')}>
       <div className='flex items-center gap-2'>
         <span className='text-xs font-medium'>{accountLabel(account)}</span>
         {plan === null ? null : <Pill tone='info'>{plan}</Pill>}
-        {active ? <Pill tone='ok'>{t('providers.accounts.active')}</Pill> : null}
         {windows.length === 0 ? null : (
           <span className='ml-auto text-[12px] text-muted-foreground/70'>{t('providers.accounts.resetsIn')}</span>
         )}
@@ -119,8 +102,6 @@ export function AccountsPanel({
 }) {
   const { t } = useTranslation()
   const accounts = subscription === undefined ? [] : subscription.accounts
-  const active = subscription === undefined ? null : subscription.activeAccount
-  const activeId = active === null ? null : active.id
   return (
     <div className='border-r border-border'>
       <div className='px-6 pt-5 pb-2'>
@@ -131,13 +112,7 @@ export function AccountsPanel({
       ) : (
         <div className='px-2 pb-4'>
           {accounts.map((a) => (
-            <AccountRow
-              key={a.id}
-              account={a}
-              active={activeId !== null && a.id === activeId}
-              quota={quota}
-              now={now}
-            />
+            <AccountRow key={a.id} account={a} quota={quota} now={now} />
           ))}
         </div>
       )}

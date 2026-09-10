@@ -47,22 +47,5 @@ export async function applySubscriptionAccountToggles(
       where: { id: { in: toDisable } },
       data: { enabled: false }
     })
-    // If the active account just got disabled, promote any other
-    // still-enabled account so the provider keeps serving requests.
-    // Only fall back to null when no enabled candidate remains —
-    // otherwise the Models view and proxy treat the provider as
-    // unavailable until the next OAuth Connect.
-    const activeId = provider.activeSubscriptionAccountId
-    if (activeId !== null && toDisable.includes(activeId)) {
-      const replacement = await tx.subAccount.findFirst({
-        where: { providerId: provider.id, enabled: true, id: { notIn: toDisable } },
-        orderBy: { createdAt: 'asc' },
-        select: { id: true }
-      })
-      await tx.provider.update({
-        where: { id: provider.id },
-        data: { activeSubscriptionAccountId: replacement ? replacement.id : null }
-      })
-    }
   }
 }

@@ -95,14 +95,15 @@ describe.skipIf(!HAS_DB)('POST /api/oauth/export-credentials (DB)', () => {
   })
 
   // Seed one subscription provider of the requested kind, backed by a
-  // ready-to-decrypt SubAccount. `active` toggles whether the provider's
-  // `activeSubscriptionAccountId` points at the seeded row.
+  // ready-to-decrypt SubAccount. `enabled` toggles whether that row is a
+  // candidate at all — the export walks the provider's enabled accounts,
+  // no row being designated any more.
   const seedProviderWithAccount = async (opts: {
     kind: 'claude' | 'codex'
     tokens: { accessToken: string; refreshToken: string; idToken?: string }
     scopes?: string[]
     expiresAt?: Date | null
-    active?: boolean
+    enabled?: boolean
   }): Promise<{ providerId: string; subAccountId: string }> => {
     const { AuthMode } = await import('../../src/generated/prisma/client')
     const db = prisma()
@@ -119,6 +120,7 @@ describe.skipIf(!HAS_DB)('POST /api/oauth/export-credentials (DB)', () => {
         providerId: provider.id,
         sourcePath: `oauth:${opts.kind}:test`,
         label: 'test',
+        enabled: opts.enabled !== false,
         accessTokenEnc: encryptForTest(opts.tokens.accessToken, TEST_KEY_HEX),
         refreshTokenEnc: encryptForTest(opts.tokens.refreshToken, TEST_KEY_HEX),
         idTokenEnc: opts.tokens.idToken ? encryptForTest(opts.tokens.idToken, TEST_KEY_HEX) : null,
@@ -126,12 +128,6 @@ describe.skipIf(!HAS_DB)('POST /api/oauth/export-credentials (DB)', () => {
         expiresAt: opts.expiresAt ?? null
       }
     })
-    if (opts.active !== false) {
-      await db.provider.update({
-        where: { id: provider.id },
-        data: { activeSubscriptionAccountId: subAccount.id }
-      })
-    }
     return { providerId: provider.id, subAccountId: subAccount.id }
   }
 
@@ -142,11 +138,11 @@ describe.skipIf(!HAS_DB)('POST /api/oauth/export-credentials (DB)', () => {
     expect(body.error).toContain('claude')
   })
 
-  test('404 when provider exists but has no active SubAccount', async () => {
+  test('404 when the provider only has disabled accounts', async () => {
     await seedProviderWithAccount({
       kind: 'claude',
       tokens: { accessToken: 'sk-ant-live', refreshToken: 'r' },
-      active: false
+      enabled: false
     })
     const res = await post({ provider: 'claude' })
     expect(res.status).toBe(404)

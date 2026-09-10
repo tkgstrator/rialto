@@ -8,7 +8,7 @@
 import { isTransformerHookResult, type RuntimeProvider } from '@/schemas/domain/pipeline'
 import { ApiStyle } from '../../generated/prisma/client'
 import { ClaudeCodeOauthTransformer } from '../../llms/transformers/anthropic'
-import { getActiveSubAccountAuth } from '../subscription-account-sync-service'
+import { getUsableSubAccountAuth } from '../subscription-account-sync-service'
 import { fetchWithTimeout, formatHttpError, type ProbeResult, reachable } from './http'
 import { probeInference } from './probes'
 
@@ -16,13 +16,14 @@ import { probeInference } from './probes'
 // envelope is needed.
 type SubAuth = { token: string; extraHeaders?: Record<string, string> }
 
-// Read the OAuth access token the provider's active SubAccount is bound
-// to (decrypted in-memory). The test then makes a *real* authed call
+// Read the OAuth access token of one SubAccount that can authenticate
+// (decrypted in-memory). The test then makes a *real* authed call
 // against the upstream — file-presence checks went away with the move
-// to DB-only credential storage.
+// to DB-only credential storage. Which account it is does not matter
+// here: the question is whether the subscription can serve the model.
 const readSubscriptionAuth = async (providerName: string, apiBaseUrl: string): Promise<SubAuth | { error: string }> => {
-  const auth = await getActiveSubAccountAuth(providerName)
-  if (!auth?.accessToken) return { error: 'no active subscription account on this provider' }
+  const auth = await getUsableSubAccountAuth(providerName)
+  if (!auth?.accessToken) return { error: 'no usable subscription account on this provider' }
   if (apiBaseUrl.includes('chatgpt.com') || apiBaseUrl.includes('openai.com')) {
     return {
       token: auth.accessToken,
@@ -56,9 +57,9 @@ const buildClaudeCodeRequest = async (
   apiBaseUrl: string,
   model: string
 ): Promise<{ headers: Record<string, string>; body: string } | { error: string }> => {
-  const overlay = await getActiveSubAccountAuth(providerName)
+  const overlay = await getUsableSubAccountAuth(providerName)
   if (!overlay?.accessToken) {
-    return { error: 'no active subscription account on this provider' }
+    return { error: 'no usable subscription account on this provider' }
   }
   const runtimeProvider: RuntimeProvider = {
     name: providerName,
