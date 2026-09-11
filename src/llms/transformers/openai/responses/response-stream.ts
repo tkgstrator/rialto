@@ -6,8 +6,11 @@
  * chunk(s) mapping in `./stream-chunks.ts`).
  */
 
+import type { Logger } from 'pino'
 import { type ResponsesStreamEvent, ResponsesStreamEventSchema } from '@/schemas/wire/openai/responses'
-import { handleStreamEvent } from './stream-chunks'
+import { failureOf, handleStreamEvent } from './stream-chunks'
+
+const FAILURE_EVENTS = new Set(['response.failed', 'response.incomplete', 'error'])
 
 /** Does this `data:` payload look like a Responses-API event? */
 function isResponsesEvent(dataStr: string): boolean {
@@ -31,11 +34,13 @@ export class ResponsesStreamSession {
   private readonly controller: ReadableStreamDefaultController<Uint8Array>
   private readonly decoder = new TextDecoder()
   private readonly encoder = new TextEncoder()
+  private readonly logger: Logger | undefined
   private buffer = ''
   private isStreamEnded = false
 
-  constructor(controller: ReadableStreamDefaultController<Uint8Array>) {
+  constructor(controller: ReadableStreamDefaultController<Uint8Array>, logger?: Logger) {
     this.controller = controller
+    this.logger = logger
   }
 
   async run(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
@@ -111,12 +116,27 @@ export class ResponsesStreamSession {
       if (!isResponsesEvent(dataStr)) this.enqueueRaw(line)
       return
     }
+    if (FAILURE_EVENTS.has(parsed.type)) this.logFailure(parsed)
     const ended = handleStreamEvent(
       parsed,
       (eventType) => this.bumpIndex(eventType),
       (chunk) => this.enqueueChunk(chunk)
     )
     if (ended) this.isStreamEnded = true
+  }
+
+  // The response went out as a 200 before this event arrived, and a
+  // stream carries no usage to write a request row from, so without a
+  // line here the operator's only record of the request says it worked.
+  private logFailure(event: ResponsesStreamEvent): void {
+    const reason = event.response?.incomplete_details?.reason
+    // A spent output budget is a truncated answer, not a failure.
+    if (reason === 'max_output_tokens') return
+    const failure = failureOf(event)
+    this.logger?.warn(
+      { event: event.type, code: failure.code, reason, message: failure.message },
+      'upstream responses stream ended in a failure after answering 200'
+    )
   }
 
   private safeParseEvent(dataStr: string): ResponsesStreamEvent | null {

@@ -147,14 +147,14 @@ const accountBlock = (a) => `
 // apart. A hairline between groups, none above the first: the section
 // head already draws one.
 const providerGroup = (p) => `
-  <div class="border-t border-border/60 pt-3 first:border-t-0 first:pt-0">
+  <div class="@container border-t border-border/60 pt-3 first:border-t-0 first:pt-0">
     <div class="flex items-center gap-2 px-6 pb-2">
       <i class="${p.icon} text-sm leading-none text-muted-foreground"></i>
       <span class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">${p.label}</span>
       ${mono(p.id)}
       <span class="text-[12px] text-muted-foreground/70">${p.accounts.length} account${p.accounts.length === 1 ? '' : 's'}</span>
     </div>
-    <div class="grid grid-cols-1 gap-x-px pb-3 xl:grid-cols-2">
+    <div class="grid grid-cols-1 gap-x-px pb-3 @min-[56rem]:grid-cols-2 @min-[84rem]:grid-cols-3">
       ${p.accounts.map(accountBlock).join('')}
     </div>
   </div>`
@@ -344,12 +344,14 @@ document.getElementById('root').innerHTML = `
   </div>
 
   ${sectionHead('Subscription windows')}
-  <!-- One group per provider; inside it, two accounts per row once there
-       is room, one below xl. An account is a name and its windows; given
-       the whole width each bar became 800px of track carrying one figure,
-       with "resets in" a screen away from the percentage it qualifies. An
-       odd account leaves its column empty rather than stretching to fill
-       the row — and never lends that column to the next provider. -->
+  <!-- One group per provider; inside it, as many accounts per row as get
+       28rem each, up to three — measured on the group with a container
+       query, not the viewport, because the sidebar folds at any width. An
+       account is a name and its windows; given the whole width each bar
+       became 800px of track carrying one figure, with "resets in" a screen
+       away from the percentage it qualifies. An empty column is left empty
+       rather than stretching the accounts to fill the row — and never lent
+       to the next provider. -->
   <div class="pb-2">
     ${PROVIDERS.map(providerGroup).join('')}
   </div>

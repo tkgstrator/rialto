@@ -235,10 +235,11 @@ export class OpenAIResponsesTransformer extends Transformer {
     }
 
     const upstreamBody = response.body
+    const logger = this.logger
 
     const stream = new ReadableStream({
       async start(controller) {
-        const session = new ResponsesStreamSession(controller)
+        const session = new ResponsesStreamSession(controller, logger)
         await session.run(upstreamBody.getReader())
       }
     })

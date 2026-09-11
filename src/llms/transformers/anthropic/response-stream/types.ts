@@ -66,6 +66,7 @@ export type StreamState = {
   currentContentBlockIndex: number
   safeEnqueue: (data: Uint8Array) => void
   safeClose: () => void
+  closeWithoutStop: () => void
   closeCurrentBlock: () => void
   assignContentBlockIndex: () => number
 }

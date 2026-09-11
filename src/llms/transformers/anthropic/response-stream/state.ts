@@ -34,6 +34,7 @@ export function createStreamState(
     currentContentBlockIndex: -1,
     safeEnqueue: () => {},
     safeClose: () => {},
+    closeWithoutStop: () => {},
     closeCurrentBlock: () => {},
     assignContentBlockIndex: () => 0
   }
@@ -43,6 +44,9 @@ export function createStreamState(
   }
   state.safeClose = () => {
     safeClose(state)
+  }
+  state.closeWithoutStop = () => {
+    closeWithoutStop(state)
   }
   state.closeCurrentBlock = () => {
     closeCurrentBlock(state)
@@ -127,8 +131,29 @@ function emitFinalMessageDelta(state: StreamState): void {
   )
 }
 
+// End the stream with nothing appended: after an error event, and for a
+// stream that never started a message.
+function closeWithoutStop(state: StreamState): void {
+  if (state.isClosed) return
+  try {
+    state.controller.close()
+  } catch (error) {
+    if (!(error instanceof TypeError && error.message.includes('Controller is already closed'))) throw error
+  }
+  state.isClosed = true
+}
+
 function safeClose(state: StreamState): void {
   if (state.isClosed) return
+  // No message_start went out, so there is no message to end. Closing it
+  // with message_delta + message_stop anyway handed the client a
+  // two-event husk ("Streaming response ended before any complete data")
+  // and slipped past the route's zero-event check, which is what turns an
+  // empty upstream into a real error status on the non-stream path.
+  if (!state.hasStarted) {
+    closeWithoutStop(state)
+    return
+  }
   try {
     if (state.currentContentBlockIndex >= 0) {
       const contentBlockStop = {

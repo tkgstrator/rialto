@@ -13,7 +13,7 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, btn, navTo } = window.Shell
+const { renderShell, pill, btn } = window.Shell
 
 const field = (label, value, hint, kind = 'text') => `
   <div class="grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4">
@@ -37,31 +37,37 @@ const field = (label, value, hint, kind = 'text') => `
     </div>
   </div>`
 
-// Retention is the part worth surfacing: RequestLog and Message grow
-// without bound today and nothing in the UI says how big they are.
-// Each store is what one Activity view reads, so the row leads there —
-// "how big is this and how long do I keep it" and "what is in it" are the
-// same question asked from two ends.
+// Stored data is the part worth surfacing: request history and
+// conversations grow without bound and nothing else in the UI says how big
+// they are. Each row is what one Activity view reads, so its name leads
+// there — "how big is this" and "what is in it" are the same question asked
+// from two ends. Named the way those views name them, not by table: an
+// operator deleting old conversations should not need to know the rows
+// live in `Message`. No "unbounded" pills and no footnote about the
+// cutoff: the column is headed as what the button beside it does.
 const STORES = [
-  { name: 'RequestLog',    rows: '1.24M',  size: '412 MB', keep: '90 days', view: 'activity-requests.html' },
-  { name: 'Message',       rows: '318k',   size: '1.8 GB', keep: '30 days', view: 'activity.html' },
-  { name: 'UsageSnapshot', rows: '82.1k',  size: '9.4 MB', keep: '14 days', view: 'activity-usage.html' },
-  { name: 'Log files',     rows: '—',      size: '186 MB', keep: '7 files', view: 'activity-logs.html' }
+  { name: 'Request history',  count: '1,240,118', size: '412 MB', keep: '90 days', view: 'activity-requests.html' },
+  { name: 'Conversations',    count: '318,402',   size: '1.8 GB', keep: '30 days', view: 'activity.html' },
+  { name: 'Usage history',    count: '82,114',    size: '9.4 MB', keep: '90 days', view: 'activity-usage.html' },
+  { name: 'Server log files', count: '7',         size: '186 MB', keep: '7 days',  view: 'activity-logs.html' }
 ]
 
 const storeRow = (s) => `
-  <tr ${navTo(s.view)} class="border-t border-border/60 transition-colors hover:bg-muted/50">
-    <td class="py-2.5 pl-6 pr-3 font-mono text-xs">${s.name}</td>
-    <td class="px-3 text-right font-mono text-xs tabular-nums text-muted-foreground">${s.rows}</td>
+  <tr class="border-t border-border/60 transition-colors hover:bg-muted/50">
+    <td class="py-2.5 pl-6 pr-3">
+      <a href="${s.view}" class="group inline-flex items-center gap-1.5 text-xs">
+        <span class="group-hover:underline">${s.name}</span>
+        <i class="ri-arrow-right-up-line text-sm text-muted-foreground"></i>
+      </a>
+    </td>
+    <td class="px-3 text-right font-mono text-xs tabular-nums text-muted-foreground">${s.count}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${s.size}</td>
     <td class="px-3">
-      <button class="inline-flex h-7 items-center gap-2 rounded-md border border-border px-2.5 text-xs transition-colors hover:bg-muted/60">
-        ${s.keep}<i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i>
+      <button class="relative inline-flex h-8 items-center rounded-md border border-border pl-2.5 pr-7 text-xs transition-colors hover:bg-muted/60">
+        ${s.keep}<i class="ri-arrow-down-s-line absolute right-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"></i>
       </button>
     </td>
-    <td class="py-2.5 pl-3 pr-6 text-right">
-      <button class="text-[12px] text-muted-foreground hover:text-destructive">Prune now</button>
-    </td>
+    <td class="py-2.5 pl-3 pr-6 text-right">${btn('Delete', 'danger', 'ri-delete-bin-line')}</td>
   </tr>`
 
 document.getElementById('root').innerHTML = `
@@ -70,25 +76,24 @@ document.getElementById('root').innerHTML = `
     <div class="min-w-0 overflow-y-auto">
       <div class="flex items-center gap-3 px-6 pt-6 pb-3">
         <h2 class="text-sm font-semibold">Server log</h2>
-        <span class="text-[12px] text-muted-foreground">pino → ~/.rialto/logs/</span>
         <div class="ml-auto">${btn('Open in Activity', 'outline', 'ri-external-link-line', 'activity-logs.html')}</div>
       </div>
-      ${field('Write to file', true, 'Off keeps logging to stdout only.', 'toggle')}
+      ${field('Write to file', true, 'When off, logs are not saved and Activity → Logs shows nothing new.', 'toggle')}
       ${field('Level', 'info', 'fatal · error · warn · info · debug · trace', 'select')}
       ${field('Rotate at', '10', 'Megabytes. A new file is started past this size.')}
       <!-- NOT "older files are deleted on rotation": src/logger.ts opens
            rialto-<date>-N.log with an incrementing suffix and never unlinks
            anything, which is why this row shows a count on disk rather
-           than a limit. The retention table below is the actual remedy. -->
-      ${field('Keep files', '7', 'Rotation never deletes; prune below.')}
+           than a limit. The stored-data table below is the actual remedy. -->
+      ${field('Log files', '7 files', 'Old files are kept until you delete them below.')}
 
       <div class="flex items-center gap-3 border-t border-border px-6 pt-6 pb-3">
         <h2 class="text-sm font-semibold">Request capture</h2>
         <span class="text-[12px] text-muted-foreground">what lands in Activity</span>
       </div>
-      ${field('Record requests', true, 'One RequestLog row per upstream call — tokens, cost, latency, routing decision.', 'toggle')}
-      ${field('Record messages', true, 'Chat turns for the session view. Never includes the system prompt or tool definitions.', 'toggle')}
-      ${field('Redact tool args', false, 'Store tool_use blocks with arguments stripped.', 'toggle')}
+      ${field('Record requests', true, 'Tokens, cost, latency and routing for every upstream call.', 'toggle')}
+      ${field('Record messages', true, "What was said, readable on a session's Conversation tab. Never includes the system prompt or tool definitions.", 'toggle')}
+      ${field('Redact tool args', false, 'Save tool calls and their results without the contents.', 'toggle')}
 
       <div class="px-6 py-4">
         <div class="rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3">
@@ -98,24 +103,24 @@ document.getElementById('root').innerHTML = `
             ${pill('privacy', 'warn')}
           </div>
           <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
-            User and assistant turns are written to Postgres in the clear so the session view can
-            replay them. Turn it off if this database is shared, or shorten the retention below.
+            User and assistant messages are saved unencrypted so they can be read in the session view.
+            Turn this off if others can access the database, or delete old conversations below.
           </p>
         </div>
       </div>
 
       <div class="flex items-center gap-3 border-t border-border px-6 pt-6 pb-3">
-        <h2 class="text-sm font-semibold">Retention</h2>
+        <h2 class="text-sm font-semibold">Stored data</h2>
         <span class="text-[12px] text-muted-foreground">2.4 GB total</span>
       </div>
       <table class="w-full table-fixed">
-        <colgroup><col><col class="w-24"><col class="w-24"><col class="w-32"><col class="w-24"></colgroup>
+        <colgroup><col><col class="w-24"><col class="w-24"><col class="w-32"><col class="w-40"></colgroup>
         <thead>
           <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
-            <th class="pl-6 pr-3 text-left font-medium">Store</th>
-            <th class="px-3 text-right font-medium">Rows</th>
+            <th class="pl-6 pr-3 text-left font-medium">Data</th>
+            <th class="px-3 text-right font-medium">Count</th>
             <th class="px-3 text-right font-medium">Size</th>
-            <th class="px-3 text-left font-medium">Keep</th>
+            <th class="px-3 text-left font-medium">Older than</th>
             <th class="pl-3 pr-6"></th>
           </tr>
         </thead>

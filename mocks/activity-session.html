@@ -13,35 +13,35 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, meter, btn, navTo } = window.Shell
+const { renderShell, pill, btn, navTo, pager, tabs } = window.Shell
 
-// Drill-down from Activity: what this session cost, and where each of its
-// calls went. The trace is the part that did not exist before — "why did
-// this turn go to that model" was only answerable by reading logs.
+// Drill-down from Activity: what this session cost, where each of its calls
+// went, and what was said. `?tab=conversation` renders the second tab.
 //
-// The archived transcript used to hold the wide column with the trace
-// squeezed into a 22rem rail beside it, showing its last five rows behind
-// a "show all". A real Claude Code session is mostly tool traffic and
-// injected context, so that column spent the screen on material nobody
-// opens this page for, and hid the one thing the page knows that no other
-// page does. The messages are still archived — they are just not what
-// this screen is about.
+// The trace and the conversation are two tabs, not two panes. Side by side,
+// the transcript held the wide column and squeezed the trace — the one thing
+// this page knows that no other page does — into a 22rem rail showing its
+// last five rows. Dropping the transcript fixed that but left a store of
+// conversations nobody could read. A tab gives each the full width.
+const TAB = new URLSearchParams(location.search).get('tab') === 'conversation' ? 'conversation' : 'trace'
 
-// One row per upstream call. `requested` vs `sent` is the routing
-// decision made visible — the old UI logged it but never showed it.
+// One row per upstream call, newest first. `requested` vs `sent` is the
+// routing decision made visible — the old UI logged it but never showed it.
 const CALLS = [
-  { t: '14:02:11', requested: 'claude-sonnet-4-5', sent: 'claude-code,claude-opus-4-8',  scenario: 'default', lane: 'agent',    in: '48,210', out: '1,204', ms: '2,140', cost: '$0.21', status: 200 },
-  { t: '14:02:33', requested: 'claude-sonnet-4-5', sent: 'claude-code,claude-opus-4-8',  scenario: 'default', lane: 'agent',    in: '52,884', out: '2,918', ms: '3,806', cost: '$0.34', status: 200 },
-  { t: '14:03:02', requested: 'claude-sonnet-4-5', sent: 'codex,gpt-5.5',                scenario: 'default', lane: 'agent',    in: '0',      out: '0',     ms: '—',     cost: '–',     status: 429 },
+  { t: '14:05:47', requested: 'claude-haiku-4-5',  sent: 'claude-code,claude-haiku-4-5', scenario: 'default', lane: 'subagent', in: '9,118',  out: '402',   ms: '812',   cost: '$0.01', status: 200 },
   { t: '14:03:02', requested: 'claude-sonnet-4-5', sent: 'claude-code,claude-fable-5',   scenario: 'default', lane: 'agent',    in: '53,010', out: '3,442', ms: '4,411', cost: '$0.39', status: 200 },
-  { t: '14:05:47', requested: 'claude-haiku-4-5',  sent: 'claude-code,claude-haiku-4-5', scenario: 'default', lane: 'subagent', in: '9,118',  out: '402',   ms: '812',   cost: '$0.01', status: 200 }
+  { t: '14:03:02', requested: 'claude-sonnet-4-5', sent: 'codex,gpt-5.5',                scenario: 'default', lane: 'agent',    in: '0',      out: '0',     ms: '—',     cost: '–',     status: 429 },
+  { t: '14:02:33', requested: 'claude-sonnet-4-5', sent: 'claude-code,claude-opus-4-8',  scenario: 'default', lane: 'agent',    in: '52,884', out: '2,918', ms: '3,806', cost: '$0.34', status: 200 },
+  { t: '14:02:11', requested: 'claude-sonnet-4-5', sent: 'claude-code,claude-opus-4-8',  scenario: 'default', lane: 'agent',    in: '48,210', out: '1,204', ms: '2,140', cost: '$0.21', status: 200 }
 ]
 
 // A table, not the rail's stacked cards: at full width the same fields
 // line up into columns that can be scanned down. Chronological and
 // unsorted — the trace is a story, and a sortable column would let the
-// reader break the only ordering that carries meaning here. Nothing is
-// folded away either; the rail hid all but five because it was 22rem wide.
+// reader break the only ordering that carries meaning here. Newest first,
+// because the latest calls are what a session is opened for; oldest first
+// put them on the last page of a long session. Paged like Sessions and
+// Requests rather than folded away behind a "show all".
 const callRow = (c) => `
   <tr ${navTo('activity-logs.html')} class="border-t border-border/60 transition-colors hover:bg-muted/50">
     <td class="py-2.5 pl-6 pr-3 font-mono text-[12px] tabular-nums text-muted-foreground">${c.t}</td>
@@ -55,11 +55,142 @@ const callRow = (c) => `
     <td class="py-2.5 pl-3 pr-6 text-right font-mono text-[12px] tabular-nums">${c.cost}</td>
   </tr>`
 
-const stat = (label, value, extra = '') => `
+const trace = `
+  <table class="w-full table-fixed">
+    <colgroup>
+      <col class="w-24"><col class="w-20"><col><col><col class="w-52">
+      <col class="w-20"><col class="w-20"><col class="w-20"><col class="w-24">
+    </colgroup>
+    <thead>
+      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2 [&>th]:font-medium">
+        <th class="pl-6 pr-3 text-left">Time</th>
+        <th class="px-3 text-left">Status</th>
+        <th class="px-3 text-left">Requested</th>
+        <th class="px-3 text-left">Sent</th>
+        <th class="px-3 text-left">Scenario</th>
+        <th class="px-3 text-right">Input</th>
+        <th class="px-3 text-right">Output</th>
+        <th class="px-3 text-right">ms</th>
+        <th class="pl-3 pr-6 text-right">Cost</th>
+      </tr>
+    </thead>
+    <tbody>${CALLS.map(callRow).join('')}</tbody>
+  </table>
+  ${pager({ first: 1, last: 25, total: 58, hasPrev: false })}`
+
+// ─── Conversation ───────────────────────────────────────────────────────
+// Newest first, like the trace, so the two tabs line up page for page.
+// Prose is shown. A tool call, a tool result and the client's injected
+// context are one folded line each until opened: dropping them — which the
+// old pane did — made a turn that was only a tool call look empty, and
+// showing them open buried the three sentences anyone came to read.
+
+const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+
+// Mock-side approximation of the real highlighter, enough to show the
+// palette the implementation has to hit: comment, string, keyword.
+const highlight = (src) =>
+  esc(src)
+    .replace(/(\/\/[^\n]*)/g, '<span class="text-muted-foreground/70">$1</span>')
+    .replace(/('[^']*')/g, '<span class="text-emerald-600 dark:text-emerald-400">$1</span>')
+    .replace(/\b(export|const|as|from|import|return|function)\b/g, '<span class="text-sky-600 dark:text-sky-400">$1</span>')
+
+const codeBlock = (lang, body) => `
+  <div class="mt-2 overflow-hidden rounded-md border border-border">
+    <div class="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-1.5">
+      <span class="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">${lang}</span>
+      <button class="ml-auto text-[11px] text-muted-foreground transition-colors hover:text-foreground">Copy</button>
+    </div>
+    <pre class="overflow-x-auto px-3 py-2.5 font-mono text-[12px] leading-relaxed"><code>${highlight(body)}</code></pre>
+  </div>`
+
+const fold = ({ icon, label, tag, preview, body, open }) => `
+  <details class="group mt-2 rounded-md border border-border/60" ${open ? 'open' : ''}>
+    <summary class="flex cursor-pointer list-none items-center gap-2 px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:bg-muted/50 [&::-webkit-details-marker]:hidden">
+      <i class="ri-arrow-right-s-line text-sm transition-transform group-open:rotate-90"></i>
+      <i class="${icon} text-sm"></i>
+      <span class="shrink-0 font-mono text-foreground">${label}</span>
+      ${tag ? `<span class="shrink-0">${tag}</span>` : ''}
+      <span class="min-w-0 truncate font-mono">${esc(preview)}</span>
+    </summary>
+    <pre class="max-h-96 overflow-auto whitespace-pre-wrap break-all border-t border-border/60 px-3 py-2.5 font-mono text-[12px] leading-relaxed">${esc(body)}</pre>
+  </details>`
+
+const oneLine = (s) => s.replace(/\s+/g, ' ').trim()
+const toolUse = (name, input, extra = {}) => {
+  const pretty = JSON.stringify(input, null, 2)
+  return fold({ icon: 'ri-tools-line', label: name, preview: oneLine(pretty), body: pretty, ...extra })
+}
+const toolResult = (text) => fold({ icon: 'ri-corner-down-right-line', label: 'Result', preview: text, body: text })
+const injected = (n, preview) =>
+  fold({ icon: 'ri-robot-2-line', label: `System context · ${n}`, preview, body: `<system-reminder>\n${preview}\n</system-reminder>` })
+const prose = (text) => `<p class="mt-1.5 whitespace-pre-wrap break-words text-xs leading-relaxed">${esc(text)}</p>`
+
+const TURNS = [
+  {
+    role: 'assistant', t: '14:05:47',
+    body: prose('Done — unknown paths fall back to the anthropic descriptor, matching the pre-existing behaviour.') +
+      toolUse('Edit', { file_path: 'src/llms/inbound/surfaces.ts', old_string: "errorShape: 'openai'", new_string: "errorShape: 'anthropic'" })
+  },
+  {
+    role: 'user', t: '14:05:31',
+    body: toolResult('The file src/llms/inbound/surfaces.ts has been updated successfully.') +
+      injected(2, 'The TodoWrite tool hasn\'t been used recently. If you\'re working on tasks that would benefit…')
+  },
+  {
+    role: 'assistant', t: '14:03:02',
+    body: prose('The descriptor ends up as one record per surface:') +
+      codeBlock('typescript', `export const SURFACES = {
+  // \`errorShape\` used to live in a switch three files away.
+  'anthropic-messages': {
+    path: '/v1/messages',
+    auth: 'x-api-key',
+    errorShape: 'anthropic',
+    aggregateSse: aggregateAnthropic
+  }
+} as const`)
+  },
+  {
+    role: 'user', t: '14:02:33',
+    body: prose('Good. Keep the Anthropic default for unknown paths.') +
+      injected(1, 'As you answer the user\'s questions, you can use the following context…')
+  },
+  {
+    role: 'assistant', t: '14:02:11',
+    body: prose('I will start by reading the four places the surface knowledge is currently duplicated.') +
+      toolUse('Read', { file_path: 'src/llms/error-shape.ts' }, { open: true }) +
+      toolUse('Read', { file_path: 'src/llms/utils/sse-aggregate/index.ts' }) +
+      // Capture keeps only the head of a long argument list, and says so.
+      toolUse('Grep', { pattern: 'inboundType', path: 'src', output_mode: 'content', glob: '**/*.ts' }, { tag: 'shortened' })
+  },
+  {
+    role: 'user', t: '14:02:05',
+    body: prose('Refactor the inbound surface registry so adding a surface is one descriptor.')
+  }
+]
+
+const turn = (x) => {
+  const isUser = x.role === 'user'
+  return `
+    <div class="border-t border-l-2 border-t-border/60 px-6 py-3 transition-colors hover:bg-muted/50 ${isUser ? 'border-l-foreground/30' : 'border-l-transparent'}">
+      <div class="flex items-baseline gap-2">
+        <span class="text-[12px] font-medium uppercase tracking-wider ${isUser ? 'text-foreground' : 'text-muted-foreground'}">${isUser ? 'User' : 'Assistant'}</span>
+        <span class="ml-auto font-mono text-[12px] tabular-nums text-muted-foreground">${x.t}</span>
+      </div>
+      ${x.body}
+    </div>`
+}
+
+// Capped like Logs: prose has a natural measure. The first turn drops its
+// top border so it does not double the tab strip's.
+const conversation = `
+  <div class="max-w-[64rem] [&>*:first-child]:border-t-0">${TURNS.map(turn).join('')}</div>
+  ${pager({ first: 1, last: 25, total: 64, hasPrev: false })}`
+
+const stat = (label, value) => `
   <div class="min-w-0">
     <div class="text-[12px] text-muted-foreground">${label}</div>
     <div class="mt-0.5 font-mono text-xs tabular-nums">${value}</div>
-    ${extra}
   </div>`
 
 document.getElementById('root').innerHTML = `
@@ -77,42 +208,32 @@ document.getElementById('root').innerHTML = `
 
     <!-- The summary reads across the top, not down a rail. Nine
          label/value rows 22rem wide sat beside the trace; the strip costs
-         one line and gives that width back to the table below. Inbound is
-         not repeated here — the subtitle above already carries it. -->
+         one line and gives that width back to the tabs below. Inbound is
+         not repeated here — the subtitle above already carries it. Cache
+         hit has no meter under it: the percentage says what the bar did,
+         and it was the only figure that took a second line. -->
     <div class="flex flex-wrap items-start gap-x-10 gap-y-3 border-b border-border px-6 py-3">
       ${stat('Upstream calls', '58')}
       ${stat('Input tokens', '284,102')}
       ${stat('Output tokens', '34,118')}
       ${stat('of which cache read', '221,940')}
-      ${stat('Cache hit', '78.1%', `<div class="mt-1.5 w-24">${meter(78, 'ok')}</div>`)}
+      ${stat('Cache hit', '78.1%')}
       ${stat('Cost', '$1.24')}
       ${stat('Duration', '19m 04s')}
     </div>
 
-    <div class="px-6 pt-5 pb-1">
-      <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Routing trace</h2>
+    <!-- The tab names the table, so there is no heading above it. -->
+    <div class="flex items-center gap-1 border-b border-border px-6">
+      ${tabs(
+        [
+          { id: 'trace', label: 'Routing trace', href: '?tab=trace' },
+          { id: 'conversation', label: 'Conversation', href: '?tab=conversation' }
+        ],
+        TAB
+      )}
     </div>
 
-    <table class="w-full table-fixed">
-      <colgroup>
-        <col class="w-24"><col class="w-20"><col><col><col class="w-52">
-        <col class="w-20"><col class="w-20"><col class="w-20"><col class="w-24">
-      </colgroup>
-      <thead>
-        <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2 [&>th]:font-medium">
-          <th class="pl-6 pr-3 text-left">Time</th>
-          <th class="px-3 text-left">Status</th>
-          <th class="px-3 text-left">Requested</th>
-          <th class="px-3 text-left">Sent</th>
-          <th class="px-3 text-left">Scenario</th>
-          <th class="px-3 text-right">Input</th>
-          <th class="px-3 text-right">Output</th>
-          <th class="px-3 text-right">ms</th>
-          <th class="pl-3 pr-6 text-right">Cost</th>
-        </tr>
-      </thead>
-      <tbody>${CALLS.map(callRow).join('')}</tbody>
-    </table>
+    ${TAB === 'conversation' ? conversation : trace}
 
     <div class="h-10"></div>
 

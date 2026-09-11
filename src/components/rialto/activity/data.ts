@@ -7,7 +7,7 @@
  * to lib/api.ts, which the Rialto migration keeps frozen.
  */
 import type { SubscriptionsResponse } from '@/components/rialto/providers/types'
-import { api, type RequestLogItem } from '@/lib/api'
+import { api, type RequestLogItem, type SessionMessageItem } from '@/lib/api'
 import type { UsageHistorySample, UsageWire } from './usage-derive'
 
 export interface ActivityRequestLog extends RequestLogItem {
@@ -55,8 +55,26 @@ export function fetchRequestLogStats(sinceHours: number): Promise<RequestLogStat
   return api.get<RequestLogStats>(`/request-logs/stats?sinceHours=${sinceHours}`)
 }
 
-export function fetchSessionRequestLogs(sessionId: string): Promise<{ items: ActivityRequestLog[] }> {
-  return api.get<{ items: ActivityRequestLog[] }>(`/request-logs/sessions/${encodeURIComponent(sessionId)}`)
+/** Newest-first page of one session's upstream calls; `total` is the whole session. */
+export function fetchSessionRequestLogs(sessionId: string, limit: number, offset = 0): Promise<RequestLogPage> {
+  return api.get<RequestLogPage>(
+    `/request-logs/sessions/${encodeURIComponent(sessionId)}?limit=${limit}&offset=${offset}`
+  )
+}
+
+export interface SessionMessagePage {
+  /** Newest first — the wire sends each page oldest first, for a chat-style reader. */
+  items: SessionMessageItem[]
+  total: number
+}
+
+/** A page of one session's archived conversation, counted from the newest message. */
+export function fetchSessionMessages(sessionId: string, limit: number, offset = 0): Promise<SessionMessagePage> {
+  return api
+    .get<{ items: SessionMessageItem[]; total: number }>(
+      `/request-logs/sessions/${encodeURIComponent(sessionId)}/messages?limit=${limit}&offset=${offset}`
+    )
+    .then((res) => ({ items: [...res.items].reverse(), total: res.total }))
 }
 
 export interface UsageCostModelRow {

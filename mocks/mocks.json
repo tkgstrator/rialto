@@ -171,14 +171,21 @@
       "mock": "activity-session.html",
       "route": null,
       "group": "Activity",
-      "note": "Session detail with the routing trace. Route stays null because /activity/sessions/:sessionId needs a real captured session id, which differs per install — a hardcoded one would shoot the not-found state."
+      "note": "Session detail, Routing trace tab: newest first, paged. Route stays null because /activity/sessions/:sessionId needs a real captured session id, which differs per install — a hardcoded one would shoot the not-found state."
+    },
+    {
+      "name": "activity-session-conversation",
+      "mock": "activity-session.html?tab=conversation",
+      "route": null,
+      "group": "Activity",
+      "note": "Session detail, Conversation tab: the archived messages newest first, paged like the trace. Prose is shown; tool calls, tool results and injected context are one folded line each until opened. Route null for the same reason as activity-session."
     },
     {
       "name": "activity-logs",
       "mock": "activity-logs.html",
       "route": "/activity/logs",
       "group": "Activity",
-      "note": "Server log grouped by request id. Absorbs LogViewer and its four sub-components."
+      "note": "Server log tail, newest first. Each line is one row and opens to the whole event. Absorbs LogViewer and its four sub-components. KNOWN DIFF: the mock shows one line opened; the implementation opens none until clicked."
     },
     {
       "name": "settings",
