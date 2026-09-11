@@ -174,6 +174,18 @@ const GROUPS = [
         "why": "トークンを複数発行し、面とルーティングプロファイルにスコープする。個別失効と帰属が取れる。"
       },
       {
+        "file": "settings-access.html?edit",
+        "title": "Access (editing)",
+        "replaces": "—",
+        "why": "Team domain と AUD は普段は読み取り専用で、Edit を押したときだけ入力と Verify ができる。一度設定したら触らない値で、誤入力はリモートのブラウザを締め出すため。Revert / Save は1組で、編集中は Audit log を押せない（Open Zero Trust は AUD をコピーしに行くので押せる）。"
+      },
+      {
+        "file": "settings-access.html?turnoff",
+        "title": "Access (turn off)",
+        "replaces": "—",
+        "why": "両方を空にして保存すると Access が無効になり、リモートのブラウザ（今操作している本人も含みうる）が締め出される。Verify なしで保存できる唯一の操作なので、AlertDialog で先に確認する。"
+      },
+      {
         "file": "settings-logging.html",
         "title": "Logging",
         "replaces": "SettingsPage の一部",
