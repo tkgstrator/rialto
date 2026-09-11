@@ -13,11 +13,12 @@
  * the one that gets used, and a header button that duplicates the whole
  * table into the clipboard was a control nobody reached for.
  */
+
+import { cn } from 'cn'
 import { useCallback, useMemo, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { Pill } from '@/components/rialto/primitives'
 import type { InboundSurfaceWire, RoutingMode, SurfaceId } from '@/lib/api'
-import { cn } from '@/lib/utils'
 import type { EnabledTarget } from './types'
 
 const copy = (text: string): void => {

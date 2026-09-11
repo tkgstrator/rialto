@@ -7,23 +7,30 @@
  * traffic that will not walk it. The old build had no such axis, which is
  * how a routing screen could quietly be about one endpoint only.
  */
-import { useCallback, useMemo, useState } from 'react'
+
+import { cn } from 'cn'
+import { useMemo } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
-import type { InboundSurfaceWire, RoutingMode, RoutingSchedulerWeightEntry } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import type { InboundSurfaceWire, RoutingMode, RoutingSchedulerWeightEntry, SurfaceId } from '@/lib/api'
 import { AddTargetDialog } from './AddTargetDialog'
 import { ChainConstraints } from './ChainConstraints'
 import { ChainTable } from './ChainTable'
 import { useEnabledTargets, usePreferences, useProfiles, useScheduler, useSurfaces } from './data'
-import { profileEntryCount, schedulerNotTickedYet, schedulerScoredNothing, weightIndex } from './derive'
+import {
+  type ConstraintEdit,
+  profileEntryCount,
+  schedulerNotTickedYet,
+  schedulerScoredNothing,
+  weightIndex
+} from './derive'
 import { PassthroughPanel } from './PassthroughPanel'
 import { SurfaceBar } from './RoutingTabs'
 import { Segmented, SurfaceScopeBar } from './SurfaceModeBar'
-import type { EnabledTarget, Lane, PreferenceEntry, PreferenceProfile, ScenarioKey } from './types'
+import type { EnabledTarget, Lane, PreferenceEntry, PreferenceProfile, ProfileSummary, ScenarioKey } from './types'
 import { SCENARIOS } from './types'
+import { useChainActions } from './useChainActions'
 import { useChainEditing } from './useChainEditing'
 import { useRoutingSelection } from './useRoutingSelection'
 
@@ -107,6 +114,12 @@ function ScenarioChips({
  * The target count moved out of here and under the table, where it reads
  * as a total of the thing above it rather than as a fourth control in a
  * row of controls.
+ *
+ * The screen reads until Edit is pressed. A chain is read far more often
+ * than it is changed, and every row carries a handle, a switch and a menu
+ * one stray click from changing what routes. One Revert / Save covers the
+ * chain and the constraints under it, because both are one profile and
+ * one write.
  */
 function ChainBand({
   scenario,
@@ -114,6 +127,9 @@ function ChainBand({
   counts,
   lane,
   onLane,
+  editing,
+  onEdit,
+  onRevert,
   onSave,
   saveDisabled
 }: {
@@ -122,6 +138,9 @@ function ChainBand({
   counts: Record<ScenarioKey, number>
   lane: Lane
   onLane: (lane: Lane) => void
+  editing: boolean
+  onEdit: () => void
+  onRevert: () => void
   onSave: () => void
   saveDisabled: boolean
 }) {
@@ -138,14 +157,26 @@ function ChainBand({
         ]}
         onChange={onLane}
       />
-      {/* Save alone. Add target moved under the table: five scenario
-          chips, a lane switch and two buttons was more than one row should
-          carry, and it does not act on the coordinate this band picks — it
-          acts on the list below it. */}
-      <div className='ml-auto'>
-        <RButton variant='primary' icon='ri-check-line' onClick={onSave} disabled={saveDisabled}>
-          {t('common.save')}
-        </RButton>
+      {/* Add target moved under the table: five scenario chips, a lane
+          switch and the edit actions are as much as one row should carry,
+          and it does not act on the coordinate this band picks — it acts
+          on the list below it. Scenario and lane stay free while editing;
+          they move within the profile being edited. */}
+      <div className='ml-auto flex items-center gap-2'>
+        {editing ? (
+          <>
+            <RButton variant='outline' icon='ri-arrow-go-back-line' onClick={onRevert}>
+              {t('common.revert')}
+            </RButton>
+            <RButton variant='primary' icon='ri-check-line' onClick={onSave} disabled={saveDisabled}>
+              {t('common.save')}
+            </RButton>
+          </>
+        ) : (
+          <RButton variant='outline' icon='ri-pencil-line' onClick={onEdit}>
+            {t('common.edit')}
+          </RButton>
+        )}
       </div>
     </div>
   )
@@ -156,7 +187,8 @@ function ChainBand({
  * to it.
  *
  * "Add target" appends a row to the table directly above, which is where
- * a reader looks for it once they have read the last one.
+ * a reader looks for it once they have read the last one. Like every other
+ * change to the chain it exists only while editing.
  *
  * The count line also carries the one sentence left of the four-line
  * dashed box that used to close the table. The rest of that box
@@ -170,11 +202,13 @@ function ChainBand({
 function ChainFooter({
   entries,
   targets,
-  onAdd
+  onAdd,
+  editing
 }: {
   entries: readonly PreferenceEntry[]
   targets: readonly EnabledTarget[]
   onAdd: (target: string) => void
+  editing: boolean
 }) {
   const { t } = useTranslation()
   const disabled = entries.filter((e) => !e.enabled).length
@@ -186,8 +220,10 @@ function ChainFooter({
         {disabled === 0 ? '' : ` · ${t('routing.chain.disabledCount', { n: disabled })}`}
         {entries.length === 0 ? '' : ` · ${t('routing.chain.orderHint')}`}
       </span>
-      <div className='ml-auto flex items-center gap-2'>
-        <AddTargetDialog targets={targets} taken={taken} onAdd={onAdd} />
+      {/* h-8 whether or not the button is there, so the constraints below
+          do not jump when Edit is pressed. */}
+      <div className='ml-auto flex h-8 items-center gap-2'>
+        {editing ? <AddTargetDialog targets={targets} taken={taken} onAdd={onAdd} /> : null}
       </div>
     </div>
   )
@@ -224,8 +260,13 @@ interface RoutedBodyProps {
   onLane: (lane: Lane) => void
   targets: readonly EnabledTarget[]
   weights: Map<string, RoutingSchedulerWeightEntry>
+  editing: boolean
+  onEdit: () => void
+  onRevert: () => void
   onSave: () => void
   saveDisabled: boolean
+  onConstraintEdit: (edit: ConstraintEdit) => void
+  onQuotaSkipValidity: (valid: boolean) => void
 }
 
 function RoutedBody(props: RoutedBodyProps) {
@@ -247,6 +288,9 @@ function RoutedBody(props: RoutedBodyProps) {
         counts={counts}
         lane={props.lane}
         onLane={props.onLane}
+        editing={props.editing}
+        onEdit={props.onEdit}
+        onRevert={props.onRevert}
         onSave={props.onSave}
         saveDisabled={props.saveDisabled}
       />
@@ -259,10 +303,104 @@ function RoutedBody(props: RoutedBodyProps) {
           </div>
         )
       ) : (
-        <ChainTable entries={entries} weights={props.weights} actions={actions} />
+        <ChainTable entries={entries} weights={props.weights} actions={actions} editing={props.editing} />
       )}
-      <ChainFooter entries={entries} targets={props.targets} onAdd={addTarget} />
-      <ChainConstraints constraints={props.profile.constraints} />
+      <ChainFooter entries={entries} targets={props.targets} onAdd={addTarget} editing={props.editing} />
+      <ChainConstraints
+        constraints={props.profile.constraints}
+        editing={props.editing}
+        onEdit={props.onConstraintEdit}
+        onValidity={props.onQuotaSkipValidity}
+      />
+    </>
+  )
+}
+
+interface LoadedChainProps {
+  surfaces: readonly InboundSurfaceWire[]
+  surface: InboundSurfaceWire
+  profiles: readonly ProfileSummary[]
+  profile: PreferenceProfile
+  setProfile: React.Dispatch<React.SetStateAction<PreferenceProfile>>
+  scenario: ScenarioKey
+  onScenario: (scenario: ScenarioKey) => void
+  lane: Lane
+  onLane: (lane: Lane) => void
+  targets: readonly EnabledTarget[]
+  weights: Map<string, RoutingSchedulerWeightEntry>
+  noChainToScore: boolean
+  notTickedYet: boolean
+  editing: boolean
+  onSelectSurface: (id: SurfaceId) => void
+  onEdit: () => void
+  onRevert: () => void
+  onSave: () => void
+  saveDisabled: boolean
+  onConstraintEdit: (edit: ConstraintEdit) => void
+  onQuotaSkipValidity: (valid: boolean) => void
+  onMode: (mode: RoutingMode) => void
+  onProfile: (key: string) => void
+  onSetDenied: (surface: SurfaceId, routingMode: RoutingMode, denied: readonly string[]) => Promise<void>
+}
+
+/**
+ * Everything below band 1 once a surface is known.
+ *
+ * Split out of `RoutingChain` itself: the two `routingMode === 'routed'`
+ * branches (the scheduler notes, and Routed vs Passthrough) nest inside
+ * the "surface loaded" branch, and that nesting is what pushed the top
+ * level past Biome's cognitive-complexity ceiling. A sibling component
+ * starts its own budget.
+ */
+function LoadedChain(props: LoadedChainProps) {
+  const routed = props.surface.routingMode === 'routed'
+  return (
+    <>
+      <SurfaceBar
+        surfaces={props.surfaces}
+        active={props.surface.id}
+        onSelect={props.onSelectSurface}
+        disabled={props.editing}
+      />
+      <SurfaceScopeBar
+        surface={props.surface}
+        profiles={props.profiles}
+        onMode={props.onMode}
+        onProfile={props.onProfile}
+        locked={props.editing}
+      />
+      {/* The notes explain a missing live reading, and Share is the only
+          one on this screen — the passthrough half has no scheduler-fed
+          column at all now, so they render inside the routed branch
+          rather than above both. */}
+      {routed ? (
+        <>
+          {props.noChainToScore ? <SchedulerNote i18nKey='routing.chain.schedulerNoChain' /> : null}
+          {props.notTickedYet ? <SchedulerNote i18nKey='routing.chain.schedulerNotTicked' /> : null}
+        </>
+      ) : null}
+      {routed ? (
+        <RoutedBody
+          surface={props.surface}
+          profile={props.profile}
+          setProfile={props.setProfile}
+          scenario={props.scenario}
+          onScenario={props.onScenario}
+          lane={props.lane}
+          onLane={props.onLane}
+          targets={props.targets}
+          weights={props.weights}
+          editing={props.editing}
+          onEdit={props.onEdit}
+          onRevert={props.onRevert}
+          onSave={props.onSave}
+          saveDisabled={props.saveDisabled}
+          onConstraintEdit={props.onConstraintEdit}
+          onQuotaSkipValidity={props.onQuotaSkipValidity}
+        />
+      ) : (
+        <PassthroughPanel surface={props.surface} targets={props.targets} onSetDenied={props.onSetDenied} />
+      )}
     </>
   )
 }
@@ -299,13 +437,13 @@ export function RoutingChain() {
   const { snapshot: scheduler } = useScheduler()
   const targets = useEnabledTargets()
 
-  const [saving, setSaving] = useState(false)
   // Surface / scenario / lane live in the query string, not in state: the
   // passthrough half of this screen is only reachable as a URL, and an
   // operator mid-way through a chain should survive a reload.
   const { surface, scenario, lane, selectSurface, selectScenario, selectLane } = useRoutingSelection(surfaces)
 
-  const { profile, setProfile, dirty, save } = usePreferences(surface === undefined ? null : surface.profileKey)
+  const profileKey = surface === undefined ? null : surface.profileKey
+  const { profile, setProfile, dirty, save, reset } = usePreferences(profileKey)
   const weights = useMemo(() => weightIndex(scheduler), [scheduler])
   // The scheduler always runs now. It used to sit armed and idle under
   // the rules selector, which needed its own permanent note; the two
@@ -313,63 +451,30 @@ export function RoutingChain() {
   const noChainToScore = schedulerScoredNothing(scheduler)
   const notTickedYet = schedulerNotTickedYet(scheduler)
 
-  const notify = useCallback((text: string, ok: boolean) => {
-    if (ok) toast.success(text)
-    else toast.error(text)
-  }, [])
-
-  const fail = useCallback((err: unknown) => notify(err instanceof Error ? err.message : String(err), false), [notify])
-
-  const onSave = useCallback(() => {
-    setSaving(true)
-    save()
-      .then((outcome) => {
-        notify(outcome.success ? t('routing.chain.saved') : t('routing.chain.saveFailed'), outcome.success)
-        for (const warning of outcome.warnings) toast.warning(warning)
-      })
-      .catch(fail)
-      .finally(() => setSaving(false))
-  }, [save, notify, fail, t])
-
-  // The mode, the profile and the reset apply on click — there is no
-  // Save for them, in the design or here, because each is a single
-  // choice rather than an edit in progress. That only reads as
-  // deliberate if the write is acknowledged; silence is
-  // indistinguishable from a dropped click, which is what makes people
-  // go looking for a Save button.
-  const onMode = useCallback(
-    (mode: RoutingMode) => {
-      if (surface === undefined) return
-      setMode(surface.id, mode)
-        .then(() =>
-          notify(
-            t('routing.chain.modeChanged', {
-              path: surface.path,
-              mode: t(mode === 'routed' ? 'routing.common.modeRouted' : 'routing.common.modePassthrough')
-            }),
-            true
-          )
-        )
-        .catch(fail)
-    },
-    [surface, setMode, notify, fail, t]
-  )
-
-  const onProfile = useCallback(
-    (key: string) => {
-      if (surface === undefined) return
-      setSurfaceProfile(surface.id, surface.routingMode, key)
-        .then(() => notify(t('routing.chain.profileChanged', { path: surface.path, profile: key }), true))
-        .catch(fail)
-    },
-    [surface, setSurfaceProfile, notify, fail, t]
-  )
+  // Edit / revert / save, the mode switch and the profile picker: one
+  // hook for the whole write side, so this component stays about layout.
+  const {
+    editing,
+    saving,
+    quotaSkipValid,
+    onQuotaSkipValidity,
+    onEdit,
+    onRevert,
+    onSave,
+    onConstraintEdit,
+    onMode,
+    onProfile
+  } = useChainActions(surface, profileKey, setProfile, save, reset, setMode, setSurfaceProfile)
 
   // No subtitle on the Screen. It read "{path} · routed · {profile}",
   // which is the surface tab, the mode switch and the profile picker of
   // band 1 spelled out a second time one line above them.
+  //
+  // One explicit crumb, "Chain": the Routing section has no children for
+  // Screen to derive a second trail level from (RialtoShell's routing
+  // entry declares none), and the mock's header reads "Routing / Chain".
   return (
-    <Screen>
+    <Screen crumbs={[{ label: t('routing.chain.crumb') }]}>
       {/* No selector bar. There is one selector now: the operator says
           which models and in what order, and the scheduler computes the
           weights. A segmented control offering a second option that no
@@ -380,37 +485,32 @@ export function RoutingChain() {
           {loading ? t('common.loading') : t('routing.chain.noSurfaces')}
         </div>
       ) : (
-        <>
-          <SurfaceBar surfaces={surfaces} active={surface.id} onSelect={selectSurface} />
-          <SurfaceScopeBar surface={surface} profiles={profiles} onMode={onMode} onProfile={onProfile} />
-          {/* The notes explain a missing live reading, and Share is the
-              only one on this screen — the passthrough half has no
-              scheduler-fed column at all now, so they render inside the
-              routed branch rather than above both. */}
-          {surface.routingMode === 'routed' ? (
-            <>
-              {noChainToScore ? <SchedulerNote i18nKey='routing.chain.schedulerNoChain' /> : null}
-              {notTickedYet ? <SchedulerNote i18nKey='routing.chain.schedulerNotTicked' /> : null}
-            </>
-          ) : null}
-          {surface.routingMode === 'routed' ? (
-            <RoutedBody
-              surface={surface}
-              profile={profile}
-              setProfile={setProfile}
-              scenario={scenario}
-              onScenario={selectScenario}
-              lane={lane}
-              onLane={selectLane}
-              targets={targets}
-              weights={weights}
-              onSave={onSave}
-              saveDisabled={saving || !dirty}
-            />
-          ) : (
-            <PassthroughPanel surface={surface} targets={targets} onSetDenied={setTargetAllowed} />
-          )}
-        </>
+        <LoadedChain
+          surfaces={surfaces}
+          surface={surface}
+          profiles={profiles}
+          profile={profile}
+          setProfile={setProfile}
+          scenario={scenario}
+          onScenario={selectScenario}
+          lane={lane}
+          onLane={selectLane}
+          targets={targets}
+          weights={weights}
+          noChainToScore={noChainToScore}
+          notTickedYet={notTickedYet}
+          editing={editing}
+          onSelectSurface={selectSurface}
+          onEdit={onEdit}
+          onRevert={onRevert}
+          onSave={onSave}
+          saveDisabled={saving || !dirty || !quotaSkipValid}
+          onConstraintEdit={onConstraintEdit}
+          onQuotaSkipValidity={onQuotaSkipValidity}
+          onMode={onMode}
+          onProfile={onProfile}
+          onSetDenied={setTargetAllowed}
+        />
       )}
     </Screen>
   )

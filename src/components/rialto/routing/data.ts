@@ -16,7 +16,7 @@ import {
   type RoutingSchedulerStateResponse,
   type SurfaceId
 } from '@/lib/api'
-import { emptyByScenario, enabledTargets } from './derive'
+import { constraintsDiffer, emptyByScenario, enabledTargets } from './derive'
 import type { EnabledTarget, PreferenceApplyResponse, PreferenceProfile, ProfileSummary } from './types'
 
 const SCHEDULER_POLL_MS = 30_000
@@ -148,8 +148,13 @@ export function usePreferences(profileKey: string | null): PreferencesState {
       })
   }, [profileKey, mounted])
 
+  // The constraints ride the same PUT as the chain, so an edit to either
+  // is an edit to the profile. They compare by reading rather than by
+  // bytes — see `constraintsDiffer`.
   const dirty = useMemo(
-    () => JSON.stringify(profile.entriesByScenario) !== JSON.stringify(baseline.entriesByScenario),
+    () =>
+      JSON.stringify(profile.entriesByScenario) !== JSON.stringify(baseline.entriesByScenario) ||
+      constraintsDiffer(profile.constraints, baseline.constraints),
     [profile, baseline]
   )
 

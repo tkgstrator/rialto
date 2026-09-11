@@ -43,6 +43,12 @@ const GROUPS = [
         "title": "Chain (passthrough)",
         "replaces": "—",
         "why": "ルーターが効かない側の表示。今日 chat/completions と responses にハードコードされている挙動を、見えて切り替えられる状態にした。"
+      },
+      {
+        "file": "routing.html?edit",
+        "title": "Chain (editing)",
+        "replaces": "—",
+        "why": "普段は読み取り専用で、Edit を押したときだけチェーンの並べ替え・有効化・追加・削除と制約の変更ができる。Revert / Save は1組で、チェーンと制約をまとめて破棄・保存する。編集中は面のタブ・モード・プロファイルを切り替えられない（切り替えると未保存の変更が消えるため）。"
       }
     ]
   },
@@ -74,10 +80,40 @@ const GROUPS = [
         "why": "サブスクとは中身が違う（キー欄・実価格・モデル数）ので別モック。価格は in / cached / out を独立列に。こちらも全幅。"
       },
       {
+        "file": "provider-subscription.html?edit",
+        "title": "Subscription detail (editing)",
+        "replaces": "—",
+        "why": "普段は読み取り専用で、Edit を押したときだけ Tier・モデルの ON・Routable を変えられる。Revert / Save は1組で、編集中は Refresh・Add subscription・Test all を押せない。"
+      },
+      {
+        "file": "provider-apikey.html?edit",
+        "title": "API key detail (editing)",
+        "replaces": "—",
+        "why": "Edit を押したときだけ Tier・Effort・ON・Routable・Replace を変えられる。Remove は編集中だけ赤で出る。Revert / Save は1組で、編集中は Refresh・Add key・Test all を押せない。"
+      },
+      {
+        "file": "provider-apikey.html?remove",
+        "title": "API key detail (remove)",
+        "replaces": "—",
+        "why": "取り消せない操作は赤いボタンから AlertDialog を経由し、何が消えるかを書く。window.confirm は使わない。"
+      },
+      {
         "file": "providers-connect.html",
         "title": "Add provider",
         "replaces": "ConnectChoiceDialog / ProviderConnectFlow / ImportCredentialsDialog / ManualCallbackDialog / ManageProvidersDialog",
         "why": "入れ子ダイアログ4枚を3ステップの1画面に。分岐も失敗も表示できる形にした。"
+      },
+      {
+        "file": "providers-connect.html?device",
+        "title": "Add provider — Codex device code",
+        "replaces": "—",
+        "why": "Codex はワンタイムコードでサインインする。表示されたコードを auth.openai.com/codex/device で入力すると、この画面が自動で次へ進む。ブラウザーでのサインインは localhost:1455 に戻る仕様でリモートや Docker では届かないので、Codex では出さない。"
+      },
+      {
+        "file": "providers-connect.html?codex-failed",
+        "title": "Add provider — Codex, previous attempt failed",
+        "replaces": "—",
+        "why": "コードを取りに行く前の Codex で、前回の失敗が残っている状態。失敗カードが Waiting カードではなく選択肢の真下に来るので、カード自身が上の余白を持つ（持たないと選択肢にくっつく）。"
       },
       {
         "file": "providers-connect-models.html",

@@ -1,15 +1,19 @@
 /**
- * POST /api/subscriptions/refresh — the Subscriptions list's Refresh
- * button, end to end against the test database with upstream stubbed.
+ * POST /api/subscriptions/refresh — the account half of the Providers
+ * screens' Refresh, end to end against the test database with upstream
+ * stubbed.
  *
  *   - profiles are re-synced and usage is polled past the 5-minute cache;
  *     the result lands in SubAccountQuota and SubAccountUsage (what the
  *     list and the account picker read) and NOT in UsageSnapshot (the
  *     Usage chart's 5-minute history)
  *   - accounts on a disabled provider are neither called nor written
+ *   - `{ provider }` narrows the refresh to that provider's accounts —
+ *     including while the provider is switched off — and calls nothing
+ *     else; a name no subscription provider has is a 404
  *   - an account whose upstream call failed is named in `failed[]` and
  *     its rows are left alone, even when a stale cached value exists
- *   - concurrent calls share one upstream pass
+ *   - concurrent calls for the same scope share one upstream pass
  *   - POST /api/subscriptions/sync keeps its { updated, failed,
  *     subscriptions } contract and still covers disabled providers
  *
@@ -26,7 +30,7 @@ import {
   SubscriptionRefreshResponseSchema
 } from '../../src/schemas/api/subscriptions'
 import { encryptionKey, encryptString } from '../../src/services/subscription-account-sync/crypto'
-import { refreshSubscriptions } from '../../src/services/subscription-refresh-service'
+import { refreshProviderSubscriptions, refreshSubscriptions } from '../../src/services/subscription-refresh-service'
 import {
   __clearUsageCachesForTest,
   __seedClaudeCacheForTest,
@@ -109,8 +113,17 @@ const stubUpstream = (failing: UpstreamCall | null = null, delayMs = 0): void =>
   globalThis.fetch = Object.assign(fake, { preconnect: originalFetch.preconnect })
 }
 
-const post = (path: string): Promise<Response> =>
-  subscriptionsRoute.fetch(new Request(`http://local${path}`, { method: 'POST' }))
+// No body unless one is given: the bare POST is the shape every caller
+// used before the endpoint took one, and it has to keep meaning the same.
+const post = (path: string, body?: unknown): Promise<Response> =>
+  subscriptionsRoute.fetch(
+    new Request(
+      `http://local${path}`,
+      body === undefined
+        ? { method: 'POST' }
+        : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }
+    )
+  )
 
 // Validated against the OpenAPI schema before it is compared, so a shape
 // drift fails here by name rather than as a mismatched toEqual.
@@ -237,6 +250,59 @@ describe.skipIf(!HAS_DB)('POST /api/subscriptions/refresh', () => {
     expect(calls.filter((c) => c.url === CLAUDE_USAGE_URL && c.token === 'tok-anna')).toHaveLength(1)
   })
 
+  test('a body with no provider is the same refresh as no body', async () => {
+    // The Subscriptions list sends `{}`.
+    await seedInstall()
+    const res = await post('/api/subscriptions/refresh', {})
+    expect(res.status).toBe(200)
+    expect(await refreshBody(res)).toEqual({ attempted: 2, refreshed: 2, failed: [] })
+    expect(calls.map((c) => c.token)).not.toContain('tok-carol')
+  })
+
+  test('a provider-scoped refresh covers that provider while it is switched off, and nothing else', async () => {
+    const { anna, bob, carol } = await seedInstall()
+
+    const res = await post('/api/subscriptions/refresh', { provider: 'claude-off' })
+    expect(res.status).toBe(200)
+    expect(await refreshBody(res)).toEqual({ attempted: 1, refreshed: 1, failed: [] })
+
+    const prisma = getPrismaClient()
+    const quotas = await prisma.subAccountQuota.findMany()
+    expect(quotas.map((q) => q.subAccountId)).toEqual([carol.id])
+    expect(quotas[0]?.fiveHourUsed).toBe(42)
+    expect(await prisma.subAccountUsage.count({ where: { subAccountId: carol.id } })).toBe(2)
+    const carolRow = await prisma.subAccount.findUniqueOrThrow({ where: { id: carol.id } })
+    expect(carolRow.authStatus).toBe(AuthStatus.live)
+
+    // Both of carol's calls went out — profile, then usage — and no other
+    // token did: the enabled providers were neither probed nor polled.
+    expect(calls.filter((c) => c.token === 'tok-carol').map((c) => c.url)).toEqual([
+      CLAUDE_PROFILE_URL,
+      CLAUDE_USAGE_URL
+    ])
+    expect(calls.filter((c) => c.token !== 'tok-carol')).toEqual([])
+    const annaRow = await prisma.subAccount.findUniqueOrThrow({ where: { id: anna.id } })
+    expect(annaRow.authCheckedAt).toBeNull()
+    expect(await prisma.subAccountQuota.findUnique({ where: { subAccountId: bob.id } })).toBeNull()
+  })
+
+  test('a name no subscription provider has is a 404 that calls nothing', async () => {
+    await seedInstall()
+    // An api_key provider has no accounts to refresh, so its name is as
+    // unknown here as a typo — and "0 accounts" for either would read as
+    // a healthy result.
+    await getPrismaClient().provider.create({
+      data: { name: 'openai', apiBaseUrl: 'https://api.openai.com/v1', authMode: AuthMode.api_key, enabled: true }
+    })
+
+    for (const provider of ['no-such-provider', 'openai']) {
+      const res = await post('/api/subscriptions/refresh', { provider })
+      expect(res.status).toBe(404)
+    }
+    expect(calls).toEqual([])
+    expect(await getPrismaClient().subAccountQuota.count()).toBe(0)
+  })
+
   test('a failed upstream call names the account and leaves its rows alone', async () => {
     const { anna, bob } = await seedInstall()
     // Bob has a stale reading in the cache. The poller would re-write it
@@ -272,6 +338,19 @@ describe.skipIf(!HAS_DB)('POST /api/subscriptions/refresh', () => {
     // The lock is released: a later click runs again.
     await refreshSubscriptions()
     expect(calls.filter((c) => c.url === CLAUDE_USAGE_URL && c.token === 'tok-anna')).toHaveLength(2)
+  })
+
+  test('concurrent refreshes of one provider share one upstream pass', async () => {
+    await seedInstall()
+    stubUpstream(null, 20)
+
+    const [first, second] = await Promise.all([
+      refreshProviderSubscriptions('claude-code'),
+      refreshProviderSubscriptions('claude-code')
+    ])
+    expect(first).toEqual(second)
+    expect(first?.refreshed).toBe(1)
+    expect(calls.filter((c) => c.url === CLAUDE_USAGE_URL && c.token === 'tok-anna')).toHaveLength(1)
   })
 
   test('POST /api/subscriptions/sync keeps its contract and still covers disabled providers', async () => {

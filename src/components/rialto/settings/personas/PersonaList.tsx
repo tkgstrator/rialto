@@ -5,10 +5,11 @@
  * renders dimmed with an `off` pill — the list answers "which of these is
  * actually costing me tokens" before it answers anything else.
  */
+
+import { cn } from 'cn'
 import { useTranslation } from 'react-i18next'
 import { Pill, RButton } from '@/components/rialto/primitives'
 import { countWords, type PersonaDraft } from '@/lib/rialto/settings-content/persona'
-import { cn } from '@/lib/utils'
 
 function PersonaRow({
   persona,

@@ -13,7 +13,7 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, btn, tierCell, effortCell, sortTh, pager } = window.Shell
+const { renderShell, pill, btn, tierCell, effortCell, sortTh, pager, dialog } = window.Shell
 
 // The api_key half of Providers. Differs from the subscription detail in
 // three ways that matter: a key field instead of accounts, real prices
@@ -22,13 +22,45 @@ const { renderShell, pill, btn, tierCell, effortCell, sortTh, pager } = window.S
 // Same shape as provider-subscription.html — the two are one
 // screen with two kinds of detail, and the rail is what says so.
 
+// The page reads until Edit is pressed: tier and effort pickers, the
+// switches and Replace were live all the time, one stray click from
+// changing what Routing sends where. `?edit` draws the state after Edit and
+// `?remove` the confirmation Remove opens from there, so a reviewer sees all
+// three without copies of the page. Declared first because the model table
+// is rendered the moment it is defined.
+const PARAMS = new URLSearchParams(location.search)
+const REMOVING = PARAMS.has('remove')
+const EDITING = REMOVING || PARAMS.has('edit')
+
+// Controls that change the provider exist only while editing; they go
+// invisible rather than absent where their absence would move the layout.
+const editOnly = EDITING ? '' : 'invisible'
+// Actions that reload the page or leave it would drop an unsaved edit, so
+// they are locked until Save or Revert.
+const lockedWhileEditing = EDITING ? 'pointer-events-none opacity-50' : ''
+const withClass = (html, cls) => (cls === '' ? html : html.replace('class="', `class="${cls} `))
+
+// A read-only override cell: the picker's own tone, without the chevron
+// that says it opens.
+const READ_TONE = { manual: 'bg-muted text-foreground', auto: 'text-muted-foreground', unset: 'text-muted-foreground/50' }
+const readCell = (label, source) =>
+  `<span class="inline-flex items-center rounded px-1.5 py-0.5 text-[12px] ${READ_TONE[source]}">${label}</span>`
+const tierRead = (tier, source) => readCell(source === 'unset' ? '—' : tier, source)
+const effortRead = (effort) => readCell(effort === null ? '—' : effort, effort === null ? 'unset' : 'manual')
+
+// The pill switch, a reading of the state until Edit is pressed.
+const toggle = (on) => `
+  <span class="inline-flex h-4 w-7 items-center rounded-full ${on ? 'bg-foreground' : 'bg-muted-foreground/30'} px-0.5 align-middle ${EDITING ? '' : 'opacity-50'}">
+    <span class="size-3 rounded-full bg-background ${on ? 'translate-x-3' : ''}"></span>
+  </span>`
+
 // Prices are per 1M tokens, each in its own right-aligned column.
 //
 // No name here contains a Claude family, so `tierOf` classifies none of
 // them: every tier below was typed by an operator, and the four left unset
 // are what an untouched api_key provider actually looks like. Those four
-// are invisible to Routing's tier-respect floor — that is the cost of the
-// column having been read-only.
+// are invisible to Routing's tier gates — that is the cost of the column
+// having been read-only.
 const MODELS = [
   { name: 'gpt-5.5',        tier: 'opus',   tierSource: 'manual', effort: null,   ctx: '400k', inp: '$1.25', cache: '$0.125', out: '$10.0', style: '—',        test: 'ok',      on: true },
   { name: 'gpt-5.4',        tier: 'sonnet', tierSource: 'manual', effort: null,   ctx: '400k', inp: '$1.25', cache: '$0.125', out: '$10.0', style: '—',        test: 'ok',      on: true },
@@ -53,19 +85,15 @@ const modelRow = (m) => `
         ${m.legacy ? pill('legacy', 'mute') : ''}
       </div>
     </td>
-    <td class="px-2">${tierCell(m.tier, m.tierSource)}</td>
+    <td class="px-2">${EDITING ? tierCell(m.tier, m.tierSource) : tierRead(m.tier, m.tierSource)}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${m.ctx}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums">${m.inp}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${m.cache}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums">${m.out}</td>
     <td class="px-2 font-mono text-[12px] text-muted-foreground">${m.style}</td>
-    <td class="px-2">${effortCell(m.effort)}</td>
+    <td class="px-2">${EDITING ? effortCell(m.effort) : effortRead(m.effort)}</td>
     <td class="px-2 text-center text-sm leading-none">${testIcon[m.test]}</td>
-    <td class="py-2.5 pl-2 pr-6 text-right">
-      <span class="inline-flex h-4 w-7 items-center rounded-full ${m.on ? 'bg-foreground' : 'bg-muted-foreground/30'} px-0.5 align-middle">
-        <span class="size-3 rounded-full bg-background ${m.on ? 'translate-x-3' : ''}"></span>
-      </span>
-    </td>
+    <td class="py-2.5 pl-2 pr-6 text-right">${toggle(m.on)}</td>
   </tr>`
 
 const models = `
@@ -96,6 +124,16 @@ const models = `
     <tbody>${MODELS.filter((m) => m.on).map(modelRow).join('')}</tbody>
   </table>`
 
+// Remove is irreversible, so it is red and it asks through a dialog that
+// says what goes with it — the copy is the app's own confirmation.
+const removeDialog = REMOVING
+  ? dialog(
+      'Remove OpenAI?',
+      '<p class="text-xs leading-relaxed text-muted-foreground">This deletes its 18 models and the stored credential, and drops it from every routing chain that names it. There is no undo.</p>',
+      `${btn('Cancel', 'ghost')}${btn('Remove', 'danger', 'ri-delete-bin-line')}`
+    )
+  : ''
+
 document.getElementById('root').innerHTML = `
   <div class="min-w-0">
       <div class="flex items-center gap-3 border-b border-border px-6 py-4">
@@ -107,10 +145,20 @@ document.getElementById('root').innerHTML = `
           </div>
           <p class="mt-0.5 font-mono text-[12px] text-muted-foreground">https://api.openai.com/v1/chat/completions</p>
         </div>
-        <div class="ml-auto flex gap-2">
-          ${btn('Test all', 'outline', 'ri-pulse-line')}
-          ${btn('Sync models', 'ghost', 'ri-refresh-line')}
-          ${btn('Remove', 'ghost', 'ri-delete-bin-line')}
+        <!-- Edit, then Revert / Save, for everything on this page that
+             changes the provider: the switch Routing reads, the key, and
+             each model's tier, effort and switch. One Save writes them all.
+             Remove only exists while editing, red, and still asks first.
+             Test all is locked meanwhile, like the page actions above: its
+             results reload the page, and an unsaved edit would go with it. -->
+        <div class="ml-auto flex items-center gap-2">
+          <span class="flex items-center gap-1.5 pr-1 text-[12px] text-muted-foreground">Routable ${toggle(true)}</span>
+          ${withClass(btn('Test all', 'outline', 'ri-pulse-line'), lockedWhileEditing)}
+          ${
+            EDITING
+              ? `${btn('Remove', 'danger', 'ri-delete-bin-line')}${btn('Revert', 'outline', 'ri-arrow-go-back-line')}${btn('Save', 'primary', 'ri-check-line')}`
+              : btn('Edit', 'outline', 'ri-pencil-line')
+          }
         </div>
       </div>
 
@@ -125,6 +173,7 @@ document.getElementById('root').innerHTML = `
               <div class="flex items-center gap-2">
                 <div class="flex h-8 flex-1 items-center rounded-md border border-border px-3 font-mono text-xs">sk-proj-••••••••••••••••7fA2</div>
                 ${btn('Reveal', 'ghost', 'ri-eye-line')}
+                ${withClass(btn('Replace', 'outline', 'ri-refresh-line'), editOnly)}
               </div>
             </div>
             <div>
@@ -206,6 +255,7 @@ document.getElementById('root').innerHTML = `
            button can never say where you are — this footer does both. -->
       ${pager({ first: 1, last: 5, total: 5, hasPrev: false, hasNext: false })}
       <div class="h-6"></div>
+      ${removeDialog}
   </div>`
 
 renderShell({
@@ -214,9 +264,13 @@ renderShell({
   navMode: 'cloudflare',
   crumbs: [{ label: 'API keys', href: 'providers-keys.html' }, 'OpenAI'],
   subtitle: 'API key · 5 of 18 models enabled',
+  // One Refresh for the catalog this page reads — prices and the model
+  // list — under one backdrop. It replaced "Refresh prices" here and "Sync
+  // models" beside Test all, two halves of the same round trip. Both
+  // actions are locked while an edit is open.
   actions:
-    btn('Refresh prices', 'ghost', 'ri-price-tag-3-line') +
-    btn('Add provider', 'primary', 'ri-add-line', 'providers-connect.html')
+    withClass(btn('Refresh', 'ghost', 'ri-refresh-line'), lockedWhileEditing) +
+    withClass(btn('Add key', 'primary', 'ri-add-line', 'providers-connect.html'), lockedWhileEditing)
 })
 </script>
 </body>

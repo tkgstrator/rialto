@@ -1,6 +1,10 @@
 /**
  * DB write path: upsert a discovered account onto its matching
  * Provider(s), and switch a provider on when it gains its first one.
+ *
+ * Nothing here asks a vendor anything. Proving that credentials
+ * authenticate is subscription-connect-service's job, and it calls
+ * `recordDiscoveredAccount` only once they have.
  */
 
 import { getPrismaClient } from '../../db/client'
@@ -8,12 +12,7 @@ import { AuthMode, type PrismaClient, type SubAccount } from '../../generated/pr
 import { logger } from '../../logger'
 import type { DiscoveredAccount } from '../../schemas/domain/subscription'
 import { encryptionKey } from './crypto'
-import {
-  buildAccountPayload,
-  buildClaudeDiscoveredAccount,
-  buildCodexDiscoveredAccount,
-  stableIdentityFor
-} from './discovery'
+import { buildAccountPayload, stableIdentityFor } from './discovery'
 
 const upsertAccount = async (
   prisma: PrismaClient,
@@ -70,52 +69,31 @@ const enableOnFirstAccount = async (prisma: PrismaClient, providerId: string, na
   logger.info({ provider: name }, '[subaccount] enabled provider on its first connected account')
 }
 
-const recordOAuthAccount = async (
+/**
+ * Upsert the account onto every subscription provider of its kind and
+ * return the rows written. Empty when no provider of that kind exists, so
+ * a caller can tell "stored" from "had nowhere to go" — the routes used to
+ * answer success for both.
+ */
+export const recordDiscoveredAccount = async (
   kind: 'claude' | 'codex',
   account: DiscoveredAccount,
-  prisma: PrismaClient
-): Promise<void> => {
+  prisma: PrismaClient = getPrismaClient()
+): Promise<string[]> => {
   const key = encryptionKey()
   const providers = await providersForKind(prisma, kind)
   if (providers.length === 0) {
     logger.warn({ kind }, '[subaccount] no subscription provider matched; skipping upsert')
-    return
+    return []
   }
+  const ids: string[] = []
   for (const p of providers) {
     // Counted before the upsert, which is about to create the row that
     // would make this look like a provider that was already set up.
     const hadAccounts = (await prisma.subAccount.count({ where: { providerId: p.id } })) > 0
-    await upsertAccount(prisma, p.id, p.name, account, key)
+    const row = await upsertAccount(prisma, p.id, p.name, account, key)
+    ids.push(row.id)
     if (!hadAccounts) await enableOnFirstAccount(prisma, p.id, p.name)
   }
-}
-
-export const recordClaudeOAuthAccount = async (
-  tokens: {
-    accessToken: string
-    refreshToken: string
-    expiresAt: number | null
-    scopes: string[]
-  },
-  prisma: PrismaClient = getPrismaClient()
-): Promise<void> => {
-  const account = await buildClaudeDiscoveredAccount(tokens)
-  if (!account) return
-  await recordOAuthAccount('claude', account, prisma)
-}
-
-export const recordCodexOAuthAccount = async (
-  tokens: {
-    accessToken: string
-    refreshToken: string
-    // Optional: an ~/.codex/auth.json that carries `tokens.account_id`
-    // identifies the account without one.
-    idToken: string | null
-    accountId?: string | null
-  },
-  prisma: PrismaClient = getPrismaClient()
-): Promise<void> => {
-  const account = buildCodexDiscoveredAccount(tokens)
-  if (!account) return
-  await recordOAuthAccount('codex', account, prisma)
+  return ids
 }

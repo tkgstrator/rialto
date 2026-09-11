@@ -7,21 +7,42 @@
  *  1. Crypto (no DB, no network): decryptString edge cases and a
  *     full encrypt→store→decrypt roundtrip via the DB helpers.
  *
- *  2. DB (require HAS_DB): recordCodexOAuthAccount, recordClaudeOAuthAccount
- *     (with mocked fetchClaudeProfile), getUsableSubAccountAuth, and
+ *  2. DB (require HAS_DB): the write path — recordDiscoveredAccount fed by
+ *     buildCodexDiscoveredAccount / claudeAccountFromProfile (with a mocked
+ *     fetchClaudeProfile) — getUsableSubAccountAuth, and
  *     updateSubAccountAccessToken.
  */
 
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { createCipheriv, randomBytes } from 'node:crypto'
+import { fetchClaudeProfile } from '../../src/services/claude-profile-service'
 import {
+  buildCodexDiscoveredAccount,
+  claudeAccountFromProfile,
   decryptString,
   getUsableSubAccountAuth,
-  recordClaudeOAuthAccount,
-  recordCodexOAuthAccount,
+  recordDiscoveredAccount,
   updateSubAccountAccessToken
 } from '../../src/services/subscription-account-sync-service'
 import { HAS_DB, resetDbTables, teardownPrisma } from '../db/helpers'
+
+// The write path without the vendor check subscription-connect-service puts
+// in front of it: these tests are about what gets stored, and connecting
+// would first ask the vendor to accept the tokens. Named after the two
+// functions that used to be exported for exactly this, so the cases below
+// read as they always did.
+const recordCodexOAuthAccount = async (
+  tokens: Parameters<typeof buildCodexDiscoveredAccount>[0]
+): Promise<string[]> => {
+  const account = buildCodexDiscoveredAccount(tokens)
+  return account === null ? [] : recordDiscoveredAccount('codex', account)
+}
+
+const recordClaudeOAuthAccount = async (tokens: Parameters<typeof claudeAccountFromProfile>[0]): Promise<string[]> => {
+  const profile = await fetchClaudeProfile(tokens.accessToken)
+  const account = profile === null ? null : claudeAccountFromProfile(tokens, profile)
+  return account === null ? [] : recordDiscoveredAccount('claude', account)
+}
 
 // ---------------------------------------------------------------------------
 // Mock fetchClaudeProfile before any import resolves against the real service.

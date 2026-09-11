@@ -6,12 +6,14 @@
  * three legs are independently null — a vendor that publishes no cached
  * price still publishes the other two.
  */
+
+import { cn } from 'cn'
 import { useTranslation } from 'react-i18next'
 import { Pill, Toggle } from '@/components/rialto/primitives'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
 import { fmtCost } from '@/lib/sessions/format'
-import { cn } from '@/lib/utils'
 import { fmtContext, type ModelRow, type TierSource } from './derive'
+import { SwitchReading } from './SwitchReading'
 import type { ReasoningEffort, TestStatus, Tier } from './types'
 
 const TEST_ICON: Record<TestStatus, string> = {
@@ -79,6 +81,17 @@ function OverrideCell({
         ))}
       </select>
     </span>
+  )
+}
+
+/**
+ * The same cell while the page reads: the picker's tone, so a manual tier
+ * still stands out from an inferred one, without the chevron that says it
+ * opens.
+ */
+function ReadCell({ value, tone }: { value: string; tone: TierSource }) {
+  return (
+    <span className={cn('inline-flex items-center rounded px-1.5 py-0.5 text-[12px]', CELL_TONE[tone])}>{value}</span>
   )
 }
 
@@ -169,9 +182,65 @@ const toEffort = (value: string): ReasoningEffort | null => {
   return found === undefined ? null : found
 }
 
+/** The tier column: a picker while editing, the reading otherwise. */
+function TierCell({
+  row,
+  editable,
+  onTier
+}: {
+  row: ModelRow
+  editable: boolean
+  onTier: (model: string, next: Tier | null) => void
+}) {
+  const { t } = useTranslation()
+  const value = row.tier === null ? DASH : row.tier
+  if (!editable) return <ReadCell value={value} tone={row.tierSource} />
+  return (
+    <OverrideCell
+      value={value}
+      tone={row.tierSource}
+      label={t('providers.models.setTier', { model: row.name })}
+      options={[
+        { value: DASH, label: t('providers.models.tierAuto') },
+        ...TIERS.map((option) => ({ value: option, label: option }))
+      ]}
+      onChange={(next) => onTier(row.name, toTier(next))}
+    />
+  )
+}
+
+/** The effort column: a picker while editing, the reading otherwise. */
+function EffortCell({
+  row,
+  editable,
+  onEffort
+}: {
+  row: ModelRow
+  editable: boolean
+  onEffort: (model: string, next: ReasoningEffort | null) => void
+}) {
+  const { t } = useTranslation()
+  const value = row.effort === null ? DASH : row.effort
+  const tone = row.effort === null ? 'unset' : 'manual'
+  if (!editable) return <ReadCell value={value} tone={tone} />
+  return (
+    <OverrideCell
+      value={value}
+      tone={tone}
+      label={t('providers.models.setEffort', { model: row.name })}
+      options={[
+        { value: DASH, label: t('providers.models.effortDefault') },
+        ...EFFORTS.map((option) => ({ value: option, label: option }))
+      ]}
+      onChange={(next) => onEffort(row.name, toEffort(next))}
+    />
+  )
+}
+
 function Row({
   row,
   withOverride,
+  editable,
   hasCached,
   hasShape,
   onToggle,
@@ -180,6 +249,7 @@ function Row({
 }: {
   row: ModelRow
   withOverride: boolean
+  editable: boolean
   hasCached: boolean
   hasShape: boolean
   onToggle: (model: string, next: boolean) => void
@@ -190,6 +260,7 @@ function Row({
   // Subscription models carry no per-token price, so their money columns
   // read as absent rather than as a number worth comparing.
   const priceTone = withOverride ? '' : 'text-muted-foreground'
+  const toggleLabel = t('providers.models.toggleModel', { model: row.name })
   return (
     <tr
       className={cn('border-t border-border/60 transition-colors hover:bg-muted/50', row.enabled ? '' : 'opacity-45')}
@@ -201,16 +272,7 @@ function Row({
         </div>
       </td>
       <td className='px-2'>
-        <OverrideCell
-          value={row.tier === null ? DASH : row.tier}
-          tone={row.tierSource}
-          label={t('providers.models.setTier', { model: row.name })}
-          options={[
-            { value: DASH, label: t('providers.models.tierAuto') },
-            ...TIERS.map((tier) => ({ value: tier, label: tier }))
-          ]}
-          onChange={(next) => onTier(row.name, toTier(next))}
-        />
+        <TierCell row={row} editable={editable} onTier={onTier} />
       </td>
       <td className={cn(NUM_CELL, 'text-muted-foreground')}>{fmtContext(row.contextWindow)}</td>
       <td className={cn(NUM_CELL, priceTone)}>{fmtCost(row.inputPer1M)}</td>
@@ -223,27 +285,18 @@ function Row({
       ) : null}
       {withOverride ? (
         <td className='px-2'>
-          <OverrideCell
-            value={row.effort === null ? DASH : row.effort}
-            tone={row.effort === null ? 'unset' : 'manual'}
-            label={t('providers.models.setEffort', { model: row.name })}
-            options={[
-              { value: DASH, label: t('providers.models.effortDefault') },
-              ...EFFORTS.map((effort) => ({ value: effort, label: effort }))
-            ]}
-            onChange={(next) => onEffort(row.name, toEffort(next))}
-          />
+          <EffortCell row={row} editable={editable} onEffort={onEffort} />
         </td>
       ) : null}
       <td className='px-2 text-center text-sm leading-none'>
         <TestIcon status={row.test} />
       </td>
       <td className='py-2.5 pl-2 pr-6 text-right'>
-        <Toggle
-          on={row.enabled}
-          label={t('providers.models.toggleModel', { model: row.name })}
-          onClick={() => onToggle(row.name, !row.enabled)}
-        />
+        {editable ? (
+          <Toggle on={row.enabled} label={toggleLabel} onClick={() => onToggle(row.name, !row.enabled)} />
+        ) : (
+          <SwitchReading on={row.enabled} label={toggleLabel} />
+        )}
       </td>
     </tr>
   )
@@ -254,6 +307,7 @@ export function ModelsTable({
   limit,
   offset = 0,
   withOverride,
+  editable = true,
   onToggle,
   onTier,
   onEffort
@@ -265,6 +319,10 @@ export function ModelsTable({
   limit?: number
   offset?: number
   withOverride: boolean
+  /** False while a provider's page reads: the pickers and switches show
+   *  their values and take no input until Edit is pressed. The
+   *  add-provider wizard's table is always editable. */
+  editable?: boolean
   onToggle: (model: string, next: boolean) => void
   onTier: (model: string, next: Tier | null) => void
   onEffort: (model: string, next: ReasoningEffort | null) => void
@@ -305,6 +363,7 @@ export function ModelsTable({
             key={row.name}
             row={row}
             withOverride={withOverride}
+            editable={editable}
             hasCached={hasCached}
             hasShape={hasShape}
             onToggle={onToggle}

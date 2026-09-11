@@ -7,11 +7,12 @@
  * expensive — the operator needs to know what is still up before they
  * restart anything.
  */
+
+import { cn } from 'cn'
 import { useEffect, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { Pill, RButton } from '@/components/rialto/primitives'
 import { api, type HealthResponse } from '@/lib/api'
-import { cn } from '@/lib/utils'
 import { SystemPage } from './SystemPage'
 
 const POLL_MS = 5000

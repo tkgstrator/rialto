@@ -6,9 +6,10 @@
  * OAuth vs. importing the CLI's credentials) and that fails often enough
  * to need a visible failure state.
  */
+
+import { cn } from 'cn'
 import { useTranslation } from 'react-i18next'
 import { RButton } from '@/components/rialto/primitives'
-import { cn } from '@/lib/utils'
 
 export type StepState = 'done' | 'active' | 'todo'
 

@@ -35,17 +35,30 @@ export function reorderModules(
 export function createModuleForType(moduleType: string): StatusLineModuleConfig {
   switch (moduleType) {
     case 'workDir':
-      return { type: 'workDir', icon: '󰉋', text: '{{workDirName}}', color: 'bright_blue' }
+      return { type: 'workDir', icon: '󰉋', text: '{{workDirName}}', color: 'bright_blue', keepProvider: false }
     case 'gitBranch':
-      return { type: 'gitBranch', icon: '🌿', text: '{{gitBranch}}', color: 'bright_green' }
+      return { type: 'gitBranch', icon: '🌿', text: '{{gitBranch}}', color: 'bright_green', keepProvider: false }
     case 'model':
-      return { type: 'model', icon: '🤖', text: '{{model}}', color: 'bright_yellow' }
+      return { type: 'model', icon: '🤖', text: '{{model}}', color: 'bright_yellow', keepProvider: false }
     case 'usage':
-      return { type: 'usage', icon: '📊', text: '{{inputTokens}} → {{outputTokens}}', color: 'bright_magenta' }
+      return {
+        type: 'usage',
+        icon: '📊',
+        text: '{{inputTokens}} → {{outputTokens}}',
+        color: 'bright_magenta',
+        keepProvider: false
+      }
     case 'speed':
-      return { type: 'speed', icon: '⚡', text: '{{tokenSpeed}}', color: 'bright_green' }
+      return { type: 'speed', icon: '⚡', text: '{{tokenSpeed}}', color: 'bright_green', keepProvider: false }
     case 'script':
-      return { type: 'script', icon: '📜', text: 'Script Module', color: 'bright_cyan', scriptPath: '' }
+      return {
+        type: 'script',
+        icon: '📜',
+        text: 'Script Module',
+        color: 'bright_cyan',
+        scriptPath: '',
+        keepProvider: false
+      }
     default:
       return { ...DEFAULT_MODULE, type: moduleType }
   }

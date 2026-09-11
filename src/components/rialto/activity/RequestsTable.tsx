@@ -8,6 +8,8 @@
  * exporting the descriptor list purely so a popover could enumerate it.
  * A column added below shows up in the table and in the menu together.
  */
+
+import { cn } from 'cn'
 import type { TFunction } from 'i18next'
 import { type ReactNode, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -18,7 +20,6 @@ import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import dayjs from '@/lib/dayjs'
 import { fmtCost, fmtTokens } from '@/lib/sessions/format'
-import { cn } from '@/lib/utils'
 
 export type ColumnId =
   | 'time'

@@ -37,6 +37,7 @@ import type {
   RouterPreferenceProfile,
   ScenarioKey
 } from '../schemas/domain'
+import { QuotaAwareConstraintsSchema } from '../schemas/domain/preference'
 
 // Every scenario the wire shape carries. Kept as a static tuple so
 // adding a new ScenarioKey in Prisma requires touching this file too
@@ -301,6 +302,22 @@ export async function applyRouterPreferences(
     return {
       success: false,
       warnings: [`"${PASSTHROUGH_PROFILE_KEY}" is a reserved profile that skips routing; it cannot hold a chain.`]
+    }
+  }
+  // A blob the schema refuses never reaches the table. The request path
+  // parses it through the same schema and, on failure, falls back to the
+  // defaults for EVERY knob (`constraintsOf` in quota-router/runtime.ts),
+  // so one mistyped value would silently undo the tier gates, the
+  // exhausted behaviour and the longContext threshold at once. Validated,
+  // never replaced: what is stored is what was sent, and the defaults stay
+  // the schema's to supply at read time.
+  if (input.constraints !== null) {
+    const parsed = QuotaAwareConstraintsSchema.safeParse(input.constraints)
+    if (!parsed.success) {
+      const issues = parsed.error.issues.map(
+        (issue) => `constraints.${issue.path.map(String).join('.')}: ${issue.message}`
+      )
+      return { success: false, warnings: [`Constraints rejected — ${issues.join('; ')}`] }
     }
   }
   const warnings: string[] = []

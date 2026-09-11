@@ -6,18 +6,19 @@
  * into each other, which is the wrong shape for a flow that branches and
  * that fails often enough to need its failure on screen.
  */
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
-import { setModelEffort, setModelTier, toggleModel } from './actions'
+import { enableAllModels, setModelEffort, setModelTier, testModels, toggleModel } from './actions'
 import { ConnectAuthStep } from './ConnectAuthStep'
 import { ConnectModelsStep } from './ConnectModelsStep'
 import { ConnectStepBar } from './ConnectStepBar'
 import { ConnectVendorRail } from './ConnectVendorRail'
 import { enableProvider } from './connect-actions'
+import { accountLabel, disabledModelsOf, listedModelsOf } from './derive'
 import { type ConnectFlow, type ConnectStep, useConnectFlow } from './useConnectFlow'
 import { useProvidersData } from './useProvidersData'
 import { vendorLabel } from './vendor-labels'
@@ -38,14 +39,29 @@ const fail = (err: unknown): void => {
 function ConnectPane({ flow, now, reload }: { flow: ConnectFlow; now: number; reload: () => Promise<void> }) {
   const { t } = useTranslation()
   const { entry, provider } = flow
+  // Local to step 3: Enable all and Test all are each one write (or a
+  // sequential run of them for Test all), and disabling the two buttons
+  // for that stretch is enough to stop a double-click from overlapping two
+  // runs. Nothing else on this step needs it — the per-row toggle / tier /
+  // effort writes are small enough to leave unguarded, same as before.
+  const [bulkBusy, setBulkBusy] = useState(false)
   if (entry === undefined) {
     return <div className='min-w-0 px-6 py-6 text-xs text-muted-foreground'>{t('providers.connect.pickVendor')}</div>
   }
   if (flow.step === 3) {
+    // A live account over any other: the pill and the confirmation line
+    // are meant to say "this is who you just signed in as", and a `live`
+    // probe is the strongest evidence of that this step has.
+    const accounts = flow.subscription === undefined ? [] : flow.subscription.accounts
+    const liveAccount = accounts.find((a) => a.authStatus === 'live')
+    const account = liveAccount === undefined ? accounts[0] : liveAccount
+    const connectedAccount = account === undefined ? null : accountLabel(account)
     return (
       <ConnectModelsStep
         entry={entry}
         provider={provider}
+        connectedAccount={connectedAccount}
+        busy={bulkBusy}
         onToggle={(model, next) => {
           if (provider === undefined) return
           toggleModel(provider, model, next).then(reload).catch(fail)
@@ -58,6 +74,24 @@ function ConnectPane({ flow, now, reload }: { flow: ConnectFlow; now: number; re
           if (provider === undefined) return
           setModelEffort(provider, model, next).then(reload).catch(fail)
         }}
+        onEnableAll={() => {
+          if (provider === undefined) return
+          setBulkBusy(true)
+          enableAllModels(provider)
+            .then(reload)
+            .catch(fail)
+            .finally(() => setBulkBusy(false))
+        }}
+        onTestAll={() => {
+          if (provider === undefined) return
+          const disabled = new Set(disabledModelsOf(provider))
+          const enabledModels = listedModelsOf(provider).filter((m) => !disabled.has(m))
+          setBulkBusy(true)
+          testModels(provider.name, enabledModels)
+            .then(reload)
+            .catch(fail)
+            .finally(() => setBulkBusy(false))
+        }}
       />
     )
   }
@@ -66,12 +100,14 @@ function ConnectPane({ flow, now, reload }: { flow: ConnectFlow; now: number; re
       entry={entry}
       oauthKind={flow.oauthKind}
       pending={flow.pending}
+      device={flow.device}
       busy={flow.busy}
       failure={flow.failure}
       now={now}
       manualUrl={flow.manualUrl}
       apiKeyDraft={flow.apiKeyDraft}
       onSignIn={flow.signIn}
+      onStartDevice={flow.startDevice}
       onImport={flow.importFile}
       onManualUrlChange={flow.setManualUrl}
       onSubmitManual={flow.submitManual}

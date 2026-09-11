@@ -147,11 +147,22 @@ const ambiguous = new Set(
 )
 const label = (t) => (ambiguous.has(modelOf(t)) ? t : modelOf(t))
 
+// The screen reads until Edit is pressed; routing.html?edit draws the
+// state after it, so a reviewer sees both without a second copy of the
+// page. Declared before the row template because the chain table is
+// rendered the moment it is defined.
+const EDITING = new URLSearchParams(location.search).has('edit')
+
+// Controls that change the chain exist only while editing. They go
+// invisible rather than absent, so the columns and the row height do not
+// move when Edit is pressed; the toggle stays as a reading of the state.
+const editOnly = EDITING ? '' : 'invisible'
+
 const chainRow = (e) => `
   <tr ${navTo(providerHref(e.target))} class="border-t border-border/60 transition-colors hover:bg-muted/50 ${e.on ? '' : 'opacity-45'}">
     <td class="py-2.5 pl-6 pr-2">
       <div class="flex items-center gap-2">
-        <i class="ri-draggable text-base leading-none text-muted-foreground/50"></i>
+        <i class="ri-draggable text-base leading-none text-muted-foreground/50 ${editOnly}"></i>
         <span class="font-mono text-xs tabular-nums text-muted-foreground">${e.n}</span>
       </div>
     </td>
@@ -168,10 +179,10 @@ const chainRow = (e) => `
     }</td>
     <td class="py-2.5 pl-2 pr-6">
       <div class="flex items-center justify-end gap-1">
-        <span class="inline-flex h-4 w-7 items-center rounded-full ${e.on ? 'bg-foreground' : 'bg-muted-foreground/30'} px-0.5">
+        <span class="inline-flex h-4 w-7 items-center rounded-full ${e.on ? 'bg-foreground' : 'bg-muted-foreground/30'} px-0.5 ${EDITING ? '' : 'opacity-50'}">
           <span class="size-3 rounded-full bg-background ${e.on ? 'translate-x-3' : ''}"></span>
         </span>
-        <button class="ml-1 text-muted-foreground/60 hover:text-foreground"><i class="ri-more-2-fill text-sm"></i></button>
+        <button class="ml-1 text-muted-foreground/60 hover:text-foreground ${editOnly}"><i class="ri-more-2-fill text-sm"></i></button>
       </div>
     </td>
   </tr>`
@@ -203,19 +214,47 @@ const chain = `
     <tbody>${CHAIN.map(chainRow).join('')}</tbody>
   </table>`
 
-const constraint = (label, value, hint) => `
+// The header row is h-8 in every cell and in both states: the grid
+// stretches the cells to one height, and a 32px control beside a 16px
+// reading would sink its label below the labels next to it.
+const constraintCell = (label, valueHtml, hint) => `
   <div class="border-l-2 border-l-transparent bg-background px-4 py-3 transition-colors hover:border-l-border hover:bg-muted/50">
-    <div class="flex items-baseline gap-2">
+    <div class="flex min-h-8 items-center gap-2">
       <span class="text-xs">${label}</span>
-      <span class="ml-auto font-mono text-xs">${value}</span>
+      ${valueHtml}
     </div>
     <div class="mt-0.5 text-[12px] text-muted-foreground">${hint}</div>
   </div>`
 
+const reading = (value) => `<span class="ml-auto font-mono text-xs">${value}</span>`
+
+// The same box as the Profile picker's trigger in band 2, so the screen
+// has one look for "this opens a list".
+const selectBox = (value) =>
+  `<button class="ml-auto inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-muted/60">${value} <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i></button>`
+
+// Two choices stay visible side by side, like Routed / Passthrough in
+// band 2 — but the wrapper is pinned to h-8 rather than sized by padding.
+const segmentedBox = (options, active) =>
+  `<div class="ml-auto flex h-8 items-center rounded-md border border-border p-0.5">${options
+    .map(
+      (o) =>
+        `<button class="flex h-full items-center rounded px-2.5 text-[12px] ${o === active ? 'bg-foreground font-medium text-background' : 'text-muted-foreground hover:text-foreground'}">${o}</button>`
+    )
+    .join('')}</div>`
+
+// The unit sits inside the box, so an edited cell still reads as a
+// percentage the way its reading did.
+const percentBox = (value) =>
+  `<span class="ml-auto inline-flex h-8 w-20 items-center justify-end gap-1 rounded-md border border-border px-2.5 font-mono text-xs">${value}<span class="text-muted-foreground">%</span></span>`
+
+// One cell, in whichever state the block is in.
+const constraint = (label, value, control, hint) => constraintCell(label, EDITING ? control : reading(value), hint)
+
 document.getElementById('root').innerHTML = `
 
-  <!-- Band 1 — which surface. -->
-  <div class="flex items-center gap-1 border-b border-border pl-4 pr-6">
+  <!-- Band 1 — which surface. Locked while editing; see band 3. -->
+  <div class="flex items-center gap-1 border-b border-border pl-4 pr-6 ${EDITING ? '[&>button]:pointer-events-none [&>button]:opacity-50' : ''}">
     ${SURFACES.map(surfaceTab).join('')}
   </div>
 
@@ -229,12 +268,12 @@ document.getElementById('root').innerHTML = `
     <span class="whitespace-nowrap font-mono text-xs">/v1/messages</span>
     <span class="whitespace-nowrap text-[12px] text-muted-foreground">Claude Code</span>
     <span class="mx-1 h-4 w-px shrink-0 bg-border"></span>
-    <div class="flex rounded-md border border-border p-0.5">
+    <div class="flex rounded-md border border-border p-0.5 ${EDITING ? 'pointer-events-none opacity-50' : ''}">
       <button class="rounded bg-foreground px-2.5 py-1 text-[12px] font-medium text-background">Routed</button>
       <button ${navTo('routing-passthrough.html')} class="rounded px-2.5 py-1 text-[12px] text-muted-foreground hover:text-foreground">Passthrough</button>
     </div>
     <span class="mx-1 h-4 w-px shrink-0 bg-border"></span>
-    <button class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-muted/60">
+    <button class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-muted/60 ${EDITING ? 'pointer-events-none opacity-50' : ''}">
       <span class="text-muted-foreground">Profile</span> live <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i>
     </button>
   </div>
@@ -254,12 +293,20 @@ document.getElementById('root').innerHTML = `
       <button class="rounded bg-foreground px-2.5 py-1 text-[12px] font-medium text-background">Agent</button>
       <button class="rounded px-2.5 py-1 text-[12px] text-muted-foreground hover:text-foreground">Subagent</button>
     </div>
-    <!-- Save alone. Add target moved under the table: five scenario
-         chips, a lane switch and two buttons was more than one row should
-         carry, and it does not act on the coordinate this band picks — it
-         acts on the list below it. -->
-    <div class="ml-auto">
-      ${btn('Save', 'primary', 'ri-check-line')}
+    <!-- Edit, then Revert / Save. The screen reads until Edit is pressed:
+         a chain is read far more often than it is changed, and every row
+         carries a drag handle, a toggle and a menu one stray click from
+         changing what routes. One Revert / Save covers the chain and the
+         constraints under it, because both are one profile and one write;
+         Revert throws the unsaved edit away and returns to reading.
+         While editing, the surface tabs, the mode switch and the profile
+         picker above are locked: each would load another profile or hide
+         the chain, and the unsaved edit would go with it. Scenario and
+         lane stay free, because they move within the profile being edited.
+         Add target moved under the table: it does not act on the
+         coordinate this band picks — it acts on the list below it. -->
+    <div class="ml-auto flex items-center gap-2">
+      ${EDITING ? `${btn('Revert', 'outline', 'ri-arrow-go-back-line')}${btn('Save', 'primary', 'ri-check-line')}` : btn('Edit', 'outline', 'ri-pencil-line')}
     </div>
   </div>
 
@@ -268,35 +315,42 @@ document.getElementById('root').innerHTML = `
   <!-- The count reads as a total under the thing it counts, and the one
        action that adds to that list sits with it. "Add target" appends a
        row to the table directly above, which is where a reader looks for
-       it once they have read the last one. -->
+       it once they have read the last one. Like every other edit it only
+       exists while editing; the row keeps its h-8 height either way, so
+       the constraints below do not jump when Edit is pressed. -->
   <div class="flex items-center gap-3 border-t border-border/60 px-6 py-2.5">
     <span class="text-[12px] text-muted-foreground">5 targets · 1 disabled · order is preference, top first</span>
-    <div class="ml-auto flex items-center gap-2">
-      ${btn('Add target', 'outline', 'ri-add-line')}
+    <div class="ml-auto flex h-8 items-center gap-2">
+      ${EDITING ? btn('Add target', 'outline', 'ri-add-line') : ''}
     </div>
   </div>
 
-  <!-- Constraints, four-up, in the space the right rail used to leave
+  <!-- Constraints, three-up, in the space the right rail used to leave
        empty. The rail ran the full page height for four rows while the
        chain beside it ended after 250px — a tall column next to a short
        one, with the empty half carrying the content. They stopped being
        a column and became a footer to the chain they constrain.
 
-       All four are the profile's own constraints, which is what makes
-       them belong under this chain: the fourth cell used to show the
-       install-wide cross-provider switch, an envelope scalar that went
-       with the peer fallback it toggled. When the chain has no usable
-       target left, the third cell is the whole decision — answer 429,
-       or send the request on with the model the caller asked for. -->
+       All three are the profile's own constraints, which is what makes
+       them belong under this chain. A fourth cell showed a healthiness
+       floor that nothing on the request path read; a reading with no
+       effect invites an edit with no effect, so it went. When the chain
+       has no usable target left, the second cell is the whole decision —
+       answer 429, or send the request on with the model the caller asked
+       for.
+
+       Each cell is a reading until Edit is pressed and the control that
+       sets it after, saved and reverted together with the chain above.
+       Tier substitution offers the two tier gates, escalation and
+       demotion, as one four-way choice. -->
   <div class="mt-6 border-t border-border">
     <div class="px-6 pt-4 pb-2">
       <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Constraints</h2>
     </div>
-    <div class="grid grid-cols-4 gap-px bg-border/60">
-      ${constraint('Tier respect', 'sonnet', 'never fall below this tier. Unknown tiers are not held by it.')}
-      ${constraint('Healthiness floor', '95%', 'skip targets below this')}
-      ${constraint('When exhausted', '429', 'no usable target left: answer 429, or pass the request through with the caller’s own model')}
-      ${constraint('Quota skip', '100%', 'skip accounts the quota collector reports as spent')}
+    <div class="grid grid-cols-3 gap-px bg-border/60">
+      ${constraint('Tier substitution', 'up and down', selectBox('up and down'), 'may a request go to a target of another tier')}
+      ${constraint('When exhausted', '429', segmentedBox(['429', 'Passthrough'], '429'), 'no usable target left: answer 429, or pass the request through with the caller’s own model')}
+      ${constraint('Quota skip', '100%', percentBox('100'), 'skip accounts the quota collector reports as spent')}
     </div>
   </div>`
 

@@ -31,16 +31,7 @@ import { ANY } from '@/components/rialto/settings/access/pickers'
 import { TokenTable } from '@/components/rialto/settings/access/TokenTable'
 import { SectionHead } from '@/components/rialto/settings/fields'
 import { type AccessTokenWire, api, type InboundSurfaceWire } from '@/lib/api'
-import {
-  countTokens,
-  EXPIRY_CHOICES,
-  expiryToIso,
-  type TokenCounts,
-  tokenState
-} from '@/lib/rialto/settings/access-tokens'
-
-// react-i18next's t(), trimmed to what these two helpers call.
-type Translate = (key: string, options?: Record<string, unknown>) => string
+import { countTokens, expiryToIso, type TokenCounts, tokenState } from '@/lib/rialto/settings/access-tokens'
 
 interface Revealed {
   plaintext: string
@@ -50,13 +41,8 @@ interface Revealed {
   expiry: string
 }
 
-const expiryLabel = (choiceId: string, t: Translate): string => {
-  const choice = EXPIRY_CHOICES.find((c) => c.id === choiceId)
-  return choice === undefined ? t('settings.access.noExpiry') : t(choice.labelKey)
-}
-
 /**
- * "4 active · 1 revoked · all on /v1/*", where the revoked count is the
+ * "4 active · 1 revoked · all /v1/*", where the revoked count is the
  * control that unfolds those rows. A plain label there would leave them
  * unreachable, and a separate toggle would spend a control on a state
  * most installs never look at.
@@ -150,7 +136,10 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
           name: res.token.name,
           scope: paths.length === 0 ? t('settings.access.allEndpoints') : paths.join(', '),
           profile: res.token.profileKey === null ? t('settings.access.followEndpoint') : res.token.profileKey,
-          expiry: expiryLabel(draft.expiry, t)
+          // The resolved date the server actually stored, not the form's
+          // relative choice — the same reading rotate's reveal gives, so
+          // the two summaries agree on what "Expires" means.
+          expiry: res.token.expiresAt === null ? t('settings.access.never') : res.token.expiresAt.slice(0, 10)
         })
         setDraft(null)
         load()
@@ -183,22 +172,8 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
           <i className='ri-information-line mr-1 align-[-1px]' />
           <Trans
             i18nKey='settings.access.tokensNote'
-            components={{
-              mono: <span className='font-mono' />,
-              strong: <span className='font-medium text-foreground' />
-            }}
+            components={{ strong: <span className='font-medium text-foreground' /> }}
           />
-          {/* Second paragraph rather than a second banner: the Cost
-              column reads as broken on a subscription-only install
-              (every row a dash) unless something says why, and one more
-              box above the table would cost more attention than the
-              answer is worth. */}
-          <p className='mt-2'>
-            <Trans
-              i18nKey='settings.access.costNote'
-              components={{ strong: <span className='font-medium text-foreground' /> }}
-            />
-          </p>
         </div>
       </div>
 

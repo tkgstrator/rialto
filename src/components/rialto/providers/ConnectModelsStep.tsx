@@ -5,8 +5,8 @@
  * treatment — it is the same decision, made once before the provider takes
  * traffic instead of after.
  */
-import { useTranslation } from 'react-i18next'
-import { Pill } from '@/components/rialto/primitives'
+import { Trans, useTranslation } from 'react-i18next'
+import { Pill, RButton } from '@/components/rialto/primitives'
 import { buildModelRows, enabledCountOf, listedModelsOf } from './derive'
 import { ModelsTable } from './ModelsTable'
 import type { CatalogEntry, Provider, ReasoningEffort, Tier } from './types'
@@ -15,15 +15,28 @@ import { vendorLabel } from './vendor-labels'
 export function ConnectModelsStep({
   entry,
   provider,
+  /** Label of the account this step's OAuth just connected; null for an
+   *  api_key provider (no account) or a subscription with none reported
+   *  yet. Drives the "connected" pill and the confirmation line below the
+   *  vendor name — step 3 is reached only after a credential landed, so
+   *  this is the one place that says which one. */
+  connectedAccount,
+  busy,
   onToggle,
   onTier,
-  onEffort
+  onEffort,
+  onEnableAll,
+  onTestAll
 }: {
   entry: CatalogEntry
   provider: Provider | undefined
+  connectedAccount: string | null
+  busy: boolean
   onToggle: (model: string, next: boolean) => void
   onTier: (model: string, next: Tier | null) => void
   onEffort: (model: string, next: ReasoningEffort | null) => void
+  onEnableAll: () => void
+  onTestAll: () => void
 }) {
   const { t } = useTranslation()
   if (provider === undefined) {
@@ -46,9 +59,18 @@ export function ConnectModelsStep({
           ) : (
             <Pill tone='info'>{t('providers.connect.pillSubscription')}</Pill>
           )}
+          {connectedAccount === null ? null : <Pill tone='ok'>{t('providers.connect.connectedPill')}</Pill>}
         </div>
         <p className='mt-1 text-[12px] leading-relaxed text-muted-foreground'>
-          {t('providers.connect.modelsExplainer')}
+          {connectedAccount === null ? (
+            t('providers.connect.modelsExplainer')
+          ) : (
+            <Trans
+              i18nKey='providers.connect.modelsConnectedFor'
+              values={{ account: connectedAccount }}
+              components={{ mono: <span className='font-mono' /> }}
+            />
+          )}
         </p>
       </div>
       <div className='flex items-center gap-3 px-6 pt-5 pb-3'>
@@ -59,6 +81,14 @@ export function ConnectModelsStep({
             total: listedModelsOf(provider).length
           })}
         </span>
+        <div className='ml-auto flex items-center gap-2'>
+          <RButton variant='ghost' icon='ri-checkbox-multiple-line' onClick={onEnableAll} disabled={busy}>
+            {t('providers.connect.enableAll')}
+          </RButton>
+          <RButton variant='outline' icon='ri-pulse-line' onClick={onTestAll} disabled={busy}>
+            {t('providers.detail.testAll')}
+          </RButton>
+        </div>
       </div>
       <ModelsTable
         rows={buildModelRows(provider, entry)}

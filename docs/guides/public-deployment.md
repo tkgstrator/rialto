@@ -240,26 +240,33 @@ initiate は、redirect_uri に Anthropic 自身の表示用コールバック
 ページに着地し、そこに表示された `code#state` を Providers → Connect の貼り付け欄に
 入れれば完了する。
 
-**Codex** — OpenAI の OAuth クライアントは `http://localhost:1455/auth/callback`
-だけを許可する。ポートもパスも差し替えられないので、同意画面は必ずブラウザ側の
-`localhost:1455` へ飛ぶ。取れる手は3つ:
-
-1. **Docker ホスト上のブラウザで開いている場合** — `compose.yaml` の
-   `127.0.0.1:1455:1455` をそのまま残す。イメージは `CODEX_CALLBACK_HOST=0.0.0.0`
-   でコンテナ内のリスナーを立てるので publish が効き、サインインは自動で完了する
-   （ループバック bind のままだと Docker の publish プロキシからは見えない）。
-   ホストのループバックにだけ publish しているので LAN には出ない。
-2. **トンネル越し／別マシンから開いている場合** — 1455 はどう転送しても届かない。
-   開けなかったページの URL をアドレスバーごとコピーし、Providers → Connect の
-   貼り付け欄に入れる。`POST /api/oauth/manual-callback` が code+state を取り出して
-   サーバ側で交換する。RFC 6749 が要求するのは redirect_uri が authorize 時と
-   **同一文字列**であることだけで、サーバから到達できる必要はない。この構成なら
-   `compose.yaml` の 1455 の publish は消してよい。
-3. **OAuth を回さない** — どこかで `codex login` を済ませ、`~/.codex/auth.json` を
-   Connect の「CLI からインポート」で読ませる。
-
 貼り付けは急ぐこと: `state` はプロセスメモリに TTL 10 分で保持され、
 サーバを再起動すると消える（`src/services/oauth-flow-service.ts`）。
+
+**Codex** — デバイスコードでサインインする（`codex login --device-auth` と同じフロー）。
+OpenAI の OAuth クライアントは `http://localhost:1455/auth/callback` しか許可せず、
+同意画面は必ずブラウザ側の `localhost:1455` へ飛ぶので、公開運用ではブラウザー
+サインインが成り立たない。デバイスコードはどこからも Rialto へ戻ってこないので、
+トンネル越しでもコンテナ内でもそのまま使える:
+
+1. Providers → Add provider → Codex で **Device code** を選ぶ。
+   `POST /api/oauth/device/start` が `auth.openai.com/api/accounts/deviceauth/usercode`
+   にワンタイムコードを取りに行き、画面にコードとリンク
+   `https://auth.openai.com/codex/device` が出る。
+2. 任意のブラウザでリンクを開き、ChatGPT にサインインしてコードを入れる。
+3. 画面は `POST /api/oauth/device/poll` を回し続け、サーバは上流の `interval`
+   ごとに高々 1 回だけ `deviceauth/token` を叩く。認可されると通常のトークン
+   エンドポイントで交換し、ほかの経路と同じく資格情報を検証してからアカウントを
+   保存する。
+
+コードの有効期限は 15 分。フローはプロセスメモリにだけあるので
+（`src/services/codex-auth/device-flow-store.ts`）、サーバを再起動したらコードを
+取り直す。どこかで `codex login` を済ませてあるなら、`~/.codex/auth.json` を
+**Import from Codex** で読ませてもよい。
+
+UI からブラウザーサインインは出していないため、`compose.yaml` の
+`127.0.0.1:1455:1455` の publish は UI の操作には不要になった
+（ループバックリスナー自体はまだ残っている）。
 
 ## 現状の制限
 

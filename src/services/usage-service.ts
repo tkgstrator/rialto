@@ -6,6 +6,7 @@
  *   - fetch: live upstream polling and TTL-cached snapshot reads
  *   - headroom: cache-only single-window (5h / primary) headroom
  *   - window-headroom: window-selectable (weekly-aware) drain targets
+ *   - account-limit: a spent 5h / weekly window folded into the account's other windows
  */
 
 export type {
@@ -23,6 +24,8 @@ export {
   __seedCodexCacheForTest
 } from './usage-service/cache'
 export {
+  fetchUsageForAccounts,
+  fetchUsageForTokens,
   fetchUsageSnapshot,
   fetchUsageSnapshotWithAccountIds,
   getUsage

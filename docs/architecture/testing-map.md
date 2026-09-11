@@ -44,6 +44,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `config-salvage.test.ts` | 壊れた `config.json` から `Personas` を救い出す経路（`APIKEY` はもう救わない）と、資格情報を決して生成しないこと |
 | `cloudflare-access.test.ts` | Access assertion の検証（署名 + audience） |
 | `chain-target-state.test.ts` | Routing 画面のチェーン行で、スケジューラが測れなかった target（api_key など）の重みをどう見せるか |
+| `routing-constraints.test.ts` | Routing 画面の制約セル。未保存の blob がスキーマのデフォルトとして読めること、編集が画面に出ていないキー（`longContextThreshold` など）を残してマージされること、デフォルトと同じ値の書き込みを変更扱いしないこと、Quota skip が 0〜100 の整数だけ通ること |
 | `long-context-beta.test.ts` | `context-1m-*` beta ヘッダの取り回し |
 | `message-content.test.ts` | メッセージ本文の正規化 |
 | `models-build-rows.test.ts` | Providers 画面のモデル行の組み立て |
@@ -54,6 +55,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `thinking-signature-filter.test.ts` | `rialto_` プレフィクスの thinking signature 濾過 |
 | `update-check.test.ts` | 更新チェック: バージョン比較（`v` 付きタグ・prerelease・読めないタグ）と、取得失敗を「最新です」に畳まないこと、成功だけをキャッシュすること |
 | `rialto/format.test.ts` | 表示フォーマッタ（金額の有効数字など） |
+| `rialto/provider-draft.test.ts` | プロバイダ詳細の Edit → Save が書くもの。手で元に戻した変更は何も書かないこと、プロバイダ・モデルのスイッチとキーは読み込んだ行を土台にした 1 回の upsert に載り、tier / effort は変わったものだけが個別の書き込みになること（upsert には載せない） |
 | `rialto/redact-tool-arguments.test.ts` | `REDACT_TOOL_ARGUMENTS` の除去処理 |
 | `rialto/settings/access-config.test.ts`<br/>`rialto/settings/access-tokens.test.ts`<br/>`rialto/settings/envelope.test.ts` | Settings 画面の各フォームのロジック |
 | `rialto/settings-content/persona.test.ts`<br/>`rialto/settings-content/statusline.test.ts` | Settings のサブ画面のロジック |
@@ -87,12 +89,13 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `upstream-error.test.ts` | `PROVIDER_ERR_RE` の逆パースと verbatim 転送 |
 | `route-plan.test.ts` | `buildRoutePlan`（body parse、面解決、transformer 引き当て、chain の primary / fallbacks が plan に載ること） |
 | `candidate-chain.test.ts` | `buildFailoverChain` — chain の順序をそのまま辿ること（subscription primary が api_key fallback を保つ、同 provider も通る）、重複排除、exhausted 除外と全滅時の順序維持 |
-| `router-preferences.test.ts` | `constraints.longContextThreshold` の受理（正の整数か null）と `/api/router-preferences` での往復 |
+| `router-preferences.test.ts` | `constraints.longContextThreshold` の受理（正の整数か null）と `/api/router-preferences` での往復。スキーマが通さない制約 blob を PUT が拒否して何も書かないこと、通った blob をデフォルトで埋めずにそのまま保存すること |
 | `chain-failover-cooldown.test.ts` | 429 後の枯渇マークと cooldown |
 | `openai-models.test.ts` | `GET /v1/models` の envelope と `provider,model` id |
 | `access-log-request-id.test.ts` | アクセスログの `reqId` |
 | `oauth-export-credentials.test.ts` | 認証情報エクスポート |
-| `subscriptions-refresh.test.ts` | `POST /api/subscriptions/refresh`（Subscriptions 一覧の Refresh）。プロファイル再同期と 5 分キャッシュを迂回した usage 取得が `SubAccountQuota` / `SubAccountUsage` に着地し、`UsageSnapshot` には書かないこと。無効プロバイダのアカウントを呼ばないこと、失敗アカウントを名指しして行を触らないこと、同時呼び出しが 1 回の上流パスに合流すること、`/sync` の契約が変わらないこと |
+| `oauth-import-credentials.test.ts` | 認証情報の取り込み。資格情報ファイルでない JSON と account id の無い Codex 資格情報を上流に問い合わせる前に 400 で断ること、上流が拒否した資格情報は（refresh token があれば 1 回 refresh を試したうえで）400 で断り何も書かないこと、refresh で通った場合は回転後の grant を保存すること、上流に届かなければ 502 で何も書かないこと、受理されたアカウントが `live` で保存され同じリクエスト内で `SubAccountUsage` / `SubAccountQuota` まで埋まること |
+| `subscriptions-refresh.test.ts` | `POST /api/subscriptions/refresh`（Providers 画面の Refresh のアカウント側）。プロファイル再同期と 5 分キャッシュを迂回した usage 取得が `SubAccountQuota` / `SubAccountUsage` に着地し、`UsageSnapshot` には書かないこと。body 無し・`{}` では無効プロバイダのアカウントを呼ばないこと、`{ provider }` ではそのプロバイダのアカウントだけを無効化されていても同期・取得して他を呼ばないこと、subscription プロバイダに無い名前は 404 で何も呼ばないこと、失敗アカウントを名指しして行を触らないこと、同じスコープの同時呼び出しが 1 回の上流パスに合流すること、`/sync` の契約が変わらないこと |
 | `routing-scheduler-state.test.ts` / `solver-input.test.ts` | スケジューラ状態とソルバ入力の API |
 
 ### `__tests__/llms` — ルーティングと変換
@@ -127,7 +130,10 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `failover-state.test.ts` | 枯渇マークとその失効 |
 | `session-account-router.test.ts` | ハードリミット除外 → sticky → balancingScore の 4 段 |
 | `usage-headroom.test.ts` | `drainTarget` / `getKindWindowHeadroom` の算術。**現在のルーティング経路からは呼ばれない関数のテスト**（UI と将来の再利用のために残してある） |
+| `usage-account-limit.test.ts` | 5h か 7d（codex は primary / secondary）が 100 % に達したら、残りの窓を 100 %・到達した窓のうち遅い方のリセットとして畳み込む `applyClaudeAccountLimit` / `applyCodexAccountLimit`。99 % では何も変えない、per-model 7d の到達は波及しない、自前でも使い切った窓がそれより後にリセットするなら自分の値を残す、上流が返していない窓は作らない |
 | `usage-fetch-force.test.ts` | usage 取得の `forceRefresh`（TTL 内のキャッシュを迂回して上流を呼び、再キャッシュする）と `enabledProvidersOnly`。既定の経路が変わらずキャッシュを返し、失敗時は直前の値を残してアカウントを `failed` に名指しすること |
+| `model-test/subscription-probe.test.ts` | Codex サブスクの Test が、プロキシと同じ `openai-responses` → `codex-oauth` で request を組むこと。ChatGPT バックエンドが拒否する `max_output_tokens` を送らない、`messages` を残さない、`/responses` へ account id と `originator` 付きで送る |
+| `model-test/probes.test.ts` | api_key の Responses 疎通確認は `max_output_tokens: 16` を送り続けること（公開 Responses API は 16 未満を 400 にする）。Codex 側と取り違えて「直さない」ための対 |
 | `subscription-account-sync-service.test.ts` / `subscription-account-sync/crypto.test.ts` | サブアカウント同期と `RIALTO_ACCOUNT_ENCRYPTION_KEY` による暗号化 |
 | `codex-auth.test.ts` | Codex のトークンリフレッシュ |
 | `router-preference-service.test.ts` / `router-utilization-service.test.ts` | 選好チェーンと利用率 |

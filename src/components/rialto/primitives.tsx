@@ -8,9 +8,10 @@
  * Deliberately NOT shadcn `Card`: the house pattern is a flat block with a
  * `border-l` accent plus `hover:bg-muted/50`.
  */
+
+import { cn } from 'cn'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { cn } from '@/lib/utils'
 
 /** Flat row treatment used everywhere instead of shadcn Card. */
 export const ROW = 'border-l-2 border-l-transparent px-4 py-3 transition-colors hover:bg-muted/50'
@@ -156,7 +157,12 @@ export function RButton({
       )}
       {...rest}
     >
-      {icon ? <i className={cn(icon, 'text-sm leading-none')} /> : null}
+      {/* aria-hidden: Chromium folds a Remix Icon's ::before glyph (a
+          private-use codepoint) into the button's accessible name, so
+          `getByRole('button', { name: 'Edit' })` matched nothing and a
+          screen reader announced a junk character before the label the
+          icon merely decorates. */}
+      {icon ? <i aria-hidden className={cn(icon, 'text-sm leading-none')} /> : null}
       {children}
     </button>
   )
@@ -275,7 +281,9 @@ export function SurfaceChip({
   )
   const content = (
     <>
-      {on ? <i className='ri-check-line text-xs' /> : null}
+      {/* Same folded-glyph issue as RButton's icon: decorative next to the
+          visible `path` text below, so it must not join the accessible name. */}
+      {on ? <i aria-hidden className='ri-check-line text-xs' /> : null}
       {path}
     </>
   )

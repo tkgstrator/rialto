@@ -35,12 +35,13 @@ document.getElementById('root').innerHTML = `
            "Subscriptions" already. -->
       <div class="flex items-center gap-3 px-6 pt-5 pb-3">
         <span class="text-[12px] text-muted-foreground">3 accounts across 3 providers · 10 of 16 models enabled</span>
-        <!-- Refresh asks upstream now. The quota column is otherwise a
-             five-minute-old reading, and the moment an operator looks at
-             it is usually the moment they doubt it. It sits beside the
-             primary action, after the catalog-wide "Refresh prices" the
-             API keys list also carries. -->
-        <div class="ml-auto flex items-center gap-2">${btn('Refresh prices', 'ghost', 'ri-price-tag-3-line')}${btn('Refresh', 'ghost', 'ri-refresh-line')}${btn('Add subscription', 'primary', 'ri-add-line', 'providers-connect.html')}</div>
+        <!-- One Refresh, beside the primary action. It asks upstream now for
+             everything this list reads that ages on its own — every enabled
+             account's usage, and the catalog's prices and models — under one
+             backdrop. It used to be two buttons, "Refresh prices" and
+             "Refresh", which made the operator pick the reading they doubted
+             when the answer is usually all of them. -->
+        <div class="ml-auto flex items-center gap-2">${btn('Refresh', 'ghost', 'ri-refresh-line')}${btn('Add subscription', 'primary', 'ri-add-line', 'providers-connect.html')}</div>
       </div>
 
       <div class="px-6 pb-4">

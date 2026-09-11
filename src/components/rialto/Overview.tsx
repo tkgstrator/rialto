@@ -7,6 +7,8 @@
  * build gave the operator no way to see that only one of them was
  * actually routed.
  */
+
+import { cn } from 'cn'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
@@ -22,7 +24,6 @@ import {
 } from '@/lib/api'
 import { fmtAgo, fmtCount, fmtLatency, fmtRate, fmtUntil, shortId } from '@/lib/rialto/format'
 import { fmtCost, fmtTokens } from '@/lib/sessions/format'
-import { cn } from '@/lib/utils'
 
 // Spend is going up or down, and neither direction is an alarm on its
 // own — a rise past a tenth is the one worth colouring.
@@ -223,8 +224,13 @@ function SurfaceTable({ data }: { data: OverviewResponse }) {
           >
             <td className='py-2.5 pl-6 pr-3'>
               {/* The link carries the row for the keyboard; the row's own
-                  onClick is the pointer affordance the hover promises. */}
-              <Link to={`/routing?surface=${s.id}`} className='font-mono text-xs hover:underline'>
+                  onClick is the pointer affordance the hover promises.
+                  `block`, because an inline <a> ahead of the client-name
+                  div below it gets an invisible line-box strut from the
+                  td's own font metrics — a few px nobody drew, repeated
+                  down every row until the whole table read taller than
+                  the mock's. */}
+              <Link to={`/routing?surface=${s.id}`} className='block font-mono text-xs hover:underline'>
                 {s.path}
               </Link>
               <div className='text-[12px] text-muted-foreground'>{s.client}</div>

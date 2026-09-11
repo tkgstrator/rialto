@@ -9,12 +9,13 @@
  * pane: Copy took the open group's lines and Raw swapped the rendered
  * group for its JSON. With one flat list there is no group to take.
  */
+
+import { cn } from 'cn'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { type LogLine, lineDetail } from '@/components/rialto/activity/log-lines'
 import { chipFor, GUTTER, LEVEL_TEXT } from '@/components/rialto/activity/log-view'
 import dayjs from '@/lib/dayjs'
-import { cn } from '@/lib/utils'
 
 function LogRow({ line }: { line: LogLine }) {
   const chip = chipFor(line.level)

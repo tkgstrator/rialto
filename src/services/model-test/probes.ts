@@ -1,24 +1,20 @@
 /**
- * Vendor-specific real-inference probes: a minimal 1-token completion
- * request shaped for each API style, dispatched by `probeInference`.
+ * Vendor-specific real-inference probes for api_key providers: a minimal
+ * completion request shaped for each API style, dispatched by
+ * `probeInference`. Subscription providers do not come through here; they
+ * are probed with the proxy's own transformer chain (subscription-probe.ts).
  */
 
 import { ApiStyle } from '../../generated/prisma/client'
 import { fetchWithTimeout, formatHttpError, type ProbeResult, reachable } from './http'
 
-const probeAnthropic = async (
-  baseUrl: string,
-  apiKey: string,
-  model: string,
-  extraHeaders: Record<string, string>
-): Promise<ProbeResult> => {
+const probeAnthropic = async (baseUrl: string, apiKey: string, model: string): Promise<ProbeResult> => {
   const res = await fetchWithTimeout(baseUrl, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      ...extraHeaders
+      'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
       model,
@@ -32,18 +28,13 @@ const probeAnthropic = async (
   return { ok: false, error: formatHttpError(res.status, ab) }
 }
 
-const probeGemini = async (
-  baseUrl: string,
-  apiKey: string,
-  model: string,
-  extraHeaders: Record<string, string>
-): Promise<ProbeResult> => {
+const probeGemini = async (baseUrl: string, apiKey: string, model: string): Promise<ProbeResult> => {
   // baseUrl ends with /v1beta/models/ — resolve relative to it.
   const url = new URL(`./${model}:generateContent`, baseUrl)
   url.searchParams.set('key', apiKey)
   const res = await fetchWithTimeout(url.href, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', ...extraHeaders },
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text: 'ping' }] }],
       generationConfig: { maxOutputTokens: 1 }
@@ -57,12 +48,7 @@ const probeGemini = async (
 // chat-completions endpoint (codex models live under the regular
 // openai provider via a per-model apiStyle override), so normalise
 // it to /responses; if it's already /responses it's unchanged.
-const probeResponses = async (
-  chatOrResponsesUrl: string,
-  apiKey: string,
-  model: string,
-  extraHeaders: Record<string, string>
-): Promise<ProbeResult> => {
+const probeResponses = async (chatOrResponsesUrl: string, apiKey: string, model: string): Promise<ProbeResult> => {
   // Normalise to the /responses endpoint: replace a trailing
   // /chat/completions, otherwise append /responses if absent.
   const responsesUrl = /\/responses\/?$/.test(chatOrResponsesUrl)
@@ -74,13 +60,8 @@ const probeResponses = async (
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${apiKey}`,
-      ...extraHeaders
+      authorization: `Bearer ${apiKey}`
     },
-    // chatgpt.com/backend-api/codex requires: `instructions`,
-    // `input` as a list, store=false, stream=true. All are valid
-    // on the public Responses API too, so one body serves both.
-    //
     // The cap is 16 because that is the Responses API's documented
     // minimum: api.openai.com answers 400 "integer_below_min_value"
     // ("Expected a value >= 16") for anything smaller. This probe used
@@ -88,6 +69,10 @@ const probeResponses = async (
     // parameter validation, and `budgetExhausted` counted that 400 as a
     // pass because its pattern matched the field name in the error text.
     // 16 keeps the probe cheap while actually exercising the model.
+    //
+    // Only the public Responses API gets this body. The Codex subscription
+    // backend refuses `max_output_tokens` outright, which is why it is
+    // probed through codex-oauth instead of here.
     body: JSON.stringify({
       model,
       instructions: 'ping',
@@ -148,21 +133,18 @@ export const probeInference = async (
   style: ApiStyle,
   baseUrl: string,
   apiKey: string,
-  model: string,
-  // Extra headers for subscription auth (e.g. codex's
-  // chatgpt-account-id). Merged into every variant's request.
-  extraHeaders: Record<string, string> = {}
+  model: string
 ): Promise<ProbeResult> => {
   try {
     if (style === ApiStyle.anthropic) {
-      return await probeAnthropic(baseUrl, apiKey, model, extraHeaders)
+      return await probeAnthropic(baseUrl, apiKey, model)
     }
     if (style === ApiStyle.gemini) {
-      return await probeGemini(baseUrl, apiKey, model, extraHeaders)
+      return await probeGemini(baseUrl, apiKey, model)
     }
     if (style === ApiStyle.openai_responses) {
       // baseUrl is already the /v1/responses endpoint.
-      return await probeResponses(baseUrl, apiKey, model, extraHeaders)
+      return await probeResponses(baseUrl, apiKey, model)
     }
     return await probeOpenAIChat(baseUrl, apiKey, model)
   } catch (err) {

@@ -2,9 +2,10 @@
  * Vendor picker for the add-provider flow — step 1, kept visible through
  * the whole flow so switching vendor is one click rather than a restart.
  */
+
+import { cn } from 'cn'
 import { useTranslation } from 'react-i18next'
 import { Pill } from '@/components/rialto/primitives'
-import { cn } from '@/lib/utils'
 import type { CatalogEntry } from './types'
 import { sortVendors, vendorHint, vendorLabel } from './vendor-labels'
 

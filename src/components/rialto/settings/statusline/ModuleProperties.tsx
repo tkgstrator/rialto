@@ -5,23 +5,27 @@
  * only show fields; here it sits under the preview, which is what makes
  * a colour or format change judgeable without saving first.
  */
-import { useTranslation } from 'react-i18next'
+
+import { cn } from 'cn'
+import type { ReactNode } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { Pill } from '@/components/rialto/primitives'
 import { BG_SWATCHES, colorHex, FG_SWATCHES, moduleMeta, type Swatch } from '@/lib/rialto/settings-content/statusline'
-import { cn } from '@/lib/utils'
 import type { StatusLineModuleConfig } from '@/types'
 
 type Field = keyof StatusLineModuleConfig
 
 // Not translated, and not in the bundle: these are the literal template
 // tokens the renderer substitutes, and i18next would interpolate `{{…}}`
-// away before it ever reached the screen.
+// away before it ever reached the screen. A `title`, not a visible row —
+// the mock keeps Format to one line, and a five-token list under every
+// module would push everything below it down for a rarely-needed hint.
 const FORMAT_HINT = '{{model}}, {{gitBranch}}, {{workDirName}}, {{inputTokens}}, {{outputTokens}}.'
 
 const FIELD_CLASS =
   'flex h-8 items-center rounded-md border border-border bg-transparent px-3 font-mono text-xs outline-none focus:border-foreground/40'
 
-function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Row({ label, hint, children }: { label: string; hint?: ReactNode; children: React.ReactNode }) {
   return (
     <div className='grid grid-cols-[10rem_1fr] items-start gap-4 border-t border-border/60 px-6 py-3'>
       {hint === undefined ? (
@@ -75,12 +79,33 @@ function ColorField({
   )
 }
 
+/** The 20×36 on/off switch, sized to match this panel's own controls — the
+ * shared `Toggle` primitive elsewhere in Settings is the smaller 16×28. */
+function BoolSwitch({ on, label, onToggle }: { on: boolean; label: string; onToggle: () => void }) {
+  return (
+    <button
+      type='button'
+      onClick={onToggle}
+      aria-pressed={on}
+      aria-label={label}
+      className={cn(
+        'inline-flex h-5 w-9 items-center rounded-full px-0.5 align-middle transition-colors',
+        on ? 'bg-foreground' : 'bg-muted-foreground/30'
+      )}
+    >
+      <span className={cn('size-4 rounded-full bg-background transition-transform', on ? 'translate-x-4' : '')} />
+    </button>
+  )
+}
+
 export function ModuleProperties({
   module,
+  style,
   onChange
 }: {
   module: StatusLineModuleConfig | null
-  onChange: (field: Field, value: string) => void
+  style: string
+  onChange: (field: Field, value: string | boolean) => void
 }) {
   const { t } = useTranslation()
   if (module === null) {
@@ -120,16 +145,49 @@ export function ModuleProperties({
         <ColorField swatches={FG_SWATCHES} value={module.color} onChange={(v) => onChange('color', v)} />
       </Row>
 
-      <Row label={t('settings.statusline.background')} hint={t('settings.statusline.backgroundHint')}>
-        <ColorField swatches={BG_SWATCHES} value={module.background} onChange={(v) => onChange('background', v)} />
-      </Row>
+      {/* Only meaningful once a background is ever painted, which the
+          default style never does. Hiding it there keeps a plain-style
+          module's fields limited to what changes anything. */}
+      {style === 'powerline' ? (
+        <Row label={t('settings.statusline.background')} hint={t('settings.statusline.backgroundHint')}>
+          <ColorField swatches={BG_SWATCHES} value={module.background} onChange={(v) => onChange('background', v)} />
+        </Row>
+      ) : null}
 
-      <Row label={t('settings.statusline.format')} hint={FORMAT_HINT}>
+      <Row label={t('settings.statusline.format')}>
         <input
           value={module.text}
           onChange={(e) => onChange('text', e.target.value)}
+          title={FORMAT_HINT}
           aria-label={t('settings.statusline.moduleFormat')}
           className={cn(FIELD_CLASS, 'w-full max-w-sm')}
+        />
+      </Row>
+
+      {module.type === 'model' ? (
+        <Row
+          label={t('settings.statusline.stripProvider')}
+          hint={
+            <Trans
+              i18nKey='settings.statusline.stripProviderHint'
+              components={{ mono: <span className='font-mono' /> }}
+            />
+          }
+        >
+          <BoolSwitch
+            on={!module.keepProvider}
+            label={t('settings.statusline.stripProvider')}
+            onToggle={() => onChange('keepProvider', !module.keepProvider)}
+          />
+        </Row>
+      ) : null}
+
+      <Row label={t('settings.statusline.separator')} hint={t('settings.statusline.separatorHint')}>
+        <input
+          value={module.separator === undefined ? '' : module.separator}
+          onChange={(e) => onChange('separator', e.target.value)}
+          aria-label={t('settings.statusline.separator')}
+          className={cn(FIELD_CLASS, 'w-24')}
         />
       </Row>
 

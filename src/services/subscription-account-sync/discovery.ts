@@ -1,15 +1,14 @@
 /**
  * Build the in-memory DiscoveredAccount shape from an OAuth token
- * exchange (Claude profile fetch / Codex id_token claims), plus the
- * identity + "which account is active" helpers used by the persist
- * layer.
+ * exchange (Claude profile / Codex id_token claims), plus the identity +
+ * "which account is active" helpers used by the persist layer.
  */
 
 import type { SubAccount } from '../../generated/prisma/client'
 import dayjs from '../../lib/dayjs'
 import { logger } from '../../logger'
 import type { DiscoveredAccount } from '../../schemas/domain/subscription'
-import { fetchClaudeProfile } from '../claude-profile-service'
+import type { ClaudeOAuthProfile } from '../../schemas/wire/oauth'
 import { codexAccessTokenExpiry, codexIdentityFrom } from '../codex-auth/claims'
 import { encryptString, firstString } from './crypto'
 import { claudeMonthlyPrice, codexMonthlyPrice } from './pricing'
@@ -42,15 +41,19 @@ export const buildAccountPayload = (providerName: string, account: DiscoveredAcc
 })
 
 // Build the in-memory shape we used to read from ~/.claude/.credentials.json,
-// but sourced from the OAuth exchange + /api/oauth/profile.
-export const buildClaudeDiscoveredAccount = async (tokens: {
-  accessToken: string
-  refreshToken: string
-  expiresAt: number | null
-  scopes: string[]
-}): Promise<DiscoveredAccount | null> => {
-  const profile = await fetchClaudeProfile(tokens.accessToken, { logger })
-  const userId = firstString(profile?.account.uuid)
+// from the tokens plus the /api/oauth/profile answer that proved them. The
+// caller fetches the profile: connecting an account needs it as the proof,
+// and fetching it a second time here could fail after the first had passed.
+export const claudeAccountFromProfile = (
+  tokens: {
+    accessToken: string
+    refreshToken: string
+    expiresAt: number | null
+    scopes: string[]
+  },
+  profile: ClaudeOAuthProfile
+): DiscoveredAccount | null => {
+  const userId = firstString(profile.account.uuid)
   if (!userId) {
     logger.warn('[subaccount] claude oauth: profile did not return account.uuid; cannot derive stable identity')
     return null
@@ -59,13 +62,13 @@ export const buildClaudeDiscoveredAccount = async (tokens: {
   return {
     sourcePath: `oauth:claude:${userId}`,
     label: 'web-oauth',
-    userName: firstString(profile?.account.full_name, profile?.account.display_name),
-    userEmail: firstString(profile?.account.email),
+    userName: firstString(profile.account.full_name, profile.account.display_name),
+    userEmail: firstString(profile.account.email),
     userId,
     accountId: null,
-    plan: firstString(profile?.organization?.organization_type),
-    rateLimitTier: firstString(profile?.organization?.rate_limit_tier),
-    monthlyPriceUsd: claudeMonthlyPrice(profile?.account ?? null, profile?.organization?.rate_limit_tier),
+    plan: firstString(profile.organization?.organization_type),
+    rateLimitTier: firstString(profile.organization?.rate_limit_tier),
+    monthlyPriceUsd: claudeMonthlyPrice(profile.account, profile.organization?.rate_limit_tier),
     expiresAt,
     // Anthropic exposes no subscription end date on the profile.
     subscriptionEndsAt: null,

@@ -108,11 +108,20 @@ docker compose restart
 
 ### 订阅型提供商（Claude Code 与 Codex）
 
-Rialto 可以在没有逐次调用 API Key 的情况下经由订阅型提供商路由。在 **Providers → Add provider** 添加一个；认证步骤为 Claude 和 Codex 同样提供三种方式：
+Rialto 可以在没有逐次调用 API Key 的情况下经由订阅型提供商路由。在 **Providers → Add provider** 添加一个。两家厂商的 OAuth 客户端回跳地址不同，所以认证步骤提供的方式按厂商区分。
 
-- **用厂商账号登录** — 在浏览器中打开厂商的 OAuth 页面。Claude 会跳回 `http://localhost:3456/callback`；Codex 则总是跳回*浏览器所在机器*上的 `http://localhost:1455/auth/callback`，这正是 `compose.yaml` 在 Docker 宿主机回环地址上发布端口 `1455` 的原因。
-- **粘贴重定向 URL** — 当浏览器到不了那个回调地址时（Rialto 在隧道之后，或是无头机器），把厂商重定向到的 URL 复制下来粘贴进输入框；授权码交换在服务端完成。
-- **导入 CLI 的凭据文件** — 从已登录过的机器上传 `~/.claude/.credentials.json` 或 `~/.codex/auth.json`。
+**Claude**
+
+- **Sign in with Anthropic** — 在浏览器中打开 Anthropic 的 OAuth 页面，回跳到 `http://localhost:3456/callback`。
+- **粘贴重定向 URL** — 当浏览器到不了那个回调地址时（Rialto 在隧道之后，或是无头机器），把 Anthropic 重定向到的 URL 复制下来粘贴进输入框；授权码交换在服务端完成。
+- **Import from Claude** — 从已登录过的机器上传 `~/.claude/.credentials.json`。
+
+**Codex**
+
+- **Device code**（默认）— Rialto 显示一次性代码和链接 `https://auth.openai.com/codex/device`。在任意浏览器打开该链接，登录 ChatGPT 并输入代码，页面会自动进入下一步。代码 15 分钟后过期。整个过程不需要任何连接回到 Rialto，因此在隧道之后或容器内同样可用。它与 `codex login --device-auth` 使用的是同一流程（`POST /api/oauth/device/start`，随后 `POST /api/oauth/device/poll`）。
+- **Import from Codex** — 从已登录过的机器上传 `~/.codex/auth.json`。
+
+不提供 Codex 的浏览器登录：其 OAuth 客户端只会跳回*浏览器所在机器*上的 `http://localhost:1455/auth/callback`，远程或容器中运行的 Rialto 永远收不到。其背后的回环监听器（端口 `1455`，`compose.yaml` 仍然发布）已不再被 UI 使用。
 
 Rialto 会保存加密后的令牌并负责刷新。一个提供商可以持有多个账户，由哪个账户处理请求按每个请求决定（见[effort、层级与兜底](#effort层级与兜底)）。Subscriptions 列表上有一个 **Refresh** 按钮（`POST /api/subscriptions/refresh`），它会重新同步已启用订阅型提供商上的每个账户，并越过 5 分钟缓存重新拉取用量。
 
