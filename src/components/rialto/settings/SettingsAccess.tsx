@@ -23,6 +23,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
+import { useConfirm } from '@/components/rialto/ConfirmDialog'
 import { Pill, RButton } from '@/components/rialto/primitives'
 import { AccessConfigSection } from '@/components/rialto/settings/access/AccessConfigSection'
 import { GuardsCard } from '@/components/rialto/settings/access/GuardsCard'
@@ -168,6 +169,10 @@ export function SettingsAccess() {
   const [checkedFor, setCheckedFor] = useState<AccessInput | null>(null)
   const [checking, setChecking] = useState(false)
   const [saving, setSaving] = useState(false)
+  // Read until Edit, like the chain and the provider pages: see
+  // AccessConfigSection for why these two values in particular.
+  const [editing, setEditing] = useState(false)
+  const { confirm, dialog: confirmDialog } = useConfirm()
 
   const loadConfig = useCallback(() => {
     api
@@ -216,10 +221,24 @@ export function SettingsAccess() {
       .finally(() => setChecking(false))
   }
 
-  const save = () => {
+  const save = async () => {
     if (!gate.allowed) {
       toast.error(gate.reason)
       return
+    }
+    // Emptying both fields is the one save the gate lets through without a
+    // dry run, and it closes /api/* to every remote browser — quite possibly
+    // the one doing the saving. That cost is stated before the click.
+    const turningOff =
+      normalized.teamDomain.length === 0 && saved !== null && normalizeAccessInput(saved).teamDomain.length > 0
+    if (turningOff) {
+      const confirmed = await confirm({
+        title: t('settings.access.turnOffTitle'),
+        description: t('settings.access.turnOffDescription'),
+        confirmLabel: t('settings.access.turnOffConfirm'),
+        icon: 'ri-lock-unlock-line'
+      })
+      if (!confirmed) return
     }
     setSaving(true)
     api
@@ -229,6 +248,9 @@ export function SettingsAccess() {
       })
       .then(() => {
         toast.success(t(normalized.teamDomain.length === 0 ? 'settings.access.savedOff' : 'settings.access.savedOn'))
+        setEditing(false)
+        setCheck(null)
+        setCheckedFor(null)
         loadConfig()
         loadIdentity()
       })
@@ -236,10 +258,13 @@ export function SettingsAccess() {
       .finally(() => setSaving(false))
   }
 
-  const discard = () => {
+  // Revert drops the edit and returns to reading, the same as it does on
+  // the chain and the provider pages.
+  const revert = () => {
     if (saved !== null) setDraft(saved)
     setCheck(null)
     setCheckedFor(null)
+    setEditing(false)
   }
 
   const configured = identity?.accessConfigured === true
@@ -260,37 +285,50 @@ export function SettingsAccess() {
       headerNote={window.location.hostname}
       actions={
         <>
-          <RButton variant='ghost' onClick={discard} disabled={!dirty}>
-            {t('common.discard')}
-          </RButton>
-          <RButton
-            variant='primary'
-            icon='ri-check-line'
-            onClick={save}
-            disabled={!dirty || saving || !gate.allowed}
-            title={gate.allowed ? undefined : gate.reason}
-          >
-            {t('common.save')}
-          </RButton>
-        </>
-      }
-      headerActions={
-        <div className='flex items-center gap-2'>
           {/* Who reached this install, and how, is a log question — the
               mock puts the shortcut here because Access is where the
               question occurs to you. Goes to the screen that already
-              exists rather than to a second log reader. */}
-          <RButton variant='ghost' icon='ri-history-line' onClick={() => navigate('/activity/logs')}>
+              exists rather than to a second log reader. Locked while
+              editing: it leaves the page, and the edit would go with it. */}
+          <RButton variant='ghost' icon='ri-history-line' onClick={() => navigate('/activity/logs')} disabled={editing}>
             {t('settings.access.auditLog')}
           </RButton>
-          <RButton
-            variant='outline'
-            icon='ri-external-link-line'
-            onClick={() => window.open(ZERO_TRUST_URL, '_blank', 'noopener,noreferrer')}
-          >
-            {t('settings.access.openZeroTrust')}
-          </RButton>
-        </div>
+          {editing ? (
+            <>
+              <RButton variant='outline' icon='ri-arrow-go-back-line' onClick={revert} disabled={saving}>
+                {t('common.revert')}
+              </RButton>
+              <RButton
+                variant='primary'
+                icon='ri-check-line'
+                onClick={() => {
+                  save().catch(() => {
+                    // save() reports its own failures through a toast.
+                  })
+                }}
+                disabled={!dirty || saving || !gate.allowed}
+                title={gate.allowed ? undefined : gate.reason}
+              >
+                {t('common.save')}
+              </RButton>
+            </>
+          ) : (
+            <RButton variant='outline' icon='ri-pencil-line' onClick={() => setEditing(true)} disabled={saved === null}>
+              {t('common.edit')}
+            </RButton>
+          )}
+        </>
+      }
+      headerActions={
+        // Stays live while editing: the Zero Trust dashboard is where the
+        // AUD being typed is copied from, and it opens in a new tab.
+        <RButton
+          variant='outline'
+          icon='ri-external-link-line'
+          onClick={() => window.open(ZERO_TRUST_URL, '_blank', 'noopener,noreferrer')}
+        >
+          {t('settings.access.openZeroTrust')}
+        </RButton>
       }
     >
       {identity === null ? null : <ClosedNotice identity={identity} />}
@@ -302,6 +340,7 @@ export function SettingsAccess() {
       </SettingsField>
 
       <AccessConfigSection
+        editing={editing}
         draft={draft}
         onChange={setDraft}
         check={check}
@@ -330,6 +369,7 @@ export function SettingsAccess() {
           because both involve a credential. */}
       <div className='h-8' />
       {unsavedDialog}
+      {confirmDialog}
     </SettingsLayout>
   )
 }

@@ -13,7 +13,71 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, btn, navTo } = window.Shell
+const { renderShell, pill, btn, navTo, dialog } = window.Shell
+
+// The Access pair reads until Edit is pressed. Both values are set once
+// and then left alone, and a stray keystroke in either is the cheapest way
+// to shut every remote browser out — clearing both even saves without a
+// dry run, because it turns Access off. `?edit` draws the state after Edit;
+// `?turnoff` the confirmation a save of the emptied pair opens first.
+const PARAMS = new URLSearchParams(location.search)
+const TURNING_OFF = PARAMS.has('turnoff')
+const EDITING = TURNING_OFF || PARAMS.has('edit')
+
+const withClass = (html, cls) => (cls === '' ? html : html.replace('class="', `class="${cls} `))
+// Leaving the page would drop an unsaved edit, so Audit log waits for
+// Save or Revert. Open Zero Trust stays live: the AUD is copied from there.
+const lockedWhileEditing = EDITING ? 'pointer-events-none opacity-50' : ''
+
+const TEAM_DOMAIN = 'acme.cloudflareaccess.com'
+const AUD = '97e2aa5c0f3b41d8a6e97c2b1d04f5e8c3a9b7d61e2f4a0c8b5d3e7f1a2c913a'
+
+const row = (label, hint, body) => `
+      <div class="grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4">
+        <div>
+          <div class="text-xs font-medium">${label}</div>
+          ${hint ? `<div class="mt-0.5 text-[12px] leading-snug text-muted-foreground">${hint}</div>` : ''}
+        </div>
+        <div class="space-y-1.5">${body}</div>
+      </div>`
+
+// The reading takes the input's exact box, so Edit swaps one for the other
+// without moving the page.
+const valueBox = (value, placeholder) => `
+          <div class="flex h-8 w-full max-w-md items-center rounded-md border border-border px-3 font-mono text-xs">${
+            value === '' ? `<span class="text-muted-foreground">${placeholder}</span>` : `<span class="truncate">${value}</span>`
+          }</div>`
+
+// A dry run of values being edited, so it only exists while editing.
+const verifyRow = TURNING_OFF
+  ? row(
+      'Verify',
+      'Nothing is saved by this. It reports whether these values would work.',
+      withClass(btn('Check settings', 'outline', 'ri-shield-check-line'), 'pointer-events-none opacity-50')
+    )
+  : row(
+      'Verify',
+      'Nothing is saved by this. It reports whether these values would work.',
+      `<div class="space-y-2">
+            <div class="flex items-center gap-2">${btn('Check settings', 'outline', 'ri-shield-check-line')}</div>
+            <div class="space-y-1.5">
+              <div class="flex items-center gap-2">
+                ${pill('verified', 'ok')}
+                <span class="font-mono text-[12px] text-muted-foreground">2 signing keys</span>
+                <span class="font-mono text-[12px]">tkgstrator@example.com</span>
+              </div>
+              <p class="text-[12px] leading-relaxed text-muted-foreground">Your own Access assertion validates against these values.</p>
+            </div>
+          </div>`
+    )
+
+const turnOffDialog = TURNING_OFF
+  ? dialog(
+      'Turn off Cloudflare Access?',
+      '<p class="text-xs leading-relaxed text-muted-foreground">Both fields are empty, so saving turns Access off. Every remote browser loses this UI and /api/* the moment it lands — including this one, if you came in through Access — and only a browser on the host can get back in.</p>',
+      `${btn('Cancel', 'ghost')}${btn('Turn off', 'danger', 'ri-lock-unlock-line')}`
+    )
+  : ''
 
 
 document.getElementById('root').innerHTML = `
@@ -42,6 +106,22 @@ document.getElementById('root').innerHTML = `
           <div class="font-mono text-[12px] text-muted-foreground">aud 97e2aa…913a · exp in 21h</div>
         </div>
       </div>
+      ${row(
+        'Team domain',
+        'Looks like &lt;team&gt;.cloudflareaccess.com. Required together with the AUD tag — one alone enables nothing.',
+        valueBox(TURNING_OFF ? '' : TEAM_DOMAIN, 'acme.cloudflareaccess.com')
+      )}
+      ${row(
+        'Application AUD',
+        'The Application Audience tag from the Access app. Without it a token minted for any other app on your team would be accepted.',
+        valueBox(TURNING_OFF ? '' : AUD, '64 hex characters')
+      )}
+      ${EDITING ? verifyRow : ''}
+      ${
+        TURNING_OFF
+          ? '<div class="px-6 pb-4 text-[12px] leading-relaxed text-muted-foreground">Both fields are empty, so saving turns Access off — afterwards only a browser on this machine can reach /api/*.</div>'
+          : ''
+      }
       <div class="grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4">
         <div>
           <div class="text-xs font-medium">Policy coverage</div>
@@ -120,7 +200,8 @@ document.getElementById('root').innerHTML = `
         </div>
       </div>
 
-  </div>`
+  </div>
+  ${turnOffDialog}`
 
 renderShell({
   active: 'settings',
@@ -128,7 +209,13 @@ renderShell({
   sub: 'auth',
   crumbs: ['Access'],
   subtitle: 'Who may administer this install',
-  actions: btn('Audit log', 'ghost', 'ri-history-line', 'activity-logs.html')
+  // Edit, then Revert / Save, for the Access pair — the only thing on this
+  // page an operator writes. Save turning Access off asks first (?turnoff).
+  actions:
+    withClass(btn('Audit log', 'ghost', 'ri-history-line', 'activity-logs.html'), lockedWhileEditing) +
+    (EDITING
+      ? `${btn('Revert', 'outline', 'ri-arrow-go-back-line')}${btn('Save', 'primary', 'ri-check-line')}`
+      : btn('Edit', 'outline', 'ri-pencil-line'))
 })
 </script>
 </body>
