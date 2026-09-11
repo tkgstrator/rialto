@@ -248,6 +248,13 @@ export function SettingsAccess() {
       })
       .then(() => {
         toast.success(t(normalized.teamDomain.length === 0 ? 'settings.access.savedOff' : 'settings.access.savedOn'))
+        // What was just written is the saved state, as of now — not once the
+        // reload below lands. Until then the page would read as dirty (an
+        // unsaved-changes prompt, a "check before saving" line under fields
+        // that cannot be edited), and the reload never lands at all for a
+        // remote browser that has just turned Access off: its GET is refused.
+        setSaved(normalized)
+        setDraft(normalized)
         setEditing(false)
         setCheck(null)
         setCheckedFor(null)
