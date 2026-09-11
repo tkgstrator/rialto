@@ -32,15 +32,17 @@ const CLAUDE_USAGE_URL = 'https://api.anthropic.com/api/oauth/usage'
 const originalFetch = globalThis.fetch
 const tokensCalled: string[] = []
 
+const FIXED_BODY = { five_hour: { utilization: 42, resets_at: '2099-01-01T05:00:00.000Z' } }
+
 // Answer the Claude usage endpoint with a fixed 42% five-hour window (or
-// a 500 when asked to fail) and record which token asked.
-const stubUsage = (status = 200): void => {
+// a 500 when asked to fail, or the given body) and record which token asked.
+const stubUsage = (status = 200, answer: object = FIXED_BODY): void => {
   const fake = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
     if (url !== CLAUDE_USAGE_URL) throw new Error(`unexpected upstream call: ${url}`)
     const auth = new Headers(init?.headers).get('authorization')
     tokensCalled.push(auth === null ? '' : auth.replace(/^Bearer /, ''))
-    const body = status === 200 ? { five_hour: { utilization: 42, resets_at: '2099-01-01T05:00:00.000Z' } } : {}
+    const body = status === 200 ? answer : {}
     return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
   }
   globalThis.fetch = Object.assign(fake, { preconnect: originalFetch.preconnect })
@@ -128,6 +130,26 @@ describe.skipIf(!HAS_DB)('usage fetch — forceRefresh', () => {
     const paired = await fetchUsageSnapshotWithAccountIds({ forceRefresh: true })
     expect(paired.claude.map((c) => [c.subAccountId, fiveHourPct(c.usage)])).toEqual([[anna.id, 5]])
     expect(paired.failed).toEqual([anna.id])
+  })
+
+  test('a spent 5h leaves the other windows as the vendor reported them', async () => {
+    // Holding the account at 100% is the scheduler's call. Folded in here,
+    // it reached the cache, both tables and the Usage panel, which then
+    // drew a 7-day window resetting with the 5h, days before the Fable
+    // window on the same week.
+    const weeklyReset = '2099-01-06T15:00:00.000Z'
+    await seedAccount('claude-code', true, 'anna', 'tok-anna')
+    stubUsage(200, {
+      five_hour: { utilization: 100, resets_at: '2099-01-01T05:00:00.000Z' },
+      seven_day: { utilization: 80, resets_at: weeklyReset },
+      limits: [
+        { kind: 'weekly_scoped', percent: 100, resets_at: weeklyReset, scope: { model: { display_name: 'Fable' } } }
+      ]
+    })
+
+    const { usage } = await fetchUsageSnapshot({ forceRefresh: true })
+    expect(usage.claude[0]?.sevenDay).toEqual({ utilization: 80, resetsAt: weeklyReset })
+    expect(usage.claude[0]?.weeklyScoped).toEqual([{ modelName: 'Fable', utilization: 100, resetsAt: weeklyReset }])
   })
 
   test('an account on a disabled provider is never polled, forced or not', async () => {

@@ -18,7 +18,6 @@ import type {
 import { ClaudeUsageWireSchema, CodexUsageWireSchema } from '../../schemas/wire/usage'
 import { ensureFreshCodexAccessToken } from '../codex-auth/token'
 import { getSubAccountTokensForKind, type SubAccountTokenInfo } from '../subscription-account-sync-service'
-import { applyClaudeAccountLimit, applyCodexAccountLimit } from './account-limit'
 import { claudeCache, codexCache, TTL_MS } from './cache'
 
 const windowOf = (v: unknown): { utilization: number; resetsAt: string | null } | null => {
@@ -78,7 +77,12 @@ const requestClaudeUsage = async (info: SubAccountTokenInfo): Promise<ClaudeUsag
     const extra = j.extra_usage
     const extraUsageEnabled =
       typeof extra === 'object' && extra !== null && 'is_enabled' in extra && extra.is_enabled === true
-    return applyClaudeAccountLimit({
+    // Every window exactly as the vendor reported it. This value is cached
+    // and written to SubAccountUsage, SubAccountQuota and UsageSnapshot,
+    // and the panels draw it — so a spent 5h or 7d must not be folded into
+    // the other windows here. The scheduler holds the account on its own
+    // copy (`routing-scheduler/account-limit.ts`).
+    return {
       subAccountId: info.subAccountId,
       accountLabel: info.displayName,
       fiveHour: windowOf(j.five_hour),
@@ -88,7 +92,7 @@ const requestClaudeUsage = async (info: SubAccountTokenInfo): Promise<ClaudeUsag
       weeklyScoped: scopedWindowsOf(j.limits),
       extraUsageEnabled,
       capturedAt: dayjs().toISOString()
-    })
+    }
   } catch {
     return null
   }
@@ -188,14 +192,14 @@ const requestCodexUsage = async (info: SubAccountTokenInfo): Promise<CodexUsage 
       rl !== null && typeof rl === 'object' && 'primary_window' in rl ? rl.primary_window : undefined
     const secondaryWindow =
       rl !== null && typeof rl === 'object' && 'secondary_window' in rl ? rl.secondary_window : undefined
-    return applyCodexAccountLimit({
+    return {
       subAccountId: info.subAccountId,
       accountLabel: info.displayName,
       planType: typeof j.plan_type === 'string' && j.plan_type.length > 0 ? j.plan_type : null,
       primary: codexWindowOf(primaryWindow),
       secondary: codexWindowOf(secondaryWindow),
       capturedAt: dayjs().toISOString()
-    })
+    }
   } catch (e) {
     logger.warn({ err: e }, '[codex] wham/usage threw')
     return null
