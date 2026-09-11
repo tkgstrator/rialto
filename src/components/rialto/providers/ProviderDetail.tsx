@@ -5,6 +5,12 @@
  * places: a subscription provider shows accounts where an api_key one
  * shows a key, only the api_key one has real per-token prices, and only
  * the api_key one has a model list long enough to need filtering.
+ *
+ * The pane reads until Edit is pressed. Everything on it that changes the
+ * provider — the switch Routing reads, the key, each model's tier, effort
+ * and switch — used to write on touch, one stray click from changing what
+ * Routing sends where. Those controls now only work while editing, and
+ * the screen holds what they change until Save (see provider-draft).
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -26,6 +32,7 @@ import {
 } from './derive'
 import { ModelsTable } from './ModelsTable'
 import { ApiKeyRequestShape, SubscriptionRequestShape } from './RequestShape'
+import { SwitchReading } from './SwitchReading'
 import type { CatalogEntry, Provider, ReasoningEffort, SubscriptionWire, Tier, TransformerWire } from './types'
 
 const SHOW_LABEL_KEYS: Record<ShowMode, string> = {
@@ -53,10 +60,13 @@ function DetailHeader({
   state,
   credentialed,
   busy,
-  onTestAll,
-  onSync,
+  editing,
+  canSave,
+  onEdit,
+  onRevert,
+  onSave,
   onRemove,
-  removeConfirm,
+  onTestAll,
   onToggleProvider
 }: {
   provider: Provider
@@ -64,18 +74,21 @@ function DetailHeader({
   state: ProviderState
   credentialed: boolean
   busy: boolean
-  onTestAll: () => void
-  onSync: () => void
+  editing: boolean
+  canSave: boolean
+  onEdit: () => void
+  onRevert: () => void
+  onSave: () => void
   onRemove: () => void
-  /** Blast radius, stated before the click. Built by the screen, which
-   *  is the one that knows the vendor label and the model count. */
-  removeConfirm: string
+  onTestAll: () => void
   onToggleProvider: (next: boolean) => void
 }) {
   const { t } = useTranslation()
   const subscription = provider.auth_mode === 'subscription'
   const stateTone = state === 'live' ? 'ok' : state === 'invalid' ? 'bad' : 'mute'
   const enabled = provider.enabled !== false
+  const switchLabel = t('providers.detail.toggleProvider', { provider: label })
+  const switchTitle = credentialed ? undefined : t('providers.detail.routableNeedsCredential')
   return (
     <div className='flex items-center gap-3 border-b border-border px-6 py-4'>
       <div className='min-w-0'>
@@ -92,6 +105,10 @@ function DetailHeader({
           {provider.api_base_url}
         </p>
       </div>
+      {/* Edit, then Revert / Save, for everything on this page that changes
+          the provider; one Save writes it all. Remove only exists while
+          editing, red, and still asks first. Test all is locked meanwhile:
+          its results reload the page, and an unsaved edit would go with it. */}
       <div className='ml-auto flex items-center gap-2'>
         {/* The switch that Routing actually reads. It sits with the
             actions rather than in the model table, because it gates the
@@ -100,33 +117,42 @@ function DetailHeader({
 
             Locked with no credential, because `getEnabledModels` drops
             such a provider regardless of the flag — an operator turning
-            it on there would be setting something nothing reads. */}
+            it on there would be setting something nothing reads. Read
+            that way outside Edit too: with no credential it shows off. */}
         <span className='flex items-center gap-1.5 pr-1 text-[12px] text-muted-foreground'>
           {t('providers.detail.routable')}
-          <Toggle
-            on={enabled}
-            disabled={!credentialed}
-            title={credentialed ? undefined : t('providers.detail.routableNeedsCredential')}
-            label={t('providers.detail.toggleProvider', { provider: label })}
-            onClick={() => onToggleProvider(!enabled)}
-          />
+          {editing ? (
+            <Toggle
+              on={enabled}
+              disabled={!credentialed}
+              title={switchTitle}
+              label={switchLabel}
+              onClick={() => onToggleProvider(!enabled)}
+            />
+          ) : (
+            <SwitchReading on={enabled && credentialed} title={switchTitle} label={switchLabel} />
+          )}
         </span>
-        <RButton variant='outline' icon='ri-pulse-line' onClick={onTestAll} disabled={busy}>
+        <RButton variant='outline' icon='ri-pulse-line' onClick={onTestAll} disabled={busy || editing}>
           {t('providers.detail.testAll')}
         </RButton>
-        <RButton variant='ghost' icon='ri-refresh-line' onClick={onSync} disabled={busy}>
-          {t('providers.detail.syncModels')}
-        </RButton>
-        {subscription ? null : (
-          <RButton
-            variant='ghost'
-            icon='ri-delete-bin-line'
-            onClick={() => {
-              if (window.confirm(removeConfirm)) onRemove()
-            }}
-            disabled={busy}
-          >
-            {t('common.remove')}
+        {editing ? (
+          <>
+            {subscription ? null : (
+              <RButton variant='danger' icon='ri-delete-bin-line' onClick={onRemove} disabled={busy}>
+                {t('common.remove')}
+              </RButton>
+            )}
+            <RButton variant='outline' icon='ri-arrow-go-back-line' onClick={onRevert} disabled={busy}>
+              {t('common.revert')}
+            </RButton>
+            <RButton variant='primary' icon='ri-check-line' onClick={onSave} disabled={busy || !canSave}>
+              {t('common.save')}
+            </RButton>
+          </>
+        ) : (
+          <RButton variant='outline' icon='ri-pencil-line' onClick={onEdit} disabled={busy}>
+            {t('common.edit')}
           </RButton>
         )}
       </div>
@@ -154,12 +180,14 @@ function FilterBox({ value, onChange, wide }: { value: string; onChange: (v: str
 function ModelsSection({
   provider,
   rows,
+  editing,
   onToggle,
   onTier,
   onEffort
 }: {
   provider: Provider
   rows: ModelRow[]
+  editing: boolean
   onToggle: (model: string, next: boolean) => void
   onTier: (model: string, next: Tier | null) => void
   onEffort: (model: string, next: ReasoningEffort | null) => void
@@ -222,6 +250,8 @@ function ModelsSection({
             {t('providers.models.legacyHidden', { n: legacyHidden })}
           </button>
         )}
+        {/* Filter, Show and the pager change what is on screen, not the
+            provider, so they work whether or not the page is editing. */}
         <div className='ml-auto flex items-center gap-2'>
           {isApiKey ? (
             <button
@@ -241,6 +271,7 @@ function ModelsSection({
         limit={isApiKey ? PAGE : undefined}
         offset={offset}
         withOverride={isApiKey}
+        editable={editing}
         onToggle={onToggle}
         onTier={onTier}
         onEffort={onEffort}
@@ -254,6 +285,8 @@ function ModelsSection({
 }
 
 export interface ProviderDetailProps {
+  /** The provider as Save would leave it: as loaded while reading, with
+   *  the staged edit applied while editing. */
   provider: Provider
   /** Catalog display name when the vendor is known, else the config slug. */
   label: string
@@ -264,17 +297,21 @@ export interface ProviderDetailProps {
   quota: QuotaIndex
   now: number
   busy: boolean
+  editing: boolean
+  /** Whether the staged edit differs from what is stored. */
+  canSave: boolean
+  onEdit: () => void
+  onRevert: () => void
+  onSave: () => void
+  onRemove: () => void
+  onTestAll: () => void
+  onToggleProvider: (next: boolean) => void
   onToggleModel: (model: string, next: boolean) => void
   /** Per-model tier override; null clears it back to name inference. */
   onModelTier: (model: string, next: Tier | null) => void
   /** Per-model reasoning effort; null clears it back to the vendor default. */
   onModelEffort: (model: string, next: ReasoningEffort | null) => void
-  onSaveKey: (key: string) => void
-  onTestAll: () => void
-  onSync: () => void
-  onRemove: () => void
-  removeConfirm: string
-  onToggleProvider: (next: boolean) => void
+  onReplaceKey: (key: string) => void
 }
 
 export function ProviderDetail(props: ProviderDetailProps) {
@@ -289,17 +326,26 @@ export function ProviderDetail(props: ProviderDetailProps) {
         state={props.state}
         credentialed={hasCredential(provider, subscription)}
         busy={props.busy}
-        onTestAll={props.onTestAll}
-        onSync={props.onSync}
+        editing={props.editing}
+        canSave={props.canSave}
+        onEdit={props.onEdit}
+        onRevert={props.onRevert}
+        onSave={props.onSave}
         onRemove={props.onRemove}
-        removeConfirm={props.removeConfirm}
+        onTestAll={props.onTestAll}
         onToggleProvider={props.onToggleProvider}
       />
       <div className='grid grid-cols-2 border-b border-border'>
         {subscriptionMode ? (
           <AccountsPanel subscription={subscription} quota={quota} now={now} />
         ) : (
-          <CredentialsPanel key={provider.name} provider={provider} label={props.label} onSave={props.onSaveKey} />
+          <CredentialsPanel
+            key={provider.name}
+            provider={provider}
+            label={props.label}
+            editing={props.editing}
+            onReplace={props.onReplaceKey}
+          />
         )}
         {subscriptionMode ? (
           <SubscriptionRequestShape provider={provider} transformers={transformers} />
@@ -313,6 +359,7 @@ export function ProviderDetail(props: ProviderDetailProps) {
         key={provider.name}
         provider={provider}
         rows={rows}
+        editing={props.editing}
         onToggle={props.onToggleModel}
         onTier={props.onModelTier}
         onEffort={props.onModelEffort}

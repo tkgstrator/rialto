@@ -14,5 +14,6 @@ export const DEFAULT_MODULE: StatusLineModuleConfig = {
   type: 'workDir',
   icon: '󰉋',
   text: '{{workDirName}}',
-  color: 'bright_blue'
+  color: 'bright_blue',
+  keepProvider: false
 }

@@ -28,8 +28,8 @@
  * an operator scramble routing by clicking a header.
  */
 
+import { cn } from 'cn'
 import { useCallback, useMemo, useState } from 'react'
-import { cn } from '@/lib/utils'
 
 export type SortDir = 'asc' | 'desc'
 

@@ -26,7 +26,7 @@ describe('moduleMeta', () => {
 
 describe('previewText', () => {
   test('substitutes the preview variables and prefixes the icon', () => {
-    expect(previewText(module())).toBe('󰚩 Claude Sonnet 4')
+    expect(previewText(module())).toBe('󰚩 claude-opus-4-8')
   })
 
   test('substitutes tokenSpeed, which the legacy preview map omits', () => {
@@ -35,6 +35,24 @@ describe('previewText', () => {
 
   test('omits the leading space when the module has no icon', () => {
     expect(previewText(module({ icon: undefined, text: '{{gitBranch}}' }))).toBe('main')
+  })
+
+  test('strips the provider prefix by default', () => {
+    expect(previewText(module())).toBe('󰚩 claude-opus-4-8')
+  })
+
+  test('keeps the provider prefix when keepProvider is set', () => {
+    expect(previewText(module({ keepProvider: true }))).toBe('󰚩 claude-code,claude-opus-4-8')
+  })
+
+  test('ignores keepProvider on a non-model module', () => {
+    expect(previewText(module({ type: 'gitBranch', icon: undefined, text: '{{gitBranch}}', keepProvider: true }))).toBe(
+      'main'
+    )
+  })
+
+  test('appends the separator after the module text', () => {
+    expect(previewText(module({ separator: ' | ' }))).toBe('󰚩 claude-opus-4-8 | ')
   })
 })
 

@@ -17,17 +17,24 @@
  * screen exists to stop hiding: the old build bypassed the router on two
  * surfaces and said so nowhere.
  */
+
+import { cn } from 'cn'
 import type { InboundSurfaceWire, SurfaceId } from '@/lib/api'
-import { cn } from '@/lib/utils'
 
 export function SurfaceBar({
   surfaces,
   active,
-  onSelect
+  onSelect,
+  disabled = false
 }: {
   surfaces: readonly InboundSurfaceWire[]
   active: SurfaceId | null
   onSelect: (id: SurfaceId) => void
+  /**
+   * Locked while the chain is being edited: another surface can mean
+   * another profile, and loading it would throw the unsaved edit away.
+   */
+  disabled?: boolean
 }) {
   return (
     <div className='flex items-center gap-1 border-b border-border pl-4 pr-6'>
@@ -37,9 +44,10 @@ export function SurfaceBar({
           <button
             key={surface.id}
             type='button'
+            disabled={disabled}
             onClick={() => onSelect(surface.id)}
             className={cn(
-              'flex items-center gap-2 border-b-2 px-3 py-2.5 transition-colors',
+              'flex items-center gap-2 border-b-2 px-3 py-2.5 transition-colors disabled:pointer-events-none disabled:opacity-50',
               on ? 'border-b-foreground' : 'border-b-transparent hover:bg-muted/50'
             )}
           >

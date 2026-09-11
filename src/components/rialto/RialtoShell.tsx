@@ -26,6 +26,8 @@
  * before any content began, which is the same arithmetic the paragraph
  * above rejects.
  */
+
+import { cn } from 'cn'
 import { useTheme } from 'next-themes'
 import {
   type ReactElement,
@@ -50,7 +52,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Toaster } from '@/components/ui/sonner'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { api, type HealthResponse, type IdentityResponse } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import type { Provider } from '@/schemas/domain/provider'
 import { APP_VERSION } from '@/version'
 
 /** A destination. Sub-entries are leaves, which is why they are a type of
@@ -159,6 +161,38 @@ export function childOf(pathname: string): NavChild | undefined {
   return [...section.children]
     .sort((a, b) => b.href.length - a.href.length)
     .find((child) => pathname === child.href || pathname.startsWith(`${child.href}/`))
+}
+
+/** The three `/providers/*` paths that are not a provider's own page. */
+const PROVIDER_NON_DETAIL_SEGMENTS = new Set(['subscriptions', 'api-keys', 'connect'])
+
+/**
+ * The Providers sub-entry a provider's own detail page belongs to.
+ *
+ * `childOf` cannot answer this from the URL alone — see the comment on the
+ * `providers` NAV entry above: a provider is named by the operator, not by
+ * which list it lives on, so `/providers/openai` carries no prefix that
+ * says "api-keys" or "subscriptions". The provider's own `auth_mode` is
+ * the only thing that says which list it belongs to, so this reads it out
+ * of `config.Providers` — already mounted by ConfigProvider for every
+ * screen — rather than fetching the provider list again just to light up
+ * a sidebar row. Returns undefined (no highlight) until config has loaded
+ * or for a name no provider has, same as the mock's active state never
+ * disagreeing with what it can actually show.
+ */
+function providerListChildOf(
+  pathname: string,
+  providers: readonly Pick<Provider, 'name' | 'auth_mode'>[]
+): NavChild | undefined {
+  const match = /^\/providers\/([^/]+)$/.exec(pathname)
+  if (match === null) return undefined
+  const name = match[1]
+  if (PROVIDER_NON_DETAIL_SEGMENTS.has(name)) return undefined
+  const provider = providers.find((p) => p.name === name)
+  if (provider === undefined) return undefined
+  const providersEntry = NAV.find((entry) => entry.id === 'providers')
+  const childId = provider.auth_mode === 'subscription' ? 'subscriptions' : 'api-keys'
+  return providersEntry?.children.find((child) => child.id === childId)
 }
 
 /**
@@ -358,7 +392,11 @@ function RailSection({
           onClick={close}
           className='flex items-center gap-2.5 rounded-md px-2.5 py-1.5 font-medium text-sm transition-colors hover:bg-sidebar-accent/60'
         >
-          <i className={cn(item.icon, 'text-base leading-none opacity-80')} />
+          {/* aria-hidden: Chromium folds a Remix Icon's ::before glyph (a
+              private-use codepoint) into the link's accessible name, so
+              getByRole('link', { name: … }) matched nothing and a screen
+              reader announced a junk character ahead of the label. */}
+          <i aria-hidden className={cn(item.icon, 'text-base leading-none opacity-80')} />
           <span>{t(item.labelKey)}</span>
         </NavLink>
         <div className='my-1 border-sidebar-border border-t' />
@@ -428,7 +466,9 @@ function NavItem({
               : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground'
           )}
         >
-          <i className={cn(item.icon, 'text-base leading-none opacity-80')} />
+          {/* aria-hidden — see the note on the popover copy of this link
+              above; this is the same link at full width. */}
+          <i aria-hidden className={cn(item.icon, 'text-base leading-none opacity-80')} />
           <span>{t(item.labelKey)}</span>
         </NavLink>
         {item.children.length > 0 ? (
@@ -486,7 +526,7 @@ function NavSearch({ open, onOpenChange }: { open: boolean; onOpenChange: (next:
         {NAV.map((section) => (
           <CommandGroup key={section.id} heading={t(section.labelKey)}>
             <CommandItem value={t(section.labelKey)} onSelect={() => go(section.href)}>
-              <i className={cn(section.icon, 'text-base leading-none opacity-80')} />
+              <i aria-hidden className={cn(section.icon, 'text-base leading-none opacity-80')} />
               {t(section.labelKey)}
             </CommandItem>
             {section.children.map((child) => (
@@ -497,7 +537,7 @@ function NavSearch({ open, onOpenChange }: { open: boolean; onOpenChange: (next:
                 value={`${t(section.labelKey)} ${t(child.labelKey)}`}
                 onSelect={() => go(child.href)}
               >
-                <i className={cn(child.icon, 'text-base leading-none opacity-80')} />
+                <i aria-hidden className={cn(child.icon, 'text-base leading-none opacity-80')} />
                 {t(child.labelKey)}
               </CommandItem>
             ))}
@@ -541,7 +581,9 @@ function IdentityRow({ identity, collapsed }: { identity: IdentityResponse | nul
         aria-label={collapsed ? `${who} · ${label}` : undefined}
         className={cn(FOOTER_ROW, collapsed ? 'justify-center px-0' : '')}
       >
-        <i className={cn('w-4 shrink-0 text-base leading-none', icon)} />
+        {/* aria-hidden when expanded: the visible spans below already
+            carry the name. Collapsed, aria-label above covers it anyway. */}
+        <i aria-hidden className={cn('w-4 shrink-0 text-base leading-none', icon)} />
         {collapsed ? null : (
           <>
             <span className='truncate text-sidebar-foreground/70'>{who}</span>
@@ -707,7 +749,12 @@ export function RialtoShell() {
   const shellVersion = health === null ? APP_VERSION : health.version
 
   const activeSection = sectionOf(pathname)?.id
-  const activeChild = childOf(pathname)?.id
+  // childOf resolves the two list pages by URL prefix; a provider's own
+  // page needs its auth_mode instead (see providerListChildOf above), so
+  // that path is only tried once the URL alone came up empty.
+  const pathChild = childOf(pathname)
+  const providers = config === null ? [] : config.Providers
+  const activeChild = (pathChild === undefined ? providerListChildOf(pathname, providers) : pathChild)?.id
   const port = config?.PORT
   const themeLabel = mounted && resolvedTheme ? resolvedTheme : ''
 
@@ -826,7 +873,7 @@ export function RialtoShell() {
                 onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
                 className={cn(FOOTER_ROW, 'text-sidebar-foreground/70', collapsed ? 'justify-center px-0' : '')}
               >
-                <i className='ri-contrast-2-line w-4 shrink-0 text-base leading-none opacity-80' />
+                <i aria-hidden className='ri-contrast-2-line w-4 shrink-0 text-base leading-none opacity-80' />
                 {collapsed ? null : (
                   <>
                     <span>{t('shell.theme')}</span>

@@ -12,12 +12,15 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import dayjs from '@/lib/dayjs'
+import type { CodexDeviceStartResponse } from '@/schemas/api/oauth'
 import type { AuthFailure } from './ConnectAuthStep'
 import {
   ensureProvider,
   importCredentials,
   oauthKindOf,
+  pollCodexDevice,
   saveNewApiKey,
+  startCodexDevice,
   startOAuth,
   submitManualCallback
 } from './connect-actions'
@@ -39,6 +42,7 @@ export function useConnectFlow(data: ProvidersData | null, reload: () => Promise
   const [baseline, setBaseline] = useState<ReadonlySet<string>>(new Set())
   const [manualUrl, setManualUrl] = useState('')
   const [apiKeyDraft, setApiKeyDraft] = useState('')
+  const [device, setDevice] = useState<CodexDeviceStartResponse | null>(null)
   const [busy, setBusy] = useState(false)
   const [sessionError, setSessionError] = useState<string | null>(null)
 
@@ -77,6 +81,60 @@ export function useConnectFlow(data: ProvidersData | null, reload: () => Promise
     }
   }, [pending, subscription, baseline, brand, t])
 
+  // Client-driven polling of an outstanding Codex device-code flow. Each
+  // tick makes at most one request to the server, which itself makes at
+  // most one upstream poll per flow interval (device-flow-store.ts) — this
+  // effect just has to honour the SAME interval on its own side so a tab
+  // polling faster never happens. The timer is scoped to `device`, so it
+  // clears itself the moment the flow ends (connected / expired / error)
+  // or the tab navigates away — no orphan timer outlives the component.
+  useEffect(() => {
+    if (device === null) return
+    // A poll can outlast the interval (the server stores the account before
+    // it answers `connected`), so a tick never starts while one is on the
+    // wire, and nothing a poll answers is applied once the effect is gone.
+    const inFlight = { current: false }
+    const live = { current: true }
+    const connected = async (): Promise<void> => {
+      setDevice(null)
+      await reload().catch(() => {
+        // The account is connected either way; a dropped reload here
+        // just means step 3 renders once the next one lands.
+      })
+      setStep(3)
+      toast.success(t('providers.connect.connected', { brand }))
+    }
+    const ended = (message: string): void => {
+      setDevice(null)
+      setSessionError(message)
+    }
+    const tick = async (): Promise<void> => {
+      const result = await pollCodexDevice(device.flowId).catch((e: unknown) => {
+        if (live.current) ended(e instanceof Error ? e.message : t('providers.connect.errorRequest'))
+        return null
+      })
+      if (result === null || !live.current || result.status === 'pending') return
+      if (result.status === 'expired') ended(t('providers.connect.deviceExpired'))
+      else await connected()
+    }
+    const timer = setInterval(() => {
+      if (inFlight.current) return
+      inFlight.current = true
+      tick()
+        .catch(() => {
+          // tick() handles its own errors; this only guards setInterval
+          // against seeing a rejected promise.
+        })
+        .finally(() => {
+          inFlight.current = false
+        })
+    }, device.intervalSeconds * 1000)
+    return () => {
+      live.current = false
+      clearInterval(timer)
+    }
+  }, [device, reload, brand, t])
+
   const guard = useCallback(
     async (work: () => Promise<void>) => {
       setBusy(true)
@@ -98,6 +156,7 @@ export function useConnectFlow(data: ProvidersData | null, reload: () => Promise
     setPending(false)
     setManualUrl('')
     setApiKeyDraft('')
+    setDevice(null)
     setSessionError(null)
   }, [])
 
@@ -113,6 +172,19 @@ export function useConnectFlow(data: ProvidersData | null, reload: () => Promise
     })
   }, [entry, oauthKind, guard, reload, subscription, t])
 
+  // Codex's OAuth choice card: no browser tab, no loopback — ask the
+  // server for a code and let the poll effect above take it from there.
+  const startDevice = useCallback(() => {
+    if (entry === undefined || oauthKind !== 'codex') return
+    guard(async () => {
+      // The row has to exist first, same reason as signIn: connecting the
+      // account needs a matching Provider row to attach to.
+      await ensureProvider(entry)
+      const started = await startCodexDevice()
+      setDevice(started)
+    })
+  }, [entry, oauthKind, guard])
+
   const importFile = useCallback(
     (file: File) => {
       if (entry === undefined || oauthKind === null) return
@@ -124,6 +196,7 @@ export function useConnectFlow(data: ProvidersData | null, reload: () => Promise
         // resolves its own state update first — leaving `pending` true
         // across that render would toast the same success twice.
         setPending(false)
+        setDevice(null)
         await reload()
         setStep(3)
         toast.success(t('providers.connect.connected', { brand }))
@@ -170,10 +243,12 @@ export function useConnectFlow(data: ProvidersData | null, reload: () => Promise
   return {
     entry,
     provider,
+    subscription,
     oauthKind,
     step,
     setStep,
     pending,
+    device,
     busy,
     failure,
     manualUrl,
@@ -182,6 +257,7 @@ export function useConnectFlow(data: ProvidersData | null, reload: () => Promise
     setApiKeyDraft,
     selectVendor,
     signIn,
+    startDevice,
     importFile,
     submitManual,
     saveApiKey

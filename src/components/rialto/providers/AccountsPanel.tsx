@@ -13,10 +13,11 @@
  * weekly alone, labelled "weekly", which made the other two look like
  * they did not exist.
  */
+
+import { cn } from 'cn'
 import { useTranslation } from 'react-i18next'
 import { Meter, Pill } from '@/components/rialto/primitives'
 import { fmtUntil } from '@/lib/rialto/format'
-import { cn } from '@/lib/utils'
 import type { SeatKind } from '@/shared/plan-capacity'
 import { planLabel } from '@/shared/plan-label'
 import { type AccountQuota, accountLabel, type QuotaIndex, quotaForAccount } from './derive'

@@ -452,10 +452,12 @@ is scoped to those schemas.
 (`src/shared/data/providers/<vendor>/prices.json` is a fourth use of the
 word, but it is static scraped output rather than code.)
 
-**Refreshing the catalog** is two buttons on the Providers screen: "Sync models"
-(`POST /api/refresh-models`) and "Refresh prices", which is `POST /api/catalog/refresh`
-followed by the same refresh. Both end in `refreshModelsForAllProviders`, and what it
-can recover comes from three sources that must not be conflated:
+**Refreshing the catalog** is half of the one "Refresh" button beside the add button on
+every Providers screen — both lists and both kinds of provider page. That half is
+`POST /api/catalog/refresh` followed by `POST /api/refresh-models`; the two used to be
+separate "Refresh prices" and "Sync models" buttons, but the second is what makes the
+first show. It ends in `refreshModelsForAllProviders`, and what that can recover comes
+from three sources that must not be conflated:
 
 - **Which models exist** — the vendor's live `/v1/models` (api_key providers with a
   key; subscription providers have no live list) unioned with the vendor's scrape.
@@ -474,19 +476,25 @@ can recover comes from three sources that must not be conflated:
 Every write is "update what the vendor confirmed, leave the rest alone", so a thin
 scrape degrades coverage rather than nulling existing rows.
 
-**Refreshing subscriptions** is a third button, on the Subscriptions list only:
-"Refresh" (`POST /api/subscriptions/refresh`, `src/services/subscription-refresh-service.ts`).
-It is not a catalog operation and touches no model or price. It re-syncs every account
-on an **enabled** subscription provider the way `POST /api/subscriptions/sync` does,
-then polls usage with `forceRefresh` past the 5-minute cache in
-`src/services/usage-service/cache.ts`, and rewrites the two current-state tables —
-`SubAccountUsage` (the account picker) and `SubAccountQuota` (the routing scheduler,
-and the list's quota column via `/api/overview`). It deliberately writes no
-`UsageSnapshot` row, so the Usage chart stays on the usage job's 5-minute grid; skips
-accounts on disabled providers; leaves an account's rows alone when its upstream call
-failed and names it in `failed[]` instead; and coalesces concurrent calls into one
-upstream pass — there is no cooldown beyond that. `/sync` is unchanged: it still probes
-every provider, disabled ones included, because that is what the auth-health job runs.
+**Refreshing subscriptions** is the other half of the same button, on the screens that
+show subscription accounts — the Subscriptions list and a subscription provider's page
+(`POST /api/subscriptions/refresh`, `src/services/subscription-refresh-service.ts`). The
+UI runs the two halves side by side with `Promise.allSettled`, so one failing does not
+cost the other its answer. It is not a catalog operation and touches no model or price.
+It re-syncs accounts the way `POST /api/subscriptions/sync` does, then polls usage with
+`forceRefresh` past the 5-minute cache in `src/services/usage-service/cache.ts`, and
+rewrites the two current-state tables — `SubAccountUsage` (the account picker) and
+`SubAccountQuota` (the routing scheduler, and the list's quota column via
+`/api/overview`). Its scope is the optional body: none (or `{}`) covers every account on
+an **enabled** subscription provider, which is the list; `{ provider }` covers that
+provider's accounts **even while it is switched off**, which is its page — whether a
+switched-off provider's credentials still work is what an operator asks before switching
+it back on — and a name no subscription provider has is a 404. It deliberately writes no
+`UsageSnapshot` row, so the Usage chart stays on the usage job's 5-minute grid; leaves an
+account's rows alone when its upstream call failed and names it in `failed[]` instead;
+and coalesces concurrent calls for the same scope into one upstream pass — there is no
+cooldown beyond that. `/sync` is unchanged: it still probes every provider, disabled ones
+included, because that is what the auth-health job runs.
 
 
 There is no dependency graph to learn — this is one package. Two rules matter:

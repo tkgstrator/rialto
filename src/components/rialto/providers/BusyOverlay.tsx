@@ -1,15 +1,16 @@
 /**
  * Backdrop shown while a catalog-wide refresh is in flight.
  *
- * Only the long vendor round-trips get one. "Sync models" and "Refresh
- * prices" fan out to every provider — a live model list, a price scrape
- * and a context-window lookup each — and can run for tens of seconds,
- * during which the screen is indistinguishable from an idle one: the
- * buttons grey out, nothing else moves, and the operator reasonably
- * concludes the click was lost and clicks again. The per-row writes
- * (toggle a model, save a key, remove a provider) return fast enough
- * that dimming the screen for them would be noise, which is why the
- * label is passed per action rather than derived from `busy`.
+ * Only the long vendor round-trips get one. Refresh fans out to every
+ * provider — a live model list, a price scrape and a context-window
+ * lookup each, plus a profile and usage call per subscription account —
+ * and can run for tens of seconds, during which the screen is
+ * indistinguishable from an idle one: the buttons grey out, nothing else
+ * moves, and the operator reasonably concludes the click was lost and
+ * clicks again. A Save, a removal or a test run returns fast enough, or
+ * shows its own progress, so dimming the screen for them would be noise —
+ * which is why the label is passed per action rather than derived from
+ * `busy`.
  *
  * Covers the master-detail area rather than the whole shell, so the
  * header keeps the disabled control that started the work visible next

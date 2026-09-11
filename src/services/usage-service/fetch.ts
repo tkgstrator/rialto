@@ -18,6 +18,7 @@ import type {
 import { ClaudeUsageWireSchema, CodexUsageWireSchema } from '../../schemas/wire/usage'
 import { ensureFreshCodexAccessToken } from '../codex-auth/token'
 import { getSubAccountTokensForKind, type SubAccountTokenInfo } from '../subscription-account-sync-service'
+import { applyClaudeAccountLimit, applyCodexAccountLimit } from './account-limit'
 import { claudeCache, codexCache, TTL_MS } from './cache'
 
 const windowOf = (v: unknown): { utilization: number; resetsAt: string | null } | null => {
@@ -77,7 +78,7 @@ const requestClaudeUsage = async (info: SubAccountTokenInfo): Promise<ClaudeUsag
     const extra = j.extra_usage
     const extraUsageEnabled =
       typeof extra === 'object' && extra !== null && 'is_enabled' in extra && extra.is_enabled === true
-    return {
+    return applyClaudeAccountLimit({
       subAccountId: info.subAccountId,
       accountLabel: info.displayName,
       fiveHour: windowOf(j.five_hour),
@@ -87,7 +88,7 @@ const requestClaudeUsage = async (info: SubAccountTokenInfo): Promise<ClaudeUsag
       weeklyScoped: scopedWindowsOf(j.limits),
       extraUsageEnabled,
       capturedAt: dayjs().toISOString()
-    }
+    })
   } catch {
     return null
   }
@@ -187,14 +188,14 @@ const requestCodexUsage = async (info: SubAccountTokenInfo): Promise<CodexUsage 
       rl !== null && typeof rl === 'object' && 'primary_window' in rl ? rl.primary_window : undefined
     const secondaryWindow =
       rl !== null && typeof rl === 'object' && 'secondary_window' in rl ? rl.secondary_window : undefined
-    return {
+    return applyCodexAccountLimit({
       subAccountId: info.subAccountId,
       accountLabel: info.displayName,
       planType: typeof j.plan_type === 'string' && j.plan_type.length > 0 ? j.plan_type : null,
       primary: codexWindowOf(primaryWindow),
       secondary: codexWindowOf(secondaryWindow),
       capturedAt: dayjs().toISOString()
-    }
+    })
   } catch (e) {
     logger.warn({ err: e }, '[codex] wham/usage threw')
     return null
@@ -231,4 +232,34 @@ export async function fetchUsageSnapshotWithAccountIds(input: GetUsageInput = {}
 }> {
   const { claude, codex } = await pollUsage(input)
   return { claude: claude.results, codex: codex.results, failed: [...claude.failed, ...codex.failed] }
+}
+
+type AccountUsagePoll = Awaited<ReturnType<typeof fetchUsageSnapshotWithAccountIds>>
+
+// Force-poll exactly these accounts, split by the endpoint that answers
+// for them. The callers that already know which accounts they mean — one
+// just connected, one provider's own page — must not spend every other
+// account's upstream call to learn about them, and where the accounts came
+// from is theirs to decide: a provider's page polls a switched-off
+// provider, which the scheduled pool never holds.
+export async function fetchUsageForTokens(accounts: {
+  claude: readonly SubAccountTokenInfo[]
+  codex: readonly SubAccountTokenInfo[]
+}): Promise<AccountUsagePoll> {
+  const [claude, codex] = await Promise.all([
+    pollAccounts(accounts.claude, claudeCache, requestClaudeUsage, true),
+    pollAccounts(accounts.codex, codexCache, requestCodexUsage, true)
+  ])
+  return { claude: claude.results, codex: codex.results, failed: [...claude.failed, ...codex.failed] }
+}
+
+// Force-poll only the named accounts. A newly connected account's windows
+// are wanted now rather than at the next tick. An account on a
+// switched-off provider is skipped here as everywhere else.
+export async function fetchUsageForAccounts(subAccountIds: readonly string[]): Promise<AccountUsagePoll> {
+  const wanted = new Set(subAccountIds)
+  const named = async (kind: 'claude' | 'codex'): Promise<SubAccountTokenInfo[]> =>
+    (await accountsOf(kind)).filter((a) => wanted.has(a.subAccountId))
+  const [claude, codex] = await Promise.all([named('claude'), named('codex')])
+  return fetchUsageForTokens({ claude, codex })
 }

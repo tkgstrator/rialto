@@ -10,6 +10,9 @@
  * the key" were the same control one keystroke apart. Changing a key is
  * rare and consequential — it now goes through ReplaceKeyDialog, which
  * cannot be entered by accident and states what it is about to do.
+ *
+ * Replace only exists while the page is in Edit, and what it takes is
+ * staged with the rest of the edit: Save writes the key, Revert drops it.
  */
 import { useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
@@ -34,25 +37,29 @@ function MaskedKey({ value }: { value: string }) {
 export function CredentialsPanel({
   provider,
   label,
-  onSave
+  editing,
+  onReplace
 }: {
+  /** As Save would leave it, so a staged replacement shows here like a stored key. */
   provider: Provider
   label: string
-  onSave: (key: string) => void
+  editing: boolean
+  /** Stages a replacement; nothing is written until the page's Save. */
+  onReplace: (key: string) => void
 }) {
   const { t } = useTranslation()
-  const stored = provider.api_key === null ? '' : provider.api_key
+  const current = provider.api_key === null ? '' : provider.api_key
   const [revealed, setRevealed] = useState(false)
   const [replacing, setReplacing] = useState(false)
 
   // Re-mask after a replacement: whatever the operator was looking at is
-  // not the stored key any more, and leaving the box open would show the
-  // new one without anybody asking for it. Switching providers is
-  // already covered upstream — ProviderDetail keys this component on the
-  // provider name, so a different provider is a different mount.
+  // not the key any more, and leaving the box open would show the new one
+  // without anybody asking for it. Switching providers is already covered
+  // upstream — ProviderDetail keys this component on the provider name, so
+  // a different provider is a different mount.
   const replace = (key: string) => {
     setRevealed(false)
-    onSave(key)
+    onReplace(key)
   }
 
   return (
@@ -65,27 +72,34 @@ export function CredentialsPanel({
           <div className='mb-1 text-[12px] text-muted-foreground'>{t('providers.credentials.apiKey')}</div>
           <div className='flex items-center gap-2'>
             <div className='flex h-8 min-w-0 flex-1 items-center rounded-md border border-border px-3 font-mono text-xs'>
-              {stored === '' ? (
+              {current === '' ? (
                 <span className='truncate'>{t('providers.credentials.notSet')}</span>
               ) : revealed ? (
-                <span className='truncate'>{stored}</span>
+                <span className='truncate'>{current}</span>
               ) : (
                 // The bullets are the only part that can be dropped: the
                 // prefix and the last four characters are what tell two
                 // keys apart, and a plain `truncate` eats the tail first.
-                <MaskedKey value={stored} />
+                <MaskedKey value={current} />
               )}
             </div>
             <RButton
               variant='ghost'
               icon={revealed ? 'ri-eye-off-line' : 'ri-eye-line'}
               onClick={() => setRevealed(!revealed)}
-              disabled={stored === ''}
+              disabled={current === ''}
             >
               {revealed ? t('providers.credentials.hide') : t('providers.credentials.reveal')}
             </RButton>
-            <RButton variant='outline' icon='ri-refresh-line' onClick={() => setReplacing(true)}>
-              {stored === '' ? t('providers.credentials.setKey') : t('providers.credentials.replace')}
+            {/* Invisible rather than absent while the page reads, so the
+                key field keeps its width when Edit is pressed. */}
+            <RButton
+              variant='outline'
+              icon='ri-refresh-line'
+              onClick={() => setReplacing(true)}
+              className={editing ? undefined : 'invisible'}
+            >
+              {current === '' ? t('providers.credentials.setKey') : t('providers.credentials.replace')}
             </RButton>
           </div>
         </div>
@@ -116,7 +130,7 @@ export function CredentialsPanel({
           />
         </p>
       </div>
-      <ReplaceKeyDialog open={replacing} current={stored} onOpenChange={setReplacing} onReplace={replace} />
+      <ReplaceKeyDialog open={replacing} current={current} onOpenChange={setReplacing} onReplace={replace} />
     </div>
   )
 }

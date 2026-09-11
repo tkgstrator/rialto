@@ -10,6 +10,8 @@
  * Full page, no app shell — the sidebar's five destinations mean nothing
  * until something answers.
  */
+
+import { cn } from 'cn'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
@@ -19,7 +21,6 @@ import { Pill, RButton } from '@/components/rialto/primitives'
 import { isProviderConnected, markSetupOffered } from '@/components/rialto/system/first-run'
 import { useAppVersion } from '@/hooks/use-app-version'
 import { type AccessTokenWire, api } from '@/lib/api'
-import { cn } from '@/lib/utils'
 
 type StepState = 'done' | 'active' | 'todo'
 
@@ -212,7 +213,7 @@ export function SetupScreen() {
               <i className='ri-route-line text-base leading-none' />
             </div>
             <span className='text-base font-semibold tracking-tight'>Rialto</span>
-            <span className='ml-auto font-mono text-[11px] text-muted-foreground'>v{version}</span>
+            <span className='ml-auto font-mono text-[12px] text-muted-foreground'>v{version}</span>
           </div>
           <p className='mt-4 text-xs leading-relaxed text-muted-foreground'>
             <Trans i18nKey='system.setup.intro' components={{ mono: <span className='font-mono' /> }} />
@@ -236,7 +237,7 @@ export function SetupScreen() {
               >
                 <i className={cn(option.icon, 'text-sm text-muted-foreground')} />
                 <div className='mt-1 text-[12px] font-medium'>{option.label}</div>
-                <div className='text-[11px] text-muted-foreground'>{t(option.hintKey)}</div>
+                <div className='text-[12px] text-muted-foreground'>{t(option.hintKey)}</div>
               </Link>
             ))}
           </div>

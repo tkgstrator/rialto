@@ -25,7 +25,7 @@ import { Meter, Pill, RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import { api, type SessionSummary } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
-import { fmtAgo, fmtRate } from '@/lib/rialto/format'
+import { fmtAgo, fmtRate, shortId } from '@/lib/rialto/format'
 import { fmtCost } from '@/lib/sessions/format'
 
 /**
@@ -210,19 +210,23 @@ export function ActivitySessionDetail() {
   const prev = index > 0 ? neighbours[index - 1] : null
   const next = index >= 0 && index < neighbours.length - 1 ? neighbours[index + 1] : null
 
-  const title = data === null ? sessionId : preferredTitle(data.summary, sessionId)
+  // Short everywhere it is read rather than routed on: the raw uuid is
+  // still what Previous/Next and the fetch use, but the breadcrumb,
+  // subtitle and title-fallback are read by a person, the same as the
+  // Sessions table's own `shortId` column.
+  const title = data === null ? shortId(sessionId) : preferredTitle(data.summary, shortId(sessionId))
   const subtitle =
     data === null
       ? undefined
       : t('activity.session.subtitle', {
-          sessionId,
+          sessionId: shortId(sessionId),
           inbound: inboundPath === null ? t('activity.common.untracked') : inboundPath
         })
 
   return (
     <Screen
       // Activity / Sessions / <id> — the third level the tree cannot name.
-      crumbs={[{ label: sessionId }]}
+      crumbs={[{ label: shortId(sessionId) }]}
       subtitle={subtitle}
       actions={
         <>

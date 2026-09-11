@@ -199,7 +199,8 @@ flowchart TD
 5. **sub-account は OAuth transformer の `auth()` 内で選ばれる** — chain ループはアカウント名を知らない。429 が返ってきてから `getActiveAccountForSession(sessionId)` で「直前に何が選ばれたか」を逆引きする。候補になるのは**有効な provider** の有効な account だけ（`getSubAccountTokensForKind` が `Provider.enabled` で絞る）。
 6. **アカウント選択は 4 段** — `src/services/session-account-router.ts` の順序どおり:
    1. in-process の枯渇マップが reactive に落としたアカウントを除外。
-   2. **DB に記録された rate-limit 状態**で、常時拘束の窓が 100 % かつ `resetAt` が未来のアカウントを除外。claude なら 7d 全体・7d Opus・5h の3窓、codex なら primary 窓。どれか1つでも 100 % なら上流 429 が確定するので先回りで避ける。
+   2. **DB に記録された rate-limit 状態**で、このリクエストを拘束する窓が `HARD_LIMIT_PCT`（99 %）以上かつ `resetAt` が未来のアカウントを除外。どの窓が拘束するかは `windowBinds` が決める — account 全体の 5h / 7d（codex は primary / secondary）は全 model、per-model の 7d（Fable など）はその model だけ。
+      **account 全体の窓（5h か 7d）のどちらかが 100 % に達した account は、残りの窓もすべて 100 %（リセットは到達した窓のうち遅い方）として記録される。** 上流は到達後も他の窓を自分の値のまま返す（7d 到達なら 5h ≈ 0 %、5h 到達なら 7d や Fable は到達前の値）が、実際には全リクエストが拒否される。per-model 7d の到達はその model だけの話なので、他の窓には波及させない。これを usage 取得時に一度だけ畳み込むので（`usage-service/account-limit.ts`）、キャッシュ・`SubAccountUsage`・`SubAccountQuota`・`UsageSnapshot`、そして scheduler の Fable 予算・Retry-After も UI も同じ値を読む。codex の primary / secondary も同じ。
    3. 生き残りの中に sticky マッピング（同じ `sessionId` = `x-claude-code-session-id`）が指すアカウントがあれば、それを再利用（prompt cache の連続性）。
    4. それも無ければ "weekly 窓の残り % ÷ リセットまでの残り時間" が **最高** のアカウント。一番余裕のあるアカウント優先ではなく、**消化を急ぐ必要があるアカウント** から優先する。
 

@@ -28,6 +28,7 @@ import { Trans, useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useSurfaces } from '@/components/rialto/activity/use-surfaces'
+import { useConfirm } from '@/components/rialto/ConfirmDialog'
 import { Pill, RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import { IssuedTokenDialog } from '@/components/rialto/settings/access/IssuedTokenDialog'
@@ -35,6 +36,7 @@ import { ANY, Picker, SurfacePicker, sameScope } from '@/components/rialto/setti
 import { SettingsField } from '@/components/rialto/settings/SettingsLayout'
 import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
 import { type AccessTokenWire, api } from '@/lib/api'
+import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
 import { fmtAgo, fmtCount } from '@/lib/rialto/format'
 import { fmtTokenCount, TOKEN_STATE_PILL, type TokenState, tokenState } from '@/lib/rialto/settings/access-tokens'
 import { fmtCost } from '@/lib/sessions/format'
@@ -105,14 +107,16 @@ function DetailHeader({
       <div className='ml-auto flex items-center gap-2'>
         {/* Rotate first and revoke second: rotating is the answer to
             almost every reason for being on this page, and revoking is
-            the one that takes a client offline.
+            the one that takes a client offline. Both are red all the same:
+            neither can be undone — a rotated secret is gone the moment the
+            new one is issued.
             Absent rather than disabled on a dead token: a new secret on
             a revoked or expired row would not authenticate, so the
             server refuses the call outright — there is no state in which
             this control could become live, and a permanently greyed-out
             button is clutter rather than information. */}
         {state === 'active' ? (
-          <RButton variant='outline' icon='ri-refresh-line' onClick={onRotate} disabled={busy}>
+          <RButton variant='danger' icon='ri-refresh-line' onClick={onRotate} disabled={busy}>
             {t('settings.access.rotate')}
           </RButton>
         ) : null}
@@ -135,6 +139,7 @@ export function TokenDetail() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const { surfaces, pathOf } = useSurfaces()
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [token, setToken] = useState<AccessTokenWire | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -169,9 +174,22 @@ export function TokenDetail() {
       })
   }, [])
 
-  const rotate = () => {
+  // Every action on this page that cannot be undone asks through the same
+  // dialog: its title is the question the confirm copy leads with, and its
+  // red button carries the words and icon of the button that opened it.
+  const ask = (message: string, confirmLabel: string, icon: string): Promise<boolean> => {
+    const { title, description } = splitConfirmMessage(message)
+    return confirm({ title, description, confirmLabel, icon })
+  }
+
+  const rotate = async () => {
     if (token === null) return
-    if (!window.confirm(t('settings.access.rotateConfirm', { name: token.name }))) return
+    const confirmed = await ask(
+      t('settings.access.rotateConfirm', { name: token.name }),
+      t('settings.access.rotate'),
+      'ri-refresh-line'
+    )
+    if (!confirmed) return
     setBusy(true)
     api
       .rotateAccessToken(token.id)
@@ -195,9 +213,14 @@ export function TokenDetail() {
       .finally(() => setBusy(false))
   }
 
-  const revoke = () => {
+  const revoke = async () => {
     if (token === null) return
-    if (!window.confirm(t('settings.access.revokeConfirm', { name: token.name }))) return
+    const confirmed = await ask(
+      t('settings.access.revokeConfirm', { name: token.name }),
+      t('settings.access.revoke'),
+      'ri-forbid-line'
+    )
+    if (!confirmed) return
     setBusy(true)
     api
       .revokeAccessToken(token.id)
@@ -209,9 +232,14 @@ export function TokenDetail() {
       .finally(() => setBusy(false))
   }
 
-  const remove = () => {
+  const remove = async () => {
     if (token === null) return
-    if (!window.confirm(t('settings.access.deleteConfirm', { name: token.name }))) return
+    const confirmed = await ask(
+      t('settings.access.deleteConfirm', { name: token.name }),
+      t('settings.access.delete'),
+      'ri-delete-bin-line'
+    )
+    if (!confirmed) return
     setBusy(true)
     api
       .deleteAccessToken(token.id)
@@ -231,7 +259,7 @@ export function TokenDetail() {
     draft !== null &&
     (!sameScope(draft.surfaces, token.surfaces) ||
       draft.profileKey !== (token.profileKey === null ? ANY : token.profileKey))
-  useUnsavedGuard(dirty)
+  const unsavedDialog = useUnsavedGuard(dirty)
 
   const save = () => {
     if (token === null || draft === null) return
@@ -417,6 +445,8 @@ export function TokenDetail() {
             onDone={() => setRevealed(null)}
           />
         )}
+        {confirmDialog}
+        {unsavedDialog}
       </div>
     </Screen>
   )

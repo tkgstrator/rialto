@@ -99,7 +99,7 @@ function StatuslineEditor({ config }: { config: Config }) {
   )
 
   const patchSelected = useCallback(
-    (field: keyof StatusLineModuleConfig, value: string) => {
+    (field: keyof StatusLineModuleConfig, value: string | boolean) => {
       if (selectedIndex === null) return
       setModules(getCurrentModules(draft).map((m, i) => (i === selectedIndex ? { ...m, [field]: value } : m)))
     },
@@ -120,7 +120,7 @@ function StatuslineEditor({ config }: { config: Config }) {
   }, [config, draft, reloadConfig, t])
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(persisted)
-  useUnsavedGuard(dirty)
+  const unsavedDialog = useUnsavedGuard(dirty)
 
   return (
     <SettingsLayout
@@ -159,11 +159,16 @@ function StatuslineEditor({ config }: { config: Config }) {
               setSelectedIndex(null)
             }}
           />
-          <ModuleProperties module={selected === undefined ? null : selected} onChange={patchSelected} />
+          <ModuleProperties
+            module={selected === undefined ? null : selected}
+            style={draft.currentStyle}
+            onChange={patchSelected}
+          />
           <WireUpNote />
           <div className='h-6' />
         </div>
       </div>
+      {unsavedDialog}
     </SettingsLayout>
   )
 }

@@ -20,6 +20,22 @@ const { renderShell, pill, btn, navTo } = window.Shell
 // into each other — into one three-step page. A dialog stack is the wrong
 // shape for a flow that can branch and can fail.
 
+// ?device — Codex signing in with a one-time code. Codex offers no browser
+// sign-in: its OAuth client only redirects to localhost:1455 on the
+// BROWSER's machine, which a remote or containerised install never
+// receives. A device code needs nothing to reach back: Rialto shows the
+// code, the operator enters it at auth.openai.com from any browser, and
+// the server polls until the grant is issued.
+const PARAMS = new URLSearchParams(location.search)
+const DEVICE = PARAMS.has('device')
+// ?codex-failed — Codex before a code has been asked for, with the last
+// attempt's error still on record. The failure card then sits straight
+// under the choice grid instead of under a waiting card, which is the one
+// placement where it has to bring its own top gap (see failureCard).
+const CODEX_FAILED = PARAMS.has('codex-failed')
+const CODEX = DEVICE || CODEX_FAILED
+const SELECTED = CODEX ? 'codex' : 'gemini-cli'
+
 const step = (n, label, state) => {
   const tone = { done: 'bg-foreground text-background', active: 'bg-foreground text-background', todo: 'bg-muted text-muted-foreground' }[state]
   return `
@@ -65,6 +81,103 @@ const vendorCard = (v, selected) => `
     </div>
   </button>`
 
+const choice = ({ icon, title, body, selected }) => `
+  <button class="rounded-md px-4 py-3 text-left ${
+    selected ? 'border-2 border-foreground/40 bg-muted/40' : 'border border-border transition-colors hover:bg-muted/50'
+  }">
+    <div class="flex items-center gap-2">
+      <i class="${icon} text-sm ${selected ? '' : 'text-muted-foreground'}"></i>
+      <span class="text-xs font-medium">${title}</span>
+      ${selected ? pill('recommended', 'ok') : ''}
+    </div>
+    <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">${body}</p>
+  </button>`
+
+// Failure state shown inline: this flow fails often enough (an expired
+// refresh token, the wrong account) that hiding it in a toast loses the only
+// actionable detail. Under a waiting card, that card's py-5 is the gap
+// between the two. `flush` is the other placement — straight under the
+// choice grid, which ends with no padding — so the card brings its own pt-5
+// rather than touching the choices.
+const failureCard = ({ ago, message, flush }) => `
+      <div class="px-6 pb-6 ${flush ? 'pt-5' : ''}">
+        <div class="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3">
+          <div class="flex items-center gap-2">
+            <i class="ri-error-warning-line text-sm text-destructive"></i>
+            <span class="text-xs font-medium">Previous attempt failed</span>
+            <span class="ml-auto text-[12px] text-muted-foreground">${ago}</span>
+          </div>
+          <p class="mt-1.5 font-mono text-[12px] leading-relaxed text-muted-foreground">
+            ${message}
+          </p>
+        </div>
+      </div>`
+
+// Codex on step 2. While `waiting`, it is mid device-code sign-in: the code
+// and the link are the whole instruction, so they are the largest things in
+// the card; the expiry is there because a code left too long stops working
+// without saying so. Before a code is asked for, the step is the two choices
+// and whatever the last attempt left behind.
+const codexPane = ({ waiting, failed }) => `
+    <div class="min-w-0 overflow-y-auto">
+      <div class="border-b border-border px-6 py-4">
+        <div class="flex items-center gap-2">
+          <h2 class="text-sm font-semibold">Codex</h2>
+          ${pill('subscription', 'info')}
+        </div>
+        <p class="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+          Uses your OpenAI subscription entitlement. Rialto never sees your password — it exchanges an
+          OAuth code and stores only the encrypted tokens.
+        </p>
+      </div>
+
+      <div class="px-6 pt-5 pb-2">
+        <h3 class="text-sm font-semibold">How to authenticate</h3>
+      </div>
+      <div class="grid grid-cols-2 gap-3 px-6">
+        ${choice({
+          icon: 'ri-keyboard-line',
+          title: 'Device code',
+          body: 'Enter a one-time code at <span class="font-mono">auth.openai.com</span> from any browser.',
+          selected: true
+        })}
+        ${choice({
+          icon: 'ri-folder-open-line',
+          title: 'Import from Codex',
+          body: 'Reads <span class="font-mono">~/.codex/auth.json</span> if you have already signed in on this machine.',
+          selected: false
+        })}
+      </div>
+
+      ${waiting ? `
+      <div class="px-6 py-5">
+        <div class="rounded-md border border-border px-4 py-4">
+          <div class="flex items-center gap-2">
+            <i class="ri-loader-4-line text-sm text-muted-foreground"></i>
+            <span class="text-xs font-medium">Waiting for the code…</span>
+            <span class="ml-auto font-mono text-[12px] tabular-nums text-muted-foreground">expires in 14:32</span>
+          </div>
+          <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
+            Open the link, sign in to ChatGPT and enter the code. This page continues on its own.
+          </p>
+          <div class="mt-3 space-y-2 rounded-md bg-muted/50 px-3 py-3">
+            <div class="flex items-center gap-3">
+              <span class="w-10 text-[12px] text-muted-foreground">Link</span>
+              <span class="min-w-0 flex-1 truncate font-mono text-xs">https://auth.openai.com/codex/device</span>
+              ${btn('Open', 'outline', 'ri-external-link-line')}
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="w-10 text-[12px] text-muted-foreground">Code</span>
+              <span class="min-w-0 flex-1 font-mono text-base font-semibold tracking-wider">KQ7M-P4TZ</span>
+              ${btn('Copy', 'outline', 'ri-file-copy-line')}
+            </div>
+          </div>
+        </div>
+      </div>` : ''}
+      ${failed ? failureCard({ ago: '13m ago', message: 'No access token stored', flush: !waiting }) : ''}
+      <div class="h-6"></div>
+    </div>`
+
 document.getElementById('root').innerHTML = `
   <div class="flex items-center gap-6 border-b border-border px-6 py-3">
     ${step(1, 'Pick a vendor', 'done')}
@@ -81,9 +194,10 @@ document.getElementById('root').innerHTML = `
       <div class="px-4 pt-5 pb-2">
         <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Vendor</h2>
       </div>
-      ${VENDORS.map((v) => vendorCard(v, v.id === 'gemini-cli')).join('')}
+      ${VENDORS.map((v) => vendorCard(v, v.id === SELECTED)).join('')}
     </aside>
 
+    ${CODEX ? codexPane({ waiting: DEVICE, failed: CODEX_FAILED }) : `
     <div class="min-w-0 overflow-y-auto">
       <div class="border-b border-border px-6 py-4">
         <div class="flex items-center gap-2">
@@ -148,23 +262,13 @@ document.getElementById('root').innerHTML = `
         </div>
       </div>
 
-      <!-- Failure state shown inline: this flow fails often enough
-           (expired refresh token, wrong Google account) that hiding it in
-           a toast loses the only actionable detail. -->
-      <div class="px-6 pb-6">
-        <div class="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3">
-          <div class="flex items-center gap-2">
-            <i class="ri-error-warning-line text-sm text-destructive"></i>
-            <span class="text-xs font-medium">Previous attempt failed</span>
-            <span class="ml-auto text-[12px] text-muted-foreground">5h ago</span>
-          </div>
-          <p class="mt-1.5 font-mono text-[12px] leading-relaxed text-muted-foreground">
-            403 — Code Assist onboarding required for this account (loadCodeAssist returned no project)
-          </p>
-        </div>
-      </div>
+      ${failureCard({
+        ago: '5h ago',
+        message: '403 — Code Assist onboarding required for this account (loadCodeAssist returned no project)',
+        flush: false
+      })}
       <div class="h-6"></div>
-    </div>
+    </div>`}
 
   </div>`
 
@@ -172,7 +276,7 @@ renderShell({
   active: 'providers',
   navMode: 'cloudflare',
   crumbs: ['Add provider'],
-  subtitle: 'Step 2 of 3 · Gemini CLI',
+  subtitle: CODEX ? 'Step 2 of 3 · Codex' : 'Step 2 of 3 · Gemini CLI',
   actions:
     btn('Back', 'ghost', 'ri-arrow-left-line', 'providers.html') +
     btn('Continue', 'primary', 'ri-arrow-right-line', 'providers-connect-models.html')

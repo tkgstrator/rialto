@@ -34,7 +34,7 @@ import { Pager } from '@/components/rialto/Pager'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import { api } from '@/lib/api'
-import { fmtCount, fmtLatency, fmtRate } from '@/lib/rialto/format'
+import { fmtLatency, fmtRate } from '@/lib/rialto/format'
 
 // The endpoint has no time filter, so a page is N calls in recency order
 // and every number on the screen describes the page on screen.
@@ -209,20 +209,13 @@ export function ActivityRequests() {
 
   const range = RANGES.find((r) => r.id === filters.range)
   const rangeLabel = range === undefined ? '' : t(range.labelKey)
-  // One scope, named. This line used to read "279 requests · 1 failovers
-  // · newest 200": an all-time total, a failover count taken from the
-  // filtered rows, and the page cap, with nothing saying they were three
-  // different populations. The failover count lives in its own stat tile
-  // just below, so the subtitle only has to answer "how much of what am I
-  // looking at".
-  const subtitle =
-    page === null
-      ? undefined
-      : t('activity.requests.subtitle', {
-          shown: fmtCount(visible.length),
-          logged: fmtCount(page.total),
-          range: rangeLabel
-        })
+  // One scope, named: the window, nothing else. This used to read "279
+  // requests · 1 failovers · newest 200" — an all-time total, a failover
+  // count taken from the filtered rows, and the page cap, three different
+  // populations with nothing saying so. Both the total and the failover
+  // count live in their own stat tiles just below, so the subtitle only
+  // has to answer "what window am I looking at".
+  const subtitle = rangeLabel === '' ? undefined : rangeLabel.toLowerCase()
 
   return (
     <Screen

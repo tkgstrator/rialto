@@ -38,7 +38,7 @@
 import { createServer, type Server, type ServerResponse } from 'node:http'
 import { logger } from '../../logger'
 import { consumePendingFlow } from '../oauth-flow-service'
-import { recordCodexOAuthAccount } from '../subscription-account-sync-service'
+import { connectCodexAccount } from '../subscription-connect-service'
 import { exchangeCodexCode } from './oauth'
 
 export const CODEX_CALLBACK_PORT = 1455
@@ -113,7 +113,7 @@ const handleCallback = async (
       codeVerifier: pending.codeVerifier,
       redirectUri: pending.redirectUri
     })
-    await recordCodexOAuthAccount({
+    await connectCodexAccount({
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       idToken: tokens.id_token

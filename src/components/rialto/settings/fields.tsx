@@ -11,9 +11,10 @@
  * heading of a pane; every section after it (Data, Update, Retention, …)
  * still needs the same strip.
  */
+
+import { cn } from 'cn'
 import type { ReactNode } from 'react'
 import { SettingsField } from '@/components/rialto/settings/SettingsLayout'
-import { cn } from '@/lib/utils'
 
 /** Shared box metrics for a text input and its read-only twin. */
 const BOX = 'flex h-8 max-w-md items-center rounded-md border border-border px-3 font-mono text-xs'

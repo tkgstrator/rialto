@@ -229,3 +229,97 @@ export function profileEntryCount(byScenario: PreferenceByScenario): number {
 export function renumber<T extends { priority: number }>(entries: readonly T[]): T[] {
   return entries.map((entry, index) => ({ ...entry, priority: index + 1 }))
 }
+
+/**
+ * The two tier gates as the one four-way answer the constraints footer
+ * offers. Two booleans read worse than one answer: the operator would
+ * have to combine them in their head to know what the selector does.
+ */
+export type TierSubstitution = 'upDown' | 'up' | 'down' | 'same'
+
+export type ExhaustedBehavior = '429' | 'passthrough'
+
+// An absent gate reads as the schema's default, true, so a profile whose
+// constraints were never written shows what the selector actually does.
+const gate = (constraints: Record<string, unknown> | null, key: string): boolean => {
+  const value = constraints === null ? undefined : constraints[key]
+  return typeof value === 'boolean' ? value : true
+}
+
+export function tierSubstitutionOf(constraints: Record<string, unknown> | null): TierSubstitution {
+  const up = gate(constraints, 'allowEscalation')
+  const down = gate(constraints, 'allowDemotion')
+  if (up && down) return 'upDown'
+  if (up) return 'up'
+  if (down) return 'down'
+  return 'same'
+}
+
+const SUBSTITUTION_GATES: Record<TierSubstitution, { allowEscalation: boolean; allowDemotion: boolean }> = {
+  upDown: { allowEscalation: true, allowDemotion: true },
+  up: { allowEscalation: true, allowDemotion: false },
+  down: { allowEscalation: false, allowDemotion: true },
+  same: { allowEscalation: false, allowDemotion: false }
+}
+
+export function exhaustedBehaviorOf(constraints: Record<string, unknown> | null): ExhaustedBehavior {
+  return constraints !== null && constraints.exhaustedBehavior === 'passthrough' ? 'passthrough' : '429'
+}
+
+export function quotaSkipPctOf(constraints: Record<string, unknown> | null): number {
+  const value = constraints === null ? undefined : constraints.quotaSkipPct
+  return typeof value === 'number' ? value : 100
+}
+
+export type ConstraintEdit =
+  | { kind: 'tierSubstitution'; value: TierSubstitution }
+  | { kind: 'exhaustedBehavior'; value: ExhaustedBehavior }
+  | { kind: 'quotaSkipPct'; value: number }
+
+/**
+ * One edit, merged over the blob that is there.
+ *
+ * The blob carries knobs this screen does not show — the longContext
+ * threshold, the scheduler's scoring factors — and the PUT replaces the
+ * whole column, so an edit that rebuilt the object from the three cells
+ * would silently reset every one of them.
+ */
+export function applyConstraintEdit(
+  constraints: Record<string, unknown> | null,
+  edit: ConstraintEdit
+): Record<string, unknown> {
+  const base = constraints === null ? {} : constraints
+  if (edit.kind === 'tierSubstitution') return { ...base, ...SUBSTITUTION_GATES[edit.value] }
+  if (edit.kind === 'exhaustedBehavior') return { ...base, exhaustedBehavior: edit.value }
+  return { ...base, quotaSkipPct: edit.value }
+}
+
+/**
+ * Whether two blobs differ in anything this screen writes.
+ *
+ * Compared by reading rather than by bytes: picking "up and down" on a
+ * profile that never stored the gates writes two `true`s the defaults
+ * already meant, and a Save lit up by that would ask the operator to
+ * write a change that changes nothing. Keys the screen does not edit are
+ * carried through untouched by `applyConstraintEdit`, so they cannot
+ * differ between an edit and its baseline.
+ */
+export function constraintsDiffer(a: Record<string, unknown> | null, b: Record<string, unknown> | null): boolean {
+  return (
+    tierSubstitutionOf(a) !== tierSubstitutionOf(b) ||
+    exhaustedBehaviorOf(a) !== exhaustedBehaviorOf(b) ||
+    quotaSkipPctOf(a) !== quotaSkipPctOf(b)
+  )
+}
+
+/**
+ * A Quota skip entry as a whole percentage, 0–100, or null when the text
+ * is not one. Whole only: the cell reads as `100%`, and a fraction there
+ * would be a precision the quota readings it is compared with do not have.
+ */
+export function parseQuotaSkipPct(text: string): number | null {
+  const trimmed = text.trim()
+  if (!/^\d{1,3}$/.test(trimmed)) return null
+  const value = Number(trimmed)
+  return value <= 100 ? value : null
+}

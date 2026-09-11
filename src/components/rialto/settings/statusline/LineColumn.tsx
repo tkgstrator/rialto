@@ -5,9 +5,10 @@
  * The row is a `div`, not a `button`: it carries its own remove control,
  * and a button inside a button is markup the browser hoists apart.
  */
+
+import { cn } from 'cn'
 import { Trans, useTranslation } from 'react-i18next'
 import { colorHex, moduleMeta } from '@/lib/rialto/settings-content/statusline'
-import { cn } from '@/lib/utils'
 import type { StatusLineModuleConfig } from '@/types'
 
 function ModuleRow({

@@ -110,7 +110,7 @@ function PersonasEditor({ config }: { config: Config }) {
   }, [config, drafts, activeId, reloadConfig, t])
 
   const dirty = activeId !== persistedActive || JSON.stringify(drafts) !== JSON.stringify(persisted)
-  useUnsavedGuard(dirty)
+  const unsavedDialog = useUnsavedGuard(dirty)
   const activeCount = activeId === null ? 0 : 1
 
   return (
@@ -158,6 +158,7 @@ function PersonasEditor({ config }: { config: Config }) {
           />
         )}
       </div>
+      {unsavedDialog}
     </SettingsLayout>
   )
 }

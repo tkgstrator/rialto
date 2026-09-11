@@ -16,6 +16,14 @@
  *
  * A page passes `crumbs` only for what the route cannot name on its own —
  * a provider, a session id.
+ *
+ * `hideChildCrumb` drops the derived child from the trail. Providers' two
+ * lists are the case: the sidebar's own sub-entry (Subscriptions / API
+ * keys) already says which list this is, so the header repeating it as
+ * "Providers / Subscriptions" said the same thing twice — the mocks (
+ * `providers.html`, `providers-keys.html`) call `renderShell` with
+ * `crumbs: []` for exactly this reason. Defaults to false so every other
+ * screen keeps deriving section + child the way it always has.
  */
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -29,11 +37,13 @@ export interface Crumb {
 
 export function Screen({
   crumbs = [],
+  hideChildCrumb = false,
   subtitle,
   actions,
   children
 }: {
   crumbs?: readonly Crumb[]
+  hideChildCrumb?: boolean
   subtitle?: ReactNode
   actions?: ReactNode
   children: ReactNode
@@ -44,7 +54,7 @@ export function Screen({
   const child = childOf(pathname)
   const trail: Crumb[] = [
     ...(section === undefined ? [] : [{ label: t(section.labelKey), href: section.href }]),
-    ...(child === undefined ? [] : [{ label: t(child.labelKey), href: child.href }]),
+    ...(child === undefined || hideChildCrumb ? [] : [{ label: t(child.labelKey), href: child.href }]),
     ...crumbs
   ]
   return (

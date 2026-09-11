@@ -10,6 +10,7 @@
 import { api } from '@/lib/api'
 import { setModelDisabled } from '@/lib/providers/provider-edits'
 import type { SubscriptionRefreshResponse } from '@/schemas/api/subscriptions'
+import type { SavePlan } from './provider-draft'
 import type { ModelTestResponse, Provider } from './types'
 
 /**
@@ -43,20 +44,62 @@ export async function toggleModel(provider: Provider, model: string, next: boole
 }
 
 /**
- * Flip the provider itself on or off.
- *
- * This is the flag `enabledTargets` and `getEnabledModels` filter on, so
- * off means Routing stops offering every model underneath it. Until this
- * existed the only writer was the add-provider wizard's last Continue,
- * which left a provider signed in but unroutable with no way back.
+ * Switch every listed model on in one write, rather than one POST per
+ * currently-disabled model — the add-provider flow lands a subscription
+ * vendor with most of its catalog switched off (see `providerFromCatalog`
+ * in connect-actions.ts), and toggling each row individually would race:
+ * parallel `setModelDisabled` calls each start from the same stale
+ * `provider` snapshot, so the last one to land would silently re-disable
+ * whatever the others had just cleared.
  */
-export async function toggleProvider(provider: Provider, next: boolean): Promise<void> {
-  await api.post('/providers', { ...provider, enabled: next })
+export async function enableAllModels(provider: Provider): Promise<void> {
+  const transformer: Record<string, unknown> = { ...(provider.transformer ? provider.transformer : {}) }
+  delete transformer._disabledModels
+  await api.post('/providers', { ...provider, transformer })
 }
 
-export async function saveApiKey(provider: Provider, apiKey: string): Promise<void> {
-  const trimmed = apiKey.trim()
-  await api.post('/providers', { ...provider, api_key: trimmed === '' ? null : trimmed })
+/** Which write of a staged edit failed, and what the server said about it. */
+export interface SaveFailure {
+  write: 'provider' | 'tier' | 'effort'
+  /** The model a tier or effort write was for; null for the provider's own. */
+  model: string | null
+  message: string
+}
+
+const step = (write: SaveFailure['write'], model: string | null, run: () => Promise<unknown>) => ({
+  write,
+  model,
+  run
+})
+
+/**
+ * Write a provider page's staged edit.
+ *
+ * The provider upsert goes first: the switch Routing reads (the flag
+ * `enabledTargets` and `getEnabledModels` filter on), the model switches
+ * and the key all travel in the one body `POST /api/providers` takes.
+ * Tiers and efforts are not part of that body, so each one that changed
+ * is its own PATCH after it.
+ *
+ * Stops at the first write that fails and names it. The writes before it
+ * have landed and the ones after it have not, which the screen shows by
+ * re-reading rather than by guessing.
+ */
+export async function saveProviderEdits(provider: Provider, plan: SavePlan): Promise<SaveFailure | null> {
+  const upsert = plan.upsert
+  const steps = [
+    ...(upsert === null ? [] : [step('provider', null, () => api.post('/providers', upsert))]),
+    ...plan.tiers.map(({ model, tier }) => step('tier', model, () => setModelTier(provider, model, tier))),
+    ...plan.efforts.map(({ model, effort }) => step('effort', model, () => setModelEffort(provider, model, effort)))
+  ]
+  for (const { write, model, run } of steps) {
+    try {
+      await run()
+    } catch (err: unknown) {
+      return { write, model, message: err instanceof Error ? err.message : String(err) }
+    }
+  }
+  return null
 }
 
 /**
@@ -83,22 +126,24 @@ export async function testModels(providerName: string, models: string[]): Promis
   }
 }
 
-/** Re-read the vendor's model list onto every configured provider. */
-export async function syncModels(): Promise<void> {
-  await api.post('/refresh-models', {})
-}
-
-/** Re-scrape vendor pricing pages, then reflect fresh prices onto provider rows. */
-export async function refreshPrices(): Promise<void> {
+/**
+ * Re-scrape the vendors' price pages, then re-read every provider's model
+ * list and reflect the fresh prices onto its rows. The screens used to
+ * offer these as two buttons, "Refresh prices" and "Sync models", but the
+ * second is what makes the first show up: they are one round trip.
+ */
+export async function refreshCatalog(): Promise<void> {
   await api.post('/catalog/refresh', {})
   await api.post('/refresh-models', {})
 }
 
 /**
- * Re-sync every subscription account's profile and poll its usage past the
+ * Re-sync subscription accounts' profiles and poll their usage past the
  * 5-minute cache, so the quota bars describe now rather than the last
- * usage-job tick. Touches no model or price — that is the pair above.
+ * usage-job tick. Every enabled provider's accounts by default; `provider`
+ * narrows it to that provider's, switched on or not. Touches no model or
+ * price — that is the catalog above.
  */
-export async function refreshSubscriptions(): Promise<SubscriptionRefreshResponse> {
-  return api.post<SubscriptionRefreshResponse>('/subscriptions/refresh', {})
+export async function refreshSubscriptions(provider?: string): Promise<SubscriptionRefreshResponse> {
+  return api.post<SubscriptionRefreshResponse>('/subscriptions/refresh', provider === undefined ? {} : { provider })
 }

@@ -1,6 +1,6 @@
 {
   "name": "rialto",
-  "version": "2.86.1",
+  "version": "2.87.0",
   "description": "Use Claude Code without an Anthropics account and route it to another LLM provider",
   "scripts": {
     "dev": "vite --host --port 16175",
@@ -95,8 +95,8 @@
     "@tailwindcss/vite": "^4.3.3",
     "bullmq": "^6.3.4",
     "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "cn": "^0.2.6",
     "dayjs": "^1.11.23",
     "dotenv": "^17.4.2",
     "fastify": "^5.12.3",
@@ -126,7 +126,6 @@
     "remixicon": "^4.9.1",
     "shadcn": "^4.21.0",
     "sonner": "^2.0.8",
-    "tailwind-merge": "^3.6.0",
     "tailwindcss-animate": "^1.0.7",
     "tiktoken": "^1.0.22",
     "undici": "^8.10.2",
