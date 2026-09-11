@@ -92,7 +92,14 @@ export const pollCodexDeviceCode = async (opts: {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ device_auth_id: opts.deviceAuthId, user_code: opts.userCode })
+  }).catch((err: unknown) => {
+    logger.warn({ err }, '[codex-device] poll did not reach auth.openai.com; asking again next interval')
+    return null
   })
+  // No response says nothing about the code, so the flow keeps waiting: one
+  // dropped connection must not end a sign-in the operator is part-way
+  // through. The flow's own 15-minute expiry still bounds the retries.
+  if (res === null) return { status: 'pending' }
   // 403/404 both mean "not yet entered" — the CLI treats them identically.
   if (res.status === 403 || res.status === 404) return { status: 'pending' }
   if (!res.ok) {
@@ -104,7 +111,7 @@ export const pollCodexDeviceCode = async (opts: {
     }
     return { status: 'error', message: `device auth failed with status ${res.status}` }
   }
-  const parsed = CodexDeviceTokenResponseSchema.safeParse(await res.json())
+  const parsed = CodexDeviceTokenResponseSchema.safeParse(await res.json().catch(() => null))
   if (!parsed.success) return { status: 'error', message: 'codex device-code poll returned an unexpected payload' }
   return { status: 'authorized', code: parsed.data.authorization_code, codeVerifier: parsed.data.code_verifier }
 }

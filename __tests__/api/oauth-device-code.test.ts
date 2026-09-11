@@ -57,7 +57,7 @@ const jsonResponse = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
 const calls: string[] = []
-const stubUpstream = (routes: Record<string, (url: string) => Response>): void => {
+const stubUpstream = (routes: Record<string, (url: string) => Response | Promise<Response>>): void => {
   const fake = async (input: string | URL | Request): Promise<Response> => {
     const url = urlOf(input)
     calls.push(url)
@@ -173,6 +173,23 @@ describe('POST /api/oauth/device/poll — with a started flow', () => {
     const second = await poll(flowId)
     expect(await second.json()).toEqual({ status: 'expired' })
   })
+
+  test('a poll that cannot reach auth.openai.com keeps the flow waiting', async () => {
+    const flowId = await startFlow()
+    stubUpstream({
+      [TOKEN_POLL_URL]: () => {
+        throw new TypeError('fetch failed')
+      }
+    })
+
+    const res = await poll(flowId)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ status: 'pending' })
+
+    // Not dropped: the next poll still finds the flow rather than `expired`.
+    const second = await poll(flowId)
+    expect(await second.json()).toEqual({ status: 'pending' })
+  })
 })
 
 describe.skipIf(!HAS_DB)('POST /api/oauth/device/poll — connected (DB)', () => {
@@ -232,9 +249,39 @@ describe.skipIf(!HAS_DB)('POST /api/oauth/device/poll — connected (DB)', () =>
     const exchangeCall = calls.filter((u) => u === TOKEN_EXCHANGE_URL)
     expect(exchangeCall).toHaveLength(1)
 
-    // A second poll on the same flow finds nothing left to do.
+    // A later poll hears the same answer, without exchanging the spent code again.
     const second = await poll(flowId)
-    expect(await second.json()).toEqual({ status: 'expired' })
+    expect(await second.json()).toEqual({ status: 'connected' })
+    expect(calls.filter((u) => u === TOKEN_EXCHANGE_URL)).toHaveLength(1)
+  })
+
+  test('a poll landing while the account is being stored reads pending, not expired', async () => {
+    const flowId = await startFlow()
+    const gate = { started: (): void => undefined, release: (): void => undefined }
+    const exchangeStarted = new Promise<void>((resolve) => {
+      gate.started = resolve
+    })
+    const exchangeReleased = new Promise<void>((resolve) => {
+      gate.release = resolve
+    })
+    stubUpstream({
+      [TOKEN_POLL_URL]: () =>
+        jsonResponse({ authorization_code: 'ac_device', code_challenge: 'cc', code_verifier: 'cv_device' }),
+      [TOKEN_EXCHANGE_URL]: async () => {
+        gate.started()
+        await exchangeReleased
+        return jsonResponse({ access_token: 'at_device', refresh_token: 'rt_device', id_token: codexIdToken })
+      },
+      [CODEX_USAGE_URL]: () => jsonResponse(codexUsageBody)
+    })
+
+    const first = poll(flowId)
+    await exchangeStarted
+    const during = await poll(flowId)
+    expect(await during.json()).toEqual({ status: 'pending' })
+
+    gate.release()
+    expect(await (await first).json()).toEqual({ status: 'connected' })
   })
 
   test('an account the vendor refuses is reported, not silently dropped', async () => {

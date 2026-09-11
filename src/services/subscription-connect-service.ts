@@ -28,6 +28,7 @@ import type { ClaudeOAuthProfile } from '../schemas/wire/oauth'
 import { refreshClaudeToken } from './claude-oauth-service'
 import { fetchClaudeProfile } from './claude-profile-service'
 import { refreshCodexToken } from './codex-auth/oauth'
+import { providersForKind } from './subscription-account-sync/persist'
 import {
   buildCodexDiscoveredAccount,
   claudeAccountFromProfile,
@@ -66,17 +67,41 @@ const isRefusal = (status: number | null): status is 401 | 403 => status === 401
 
 // Probe with the access token as given and, when the vendor refuses it and
 // a refresh token came along, trade that once and probe again.
+//
+// Trading spends the refresh token: the vendor rotates it, so the copy the
+// caller holds (an imported file, the operator's own CLI) stops working the
+// moment the grant is issued, and the rotated pair is the only one left.
+// So `canStore` runs before the trade — with nowhere to store the result,
+// nothing is spent — and a probe that cannot reach the vendor after it is
+// asked once more instead of being taken as the answer.
 const verify = async <Tokens extends { refreshToken: string }, T>(
   tokens: Tokens,
   probe: (tokens: Tokens) => Promise<Probe<T>>,
-  refresh: (tokens: Tokens) => Promise<Tokens | null>
-): Promise<{ tokens: Tokens; probe: Probe<T> }> => {
+  refresh: (tokens: Tokens) => Promise<Tokens | null>,
+  canStore: () => Promise<void>
+): Promise<{ tokens: Tokens; probe: Probe<T>; rotated: boolean }> => {
   const first = await probe(tokens)
-  if (first.kind !== 'rejected' || tokens.refreshToken.length === 0) return { tokens, probe: first }
+  if (first.kind !== 'rejected' || tokens.refreshToken.length === 0) return { tokens, probe: first, rotated: false }
+  await canStore()
   const rotated = await refresh(tokens)
-  if (rotated === null) return { tokens, probe: first }
-  return { tokens: rotated, probe: await probe(rotated) }
+  if (rotated === null) return { tokens, probe: first, rotated: false }
+  const second = await probe(rotated)
+  if (second.kind !== 'unreachable') return { tokens: rotated, probe: second, rotated: true }
+  return { tokens: rotated, probe: await probe(rotated), rotated: true }
 }
+
+const noProviderError = (kind: 'claude' | 'codex'): AccountConnectError =>
+  new AccountConnectError(
+    400,
+    `There is no ${kind === 'claude' ? 'Claude' : 'Codex'} subscription provider to add this account to. Add the provider first.`
+  )
+
+// The check storeVerified would fail on, made before a refresh token is spent.
+const providerCheck =
+  (kind: 'claude' | 'codex', prismaOverride: PrismaClient | undefined) => async (): Promise<void> => {
+    const prisma = prismaOverride === undefined ? getPrismaClient() : prismaOverride
+    if ((await providersForKind(prisma, kind)).length === 0) throw noProviderError(kind)
+  }
 
 const refusalError = (vendor: 'Claude' | 'Codex', probe: Refusal): AccountConnectError =>
   probe.kind === 'rejected'
@@ -98,13 +123,7 @@ const storeVerified = async (
   // Resolved only now, so credentials refused above never needed a database.
   const prisma = prismaOverride === undefined ? getPrismaClient() : prismaOverride
   const ids = await recordDiscoveredAccount(kind, account, prisma)
-  if (ids.length === 0) {
-    const vendor = kind === 'claude' ? 'Claude' : 'Codex'
-    throw new AccountConnectError(
-      400,
-      `There is no ${vendor} subscription provider to add this account to. Add the provider first.`
-    )
-  }
+  if (ids.length === 0) throw noProviderError(kind)
   // The vendor accepted these credentials a moment ago, so the account is
   // live now rather than `unknown` until the health job's next pass.
   await prisma.subAccount.updateMany({
@@ -162,9 +181,20 @@ const refreshClaude = async (tokens: ClaudeConnectTokens): Promise<ClaudeConnect
 }
 
 export async function connectClaudeAccount(tokens: ClaudeConnectTokens, prisma?: PrismaClient): Promise<string[]> {
-  const result = await verify(tokens, probeClaude, refreshClaude)
-  if (result.probe.kind !== 'ok') throw refusalError('Claude', result.probe)
-  const account = claudeAccountFromProfile(result.tokens, result.probe.value)
+  const result = await verify(tokens, probeClaude, refreshClaude, providerCheck('claude', prisma))
+  const { probe } = result
+  if (probe.kind === 'unreachable' && result.rotated) {
+    // Claude's account id comes from the profile, so a refreshed pair whose
+    // profile cannot be read has nothing to be stored under — and the
+    // refresh token the caller brought is already spent, so "try again"
+    // would only earn a rejection.
+    throw new AccountConnectError(
+      502,
+      `Claude refreshed these credentials, but its profile could not be read (${probe.status === null ? 'no response' : `HTTP ${probe.status}`}), so there was no account to store them under. The refresh token they carried has now been used: sign in again, or import a freshly signed-in credentials file.`
+    )
+  }
+  if (probe.kind !== 'ok') throw refusalError('Claude', probe)
+  const account = claudeAccountFromProfile(result.tokens, probe.value)
   if (account === null) {
     throw new AccountConnectError(
       502,
@@ -230,8 +260,19 @@ export async function connectCodexAccount(tokens: CodexConnectTokens, prisma?: P
       'These Codex credentials carry no account id (tokens.account_id, or an id_token with chatgpt_account_id), so there is no account to connect.'
     )
   }
-  const result = await verify(tokens, probeCodex(keyed.accountId), refreshCodex)
-  if (result.probe.kind !== 'ok') throw refusalError('Codex', result.probe)
+  const result = await verify(tokens, probeCodex(keyed.accountId), refreshCodex, providerCheck('codex', prisma))
+  const { probe } = result
+  if (probe.kind === 'rejected' || (probe.kind === 'unreachable' && !result.rotated)) throw refusalError('Codex', probe)
+  if (probe.kind === 'unreachable') {
+    // A refresh the vendor granted is itself a verdict on these credentials,
+    // and the pair it returned is now the only one that works. A usage
+    // endpoint that cannot be reached afterwards says nothing against them,
+    // so the account is stored rather than the only working tokens dropped.
+    logger.warn(
+      { status: probe.status },
+      '[subaccount] codex refreshed the credentials but the usage check could not reach the vendor; storing the refreshed pair'
+    )
+  }
   // Rebuilt from the tokens that passed, so a rotated grant's own expiry is
   // what gets stored.
   const account = buildCodexDiscoveredAccount(result.tokens)

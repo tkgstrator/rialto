@@ -16,6 +16,16 @@
 import { randomBytes } from 'node:crypto'
 import { CODEX_DEVICE_CODE_TTL_MS } from './device-code'
 
+/**
+ * `completing` covers the seconds between the vendor issuing a grant and the
+ * account being stored (token exchange, credential check, first usage poll).
+ * A poll landing then must read `pending`, not find the flow gone and tell
+ * the operator their code expired while the sign-in is about to succeed.
+ * `connected` is kept until the flow's own expiry so a later poll — a second
+ * tab, a tick already on the wire — hears the same answer the first did.
+ */
+export type DeviceFlowPhase = 'polling' | 'completing' | 'connected'
+
 export interface DeviceFlowState {
   deviceAuthId: string
   userCode: string
@@ -23,6 +33,7 @@ export interface DeviceFlowState {
   intervalSeconds: number
   expiresAt: number
   nextPollAt: number
+  phase: DeviceFlowPhase
 }
 
 const flows = new Map<string, DeviceFlowState>()
@@ -38,7 +49,8 @@ export const createDeviceFlow = (code: {
   // process. Starting a new flow is the natural moment to drop those.
   const now = Date.now()
   for (const [id, flow] of flows) {
-    if (now >= flow.expiresAt) flows.delete(id)
+    // A flow mid-exchange is left to the request finishing it.
+    if (now >= flow.expiresAt && flow.phase !== 'completing') flows.delete(id)
   }
   const flowId = randomBytes(24).toString('base64url')
   const expiresAt = now + CODEX_DEVICE_CODE_TTL_MS
@@ -50,7 +62,8 @@ export const createDeviceFlow = (code: {
     expiresAt,
     // The first poll is allowed immediately — the interval only throttles
     // polls AFTER the vendor has answered once.
-    nextPollAt: 0
+    nextPollAt: 0,
+    phase: 'polling'
   })
   return { flowId, expiresAt }
 }
@@ -69,4 +82,10 @@ export const markDeviceFlowPolled = (flowId: string): void => {
   const flow = flows.get(flowId)
   if (!flow) return
   flows.set(flowId, { ...flow, nextPollAt: Date.now() + flow.intervalSeconds * 1000 })
+}
+
+export const setDeviceFlowPhase = (flowId: string, phase: DeviceFlowPhase): void => {
+  const flow = flows.get(flowId)
+  if (!flow) return
+  flows.set(flowId, { ...flow, phase })
 }

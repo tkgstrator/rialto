@@ -90,34 +90,49 @@ export function useConnectFlow(data: ProvidersData | null, reload: () => Promise
   // or the tab navigates away — no orphan timer outlives the component.
   useEffect(() => {
     if (device === null) return
+    // A poll can outlast the interval (the server stores the account before
+    // it answers `connected`), so a tick never starts while one is on the
+    // wire, and nothing a poll answers is applied once the effect is gone.
+    const inFlight = { current: false }
+    const live = { current: true }
+    const connected = async (): Promise<void> => {
+      setDevice(null)
+      await reload().catch(() => {
+        // The account is connected either way; a dropped reload here
+        // just means step 3 renders once the next one lands.
+      })
+      setStep(3)
+      toast.success(t('providers.connect.connected', { brand }))
+    }
+    const ended = (message: string): void => {
+      setDevice(null)
+      setSessionError(message)
+    }
     const tick = async (): Promise<void> => {
-      try {
-        const result = await pollCodexDevice(device.flowId)
-        if (result.status === 'pending') return
-        if (result.status === 'expired') {
-          setDevice(null)
-          setSessionError(t('providers.connect.deviceExpired'))
-          return
-        }
-        setDevice(null)
-        await reload().catch(() => {
-          // The account is connected either way; a dropped reload here
-          // just means step 3 renders once the next one lands.
-        })
-        setStep(3)
-        toast.success(t('providers.connect.connected', { brand }))
-      } catch (e) {
-        setDevice(null)
-        setSessionError(e instanceof Error ? e.message : t('providers.connect.errorRequest'))
-      }
+      const result = await pollCodexDevice(device.flowId).catch((e: unknown) => {
+        if (live.current) ended(e instanceof Error ? e.message : t('providers.connect.errorRequest'))
+        return null
+      })
+      if (result === null || !live.current || result.status === 'pending') return
+      if (result.status === 'expired') ended(t('providers.connect.deviceExpired'))
+      else await connected()
     }
     const timer = setInterval(() => {
-      tick().catch(() => {
-        // tick() handles its own errors; this only guards setInterval
-        // against seeing a rejected promise.
-      })
+      if (inFlight.current) return
+      inFlight.current = true
+      tick()
+        .catch(() => {
+          // tick() handles its own errors; this only guards setInterval
+          // against seeing a rejected promise.
+        })
+        .finally(() => {
+          inFlight.current = false
+        })
     }, device.intervalSeconds * 1000)
-    return () => clearInterval(timer)
+    return () => {
+      live.current = false
+      clearInterval(timer)
+    }
   }, [device, reload, brand, t])
 
   const guard = useCallback(

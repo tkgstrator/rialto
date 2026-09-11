@@ -199,6 +199,64 @@ describe.skipIf(!HAS_DB)('POST /api/oauth/import-credentials (DB)', () => {
     expect(quota.weeklyUsed).toBe(80)
   })
 
+  test('with no Codex provider to store under, a refused access token does not spend its refresh token', async () => {
+    await getPrismaClient().provider.deleteMany({ where: { name: 'codex' } })
+    stubUpstream({ [CODEX_USAGE_URL]: () => json({ detail: 'expired' }, 401) })
+
+    const res = await importFile('codex', {
+      tokens: { access_token: codexAccess('stale'), refresh_token: 'rt-original', id_token: codexIdToken }
+    })
+
+    expect(res.status).toBe(400)
+    expect(await errorOf(res)).toContain('no Codex subscription provider')
+    // Refused before the trade: the token endpoint was never asked, so the
+    // file's refresh token still works wherever else it lives.
+    expect(calls.map((c) => c.url)).toEqual([CODEX_USAGE_URL])
+  })
+
+  test('a refreshed Codex grant is stored even when the vendor cannot be reached after the refresh', async () => {
+    const rotated = codexAccess('rotated')
+    stubUpstream({
+      [CODEX_USAGE_URL]: (call) =>
+        call.token === rotated ? json({ error: 'overloaded' }, 503) : json({ detail: 'expired' }, 401),
+      [CODEX_TOKEN_URL]: () => json({ access_token: rotated, refresh_token: 'rt-rotated', id_token: codexIdToken })
+    })
+
+    const res = await importFile('codex', {
+      tokens: { access_token: codexAccess('stale'), refresh_token: 'rt-original', id_token: codexIdToken }
+    })
+
+    // The refresh spent 'rt-original'; dropping the rotated pair would have
+    // left no working token anywhere.
+    expect(res.status).toBe(200)
+    const row = await getPrismaClient().subAccount.findFirstOrThrow()
+    expect(decryptString(row.accessTokenEnc, encryptionKey())).toBe(rotated)
+    expect(decryptString(row.refreshTokenEnc, encryptionKey())).toBe('rt-rotated')
+  })
+
+  test('a refreshed Claude grant whose profile cannot be read says the refresh token is spent', async () => {
+    stubUpstream({
+      [CLAUDE_PROFILE_URL]: (call) =>
+        call.token === 'claude-rotated'
+          ? json({ error: 'overloaded' }, 529)
+          : json({ error: { message: 'expired' } }, 401),
+      [CLAUDE_TOKEN_URL]: () => json({ access_token: 'claude-rotated', refresh_token: 'rt-rotated', expires_in: 3600 })
+    })
+
+    const res = await importFile('claude', { accessToken: 'claude-stale', refreshToken: 'rt-original' })
+
+    expect(res.status).toBe(502)
+    expect(await errorOf(res)).toContain('has now been used')
+    // The rotated token's profile was asked twice before giving up.
+    expect(calls.map((c) => c.url)).toEqual([
+      CLAUDE_PROFILE_URL,
+      CLAUDE_TOKEN_URL,
+      CLAUDE_PROFILE_URL,
+      CLAUDE_PROFILE_URL
+    ])
+    expect(await getPrismaClient().subAccount.count()).toBe(0)
+  })
+
   test('a Claude account the vendor accepts is stored live, with its windows read in the same request', async () => {
     stubUpstream({
       [CLAUDE_PROFILE_URL]: () => json(claudeProfileBody),

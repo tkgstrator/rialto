@@ -83,7 +83,8 @@ import {
   createDeviceFlow,
   deleteDeviceFlow,
   getDeviceFlow,
-  markDeviceFlowPolled
+  markDeviceFlowPolled,
+  setDeviceFlowPhase
 } from '../../services/codex-auth/device-flow-store'
 import { buildCodexAuthorizeUrl, CODEX_CALLBACK_PATH, exchangeCodexCode } from '../../services/codex-auth/oauth'
 import {
@@ -261,7 +262,12 @@ oauthRoute.post('/api/oauth/device/poll', async (c) => {
   const flow = getDeviceFlow(parsed.data.flowId)
   const expired: CodexDevicePollResponse = { status: 'expired' }
   const pending: CodexDevicePollResponse = { status: 'pending' }
+  const connected: CodexDevicePollResponse = { status: 'connected' }
   if (flow === null) return c.json(expired)
+  // Both answered from memory, before the expiry check: a sign-in that is
+  // finishing or finished is not undone by the clock running out meanwhile.
+  if (flow.phase === 'connected') return c.json(connected)
+  if (flow.phase === 'completing') return c.json(pending)
   if (Date.now() >= flow.expiresAt) {
     deleteDeviceFlow(parsed.data.flowId)
     return c.json(expired)
@@ -280,9 +286,11 @@ oauthRoute.post('/api/oauth/device/poll', async (c) => {
     return c.json({ success: false as const, error: result.message }, 502)
   }
 
-  // Authorized: the flow's job is done either way past this point, so it
-  // is dropped from the store before the exchange even runs.
-  deleteDeviceFlow(parsed.data.flowId)
+  // Authorized. The exchange, the credential check and the first usage poll
+  // take seconds, so the flow stays in the store as `completing` meanwhile
+  // (see DeviceFlowPhase) instead of being dropped up front, where a poll
+  // landing in those seconds found nothing and read `expired`.
+  setDeviceFlowPhase(parsed.data.flowId, 'completing')
   try {
     const tokens = await exchangeCodexDeviceCode({ code: result.code, codeVerifier: result.codeVerifier })
     await connectCodexAccount({
@@ -290,8 +298,12 @@ oauthRoute.post('/api/oauth/device/poll', async (c) => {
       refreshToken: tokens.refresh_token,
       idToken: tokens.id_token
     })
-    return c.json({ status: 'connected' } satisfies CodexDevicePollResponse)
+    setDeviceFlowPhase(parsed.data.flowId, 'connected')
+    return c.json(connected)
   } catch (err) {
+    // The grant's code is single-use and spent, so there is nothing to retry
+    // on this flow: the error goes back once and later polls read `expired`.
+    deleteDeviceFlow(parsed.data.flowId)
     logger.error({ err }, '[oauth] codex device-code exchange failed')
     const failure = connectFailure(err, 'Failed to complete Codex device-code sign-in.')
     return c.json(failure.body, failure.status)

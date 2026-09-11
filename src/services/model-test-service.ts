@@ -25,6 +25,7 @@ import { type ApiStyle, AuthMode, ModelTestStatus, type PrismaClient } from '../
 import dayjs from '../lib/dayjs'
 import type { ModelTestAllResponseSchema, ModelTestResultSchema } from '../schemas/api/models'
 import { hasUnexpiredAccount } from '../shared/subscription-credential'
+import { effectiveApiStyle } from '../shared/transformer-chain'
 import { probeInference } from './model-test/probes'
 import { probeSubscription } from './model-test/subscription-probe'
 import { getSubscriptionsInfo } from './subscription-info-service'
@@ -119,7 +120,19 @@ export async function testModel(
   // call with the OAuth token from the credential file — not just a
   // file-presence check.
   if (provider.authMode === AuthMode.subscription) {
-    return runSubscriptionTest(prisma, providerName, modelName, provider.apiBaseUrl, effectiveStyle, modelRow.id, start)
+    // Dispatched on the style the proxy builds this provider's chain from,
+    // not the stored column. A subscription provider stored as `openai_chat`
+    // (a self-hosted proxy under a name the vendor map does not know) is
+    // served as Claude or Codex by its base URL, and probing it by the
+    // column failed every test on a provider the proxy serves fine.
+    const served = effectiveApiStyle({
+      name: provider.name,
+      api_base_url: provider.apiBaseUrl,
+      auth_mode: 'subscription',
+      api_style: provider.apiStyle
+    })
+    const style = served === null ? effectiveStyle : served
+    return runSubscriptionTest(prisma, providerName, modelName, provider.apiBaseUrl, style, modelRow.id, start)
   }
 
   if (!provider.apiKey || provider.apiKey.trim() === '') {

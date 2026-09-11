@@ -9,7 +9,7 @@
  */
 
 import { cn } from 'cn'
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
@@ -131,7 +131,8 @@ function ChainBand({
   onEdit,
   onRevert,
   onSave,
-  saveDisabled
+  saveDisabled,
+  saving
 }: {
   scenario: ScenarioKey
   onScenario: (scenario: ScenarioKey) => void
@@ -143,6 +144,7 @@ function ChainBand({
   onRevert: () => void
   onSave: () => void
   saveDisabled: boolean
+  saving: boolean
 }) {
   const { t } = useTranslation()
   return (
@@ -165,7 +167,10 @@ function ChainBand({
       <div className='ml-auto flex items-center gap-2'>
         {editing ? (
           <>
-            <RButton variant='outline' icon='ri-arrow-go-back-line' onClick={onRevert}>
+            {/* Not while a save is on the wire: the write carries the
+                profile as it was at the click, and reverting under it would
+                leave the screen reading the old chain once it lands. */}
+            <RButton variant='outline' icon='ri-arrow-go-back-line' onClick={onRevert} disabled={saving}>
               {t('common.revert')}
             </RButton>
             <RButton variant='primary' icon='ri-check-line' onClick={onSave} disabled={saveDisabled}>
@@ -265,6 +270,7 @@ interface RoutedBodyProps {
   onRevert: () => void
   onSave: () => void
   saveDisabled: boolean
+  saving: boolean
   onConstraintEdit: (edit: ConstraintEdit) => void
   onQuotaSkipValidity: (valid: boolean) => void
 }
@@ -277,6 +283,12 @@ function RoutedBody(props: RoutedBodyProps) {
     props.scenario,
     props.lane
   )
+  // Set on the DOM node rather than as a JSX prop: this project's React
+  // types (18) do not declare `inert` on elements yet.
+  const chainRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (chainRef.current !== null) chainRef.current.inert = props.saving
+  }, [props.saving])
 
   // No grid. The chain runs the full width and its constraints follow it
   // as a footer — see ChainConstraints for why the rail went.
@@ -293,25 +305,32 @@ function RoutedBody(props: RoutedBodyProps) {
         onRevert={props.onRevert}
         onSave={props.onSave}
         saveDisabled={props.saveDisabled}
+        saving={props.saving}
       />
-      {entries.length === 0 ? (
-        profileEntryCount(props.profile.entriesByScenario) === 0 ? (
-          <UnconfiguredProfile surface={props.surface} />
+      {/* Inert while a save is on the wire, for the same reason Revert is
+          disabled: an edit made now would not be in the write, and the
+          screen would return to reading with it unsaved and no Save left.
+          `inert` changes no pixels, so the chain stays readable meanwhile. */}
+      <div ref={chainRef} aria-busy={props.saving}>
+        {entries.length === 0 ? (
+          profileEntryCount(props.profile.entriesByScenario) === 0 ? (
+            <UnconfiguredProfile surface={props.surface} />
+          ) : (
+            <div className='border-t border-border/60 px-6 py-6 text-xs text-muted-foreground'>
+              {t('routing.chain.emptyLane')}
+            </div>
+          )
         ) : (
-          <div className='border-t border-border/60 px-6 py-6 text-xs text-muted-foreground'>
-            {t('routing.chain.emptyLane')}
-          </div>
-        )
-      ) : (
-        <ChainTable entries={entries} weights={props.weights} actions={actions} editing={props.editing} />
-      )}
-      <ChainFooter entries={entries} targets={props.targets} onAdd={addTarget} editing={props.editing} />
-      <ChainConstraints
-        constraints={props.profile.constraints}
-        editing={props.editing}
-        onEdit={props.onConstraintEdit}
-        onValidity={props.onQuotaSkipValidity}
-      />
+          <ChainTable entries={entries} weights={props.weights} actions={actions} editing={props.editing} />
+        )}
+        <ChainFooter entries={entries} targets={props.targets} onAdd={addTarget} editing={props.editing} />
+        <ChainConstraints
+          constraints={props.profile.constraints}
+          editing={props.editing}
+          onEdit={props.onConstraintEdit}
+          onValidity={props.onQuotaSkipValidity}
+        />
+      </div>
     </>
   )
 }
@@ -336,6 +355,7 @@ interface LoadedChainProps {
   onRevert: () => void
   onSave: () => void
   saveDisabled: boolean
+  saving: boolean
   onConstraintEdit: (edit: ConstraintEdit) => void
   onQuotaSkipValidity: (valid: boolean) => void
   onMode: (mode: RoutingMode) => void
@@ -395,6 +415,7 @@ function LoadedChain(props: LoadedChainProps) {
           onRevert={props.onRevert}
           onSave={props.onSave}
           saveDisabled={props.saveDisabled}
+          saving={props.saving}
           onConstraintEdit={props.onConstraintEdit}
           onQuotaSkipValidity={props.onQuotaSkipValidity}
         />
@@ -505,6 +526,7 @@ export function RoutingChain() {
           onRevert={onRevert}
           onSave={onSave}
           saveDisabled={saving || !dirty || !quotaSkipValid}
+          saving={saving}
           onConstraintEdit={onConstraintEdit}
           onQuotaSkipValidity={onQuotaSkipValidity}
           onMode={onMode}
