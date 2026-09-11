@@ -195,6 +195,20 @@
       "note": "Admin access: Cloudflare Access, and the way back in when it breaks — a browser on the host, reached over an SSH port-forward. There is no bootstrap token (APIKEY is gone). The per-client /v1 tokens moved to their own top-level section. KNOWN DIFF: the mock depicts an install with Cloudflare Access configured (signed-in email, populated policy rows); an install without it correctly renders the other state, including the notice that remote admin access is closed, which the mock is never in a position to show."
     },
     {
+      "name": "settings-access-edit",
+      "mock": "settings-access.html?edit",
+      "route": null,
+      "group": "Settings",
+      "note": "Admin access after Edit. The team domain and AUD read until Edit is pressed — they are set once and left alone, and a stray keystroke in either shuts remote browsers out. The dry run (Verify) only exists while editing, one Revert / Save covers the pair, and Audit log is locked because leaving would drop the edit; Open Zero Trust stays live because the AUD is copied from there. Mock-only because the state sits behind a click."
+    },
+    {
+      "name": "settings-access-turnoff",
+      "mock": "settings-access.html?turnoff",
+      "route": null,
+      "group": "Settings",
+      "note": "Saving an emptied pair turns Access off, the one save the gate allows without a dry run, and it closes /api/* to every remote browser — possibly the one saving. So it asks first, in an AlertDialog that says who loses access. Mock-only because the state sits behind an edit and a click."
+    },
+    {
       "name": "settings-logging",
       "mock": "settings-logging.html",
       "route": "/settings/logging",
