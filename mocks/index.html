@@ -148,13 +148,19 @@ const GROUPS = [
         "file": "activity-session.html",
         "title": "Session detail",
         "replaces": "SessionDetail",
-        "why": "右ペインの routing trace が新規。「なぜこのターンがそのモデルに行ったか」がログを読まずに分かる。"
+        "why": "ルーティングの経路と会話を2つのタブに分け、それぞれ全幅で表示する。経路は新しい順にページングし、「なぜこのターンがそのモデルに行ったか」がログを読まずに分かる。"
+      },
+      {
+        "file": "activity-session.html?tab=conversation",
+        "title": "Session detail (conversation)",
+        "replaces": "SessionDetail の会話ペイン",
+        "why": "保存された会話を新しい順にページングして読む。本文はそのまま表示し、ツール呼び出し・ツール結果・挿入されたコンテキストは1行に折りたたんで、開けば中身が読める。"
       },
       {
         "file": "activity-logs.html",
         "title": "Logs",
         "replaces": "LogViewer / LogFileList / Breadcrumbs / RequestGroupList / LogEditor",
-        "why": "リクエストID単位でグループ化。429 とその後の成功リトライが1つの塊として読める。"
+        "why": "ログファイルを新しい順に1行1イベントで表示する。行を開くと、1行に収まらない値も含めてイベント全体が読める。"
       }
     ]
   },
@@ -189,7 +195,7 @@ const GROUPS = [
         "file": "settings-logging.html",
         "title": "Logging",
         "replaces": "SettingsPage の一部",
-        "why": "ログレベルに加えて、記録内容と保持期間。今は RequestLog / Message が無制限に増える。"
+        "why": "ログの保存とレベル、記録する内容、保存データの容量と古いデータの削除。リクエスト履歴と会話は自動では減らないので、ここで量を確認でき、各行から中身を見る画面に移れる。"
       },
       {
         "file": "settings-personas.html",

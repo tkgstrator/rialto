@@ -181,8 +181,9 @@ function buildFunctionArgsDeltaChunk(
   }
 }
 
-function buildCompletedChunk(data: ResponsesStreamEvent): Record<string, unknown> {
-  const finishReason = data.response?.output?.some((item) => item.type === 'function_call') ? 'tool_calls' : 'stop'
+function buildCompletedChunk(data: ResponsesStreamEvent, finishReasonOverride?: string): Record<string, unknown> {
+  const inferred = data.response?.output?.some((item) => item.type === 'function_call') ? 'tool_calls' : 'stop'
+  const finishReason = finishReasonOverride === undefined ? inferred : finishReasonOverride
   // Codex reports usage in Responses-API terms (input_tokens /
   // output_tokens / total_tokens). Emit the Chat-Completions
   // equivalent (prompt_tokens / completion_tokens / total_tokens) on
@@ -292,10 +293,95 @@ function buildReasoningSignatureChunk(
 }
 
 /**
+ * The error `type` for a Responses failure `code`, in the taxonomy the
+ * Anthropic and OpenAI envelopes share.
+ *
+ * The code is all the backend gives, and the type is what everything
+ * downstream keys on: the Anthropic writer copies it onto its `error`
+ * event, and the non-stream path recovers an HTTP status from it
+ * (`statusForErrorEvent`). So a context overflow answers 400 and a spent
+ * allowance 429, which a client knows to retry, instead of one failure
+ * nobody can tell apart. The codes are the ones the Codex CLI itself
+ * branches on; anything else is `api_error`.
+ */
+const FAILURE_TYPE_BY_CODE = new Map<string, string>([
+  ['context_length_exceeded', 'invalid_request_error'],
+  ['invalid_prompt', 'invalid_request_error'],
+  ['bio_policy', 'invalid_request_error'],
+  ['cyber_policy', 'invalid_request_error'],
+  ['misalignment_policy_violation', 'invalid_request_error'],
+  ['usage_not_included', 'permission_error'],
+  ['rate_limit_exceeded', 'rate_limit_error'],
+  ['insufficient_quota', 'rate_limit_error'],
+  ['server_is_overloaded', 'overloaded_error'],
+  ['slow_down', 'overloaded_error']
+])
+
+export type StreamFailure = { code: string | null; message: string }
+
+const nonEmptyString = (value: unknown): string | null => (typeof value === 'string' && value.length > 0 ? value : null)
+
+/**
+ * The code and message of a `response.failed` or `error` event.
+ *
+ * `response.failed` nests them under `response.error`; a bare `error`
+ * event carries them at the top level, or under `error` on backends that
+ * wrap it.
+ */
+export function failureOf(data: ResponsesStreamEvent): StreamFailure {
+  const nested = data.type === 'response.failed' ? data.response?.error : data.error
+  const source = nested === undefined || nested === null ? data : nested
+  const code = nonEmptyString(source.code)
+  const message = nonEmptyString(source.message)
+  if (message !== null) return { code, message }
+  const named = code === null ? data.type : `${data.type}: ${code}`
+  return { code, message: `The upstream ended the response with ${named} and no message.` }
+}
+
+/**
+ * An upstream failure as a chat chunk: the `{error:{…}}` payload an OpenAI
+ * SDK throws on mid-stream, and the one the Anthropic writer turns into
+ * an `error` event.
+ */
+function buildErrorChunk(failure: StreamFailure): Record<string, unknown> {
+  const mapped = failure.code === null ? undefined : FAILURE_TYPE_BY_CODE.get(failure.code)
+  return {
+    error: {
+      message: failure.message,
+      type: mapped === undefined ? 'api_error' : mapped,
+      code: failure.code,
+      param: null
+    }
+  }
+}
+
+/**
+ * `response.incomplete` is a truncation when the output budget ran out —
+ * the text so far is the answer, cut short, which Chat calls `length` —
+ * and a failure for any other reason.
+ */
+function handleIncomplete(data: ResponsesStreamEvent, enqueueChunk: (chunk: unknown) => void): void {
+  const reason = nonEmptyString(data.response?.incomplete_details?.reason)
+  if (reason === 'max_output_tokens') {
+    enqueueChunk(buildCompletedChunk(data, 'length'))
+    return
+  }
+  const named = reason === null ? 'no reason given' : `reason: ${reason}`
+  enqueueChunk(buildErrorChunk({ code: reason, message: `The upstream returned an incomplete response (${named}).` }))
+}
+
+/**
  * Translates a single Responses-API SSE event into the chat-completion
  * chunk(s) the rest of the pipeline expects. Returns `true` when the
  * event indicates the stream is complete (so callers can suppress the
  * extra synthetic `[DONE]`).
+ *
+ * A failure ends the stream too, and has to be translated rather than
+ * skipped: the Codex backend reports one only as an event on a stream
+ * that already answered 200, so dropping it left a chat stream with no
+ * chunks at all — which the Anthropic writer used to close as a message
+ * with no start, and Claude Code reported as a malformed response from
+ * "a proxy or gateway" instead of the upstream's own reason.
  */
 export function handleStreamEvent(
   data: ResponsesStreamEvent,
@@ -322,6 +408,13 @@ export function handleStreamEvent(
       return false
     case 'response.completed':
       enqueueChunk(buildCompletedChunk(data))
+      return true
+    case 'response.failed':
+    case 'error':
+      enqueueChunk(buildErrorChunk(failureOf(data)))
+      return true
+    case 'response.incomplete':
+      handleIncomplete(data, enqueueChunk)
       return true
     case 'response.reasoning_summary_text.delta':
       enqueueChunk(buildReasoningDeltaChunk(data, getCurrentIndex))

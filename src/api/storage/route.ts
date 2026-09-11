@@ -13,10 +13,9 @@ const StoreIdSchema = z.enum(['requestLog', 'message', 'usageSnapshot', 'logFile
 const StoreSchema = z
   .object({
     id: StoreIdSchema,
-    label: z.string().nonempty(),
-    rows: z.number().int().nonnegative().nullable(),
-    bytes: z.number().int().nonnegative(),
-    retention: z.string().nonempty().nullable()
+    // Rows for a table, files for the log-file store.
+    count: z.number().int().nonnegative(),
+    bytes: z.number().int().nonnegative()
   })
   .openapi('StorageStore')
 

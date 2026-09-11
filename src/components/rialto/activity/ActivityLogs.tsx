@@ -11,14 +11,16 @@
  * "group" was one line behind a disclosure arrow, reached through two
  * rails.
  *
- * What is left is the file, the level filter, the search and the lines.
- * Where a request was routed, and why, is Activity › Requests, which
- * reads the archive rather than the log.
+ * What is left is the file, the level filter, the search and the lines,
+ * each of which opens to the whole event. Where a request was routed, and
+ * why, is Activity › Requests, which reads the archive rather than the log.
  */
 
 import { cn } from 'cn'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
+import { Trans, useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
+import { useConfig } from '@/components/ConfigProvider'
 import { LogBody } from '@/components/rialto/activity/LogBody'
 import { type LogLine, parseLogLines } from '@/components/rialto/activity/log-lines'
 import { chipFor, LEVEL_CHIPS, type LevelChip } from '@/components/rialto/activity/log-view'
@@ -181,10 +183,6 @@ function LogPane({
           onPage={setPage}
         />
 
-        <div className='px-6 py-4'>
-          <NoteBox>{t('activity.logs.note')}</NoteBox>
-        </div>
-
         <div className='h-6' />
       </div>
     </div>
@@ -196,6 +194,21 @@ export function ActivityLogs() {
   const { files, file, setFile, rawLines, error, loadLines } = useLogFiles()
   const [follow, setFollow] = useState(false)
   const _counts = useActivityCounts()
+  // Whether the file this screen reads is being written at all. Off is the
+  // shipped default, and an empty or frozen tail with nothing saying so
+  // reads as a broken screen.
+  const { config } = useConfig()
+  const fileLogOff = config !== null && config.LOG === false
+  const offNotice = fileLogOff ? (
+    <div className='max-w-[64rem] px-6 pt-4 pb-1'>
+      <NoteBox>
+        <Trans
+          i18nKey='activity.logs.fileLogOff'
+          components={{ settings: <Link to='/settings/logging' className='underline' /> }}
+        />
+      </NoteBox>
+    </div>
+  ) : null
 
   useEffect(() => {
     if (!follow) return
@@ -227,10 +240,18 @@ export function ActivityLogs() {
       {error !== null ? (
         <ScreenMessage tone='bad'>{error}</ScreenMessage>
       ) : file === null ? (
-        <ScreenMessage>{t('activity.logs.noFiles')}</ScreenMessage>
+        // With file logging off the notice already says why there is nothing.
+        offNotice === null ? (
+          <ScreenMessage>{t('activity.logs.noFiles')}</ScreenMessage>
+        ) : (
+          offNotice
+        )
       ) : (
-        // Remount per file so the level filter, search and page reset with it.
-        <LogPane key={file.path} files={files} file={file} onSelectFile={setFile} lines={lines} />
+        <>
+          {offNotice}
+          {/* Remount per file so the level filter, search and page reset with it. */}
+          <LogPane key={file.path} files={files} file={file} onSelectFile={setFile} lines={lines} />
+        </>
       )}
     </Screen>
   )

@@ -39,26 +39,19 @@ describe.skipIf(!HAS_DB)('storage-service', () => {
   test('reports a row count and a non-zero size for every store', async () => {
     const { stores } = await getStorageStats()
     expect(stores.map((s) => s.id)).toEqual(['requestLog', 'message', 'usageSnapshot', 'logFiles'])
-    expect(stores.find((s) => s.id === 'requestLog')?.rows).toBe(3)
-    expect(stores.find((s) => s.id === 'message')?.rows).toBe(3)
+    expect(stores.find((s) => s.id === 'requestLog')?.count).toBe(3)
+    expect(stores.find((s) => s.id === 'message')?.count).toBe(3)
     // pg_total_relation_size counts indexes and TOAST, so a table with
     // rows is never zero bytes.
     expect(stores.find((s) => s.id === 'requestLog')?.bytes).toBeGreaterThan(0)
   })
 
-  test('the log-file store reports files rather than rows', async () => {
+  test('the log-file store counts files', async () => {
     const logFiles = (await getStorageStats()).stores.find((s) => s.id === 'logFiles')
-    expect(logFiles?.rows).toBeNull()
-  })
-
-  test('names the stores nothing currently bounds', async () => {
-    const { stores } = await getStorageStats()
-    // The panel exists because these two grow forever; if either ever
-    // gains a retention policy this assertion should be the thing that
-    // notices.
-    expect(stores.find((s) => s.id === 'requestLog')?.retention).toBeNull()
-    expect(stores.find((s) => s.id === 'message')?.retention).toBeNull()
-    expect(stores.find((s) => s.id === 'usageSnapshot')?.retention).not.toBeNull()
+    expect(logFiles?.count).toBeGreaterThanOrEqual(0)
+    // Nothing but the id and the two numbers: what a store is called is
+    // translated in the UI, and a table name here once reached the screen.
+    expect(Object.keys(logFiles === undefined ? {} : logFiles).sort()).toEqual(['bytes', 'count', 'id'])
   })
 
   test('prune deletes strictly older than the cutoff and keeps the rest', async () => {

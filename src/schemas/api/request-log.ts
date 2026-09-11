@@ -134,6 +134,10 @@ export const RequestLogsSessionsQuerySchema = z.object({
   inboundType: InboundTypeSchema.optional()
 })
 
+// One session's calls, paged: ?limit&offset. No time window — a session is
+// already its own window, so `total` is simply how many calls it made.
+export const SessionLogsQuerySchema = RequestLogsListQuerySchema.pick({ limit: true, offset: true })
+
 export const SessionIdParamSchema = z.object({ sessionId: z.string().nonempty() })
 export const RequestLogIdParamSchema = z.object({ id: z.string().nonempty() })
 
@@ -143,7 +147,8 @@ export const SessionsResponseSchema = z.object({
 })
 
 export const SessionLogsResponseSchema = z.object({
-  items: z.array(RequestLogItemSchema)
+  items: z.array(RequestLogItemSchema),
+  total: z.number().int().nonnegative()
 })
 
 export const RequestLogsListResponseSchema = z.object({
@@ -166,11 +171,14 @@ export const SessionMessageItemSchema = z.object({
   createdAt: z.string()
 })
 
-// Cursor pagination for a session's messages. The client fetches the
-// newest window first (no cursor), then pages older-and-older by passing
-// `before` = the id of the oldest message currently in view.
+// Pagination for a session's messages, counted from the newest end. Either
+// walk older-and-older with `before` = the id of the oldest message in
+// view, or jump to a page with `offset` — the session screen's pager does
+// the latter, the same way it pages the routing trace. `offset` is ignored
+// when `before` is given.
 export const SessionMessagesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
   before: z.string().nonempty().optional()
 })
 
@@ -180,5 +188,7 @@ export const SessionMessagesResponseSchema = z.object({
   // Id of the OLDEST message returned in this page, iff older history
   // remains. Pass it back as `before` to fetch the next older window.
   // Null when the page reached the beginning of the session.
-  nextCursor: z.string().nullable()
+  nextCursor: z.string().nullable(),
+  // Every message the session has, so a pager can say "26–50 of 312".
+  total: z.number().int().nonnegative()
 })

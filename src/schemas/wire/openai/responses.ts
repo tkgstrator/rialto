@@ -104,6 +104,22 @@ export const ResponsesStreamDeltaSchema = z.union([
 ])
 export type ResponsesStreamDelta = z.infer<typeof ResponsesStreamDeltaSchema>
 
+// What a Responses backend says when it fails after opening the stream.
+// The Codex backend does that with the 200 already sent, so the status
+// line cannot carry it: `response.failed` puts it on `response.error`,
+// and a bare `error` event puts `code` / `message` at the top level (or
+// under `error`). The leaves are `unknown` on purpose — an event that
+// fails to parse is dropped, and a dropped failure is exactly the silent
+// empty stream this is read to prevent.
+export const ResponsesStreamFailureSchema = z
+  .object({
+    type: z.unknown().optional(),
+    code: z.unknown().optional(),
+    message: z.unknown().optional()
+  })
+  .loose()
+export type ResponsesStreamFailure = z.infer<typeof ResponsesStreamFailureSchema>
+
 export const ResponsesStreamEventSchema = z.object({
   type: z.string().nonempty(),
   item_id: z.string().nonempty().optional(),
@@ -130,13 +146,20 @@ export const ResponsesStreamEventSchema = z.object({
           total_tokens: z.number().int().nonnegative().optional()
         })
         .loose()
-        .nullish()
+        .nullish(),
+      // Null on every event but the one that ends the response.
+      error: ResponsesStreamFailureSchema.nullish(),
+      incomplete_details: z.object({ reason: z.unknown().optional() }).loose().nullish()
     })
     .loose()
     .optional(),
   annotation: ResponsesAnnotationSchema.optional(),
   part: z.unknown().optional(),
-  reasoning_summary: z.string().nonempty().optional()
+  reasoning_summary: z.string().nonempty().optional(),
+  // The bare `error` event's own fields.
+  code: z.unknown().optional(),
+  message: z.unknown().optional(),
+  error: ResponsesStreamFailureSchema.nullish()
 })
 export type ResponsesStreamEvent = z.infer<typeof ResponsesStreamEventSchema>
 

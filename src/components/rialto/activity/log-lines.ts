@@ -86,6 +86,18 @@ export function lineDetail(raw: string): string {
     .join(' ')
 }
 
+/**
+ * The whole event, indented, for a line the reader opened.
+ *
+ * `lineDetail` clips every value to fit one row, which is exactly what an
+ * error's stack or an upstream's response body cannot survive. Built only
+ * for an opened line, for the same reason `lineDetail` is built on render.
+ */
+export function lineFields(raw: string): string {
+  const source = toObject(raw)
+  return source === null ? raw : JSON.stringify(source, null, 2)
+}
+
 function readTarget(source: object): string | null {
   const type = Reflect.get(source, 'type')
   const scope = type === 'request body' ? Reflect.get(source, 'data') : source

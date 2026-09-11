@@ -325,6 +325,27 @@ a real status — the upstream's when it named one (`error.code` on google, `err
 through the same table `error-shape.ts` maps forward), 529 for `overloaded_error`, otherwise 502.
 The same rule covers a non-SSE upstream that returns an empty body.
 
+That check can only find an error the conversion kept. A Responses upstream — the Codex backend
+above all — fails *after* answering 200, with a `response.failed` (`response.error.{code,message}`),
+`response.incomplete` or bare `error` event. The Responses → Chat converter used to skip all three,
+so the chat stream carried nothing, and the `/v1/messages` writer closed it with `message_delta` +
+`message_stop` and no `message_start`: two events, which `findSseStreamDefect` does not call a
+defect. Claude Code reported that as "Streaming response ended before any complete data", then its
+non-stream retry as "JSON but not a Message (HTTP 200)", blaming a proxy. Now
+(`__tests__/llms/codex-stream-failure.test.ts`):
+
+- `stream-chunks.ts` turns a failure into a `{error:{message,type,code}}` chat chunk. `type` comes
+  from the Codex error code — `context_length_exceeded` → `invalid_request_error` (400),
+  `rate_limit_exceeded` / `insufficient_quota` → `rate_limit_error` (429),
+  `server_is_overloaded` / `slow_down` → `overloaded_error` (529), anything else `api_error`.
+  `response.incomplete` for `max_output_tokens` is a truncation (`finish_reason: 'length'`), not a
+  failure. The session logs each failure at `warn`, because a stream writes no request row.
+- The `/v1/messages` writer sends it as `{type:'error', error:{type,message}}` and closes with
+  nothing after it. It used to put the payload under `message`, which neither the Anthropic SDK nor
+  `statusForErrorEvent` reads.
+- A stream that never sent `message_start` closes with no events at all, so an empty upstream is a
+  `no-events` defect (502) on the non-stream path instead of a two-event husk.
+
 ## Surface parity for routing
 
 Before the matrix comes a prior question: can routing be turned on per surface at all

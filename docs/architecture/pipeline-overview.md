@@ -593,6 +593,15 @@ document の base64 は（トップレベルの image ブロックと同じく�
 数えていた頃はスクリーンショット 1 枚が 100 万トークンになり、以後のリクエストが全部
 `longContext` に分類された。
 
+上流へ送る変換も同じ扱いにしてある。Anthropic → unified の変換（`toolResultContent`）は
+`tool_result` の配列 content を `JSON.stringify` していたため、Read で読んだスクリーンショットが
+base64 のままプロンプトのテキストとして上流に届き、Codex ではコンテキスト長を超えて
+ストリーム途中の `response.failed` になっていた（その会話の以後のターンもすべて同じく失敗する）。
+今は unified の tool メッセージが画像を image part のまま持ち、Responses では
+`function_call_output.output` の `input_image` 配列として送る。tool メッセージに画像を
+載せられない Chat Completions と Gemini では、`liftToolResultImages` がそれを tool メッセージ群の
+直後の user メッセージへ移す。
+
 ### applyProactiveFailover
 
 `src/llms/scenario-router/failover.ts`。primary を実際に投げる前に `[primary, ...fallbacks]` を歩き、

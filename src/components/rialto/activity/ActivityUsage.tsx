@@ -194,7 +194,7 @@ function AccountBlock({ account, now }: { account: AccountWindows; now: number }
 function ProviderGroup({ group, now }: { group: ProviderWindows; now: number }) {
   const { t } = useTranslation()
   return (
-    <div className='border-t border-border/60 pt-3 first:border-t-0 first:pt-0'>
+    <div className='@container border-t border-border/60 pt-3 first:border-t-0 first:pt-0'>
       <div className='flex items-center gap-2 px-6 pb-2'>
         <i className={`${KIND_ICON[group.kind]} text-sm leading-none text-muted-foreground`} />
         <span className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>{group.label}</span>
@@ -203,12 +203,17 @@ function ProviderGroup({ group, now }: { group: ProviderWindows; now: number }) 
           {t('activity.usage.accountCount', { count: group.accounts.length })}
         </span>
       </div>
-      {/* Two accounts per row once there is room, one below xl. Given the
-          whole width each meter became 800px of track carrying one figure,
-          with "resets in" a screen away from the percentage it qualifies.
-          An odd account leaves its column empty rather than stretching to
-          fill the row — and never lends it to the next provider. */}
-      <div className='grid grid-cols-1 gap-x-px pb-3 xl:grid-cols-2'>
+      {/* As many accounts per row as get 28rem each, up to three: the fixed
+          columns of a window line take 360px, and 28rem leaves the meter a
+          track worth reading. Given the whole width each meter became 800px
+          of track carrying one figure, with "resets in" a screen away from
+          the percentage it qualifies.
+          Measured on the group, not the viewport: the sidebar folds with
+          ⌘B at any width, so a viewport breakpoint held one column across
+          200px of width the section actually had.
+          An empty column is left empty rather than stretching the accounts
+          to fill the row — and never lent to the next provider. */}
+      <div className='grid grid-cols-1 gap-x-px pb-3 @min-[56rem]:grid-cols-2 @min-[84rem]:grid-cols-3'>
         {group.accounts.map((account) => (
           <AccountBlock key={account.subAccountId} account={account} now={now} />
         ))}

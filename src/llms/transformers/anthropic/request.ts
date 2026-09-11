@@ -7,13 +7,14 @@
  */
 
 import { HTTPException } from 'hono/http-exception'
-import type { UnifiedChatRequest, UnifiedMessage, UnifiedTool } from '@/schemas/domain/unified'
-import type {
-  AnthropicContentBlock,
-  AnthropicCustomToolDef,
-  AnthropicIncomingMessage,
-  AnthropicIncomingRequest,
-  AnthropicToolDef
+import type { MessageContent, UnifiedChatRequest, UnifiedMessage, UnifiedTool } from '@/schemas/domain/unified'
+import {
+  type AnthropicContentBlock,
+  AnthropicContentBlockSchema,
+  type AnthropicCustomToolDef,
+  type AnthropicIncomingMessage,
+  type AnthropicIncomingRequest,
+  type AnthropicToolDef
 } from '@/schemas/wire/anthropic/messages'
 import { formatBase64 } from '../../utils/image'
 
@@ -39,25 +40,51 @@ export function buildSystemMessage(system: AnthropicIncomingRequest['system']): 
   return { role: 'system', content: textParts }
 }
 
+// One block of a tool_result's content array. Text and images are what
+// Anthropic tools return; anything else keeps the JSON it was always
+// forwarded as.
+function toolResultParts(block: unknown): MessageContent[] {
+  const parsed = AnthropicContentBlockSchema.safeParse(block)
+  if (parsed.success && parsed.data.type === 'text' && parsed.data.text !== undefined) {
+    return [{ type: 'text', text: parsed.data.text }]
+  }
+  if (parsed.success && parsed.data.type === 'image' && parsed.data.source !== undefined) {
+    return [convertImagePart(parsed.data)]
+  }
+  return [{ type: 'text', text: JSON.stringify(block) }]
+}
+
+/**
+ * A tool_result's content, as the unified tool message carries it.
+ *
+ * All-text content collapses to one string, which is what every outbound
+ * conversion has always been handed. An image stays an image part. It
+ * used to be serialised with the rest of the array, so a screenshot from
+ * Read reached the upstream as a megabyte of base64 prompt text — past the
+ * context window, and in every later turn of the same conversation (Codex
+ * answers that with `response.failed` on a stream that already said 200).
+ * Each outbound conversion renders the parts in its own wire format: the
+ * Responses API takes `input_image` in a function output natively, and
+ * `liftToolResultImages` moves them out for the formats that cannot.
+ */
+function toolResultContent(content: unknown): UnifiedMessage['content'] {
+  if (typeof content === 'string') return content
+  if (content === undefined || content === null) return '{}'
+  if (!Array.isArray(content) || content.length === 0) return JSON.stringify(content)
+  const parts = content.flatMap(toolResultParts)
+  const texts = parts.flatMap((part) => (part.type === 'text' ? [part.text] : []))
+  return texts.length === parts.length ? texts.join('\n') : parts
+}
+
 function buildToolResultMessages(blocks: AnthropicContentBlock[]): UnifiedMessage[] {
   return blocks
     .filter((c) => c.type === 'tool_result' && c.tool_use_id)
-    .map((tool) => {
-      let content: string
-      if (typeof tool.content === 'string') {
-        content = tool.content
-      } else if (tool.content === undefined || tool.content === null) {
-        content = '{}'
-      } else {
-        content = JSON.stringify(tool.content)
-      }
-      return {
-        role: 'tool' as const,
-        content,
-        tool_call_id: tool.tool_use_id,
-        cache_control: tool.cache_control
-      }
-    })
+    .map((tool) => ({
+      role: 'tool' as const,
+      content: toolResultContent(tool.content),
+      tool_call_id: tool.tool_use_id,
+      cache_control: tool.cache_control
+    }))
 }
 
 // Convert one image content block to its unified `image_url` shape.
