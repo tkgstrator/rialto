@@ -200,7 +200,9 @@ flowchart TD
 6. **アカウント選択は 4 段** — `src/services/session-account-router.ts` の順序どおり:
    1. in-process の枯渇マップが reactive に落としたアカウントを除外。
    2. **DB に記録された rate-limit 状態**で、このリクエストを拘束する窓が `HARD_LIMIT_PCT`（99 %）以上かつ `resetAt` が未来のアカウントを除外。どの窓が拘束するかは `windowBinds` が決める — account 全体の 5h / 7d（codex は primary / secondary）は全 model、per-model の 7d（Fable など）はその model だけ。
-      **account 全体の窓（5h か 7d）のどちらかが 100 % に達した account は、残りの窓もすべて 100 %（リセットは到達した窓のうち遅い方）として記録される。** 上流は到達後も他の窓を自分の値のまま返す（7d 到達なら 5h ≈ 0 %、5h 到達なら 7d や Fable は到達前の値）が、実際には全リクエストが拒否される。per-model 7d の到達はその model だけの話なので、他の窓には波及させない。これを usage 取得時に一度だけ畳み込むので（`usage-service/account-limit.ts`）、キャッシュ・`SubAccountUsage`・`SubAccountQuota`・`UsageSnapshot`、そして scheduler の Fable 予算・Retry-After も UI も同じ値を読む。codex の primary / secondary も同じ。
+      `SubAccountUsage` の値は上流が返したとおりで、畳み込みはしない。account 全体の 5h / 7d はどの model に対しても拘束するので、どちらかが 100 % ならこの段で除外されるし、他の窓を 100 % に引き上げても判断は変わらない。
+      **account 全体の窓（5h か 7d）のどちらかが 100 % に達したら残りの窓も 100 % 扱い（リセットは到達した窓のうち遅い方）にするのは、Chain の重みを出す routing-scheduler の中だけ。** 上流は到達後も他の窓を自分の値のまま返す（7d 到達なら 5h ≈ 0 %、5h 到達なら 7d や Fable は到達前の値）が、実際には全リクエストが拒否される。scheduler の Fable 予算・ペース・Retry-After は scoped 窓しか見ないので、tick が `SubAccountQuota` を読み込むときに畳み込む（`routing-scheduler/account-limit.ts`）。per-model 7d の到達はその model だけの話なので、他の窓には波及させない。codex の primary / secondary も同じ。
+      以前は usage 取得時に畳み込んでいたため、キャッシュ・`SubAccountUsage`・`SubAccountQuota`・`UsageSnapshot` に 100 % 扱いの値がそのまま書かれ、Activity → Usage などに「5-hour のリセットが 1 日後」「7-day だけが Fable より何日も早くリセット」といった上流が返していない値が出ていた。保存と表示は上流の値、100 % 扱いはルーティングの判断、と分けてある。
    3. 生き残りの中に sticky マッピング（同じ `sessionId` = `x-claude-code-session-id`）が指すアカウントがあれば、それを再利用（prompt cache の連続性）。
    4. それも無ければ "weekly 窓の残り % ÷ リセットまでの残り時間" が **最高** のアカウント。一番余裕のあるアカウント優先ではなく、**消化を急ぐ必要があるアカウント** から優先する。
 
