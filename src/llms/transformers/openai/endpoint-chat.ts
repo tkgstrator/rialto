@@ -20,6 +20,7 @@
 import type { RuntimeProvider, TransformerContext, UnifiedChatRequest } from '@/schemas/domain'
 import { REASONING_MODEL_RE } from '@/shared/reasoning-model'
 import { absorbTopLevelSystem } from '../../utils/system-blocks'
+import { liftToolResultImages } from '../../utils/tool-result-images'
 import { Transformer } from '../base'
 
 // gpt-5.x and o1/o3/o4 chat completions reject `max_tokens` in favour of
@@ -110,6 +111,8 @@ export class OpenAITransformer extends Transformer {
       // the same predicate we use for max_completion_tokens.
       req.reasoning_effort = effort
     }
+    // A tool message takes text only on this wire format.
+    if (Array.isArray(req.messages)) req.messages = liftToolResultImages(req.messages)
     return req
   }
 }

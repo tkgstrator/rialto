@@ -87,7 +87,6 @@ const SHARED_VOCABULARY = new Set([
   // itself, so a translated one would point at something that does not exist.
   'settings.advanced.subtitleConfig',
   'settings.advanced.subtitleHealth',
-  'settings.logging.headerNote',
   'settings.logging.levelHint',
   'settings.personas.markdown',
   'settings.server.redis',

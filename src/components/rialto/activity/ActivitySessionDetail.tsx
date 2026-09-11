@@ -1,32 +1,34 @@
 /**
- * Activity › Session — what one session cost, and where each of its calls went.
+ * Activity › Session — what one session cost, where each of its calls
+ * went, and what was said.
  *
- * The trace is the part the old build could not answer: "why did this turn
- * go to that model" was written to the request log but only readable by
- * grepping. Requested → sent, per call, in the order they happened.
+ * The routing trace and the conversation are two tabs rather than two
+ * panes. Side by side, the transcript took the wide column and squeezed
+ * the trace — the one thing this screen knows that no other screen does —
+ * into a 22rem rail that could only show its last five rows; the fix then
+ * dropped the transcript altogether, which left a store of conversations
+ * with no way to read them. A tab gives each the full width.
  *
- * The archived transcript used to sit beside it in the wider column. It is
- * gone: a real Claude Code session is mostly tool traffic and injected
- * context, so the pane spent a screen's width rendering material nobody
- * came here to read, and the routing trace — the one thing this screen
- * knows that no other screen does — was squeezed into a 22rem rail that
- * could only show its last five rows. The messages are still archived and
- * still reachable at GET /api/request-logs/sessions/:id/messages; what
- * capture feeds in the UI now is the session's title.
+ * Tab state rides on the query string, as on Settings › Advanced, so a tab
+ * is linkable and Previous / Next keep the reader on the tab they chose.
  */
 import { type ReactNode, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate, useParams } from 'react-router-dom'
-import { type ActivityRequestLog, fetchSessionRequestLogs } from '@/components/rialto/activity/data'
-import { LANE_KEYS, lane as laneOf } from '@/components/rialto/activity/requests-rows'
-import { DASH, ScreenMessage, StatusPill } from '@/components/rialto/activity/shared'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { SessionConversation } from '@/components/rialto/activity/SessionConversation'
+import { SessionTrace } from '@/components/rialto/activity/SessionTrace'
+import { ScreenMessage } from '@/components/rialto/activity/shared'
 import { useSurfaces } from '@/components/rialto/activity/use-surfaces'
-import { Meter, Pill, RButton } from '@/components/rialto/primitives'
+import { RButton, Tabs } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import { api, type SessionSummary } from '@/lib/api'
-import dayjs from '@/lib/dayjs'
 import { fmtAgo, fmtRate, shortId } from '@/lib/rialto/format'
 import { fmtCost } from '@/lib/sessions/format'
+
+const TABS = [
+  { id: 'trace', labelKey: 'activity.session.routingTrace', href: '?tab=trace' },
+  { id: 'conversation', labelKey: 'activity.session.conversation', href: '?tab=conversation' }
+] as const
 
 /**
  * One figure, with its name above it.
@@ -35,12 +37,11 @@ import { fmtCost } from '@/lib/sessions/format'
  * opposite: a row of nine `label ... value` pairs turned into a column
  * of ragged gaps the moment it stopped being 22rem wide.
  */
-function Stat({ label, value, children }: { label: string; value: ReactNode; children?: ReactNode }) {
+function Stat({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className='min-w-0'>
       <div className='text-[12px] text-muted-foreground'>{label}</div>
       <div className='mt-0.5 font-mono text-xs tabular-nums'>{value}</div>
-      {children}
     </div>
   )
 }
@@ -50,147 +51,58 @@ function Stat({ label, value, children }: { label: string; value: ReactNode; chi
  *
  * These were nine rows down the right rail, above the routing trace, on a
  * screen whose subject was the transcript beside them. Read left to right
- * they cost one line, and the width goes to the trace — the part that
- * grows with the session. Inbound is not here because the subtitle
- * already says it.
+ * they cost one line, and the width goes to the tabs below. Inbound is not
+ * here because the subtitle already says it.
+ *
+ * The cache hit rate is a figure like its neighbours, with no meter under
+ * it: the percentage already says everything the bar did, and it was the
+ * only figure in the strip that took a second line.
  */
 function StatStrip({ summary }: { summary: SessionSummary }) {
   const { t } = useTranslation()
   const totalInput = summary.totalInputTokens
   const cacheRate = totalInput === 0 ? null : summary.totalCacheReadTokens / totalInput
-  const cachePct = cacheRate === null ? 0 : Math.round(cacheRate * 100)
   return (
     <div className='flex flex-wrap items-start gap-x-10 gap-y-3 border-b border-border px-6 py-3'>
       <Stat label={t('activity.session.upstreamCalls')} value={summary.requestCount} />
       <Stat label={t('activity.session.inputTokens')} value={summary.totalInputTokens.toLocaleString()} />
       <Stat label={t('activity.session.outputTokens')} value={summary.totalOutputTokens.toLocaleString()} />
       <Stat label={t('activity.session.cacheRead')} value={summary.totalCacheReadTokens.toLocaleString()} />
-      <Stat label={t('activity.session.cacheHit')} value={fmtRate(cacheRate)}>
-        {/* Explicit `ok`: a high cache hit is the good end of the scale, the
-            inverse of the utilization meters the auto tone is built for. */}
-        <div className='mt-1.5 w-24'>
-          <Meter pct={cachePct} tone='ok' />
-        </div>
-      </Stat>
+      <Stat label={t('activity.session.cacheHit')} value={fmtRate(cacheRate)} />
       <Stat label={t('activity.session.cost')} value={fmtCost(summary.totalCostUsd)} />
       <Stat label={t('activity.session.duration')} value={fmtAgo(summary.firstAt, Date.parse(summary.lastAt))} />
     </div>
   )
 }
 
-function CallRow({ call }: { call: ActivityRequestLog }) {
-  const { t } = useTranslation()
-  const requested = call.requestedModel === null ? t('activity.common.untracked') : call.requestedModel
-  return (
-    <tr className='border-t border-border/60 transition-colors hover:bg-muted/50'>
-      <td className='py-2.5 pl-6 pr-3 font-mono text-[12px] tabular-nums text-muted-foreground'>
-        {dayjs(call.createdAt).format('HH:mm:ss')}
-      </td>
-      <td className='px-3'>
-        <StatusPill status={call.status} />
-      </td>
-      <td className='truncate px-3 font-mono text-[12px] text-muted-foreground' title={requested}>
-        {requested}
-      </td>
-      <td className='truncate px-3 font-mono text-[12px]' title={`${call.provider},${call.model}`}>
-        {`${call.provider},${call.model}`}
-      </td>
-      <td className='px-3'>
-        <div className='flex gap-1.5'>
-          <Pill tone='mute'>{call.scenario === null ? t('activity.common.untracked') : call.scenario}</Pill>
-          <Pill tone='mute'>{t(LANE_KEYS[laneOf(call.isSubagent)])}</Pill>
-        </div>
-      </td>
-      <td className='px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
-        {call.totalInputTokens.toLocaleString()}
-      </td>
-      <td className='px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
-        {call.outputTokens.toLocaleString()}
-      </td>
-      <td className='px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
-        {call.durationMs === 0 ? DASH : call.durationMs.toLocaleString()}
-      </td>
-      <td className='py-2.5 pl-3 pr-6 text-right font-mono text-[12px] tabular-nums'>{fmtCost(call.totalCostUsd)}</td>
-    </tr>
-  )
-}
-
-/**
- * Every upstream call the session made, oldest first.
- *
- * Chronological and unsorted on purpose: the trace is a story — this
- * model was asked for, that one answered, then the next one did — and a
- * sortable column would let the reader break the only ordering that
- * carries meaning here. Nothing is folded away either; the rail showed
- * the last five behind a "show all" because it was 22rem wide.
- *
- * Column labels are borrowed from the Requests screen. They name the same
- * fields, and a second set of identical strings in three locales would
- * only be a second thing to keep in step.
- */
-function TraceTable({ calls }: { calls: ActivityRequestLog[] }) {
-  const { t } = useTranslation()
-  if (calls.length === 0) {
-    return <div className='px-6 py-6 text-xs text-muted-foreground'>{t('activity.session.noCalls')}</div>
-  }
-  return (
-    <table className='w-full table-fixed'>
-      <colgroup>
-        <col className='w-24' />
-        <col className='w-20' />
-        <col />
-        <col />
-        <col className='w-52' />
-        <col className='w-20' />
-        <col className='w-20' />
-        <col className='w-20' />
-        <col className='w-24' />
-      </colgroup>
-      <thead>
-        <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2 [&>th]:font-medium'>
-          <th className='pl-6 pr-3 text-left'>{t('activity.requests.colTime')}</th>
-          <th className='px-3 text-left'>{t('activity.requests.colStatus')}</th>
-          <th className='px-3 text-left'>{t('activity.requests.colRequested')}</th>
-          <th className='px-3 text-left'>{t('activity.requests.colSent')}</th>
-          <th className='px-3 text-left'>{t('activity.requests.colRule')}</th>
-          <th className='px-3 text-right'>{t('activity.requests.colInput')}</th>
-          <th className='px-3 text-right'>{t('activity.requests.colOutput')}</th>
-          <th className='px-3 text-right'>{t('activity.requests.colMs')}</th>
-          <th className='pl-3 pr-6 text-right'>{t('activity.requests.colCost')}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {calls.map((call) => (
-          <CallRow key={call.id} call={call} />
-        ))}
-      </tbody>
-    </table>
-  )
-}
-
-interface Loaded {
-  summary: SessionSummary
-  calls: ActivityRequestLog[]
-}
-
 export function ActivitySessionDetail() {
   const { t } = useTranslation()
   const { sessionId = '' } = useParams()
   const navigate = useNavigate()
-  const [data, setData] = useState<Loaded | null>(null)
+  const { search } = useLocation()
+  const [params] = useSearchParams()
+  const tab = params.get('tab') === 'conversation' ? 'conversation' : 'trace'
+  const [summary, setSummary] = useState<SessionSummary | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [neighbours, setNeighbours] = useState<string[]>([])
   const surfaces = useSurfaces()
 
   useEffect(() => {
-    setData(null)
-    Promise.all([api.getSessionSummary(sessionId), fetchSessionRequestLogs(sessionId)])
-      .then(([summary, logs]) => {
-        // Logs arrive newest-first; the trace reads as a story forwards.
-        setData({ summary, calls: [...logs.items].reverse() })
-        setError(null)
+    // A late answer for the session just left must not land on this one.
+    const request = { stale: false }
+    setSummary(null)
+    setError(null)
+    api
+      .getSessionSummary(sessionId)
+      .then((res) => {
+        if (!request.stale) setSummary(res)
       })
-      .catch((e: Error) => setError(e.message))
+      .catch((e: Error) => {
+        if (!request.stale) setError(e.message)
+      })
+    return () => {
+      request.stale = true
+    }
   }, [sessionId])
 
   // Previous / Next walk the same list the Activity table shows, so the
@@ -204,19 +116,20 @@ export function ActivitySessionDetail() {
       })
   }, [])
 
-  const inboundPath = data === null ? null : surfaces.pathOf(data.summary.surface)
+  const inboundPath = summary === null ? null : surfaces.pathOf(summary.surface)
 
   const index = neighbours.indexOf(sessionId)
   const prev = index > 0 ? neighbours[index - 1] : null
   const next = index >= 0 && index < neighbours.length - 1 ? neighbours[index + 1] : null
+  const go = (target: string) => navigate({ pathname: `/activity/sessions/${encodeURIComponent(target)}`, search })
 
   // Short everywhere it is read rather than routed on: the raw uuid is
   // still what Previous/Next and the fetch use, but the breadcrumb,
   // subtitle and title-fallback are read by a person, the same as the
   // Sessions table's own `shortId` column.
-  const title = data === null ? shortId(sessionId) : preferredTitle(data.summary, shortId(sessionId))
+  const title = summary === null ? shortId(sessionId) : preferredTitle(summary, shortId(sessionId))
   const subtitle =
-    data === null
+    summary === null
       ? undefined
       : t('activity.session.subtitle', {
           sessionId: shortId(sessionId),
@@ -234,7 +147,7 @@ export function ActivitySessionDetail() {
             variant='ghost'
             icon='ri-arrow-up-s-line'
             disabled={prev === null}
-            onClick={() => prev !== null && navigate(`/activity/sessions/${encodeURIComponent(prev)}`)}
+            onClick={() => prev !== null && go(prev)}
           >
             {t('activity.session.previous')}
           </RButton>
@@ -242,7 +155,7 @@ export function ActivitySessionDetail() {
             variant='ghost'
             icon='ri-arrow-down-s-line'
             disabled={next === null}
-            onClick={() => next !== null && navigate(`/activity/sessions/${encodeURIComponent(next)}`)}
+            onClick={() => next !== null && go(next)}
           >
             {t('common.next')}
           </RButton>
@@ -251,7 +164,7 @@ export function ActivitySessionDetail() {
     >
       {error !== null ? (
         <ScreenMessage tone='bad'>{error}</ScreenMessage>
-      ) : data === null ? (
+      ) : summary === null ? (
         <ScreenMessage>{t('common.loading')}</ScreenMessage>
       ) : (
         <div className='min-w-0'>
@@ -270,13 +183,21 @@ export function ActivitySessionDetail() {
                 session for "still receiving calls" — shown just the same
                 on one last seen three days ago. */}
           </div>
-          <StatStrip summary={data.summary} />
-          <div className='px-6 pt-5 pb-1'>
-            <h2 className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>
-              {t('activity.session.routingTrace')}
-            </h2>
+          <StatStrip summary={summary} />
+          <div className='flex items-center gap-1 border-b border-border px-6'>
+            <Tabs
+              items={TABS.map((item) => ({ id: item.id, label: t(item.labelKey), href: item.href }))}
+              active={tab}
+            />
           </div>
-          <TraceTable calls={data.calls} />
+          {/* Keyed by session: the header's Previous / Next reuse this
+              screen, and the next session should open on its newest page
+              rather than on whatever page the last one was left at. */}
+          {tab === 'conversation' ? (
+            <SessionConversation key={sessionId} sessionId={sessionId} />
+          ) : (
+            <SessionTrace key={sessionId} sessionId={sessionId} />
+          )}
           <div className='h-10' />
         </div>
       )}

@@ -4,12 +4,15 @@
  * RequestLog and Message grow with every request and nothing prunes
  * them, so the honest first step is showing the operator the number.
  * UsageSnapshot already self-prunes on the usage job's tick; it is
- * listed here so all four stores read from one place rather than the
- * operator having to know which ones are bounded.
+ * listed here so all four stores read from one place.
  *
  * Sizes come from `pg_total_relation_size`, which counts indexes and
  * TOAST as well as the heap — the number an operator sees in `df` — not
  * from row counts multiplied by a guess.
+ *
+ * Stores are identified by id only. What a store is called is the UI's
+ * business and is translated there; a table name here used to reach the
+ * screen verbatim.
  */
 
 import { readdir, stat, unlink } from 'node:fs/promises'
@@ -22,12 +25,9 @@ export type StoreId = 'requestLog' | 'message' | 'usageSnapshot' | 'logFiles'
 
 export interface StoreStats {
   id: StoreId
-  label: string
-  /** Null for the log-file store, which has files rather than rows. */
-  rows: number | null
+  /** Rows for a table, files for the log-file store. */
+  count: number
   bytes: number
-  /** What currently bounds the store, or null when nothing does. */
-  retention: string | null
 }
 
 export interface StorageStats {
@@ -35,13 +35,12 @@ export interface StorageStats {
   generatedAt: string
 }
 
-// Table name → the Prisma delegate and label the UI shows. Kept explicit
-// rather than derived so a renamed model cannot silently start pruning
-// the wrong table.
-const TABLES: Array<{ id: StoreId; table: string; label: string; retention: string | null }> = [
-  { id: 'requestLog', table: 'RequestLog', label: 'RequestLog', retention: null },
-  { id: 'message', table: 'Message', label: 'Message', retention: null },
-  { id: 'usageSnapshot', table: 'UsageSnapshot', label: 'UsageSnapshot', retention: '8 days' }
+// Store id → table. Kept explicit rather than derived so a renamed model
+// cannot silently start pruning the wrong table.
+const TABLES: Array<{ id: StoreId; table: string }> = [
+  { id: 'requestLog', table: 'RequestLog' },
+  { id: 'message', table: 'Message' },
+  { id: 'usageSnapshot', table: 'UsageSnapshot' }
 ]
 
 async function tableBytes(table: string): Promise<number> {
@@ -81,21 +80,9 @@ export async function getStorageStats(): Promise<StorageStats> {
     usageSnapshot: usageRows
   }
 
-  const stores: StoreStats[] = TABLES.map((t, i) => ({
-    id: t.id,
-    label: t.label,
-    rows: rowCounts[t.id],
-    bytes: sizes[i],
-    retention: t.retention
-  }))
+  const stores: StoreStats[] = TABLES.map((t, i) => ({ id: t.id, count: rowCounts[t.id], bytes: sizes[i] }))
 
-  stores.push({
-    id: 'logFiles',
-    label: 'Log files',
-    rows: null,
-    bytes: logs.bytes,
-    retention: `${logs.count} files`
-  })
+  stores.push({ id: 'logFiles', count: logs.count, bytes: logs.bytes })
 
   return { stores, generatedAt: dayjs().toISOString() }
 }

@@ -16,6 +16,7 @@ import type {
   GeminiPart,
   GeminiTextPart
 } from '@/schemas/wire/gemini/content'
+import { liftToolResultImages } from '../tool-result-images'
 
 const genRandomToolId = (): string => `tool_${Math.random().toString(36).substring(2, 15)}`
 
@@ -175,7 +176,10 @@ function buildToolResponseParts(
  * appends a synthetic `user` turn carrying tool responses after each
  * assistant tool-call turn.
  */
-export function buildContents(messages: UnifiedMessage[]): GeminiContent[] {
+export function buildContents(unified: UnifiedMessage[]): GeminiContent[] {
+  // A functionResponse result is a JSON value, not parts, so a tool's
+  // image has to travel as an ordinary user turn beside it.
+  const messages = liftToolResultImages(unified)
   const contents: GeminiContent[] = []
   const toolResponses = messages.filter((item) => item.role === 'tool')
   for (const message of messages) {

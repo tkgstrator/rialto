@@ -13,17 +13,49 @@ import { computeUsage } from '../response-shared'
 import { handleToolCallDelta } from './tool-calls'
 import type { StreamChoiceDelta, StreamChunk, StreamState } from './types'
 
+// The error types Anthropic's own envelope uses. One of them passes
+// through; anything else is reported as `api_error`.
+const ANTHROPIC_ERROR_TYPES = new Set([
+  'invalid_request_error',
+  'authentication_error',
+  'permission_error',
+  'not_found_error',
+  'rate_limit_error',
+  'api_error',
+  'overloaded_error'
+])
+
+/**
+ * An upstream failure as Anthropic's `error` event, and the end of the
+ * stream.
+ *
+ * The payload is `{type:'error', error:{type, message}}` — the shape the
+ * Anthropic SDK throws with, and the one `statusForErrorEvent` recovers a
+ * status from on the non-stream path. It was sent under `message` with the
+ * whole upstream object stringified into it, which neither reads.
+ *
+ * Nothing follows it. The writer's ordinary close appends message_delta
+ * and message_stop, which would describe a failed message as one that
+ * ended normally.
+ */
+function emitErrorAndClose(error: unknown, state: StreamState): void {
+  const type = typeof error === 'object' && error !== null ? Reflect.get(error, 'type') : undefined
+  const message = typeof error === 'object' && error !== null ? Reflect.get(error, 'message') : error
+  const event = {
+    type: 'error',
+    error: {
+      type: typeof type === 'string' && ANTHROPIC_ERROR_TYPES.has(type) ? type : 'api_error',
+      message: typeof message === 'string' && message.length > 0 ? message : JSON.stringify(error)
+    }
+  }
+  state.safeEnqueue(state.encoder.encode(`event: error\ndata: ${JSON.stringify(event)}\n\n`))
+  state.closeWithoutStop()
+}
+
 export function handleChunk(chunk: StreamChunk, state: StreamState): boolean {
   if (chunk.error) {
-    const errorMessage = {
-      type: 'error',
-      message: {
-        type: 'api_error',
-        message: JSON.stringify(chunk.error)
-      }
-    }
-    state.safeEnqueue(state.encoder.encode(`event: error\ndata: ${JSON.stringify(errorMessage)}\n\n`))
-    return false
+    emitErrorAndClose(chunk.error, state)
+    return true
   }
 
   if (chunk.model !== undefined) state.model = chunk.model

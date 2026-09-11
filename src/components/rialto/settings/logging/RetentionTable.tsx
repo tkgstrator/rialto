@@ -1,27 +1,29 @@
 /**
- * Retention table, over `GET /api/storage`.
+ * Stored-data table, over `GET /api/storage`.
  *
- * The Keep column is deliberately NOT a saved retention policy: nothing
- * stores one, and `POST /api/storage/prune` requires an explicit cutoff
- * on every call. So it reads as "prune older than", which is what the
- * button next to it actually does. What currently bounds each store —
- * usually nothing — rides under the store name instead, because
- * "unbounded" is the fact this panel exists to surface.
+ * Each row is what one Activity view reads, so its name leads there — "how
+ * big is this" and "what is in it" are the same question asked from two
+ * ends. The names are the ones those views use, not table names: an
+ * operator deleting old conversations should not have to know the rows
+ * live in `Message`.
+ *
+ * The cutoff is not a saved retention policy: nothing stores one, and
+ * `POST /api/storage/prune` requires an explicit cutoff on every call. So
+ * the column is headed as the argument to the button beside it ("older
+ * than"), which says what the button does without a footnote.
  */
 import { useTranslation } from 'react-i18next'
-import { Pill, RButton } from '@/components/rialto/primitives'
+import { Link } from 'react-router-dom'
+import { RButton } from '@/components/rialto/primitives'
 import { fmtBytes } from '@/lib/rialto/settings/envelope'
 
 export type StoreId = 'requestLog' | 'message' | 'usageSnapshot' | 'logFiles'
 
 export interface StoreStats {
   id: StoreId
-  label: string
-  /** Null for the log-file store, which has files rather than rows. */
-  rows: number | null
+  /** Rows for a table, files for the log-file store. */
+  count: number
   bytes: number
-  /** What currently bounds the store, or null when nothing does. */
-  retention: string | null
 }
 
 export interface StorageStats {
@@ -29,7 +31,19 @@ export interface StorageStats {
   generatedAt: string
 }
 
-/** Cutoffs offered for a prune. Explicit days, because the API demands one. */
+/**
+ * What each store is called, and the view that reads it. Conversations
+ * have no list of their own — they are read per session — so that row
+ * leads to Sessions.
+ */
+export const STORES: Record<StoreId, { labelKey: string; view: string }> = {
+  requestLog: { labelKey: 'settings.logging.storeRequests', view: '/activity/requests' },
+  message: { labelKey: 'settings.logging.storeConversations', view: '/activity' },
+  usageSnapshot: { labelKey: 'settings.logging.storeUsage', view: '/activity/usage' },
+  logFiles: { labelKey: 'settings.logging.storeLogFiles', view: '/activity/logs' }
+}
+
+/** Cutoffs offered for a delete. Explicit days, because the API demands one. */
 export const CUTOFF_DAYS = [7, 30, 90, 365] as const
 
 function CutoffSelect({ value, onChange, label }: { value: number; onChange: (days: number) => void; label: string }) {
@@ -67,20 +81,22 @@ function StoreRow({
   pruning: boolean
 }) {
   const { t } = useTranslation()
+  const { labelKey, view } = STORES[store.id]
+  const label = t(labelKey)
   return (
     <tr className='border-t border-border/60 transition-colors hover:bg-muted/50'>
       <td className='py-2.5 pl-6 pr-3'>
-        <div className='font-mono text-xs'>{store.label}</div>
-        <div className='mt-0.5 text-[12px] text-muted-foreground'>
-          {store.retention === null ? <Pill tone='warn'>{t('settings.logging.unbounded')}</Pill> : store.retention}
-        </div>
+        <Link to={view} className='group inline-flex items-center gap-1.5 text-xs'>
+          <span className='group-hover:underline'>{label}</span>
+          <i className='ri-arrow-right-up-line text-sm text-muted-foreground' />
+        </Link>
       </td>
       <td className='px-3 text-right font-mono text-xs tabular-nums text-muted-foreground'>
-        {store.rows === null ? '—' : store.rows.toLocaleString()}
+        {store.count.toLocaleString()}
       </td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtBytes(store.bytes)}</td>
       <td className='px-3'>
-        <CutoffSelect value={cutoff} onChange={onCutoff} label={store.label} />
+        <CutoffSelect value={cutoff} onChange={onCutoff} label={label} />
       </td>
       <td className='py-2.5 pl-3 pr-6 text-right'>
         {/* Red, like every action that cannot be taken back: the rows are
@@ -121,7 +137,7 @@ export function RetentionTable({
       <thead>
         <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2'>
           <th className='pl-6 pr-3 text-left font-medium'>{t('settings.logging.colStore')}</th>
-          <th className='px-3 text-right font-medium'>{t('settings.logging.colRows')}</th>
+          <th className='px-3 text-right font-medium'>{t('settings.logging.colCount')}</th>
           <th className='px-3 text-right font-medium'>{t('settings.logging.colSize')}</th>
           <th className='px-3 text-left font-medium'>{t('settings.logging.colKeep')}</th>
           <th className='pl-3 pr-6' />

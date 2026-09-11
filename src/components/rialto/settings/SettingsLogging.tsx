@@ -19,6 +19,7 @@ import { RButton } from '@/components/rialto/primitives'
 import { SectionHead, SelectField, StaticField, TextField, ToggleField } from '@/components/rialto/settings/fields'
 import {
   RetentionTable,
+  STORES,
   type StorageStats,
   type StoreId,
   type StoreStats
@@ -113,10 +114,8 @@ function RetentionSection({ stats, reload }: { stats: StorageStats | null; reloa
   const { confirm, dialog: confirmDialog } = useConfirm()
 
   const prune = async (store: StoreStats, days: number) => {
-    const unit = t(store.rows === null ? 'settings.logging.unitFiles' : 'settings.logging.unitRows')
-    const { title, description } = splitConfirmMessage(
-      t('settings.logging.pruneConfirm', { store: store.label, unit, days })
-    )
+    const label = t(STORES[store.id].labelKey)
+    const { title, description } = splitConfirmMessage(t('settings.logging.pruneConfirm', { store: label, days }))
     // The store's own consequence follows the general one: "this cannot be
     // undone" is true of every store, lowered historical spend only of these.
     const extraKey = EXTRA_WARNING_KEYS[store.id]
@@ -131,14 +130,12 @@ function RetentionSection({ stats, reload }: { stats: StorageStats | null; reloa
     api
       .post<{ store: StoreId; deleted: number }>('/storage/prune', { store: store.id, olderThanDays: days })
       .then((res) => {
-        toast.success(t('settings.logging.pruned', { n: res.deleted, unit, store: store.label }))
+        toast.success(t('settings.logging.pruned', { n: res.deleted, store: label }))
         reload()
       })
       .catch((e: Error) => toast.error(t('settings.logging.pruneFailed', { message: e.message })))
       .finally(() => setPruning(null))
   }
-
-  const unbounded = stats === null ? 0 : stats.stores.filter((s) => s.retention === null).length
 
   return (
     <>
@@ -147,11 +144,7 @@ function RetentionSection({ stats, reload }: { stats: StorageStats | null; reloa
         meta={
           stats === null
             ? t('settings.logging.reading')
-            : t('settings.logging.retentionMeta', {
-                total: fmtBytes(totalBytes(stats.stores)),
-                unbounded,
-                stores: stats.stores.length
-              })
+            : t('settings.logging.retentionMeta', { total: fmtBytes(totalBytes(stats.stores)) })
         }
       />
       {stats === null ? (
@@ -165,9 +158,6 @@ function RetentionSection({ stats, reload }: { stats: StorageStats | null; reloa
           pruning={pruning}
         />
       )}
-      <div className='px-6 py-4 text-[12px] leading-relaxed text-muted-foreground'>
-        {t('settings.logging.retentionNote')}
-      </div>
       {confirmDialog}
     </>
   )
@@ -247,7 +237,6 @@ export function SettingsLogging() {
       active='logging'
       heading={t('settings.logging.serverLog')}
       subtitle={t('settings.logging.subtitle', { level, captured })}
-      headerNote={t('settings.logging.headerNote')}
       headerActions={
         <RButton variant='outline' icon='ri-external-link-line' onClick={() => navigate('/activity/logs')}>
           {t('settings.logging.openInActivity')}
@@ -297,7 +286,7 @@ export function SettingsLogging() {
           <StaticField
             label={t('settings.logging.keepFiles')}
             hint={t('settings.logging.keepFilesHint')}
-            value={logFiles === undefined || logFiles.retention === null ? '–' : logFiles.retention}
+            value={logFiles === undefined ? '–' : t('settings.logging.fileCount', { n: logFiles.count })}
           />
           <CaptureSection draft={draft} onChange={set} />
         </>

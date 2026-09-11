@@ -48,7 +48,19 @@ const LINES = [
   { lv: 'warn',  t: '14:03:04.883', msg: 'POST /v1/messages 429 2140ms', kv: 'reqId=req_71bd08 status=429 durationMs=2140' },
   { lv: 'debug', t: '14:03:02.741', msg: 'final request', kv: 'reqId=req_71bd08 requestUrl=https://chatgpt.com/backend-api/codex/responses bodyLength=48210' },
   { lv: 'info',  t: '14:02:33.104', msg: 'POST /v1/messages 200 3806ms', kv: 'reqId=req_04c79a status=200 durationMs=3806' },
-  { lv: 'warn',  t: '13:58:10.220', msg: '[codex] wham/usage non-OK', kv: 'status=401 body={"detail":"token_expired"}' },
+  { lv: 'warn',  t: '13:58:10.220', msg: '[codex] wham/usage non-OK', kv: 'status=401 body={"detail":"token_expired"}',
+    // Opened. A closed row clips every value to one line; this is the only
+    // place the whole event can be read.
+    open: `{
+  "level": "warn",
+  "time": 1788789490220,
+  "timestamp": "2026-08-31T13:58:10.220Z",
+  "status": 401,
+  "body": {
+    "detail": "token_expired"
+  },
+  "msg": "[codex] wham/usage non-OK"
+}` },
   { lv: 'info',  t: '13:58:09.004', msg: '[codex-oauth] token refresh failed', kv: 'account=tkgstrator@… attempt=1' },
   { lv: 'error', t: '13:40:22.518', msg: 'POST /v1/chat/completions 500 812ms', kv: 'reqId=req_3d907b status=500 durationMs=812' },
   { lv: 'warn',  t: '13:35:00.913', msg: 'google scrape: no priced Gemini sections found', kv: '' },
@@ -63,18 +75,28 @@ const LINES = [
 // makes a long tail unreadable.
 const gutter = { info: 'bg-transparent', debug: 'bg-transparent', warn: 'bg-amber-500', error: 'bg-destructive' }
 
+// Every line opens to the whole event, indented under the message column.
+// Closed, a line is one row — each trailing value clipped — so the tail
+// stays scannable however long a debug body gets.
 const line = (l) => `
-  <div class="flex gap-0 border-b border-border/40 hover:bg-muted/50">
-    <span class="w-0.5 shrink-0 ${gutter[l.lv]}"></span>
-    <span class="w-28 shrink-0 py-1.5 pl-6 font-mono text-[12px] tabular-nums text-muted-foreground">${l.t}</span>
-    <span class="w-16 shrink-0 py-1.5 pl-2 font-mono text-[12px] uppercase ${
-      l.lv === 'warn' ? 'text-amber-600 dark:text-amber-400' : l.lv === 'error' ? 'text-destructive' : 'text-muted-foreground/60'
-    }">${l.lv}</span>
-    <span class="min-w-0 flex-1 py-1.5 pr-6">
-      <span class="font-mono text-[12px]">${l.msg}</span>
-      ${l.kv ? `<span class="ml-2 font-mono text-[12px] text-muted-foreground">${l.kv}</span>` : ''}
-    </span>
-  </div>`
+  <details class="border-b border-border/40" ${l.open ? 'open' : ''}>
+    <summary class="flex cursor-pointer list-none gap-0 hover:bg-muted/50 [&::-webkit-details-marker]:hidden">
+      <span class="w-0.5 shrink-0 ${gutter[l.lv]}"></span>
+      <span class="w-28 shrink-0 py-1.5 pl-6 font-mono text-[12px] tabular-nums text-muted-foreground">${l.t}</span>
+      <span class="w-16 shrink-0 py-1.5 pl-2 font-mono text-[11px] uppercase ${
+        l.lv === 'warn' ? 'text-amber-600 dark:text-amber-400' : l.lv === 'error' ? 'text-destructive' : 'text-muted-foreground/60'
+      }">${l.lv}</span>
+      <span class="min-w-0 flex-1 py-1.5 pr-6 ${l.open ? '' : 'truncate'}">
+        <span class="font-mono text-[12px]">${l.msg}</span>
+        ${l.kv ? `<span class="ml-2 font-mono text-[12px] text-muted-foreground">${l.kv}</span>` : ''}
+      </span>
+    </summary>
+    ${
+      l.open
+        ? `<pre class="overflow-x-auto border-t border-border/40 bg-muted/30 py-2.5 pl-[11.125rem] pr-6 font-mono text-[12px] leading-relaxed text-muted-foreground">${l.open}</pre>`
+        : ''
+    }
+  </details>`
 
 const chip = (label, on) => `
   <button class="h-7 rounded-md border px-2.5 text-xs transition-colors ${
@@ -115,15 +137,9 @@ document.getElementById('root').innerHTML = `
 
       ${pager({ first: 1, last: 14, total: 214, hasPrev: false })}
 
-      <div class="px-6 py-4">
-        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
-          <i class="ri-information-line mr-1 align-[-1px]"></i>
-          Newest first, and one line per event — the way the file is written.
-          A request appears here as its access-log line; what it was routed to,
-          and why, is in <span class="font-medium text-foreground">Requests</span>,
-          which reads the archive rather than the log.
-        </div>
-      </div>
+      <!-- No footnote about how the file is written or where routing
+           decisions are read instead: that is how the screen was built, not
+           something the reader needs in order to use it. -->
 
       <div class="h-6"></div>
     </div>
