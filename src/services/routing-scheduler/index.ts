@@ -25,6 +25,7 @@ import dayjs from '../../lib/dayjs'
 import { logger } from '../../logger'
 import { type QuotaAwareConstraints, QuotaAwareConstraintsSchema } from '../../schemas/domain/preference'
 import { DEFAULT_PROFILE_KEY, loadRoutableProfile } from '../router-preference-service'
+import { holdSpentAccount } from './account-limit'
 import { refreshQuotaSnapshots } from './collector'
 import { computeWeights } from './compute'
 import {
@@ -147,13 +148,19 @@ async function loadCandidateState(prisma: PrismaClient): Promise<LoadedState> {
     const accts: AccountQuotaState[] = []
     for (const a of p.subscriptionAccounts) {
       const q = a.quota
-      const fiveHour =
-        q === null
-          ? undefined
-          : windowFromDb(q.fiveHourUsed, q.fiveHourLimit, q.fiveHourResetAt, q.fiveHourWindowSeconds)
-      const weekly =
-        q === null ? undefined : windowFromDb(q.weeklyUsed, q.weeklyLimit, q.weeklyResetAt, q.weeklyWindowSeconds)
-      const scopedFable = q === null ? undefined : fableFromScoped(q.scopedWindows)
+      // The row is the vendor's reading. Held here, before the compute
+      // step and the published view read it, so a spent 5h or 7d reaches
+      // the Fable budget and the Retry-After without being written back
+      // into the table the panels draw from.
+      const { fiveHour, weekly, scopedFable } = holdSpentAccount({
+        fiveHour:
+          q === null
+            ? undefined
+            : windowFromDb(q.fiveHourUsed, q.fiveHourLimit, q.fiveHourResetAt, q.fiveHourWindowSeconds),
+        weekly:
+          q === null ? undefined : windowFromDb(q.weeklyUsed, q.weeklyLimit, q.weeklyResetAt, q.weeklyWindowSeconds),
+        scopedFable: q === null ? undefined : fableFromScoped(q.scopedWindows)
+      })
       const refreshedAt = q?.quotaRefreshedAt ? q.quotaRefreshedAt.valueOf() : null
       accts.push({
         subAccountId: a.id,

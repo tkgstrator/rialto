@@ -43,8 +43,8 @@ const accountBudget = (acct: AccountQuotaState): number | null => {
 // scoped window IS the budget — the account-wide limits belong to Opus /
 // Sonnet traffic, and mixing them would demote Fable every time regular
 // Claude Code usage climbed. A 5h or weekly window that is actually spent
-// still reaches Fable: the usage fetch folds it into the scoped window
-// (`usage-service/account-limit.ts`). Falls back to `accountBudget` when the
+// still reaches Fable: the tick holds the scoped window with it as it loads
+// the account (`account-limit.ts`). Falls back to `accountBudget` when the
 // upstream hasn't reported a scoped window yet (fresh account, non-Fable
 // plan), so the pipeline still yields a working number.
 const isFableTarget = (candidate: ModelCandidateState): boolean => candidate.modelName.toLowerCase().includes('fable')
