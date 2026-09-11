@@ -69,9 +69,9 @@ const SHARED_VOCABULARY = new Set([
   // every other place the same window is named.
   'activity.usage.windowPrimary',
   'activity.usage.windowSecondary',
+  'providers.connect.connectedPill',
   'providers.connect.pillSubscription',
   'providers.connect.redirectPlaceholder',
-  'providers.connect.redirectPlaceholderCodex',
   'providers.rail.oauth',
   'routing.chain.modePassthroughLabel',
   'routing.chain.modeRoutedLabel',
@@ -83,6 +83,11 @@ const SHARED_VOCABULARY = new Set([
   'settings.access.guardAccessTitle',
   'settings.access.issueNamePlaceholder',
   'settings.access.teamDomainPlaceholder',
+  // A file name, a path and an HTTP request line: each names the artefact
+  // itself, so a translated one would point at something that does not exist.
+  'settings.advanced.subtitleConfig',
+  'settings.advanced.subtitleHealth',
+  'settings.logging.headerNote',
   'settings.logging.levelHint',
   'settings.personas.markdown',
   'settings.server.redis',

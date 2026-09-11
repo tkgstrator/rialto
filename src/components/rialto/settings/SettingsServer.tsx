@@ -263,7 +263,7 @@ export function SettingsServer() {
     () => wire !== null && draft !== null && JSON.stringify(draft) !== JSON.stringify(toDraft(wire)),
     [draft, wire]
   )
-  useUnsavedGuard(dirty)
+  const unsavedDialog = useUnsavedGuard(dirty)
 
   const save = () => {
     if (draft === null) return
@@ -321,6 +321,7 @@ export function SettingsServer() {
       <DataSection />
       <UpdateSection />
       <div className='h-10' />
+      {unsavedDialog}
     </SettingsLayout>
   )
 }

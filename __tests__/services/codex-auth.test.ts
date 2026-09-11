@@ -365,7 +365,9 @@ describe.skipIf(!HAS_DB)('codex-auth / ensureFreshCodexAccessToken persistence',
   const seedCodexAccount = async (accessToken: string) => {
     const { getPrismaClient } = await import('../../src/db/client')
     const { AuthMode } = await import('../../src/generated/prisma/client')
-    const { recordCodexOAuthAccount } = await import('../../src/services/subscription-account-sync-service')
+    const { buildCodexDiscoveredAccount, recordDiscoveredAccount } = await import(
+      '../../src/services/subscription-account-sync-service'
+    )
     const db = getPrismaClient()
     await db.provider.create({
       data: {
@@ -374,7 +376,11 @@ describe.skipIf(!HAS_DB)('codex-auth / ensureFreshCodexAccessToken persistence',
         authMode: AuthMode.subscription
       }
     })
-    await recordCodexOAuthAccount({ accessToken, refreshToken: 'rt-original', idToken: makeIdToken() })
+    // Straight to the write path: these tests are about the stored grant,
+    // and connecting would first ask the vendor to accept it.
+    const account = buildCodexDiscoveredAccount({ accessToken, refreshToken: 'rt-original', idToken: makeIdToken() })
+    if (account === null) throw new Error('the test id_token should key an account')
+    await recordDiscoveredAccount('codex', account)
     const row = await db.subAccount.findFirstOrThrow()
     return { db, row }
   }

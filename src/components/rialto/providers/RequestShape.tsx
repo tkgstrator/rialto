@@ -6,9 +6,10 @@
  * and takes no options. It is shown because the answer is the first thing
  * worth knowing when a request misbehaves.
  */
+
+import { cn } from 'cn'
 import type { ReactNode } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
-import { cn } from '@/lib/utils'
 import { apiStyleOf, authLabelOf, endpointOf, pipelineOf } from './derive'
 import type { Provider, TransformerWire } from './types'
 

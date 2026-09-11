@@ -11,13 +11,18 @@
  * snapshot for anyone debugging the scheduler, and the quota percentage is
  * still a column on the screens where an account, not a chain entry, is
  * the subject: Providers and Overview.
+ *
+ * The table reads until the screen's Edit is pressed. The handle and the
+ * row menu go invisible rather than absent, so the columns do not move
+ * when editing starts, and the switch stays as a reading of the state.
  */
+
+import { cn } from 'cn'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Pill } from '@/components/rialto/primitives'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { RoutingSchedulerWeightEntry } from '@/lib/api'
-import { cn } from '@/lib/utils'
 import { chainShares, inferTier, splitTarget, targetLabels } from './derive'
 import type { PreferenceEntry } from './types'
 
@@ -27,7 +32,17 @@ export interface ChainRowActions {
   onRemove: (index: number) => void
 }
 
-function RowMenu({ index, count, actions }: { index: number; count: number; actions: ChainRowActions }) {
+function RowMenu({
+  index,
+  count,
+  actions,
+  editing
+}: {
+  index: number
+  count: number
+  actions: ChainRowActions
+  editing: boolean
+}) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const run = (fn: () => void) => () => {
@@ -41,7 +56,7 @@ function RowMenu({ index, count, actions }: { index: number; count: number; acti
         <button
           type='button'
           aria-label={t('routing.chain.rowActions')}
-          className='ml-1 text-muted-foreground/60 hover:text-foreground'
+          className={cn('ml-1 text-muted-foreground/60 hover:text-foreground', editing ? '' : 'invisible')}
         >
           <i className='ri-more-2-fill text-sm' />
         </button>
@@ -101,6 +116,7 @@ function ChainRow({
   share,
   label,
   actions,
+  editing,
   onDragStart,
   onDragOver,
   onDrop
@@ -112,6 +128,7 @@ function ChainRow({
   /** Model name, or the full pair when the lane needs it — see targetLabels. */
   label: string
   actions: ChainRowActions
+  editing: boolean
   onDragStart: () => void
   onDragOver: (event: React.DragEvent) => void
   onDrop: () => void
@@ -121,15 +138,17 @@ function ChainRow({
   const tier = declared === null || declared === undefined ? inferTier(splitTarget(entry.target).model) : declared
   return (
     <tr
-      draggable
-      onDragStart={onDragStart}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
+      draggable={editing}
+      onDragStart={editing ? onDragStart : undefined}
+      onDragOver={editing ? onDragOver : undefined}
+      onDrop={editing ? onDrop : undefined}
       className={cn('border-t border-border/60 transition-colors hover:bg-muted/50', entry.enabled ? '' : 'opacity-45')}
     >
       <td className='py-2.5 pl-6 pr-2'>
         <div className='flex items-center gap-2'>
-          <i className='ri-draggable text-base leading-none text-muted-foreground/50' />
+          <i
+            className={cn('ri-draggable text-base leading-none text-muted-foreground/50', editing ? '' : 'invisible')}
+          />
           <span className='font-mono text-xs tabular-nums text-muted-foreground'>{index + 1}</span>
         </div>
       </td>
@@ -147,15 +166,16 @@ function ChainRow({
             role='switch'
             aria-checked={entry.enabled}
             aria-label={t('routing.chain.enableTarget', { target: entry.target })}
+            disabled={!editing}
             onClick={() => actions.onToggle(index, !entry.enabled)}
             className={cn(
-              'inline-flex h-4 w-7 items-center rounded-full px-0.5',
+              'inline-flex h-4 w-7 items-center rounded-full px-0.5 disabled:opacity-50',
               entry.enabled ? 'bg-foreground' : 'bg-muted-foreground/30'
             )}
           >
             <span className={cn('size-3 rounded-full bg-background', entry.enabled ? 'translate-x-3' : '')} />
           </button>
-          <RowMenu index={index} count={count} actions={actions} />
+          <RowMenu index={index} count={count} actions={actions} editing={editing} />
         </div>
       </td>
     </tr>
@@ -165,11 +185,13 @@ function ChainRow({
 export function ChainTable({
   entries,
   weights,
-  actions
+  actions,
+  editing
 }: {
   entries: readonly PreferenceEntry[]
   weights: Map<string, RoutingSchedulerWeightEntry>
   actions: ChainRowActions
+  editing: boolean
 }) {
   const { t } = useTranslation()
   // Index of the row currently being dragged. Held here rather than in the
@@ -247,6 +269,7 @@ export function ChainTable({
             share={shareOf(shares, entry.target)}
             label={labelOf(labels, entry.target)}
             actions={actions}
+            editing={editing}
             onDragStart={() => setDragging(index)}
             onDragOver={(event) => event.preventDefault()}
             onDrop={drop(index)}

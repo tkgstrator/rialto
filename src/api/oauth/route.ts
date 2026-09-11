@@ -12,9 +12,9 @@
  *   GET  /callback        (claude — intentionally public, root path)
  *   GET  /auth/callback   (codex  — intentionally public, root path)
  *     ← top-level browser redirect with `code` + `state`. We look up
- *     the pending flow by state, dispatch to the provider-specific
- *     token exchange + credentials writer, then trigger the
- *     SubAccount sync.
+ *     the pending flow by state, run the provider-specific token
+ *     exchange, then connect the account (subscription-connect-service:
+ *     verify with the vendor, store it live, read its windows).
  *
  *   POST /api/oauth/manual-callback   (admin gate)
  *     For every deployment where the browser cannot reach the loopback
@@ -27,10 +27,26 @@
  *     so any install the operator does not sit in front of has no other
  *     way through.
  *
+ *   POST /api/oauth/device/start   (admin gate, Codex only)
+ *   POST /api/oauth/device/poll    (admin gate, Codex only)
+ *     Device-code sign-in (codex-auth/device-code.ts): Codex has no
+ *     browser sign-in in this UI at all — its OAuth client only
+ *     redirects to localhost:1455 on the BROWSER's machine, which a
+ *     remote or containerised install never receives, so the loopback
+ *     flow above needs the manual-callback escape hatch just to be
+ *     usable. A device code needs nothing to reach back: /start asks
+ *     auth.openai.com for a one-time code and returns it with a flowId;
+ *     the UI shows the code and polls /poll on its own timer, at most
+ *     once per upstream interval (see device-flow-store.ts), until the
+ *     operator enters the code at auth.openai.com/codex/device. On
+ *     `connected`, the grant is exchanged and connected exactly like the
+ *     other Codex arrivals below.
+ *
  *   POST /api/oauth/import-credentials   (admin gate)
  *     Accepts a raw credentials payload (or a parsed ~/.claude/.credentials.json
- *     / ~/.codex/auth.json object) and upserts the SubAccount directly,
- *     bypassing the OAuth dance entirely.
+ *     / ~/.codex/auth.json object) and connects the account the same way,
+ *     bypassing the OAuth dance entirely. Nothing is stored unless the
+ *     vendor accepts the credentials.
  *
  *   POST /api/oauth/export-credentials   (admin gate)
  *     Symmetric to import-credentials — decrypts the ACTIVE SubAccount's
@@ -50,9 +66,26 @@
 import { Hono } from 'hono'
 import { getPrismaClient } from '../../db/client'
 import { logger } from '../../logger'
+import {
+  CodexDevicePollRequestSchema,
+  type CodexDevicePollResponse,
+  type CodexDeviceStartResponse
+} from '../../schemas/api/oauth'
 import { ClaudeCredentialsFileSchema, CodexCredentialsFileSchema } from '../../schemas/wire/oauth'
 import { buildClaudeAuthorizeUrl, CLAUDE_SCOPES, exchangeClaudeCode } from '../../services/claude-oauth-service'
 import { CODEX_CALLBACK_PORT, ensureCodexCallbackListener } from '../../services/codex-auth/callback-listener'
+import {
+  exchangeCodexDeviceCode,
+  pollCodexDeviceCode,
+  requestCodexDeviceCode
+} from '../../services/codex-auth/device-code'
+import {
+  createDeviceFlow,
+  deleteDeviceFlow,
+  getDeviceFlow,
+  markDeviceFlowPolled,
+  setDeviceFlowPhase
+} from '../../services/codex-auth/device-flow-store'
 import { buildCodexAuthorizeUrl, CODEX_CALLBACK_PATH, exchangeCodexCode } from '../../services/codex-auth/oauth'
 import {
   consumePendingFlow,
@@ -62,7 +95,11 @@ import {
 } from '../../services/oauth-flow-service'
 import { providersForKind } from '../../services/subscription-account-sync/persist'
 import { getUsableSubAccountAuth } from '../../services/subscription-account-sync/read'
-import { recordClaudeOAuthAccount, recordCodexOAuthAccount } from '../../services/subscription-account-sync-service'
+import {
+  AccountConnectError,
+  connectClaudeAccount,
+  connectCodexAccount
+} from '../../services/subscription-connect-service'
 
 export const oauthRoute = new Hono()
 
@@ -162,7 +199,7 @@ oauthRoute.get(CLAUDE_CALLBACK_PATH, async (c) => {
       redirectUri: pending.redirectUri,
       state
     })
-    await recordClaudeOAuthAccount({
+    await connectClaudeAccount({
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       expiresAt: Date.now() + tokens.expires_in * 1000,
@@ -173,6 +210,103 @@ oauthRoute.get(CLAUDE_CALLBACK_PATH, async (c) => {
     logger.error({ err, provider: 'claude' }, '[oauth] callback failed')
     const message = err instanceof Error ? err.message : 'Unknown error during token exchange.'
     return c.redirect(resultUrl('error', message))
+  }
+})
+
+// How a failed connection is answered. A refusal from connecting carries
+// its own status — bad credentials are the caller's to fix, an unreachable
+// vendor is not — and anything else stays the 500 it always was.
+const connectFailure = (
+  err: unknown,
+  fallback: string
+): { body: { success: false; error: string }; status: 400 | 500 | 502 } => {
+  if (err instanceof AccountConnectError) return { body: { success: false, error: err.message }, status: err.status }
+  return { body: { success: false, error: err instanceof Error ? err.message : fallback }, status: 500 }
+}
+
+// Start a Codex device-code sign-in: ask auth.openai.com for a one-time
+// code, hold the flow server-side, and hand the UI just enough to render
+// it and start polling. Codex only — no other vendor's CLI exposes this
+// device-auth endpoint set, and nothing here allows a `provider` param.
+oauthRoute.post('/api/oauth/device/start', async (c) => {
+  try {
+    const code = await requestCodexDeviceCode()
+    const { flowId, expiresAt } = createDeviceFlow(code)
+    return c.json({
+      flowId,
+      userCode: code.userCode,
+      verificationUri: code.verificationUri,
+      expiresAt,
+      intervalSeconds: code.intervalSeconds
+    } satisfies CodexDeviceStartResponse)
+  } catch (err) {
+    logger.error({ err }, '[oauth] codex device-code start failed')
+    const message = err instanceof Error ? err.message : 'Failed to start Codex device-code sign-in.'
+    return c.json({ success: false as const, error: message }, 502)
+  }
+})
+
+// One poll of an outstanding device-code flow. Client-driven: the UI times
+// this itself (see the countdown / interval it got from /start), and this
+// handler only forwards to auth.openai.com when the flow's own interval has
+// elapsed (device-flow-store.ts) — a tab polling too eagerly, or a second
+// tab on the same flow, answers from memory instead of doubling upstream
+// calls. `pending` / `connected` / `expired` are ordinary 200s; a hard
+// failure (bad flowId aside, which reads as `expired`) is the same 400/502
+// `{ success, error }` shape every other /api/oauth/* route answers with.
+oauthRoute.post('/api/oauth/device/poll', async (c) => {
+  const body = await c.req.json<unknown>().catch(() => ({}))
+  const parsed = CodexDevicePollRequestSchema.safeParse(body)
+  if (!parsed.success) return c.json({ success: false as const, error: 'Missing `flowId`.' }, 400)
+
+  const flow = getDeviceFlow(parsed.data.flowId)
+  const expired: CodexDevicePollResponse = { status: 'expired' }
+  const pending: CodexDevicePollResponse = { status: 'pending' }
+  const connected: CodexDevicePollResponse = { status: 'connected' }
+  if (flow === null) return c.json(expired)
+  // Both answered from memory, before the expiry check: a sign-in that is
+  // finishing or finished is not undone by the clock running out meanwhile.
+  if (flow.phase === 'connected') return c.json(connected)
+  if (flow.phase === 'completing') return c.json(pending)
+  if (Date.now() >= flow.expiresAt) {
+    deleteDeviceFlow(parsed.data.flowId)
+    return c.json(expired)
+  }
+  if (Date.now() < flow.nextPollAt) return c.json(pending)
+
+  // Claimed before the upstream call, not after: a poll that arrives while
+  // this one is still waiting on auth.openai.com must answer `pending` from
+  // memory. Otherwise both reach upstream, both can come back authorized,
+  // and the second exchange of the single-use code fails the sign-in.
+  markDeviceFlowPolled(parsed.data.flowId)
+  const result = await pollCodexDeviceCode({ deviceAuthId: flow.deviceAuthId, userCode: flow.userCode })
+  if (result.status === 'pending') return c.json(pending)
+  if (result.status === 'error') {
+    deleteDeviceFlow(parsed.data.flowId)
+    return c.json({ success: false as const, error: result.message }, 502)
+  }
+
+  // Authorized. The exchange, the credential check and the first usage poll
+  // take seconds, so the flow stays in the store as `completing` meanwhile
+  // (see DeviceFlowPhase) instead of being dropped up front, where a poll
+  // landing in those seconds found nothing and read `expired`.
+  setDeviceFlowPhase(parsed.data.flowId, 'completing')
+  try {
+    const tokens = await exchangeCodexDeviceCode({ code: result.code, codeVerifier: result.codeVerifier })
+    await connectCodexAccount({
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      idToken: tokens.id_token
+    })
+    setDeviceFlowPhase(parsed.data.flowId, 'connected')
+    return c.json(connected)
+  } catch (err) {
+    // The grant's code is single-use and spent, so there is nothing to retry
+    // on this flow: the error goes back once and later polls read `expired`.
+    deleteDeviceFlow(parsed.data.flowId)
+    logger.error({ err }, '[oauth] codex device-code exchange failed')
+    const failure = connectFailure(err, 'Failed to complete Codex device-code sign-in.')
+    return c.json(failure.body, failure.status)
   }
 })
 
@@ -238,7 +372,7 @@ oauthRoute.post('/api/oauth/manual-callback', async (c) => {
         codeVerifier: pending.codeVerifier,
         redirectUri: pending.redirectUri
       })
-      await recordCodexOAuthAccount({
+      await connectCodexAccount({
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
         idToken: tokens.id_token
@@ -251,7 +385,7 @@ oauthRoute.post('/api/oauth/manual-callback', async (c) => {
       redirectUri: pending.redirectUri,
       state
     })
-    await recordClaudeOAuthAccount({
+    await connectClaudeAccount({
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       expiresAt: Date.now() + tokens.expires_in * 1000,
@@ -260,43 +394,58 @@ oauthRoute.post('/api/oauth/manual-callback', async (c) => {
     return c.json({ success: true as const })
   } catch (err) {
     logger.error({ err, provider: flowProvider }, '[oauth] manual-callback failed')
-    const message = err instanceof Error ? err.message : 'Unknown error during token exchange.'
-    return c.json({ success: false as const, error: message }, 500)
+    const failure = connectFailure(err, 'Unknown error during token exchange.')
+    return c.json(failure.body, failure.status)
   }
 })
 
-// Bypass the OAuth dance: accept a raw credential payload and upsert the
-// SubAccount directly. Useful for remote deployments where the loopback
+// Bypass the OAuth dance: accept a raw credential payload and connect the
+// account from it. Useful for remote deployments where the loopback
 // callback is unreachable and the user already has a credentials file.
 oauthRoute.post('/api/oauth/import-credentials', async (c) => {
   const body = await c.req.json<{ provider: string; credentials: unknown }>()
 
+  // A payload the schema refuses is answered with the schema's own reasons.
+  // "Not a credentials file" alone sent an operator hunting for a format
+  // problem in a file that only lacked the field naming the account.
+  const notCredentials = (vendor: 'Claude' | 'Codex', file: string, issues: readonly { message: string }[]) => ({
+    success: false as const,
+    error: `Not a ${vendor} credentials file (${file}): ${issues.map((issue) => issue.message).join('; ')}`
+  })
+
   if (body.provider === 'claude') {
-    const { accessToken, refreshToken, expiresAt, scopes } = ClaudeCredentialsFileSchema.parse(body.credentials)
+    const parsed = ClaudeCredentialsFileSchema.safeParse(body.credentials)
+    if (!parsed.success) {
+      return c.json(notCredentials('Claude', '~/.claude/.credentials.json', parsed.error.issues), 400)
+    }
+    const { accessToken, refreshToken, expiresAt, scopes } = parsed.data
     try {
-      await recordClaudeOAuthAccount({
+      await connectClaudeAccount({
         accessToken,
         refreshToken,
-        expiresAt: expiresAt ?? null,
-        scopes: scopes ?? CLAUDE_SCOPES
+        expiresAt: typeof expiresAt === 'number' ? expiresAt : null,
+        scopes: scopes === undefined ? CLAUDE_SCOPES : scopes
       })
       return c.json({ success: true as const })
     } catch (err) {
       logger.error({ err }, '[oauth] import-credentials (claude) failed')
-      const message = err instanceof Error ? err.message : 'Failed to record account.'
-      return c.json({ success: false as const, error: message }, 500)
+      const failure = connectFailure(err, 'Failed to record account.')
+      return c.json(failure.body, failure.status)
     }
   }
 
   if (body.provider === 'codex') {
-    const data = CodexCredentialsFileSchema.parse(body.credentials)
+    const parsed = CodexCredentialsFileSchema.safeParse(body.credentials)
+    if (!parsed.success) {
+      return c.json(notCredentials('Codex', '~/.codex/auth.json', parsed.error.issues), 400)
+    }
     try {
-      await recordCodexOAuthAccount(data)
+      await connectCodexAccount(parsed.data)
       return c.json({ success: true as const })
     } catch (err) {
       logger.error({ err }, '[oauth] import-credentials (codex) failed')
-      const message = err instanceof Error ? err.message : 'Failed to record account.'
-      return c.json({ success: false as const, error: message }, 500)
+      const failure = connectFailure(err, 'Failed to record account.')
+      return c.json(failure.body, failure.status)
     }
   }
 

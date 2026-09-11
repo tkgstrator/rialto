@@ -108,11 +108,20 @@ UI 経由で変更したエンベロープ値は即時反映されます（保�
 
 ### サブスクリプション型プロバイダー（Claude Code・Codex）
 
-Rialto はサブスクリプション型プロバイダーを API キーなしでルーティングに利用できます。**Providers → Add provider** から追加してください。認証ステップには Claude・Codex 共通で 3 つの入口があります：
+Rialto はサブスクリプション型プロバイダーを API キーなしでルーティングに利用できます。**Providers → Add provider** から追加してください。2 社の OAuth クライアントは戻り先が異なるため、認証ステップの選択肢はベンダーごとに違います。
 
-- **ベンダーでサインイン** — ベンダーの OAuth ページをブラウザで開きます。Claude は `http://localhost:3456/callback` に、Codex は必ず「ブラウザが動いているマシン」の `http://localhost:1455/auth/callback` に戻ってきます。`compose.yaml` が Docker ホストのループバックにポート `1455` を公開しているのはそのためです。
-- **リダイレクト URL を貼り付け** — ブラウザがそのコールバックに届かないとき（トンネル越しの Rialto や、ヘッドレス環境）は、ベンダーがリダイレクトした先の URL をコピーして入力欄に貼り付けます。コード交換はサーバー側で行われます。
-- **CLI の認証情報ファイルを取り込む** — 既にサインイン済みのマシンから `~/.claude/.credentials.json` または `~/.codex/auth.json` をアップロードします。
+**Claude**
+
+- **Sign in with Anthropic** — Anthropic の OAuth ページをブラウザで開きます。戻り先は `http://localhost:3456/callback` です。
+- **リダイレクト URL を貼り付け** — ブラウザがそのコールバックに届かないとき（トンネル越しの Rialto や、ヘッドレス環境）は、Anthropic がリダイレクトした先の URL をコピーして入力欄に貼り付けます。コード交換はサーバー側で行われます。
+- **Import from Claude** — 既にサインイン済みのマシンから `~/.claude/.credentials.json` をアップロードします。
+
+**Codex**
+
+- **Device code**（既定）— Rialto がワンタイムコードとリンク `https://auth.openai.com/codex/device` を表示します。任意のブラウザでリンクを開き、ChatGPT にサインインしてコードを入力すると、画面は自動で次へ進みます。コードの有効期限は 15 分です。Rialto に戻ってくる通信が要らないので、トンネル越しやコンテナ内でも使えます。`codex login --device-auth` と同じフローです（`POST /api/oauth/device/start` → `POST /api/oauth/device/poll`）。
+- **Import from Codex** — 既にサインイン済みのマシンから `~/.codex/auth.json` をアップロードします。
+
+Codex のブラウザーサインインは提供していません。OpenAI の OAuth クライアントは「ブラウザが動いているマシン」の `http://localhost:1455/auth/callback` にしか戻らず、リモートやコンテナで動く Rialto には届かないためです。その裏にあるループバックリスナー（ポート `1455`、`compose.yaml` は引き続き公開しています）は UI からは使われなくなりました。
 
 Rialto は暗号化したトークンを保存し、更新も行います。1 つのプロバイダーに複数アカウントを持てて、どのアカウントがリクエストを処理するかはリクエストごとに決まります（[effort・ティア・フォールバック](#effortティアフォールバック) を参照）。Subscriptions 一覧の **Refresh** ボタン（`POST /api/subscriptions/refresh`）は、有効なサブスクリプションプロバイダー上の全アカウントを再同期し、5 分キャッシュを越えて使用量を取り直します。
 

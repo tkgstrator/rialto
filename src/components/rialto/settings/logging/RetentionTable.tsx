@@ -9,7 +9,7 @@
  * "unbounded" is the fact this panel exists to surface.
  */
 import { useTranslation } from 'react-i18next'
-import { Pill } from '@/components/rialto/primitives'
+import { Pill, RButton } from '@/components/rialto/primitives'
 import { fmtBytes } from '@/lib/rialto/settings/envelope'
 
 export type StoreId = 'requestLog' | 'message' | 'usageSnapshot' | 'logFiles'
@@ -40,7 +40,7 @@ function CutoffSelect({ value, onChange, label }: { value: number; onChange: (da
         value={value}
         aria-label={t('settings.logging.pruneOlderThanLabel', { store: label })}
         onChange={(e) => onChange(Number(e.target.value))}
-        className='inline-flex h-7 appearance-none items-center rounded-md border border-border bg-transparent pl-2.5 pr-7 text-xs transition-colors hover:bg-muted/60'
+        className='inline-flex h-8 appearance-none items-center rounded-md border border-border bg-transparent pl-2.5 pr-7 text-xs transition-colors hover:bg-muted/60'
       >
         {CUTOFF_DAYS.map((d) => (
           <option key={d} value={d}>
@@ -83,14 +83,11 @@ function StoreRow({
         <CutoffSelect value={cutoff} onChange={onCutoff} label={store.label} />
       </td>
       <td className='py-2.5 pl-3 pr-6 text-right'>
-        <button
-          type='button'
-          onClick={onPrune}
-          disabled={pruning}
-          className='text-[12px] text-muted-foreground hover:text-destructive disabled:opacity-50'
-        >
+        {/* Red, like every action that cannot be taken back: the rows are
+            deleted, not hidden, and a quiet text link undersold that. */}
+        <RButton variant='danger' icon='ri-delete-bin-line' onClick={onPrune} disabled={pruning}>
           {t('settings.logging.pruneNow')}
-        </button>
+        </RButton>
       </td>
     </tr>
   )
@@ -117,7 +114,9 @@ export function RetentionTable({
         <col className='w-24' />
         <col className='w-24' />
         <col className='w-32' />
-        <col className='w-24' />
+        {/* Wide enough for the red button's icon and label in every
+            locale; the text link it replaced fit in a w-24. */}
+        <col className='w-40' />
       </colgroup>
       <thead>
         <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2'>

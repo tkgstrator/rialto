@@ -10,20 +10,25 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { useConfirm } from '@/components/rialto/ConfirmDialog'
+import { RButton } from '@/components/rialto/primitives'
 import { SectionHead } from '@/components/rialto/settings/fields'
 import { NotYetAvailable } from '@/components/rialto/settings/notice'
 import { api } from '@/lib/api'
+import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
 
 function DangerRow({
   label,
   hint,
   verb,
+  icon,
   onClick,
   disabled
 }: {
   label: string
   hint: string
   verb: string
+  icon: string
   onClick: () => void
   disabled?: boolean
 }) {
@@ -33,14 +38,12 @@ function DangerRow({
         <div className='text-xs font-medium'>{label}</div>
         <div className='mt-0.5 text-[12px] leading-snug text-muted-foreground'>{hint}</div>
       </div>
-      <button
-        type='button'
-        onClick={onClick}
-        disabled={disabled}
-        className='inline-flex h-8 items-center rounded-md border border-destructive/40 px-3 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50'
-      >
+      {/* The house red button rather than a hand-drawn one, so it is the
+          same red as the confirm it opens and every other irreversible
+          action in the app. */}
+      <RButton variant='danger' icon={icon} onClick={onClick} disabled={disabled}>
         {verb}
-      </button>
+      </RButton>
     </div>
   )
 }
@@ -48,11 +51,17 @@ function DangerRow({
 export function DangerZone() {
   const { t } = useTranslation()
   const [archiving, setArchiving] = useState(false)
+  const { confirm, dialog: confirmDialog } = useConfirm()
 
-  const archive = () => {
-    if (!window.confirm(t('settings.advanced.archiveConfirm'))) {
-      return
-    }
+  const archive = async () => {
+    const { title, description } = splitConfirmMessage(t('settings.advanced.archiveConfirm'))
+    const confirmed = await confirm({
+      title,
+      description,
+      confirmLabel: t('settings.advanced.archiveVerb'),
+      icon: 'ri-archive-line'
+    })
+    if (!confirmed) return
     setArchiving(true)
     api
       .archiveAllSessions()
@@ -68,12 +77,14 @@ export function DangerZone() {
         label={t('settings.advanced.archiveAll')}
         hint={t('settings.advanced.archiveAllHint')}
         verb={t('settings.advanced.archiveVerb')}
+        icon='ri-archive-line'
         onClick={archive}
         disabled={archiving}
       />
       <div className='px-6 py-4'>
         <NotYetAvailable what={t('settings.advanced.resetWhat')} needs={t('settings.advanced.resetNeeds')} />
       </div>
+      {confirmDialog}
     </>
   )
 }

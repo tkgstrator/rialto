@@ -33,6 +33,13 @@
       "note": "The passthrough half — today's hardcoded behaviour for chat/completions and responses, made visible and reversible."
     },
     {
+      "name": "routing-edit",
+      "mock": "routing.html?edit",
+      "route": null,
+      "group": "Routing",
+      "note": "The chain after Edit. The screen reads until then: drag handles, row toggles, the row menu, Add target and the constraint controls only work in this state, and one Revert / Save in band 3 covers the chain and its constraints together, because one write carries both. While editing, the surface tabs, the mode switch and the profile picker are disabled: each would load another profile or hide the chain, and the unsaved edit would go with it. Mock-only because the state sits behind a click, so there is no route that lands on it."
+    },
+    {
       "name": "providers",
       "mock": "providers.html",
       "route": "/providers/subscriptions",
@@ -54,6 +61,27 @@
       "note": "One subscription provider: accounts, request shape, models. Full width now that the rail is gone — reached from the Subscriptions list, back via the breadcrumb, the same way a token detail works."
     },
     {
+      "name": "provider-subscription-edit",
+      "mock": "provider-subscription.html?edit",
+      "route": null,
+      "group": "Providers",
+      "note": "The subscription provider after Edit: tier overrides and the model and provider switches only work in this state, one Revert / Save covers them, and Refresh / Add subscription / Test all are locked until one is pressed. Mock-only because the state sits behind a click."
+    },
+    {
+      "name": "provider-apikey-edit",
+      "mock": "provider-apikey.html?edit",
+      "route": null,
+      "group": "Providers",
+      "note": "The api_key provider after Edit: tier and effort overrides, the switches and Replace only work in this state, Remove appears red beside Revert / Save, and the page actions and Test all are locked. Mock-only because the state sits behind a click."
+    },
+    {
+      "name": "provider-apikey-remove",
+      "mock": "provider-apikey.html?remove",
+      "route": null,
+      "group": "Providers",
+      "note": "Remove's confirmation. An irreversible action is a red button that goes through an AlertDialog stating what goes with it, never window.confirm. Mock-only because the state sits behind two clicks."
+    },
+    {
       "name": "provider-apikey",
       "mock": "provider-apikey.html",
       "route": "/providers/openai",
@@ -66,6 +94,20 @@
       "route": "/providers/connect",
       "group": "Providers",
       "note": "Add-provider flow. Absorbs ConnectChoiceDialog + ProviderConnectFlow + ImportCredentialsDialog + ManualCallbackDialog. KNOWN DIFF ~15% dark: the mock draws step 2 of three, mid-authentication; the route opens on step 1. Capture limitation, not an implementation gap."
+    },
+    {
+      "name": "providers-connect-device",
+      "mock": "providers-connect.html?device",
+      "route": null,
+      "group": "Providers",
+      "note": "Codex signing in with a device code: Rialto shows a one-time code and auth.openai.com/codex/device, and continues once the code is entered. Codex has no browser sign-in here: its OAuth client only redirects to localhost:1455, which a remote or containerised install never receives. Mock-only because the state sits behind a click and a live upstream call. The code is a placeholder: its real format is only seen on a live sign-in."
+    },
+    {
+      "name": "providers-connect-codex-failed",
+      "mock": "providers-connect.html?codex-failed",
+      "route": null,
+      "group": "Providers",
+      "note": "Codex before a code has been asked for, with the last attempt's error still on record. The failure card sits straight under the choice grid here rather than under a waiting card, so it carries its own top gap — without one it touched the choices. Mock-only because the state sits behind a click and depends on an account that has already failed."
     },
     {
       "name": "providers-connect-models",

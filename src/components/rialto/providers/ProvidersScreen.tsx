@@ -16,19 +16,17 @@
  * make the two lists disagree while one of them was stale.
  */
 import type { TFunction } from 'i18next'
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { toast } from 'sonner'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import { SectionHead } from '@/components/rialto/settings/fields'
-import type { SubscriptionRefreshResponse } from '@/schemas/api/subscriptions'
-import { refreshPrices, refreshSubscriptions } from './actions'
 import { BusyOverlay } from './BusyOverlay'
 import { enabledCountOf, listedModelsOf, providerState } from './derive'
 import { type ListedProvider, ProviderTable } from './ProviderTable'
 import { type ProvidersData, useProvidersData } from './useProvidersData'
+import { type RefreshScope, useRefresh } from './useRefresh'
 import { vendorBrand, vendorLabel } from './vendor-labels'
 
 type Kind = 'subscription' | 'api_key'
@@ -43,9 +41,18 @@ const COPY: Record<Kind, { subtitle: string; note: string; add: string; empty: s
   api_key: {
     subtitle: 'providers.list.apiKeysSubtitle',
     note: 'providers.list.apiKeysNote',
-    add: 'providers.screen.addProvider',
+    add: 'providers.screen.addKey',
     empty: 'providers.list.apiKeysEmpty'
   }
+}
+
+// What Refresh re-reads besides the catalog. The Subscriptions list's
+// quota column is a five-minute-old reading, and this asks upstream for it
+// now. The API keys list has nothing that ages the same way: its rows
+// change through the catalog alone.
+const REFRESH_SCOPE: Record<Kind, RefreshScope> = {
+  subscription: { accounts: 'all' },
+  api_key: { accounts: 'none' }
 }
 
 function listOf(data: ProvidersData, kind: Kind): ListedProvider[] {
@@ -81,93 +88,25 @@ function summary(entries: ListedProvider[], kind: Kind, t: TFunction): string {
   return t('providers.list.apiKeysSummary', { providers: entries.length, enabled, models, keyless })
 }
 
-/**
- * Narrate a refresh. A failure is named, not counted — the list shows
- * accounts by label, so "could not refresh anna" points at a row where
- * "1 of 3 failed" would not. Zero accounts gets its own line: on an
- * install whose only subscription provider is switched off, "Refreshed 0
- * accounts" reads as a failure it is not.
- */
-function toastRefreshOutcome(outcome: SubscriptionRefreshResponse, t: TFunction): void {
-  if (outcome.attempted === 0) {
-    toast.info(t('providers.screen.subscriptionsRefreshedNone'))
-    return
-  }
-  if (outcome.failed.length === 0) {
-    toast.success(t('providers.screen.subscriptionsRefreshed', { count: outcome.refreshed }))
-    return
-  }
-  const message = t('providers.screen.subscriptionsRefreshPartial', {
-    refreshed: outcome.refreshed,
-    attempted: outcome.attempted,
-    names: outcome.failed.map((f) => f.label).join(', ')
-  })
-  if (outcome.refreshed === 0) toast.error(message)
-  else toast.warning(message)
-}
-
 export function ProvidersScreen({ kind }: { kind: Kind }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { data, error, loading, reload } = useProvidersData()
-  const [pending, setPending] = useState<string | null>(null)
+  const { pending, refresh } = useRefresh(REFRESH_SCOPE[kind], reload)
 
   const copy = COPY[kind]
   const goAdd = useCallback(() => navigate('/providers/connect'), [navigate])
-
-  // A price scrape produces no visible change on an install with no
-  // api_key providers even when it succeeds, so silence cannot be read as
-  // success here — it narrates itself either way.
-  const refresh = useCallback(() => {
-    setPending(t('providers.screen.refreshingPrices'))
-    refreshPrices()
-      .then(reload)
-      .then(() => toast.success(t('providers.screen.pricesRefreshed')))
-      .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
-      .finally(() => setPending(null))
-  }, [reload, t])
-
-  // Subscriptions only: the quota column is a five-minute-old reading and
-  // this asks upstream for it now. The API keys list has nothing that
-  // ages the same way — its rows change through the catalog pair. The
-  // toast waits for `reload` so it lands on a list already showing what
-  // it reports.
-  const refreshAccounts = useCallback(() => {
-    setPending(t('providers.screen.refreshingSubscriptions'))
-    refreshSubscriptions()
-      .then((outcome) => reload().then(() => toastRefreshOutcome(outcome, t)))
-      .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
-      .finally(() => setPending(null))
-  }, [reload, t])
 
   const entries = data === null ? [] : listOf(data, kind)
 
   return (
     <Screen
-      // No crumbs: this route IS a sidebar child, so Screen already
-      // renders "Providers / Subscriptions" from the nav tree. Naming it
-      // again here spelled the leaf twice.
+      // The sidebar's own sub-entry (Subscriptions / API keys) already
+      // says which list this is, so the header repeating it as
+      // "Providers / Subscriptions" spelled the leaf twice — the mocks
+      // call renderShell with crumbs: [] for exactly this reason.
+      hideChildCrumb
       subtitle={t(copy.subtitle)}
-      actions={
-        <>
-          <RButton variant='ghost' icon='ri-price-tag-3-line' onClick={refresh} disabled={pending !== null || loading}>
-            {t('providers.screen.refreshPrices')}
-          </RButton>
-          {kind === 'subscription' ? (
-            <RButton
-              variant='ghost'
-              icon='ri-refresh-line'
-              onClick={refreshAccounts}
-              disabled={pending !== null || loading}
-            >
-              {t('providers.screen.refreshSubscriptions')}
-            </RButton>
-          ) : null}
-          <RButton variant='primary' icon='ri-add-line' onClick={goAdd}>
-            {t(copy.add)}
-          </RButton>
-        </>
-      }
     >
       {error !== null ? (
         <div className='px-6 py-6 text-xs text-destructive'>{error}</div>
@@ -176,8 +115,27 @@ export function ProvidersScreen({ kind }: { kind: Kind }) {
       ) : (
         <div className='relative min-w-0'>
           {/* No title: the breadcrumb and the sidebar both say
-              "Subscriptions" already. */}
-          <SectionHead meta={summary(entries, kind, t)} />
+              "Subscriptions" already. The Refresh / Add pair sits in this
+              row, beside the summary text, not in the sticky top header —
+              matching the mock's single "flex items-center gap-3" row. */}
+          <SectionHead
+            meta={summary(entries, kind, t)}
+            actions={
+              <>
+                <RButton
+                  variant='ghost'
+                  icon='ri-refresh-line'
+                  onClick={refresh}
+                  disabled={pending !== null || loading}
+                >
+                  {t('providers.screen.refresh')}
+                </RButton>
+                <RButton variant='primary' icon='ri-add-line' onClick={goAdd}>
+                  {t(copy.add)}
+                </RButton>
+              </>
+            }
+          />
 
           <div className='px-6 pb-4'>
             <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>

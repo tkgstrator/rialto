@@ -48,6 +48,42 @@ export const CodexRefreshResponseSchema = z.object({
 })
 export type CodexRefreshResponse = z.infer<typeof CodexRefreshResponseSchema>
 
+// ─── Codex device-code authorization ───────────────────────────────────
+//
+// `codex login --device-auth`, captured from openai/codex
+// codex-rs/login/src/device_code_auth.rs at commit
+// d4fcb2873bf23464cfacd804a31d46529db943b0:
+//
+//   1. POST {issuer}/api/accounts/deviceauth/usercode  { client_id }
+//        → UserCodeResp. The struct accepts `user_code` OR `usercode`,
+//        and `interval` arrives as a numeric STRING (its own custom
+//        deserializer parses it) — both handled in codex-auth/device-code.ts,
+//        so this schema stays a literal description of the wire shape.
+//        The verification URL is never part of this response: the CLI
+//        builds it itself as `{issuer}/codex/device`.
+//   2. Poll POST {issuer}/api/accounts/deviceauth/token
+//        { device_auth_id, user_code } — 200 once the operator has entered
+//        the code (CodeSuccessResp below); 403/404 means "still pending"
+//        and is not a schema failure, so the caller branches on HTTP
+//        status before ever parsing a body against this schema.
+export const CodexDeviceUserCodeResponseSchema = z.object({
+  device_auth_id: z.string().nonempty(),
+  user_code: z.string().nonempty().optional(),
+  usercode: z.string().nonempty().optional(),
+  interval: z.union([z.string().nonempty(), z.number()]).optional()
+})
+export type CodexDeviceUserCodeResponse = z.infer<typeof CodexDeviceUserCodeResponseSchema>
+
+// The device-auth server mints its own PKCE pair and hands the verifier
+// back here once the code is redeemed — unlike the browser flow, this
+// client never generates code_verifier itself.
+export const CodexDeviceTokenResponseSchema = z.object({
+  authorization_code: z.string().nonempty(),
+  code_challenge: z.string().nonempty(),
+  code_verifier: z.string().nonempty()
+})
+export type CodexDeviceTokenResponse = z.infer<typeof CodexDeviceTokenResponseSchema>
+
 // ─── Anthropic OAuth profile response ──────────────────────────────────
 //
 // GET https://api.anthropic.com/api/oauth/profile (with the

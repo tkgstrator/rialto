@@ -13,7 +13,7 @@
  * host (auth.openai.com), same client_id, same custom params
  * (`id_token_add_organizations`, `codex_cli_simplified_flow`,
  * `originator=codex-tui`). Persistence is handled by
- * subscription-account-sync-service.recordCodexOAuthAccount — tokens
+ * subscription-connect-service.connectCodexAccount — tokens
  * land encrypted in the DB; nothing is written to disk.
  */
 

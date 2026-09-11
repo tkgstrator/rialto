@@ -64,9 +64,24 @@ const SubscriptionRefreshFailureSchema = z
   })
   .openapi('SubscriptionRefreshFailure')
 
+// No body, or one without `provider`, refreshes every account on an
+// enabled subscription provider — the Subscriptions list's Refresh.
+// `provider` narrows it to that provider's accounts, switched on or not:
+// its own page asks about the provider it shows, and a switched-off
+// provider is when an operator most wants to know whether its credentials
+// still work.
+export const SubscriptionRefreshRequestSchema = z
+  .object({ provider: z.string().nonempty().optional() })
+  .openapi('SubscriptionRefreshRequest')
+
+export const SubscriptionRefreshErrorSchema = z
+  .object({ error: z.string().nonempty() })
+  .openapi('SubscriptionRefreshError')
+
 export const SubscriptionRefreshResponseSchema = z
   .object({
-    // Accounts on enabled subscription providers the refresh was pointed at.
+    // The accounts the refresh was pointed at: every account on an enabled
+    // subscription provider, or every account on the one provider named.
     attempted: z.number().int().nonnegative(),
     // Of those, the accounts whose profile sync and usage fetch both answered.
     refreshed: z.number().int().nonnegative(),

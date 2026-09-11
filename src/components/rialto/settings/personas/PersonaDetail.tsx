@@ -3,12 +3,13 @@
  * result — the three routes (`/personas`, `/personas/view/:id`,
  * `/personas/edit/:id`) collapsed into one pane with no view/edit mode.
  */
+
+import { cn } from 'cn'
 import { useTranslation } from 'react-i18next'
 import { Pill, RButton, SurfaceChip } from '@/components/rialto/primitives'
 import type { InboundSurfaceWire } from '@/lib/api'
 import { fmtCount } from '@/lib/rialto/format'
 import { countWords, estimateTokens, type PersonaDraft } from '@/lib/rialto/settings-content/persona'
-import { cn } from '@/lib/utils'
 import { PersonaPreview } from './PersonaPreview'
 import { PromptEditor } from './PromptEditor'
 

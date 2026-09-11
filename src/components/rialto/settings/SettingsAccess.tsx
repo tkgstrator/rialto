@@ -202,7 +202,7 @@ export function SettingsAccess() {
   const gate = accessSaveGate(normalized, check, checkedFor)
   const stale = checkedFor !== null && !sameAccessInput(normalized, checkedFor)
   const dirty = saved !== null && !sameAccessInput(normalized, normalizeAccessInput(saved))
-  useUnsavedGuard(dirty)
+  const unsavedDialog = useUnsavedGuard(dirty)
 
   const runCheck = () => {
     setChecking(true)
@@ -329,6 +329,7 @@ export function SettingsAccess() {
           may send it traffic, and the two were only ever together
           because both involve a credential. */}
       <div className='h-8' />
+      {unsavedDialog}
     </SettingsLayout>
   )
 }

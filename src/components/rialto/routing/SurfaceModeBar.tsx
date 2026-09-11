@@ -12,28 +12,32 @@
  * controls change what actually routes — `scenario-router.ts` resolves
  * the surface for the inbound path and runs that surface's profile.
  */
+
+import { cn } from 'cn'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { InboundSurfaceWire, RoutingMode } from '@/lib/api'
-import { cn } from '@/lib/utils'
 import type { ProfileSummary } from './types'
 
 export function Segmented<T extends string>({
   value,
   options,
-  onChange
+  onChange,
+  disabled = false
 }: {
   value: T
   options: readonly { value: T; label: string }[]
   onChange: (next: T) => void
+  disabled?: boolean
 }) {
   return (
-    <div className='flex rounded-md border border-border p-0.5'>
+    <div className={cn('flex rounded-md border border-border p-0.5', disabled ? 'pointer-events-none opacity-50' : '')}>
       {options.map((option) => (
         <button
           key={option.value}
           type='button'
+          disabled={disabled}
           onClick={() => onChange(option.value)}
           className={cn(
             'rounded px-2.5 py-1 text-[12px]',
@@ -52,11 +56,13 @@ export function Segmented<T extends string>({
 function ProfilePicker({
   current,
   profiles,
-  onSelect
+  onSelect,
+  disabled
 }: {
   current: string
   profiles: readonly ProfileSummary[]
   onSelect: (key: string) => void
+  disabled: boolean
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -69,7 +75,8 @@ function ProfilePicker({
             two-position switch. */}
         <button
           type='button'
-          className='inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-muted/60'
+          disabled={disabled}
+          className='inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-muted/60 disabled:pointer-events-none disabled:opacity-50'
         >
           <span className='text-muted-foreground'>{t('routing.chain.profile')}</span>
           {current}
@@ -118,12 +125,19 @@ export function SurfaceScopeBar({
   surface,
   profiles,
   onMode,
-  onProfile
+  onProfile,
+  locked
 }: {
   surface: InboundSurfaceWire
   profiles: readonly ProfileSummary[]
   onMode: (mode: RoutingMode) => void
   onProfile: (key: string) => void
+  /**
+   * True while the chain below is being edited. Either control would load
+   * another profile or hide the chain, and the unsaved edit would go with
+   * it, so both wait for Save or Revert.
+   */
+  locked: boolean
 }) {
   const { t } = useTranslation()
   return (
@@ -138,6 +152,7 @@ export function SurfaceScopeBar({
           { value: 'passthrough', label: t('routing.chain.modePassthroughLabel') }
         ]}
         onChange={onMode}
+        disabled={locked}
       />
       {/* No help marker beside the switch. It explained two words that
           explain themselves, through a `title` that touch never shows and
@@ -150,7 +165,7 @@ export function SurfaceScopeBar({
       {surface.routingMode === 'routed' ? (
         <>
           <span className='mx-1 h-4 w-px shrink-0 bg-border' />
-          <ProfilePicker current={surface.profileKey} profiles={profiles} onSelect={onProfile} />
+          <ProfilePicker current={surface.profileKey} profiles={profiles} onSelect={onProfile} disabled={locked} />
         </>
       ) : null}
     </div>

@@ -12,14 +12,16 @@
  * `/api/config` composes the on-disk envelope with the DB-resident
  * Providers and Router, and hands back plain JSON. Comments in the file
  * itself survive on disk; they do not survive this round trip.
+ *
+ * Text/save state lives in the parent (`SettingsAdvanced`) rather than
+ * here: the mock's app-level header carries its own "Save" beside the
+ * toolbar's, so the screen needs the same `save`/`valid` this panel uses
+ * to drive that second button without a second source of truth.
  */
-import { useCallback, useEffect, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 import { Pill, RButton } from '@/components/rialto/primitives'
 import { InfoNotice } from '@/components/rialto/settings/notice'
-import { api } from '@/lib/api'
-import { formatJson, isValidJson, lineNumbers, SECRET_MASK } from '@/lib/rialto/settings/envelope'
+import { lineNumbers, SECRET_MASK } from '@/lib/rialto/settings/envelope'
 
 /** Narrowing guard — the house style forbids `as`, and this document is
  *  `unknown` by construction (it is whatever /api/config returned). */
@@ -37,7 +39,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
  * nothing: a value still equal to the mask means "unchanged", not "set
  * it to bullets".
  */
-const maskSecrets = (doc: unknown): unknown => {
+export const maskSecrets = (doc: unknown): unknown => {
   if (!isRecord(doc)) return doc
   const out: Record<string, unknown> = { ...doc }
   if (Array.isArray(out.Providers)) {
@@ -52,7 +54,7 @@ const maskSecrets = (doc: unknown): unknown => {
 
 /** Put back every credential the operator left masked, so a save never
  *  writes bullets over a real key. */
-const stripMasked = (doc: unknown, original: unknown): unknown => {
+export const stripMasked = (doc: unknown, original: unknown): unknown => {
   if (!isRecord(doc)) return doc
   const from = isRecord(original) ? original : {}
   const out: Record<string, unknown> = { ...doc }
@@ -73,52 +75,24 @@ const stripMasked = (doc: unknown, original: unknown): unknown => {
 // the textarea alike so the numbers stay level with their lines.
 const LINE = 'font-mono text-[12px] leading-[20.5px]'
 
-export function ConfigDocument() {
+export function ConfigDocument({
+  text,
+  onTextChange,
+  valid,
+  saving,
+  onLoad,
+  onFormat,
+  onSave
+}: {
+  text: string
+  onTextChange: (text: string) => void
+  valid: boolean
+  saving: boolean
+  onLoad: () => void
+  onFormat: () => void
+  onSave: () => void
+}) {
   const { t } = useTranslation()
-  const [text, setText] = useState('')
-  const [saving, setSaving] = useState(false)
-  // The unmasked document, kept so a save can put back the credentials
-  // the operator never saw.
-  const [loaded, setLoaded] = useState<unknown>(null)
-
-  const load = useCallback(() => {
-    api
-      .get<unknown>('/config')
-      .then((raw) => {
-        setLoaded(raw)
-        setText(JSON.stringify(maskSecrets(raw), null, 2))
-      })
-      .catch((e: Error) => toast.error(t('settings.advanced.readFailed', { message: e.message })))
-  }, [t])
-
-  useEffect(load, [load])
-
-  const valid = isValidJson(text)
-
-  const format = () => {
-    const pretty = formatJson(text)
-    if (pretty === null) {
-      toast.error(t('settings.advanced.cannotFormat'))
-      return
-    }
-    setText(pretty)
-  }
-
-  const save = () => {
-    if (!valid) {
-      toast.error(t('settings.advanced.cannotSave'))
-      return
-    }
-    setSaving(true)
-    api
-      .post<{ success: boolean; message: string }>('/config', stripMasked(JSON.parse(text), loaded))
-      .then((res) => {
-        toast.success(res.message)
-        load()
-      })
-      .catch((e: Error) => toast.error(t('settings.common.saveFailed', { message: e.message })))
-      .finally(() => setSaving(false))
-  }
 
   return (
     <>
@@ -132,13 +106,13 @@ export function ConfigDocument() {
         )}
         <span className='text-[12px] text-muted-foreground'>{t('settings.advanced.backupsKept')}</span>
         <div className='ml-auto flex gap-2'>
-          <RButton variant='ghost' icon='ri-refresh-line' onClick={load}>
+          <RButton variant='ghost' icon='ri-refresh-line' onClick={onLoad}>
             {t('settings.advanced.reload')}
           </RButton>
-          <RButton variant='ghost' icon='ri-code-line' onClick={format} disabled={!valid}>
+          <RButton variant='ghost' icon='ri-code-line' onClick={onFormat} disabled={!valid}>
             {t('settings.advanced.format')}
           </RButton>
-          <RButton variant='primary' icon='ri-check-line' onClick={save} disabled={!valid || saving}>
+          <RButton variant='primary' icon='ri-check-line' onClick={onSave} disabled={!valid || saving}>
             {t('common.save')}
           </RButton>
         </div>
@@ -157,7 +131,7 @@ export function ConfigDocument() {
           aria-label={t('settings.advanced.configDocument')}
           spellCheck={false}
           rows={lineNumbers(text).length}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => onTextChange(e.target.value)}
           className={`${LINE} min-w-0 flex-1 resize-none overflow-hidden whitespace-pre bg-transparent pr-6 outline-none`}
         />
       </div>

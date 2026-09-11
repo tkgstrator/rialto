@@ -7,33 +7,28 @@
  * exclude list — without that entry the SPA shell answers and every
  * check reads unreachable.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Pill, RButton } from '@/components/rialto/primitives'
 import { SectionHead } from '@/components/rialto/settings/fields'
 import { SettingsField } from '@/components/rialto/settings/SettingsLayout'
-import { api, type HealthResponse } from '@/lib/api'
+import type { HealthResponse } from '@/lib/api'
 import { fmtUptime } from '@/lib/rialto/format'
 
 const CHECK_TONES = { ok: 'ok', fail: 'bad', skip: 'mute' } as const
 
-export function HealthPanel() {
+export function HealthPanel({
+  health,
+  reachable,
+  onReload
+}: {
+  health: HealthResponse | null
+  reachable: boolean
+  /** Re-probe now — the same call the screen already ran on arriving at this tab. */
+  onReload: () => void
+}) {
   const { t } = useTranslation()
-  const [health, setHealth] = useState<HealthResponse | null>(null)
-  const [reachable, setReachable] = useState(true)
   const [raw, setRaw] = useState(false)
-
-  const load = useCallback(() => {
-    api
-      .getHealth()
-      .then((res) => {
-        setHealth(res)
-        setReachable(true)
-      })
-      .catch(() => setReachable(false))
-  }, [])
-
-  useEffect(load, [load])
 
   return (
     <>
@@ -51,7 +46,7 @@ export function HealthPanel() {
             <RButton variant='ghost' icon='ri-code-line' onClick={() => setRaw((prev) => !prev)}>
               {t('settings.advanced.rawJson')}
             </RButton>
-            <RButton variant='outline' icon='ri-refresh-line' onClick={load}>
+            <RButton variant='outline' icon='ri-refresh-line' onClick={onReload}>
               {t('settings.advanced.recheck')}
             </RButton>
           </div>

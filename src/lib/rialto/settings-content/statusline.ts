@@ -42,14 +42,25 @@ export function moduleMeta(type: string): ModuleTypeMeta {
 
 // The shared preview map predates the `speed` module, so a speed module
 // would print a literal {{tokenSpeed}}. Extended here rather than in
-// lib/statusline, which the legacy dialog still binds to.
-const PREVIEW_VARS: Record<string, string> = { ...PREVIEW_VARIABLES, tokenSpeed: '48' }
+// lib/statusline, which the legacy dialog still binds to. `model` is the
+// stripped form — the same tail every `provider,model` pair resolves to
+// once `stripProvider` removes the vendor prefix — since that is the
+// default a freshly added Model module renders.
+const PREVIEW_VARS: Record<string, string> = { ...PREVIEW_VARIABLES, tokenSpeed: '48', model: 'claude-opus-4-8' }
+const PREVIEW_MODEL_RAW = 'claude-code,claude-opus-4-8'
 
-/** One module as the terminal will print it: icon then substituted text. */
+/**
+ * One module as the terminal will print it: icon, substituted text, then
+ * its separator. `keepProvider` only means something for `model` — every
+ * other type ignores it.
+ */
 export function previewText(module: StatusLineModuleConfig): string {
-  const text = replaceVariables(module.text, PREVIEW_VARS)
+  const vars =
+    module.type === 'model' && module.keepProvider ? { ...PREVIEW_VARS, model: PREVIEW_MODEL_RAW } : PREVIEW_VARS
+  const text = replaceVariables(module.text, vars)
   const icon = typeof module.icon === 'string' ? module.icon : ''
-  return icon === '' ? text : `${icon} ${text}`
+  const body = icon === '' ? text : `${icon} ${text}`
+  return typeof module.separator === 'string' && module.separator !== '' ? `${body}${module.separator}` : body
 }
 
 const HEX_RE = /^#[0-9a-f]{6}$/i

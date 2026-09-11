@@ -2,12 +2,13 @@
  * Server calls the add-provider flow makes.
  *
  * Order matters in one place: the Provider row must exist BEFORE the OAuth
- * exchange completes. `recordClaudeOAuthAccount` / `recordCodexOAuthAccount`
- * attach the discovered account to whichever subscription provider matches
- * the vendor's base URL, and silently skip the upsert when none does — so
- * signing in first and creating the provider afterwards loses the account.
+ * exchange completes. Connecting an account attaches it to whichever
+ * subscription provider matches the vendor's base URL, and refuses the
+ * connection when none does — so signing in first and creating the
+ * provider afterwards leaves the account nowhere to go.
  */
 import { api } from '@/lib/api'
+import type { CodexDevicePollResponse, CodexDeviceStartResponse } from '@/schemas/api/oauth'
 import type { OAuthKind } from './ConnectAuthStep'
 import type { CatalogEntry, OAuthInitiateResponse, OAuthSubmitResponse, Provider } from './types'
 
@@ -86,6 +87,26 @@ export async function startOAuth(kind: OAuthKind, t: Translate): Promise<string>
 export async function submitManualCallback(url: string, t: Translate): Promise<void> {
   const res = await api.post<OAuthSubmitResponse>('/oauth/manual-callback', { url: url.trim() })
   if (!res.success) throw new Error(res.error === undefined ? t('providers.connect.errorRedirect') : res.error)
+}
+
+/**
+ * Ask the server for a Codex device code. Codex has no browser sign-in in
+ * this UI (see device-code.ts) — this is the only way in for the OAuth
+ * choice card. A hard upstream failure throws (api.post rejects on a
+ * non-2xx status), so the caller's `guard` surfaces it the same way every
+ * other connect action does.
+ */
+export async function startCodexDevice(): Promise<CodexDeviceStartResponse> {
+  return api.post<CodexDeviceStartResponse>('/oauth/device/start', {})
+}
+
+/**
+ * One poll of an outstanding device-code flow. `pending` / `connected` /
+ * `expired` are ordinary results; a hard failure still throws, same as
+ * every other connect action.
+ */
+export async function pollCodexDevice(flowId: string): Promise<CodexDevicePollResponse> {
+  return api.post<CodexDevicePollResponse>('/oauth/device/poll', { flowId })
 }
 
 /** undefined signals "not valid JSON" — JSON.parse never returns it for a well-formed document. */

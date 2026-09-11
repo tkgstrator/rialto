@@ -15,6 +15,8 @@
  * Where a request was routed, and why, is Activity › Requests, which
  * reads the archive rather than the log.
  */
+
+import { cn } from 'cn'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { LogBody } from '@/components/rialto/activity/LogBody'
@@ -28,7 +30,6 @@ import { Screen } from '@/components/rialto/Screen'
 import { api } from '@/lib/api'
 import { formatFileSize } from '@/lib/log-viewer/format'
 import type { LogFile } from '@/lib/log-viewer/types'
-import { cn } from '@/lib/utils'
 
 const FOLLOW_INTERVAL_MS = 5000
 

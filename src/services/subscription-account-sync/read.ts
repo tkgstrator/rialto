@@ -4,9 +4,9 @@
  */
 
 import { getPrismaClient } from '../../db/client'
-import { AuthMode, type PrismaClient } from '../../generated/prisma/client'
+import { AuthMode, type PrismaClient, type SubAccount } from '../../generated/prisma/client'
 import dayjs from '../../lib/dayjs'
-import { decryptString, encryptionKey, encryptString } from './crypto'
+import { decryptString, encryptionKey, encryptString, firstString } from './crypto'
 
 export interface UsableSubAccountAuth {
   subAccountId: string
@@ -100,13 +100,40 @@ export interface SubAccountTokenInfo {
   expiresAt: Date | null
 }
 
+// Which usage endpoint answers for a subscription provider, read off its
+// base URL. Null for any other host, which no usage endpoint covers.
+const usageKindOf = (apiBaseUrl: string): 'claude' | 'codex' | null => {
+  if (apiBaseUrl.includes('anthropic.com')) return 'claude'
+  if (apiBaseUrl.includes('chatgpt.com') || apiBaseUrl.includes('openai.com/v1')) return 'codex'
+  return null
+}
+
+// An account whose access token does not decrypt has nothing to call
+// upstream with, so it is left out rather than handed over empty.
+const tokenInfoOf = (account: SubAccount, key: Buffer): SubAccountTokenInfo | null => {
+  const accessToken = decryptString(account.accessTokenEnc, key)
+  if (!accessToken) return null
+  const name = firstString(account.userName, account.userEmail, account.userId)
+  return {
+    subAccountId: account.id,
+    displayName: name === null ? 'Account' : name,
+    accessToken,
+    refreshToken: decryptString(account.refreshTokenEnc, key),
+    accountId: account.accountId,
+    expiresAt: account.expiresAt
+  }
+}
+
+const hasToken = (info: SubAccountTokenInfo | null): info is SubAccountTokenInfo => info !== null
+
 // Return decrypted tokens for all enabled SubAccounts of the given
 // vendor kind on enabled providers. This is the pool the per-request
 // account picker and the reactive 429 rotation draw from, so a provider
 // the operator switched off contributes nothing to it — the same
 // switch that keeps its models out of the registry. The usage poller and
 // the Subscriptions list's Refresh read the same pool, so a switched-off
-// provider is neither routed to nor polled.
+// provider is neither routed to nor polled by either; only the Refresh on
+// its own page reads it, through getSubAccountTokensForProvider.
 export async function getSubAccountTokensForKind(
   kind: 'claude' | 'codex',
   prisma: PrismaClient = getPrismaClient()
@@ -121,25 +148,31 @@ export async function getSubAccountTokensForKind(
     orderBy: { name: 'asc' },
     include: { subscriptionAccounts: { where: { enabled: true }, orderBy: { id: 'asc' } } }
   })
-  const matched = all.filter((p) => {
-    if (kind === 'claude') return p.apiBaseUrl.includes('anthropic.com')
-    return p.apiBaseUrl.includes('chatgpt.com') || p.apiBaseUrl.includes('openai.com/v1')
-  })
   const key = encryptionKey()
-  const out: SubAccountTokenInfo[] = []
-  for (const provider of matched) {
-    for (const account of provider.subscriptionAccounts) {
-      const accessToken = decryptString(account.accessTokenEnc, key)
-      if (!accessToken) continue
-      out.push({
-        subAccountId: account.id,
-        displayName: account.userName ?? account.userEmail ?? account.userId ?? 'Account',
-        accessToken,
-        refreshToken: decryptString(account.refreshTokenEnc, key),
-        accountId: account.accountId,
-        expiresAt: account.expiresAt
-      })
-    }
-  }
-  return out
+  return all
+    .filter((provider) => usageKindOf(provider.apiBaseUrl) === kind)
+    .flatMap((provider) => provider.subscriptionAccounts.map((account) => tokenInfoOf(account, key)))
+    .filter(hasToken)
+}
+
+// One provider's accounts, for the Refresh on that provider's own page.
+// Unlike the pool above it does not ask Provider.enabled: nothing routes
+// from this list, and a switched-off provider is the one whose
+// credentials an operator most wants checked before switching it back
+// on. Disabled accounts stay out, as they do of every poll. Split by kind
+// so it can go straight to the usage poll; null when no subscription
+// provider has the name.
+export async function getSubAccountTokensForProvider(
+  providerName: string,
+  prisma: PrismaClient = getPrismaClient()
+): Promise<{ claude: SubAccountTokenInfo[]; codex: SubAccountTokenInfo[] } | null> {
+  const provider = await prisma.provider.findFirst({
+    where: { name: providerName, authMode: AuthMode.subscription },
+    include: { subscriptionAccounts: { where: { enabled: true }, orderBy: { id: 'asc' } } }
+  })
+  if (provider === null) return null
+  const key = encryptionKey()
+  const accounts = provider.subscriptionAccounts.map((account) => tokenInfoOf(account, key)).filter(hasToken)
+  const kind = usageKindOf(provider.apiBaseUrl)
+  return { claude: kind === 'claude' ? accounts : [], codex: kind === 'codex' ? accounts : [] }
 }

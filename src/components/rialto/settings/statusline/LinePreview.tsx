@@ -6,11 +6,12 @@
  * literal hex that a terminal will honour — an approximation here would
  * make the preview a different design surface from the artefact.
  */
+
+import { cn } from 'cn'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Pill } from '@/components/rialto/primitives'
 import { colorHex, previewText } from '@/lib/rialto/settings-content/statusline'
-import { cn } from '@/lib/utils'
 import type { StatusLineModuleConfig } from '@/types'
 
 const STYLES = [

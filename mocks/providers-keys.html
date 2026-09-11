@@ -32,7 +32,10 @@ document.getElementById('root').innerHTML = `
       <div class="flex items-center gap-3 px-6 pt-5 pb-3">
         <span class="text-[12px] text-muted-foreground">4 providers · 13 of 42 models enabled ·
           <span class="font-mono">1</span> without a key</span>
-        <div class="ml-auto flex items-center gap-2">${btn('Refresh prices', 'ghost', 'ri-price-tag-3-line')}${btn('Add provider', 'primary', 'ri-add-line', 'providers-connect.html')}</div>
+        <!-- The same single Refresh the Subscriptions list carries. An API
+             key has no usage window to read, so here it refreshes the
+             catalog: prices and the model lists, under one backdrop. -->
+        <div class="ml-auto flex items-center gap-2">${btn('Refresh', 'ghost', 'ri-refresh-line')}${btn('Add key', 'primary', 'ri-add-line', 'providers-connect.html')}</div>
       </div>
 
       <div class="px-6 pb-4">

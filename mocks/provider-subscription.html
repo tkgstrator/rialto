@@ -24,6 +24,29 @@ const { renderShell, pill, meter, btn, navTo, tierCell, sortTh, toast } = window
 // detail mocks, and picking a row is how a reviewer crosses from the
 // subscription detail to the API-key one.
 
+// The page reads until Edit is pressed, the same as the API-key detail:
+// the tier pickers and the switches were live all the time. `?edit` draws
+// the state after Edit. Declared first because the model table is rendered
+// the moment it is defined.
+const EDITING = new URLSearchParams(location.search).has('edit')
+
+// Actions that reload the page or leave it would drop an unsaved edit, so
+// they are locked until Save or Revert.
+const lockedWhileEditing = EDITING ? 'pointer-events-none opacity-50' : ''
+const withClass = (html, cls) => (cls === '' ? html : html.replace('class="', `class="${cls} `))
+
+// A read-only tier cell: the picker's own tone, without the chevron that
+// says it opens.
+const READ_TONE = { manual: 'bg-muted text-foreground', auto: 'text-muted-foreground', unset: 'text-muted-foreground/50' }
+const tierRead = (tier, source) =>
+  `<span class="inline-flex items-center rounded px-1.5 py-0.5 text-[12px] ${READ_TONE[source]}">${source === 'unset' ? '—' : tier}</span>`
+
+// The pill switch, a reading of the state until Edit is pressed.
+const toggle = (on) => `
+  <span class="inline-flex h-4 w-7 items-center rounded-full ${on ? 'bg-foreground' : 'bg-muted-foreground/30'} px-0.5 align-middle ${EDITING ? '' : 'opacity-50'}">
+    <span class="size-3 rounded-full bg-background ${on ? 'translate-x-3' : ''}"></span>
+  </span>`
+
 // ─── Model table for the selected provider ────────────────────────────
 // Prices stay in separate columns (in / cached / out) — one packed
 // "$3/$0.30/$15" cell is unreadable and unsortable.
@@ -45,17 +68,13 @@ const testIcon = { ok: '<i class="ri-check-line text-emerald-600 dark:text-emera
 const modelRow = (m) => `
   <tr class="border-t border-border/60 transition-colors hover:bg-muted/50 ${m.on ? '' : 'opacity-45'}">
     <td class="py-2.5 pl-6 pr-2 font-mono text-xs">${m.name}</td>
-    <td class="px-2">${tierCell(m.tier, m.tierSource)}</td>
+    <td class="px-2">${EDITING ? tierCell(m.tier, m.tierSource) : tierRead(m.tier, m.tierSource)}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${m.ctx}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${m.inp}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${m.cache}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${m.out}</td>
     <td class="px-2 text-center text-sm leading-none">${testIcon[m.test]}</td>
-    <td class="py-2.5 pl-2 pr-6 text-right">
-      <span class="inline-flex h-4 w-7 items-center rounded-full ${m.on ? 'bg-foreground' : 'bg-muted-foreground/30'} px-0.5 align-middle">
-        <span class="size-3 rounded-full bg-background ${m.on ? 'translate-x-3' : ''}"></span>
-      </span>
-    </td>
+    <td class="py-2.5 pl-2 pr-6 text-right">${toggle(m.on)}</td>
   </tr>`
 
 const models = `
@@ -151,9 +170,18 @@ document.getElementById('root').innerHTML = `
           </div>
           <p class="mt-0.5 font-mono text-[12px] text-muted-foreground">https://api.anthropic.com/v1/messages</p>
         </div>
-        <div class="ml-auto flex gap-2">
-          ${btn('Test all', 'outline', 'ri-pulse-line')}
-          ${btn('Sync models', 'ghost', 'ri-refresh-line')}
+        <!-- Edit, then Revert / Save, for the switch Routing reads and each
+             model's tier and switch. The accounts are read-only either way:
+             they change by signing in, not by editing this page. Test all is
+             locked while editing, like the page actions above. -->
+        <div class="ml-auto flex items-center gap-2">
+          <span class="flex items-center gap-1.5 pr-1 text-[12px] text-muted-foreground">Routable ${toggle(true)}</span>
+          ${withClass(btn('Test all', 'outline', 'ri-pulse-line'), lockedWhileEditing)}
+          ${
+            EDITING
+              ? `${btn('Revert', 'outline', 'ri-arrow-go-back-line')}${btn('Save', 'primary', 'ri-check-line')}`
+              : btn('Edit', 'outline', 'ri-pencil-line')
+          }
         </div>
       </div>
 
@@ -215,7 +243,7 @@ document.getElementById('root').innerHTML = `
           <span class="font-mono">fable</span> / <span class="font-mono">opus</span> /
           <span class="font-mono">sonnet</span> / <span class="font-mono">haiku</span>. Those cells are
           plain. <span class="font-mono">claude-mythos-5</span> says none of them, so its tier was set
-          by hand and is shown solid. Click a tier to override or clear it; Routing's
+          by hand and is shown solid. Press Edit to override or clear one; Routing's
           <span class="font-medium text-foreground">tier respect</span> floor is what reads it.
         </div>
       </div>
@@ -228,14 +256,20 @@ renderShell({
   navMode: 'cloudflare',
   crumbs: [{ label: 'Subscriptions', href: 'providers.html' }, 'Claude Code'],
   subtitle: '7 providers · 23 models enabled · 3 subscription accounts',
+  // One Refresh, under one backdrop: this provider's accounts — re-checked,
+  // with their windows read now, even while the provider is switched off,
+  // which is exactly when an operator wants to know whether its credentials
+  // still work — plus the catalog's prices and models. It replaced
+  // "Refresh prices" here and "Sync models" beside Test all. Both actions
+  // are locked while an edit is open.
   actions:
-    btn('Refresh prices', 'ghost', 'ri-price-tag-3-line') +
-    btn('Add provider', 'primary', 'ri-add-line', 'providers-connect.html'),
-  // Drawn here because a catalog refresh is the app's longest action and
-  // the one whose result you cannot see on the screen that started it: the
-  // model counts in the rail move, and nothing else does. What the toast
-  // has to say is what changed, not that something finished.
-  toast: toast('Synced 23 models across 7 providers', 'ok', '4 added · 1 removed · prices from 3 vendors')
+    withClass(btn('Refresh', 'ghost', 'ri-refresh-line'), lockedWhileEditing) +
+    withClass(btn('Add subscription', 'primary', 'ri-add-line', 'providers-connect.html'), lockedWhileEditing),
+  // Drawn here because a refresh is the app's longest action and the one
+  // whose result is hardest to see on the screen that started it. It says
+  // what was refreshed; an account that could not be is named instead.
+  // Not drawn over the edit state, which a refresh cannot start from.
+  ...(EDITING ? {} : { toast: toast('Refreshed usage, prices and models', 'ok') })
 })
 </script>
 </body>

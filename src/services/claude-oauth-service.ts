@@ -4,8 +4,9 @@
  * Mirrors what `claude` CLI does on `claude login`: builds the
  * authorize URL pointing at the user's browser, then on the callback
  * exchanges the code for OAuth tokens. Persistence is handled by
- * subscription-account-sync-service.recordClaudeOAuthAccount — tokens
- * land encrypted in the DB; nothing is written to disk.
+ * subscription-connect-service.connectClaudeAccount — the tokens are
+ * verified with Anthropic, then land encrypted in the DB; nothing is
+ * written to disk.
  *
  * Client id + the refresh URL match the values already hardcoded in
  * `llms/transformers/anthropic/claude-code-oauth.ts` so the proxy keeps
@@ -13,6 +14,7 @@
  */
 
 import { logger } from '../logger'
+import { type OauthRefreshResponse, OauthRefreshResponseSchema } from '../schemas/wire/oauth'
 
 // Diagnostic flag — set RIALTO_DEBUG_OAUTH=1 to log the token-exchange
 // request body alongside the response on failure. Off by default to
@@ -83,6 +85,29 @@ const isTokenResponse = (value: unknown): value is TokenExchangeResponse => {
     v.refresh_token.length > 0 &&
     typeof v.expires_in === 'number'
   )
+}
+
+/**
+ * Trade a refresh token for a new grant. Throws when the token endpoint
+ * refuses it or answers something unreadable — the same contract as
+ * exchangeClaudeCode below; a caller that can live without the refresh
+ * catches.
+ */
+export const refreshClaudeToken = async (refreshToken: string): Promise<OauthRefreshResponse> => {
+  const res = await fetch(CLAUDE_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: CLAUDE_CLIENT_ID })
+  })
+  if (!res.ok) {
+    // Only the status is logged: unlike the code exchange, this request
+    // body is a live refresh token, debug flag or not.
+    logger.warn({ status: res.status }, '[claude-oauth] token refresh failed')
+    throw new Error(`claude token refresh failed: ${res.status}`)
+  }
+  const parsed = OauthRefreshResponseSchema.safeParse(await res.json())
+  if (!parsed.success) throw new Error('claude token refresh returned an unexpected payload')
+  return parsed.data
 }
 
 export const exchangeClaudeCode = async (opts: {

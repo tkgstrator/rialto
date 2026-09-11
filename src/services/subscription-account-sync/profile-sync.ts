@@ -92,6 +92,9 @@ export interface ProfileSyncScope {
   // job and POST /api/subscriptions/sync probe every account, so a
   // provider's accounts are known to authenticate before it is turned on.
   enabledProvidersOnly?: boolean
+  // Only the provider with this name, switched on or not: the Refresh on
+  // that provider's own page, which asks about nothing else.
+  providerName?: string
 }
 
 export interface ProfileSyncResult {
@@ -108,7 +111,9 @@ export async function syncSubAccountProfiles(
   scope: ProfileSyncScope = {}
 ): Promise<ProfileSyncResult> {
   const key = encryptionKey()
-  const inScope = (p: { enabled: boolean }): boolean => scope.enabledProvidersOnly !== true || p.enabled
+  const inScope = (p: { name: string; enabled: boolean }): boolean =>
+    (scope.enabledProvidersOnly !== true || p.enabled) &&
+    (scope.providerName === undefined || p.name === scope.providerName)
   const claudeProviders = (await providersForKind(prisma, 'claude')).filter(inScope)
   let updated = 0
   const failedAccountIds: string[] = []

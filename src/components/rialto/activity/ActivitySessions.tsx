@@ -27,11 +27,13 @@ import {
 } from '@/components/rialto/activity/sessions-derive'
 import { FilterSelect, ScreenMessage, StatTile } from '@/components/rialto/activity/shared'
 import { useSurfaces } from '@/components/rialto/activity/use-surfaces'
+import { useConfirm } from '@/components/rialto/ConfirmDialog'
 import { Pager } from '@/components/rialto/Pager'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import { api, type SessionSummary } from '@/lib/api'
-import { fmtCount, fmtRate } from '@/lib/rialto/format'
+import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
+import { fmtRate } from '@/lib/rialto/format'
 import { fmtCost, fmtTokens } from '@/lib/sessions/format'
 
 // The screen used to join the newest 500 request-log rows onto the
@@ -143,17 +145,18 @@ export function ActivitySessions() {
 
   const spec = rangeSpec(range)
   const rangeLabel = t(spec.labelKey)
-  const subtitle =
-    sessions === null
-      ? undefined
-      : t('activity.sessions.subtitle', {
-          sessions: fmtCount(totalSessions === undefined ? sessions.length : totalSessions),
-          requests: totals === null ? '–' : fmtCount(totals.requests),
-          range: rangeLabel.toLowerCase()
-        })
 
-  const archiveAll = () => {
-    if (!window.confirm(t('activity.sessions.archiveConfirm'))) return
+  const { confirm, dialog: confirmDialog } = useConfirm()
+
+  const archiveAll = async () => {
+    const { title, description } = splitConfirmMessage(t('activity.sessions.archiveConfirm'))
+    const confirmed = await confirm({
+      title,
+      description,
+      confirmLabel: t('activity.sessions.archive'),
+      icon: 'ri-archive-line'
+    })
+    if (!confirmed) return
     // The confirm makes this the one destructive action on the screen, and
     // a rejected archive re-reads the same rows — identical to a click that
     // never landed. It has to say which of the two happened.
@@ -165,7 +168,6 @@ export function ActivitySessions() {
 
   return (
     <Screen
-      subtitle={subtitle}
       actions={
         <>
           <RButton
@@ -177,9 +179,15 @@ export function ActivitySessions() {
           >
             {t('activity.sessions.liveTail')}
           </RButton>
+          {/* Ghost, not red: archiving files sessions away rather than
+              deleting them — their request logs stay — so it does not read
+              as the same kind of irreversible action as Remove elsewhere. */}
           <RButton variant='ghost' icon='ri-archive-line' onClick={archiveAll}>
             {t('activity.sessions.archive')}
           </RButton>
+          {/* Portalled, so its place in the tree changes nothing on screen;
+              beside the button that opens it is where a reader looks. */}
+          {confirmDialog}
         </>
       }
     >

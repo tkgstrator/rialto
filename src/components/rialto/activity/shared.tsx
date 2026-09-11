@@ -4,11 +4,12 @@
  * Class lists are copied from `mocks/activity*.html` verbatim so the
  * pixel-diff harness measures design differences, not markup drift.
  */
+
+import { cn } from 'cn'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Mono, Pill, SurfacePill } from '@/components/rialto/primitives'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { cn } from '@/lib/utils'
 
 /** Rendered wherever a column has no value for this row. */
 export const DASH = '—'

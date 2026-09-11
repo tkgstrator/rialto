@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
+import { useConfirm } from '@/components/rialto/ConfirmDialog'
 import { RButton } from '@/components/rialto/primitives'
 import { SectionHead, SelectField, StaticField, TextField, ToggleField } from '@/components/rialto/settings/fields'
 import {
@@ -26,6 +27,7 @@ import { WarnNotice } from '@/components/rialto/settings/notice'
 import { SettingsLayout } from '@/components/rialto/settings/SettingsLayout'
 import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
 import { api } from '@/lib/api'
+import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
 import {
   captureSettings,
   DEFAULT_LOG_MAX_MB,
@@ -108,12 +110,23 @@ function RetentionSection({ stats, reload }: { stats: StorageStats | null; reloa
   const { t } = useTranslation()
   const [cutoffs, setCutoffs] = useState<Record<string, number>>({})
   const [pruning, setPruning] = useState<StoreId | null>(null)
+  const { confirm, dialog: confirmDialog } = useConfirm()
 
-  const prune = (store: StoreStats, days: number) => {
-    const extraKey = EXTRA_WARNING_KEYS[store.id]
-    const tail = extraKey === undefined ? '' : `\n\n${t(extraKey)}`
+  const prune = async (store: StoreStats, days: number) => {
     const unit = t(store.rows === null ? 'settings.logging.unitFiles' : 'settings.logging.unitRows')
-    if (!window.confirm(`${t('settings.logging.pruneConfirm', { store: store.label, unit, days })}${tail}`)) return
+    const { title, description } = splitConfirmMessage(
+      t('settings.logging.pruneConfirm', { store: store.label, unit, days })
+    )
+    // The store's own consequence follows the general one: "this cannot be
+    // undone" is true of every store, lowered historical spend only of these.
+    const extraKey = EXTRA_WARNING_KEYS[store.id]
+    const confirmed = await confirm({
+      title,
+      description: extraKey === undefined ? description : `${description}\n\n${t(extraKey)}`,
+      confirmLabel: t('settings.logging.pruneNow'),
+      icon: 'ri-delete-bin-line'
+    })
+    if (!confirmed) return
     setPruning(store.id)
     api
       .post<{ store: StoreId; deleted: number }>('/storage/prune', { store: store.id, olderThanDays: days })
@@ -155,6 +168,7 @@ function RetentionSection({ stats, reload }: { stats: StorageStats | null; reloa
       <div className='px-6 py-4 text-[12px] leading-relaxed text-muted-foreground'>
         {t('settings.logging.retentionNote')}
       </div>
+      {confirmDialog}
     </>
   )
 }
@@ -193,7 +207,7 @@ export function SettingsLogging() {
     () => wire !== null && draft !== null && JSON.stringify(draft) !== JSON.stringify(toDraft(wire)),
     [draft, wire]
   )
-  useUnsavedGuard(dirty)
+  const unsavedDialog = useUnsavedGuard(dirty)
 
   const save = () => {
     if (draft === null) return
@@ -291,6 +305,7 @@ export function SettingsLogging() {
 
       <RetentionSection stats={stats} reload={loadStats} />
       <div className='h-10' />
+      {unsavedDialog}
     </SettingsLayout>
   )
 }

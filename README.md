@@ -108,11 +108,20 @@ On the **Providers** page, choose **Add provider**, pick a vendor (Anthropic, Op
 
 ### Subscription providers (Claude Code & Codex)
 
-Rialto can route through subscription-based providers without a per-call API key. Add one under **Providers → Add provider**; the Authenticate step offers three ways in, for Claude and Codex alike:
+Rialto can route through subscription-based providers without a per-call API key. Add one under **Providers → Add provider**. The Authenticate step differs by vendor, because the two vendors' OAuth clients return to different places.
 
-- **Sign in with the vendor** — opens the vendor's OAuth page in your browser. Claude returns to `http://localhost:3456/callback`; Codex always returns to `http://localhost:1455/auth/callback` on the machine the browser runs on, which is why `compose.yaml` publishes port `1455` on the Docker host's loopback.
-- **Paste the redirect URL** — when the browser cannot reach that callback (Rialto behind a tunnel, or a headless box), copy the URL the vendor redirected to and paste it into the box; the code exchange runs server-side.
-- **Import the CLI's credentials file** — upload `~/.claude/.credentials.json` or `~/.codex/auth.json` from a machine where you have already signed in.
+**Claude**
+
+- **Sign in with Anthropic** — opens Anthropic's OAuth page in your browser, which returns to `http://localhost:3456/callback`.
+- **Paste the redirect URL** — when the browser cannot reach that callback (Rialto behind a tunnel, or a headless box), copy the URL Anthropic redirected to and paste it into the box; the code exchange runs server-side.
+- **Import from Claude** — upload `~/.claude/.credentials.json` from a machine where you have already signed in.
+
+**Codex**
+
+- **Device code** (the default) — Rialto shows a one-time code and the link `https://auth.openai.com/codex/device`. Open it in any browser, sign in to ChatGPT and enter the code; the page moves on by itself once the code is accepted. The code expires after 15 minutes. Nothing has to reach back to Rialto, so this works behind a tunnel or in a container. It is the flow `codex login --device-auth` uses (`POST /api/oauth/device/start`, then `POST /api/oauth/device/poll`).
+- **Import from Codex** — upload `~/.codex/auth.json` from a machine where you have already signed in.
+
+Codex's browser sign-in is not offered: its OAuth client only redirects to `http://localhost:1455/auth/callback` on the machine the browser runs on, which a remote or containerised install never receives. The loopback listener behind it (port `1455`, still published by `compose.yaml`) is no longer used by the UI.
 
 Rialto stores the encrypted tokens and refreshes them. A provider may hold several accounts; which one serves a request is decided per request (see [Effort, tier, and fallbacks](#effort-tier-and-fallbacks)). The Subscriptions list has a **Refresh** button (`POST /api/subscriptions/refresh`) that re-syncs every account on an enabled subscription provider and re-polls its usage past the 5-minute cache.
 

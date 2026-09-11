@@ -1,14 +1,15 @@
 /**
  * Subscription-account persistence — DB only.
  *
- * SubAccount rows are created and updated exclusively through the
- * web-UI OAuth flow:
- *   - claude: recordClaudeOAuthAccount({ accessToken, refreshToken,
- *     expiresAt, scopes }) — pulls the user's profile via
- *     fetchClaudeProfile and writes an encrypted row.
- *   - codex:  recordCodexOAuthAccount({ accessToken, refreshToken,
- *     idToken }) — decodes id_token claims for identity + plan info
- *     and writes an encrypted row.
+ * SubAccount rows are created and updated through the web-UI OAuth flow
+ * and credential import, both of which go through
+ * subscription-connect-service: it proves the credentials with the vendor
+ * first, then writes the account here with recordDiscoveredAccount.
+ *   - claude: claudeAccountFromProfile(tokens, profile) keys the account on
+ *     the profile's account uuid.
+ *   - codex:  buildCodexDiscoveredAccount({ accessToken, refreshToken,
+ *     idToken, accountId }) keys it on the account id carried by the file
+ *     or the id_token claims.
  *
  * Tokens are AES-256-GCM-encrypted with the key derived from
  * `RIALTO_ACCOUNT_ENCRYPTION_KEY` (hex / base64 / passphrase, in that
@@ -24,10 +25,12 @@
  */
 
 export { decryptString } from './subscription-account-sync/crypto'
-export { recordClaudeOAuthAccount, recordCodexOAuthAccount } from './subscription-account-sync/persist'
-export { syncSubAccountProfiles } from './subscription-account-sync/profile-sync'
+export { buildCodexDiscoveredAccount, claudeAccountFromProfile } from './subscription-account-sync/discovery'
+export { recordDiscoveredAccount } from './subscription-account-sync/persist'
+export { type ProfileSyncScope, syncSubAccountProfiles } from './subscription-account-sync/profile-sync'
 export {
   getSubAccountTokensForKind,
+  getSubAccountTokensForProvider,
   getUsableSubAccountAuth,
   type SubAccountTokenInfo,
   type UsableSubAccountAuth,

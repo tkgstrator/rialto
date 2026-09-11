@@ -53,22 +53,64 @@ export function createDefaultStatusLineConfig(): StatusLineConfig {
     currentStyle: 'default',
     default: {
       modules: [
-        { type: 'workDir', icon: '󰉋', text: '{{workDirName}}', color: 'bright_blue' },
-        { type: 'gitBranch', icon: '', text: '{{gitBranch}}', color: 'bright_magenta' },
-        { type: 'model', icon: '󰚩', text: '{{model}}', color: 'bright_cyan' },
-        { type: 'usage', icon: '↑', text: '{{inputTokens}}', color: 'bright_green' },
-        { type: 'usage', icon: '↓', text: '{{outputTokens}}', color: 'bright_yellow' },
-        { type: 'speed', icon: '', text: '{{tokenSpeed}} t/s', color: 'bright_red' }
+        { type: 'workDir', icon: '󰉋', text: '{{workDirName}}', color: 'bright_blue', keepProvider: false },
+        { type: 'gitBranch', icon: '', text: '{{gitBranch}}', color: 'bright_magenta', keepProvider: false },
+        { type: 'model', icon: '󰚩', text: '{{model}}', color: 'bright_cyan', keepProvider: false },
+        { type: 'usage', icon: '↑', text: '{{inputTokens}}', color: 'bright_green', keepProvider: false },
+        { type: 'usage', icon: '↓', text: '{{outputTokens}}', color: 'bright_yellow', keepProvider: false },
+        { type: 'speed', icon: '', text: '{{tokenSpeed}} t/s', color: 'bright_red', keepProvider: false }
       ]
     },
     powerline: {
       modules: [
-        { type: 'workDir', icon: '󰉋', text: '{{workDirName}}', color: 'white', background: 'bg_bright_blue' },
-        { type: 'gitBranch', icon: '', text: '{{gitBranch}}', color: 'white', background: 'bg_bright_magenta' },
-        { type: 'model', icon: '󰚩', text: '{{model}}', color: 'white', background: 'bg_bright_cyan' },
-        { type: 'usage', icon: '↑', text: '{{inputTokens}}', color: 'white', background: 'bg_bright_green' },
-        { type: 'usage', icon: '↓', text: '{{outputTokens}}', color: 'white', background: 'bg_bright_yellow' },
-        { type: 'speed', icon: '', text: '{{tokenSpeed}} t/s', color: 'white', background: 'bg_bright_red' }
+        {
+          type: 'workDir',
+          icon: '󰉋',
+          text: '{{workDirName}}',
+          color: 'white',
+          background: 'bg_bright_blue',
+          keepProvider: false
+        },
+        {
+          type: 'gitBranch',
+          icon: '',
+          text: '{{gitBranch}}',
+          color: 'white',
+          background: 'bg_bright_magenta',
+          keepProvider: false
+        },
+        {
+          type: 'model',
+          icon: '󰚩',
+          text: '{{model}}',
+          color: 'white',
+          background: 'bg_bright_cyan',
+          keepProvider: false
+        },
+        {
+          type: 'usage',
+          icon: '↑',
+          text: '{{inputTokens}}',
+          color: 'white',
+          background: 'bg_bright_green',
+          keepProvider: false
+        },
+        {
+          type: 'usage',
+          icon: '↓',
+          text: '{{outputTokens}}',
+          color: 'white',
+          background: 'bg_bright_yellow',
+          keepProvider: false
+        },
+        {
+          type: 'speed',
+          icon: '',
+          text: '{{tokenSpeed}} t/s',
+          color: 'white',
+          background: 'bg_bright_red',
+          keepProvider: false
+        }
       ]
     }
   }

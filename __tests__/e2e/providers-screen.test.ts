@@ -29,7 +29,7 @@ const browser = (): Browser => {
 /** Both lists, with the add button each one offers. */
 const LISTS = [
   { path: '/providers/subscriptions', add: 'Add subscription', empty: 'No subscriptions connected yet' },
-  { path: '/providers/api-keys', add: 'Add provider', empty: 'No API-key providers configured yet' }
+  { path: '/providers/api-keys', add: 'Add key', empty: 'No API-key providers configured yet' }
 ] as const
 
 /** The first-run gate opens once /setup has rendered. From a bare
