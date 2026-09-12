@@ -29,12 +29,11 @@ export interface ChainProvider {
 /**
  * Wire-format conversion step for an apiStyle.
  *
- * `anthropic` maps to nothing on purpose. The unified request the endpoint
- * transformer produces already IS the Anthropic wire shape, so an
- * Anthropic upstream needs no conversion — and mounting `anthropic` here
- * would not be the no-op it looks like: a single-entry chain naming the
- * endpoint transformer flips the pipeline into bypass mode, which is a
- * different code path (raw body, header strip, auth hook).
+ * `anthropic` has no outbound conversion step: the unified body is
+ * Chat-shaped, not Anthropic-shaped. Native Anthropic traffic must instead
+ * take the pipeline's passthrough path through a sole endpoint/auth step.
+ * `transformerChain` selects `anthropic` for API keys or `claude-code-oauth`
+ * for subscriptions; adding both would disable native passthrough.
  */
 const CONVERSION_STEP: Record<ChainApiStyle, string | null> = {
   anthropic: null,
@@ -93,17 +92,16 @@ export const effectiveApiStyle = (p: ChainProvider): ChainApiStyle | null => {
  * Transformer names, in run order, for every request through this
  * provider.
  *
- * An empty array is a real answer — an Anthropic api_key provider needs
- * no step at all. Null means the provider cannot be served: a
- * subscription vendor this build has no auth transformer for. Callers
- * must keep the two apart, because the second one has to leave the
- * provider unregistered rather than call it without a credential.
+ * An Anthropic API-key provider needs its endpoint step so native requests
+ * preserve their wire shape and use the API-key auth hook. Null means the
+ * provider cannot be served; callers must leave it unregistered rather
+ * than call an unsupported subscription provider without a credential.
  */
 export const transformerChain = (p: ChainProvider): string[] | null => {
   const style = effectiveApiStyle(p)
   if (style === null) return null
   const conversion = CONVERSION_STEP[style]
-  if (p.auth_mode !== 'subscription') return conversion === null ? [] : [conversion]
+  if (p.auth_mode !== 'subscription') return conversion === null ? ['anthropic'] : [conversion]
   const auth = SUBSCRIPTION_AUTH_STEP[style]
   if (auth === null) return null
   return conversion === null ? [auth] : [conversion, auth]
