@@ -57,11 +57,10 @@ describe('api_key providers', () => {
     expect(transformerChain(provider({ name: 'google', api_style: 'gemini' }))).toEqual(['gemini'])
   })
 
-  test('an anthropic provider needs no step', () => {
-    // Not an oversight: the unified request already IS the Anthropic wire
-    // shape. Naming the endpoint transformer here would flip the pipeline
-    // into bypass mode, which is a different path, not a no-op.
-    expect(transformerChain(provider({ name: 'anthropic', api_style: 'anthropic' }))).toEqual([])
+  test('an anthropic API-key provider preserves native requests through the endpoint auth path', () => {
+    // The unified body is Chat-shaped, not Anthropic-shaped. A sole native
+    // endpoint step selects the passthrough body and its API-key auth hook.
+    expect(transformerChain(provider({ name: 'anthropic', api_style: 'anthropic' }))).toEqual(['anthropic'])
   })
 
   test('a provider with no stored api_style is unservable', () => {

@@ -70,18 +70,17 @@ describe('ProviderRegistry chain derivation', () => {
     expect(chainNames(registry, 'google')).toEqual(['gemini'])
   })
 
-  test('an anthropic api_key provider is registered with no chain at all', () => {
+  test('an anthropic api_key provider registers its native endpoint transformer', () => {
     const registry = registryWith([
       { ...base, name: 'anthropic', api_style: 'anthropic', api_base_url: 'https://api.anthropic.com/v1/messages' }
     ])
     expect(registry.get('anthropic')).toBeDefined()
-    expect(chainNames(registry, 'anthropic')).toBeUndefined()
+    expect(chainNames(registry, 'anthropic')).toEqual(['anthropic'])
   })
 
-  test('a stale `use` is dropped even when the derived chain is empty', () => {
-    // The empty-chain branch is where a merge would leave raw strings
-    // sitting where the pipeline expects Transformer instances —
-    // shouldBypass reads `.name` off each entry.
+  test('a stale `use` cannot replace the native Anthropic endpoint step', () => {
+    // The derived chain contains real Transformer instances, not legacy
+    // configuration strings, while unrelated credential metadata survives.
     const registry = registryWith([
       {
         ...base,
@@ -91,7 +90,7 @@ describe('ProviderRegistry chain derivation', () => {
         transformer: { use: ['openai'], subscriptionCredentialPath: '/creds/x.json' }
       }
     ])
-    expect(chainNames(registry, 'anthropic')).toBeUndefined()
+    expect(chainNames(registry, 'anthropic')).toEqual(['anthropic'])
     expect(registry.get('anthropic')?.transformer?.subscriptionCredentialPath).toBe('/creds/x.json')
   })
 
