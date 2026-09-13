@@ -133,8 +133,11 @@ function convertToolsResponsesToChat(tools: unknown): unknown {
       continue
     }
     if (raw.type !== 'function') {
-      // Unknown tool type — pass through so the upstream error surfaces
-      // instead of us silently dropping it.
+      // A tool with no Chat-Completions equivalent — Codex's `custom` and
+      // `local_shell`. Carry it verbatim: the unified tool type has a
+      // member for exactly this (UnifiedPassthroughTool), so each
+      // outbound transformer decides what its own upstream can do with
+      // it rather than us dropping it here.
       out.push(raw)
       continue
     }

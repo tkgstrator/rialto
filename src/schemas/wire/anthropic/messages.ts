@@ -13,7 +13,7 @@ import { z } from '@hono/zod-openapi'
 // The one place the wire layer reaches into domain/: an Anthropic custom
 // tool's `input_schema` is JSON Schema, identical to the parameters
 // object on a unified tool. Re-declaring it would let the two drift.
-import { UnifiedToolSchema } from '@/schemas/domain/unified'
+import { UnifiedFunctionToolSchema } from '@/schemas/domain/unified'
 
 // ─── Anthropic incoming request shapes ─────────────────────────────────
 // Schemas for the inbound `/v1/messages` payload. The Anthropic
@@ -102,7 +102,7 @@ export const AnthropicCustomToolDefSchema = z.object({
   // definition — the docs treat it as load-bearing for model tool
   // selection.
   description: z.string().nonempty(),
-  input_schema: UnifiedToolSchema.shape.function.shape.parameters,
+  input_schema: UnifiedFunctionToolSchema.shape.function.shape.parameters,
   cache_control: AnthropicCacheControlSchema.optional()
 })
 export type AnthropicCustomToolDef = z.input<typeof AnthropicCustomToolDefSchema>
