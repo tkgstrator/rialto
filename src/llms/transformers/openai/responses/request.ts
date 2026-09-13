@@ -6,7 +6,7 @@
  * input/instructions/tools wire shape.
  */
 
-import type { UnifiedChatRequest } from '@/schemas/domain/unified'
+import { isUnifiedFunctionTool, type UnifiedChatRequest } from '@/schemas/domain/unified'
 import type { ResponsesUnifiedChatRequest } from '@/schemas/wire/openai/responses'
 import { isObject } from '../../../utils/guards'
 
@@ -211,19 +211,25 @@ export function convertResponseFormatToTextFormat(raw: unknown): unknown {
 
 export function remapTools(tools: UnifiedChatRequest['tools']): unknown[] {
   if (!Array.isArray(tools)) return []
-  const webSearch = tools.find((tool) => tool.function.name === 'web_search')
+  const hasWebSearch = tools.some((tool) => isUnifiedFunctionTool(tool) && tool.function.name === 'web_search')
 
-  const remapped: unknown[] = tools
-    .filter((tool) => tool.function.name !== 'web_search')
-    .map((tool) => {
-      if (tool.function.name === 'WebSearch') {
-        const properties = tool.function.parameters.properties
-        if (isObject(properties)) {
-          delete properties.allowed_domains
-        }
+  const remapped: unknown[] = tools.flatMap((tool) => {
+    // A tool carrying no `function` object — Codex's `custom` and
+    // `local_shell`. Responses is the wire format on both sides of this
+    // transformer, so the caller already wrote the shape the upstream
+    // wants: emit it verbatim. Reading `tool.function.name` on one of
+    // these is what answered every Codex tool call with a 500.
+    if (!isUnifiedFunctionTool(tool)) return [tool]
+    if (tool.function.name === 'web_search') return []
+    if (tool.function.name === 'WebSearch') {
+      const properties = tool.function.parameters.properties
+      if (isObject(properties)) {
+        delete properties.allowed_domains
       }
-      if (tool.function.name === 'Edit') {
-        return {
+    }
+    if (tool.function.name === 'Edit') {
+      return [
+        {
           type: tool.type,
           name: tool.function.name,
           description: tool.function.description,
@@ -233,16 +239,19 @@ export function remapTools(tools: UnifiedChatRequest['tools']): unknown[] {
           },
           strict: true
         }
-      }
-      return {
+      ]
+    }
+    return [
+      {
         type: tool.type,
         name: tool.function.name,
         description: tool.function.description,
         parameters: tool.function.parameters
       }
-    })
+    ]
+  })
 
-  if (webSearch) {
+  if (hasWebSearch) {
     remapped.push({ type: 'web_search' })
   }
 

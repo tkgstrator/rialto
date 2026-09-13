@@ -17,6 +17,7 @@
 
 import { describe, expect, test } from 'bun:test'
 import { GeminiTransformer } from '../../src/llms/transformers/gemini'
+import { buildTools } from '../../src/llms/utils/gemini/request-config'
 import type { RuntimeProvider, TransformerContext, UnifiedChatRequest } from '../../src/schemas/domain'
 
 const provider = (apiBaseUrl: string): RuntimeProvider =>
@@ -114,5 +115,54 @@ describe('GeminiTransformer.transformRequestIn (converted path)', () => {
     const url = (result as { config: { url: URL } }).config.url
     expect(url.pathname).toBe('/v1beta/models/gemini-3-pro:streamGenerateContent')
     expect(url.searchParams.get('alt')).toBe('sse')
+  })
+})
+
+describe('buildTools — tools Gemini cannot declare', () => {
+  test('drops a tool carrying no function object and keeps the rest', () => {
+    // Gemini declares tools by function signature; Codex's `custom` and
+    // `local_shell` have none, so there is nothing to declare. Dropping
+    // them is the only honest answer — before the unified tool type
+    // admitted them, reading their name crashed the request instead.
+    expect(
+      buildTools([
+        { type: 'custom', name: 'shell', description: 'Run a shell command' },
+        { type: 'local_shell' },
+        {
+          type: 'function',
+          function: {
+            name: 'get_weather',
+            description: 'Look up weather',
+            parameters: { type: 'object', properties: {} }
+          }
+        }
+      ])
+    ).toEqual([
+      {
+        functionDeclarations: [
+          {
+            name: 'get_weather',
+            description: 'Look up weather',
+            parametersJsonSchema: { type: 'object', properties: {} }
+          }
+        ]
+      }
+    ])
+  })
+
+  test('a hosted web_search alongside them still asks for googleSearch', () => {
+    expect(
+      buildTools([
+        { type: 'local_shell' },
+        {
+          type: 'function',
+          function: {
+            name: 'web_search',
+            description: 'Hosted web search',
+            parameters: { type: 'object', properties: {} }
+          }
+        }
+      ])
+    ).toEqual([{ googleSearch: {} }])
   })
 })
