@@ -187,8 +187,9 @@ describe('convertResponsesRequestToUnified', () => {
     ])
   })
 
-  // Regression: Codex sends `{type:'custom'}` and `{type:'local_shell'}`
-  // tool definitions, neither of which carries a `function` object. The
+  // Regression: Codex 0.154 sends `{type:'namespace', name, tools}` on
+  // every request, and `custom` / `local_shell` in other configurations.
+  // None of them carries a `function` object. The
   // inbound converter passes them through untouched, and remapTools on
   // the outbound side then read `tool.function.name` unconditionally —
   // a TypeError that surfaced as HTTP 500 "undefined is not an object
@@ -200,6 +201,7 @@ describe('convertResponsesRequestToUnified', () => {
       model: 'gpt-5.6-sol',
       input: 'Run: echo hi',
       tools: [
+        { type: 'namespace', name: 'multi_agent_v1', description: 'Sub-agents', tools: [] },
         { type: 'custom', name: 'shell', description: 'Run a shell command' },
         { type: 'local_shell' },
         {
@@ -211,6 +213,7 @@ describe('convertResponsesRequestToUnified', () => {
       ]
     })
     expect(remapTools(unified.tools)).toEqual([
+      { type: 'namespace', name: 'multi_agent_v1', description: 'Sub-agents', tools: [] },
       { type: 'custom', name: 'shell', description: 'Run a shell command' },
       { type: 'local_shell' },
       {

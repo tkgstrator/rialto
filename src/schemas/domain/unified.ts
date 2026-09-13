@@ -105,10 +105,11 @@ export const UnifiedFunctionToolSchema = z.object({
 })
 export type UnifiedFunctionTool = z.input<typeof UnifiedFunctionToolSchema>
 
-// A tool only the caller's own upstream models. Codex sends `{type:'custom',
-// name, description}` and `{type:'local_shell'}`, which have no `function`
-// object at all, and a Responses inbound request whose chain ends at a
-// Responses upstream can carry them through untouched.
+// A tool only the caller's own upstream models. Codex 0.154 sends
+// `{type:'namespace', name, tools:[...]}` on every request (measured), and
+// `custom` / `local_shell` in other configurations; none of them carries a
+// `function` object at all. A Responses inbound request whose chain ends at
+// a Responses upstream can carry them through untouched.
 //
 // This member exists so that carrying one is expressible in the domain type
 // rather than smuggled past it. While `tools` was declared function-only, the
