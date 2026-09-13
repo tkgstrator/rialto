@@ -11,7 +11,8 @@
  *
  * The internal representation is OpenAI chat.completion, so the input on
  * all four is chat.completion.chunk SSE. What differs is the output
- * vocabulary and **the granularity** — incremental or buffered.
+ * vocabulary; all four now relay the upstream's granularity rather than
+ * folding the stream and re-emitting it whole.
  */
 
 import { describe, expect, test } from 'bun:test'
@@ -93,7 +94,7 @@ describe('openai-chat — supported by passing through', () => {
   })
 })
 
-describe('openai-responses — partial: the contract holds but the incrementality is lost', () => {
+describe('openai-responses — supported, incrementally', () => {
   test('converted into the Responses event vocabulary', async () => {
     const converted = await new OpenAIResponsesTransformer().transformResponseIn(chatStream(TWO_DELTA_STREAM), ctx)
     expect(converted.headers.get('content-type')).toBe('text/event-stream')
@@ -103,17 +104,51 @@ describe('openai-responses — partial: the contract holds but the incrementalit
     expect(names[names.length - 1]).toBe('response.completed')
   })
 
-  test('unsupported: the upstream granularity is lost and the whole text arrives as one delta', async () => {
-    // `transformResponseIn` folds the upstream SSE into JSON with
-    // `aggregateOpenAiChatSseToJson` and then composes fresh Responses
-    // SSE, so TTFT slips to the upstream's completion time. If the
-    // implementation is ever made incremental, invert this expectation
-    // and update the matching cell in inbound-parity.md with it.
+  test('the upstream granularity carries through: two deltas become two events', async () => {
     const converted = await new OpenAIResponsesTransformer().transformResponseIn(chatStream(TWO_DELTA_STREAM), ctx)
     const deltas = dataPayloads(await converted.text())
       .filter((e) => e.type === 'response.output_text.delta')
       .map((e) => e.delta)
-    expect(deltas).toEqual(['Hello'])
+    expect(deltas).toEqual(['Hel', 'lo'])
+  })
+
+  test('the completed envelope still carries the whole text, for a client that ignores the deltas', async () => {
+    const converted = await new OpenAIResponsesTransformer().transformResponseIn(chatStream(TWO_DELTA_STREAM), ctx)
+    const events = dataPayloads(await converted.text())
+    const completed = events.find((e) => e.type === 'response.completed')
+    const response = Object(completed?.response)
+    const output = Reflect.get(response, 'output')
+    const first = Array.isArray(output) ? Object(output[0]) : {}
+    const content = Reflect.get(first, 'content')
+    const block = Array.isArray(content) ? Object(content[0]) : {}
+    expect(Reflect.get(block, 'text')).toBe('Hello')
+    expect(Reflect.get(response, 'status')).toBe('completed')
+  })
+
+  // The point of the conversion being incremental: bytes must reach the
+  // client while the upstream is still generating. A buffered converter
+  // passes every expectation above and still fails this one — and it is
+  // the failure a reverse proxy turns into a 524 on a long answer.
+  test('the first event is readable before the upstream stream has ended', async () => {
+    const upstream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const encoder = new TextEncoder()
+        controller.enqueue(
+          encoder.encode(chunk({ id: 'chatcmpl-ttft', model: 'm', choices: [{ index: 0, delta: { content: 'Hel' } }] }))
+        )
+        // Deliberately left open: no close(), no further chunks.
+      }
+    })
+    const converted = await new OpenAIResponsesTransformer().transformResponseIn(
+      new Response(upstream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }),
+      ctx
+    )
+    const body = converted.body
+    if (body === null) throw new Error('the converted response carries no body')
+    const reader = body.getReader()
+    const first = await reader.read()
+    expect(new TextDecoder().decode(first.value)).toContain('response.created')
+    await reader.cancel()
   })
 })
 
