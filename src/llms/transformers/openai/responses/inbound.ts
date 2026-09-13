@@ -7,9 +7,10 @@
  *   - request:   Responses shape (`input`, `instructions`, flat tools)
  *                → UnifiedChatRequest (`messages`, nested tools)
  *   - response:  chat.completion JSON → Responses `response` envelope
- *   - SSE:       chat.completion SSE  → Responses SSE (buffered — full
- *                text is emitted in one `output_text.delta`, so TTFT is
- *                lost for now but the wire contract holds).
+ *   - SSE:       chat.completion SSE  → Responses SSE. The incremental
+ *                converter lives in `./inbound-stream.ts`;
+ *                `wrapResponsesEnvelopeAsSse` below is the fallback for
+ *                a response with no readable body.
  *
  * Kept minimal: text, tools, both tool-call kinds (function_call /
  * custom_tool_call and their outputs), and input images are supported.
@@ -313,16 +314,24 @@ function buildResponsesOutputItems(message: ChatCompletionResponseMessage | unde
   return items
 }
 
+/**
+ * The one field rename the two surfaces disagree on. Split out so the
+ * incremental converter in `./inbound-stream.ts`, which never assembles
+ * a `ChatCompletionResponse` to read it off, maps usage identically.
+ */
+export function convertChatUsageToResponses(usage: Record<string, unknown>): Record<string, number> {
+  const count = (value: unknown): number => (typeof value === 'number' ? value : 0)
+  return {
+    input_tokens: count(usage.prompt_tokens),
+    output_tokens: count(usage.completion_tokens),
+    total_tokens: count(usage.total_tokens)
+  }
+}
+
 export function convertChatCompletionToResponses(chat: ChatCompletionResponse): Record<string, unknown> {
   const firstChoice = chat.choices?.[0]
   const output = buildResponsesOutputItems(firstChoice?.message)
-  const usage = chat.usage
-    ? {
-        input_tokens: chat.usage.prompt_tokens ?? 0,
-        output_tokens: chat.usage.completion_tokens ?? 0,
-        total_tokens: chat.usage.total_tokens ?? 0
-      }
-    : undefined
+  const usage = chat.usage ? convertChatUsageToResponses({ ...chat.usage }) : undefined
   const envelope: Record<string, unknown> = {
     id: chat.id ?? `resp_${randomUUID().replace(/-/g, '').slice(0, 24)}`,
     object: 'response',
@@ -346,9 +355,11 @@ export function convertChatCompletionToResponses(chat: ChatCompletionResponse): 
  *   response.output_text.delta / *.done for the message text (if any)
  *   response.completed       (full envelope)
  *
- * Deliberately buffered — real streaming through the Chat→Responses
- * boundary is future work; for now the /v1/responses inbound path
- * trades TTFT for correctness of the wire contract.
+ * Buffered by construction: it needs the finished envelope. The live
+ * path is `convertChatSseToResponsesSse` in `./inbound-stream.ts`, which
+ * emits this same vocabulary as the upstream produces it; this remains
+ * for the case where there is no body left to read incrementally, and
+ * for callers that already hold a complete envelope.
  */
 export function wrapResponsesEnvelopeAsSse(envelope: Record<string, unknown>): string {
   const lines: string[] = []

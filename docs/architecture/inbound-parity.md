@@ -38,7 +38,7 @@ cell note below.
 
 | | messages | chat/completions | responses | gemini |
 |---|---|---|---|---|
-| streaming (SSE) | Supported | Supported | Partial (1) | Supported |
+| streaming (SSE) | Supported | Supported | Supported (1) | Supported |
 | non-streaming aggregation | Supported | Supported | Supported | Supported |
 | tool use | Supported | Supported | Supported | Supported (2) |
 | system prompt | Supported | Supported | Supported | Supported (3) |
@@ -72,14 +72,43 @@ of `contents[]` after that fix, are pinned by
 
 ## Cell notes
 
-### (1) responses × streaming — loses its incrementality
+### (1) responses × streaming — **fixed** (2026-09-13)
 
 `OpenAIResponsesTransformer.transformResponseIn` (`src/llms/transformers/openai/endpoint-responses.ts`)
-**folds the upstream chat SSE into JSON first**, with `aggregateOpenAiChatSseToJson`, and then
-composes fresh Responses SSE. The event sequence comes out in the same order as the real thing, so
-the wire contract holds — but the first `output_text.delta` only appears after the upstream
-finishes, which means TTFT is gone. Passing the Chat → Responses boundary incrementally needs a
-different implementation.
+used to **fold the upstream chat SSE into JSON first**, with `aggregateOpenAiChatSseToJson`, and
+then compose fresh Responses SSE from the finished envelope. The event sequence came out in the
+same order as the real thing, so the wire contract held — but the first `output_text.delta` only
+appeared after the upstream finished, which made TTFT equal to total generation time.
+
+**Why that was worse than a latency figure.** A reverse proxy in front of the gateway cannot
+distinguish a slow generation from a hung origin, so it applies its own ceiling on silence —
+Cloudflare terminates a request whose origin has written nothing for ~100s with a 524. Any byte
+resets that timer, so an incrementally-written response never trips it and a buffered one trips it
+on every long answer. Measured against this gateway, same model and prompt, through the same
+tunnel:
+
+| surface | first byte | total |
+|---|---|---|
+| `/v1/messages` (incremental) | 0.67s | 4.48s |
+| `/v1/responses` (buffered) | 8.46s | 8.46s |
+
+The equality in the second row is the defect; on a generation past the ceiling the same row was a
+524 the client saw as a failed request. `/v1/responses` is the surface the Codex CLI uses, so this
+hit exactly the long agentic turns it exists to serve.
+
+**The fix** is `convertChatSseToResponsesSse` in
+`src/llms/transformers/openai/responses/inbound-stream.ts`: the same event vocabulary, emitted as
+each upstream chunk is parsed. It mirrors `foldOpenAiChatChunks` chunk by chunk — a `message`
+output item opened lazily on the first content delta, one `function_call` / `custom_tool_call` item
+per `tool_calls[].index`, each closed with its `.done` pair — and replays the accumulated envelope
+on `response.completed`, so a client that reads only that event still sees what the buffered path
+used to hand it. `wrapResponsesEnvelopeAsSse` stays as the fallback for a response with no readable
+body.
+
+A stream that produces no parseable chunk at all emits nothing and closes, rather than fabricating
+an empty `response.completed` — that keeps the zero-event case visible to the route's own warning
+instead of laundering it into a well-formed success, on the same rule as `findSseStreamDefect`
+below.
 
 ### (2) gemini × tool use — **fixed** (2026-09-01)
 

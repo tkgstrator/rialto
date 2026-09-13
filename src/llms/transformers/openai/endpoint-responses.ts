@@ -8,6 +8,8 @@
  *
  * The conversion pieces live under `./responses/`:
  *   - `request.ts`         unified request -> Responses input[] shaping
+ *   - `inbound.ts`         Responses request/response -> unified/chat
+ *   - `inbound-stream.ts`  chat SSE -> Responses SSE, incrementally
  *   - `response-json.ts`   blocking JSON response -> chat.completion
  *   - `response-stream.ts` SSE session (dispatches into `stream-chunks.ts`)
  *   - `stream-chunks.ts`   per-event-type SSE chunk builders
@@ -31,6 +33,7 @@ import {
   convertResponsesRequestToUnified,
   wrapResponsesEnvelopeAsSse
 } from './responses/inbound'
+import { convertChatSseToResponsesSse } from './responses/inbound-stream'
 import {
   collectSystemMessages,
   convertResponseFormatToTextFormat,
@@ -61,14 +64,18 @@ export class OpenAIResponsesTransformer extends Transformer {
 
   // Endpoint-side outbound hook. After the provider chain reversed the
   // upstream reply into unified/chat-completion shape, convert back to
-  // the Responses `response` envelope the client asked for. SSE input is
-  // buffered — real per-token streaming through the Chat→Responses
-  // boundary is future work; for now the wire contract is honoured but
-  // TTFT is lost.
+  // the Responses `response` envelope the client asked for. An SSE reply
+  // is converted event by event (`convertChatSseToResponsesSse`) so the
+  // client's first byte arrives with the upstream's first token rather
+  // than with its last — see that module for what buffering here costs.
   async transformResponseIn(response: Response, _context?: TransformerContext): Promise<Response> {
     if (!response.ok) return response
     const contentType = response.headers.get('content-type')
     if (isSseContentType(contentType)) {
+      const streamed = convertChatSseToResponsesSse(response, this.logger)
+      if (streamed !== null) return streamed
+      // No body to read: nothing to be incremental about. Fold whatever
+      // the response can still give us and wrap the finished envelope.
       const chatJsonRaw = await aggregateOpenAiChatSseToJson(response)
       const chat = ChatCompletionResponseSchema.safeParse(chatJsonRaw)
       if (!chat.success) return response
