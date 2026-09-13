@@ -6,7 +6,7 @@
  * `request-content.ts`, which builds `contents[]` from the message list).
  */
 
-import type { ToolChoiceFunctionObject, UnifiedChatRequest } from '@/schemas/domain/unified'
+import { isUnifiedFunctionTool, type ToolChoiceFunctionObject, type UnifiedChatRequest } from '@/schemas/domain/unified'
 import type { GeminiGenerationConfig, GeminiThinkingConfig, GeminiToolConfig } from '@/schemas/wire/gemini/content'
 import { type GeminiFunctionDeclaration, type GeminiTool, tTool } from '../gemini-schema'
 
@@ -76,7 +76,11 @@ export function buildToolConfig(toolChoice: UnifiedChatRequest['tool_choice']): 
 /** Build the `tools[]` slice (function declarations + optional googleSearch). */
 export function buildTools(requestTools: UnifiedChatRequest['tools']): GeminiTool[] {
   const tools: GeminiTool[] = []
-  const functionDeclarations: GeminiFunctionDeclaration[] | undefined = requestTools
+  // Gemini's wire format has no equivalent of the hosted tools Codex sends
+  // (`custom`, `local_shell`) — there is no function signature to declare.
+  // Drop them rather than inventing a declaration Gemini would reject.
+  const functionTools = requestTools?.filter(isUnifiedFunctionTool)
+  const functionDeclarations: GeminiFunctionDeclaration[] | undefined = functionTools
     ?.filter((tool) => tool.function.name !== 'web_search')
     ?.map((tool) => ({
       name: tool.function.name,
@@ -86,7 +90,7 @@ export function buildTools(requestTools: UnifiedChatRequest['tools']): GeminiToo
   if (functionDeclarations?.length) {
     tools.push(tTool({ functionDeclarations }))
   }
-  if (requestTools?.some((tool) => tool.function.name === 'web_search')) {
+  if (functionTools?.some((tool) => tool.function.name === 'web_search')) {
     tools.push({ googleSearch: {} })
   }
   return tools

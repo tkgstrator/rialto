@@ -11,6 +11,7 @@ import {
   convertResponsesRequestToUnified,
   wrapResponsesEnvelopeAsSse
 } from '../../src/llms/transformers/openai/responses/inbound'
+import { remapTools } from '../../src/llms/transformers/openai/responses/request'
 
 describe('convertResponsesRequestToUnified', () => {
   test('string input becomes a single user message', () => {
@@ -182,6 +183,41 @@ describe('convertResponsesRequestToUnified', () => {
           description: 'Look up weather',
           parameters: { type: 'object', properties: { city: { type: 'string' } } }
         }
+      }
+    ])
+  })
+
+  // Regression: Codex sends `{type:'custom'}` and `{type:'local_shell'}`
+  // tool definitions, neither of which carries a `function` object. The
+  // inbound converter passes them through untouched, and remapTools on
+  // the outbound side then read `tool.function.name` unconditionally —
+  // a TypeError that surfaced as HTTP 500 "undefined is not an object
+  // (evaluating 'tool.function.name')" the moment Codex tried to use a
+  // tool at all. Responses is also the upstream wire shape here, so a
+  // flat tool has to come out exactly as it went in.
+  test('non-function tool types survive the Responses round trip', () => {
+    const unified = convertResponsesRequestToUnified({
+      model: 'gpt-5.6-sol',
+      input: 'Run: echo hi',
+      tools: [
+        { type: 'custom', name: 'shell', description: 'Run a shell command' },
+        { type: 'local_shell' },
+        {
+          type: 'function',
+          name: 'get_weather',
+          description: 'Look up weather',
+          parameters: { type: 'object', properties: { city: { type: 'string' } } }
+        }
+      ]
+    })
+    expect(remapTools(unified.tools)).toEqual([
+      { type: 'custom', name: 'shell', description: 'Run a shell command' },
+      { type: 'local_shell' },
+      {
+        type: 'function',
+        name: 'get_weather',
+        description: 'Look up weather',
+        parameters: { type: 'object', properties: { city: { type: 'string' } } }
       }
     ])
   })

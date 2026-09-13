@@ -88,7 +88,7 @@ export type UnifiedMessage = z.input<typeof UnifiedMessageSchema>
 
 // ─── Tool definitions ──────────────────────────────────────────────────
 
-export const UnifiedToolSchema = z.object({
+export const UnifiedFunctionToolSchema = z.object({
   type: z.literal('function'),
   function: z.object({
     name: z.string().nonempty(),
@@ -103,7 +103,42 @@ export const UnifiedToolSchema = z.object({
   }),
   cache_control: z.object({ type: z.string().nonempty() }).optional()
 })
+export type UnifiedFunctionTool = z.input<typeof UnifiedFunctionToolSchema>
+
+// A tool only the caller's own upstream models. Codex sends `{type:'custom',
+// name, description}` and `{type:'local_shell'}`, which have no `function`
+// object at all, and a Responses inbound request whose chain ends at a
+// Responses upstream can carry them through untouched.
+//
+// This member exists so that carrying one is expressible in the domain type
+// rather than smuggled past it. While `tools` was declared function-only, the
+// Responses inbound converter still pushed these shapes into the array and
+// every consumer that read `tool.function.name` crashed on them — a 500 that
+// the compiler could not have caught, because the type said the case was
+// impossible. Widening it turns each such consumer into a decision the
+// compiler asks for.
+export const UnifiedPassthroughToolSchema = z
+  .object({
+    type: z
+      .string()
+      .nonempty()
+      .refine((type) => type !== 'function', {
+        message: 'A function tool must carry its `function` object — use UnifiedFunctionToolSchema.'
+      })
+  })
+  .catchall(z.unknown())
+export type UnifiedPassthroughTool = z.input<typeof UnifiedPassthroughToolSchema>
+
+export const UnifiedToolSchema = z.union([UnifiedFunctionToolSchema, UnifiedPassthroughToolSchema])
 export type UnifiedTool = z.input<typeof UnifiedToolSchema>
+
+/** Narrow a unified tool to the function member. Consumers that can only
+ *  express a function tool (every provider whose wire format has no
+ *  equivalent of Codex's hosted tools) filter on this. */
+export function isUnifiedFunctionTool(tool: UnifiedTool): tool is UnifiedFunctionTool {
+  const fn: unknown = Reflect.get(tool, 'function')
+  return tool.type === 'function' && typeof fn === 'object' && fn !== null
+}
 
 // ─── Reasoning effort ──────────────────────────────────────────────────
 

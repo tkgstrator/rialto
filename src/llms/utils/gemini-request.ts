@@ -11,7 +11,7 @@
  */
 
 import { HTTPException } from 'hono/http-exception'
-import type { UnifiedChatRequest, UnifiedTool } from '@/schemas/domain/unified'
+import type { UnifiedChatRequest, UnifiedFunctionTool, UnifiedTool } from '@/schemas/domain/unified'
 import {
   type GeminiContent,
   type GeminiGenerationConfig,
@@ -89,7 +89,7 @@ export function buildRequestBody(request: UnifiedChatRequest): GeminiRequestBody
 // ─── Inbound (Gemini-shaped → unified) ─────────────────────────────────
 
 /** Default JSON Schema body for a Gemini tool whose parameters are omitted. */
-const EMPTY_PARAMETERS: UnifiedTool['function']['parameters'] = {
+const EMPTY_PARAMETERS: UnifiedFunctionTool['function']['parameters'] = {
   type: 'object',
   properties: {}
 }
@@ -99,7 +99,7 @@ const EMPTY_PARAMETERS: UnifiedTool['function']['parameters'] = {
  * Gemini function declaration. We only check the `type === 'object'`
  * top-level marker — deeper validation is the schema's job.
  */
-function isUnifiedToolParameters(value: unknown): value is UnifiedTool['function']['parameters'] {
+function isUnifiedToolParameters(value: unknown): value is UnifiedFunctionTool['function']['parameters'] {
   if (typeof value !== 'object' || value === null) {
     return false
   }
