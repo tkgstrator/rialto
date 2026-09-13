@@ -54,9 +54,18 @@ export type MessageContent = z.infer<typeof MessageContentSchema>
 
 // ─── Tool calls ────────────────────────────────────────────────────────
 
+// `custom` is the second call kind the Responses API can answer with:
+// `{type:'custom_tool_call', call_id, name, input}`, where `input` is
+// free-form text rather than a JSON argument object. It reuses the
+// `function` member instead of getting one of its own because a custom
+// call does have both a name and one payload string, and every consumer
+// below already reads a call that way — a separate member would make each
+// of them narrow for a distinction only the Responses converters act on.
+// `type` is what tells those converters which spelling to re-emit; get it
+// wrong and the upstream 400s the call_id's follow-up output.
 export const UnifiedToolCallSchema = z.object({
   id: z.string().nonempty(),
-  type: z.literal('function'),
+  type: z.enum(['function', 'custom']),
   function: z.object({
     name: z.string().nonempty(),
     arguments: z.string().nonempty()
@@ -74,6 +83,13 @@ export const UnifiedMessageSchema = z.object({
   content: z.union([z.string().nonempty(), z.null(), z.array(MessageContentSchema)]),
   tool_calls: z.array(UnifiedToolCallSchema).default([]),
   tool_call_id: z.string().nonempty().optional(),
+  // Which call kind a `role:'tool'` result answers. Chat-Completions has
+  // one tool message for both, Responses has two output items and rejects
+  // a `function_call_output` naming a call_id the model made as a custom
+  // tool call — so the distinction has to survive the trip through this
+  // shape. Absent means the function kind, which is every caller that
+  // predates custom tools.
+  tool_call_type: z.enum(['function', 'custom']).optional(),
   cache_control: z.object({ type: z.string().nonempty().optional() }).optional(),
   thinking: z
     .object({
@@ -105,10 +121,11 @@ export const UnifiedFunctionToolSchema = z.object({
 })
 export type UnifiedFunctionTool = z.input<typeof UnifiedFunctionToolSchema>
 
-// A tool only the caller's own upstream models. Codex sends `{type:'custom',
-// name, description}` and `{type:'local_shell'}`, which have no `function`
-// object at all, and a Responses inbound request whose chain ends at a
-// Responses upstream can carry them through untouched.
+// A tool only the caller's own upstream models. Codex 0.154 sends
+// `{type:'namespace', name, tools:[...]}` on every request (measured), and
+// `custom` / `local_shell` in other configurations; none of them carries a
+// `function` object at all. A Responses inbound request whose chain ends at
+// a Responses upstream can carry them through untouched.
 //
 // This member exists so that carrying one is expressible in the domain type
 // rather than smuggled past it. While `tools` was declared function-only, the

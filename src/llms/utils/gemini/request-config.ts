@@ -77,7 +77,7 @@ export function buildToolConfig(toolChoice: UnifiedChatRequest['tool_choice']): 
 export function buildTools(requestTools: UnifiedChatRequest['tools']): GeminiTool[] {
   const tools: GeminiTool[] = []
   // Gemini's wire format has no equivalent of the hosted tools Codex sends
-  // (`custom`, `local_shell`) — there is no function signature to declare.
+  // (`namespace`, `custom`, `local_shell`) — no function signature to declare.
   // Drop them rather than inventing a declaration Gemini would reject.
   const functionTools = requestTools?.filter(isUnifiedFunctionTool)
   const functionDeclarations: GeminiFunctionDeclaration[] | undefined = functionTools
