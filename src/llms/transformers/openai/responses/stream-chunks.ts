@@ -35,14 +35,14 @@ function buildTextDeltaChunk(
   }
 }
 
-function buildFunctionCallAddedChunk(
+function buildToolCallAddedChunk(
   data: ResponsesStreamEvent,
   getCurrentIndex: (eventType: string) => number
 ): Record<string, unknown> {
   const item = data.item
   const toolName = item?.name
   if (toolName === undefined) {
-    throw new Error('OpenAI Responses stream: function_call output is missing name')
+    throw new Error(`OpenAI Responses stream: ${item?.type} output is missing name`)
   }
   const callId = firstDefined([item?.call_id, item?.id])
   return {
@@ -63,7 +63,11 @@ function buildFunctionCallAddedChunk(
                 name: toolName,
                 arguments: ''
               },
-              type: 'function'
+              // The kind is only stated on this first chunk; the
+              // aggregator keeps it while the payload deltas accumulate,
+              // and the Responses inbound converter reads it to decide
+              // which output item the caller gets back.
+              type: item?.type === 'custom_tool_call' ? 'custom' : 'function'
             }
           ]
         },
@@ -153,7 +157,10 @@ function buildAnnotationChunk(
   }
 }
 
-function buildFunctionArgsDeltaChunk(
+// Serves both call kinds: the aggregator concatenates onto whichever
+// call the `added` chunk opened, and a delta chunk restating the kind
+// would say nothing the accumulator does not already hold.
+function buildToolCallPayloadDeltaChunk(
   data: ResponsesStreamEvent,
   getCurrentIndex: (eventType: string) => number
 ): Record<string, unknown> {
@@ -182,7 +189,10 @@ function buildFunctionArgsDeltaChunk(
 }
 
 function buildCompletedChunk(data: ResponsesStreamEvent, finishReasonOverride?: string): Record<string, unknown> {
-  const inferred = data.response?.output?.some((item) => item.type === 'function_call') ? 'tool_calls' : 'stop'
+  const endedOnToolCall = data.response?.output?.some(
+    (item) => item.type === 'function_call' || item.type === 'custom_tool_call'
+  )
+  const inferred = endedOnToolCall ? 'tool_calls' : 'stop'
   const finishReason = finishReasonOverride === undefined ? inferred : finishReasonOverride
   // Codex reports usage in Responses-API terms (input_tokens /
   // output_tokens / total_tokens). Emit the Chat-Completions
@@ -393,8 +403,8 @@ export function handleStreamEvent(
       enqueueChunk(buildTextDeltaChunk(data, getCurrentIndex))
       return false
     case 'response.output_item.added':
-      if (data.item?.type === 'function_call') {
-        enqueueChunk(buildFunctionCallAddedChunk(data, getCurrentIndex))
+      if (data.item?.type === 'function_call' || data.item?.type === 'custom_tool_call') {
+        enqueueChunk(buildToolCallAddedChunk(data, getCurrentIndex))
       } else if (data.item?.type === 'message') {
         const chunk = buildMessageAddedChunk(data, getCurrentIndex)
         if (chunk) enqueueChunk(chunk)
@@ -404,7 +414,8 @@ export function handleStreamEvent(
       enqueueChunk(buildAnnotationChunk(data, getCurrentIndex))
       return false
     case 'response.function_call_arguments.delta':
-      enqueueChunk(buildFunctionArgsDeltaChunk(data, getCurrentIndex))
+    case 'response.custom_tool_call_input.delta':
+      enqueueChunk(buildToolCallPayloadDeltaChunk(data, getCurrentIndex))
       return false
     case 'response.completed':
       enqueueChunk(buildCompletedChunk(data))

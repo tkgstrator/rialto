@@ -122,12 +122,16 @@ export function processNonSystemMessage(message: UnifiedChatRequest['messages'][
 
   if (message.role === 'tool') {
     const toolMessage: MutableMessage = { ...mutable }
-    toolMessage.type = 'function_call_output'
+    // The output kind has to match the kind of call it answers: the
+    // upstream 400s a `function_call_output` whose call_id it recorded as
+    // a custom tool call, and the mirror image too.
+    toolMessage.type = message.tool_call_type === 'custom' ? 'custom_tool_call_output' : 'function_call_output'
     toolMessage.call_id = message.tool_call_id
     toolMessage.output = message.content
     deleteField(toolMessage, 'cache_control')
     deleteField(toolMessage, 'role')
     deleteField(toolMessage, 'tool_call_id')
+    deleteField(toolMessage, 'tool_call_type')
     deleteField(toolMessage, 'content')
     input.push(toolMessage)
     return
@@ -135,6 +139,15 @@ export function processNonSystemMessage(message: UnifiedChatRequest['messages'][
 
   if (message.role === 'assistant' && Array.isArray(message.tool_calls)) {
     message.tool_calls.forEach((tool) => {
+      if (tool.type === 'custom') {
+        input.push({
+          type: 'custom_tool_call',
+          input: tool.function.arguments,
+          name: tool.function.name,
+          call_id: tool.id
+        })
+        return
+      }
       input.push({
         type: 'function_call',
         arguments: tool.function.arguments,
