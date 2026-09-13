@@ -39,7 +39,7 @@ export const ResponsesAPIOutputContentSchema = z.object({
 })
 export type ResponsesAPIOutputContent = z.infer<typeof ResponsesAPIOutputContentSchema>
 
-// ─── Output items (message / function_call) ────────────────────────────
+// ─── Output items (message / function_call / custom_tool_call) ─────────
 
 export const ResponsesAPIOutputItemSchema = z.object({
   type: z.string().nonempty(),
@@ -47,6 +47,11 @@ export const ResponsesAPIOutputItemSchema = z.object({
   call_id: z.string().nonempty().optional(),
   name: z.string().nonempty().optional(),
   arguments: z.string().nonempty().optional(),
+  // A `custom_tool_call`'s payload. Free-form text under its own name
+  // rather than `arguments`, which is JSON and belongs to `function_call`;
+  // `.min(0)` because a custom tool can legitimately be called with
+  // nothing, and dropping the field would read as "no call at all".
+  input: z.string().min(0).optional(),
   content: z.array(ResponsesAPIOutputContentSchema).default([]),
   reasoning: z.string().nonempty().optional()
 })
@@ -244,9 +249,35 @@ export const ResponsesInboundFunctionCallOutputItemSchema = z
   .loose()
 export type ResponsesInboundFunctionCallOutputItem = z.infer<typeof ResponsesInboundFunctionCallOutputItemSchema>
 
+// The custom-tool twins of the two items above. A caller replaying its
+// own history sends these back verbatim, so both directions have to know
+// the shape: `input` is the free-form text the model produced, and the
+// output item is the result of having run it.
+export const ResponsesInboundCustomToolCallItemSchema = z
+  .object({
+    type: z.literal('custom_tool_call'),
+    call_id: z.string().nonempty().optional(),
+    id: z.string().nonempty().optional(),
+    name: z.string().min(0).optional(),
+    input: z.string().min(0).optional()
+  })
+  .loose()
+export type ResponsesInboundCustomToolCallItem = z.infer<typeof ResponsesInboundCustomToolCallItemSchema>
+
+export const ResponsesInboundCustomToolCallOutputItemSchema = z
+  .object({
+    type: z.literal('custom_tool_call_output'),
+    call_id: z.string().nonempty().optional(),
+    output: z.unknown().optional()
+  })
+  .loose()
+export type ResponsesInboundCustomToolCallOutputItem = z.infer<typeof ResponsesInboundCustomToolCallOutputItemSchema>
+
 export const ResponsesInboundInputItemSchema = z.union([
   ResponsesInboundFunctionCallItemSchema,
   ResponsesInboundFunctionCallOutputItemSchema,
+  ResponsesInboundCustomToolCallItemSchema,
+  ResponsesInboundCustomToolCallOutputItemSchema,
   ResponsesInboundMessageItemSchema
 ])
 export type ResponsesInboundInputItem = z.infer<typeof ResponsesInboundInputItemSchema>

@@ -11,11 +11,11 @@
  *                text is emitted in one `output_text.delta`, so TTFT is
  *                lost for now but the wire contract holds).
  *
- * Kept minimal: text, tools, function_call, function_call_output, and
- * input images are supported. Uncommon shapes (audio, refusal, custom
- * annotations) round-trip through the pipeline verbatim rather than
- * throwing, so the upstream error surfaces to the caller instead of a
- * schema violation here.
+ * Kept minimal: text, tools, both tool-call kinds (function_call /
+ * custom_tool_call and their outputs), and input images are supported.
+ * Uncommon shapes (audio, refusal, custom annotations) round-trip through
+ * the pipeline verbatim rather than throwing, so the upstream error
+ * surfaces to the caller instead of a schema violation here.
  */
 
 import { randomUUID } from 'node:crypto'
@@ -23,9 +23,9 @@ import type { UnifiedChatRequest } from '@/schemas/domain/unified'
 import {
   type ChatCompletionResponse,
   type ChatCompletionResponseMessage,
-  type ResponsesInboundFunctionCallItem,
+  ResponsesInboundCustomToolCallItemSchema,
+  ResponsesInboundCustomToolCallOutputItemSchema,
   ResponsesInboundFunctionCallItemSchema,
-  type ResponsesInboundFunctionCallOutputItem,
   ResponsesInboundFunctionCallOutputItemSchema,
   type ResponsesInboundMessageItem,
   ResponsesInboundMessageItemSchema
@@ -85,32 +85,32 @@ function convertMessageItem(item: ResponsesInboundMessageItem): Record<string, u
   return { role, content: blocks }
 }
 
-function convertFunctionCallItem(item: ResponsesInboundFunctionCallItem): Record<string, unknown> {
-  const id = item.call_id ?? item.id ?? `call_${randomUUID().slice(0, 8)}`
+// An assistant turn that called a tool, in the one shape chat-completions
+// has for both kinds. `payload` is the call's arguments (JSON, for the
+// function kind) or its input (free text, for the custom kind); `kind` is
+// what lets the outbound side put it back under the right name.
+function toolCallMessage(
+  ids: { call_id?: string; id?: string },
+  kind: 'function' | 'custom',
+  name: string,
+  payload: string
+): Record<string, unknown> {
+  const id = ids.call_id ?? ids.id ?? `call_${randomUUID().slice(0, 8)}`
   return {
     role: 'assistant',
     content: null,
-    tool_calls: [
-      {
-        id,
-        type: 'function',
-        function: {
-          name: item.name ?? '',
-          arguments: item.arguments ?? ''
-        }
-      }
-    ]
+    tool_calls: [{ id, type: kind, function: { name, arguments: payload } }]
   }
 }
 
-function convertFunctionCallOutputItem(item: ResponsesInboundFunctionCallOutputItem): Record<string, unknown> {
-  const output =
-    typeof item.output === 'string' ? item.output : item.output !== undefined ? JSON.stringify(item.output) : ''
-  return {
-    role: 'tool',
-    tool_call_id: item.call_id ?? '',
-    content: output
-  }
+// The result of having run one, likewise. `tool_call_type` rides along
+// only for the custom kind so that a function result stays byte-identical
+// to what every caller before custom tools produced.
+function toolResultMessage(callId: string | undefined, kind: 'function' | 'custom', output: unknown) {
+  const content = typeof output === 'string' ? output : output !== undefined ? JSON.stringify(output) : ''
+  const message: Record<string, unknown> = { role: 'tool', tool_call_id: callId ?? '', content }
+  if (kind === 'custom') message.tool_call_type = kind
+  return message
 }
 
 function convertToolsResponsesToChat(tools: unknown): unknown {
@@ -184,13 +184,25 @@ export function convertResponsesRequestToUnified(body: Record<string, unknown>):
 
       const fc = ResponsesInboundFunctionCallItemSchema.safeParse(raw)
       if (fc.success) {
-        messages.push(convertFunctionCallItem(fc.data))
+        messages.push(toolCallMessage(fc.data, 'function', fc.data.name ?? '', fc.data.arguments ?? ''))
         continue
       }
 
       const fco = ResponsesInboundFunctionCallOutputItemSchema.safeParse(raw)
       if (fco.success) {
-        messages.push(convertFunctionCallOutputItem(fco.data))
+        messages.push(toolResultMessage(fco.data.call_id, 'function', fco.data.output))
+        continue
+      }
+
+      const ctc = ResponsesInboundCustomToolCallItemSchema.safeParse(raw)
+      if (ctc.success) {
+        messages.push(toolCallMessage(ctc.data, 'custom', ctc.data.name ?? '', ctc.data.input ?? ''))
+        continue
+      }
+
+      const ctco = ResponsesInboundCustomToolCallOutputItemSchema.safeParse(raw)
+      if (ctco.success) {
+        messages.push(toolResultMessage(ctco.data.call_id, 'custom', ctco.data.output))
         continue
       }
 
@@ -270,13 +282,31 @@ function buildResponsesOutputItems(message: ChatCompletionResponseMessage | unde
   }
   if (Array.isArray(message?.tool_calls)) {
     for (const tc of message.tool_calls) {
+      const callId = tc.id ?? `call_${randomUUID().slice(0, 8)}`
+      const name = tc.function?.name ?? ''
+      const payload = tc.function?.arguments ?? ''
+      // A custom tool's call is a different output item, not a
+      // `function_call` with a different payload: the Codex CLI reads
+      // `input`, and the upstream expects the matching
+      // `custom_tool_call_output` on the next turn.
+      if (tc.type === 'custom') {
+        items.push({
+          id: `ctc_${randomUUID().replace(/-/g, '').slice(0, 24)}`,
+          type: 'custom_tool_call',
+          status: 'completed',
+          call_id: callId,
+          name,
+          input: payload
+        })
+        continue
+      }
       items.push({
         id: `fc_${randomUUID().replace(/-/g, '').slice(0, 24)}`,
         type: 'function_call',
         status: 'completed',
-        call_id: tc.id ?? `call_${randomUUID().slice(0, 8)}`,
-        name: tc.function?.name ?? '',
-        arguments: tc.function?.arguments ?? ''
+        call_id: callId,
+        name,
+        arguments: payload
       })
     }
   }
@@ -376,6 +406,28 @@ export function wrapResponsesEnvelopeAsSse(envelope: Record<string, unknown>): s
           item_id: item.id,
           output_index: i,
           arguments: args
+        })
+      )
+    } else if (item.type === 'custom_tool_call') {
+      // The custom kind has its own pair of events, and the Codex CLI
+      // reads the call's text off them rather than off the item — a
+      // function_call_arguments pair here would leave it with an empty
+      // command to run.
+      const callInput = typeof item.input === 'string' ? item.input : ''
+      lines.push(
+        sseEvent('response.custom_tool_call_input.delta', {
+          type: 'response.custom_tool_call_input.delta',
+          item_id: item.id,
+          output_index: i,
+          delta: callInput
+        })
+      )
+      lines.push(
+        sseEvent('response.custom_tool_call_input.done', {
+          type: 'response.custom_tool_call_input.done',
+          item_id: item.id,
+          output_index: i,
+          input: callInput
         })
       )
     }

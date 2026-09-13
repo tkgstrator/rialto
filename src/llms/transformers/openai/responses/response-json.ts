@@ -16,7 +16,12 @@ import { firstDefined, newChatcmplId } from './helpers'
 
 export function convertResponseToChat(responseData: ResponsesAPIPayload, logger?: Logger): Record<string, unknown> {
   const messageOutput = responseData.output?.find((item) => item.type === 'message')
-  const functionCallOutput = responseData.output?.find((item) => item.type === 'function_call')
+  // Both call kinds land in the one chat `tool_calls` slot. Requests go
+  // upstream with `parallel_tool_calls:false`, so at most one is expected;
+  // the first is taken for the same reason it always was.
+  const toolCallOutput = responseData.output?.find(
+    (item) => item.type === 'function_call' || item.type === 'custom_tool_call'
+  )
   const annotations = buildAnnotationsFromMessage(messageOutput)
 
   logger?.debug({
@@ -26,15 +31,18 @@ export function convertResponseToChat(responseData: ResponsesAPIPayload, logger?
 
   const thinking = messageOutput?.reasoning ? { content: messageOutput.reasoning } : null
   const messageContent = buildMessageContentFromOutput(messageOutput)
-  const toolCalls = functionCallOutput
+  const isCustomCall = toolCallOutput?.type === 'custom_tool_call'
+  const toolCalls = toolCallOutput
     ? [
         {
-          id: firstDefined([functionCallOutput.call_id, functionCallOutput.id]),
+          id: firstDefined([toolCallOutput.call_id, toolCallOutput.id]),
           function: {
-            name: functionCallOutput.name,
-            arguments: functionCallOutput.arguments
+            name: toolCallOutput.name,
+            // A custom call's payload is `input`; `arguments` is the
+            // function kind's and is absent on one of these.
+            arguments: isCustomCall ? toolCallOutput.input : toolCallOutput.arguments
           },
-          type: 'function'
+          type: isCustomCall ? 'custom' : 'function'
         }
       ]
     : null
