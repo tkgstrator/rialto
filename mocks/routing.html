@@ -13,7 +13,7 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, btn, navTo } = window.Shell
+const { renderShell, btn, navTo, dialog } = window.Shell
 
 // ─── Surfaces ─────────────────────────────────────────────────────────
 // The surface is the outermost selector: pick which wire format you are
@@ -56,12 +56,12 @@ const surfaceTab = (s) => {
 // Earlier drafts stacked a summary, a quota strip, a status per row and a
 // block of constraints. None of it was asked for: the question an
 // operator brings here is which provider and tier each scenario uses.
-const R = (provider, tier, model) => ({ provider, tier, model })
+const R = (provider, tier, model, on = true) => ({ provider, tier, model, on })
 const SCENARIOS = [
   {
     label: 'Default',
     when: 'everything the rows below do not catch',
-    agent: [R('claude-code', 'sonnet', 'claude-sonnet-5'), R('codex', 'sonnet', 'gpt-5.5')],
+    agent: [R('claude-code', 'sonnet', 'claude-sonnet-5'), R('codex', 'sonnet', 'gpt-5.5', false)],
     subagent: [R('claude-code', 'haiku', 'claude-haiku-4-5'), R('claude-code', 'sonnet', 'claude-sonnet-5')]
   },
   {
@@ -82,38 +82,102 @@ const SCENARIOS = [
 // state after it.
 const EDITING = new URLSearchParams(location.search).has('edit')
 
-// Reading: the combination as text. Editing: provider and tier become
-// select boxes, each line can be dragged or removed, and Add appends one.
-// The model the tier resolves to rides along muted, so "sonnet" is never
-// a mystery and a changed alias shows up here without an edit.
-const selectBox = (value) =>
-  `<button class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 font-mono text-xs hover:bg-muted/60">${value} <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i></button>`
+// What a combination can be: every provider's tiers, with the model each
+// alias names today. A tier whose alias is unset cannot be chosen — it
+// would reach nothing — and says where to set it.
+const PROVIDERS = [
+  { name: 'claude-code', kind: 'subscription', tiers: [['fable', 'claude-fable-5'], ['opus', 'claude-opus-5'], ['sonnet', 'claude-sonnet-5'], ['haiku', 'claude-haiku-4-5']] },
+  { name: 'codex',       kind: 'subscription', tiers: [['fable', null], ['opus', 'gpt-5.5'], ['sonnet', 'gpt-5.5'], ['haiku', 'gpt-5.4-mini']] },
+  { name: 'openai',      kind: 'api key',      tiers: [['fable', null], ['opus', 'gpt-5.6-sol'], ['sonnet', 'gpt-5.6-terra'], ['haiku', 'gpt-5.6-luna']] }
+]
+
+// A combination is shown, not edited in place. Picking one is a
+// decision in two steps — which provider, then which of its tiers — so
+// it happens in a dialog (?edit&add, ?edit&add=tier), opened by Add or
+// by clicking a line to change it. An earlier draft put a provider
+// select and a tier select side by side on every line: two controls for
+// one decision, the second's options depending on the first.
+//
+// Every line is the same grid in both states, so the columns line up
+// down a cell and across the table: handle, order, the combination, on,
+// remove. A combination switched off keeps its place and is skipped.
+const LINE = 'grid grid-cols-[1rem_1rem_minmax(0,22rem)_1.75rem_1.5rem] items-center gap-2'
+
+const toggle = (on) => `
+  <span class="inline-flex h-4 w-7 items-center rounded-full ${on ? 'bg-foreground' : 'bg-muted-foreground/30'} px-0.5 ${EDITING ? 'cursor-pointer' : 'opacity-50'}">
+    <span class="size-3 rounded-full bg-background ${on ? 'translate-x-3' : ''}"></span>
+  </span>`
 
 const combination = (r, i) => `
-  <div class="flex min-h-8 items-center gap-2">
-    ${EDITING ? '<i class="ri-draggable text-base leading-none text-muted-foreground/50"></i>' : ''}
-    <span class="w-4 font-mono text-[12px] tabular-nums text-muted-foreground">${i + 1}</span>
-    ${
-      EDITING
-        ? `${selectBox(r.provider)}${selectBox(r.tier)}`
-        : `<span class="font-mono text-xs">${r.provider}</span><span class="text-muted-foreground/60">·</span><span class="font-mono text-xs">${r.tier}</span>`
-    }
-    <span class="ml-1 font-mono text-[12px] text-muted-foreground">${r.model}</span>
-    ${EDITING ? '<button class="ml-1 text-muted-foreground/60 hover:text-foreground"><i class="ri-close-line text-sm"></i></button>' : ''}
+  <div class="${LINE} min-h-8">
+    <i class="ri-draggable text-base leading-none text-muted-foreground/50 ${EDITING ? '' : 'invisible'}"></i>
+    <span class="font-mono text-[12px] tabular-nums text-muted-foreground">${i + 1}</span>
+    <div class="flex h-8 items-center gap-2 rounded-md px-2.5 ${EDITING ? 'cursor-pointer border border-border hover:bg-muted/60' : ''} ${r.on ? '' : 'opacity-50'}">
+      <span class="font-mono text-xs">${r.provider} · ${r.tier}</span>
+      <span class="ml-auto truncate font-mono text-[12px] text-muted-foreground">${r.on ? r.model : 'off'}</span>
+    </div>
+    ${toggle(r.on)}
+    <button class="text-muted-foreground/60 hover:text-foreground ${EDITING ? '' : 'invisible'}"><i class="ri-close-line text-sm"></i></button>
   </div>`
 
-// An empty cell is not an error: Think and Long context fall back to
-// Default for the same caller, and an empty Default sends the request
-// upstream with the model it asked for.
+// ─── The dialog ───────────────────────────────────────────────────────
+// Step 1: which provider. Step 2: which of its tiers, each with the model
+// its alias names; an unset alias is disabled and says where to fix it.
+const ADD = new URLSearchParams(location.search).get('add')
+
+const option = (label, detail, { on = false, disabled = false, arrow = false } = {}) => `
+  <button class="flex h-10 w-full items-center gap-3 rounded-md px-3 text-left ${disabled ? 'cursor-not-allowed text-muted-foreground/50' : on ? 'bg-muted' : 'hover:bg-muted/60'}">
+    <span class="w-4">${on ? '<i class="ri-check-line text-sm"></i>' : ''}</span>
+    <span class="font-mono text-xs">${label}</span>
+    <span class="ml-auto text-[12px] ${disabled ? '' : 'font-mono text-muted-foreground'}">${detail}</span>
+    ${arrow ? '<i class="ri-arrow-right-s-line text-sm text-muted-foreground"></i>' : ''}
+  </button>`
+
+const providerStep = dialog(
+  'Add provider · tier — Default, Agent',
+  `<div class="grid gap-1">
+    <div class="text-[12px] text-muted-foreground">1. Choose a provider</div>
+    ${PROVIDERS.map((p) => option(p.name, `<span class="font-sans">${p.kind}</span>`, { arrow: true })).join('')}
+  </div>`,
+  btn('Cancel', 'ghost')
+)
+
+const tierStep = dialog(
+  'Add provider · tier — Default, Agent',
+  `<div class="grid gap-1">
+    <div class="flex items-center gap-2 text-[12px] text-muted-foreground">
+      <button class="inline-flex items-center gap-1 hover:text-foreground"><i class="ri-arrow-left-s-line text-sm"></i>codex</button>
+      <span>·</span><span>2. Choose a tier</span>
+    </div>
+    ${PROVIDERS[1].tiers
+      .map(([tier, model]) =>
+        model === null
+          ? option(tier, '<span class="font-sans">no model set — set it on the provider page</span>', { disabled: true })
+          : option(tier, model, { on: tier === 'sonnet' })
+      )
+      .join('')}
+  </div>`,
+  `${btn('Cancel', 'ghost')}${btn('Add', 'primary', 'ri-add-line')}`
+)
+
+// Add sits on the combination column, dashed, where the next line would
+// go. It opens the dialog.
+const addLine = `
+  <div class="${LINE}">
+    <span></span><span></span>
+    <button class="flex h-8 items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 text-[12px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"><i class="ri-add-line text-sm"></i>Add provider · tier</button>
+    <span></span>
+  </div>`
+
 const cell = (routes, isDefault) => `
   <td class="px-2 py-3">
     <div class="grid gap-1.5">
       ${
         routes.length === 0
-          ? `<span class="flex min-h-8 items-center text-[12px] text-muted-foreground">${isDefault ? 'none — the requested model is used' : 'none — uses Default'}</span>`
+          ? `<div class="${LINE} min-h-8"><span></span><span></span><span class="px-2.5 text-[12px] text-muted-foreground">${isDefault ? 'none — the requested model is used' : 'none — uses Default'}</span><span></span></div>`
           : routes.map(combination).join('')
       }
-      ${EDITING ? `<div>${btn('Add', 'ghost', 'ri-add-line')}</div>` : ''}
+      ${EDITING ? addLine : ''}
     </div>
   </td>`
 
@@ -169,7 +233,9 @@ document.getElementById('root').innerHTML = `
       </tr>
     </thead>
     <tbody>${SCENARIOS.map(row).join('')}</tbody>
-  </table>`
+  </table>
+
+  ${EDITING && ADD !== null ? (ADD === 'tier' ? tierStep : providerStep) : ''}`
 
 renderShell({
   active: 'routing',
