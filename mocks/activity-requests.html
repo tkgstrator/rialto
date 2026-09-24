@@ -17,24 +17,23 @@ const { renderShell, pill, btn, surfacePill, navTo, sortTh, pager } = window.She
 
 // One row per upstream call (RequestLog), vs Sessions which groups them.
 // The columns that did not exist before are `Requested` / `Sent`,
-// `Scenario` and `Token` — the three answers to "why did this go there,
-// and who asked for it".
+// `Route` and `Token` — the three answers to "why did this go there, and
+// who asked for it".
 //
-// The middle column is `Scenario`, not `Rule`. It was drawn as a rule name
-// ("Haiku passthrough") when routing rules existed, but no rule name was
-// ever persisted, so the build could fill it with nothing but the
-// ScenarioKey — and calling it Rule made "think" read as a rule someone
-// had written. Rules are gone now: the chain is the only selector, and the
-// scenario it classified the request into is the whole answer.
+// The middle column is `Route`: the tier of the tier map that served the
+// request, or `passthrough` when no route did — a passthrough surface, or
+// a tier with no routes. It used to be the scenario the classifier put
+// the request in; scenarios went with the per-scenario chains, and the
+// value is stored in the same column, so older rows read as they were.
 const REQS = [
-  { t: '14:05:47', status: 200, requested: 'claude-haiku-4-5',  sent: 'claude-haiku-4-5', provider: 'claude-code',  surface: '/v1/messages',  rule: 'default', lane: 'subagent', token: 'MacBook — Claude Code', inTok: '3.10k', outTok: '412',  ms: '812',   cost: '$0.00412' },
-  { t: '14:03:02', status: 200, requested: 'claude-sonnet-4-5', sent: 'claude-fable-5', provider: 'claude-code',    surface: '/v1/messages',  rule: '—', lane: 'agent',    token: 'MacBook — Claude Code', inTok: '48.2k', outTok: '2.10k', ms: '4,411', cost: '$0.0891' },
-  { t: '14:03:02', status: 429, requested: 'claude-sonnet-4-5', sent: 'gpt-5.5', provider: 'codex',                 surface: '/v1/messages',  rule: '—', lane: 'agent',    token: 'MacBook — Claude Code', inTok: '—',     outTok: '—',     ms: '—',     cost: '—' },
-  { t: '14:02:33', status: 200, requested: 'claude-sonnet-4-5', sent: 'claude-opus-4-8', provider: 'claude-code',   surface: '/v1/messages',  rule: '—', lane: 'agent',    token: 'MacBook — Claude Code', inTok: '46.1k', outTok: '1.84k', ms: '3,806', cost: '$0.121' },
-  { t: '13:58:10', status: 200, requested: 'gpt-5.5',           sent: 'gpt-5.5', provider: 'codex',                 surface: '/v1/responses', rule: '—', lane: 'agent',    token: 'MacBook — Codex',       inTok: '12.4k', outTok: '940',   ms: '2,140', cost: '—' },
-  { t: '13:51:04', status: 200, requested: 'gemini-3.1-pro',    sent: 'gemini-3.1-pro', provider: 'gemini-cli',     surface: '/v1beta/models/*',    rule: '—', lane: 'agent',    token: 'Gemini CLI',            inTok: '8.20k', outTok: '610',   ms: '1,104', cost: '—' },
-  { t: '13:40:22', status: 400, requested: 'gpt-5.4-mini',      sent: 'gpt-5.4-mini', provider: 'openai',           surface: '/v1/chat/completions',      rule: 'longContext', lane: 'agent', token: 'CI — nightly evals', inTok: '—', outTok: '—',  ms: '188',   cost: '—' },
-  { t: '13:38:57', status: 200, requested: 'gpt-5.4-mini',      sent: 'gpt-5.4-mini', provider: 'openai',           surface: '/v1/chat/completions',      rule: 'longContext', lane: 'agent', token: 'CI — nightly evals', inTok: '2.30k', outTok: '301', ms: '640', cost: '$0.00118' }
+  { t: '14:05:47', status: 200, requested: 'claude-haiku-4-5',  sent: 'claude-haiku-4-5', provider: 'claude-code',  surface: '/v1/messages',  rule: 'haiku', lane: 'subagent', token: 'MacBook — Claude Code', inTok: '3.10k', outTok: '412',  ms: '812',   cost: '$0.00412' },
+  { t: '14:03:02', status: 200, requested: 'claude-sonnet-4-5', sent: 'claude-fable-5', provider: 'claude-code',    surface: '/v1/messages',  rule: 'sonnet', lane: 'agent',    token: 'MacBook — Claude Code', inTok: '48.2k', outTok: '2.10k', ms: '4,411', cost: '$0.0891' },
+  { t: '14:03:02', status: 429, requested: 'claude-sonnet-4-5', sent: 'gpt-5.5', provider: 'codex',                 surface: '/v1/messages',  rule: 'sonnet', lane: 'agent',    token: 'MacBook — Claude Code', inTok: '—',     outTok: '—',     ms: '—',     cost: '—' },
+  { t: '14:02:33', status: 200, requested: 'claude-sonnet-4-5', sent: 'claude-opus-4-8', provider: 'claude-code',   surface: '/v1/messages',  rule: 'sonnet', lane: 'agent',    token: 'MacBook — Claude Code', inTok: '46.1k', outTok: '1.84k', ms: '3,806', cost: '$0.121' },
+  { t: '13:58:10', status: 200, requested: 'gpt-5.5',           sent: 'gpt-5.5', provider: 'codex',                 surface: '/v1/responses', rule: 'passthrough', lane: 'agent',    token: 'MacBook — Codex',       inTok: '12.4k', outTok: '940',   ms: '2,140', cost: '—' },
+  { t: '13:51:04', status: 200, requested: 'gemini-3.1-pro',    sent: 'gemini-3.1-pro', provider: 'gemini-cli',     surface: '/v1beta/models/*',    rule: 'passthrough', lane: 'agent',    token: 'Gemini CLI',            inTok: '8.20k', outTok: '610',   ms: '1,104', cost: '—' },
+  { t: '13:40:22', status: 400, requested: 'gpt-5.4-mini',      sent: 'gpt-5.4-mini', provider: 'openai',           surface: '/v1/chat/completions',      rule: 'passthrough', lane: 'agent', token: 'CI — nightly evals', inTok: '—', outTok: '—',  ms: '188',   cost: '—' },
+  { t: '13:38:57', status: 200, requested: 'gpt-5.4-mini',      sent: 'gpt-5.4-mini', provider: 'openai',           surface: '/v1/chat/completions',      rule: 'passthrough', lane: 'agent', token: 'CI — nightly evals', inTok: '2.30k', outTok: '301', ms: '640', cost: '$0.00118' }
 ]
 
 const statusPill = (s) => (s === 200 ? pill('200', 'ok') : s === 429 ? pill('429', 'warn') : pill(String(s), 'bad'))
@@ -42,8 +41,8 @@ const statusPill = (s) => (s === 200 ? pill('200', 'ok') : s === 429 ? pill('429
 // One cell names something that lives on another screen — the credential
 // the caller presented. A nested data-nav wins over the row's, so that
 // cell leads to its own editor while the rest of the row still opens the
-// session. Scenario is not linked: it is a classification, not a thing
-// with a page of its own.
+// session. Route is not linked: the tier map it names is one screen, and
+// the row already says which tier.
 const linked = (text, href) => '<span ' + navTo(href) + '>' + text + '</span>'
 
 // The row leads to its SESSION, not to the log group: a request's log
@@ -67,11 +66,10 @@ const row = (r) => `
          the hover, and it is still what the column sorts on so the log
          can be grouped by provider. -->
     <td class="px-2 font-mono text-[12px]" title="${r.provider},${r.sent}">${r.sent}</td>
-    <!-- The lane rides with the scenario instead of holding a column: it
-         is a qualifier of it (there is no lane without a scenario), it is
-         "agent" on almost every row, and the column it cost belonged to
-         the model pair, which was truncating both of its halves. -->
-    <td class="px-2 text-[12px] ${r.rule === '—' ? 'text-muted-foreground/50' : ''}">${r.rule}${
+    <!-- A subagent call rides with the route instead of holding a column:
+         the flag is still recorded, it is off on almost every row, and the
+         column it would cost belongs to the model pair. -->
+    <td class="px-2 text-[12px] ${r.rule === 'passthrough' ? 'text-muted-foreground' : ''}">${r.rule}${
       r.lane === 'agent' ? '' : `<span class="ml-1.5 text-muted-foreground">· ${r.lane}</span>`
     }</td>
     <td class="px-2 truncate text-[12px] text-muted-foreground">${linked(r.token, 'settings-access.html')}</td>
@@ -93,7 +91,7 @@ document.getElementById('root').innerHTML = `
     ${filter('Surface', 'All')}
     ${filter('Status', 'All')}
     ${filter('Token', 'All')}
-    ${filter('Scenario', 'All')}
+    ${filter('Route', 'All')}
     ${filter('Range', 'Last 24h')}
     <div class="ml-auto flex items-center gap-2">
       <span class="flex items-center gap-1.5 text-[12px] text-muted-foreground">
@@ -138,7 +136,7 @@ document.getElementById('root').innerHTML = `
         ${sortTh('Endpoint', 'px-2')}
         ${sortTh('Requested', 'px-2')}
         ${sortTh('Sent', 'px-2')}
-        ${sortTh('Scenario', 'px-2')}
+        ${sortTh('Route', 'px-2')}
         ${sortTh('Token', 'px-2')}
         ${sortTh('Input', 'px-2', 'right')}
         ${sortTh('Output', 'px-2', 'right')}

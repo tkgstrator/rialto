@@ -88,16 +88,20 @@ const QUOTA = [
       { window: '5h', pct: 25, resets: '2h 11m' },
       { window: '7d', pct: 63, resets: '3d 04h' },
       { window: '7d · Fable', pct: 8, resets: '3d 04h' }
-    ]
+    ],
+    usage: { weekTokens: '61.4M', weekCost: '$684', monthCost: '$2.20k', fee: '$200', ratio: '×11' }
   },
   {
     account: 'Codex Pro',
     windows: [
       { window: 'primary', pct: 88, resets: '46m' },
       { window: 'secondary', pct: 65, resets: '4d 02h' }
-    ]
+    ],
+    usage: { weekTokens: '38.2M', weekCost: '$412', monthCost: '$1.31k', fee: '$200', ratio: '×6.6' }
   },
-  { account: 'Gemini AI Pro', windows: [{ window: 'daily', pct: 12, resets: '9h 22m' }] }
+  // No priced traffic yet: the account is new, so the lines say so rather
+  // than showing a $0 that would read as "free".
+  { account: 'Gemini AI Pro', windows: [{ window: 'daily', pct: 12, resets: '9h 22m' }], usage: null }
 ]
 
 // The meter is capped rather than stretched. Full width it ran the
@@ -112,6 +116,28 @@ const windowLine = (w) => `
     <span class="w-20 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${w.resets}</span>
   </div>`
 
+// What the account carried, at the models' API prices — "API equiv",
+// never a bill. The same four columns as the windows above it, one
+// figure per cell: this week's tokens and cost, then 30 days' cost with
+// the plan fee and the ratio of the two, which is the question an
+// operator with several accounts asks — which plan earns its fee.
+const usageLines = (u) =>
+  u === null
+    ? `<div class="flex items-baseline gap-3 pt-2"><span class="w-28 shrink-0 font-mono text-[12px] text-muted-foreground">API equiv</span><span class="text-[12px] text-muted-foreground/60">no priced traffic yet</span></div>`
+    : `
+  <div class="flex items-baseline gap-3 pt-2">
+    <span class="w-28 shrink-0 font-mono text-[12px] text-muted-foreground">week · API eq.</span>
+    <span class="w-64 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${u.weekTokens} tok</span>
+    <span class="w-10 shrink-0"></span>
+    <span class="w-20 shrink-0 text-right font-mono text-[12px] tabular-nums">${u.weekCost}</span>
+  </div>
+  <div class="flex items-baseline gap-3 pt-2">
+    <span class="w-28 shrink-0 font-mono text-[12px] text-muted-foreground">30d · API eq.</span>
+    <span class="w-64 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">of ${u.fee}/mo</span>
+    <span class="w-10 shrink-0 text-right font-mono text-[12px] tabular-nums">${u.ratio}</span>
+    <span class="w-20 shrink-0 text-right font-mono text-[12px] tabular-nums">${u.monthCost}</span>
+  </div>`
+
 // No percentage on the account line. It carried the worst window's
 // figure, which nothing on the row said — beside a list where every line
 // already shows its own percent, an unlabelled number in the corner is a
@@ -122,45 +148,22 @@ const quotaRow = (q) => `
       <span class="text-xs font-medium">${q.account}</span>
       <span class="text-[12px] text-muted-foreground/70">${q.windows.length} limit${q.windows.length === 1 ? '' : 's'}</span>
     </div>
-    <div class="mt-2">${q.windows.map(windowLine).join('')}</div>
+    <div class="mt-2">${q.windows.map(windowLine).join('')}${usageLines(q.usage)}</div>
   </div>`
 
 // ─── Failover activity ────────────────────────────────────────────────
 //
-// The panel exists to answer "what changed", so the change is a column,
-// not a phrase at the end of a sentence. `RoutingWeightChange` stores
-// fromWeight and toWeight; putting them in a fixed slot lets several
-// moves be compared down the page instead of read one at a time, and the
-// destination value carries the weight because that is the number in
-// force now.
+// What stopped serving, and when it can again. The scheduler-weight moves
+// this panel used to lead with are gone with the weights themselves:
+// routing reads a route's quota directly now, so there is no number that
+// drifts between 1.00 and 0.60 to report. What is left are the events an
+// operator acts on — an account refused with a 429, and a credential that
+// no longer authenticates.
 //
 // A 429 has no transition — the row carries account, status and
-// Retry-After and nothing else. Earlier drafts of this mock wrote "fell
-// through to openai,gpt-5.5" under one, which is a sentence with no data
-// behind it: nothing records which target picked the traffic up. Rather
-// than invent it, the 429 row shows what it does have, and Retry-After
-// is the value worth reading there.
+// Retry-After and nothing else. Nothing records which target picked the
+// traffic up, so the row does not invent one.
 const FAILOVER = [
-  {
-    kind: 'weight',
-    tone: 'warn',
-    target: 'claude-code,claude-opus-5',
-    from: '1.00',
-    to: '0.60',
-    detail: 'its quota is running out',
-    at: '1h ago',
-    href: 'routing.html'
-  },
-  {
-    kind: 'weight',
-    tone: 'mute',
-    target: 'claude-code,claude-sonnet-5',
-    from: '0.38',
-    to: '0.37',
-    detail: 'its window resets soon',
-    at: '2h ago',
-    href: 'routing.html'
-  },
   {
     kind: '429',
     tone: 'bad',
@@ -168,6 +171,14 @@ const FAILOVER = [
     detail: 'retry after 11m',
     at: '46m ago',
     href: 'activity-requests.html'
+  },
+  {
+    kind: '429',
+    tone: 'bad',
+    target: 'claude-code:tkgstrator@gmail.com',
+    detail: '7-day window spent — resets in 2d 09h; a banked reset or a Refresh lets it back in early',
+    at: '3h ago',
+    href: 'provider-subscription.html'
   },
   {
     kind: 'auth',
@@ -180,24 +191,12 @@ const FAILOVER = [
 ]
 
 // Durations are numbers and are set as such — mono and tabular, like
-// every other figure on the page. In the proportional face "4h 36m" and
-// "3d 22h" are different widths, so a column of them does not line up and
-// the eye cannot compare two rows without reading both.
-
-/** from → to, aligned so a column of moves reads as a column. */
-const transition = (from, to) => `
-  <span class="inline-flex items-baseline gap-1.5 font-mono text-xs tabular-nums">
-    <span class="text-muted-foreground/70">${from}</span>
-    <i class="ri-arrow-right-line text-[11px] text-muted-foreground/50"></i>
-    <span class="font-medium text-foreground">${to}</span>
-  </span>`
-
+// every other figure on the page.
 const failoverRow = (f) => `
   <div ${navTo(f.href)} class="border-t border-border/60 px-6 py-3 transition-colors hover:bg-muted/50">
     <div class="flex items-baseline gap-3">
       <span class="w-14 shrink-0">${pill(f.kind, f.tone)}</span>
       <span class="min-w-0 flex-1 truncate font-mono text-xs">${f.target}</span>
-      <span class="w-32 shrink-0 text-right">${f.from ? transition(f.from, f.to) : ''}</span>
       <span class="w-16 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${f.at}</span>
     </div>
     ${f.detail ? `<div class="mt-1 pl-[4.25rem] text-[12px] text-muted-foreground">${f.detail}</div>` : ''}
@@ -268,7 +267,7 @@ document.getElementById('root').innerHTML = `
        one column lets each use the full width and keeps the page a single
        reading order. -->
   ${section('Subscription quota', QUOTA.map(quotaRow).join(''), 'every window · worst shown per account')}
-  ${section('Failover activity', FAILOVER.map(failoverRow).join(''), 'what moved, and to what')}
+  ${section('Failover activity', FAILOVER.map(failoverRow).join(''), 'what stopped serving, and when')}
   ${section('Recent sessions', sessions)}
   <div class="h-10"></div>`
 
