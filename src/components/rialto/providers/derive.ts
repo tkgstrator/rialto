@@ -5,6 +5,8 @@
  * speak" logic — the part an operator reads when a request misbehaves —
  * can be reasoned about (and unit-tested) without React.
  */
+import type { OverviewAccountUsage } from '@/lib/api-types'
+import dayjs from '@/lib/dayjs'
 import type { CatalogEntry, CatalogModel } from '@/schemas/api/catalog'
 import { planCapacityWeight, type SeatKind } from '@/shared/plan-capacity'
 import { planLabel } from '@/shared/plan-label'
@@ -464,4 +466,37 @@ export function providerQuotaPct(index: QuotaIndex, kind: SeatKind, accounts: re
   // account the collector has not reached yet is unknown, not empty.
   const pcts = [...byWindow.values()].map((w) => Math.round(w.used / w.weight))
   return pcts.length === 0 ? null : Math.max(...pcts)
+}
+
+/**
+ * What an account carried and what it can still spend, beside its windows.
+ *
+ * Both come on the same Overview quota row as the windows but are not
+ * windows, so they get their own index rather than a place in QuotaIndex:
+ * the rail folds QuotaIndex into one percentage, and nothing here belongs
+ * in that number.
+ */
+export interface AccountExtras {
+  usage: OverviewAccountUsage | null
+  resetCredits: { available: number; applicable: number | null } | null
+}
+
+export type AccountExtrasIndex = Map<string, AccountExtras>
+
+export function indexAccountExtras(
+  rows: ReadonlyArray<{
+    subAccountId: string
+    usage: OverviewAccountUsage | null
+    resetCredits: { available: number; applicable: number | null } | null
+  }>
+): AccountExtrasIndex {
+  return new Map(rows.map((r) => [r.subAccountId, { usage: r.usage, resetCredits: r.resetCredits }]))
+}
+
+/** "Oct 4" in the reader's language, or a dash when the vendor sent no date. */
+export function fmtExpiry(iso: string | null, locale: string): string {
+  if (iso === null) return '—'
+  const at = dayjs(iso)
+  if (!at.isValid()) return '—'
+  return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' }).format(at.toDate())
 }
