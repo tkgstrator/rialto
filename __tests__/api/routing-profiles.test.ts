@@ -1,12 +1,13 @@
 /**
- * The tier-map and tier-alias endpoints, against the test database.
+ * The scenario-route and tier-alias endpoints, against the test database.
  *
- * Pinned: a profile reads back with each route resolved through its alias
- * (the model, whether it can take traffic, web search, context window);
- * an unset alias reads as null rather than failing the page; the reserved
- * passthrough key is refused; promoting a model switches it on and puts it
- * in the quota snapshot at once; clearing an alias that is not there is a
- * 404.
+ * Pinned: a profile reads back by scenario and lane with each route
+ * resolved through its alias (the model, whether it can take traffic, web
+ * search, context window) and the Long context threshold in effect; an
+ * unset alias reads as null rather than failing the page; a save keeps
+ * the threshold tuner's state; the reserved passthrough key is refused;
+ * promoting a model switches it on and puts it in the quota snapshot at
+ * once; clearing an alias that is not there is a 404.
  */
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
@@ -25,10 +26,24 @@ const request = (method: string, path: string, body?: unknown): Request =>
     ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
   })
 
-const map = (routes: Record<string, unknown[]>) => ({
-  routes: { fable: [], opus: [], sonnet: [], haiku: [], other: [], ...routes },
-  constraints: { exhaustedBehavior: '429', quotaSkipPct: 100, errorRateSkipPct: 0.5, minHealthSamples: 5 }
-})
+// What the Routing screen PUTs: every list, and the constraints it loaded.
+const map = (routes: Record<string, Record<string, unknown[]>>, constraints: Record<string, unknown> = {}) => {
+  const lanes = (scenario: string) => ({ agent: [], subagent: [], ...routes[scenario] })
+  return {
+    routes: { default: lanes('default'), think: lanes('think'), longContext: lanes('longContext') },
+    constraints: {
+      exhaustedBehavior: '429',
+      quotaSkipPct: 100,
+      errorRateSkipPct: 0.5,
+      minHealthSamples: 5,
+      longContextThreshold: null,
+      previousLongContextThreshold: null,
+      longContextTunedAt: null,
+      autoTuneLongContext: true,
+      ...constraints
+    }
+  }
+}
 
 describe.skipIf(!HAS_DB)('routing profile and tier alias endpoints', () => {
   beforeEach(async () => {
@@ -62,17 +77,20 @@ describe.skipIf(!HAS_DB)('routing profile and tier alias endpoints', () => {
         'PUT',
         '/api/routing/profiles/live',
         map({
-          haiku: [{ provider: 'claude-code', targetTier: 'sonnet', enabled: true }],
-          opus: [{ provider: 'claude-code', targetTier: 'opus', enabled: true }]
+          default: { agent: [{ provider: 'claude-code', targetTier: 'sonnet', enabled: true }] },
+          think: { subagent: [{ provider: 'claude-code', targetTier: 'opus', enabled: true }] }
         })
       )
     )
     expect(put.status).toBe(200)
-    expect(await put.json()).toMatchObject({ success: true, warnings: [expect.stringContaining('no opus alias')] })
+    expect(await put.json()).toEqual({
+      success: true,
+      warnings: ['think/subagent: claude-code has no opus alias yet; the route is skipped until one is set']
+    })
 
     const got = await routingProfileRoute.fetch(request('GET', '/api/routing/profiles/live'))
     const body = await got.json()
-    expect(body.routes.haiku).toEqual([
+    expect(body.routes.default.agent).toEqual([
       {
         provider: 'claude-code',
         targetTier: 'sonnet',
@@ -80,7 +98,56 @@ describe.skipIf(!HAS_DB)('routing profile and tier alias endpoints', () => {
         resolved: { model: 'claude-sonnet-5', targetEnabled: true, hostsWebSearch: true, contextWindow: 1_000_000 }
       }
     ])
-    expect(body.routes.opus[0].resolved).toBeNull()
+    expect(body.routes.default.subagent).toEqual([])
+    expect(body.routes.think.subagent[0].resolved).toBeNull()
+    expect(body.routes.longContext).toEqual({ agent: [], subagent: [] })
+    // 70% of the Default · agent model's million-token window.
+    expect(body.longContextThreshold).toBe(700_000)
+  })
+
+  test('a profile never saved reads as empty lists with the 128k threshold', async () => {
+    const got = await routingProfileRoute.fetch(request('GET', '/api/routing/profiles/never-saved'))
+    expect(got.status).toBe(200)
+    const body = await got.json()
+    expect(body.routes.default).toEqual({ agent: [], subagent: [] })
+    expect(body.longContextThreshold).toBe(128_000)
+    expect(body.constraints.autoTuneLongContext).toBe(true)
+  })
+
+  test('a save keeps the tuner’s threshold, and the view serves it as the one in effect', async () => {
+    await providerTierAliasRoute.fetch(
+      request('PUT', '/api/providers/claude-code/tier-aliases/sonnet', { model: 'claude-sonnet-5' })
+    )
+    await getPrismaClient().routerPreferenceProfile.create({
+      data: {
+        key: 'live',
+        constraints: {
+          longContextThreshold: 400_000,
+          previousLongContextThreshold: 500_000,
+          longContextTunedAt: '2026-09-24T03:00:00.000Z'
+        }
+      }
+    })
+    // The editor sends back what it loaded before the tune.
+    const put = await routingProfileRoute.fetch(
+      request(
+        'PUT',
+        '/api/routing/profiles/live',
+        map(
+          { default: { agent: [{ provider: 'claude-code', targetTier: 'sonnet', enabled: true }] } },
+          { longContextThreshold: null, quotaSkipPct: 90 }
+        )
+      )
+    )
+    expect(put.status).toBe(200)
+    const body = await (await routingProfileRoute.fetch(request('GET', '/api/routing/profiles/live'))).json()
+    expect(body.constraints).toMatchObject({
+      quotaSkipPct: 90,
+      longContextThreshold: 400_000,
+      previousLongContextThreshold: 500_000,
+      longContextTunedAt: '2026-09-24T03:00:00.000Z'
+    })
+    expect(body.longContextThreshold).toBe(400_000)
   })
 
   test('the reserved passthrough key is refused', async () => {
@@ -88,11 +155,31 @@ describe.skipIf(!HAS_DB)('routing profile and tier alias endpoints', () => {
     expect(res.status).toBe(400)
   })
 
-  test('a body that is not a tier map is a validation error', async () => {
-    const res = await routingProfileRoute.fetch(
-      request('PUT', '/api/routing/profiles/live', { routes: { sonnet: [{ provider: 'x', targetTier: 'mega' }] } })
+  test('a body that is not a scenario map is a validation error', async () => {
+    const badTier = await routingProfileRoute.fetch(
+      request('PUT', '/api/routing/profiles/live', {
+        routes: { default: { agent: [{ provider: 'x', targetTier: 'mega' }] } },
+        constraints: {}
+      })
     )
-    expect(res.status).toBe(400)
+    expect(badTier.status).toBe(400)
+    // The shape the tier map used: a list per requested tier, not per lane.
+    const byTier = await routingProfileRoute.fetch(
+      request('PUT', '/api/routing/profiles/live', {
+        routes: { default: [{ provider: 'x', targetTier: 'sonnet' }] },
+        constraints: {}
+      })
+    )
+    expect(byTier.status).toBe(400)
+  })
+
+  test('the lists a body leaves out are saved empty', async () => {
+    const res = await routingProfileRoute.fetch(
+      request('PUT', '/api/routing/profiles/live', { routes: { think: { agent: [] } }, constraints: {} })
+    )
+    expect(res.status).toBe(200)
+    const body = await (await routingProfileRoute.fetch(request('GET', '/api/routing/profiles/live'))).json()
+    expect(body.routes.default).toEqual({ agent: [], subagent: [] })
   })
 
   test('promoting a model that is off switches it on; the alias list shows it', async () => {

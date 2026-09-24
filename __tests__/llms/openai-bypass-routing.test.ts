@@ -1,10 +1,10 @@
 /**
- * A surface in passthrough skips the tier map entirely: the caller's
- * `body.model` reaches upstream verbatim, no token count / map / persona
- * runs.
+ * A surface in passthrough skips the scenario routes entirely: the
+ * caller's `body.model` reaches upstream verbatim, no token count / route
+ * lookup / persona runs.
  *
  * A routed surface and legacy callers without an inboundPath go through
- * the map.
+ * the routes.
  */
 
 import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
@@ -34,14 +34,16 @@ async function runRouter(path: string | undefined, bodyModel: string): Promise<R
   return req
 }
 
-// The router's behaviour depends on the surface's mode and the map, so
-// the tests set both rather than inheriting whatever a fresh install
+// The router's behaviour depends on the surface's mode and the routes,
+// so the tests set both rather than inheriting whatever a fresh install
 // seeds. These cases describe /v1/messages routed, the OpenAI surfaces
-// in passthrough. `openai,gpt-5` names no Claude family, so it asks for
-// the "other" tier, which the map serves.
+// in passthrough. The model the caller names plays no part: an ordinary
+// request walks the Default list, which the map fills.
 beforeEach(() => {
   __setSurfacesForTests({ 'anthropic-messages': 'routed' })
-  __setTierProfilesForTests({ live: mapWith({ other: [route('anthropic', 'sonnet', 'claude-sonnet-5')] }) })
+  __setTierProfilesForTests({
+    live: mapWith({ default: { agent: [route('anthropic', 'sonnet', 'claude-sonnet-5')] } })
+  })
 })
 
 afterEach(() => {
@@ -50,7 +52,7 @@ afterEach(() => {
 })
 
 describe('routeRequest — passthrough surfaces', () => {
-  test('/v1/chat/completions keeps body.model verbatim (no rewrite to the tier primary)', async () => {
+  test('/v1/chat/completions keeps body.model verbatim (no rewrite to the list primary)', async () => {
     const req = await runRouter('/v1/chat/completions', 'openai,gpt-5')
     expect(req.body.model).toBe('openai,gpt-5')
     expect(req.route).toBe(PASSTHROUGH_ROUTE)
@@ -65,14 +67,14 @@ describe('routeRequest — passthrough surfaces', () => {
     expect(req.resolvedFallbacks).toEqual([])
   })
 
-  test('/v1/messages does NOT bypass — the map runs (tokenCount stamped, model rewritten)', async () => {
+  test('/v1/messages does NOT bypass — the routes run (tokenCount stamped, model rewritten)', async () => {
     // The passthrough early-return skips the countRequestTokens call, so
     // req.tokenCount stays undefined; on a routed surface the router
     // runs it and stamps a numeric value.
     const req = await runRouter('/v1/messages', 'openai,gpt-5')
     expect(typeof req.tokenCount).toBe('number')
     expect(req.body.model).toBe('anthropic,claude-sonnet-5')
-    expect(req.route).toBe('other')
+    expect(req.route).toBe('default')
   })
 
   test('missing inboundPath (legacy caller) also does NOT bypass — backward compat', async () => {

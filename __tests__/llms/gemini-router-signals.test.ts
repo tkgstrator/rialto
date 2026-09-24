@@ -2,10 +2,11 @@
  * Routing-signal extraction for the gemini surface.
  *
  * `/v1beta/models/*` is the one surface of the four that puts the body,
- * the system prompt and the tools under different keys than Anthropic.
- * While it had no reader, all of that read as absent: `contents` was
- * never counted, so the context-window gate always saw 0 tokens, and a
- * `googleSearch` tool never reached the web-search gate.
+ * the system prompt, the tools and the thinking switch under different
+ * keys than Anthropic. While it had no reader, all of that read as
+ * absent: `contents` was never counted, so the context-window gate always
+ * saw 0 tokens, a `googleSearch` tool never reached the web-search gate,
+ * and no Gemini request could land on the Think list.
  *
  * These go through `readSignals` rather than calling the reader
  * directly. Covering the surface-id → reader registration is what stops
@@ -138,5 +139,45 @@ describe('webSearch', () => {
 
   test('false when there are no tools', () => {
     expect(signals({ contents: [] }).webSearch).toBe(false)
+  })
+})
+
+describe('thinking', () => {
+  const withThinking = (thinkingConfig: Record<string, unknown>, key = 'generationConfig') =>
+    signals({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }], [key]: { thinkingConfig } })
+
+  test('no thinkingConfig is not thinking', () => {
+    expect(signals({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] }).thinking).toBe(false)
+    expect(signals({ generationConfig: { temperature: 0.2 } }).thinking).toBe(false)
+  })
+
+  test('a thinking level opts in, and `none` opts out', () => {
+    expect(withThinking({ thinkingLevel: 'high' }).thinking).toBe(true)
+    expect(withThinking({ thinkingLevel: 'low' }).thinking).toBe(true)
+    expect(withThinking({ thinkingLevel: 'none' }).thinking).toBe(false)
+  })
+
+  test('a positive thinking budget opts in, a zero one opts out', () => {
+    expect(withThinking({ thinkingBudget: 8_192 }).thinking).toBe(true)
+    expect(withThinking({ thinkingBudget: 0 }).thinking).toBe(false)
+  })
+
+  test('includeThoughts alone asks for thinking', () => {
+    expect(withThinking({ includeThoughts: true }).thinking).toBe(true)
+    expect(withThinking({}).thinking).toBe(false)
+  })
+
+  test('a level the converter does not recognise still asks to think: `none` is the only opt-out', () => {
+    expect(withThinking({ thinkingLevel: 'extreme' }).thinking).toBe(true)
+  })
+
+  test('snake_case generation_config is read too', () => {
+    expect(withThinking({ thinkingLevel: 'high' }, 'generation_config').thinking).toBe(true)
+  })
+
+  test('a body that is not Gemini is not thinking', () => {
+    expect(
+      signals({ contents: 'not an array', generationConfig: { thinkingConfig: { thinkingLevel: 'high' } } }).thinking
+    ).toBe(false)
   })
 })

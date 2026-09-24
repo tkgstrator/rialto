@@ -21,6 +21,7 @@ import { applyUiConfig } from '../../src/services/config'
 import { getSubAccountTokensForKind } from '../../src/services/subscription-account-sync/read'
 import { setTierAlias } from '../../src/services/tier-alias-service'
 import { loadTierProfileView, saveTierProfile } from '../../src/services/tier-route-service'
+import { profileWith } from '../llms/tier-fixture'
 import { HAS_DB, resetDbTables, teardownPrisma } from './helpers'
 
 const TEST_KEY_HEX = 'ab'.repeat(32)
@@ -41,7 +42,7 @@ const plan = (): RoutePlan => ({
   headers: {},
   transformersByName: new Map(),
   defaultTransformer: new AnthropicTransformer(),
-  route: 'sonnet',
+  route: 'default',
   primaryModel: 'x',
   isSubagent: false,
   fallbacks: [],
@@ -111,23 +112,21 @@ describe.skipIf(!HAS_DB)('disabled targets (DB)', () => {
         { ...idOf('openai', 'gpt-5'), tier: 'sonnet' }
       ]
     })
-    await saveTierProfile('live', {
-      routes: {
-        fable: [],
-        opus: [],
-        sonnet: [
-          { provider: 'anthropic', targetTier: 'sonnet', enabled: true },
-          { provider: 'openai', targetTier: 'haiku', enabled: true },
-          { provider: 'openai', targetTier: 'sonnet', enabled: true }
-        ],
-        haiku: [],
-        other: []
-      },
-      constraints: { exhaustedBehavior: '429', quotaSkipPct: 100, errorRateSkipPct: 0.5, minHealthSamples: 5 }
-    })
+    await saveTierProfile(
+      'live',
+      profileWith({
+        default: {
+          agent: [
+            { provider: 'anthropic', targetTier: 'sonnet', enabled: true },
+            { provider: 'openai', targetTier: 'haiku', enabled: true },
+            { provider: 'openai', targetTier: 'sonnet', enabled: true }
+          ]
+        }
+      })
+    )
 
     const view = await loadTierProfileView('live')
-    expect(view.routes.sonnet.map((r) => [r.provider, r.enabled, r.resolved?.targetEnabled])).toEqual([
+    expect(view.routes.default.agent.map((r) => [r.provider, r.enabled, r.resolved?.targetEnabled])).toEqual([
       ['anthropic', true, false],
       ['openai', true, false],
       ['openai', true, true]

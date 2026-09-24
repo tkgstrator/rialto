@@ -17,8 +17,9 @@
  * Token counting used to read `body.messages` directly and so always saw
  * 0 in the Responses and Gemini vocabularies. It now goes through the
  * per-surface normalised signals (`router/surface-signals.ts`)
- * and counts on all four, which is what the tier map's context gate
- * weighs a prompt with.
+ * and counts on all four, which is what the context gate weighs a prompt
+ * with and what the Long context threshold is measured against. Thinking
+ * is read per surface the same way, so each can reach the Think list.
  */
 
 import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
@@ -49,14 +50,17 @@ async function run(path: string, body: Record<string, unknown>): Promise<RouterR
   return req
 }
 
-// The caller's model names no Claude family, so every surface asks for
-// the "other" tier; the map serves it with two routes.
-const otherRoutes = (contextWindow: number | null = null) =>
+// The caller's model picks nothing: an ordinary request on any surface
+// walks the Default list, which has two routes. Think has its own.
+const defaultRoutes = (contextWindow: number | null = null) =>
   mapWith({
-    other: [
-      route('anthropic', 'sonnet', 'claude-sonnet-5', { contextWindow }),
-      route('anthropic', 'opus', 'claude-opus-4-7', { contextWindow })
-    ]
+    default: {
+      agent: [
+        route('anthropic', 'sonnet', 'claude-sonnet-5', { contextWindow }),
+        route('anthropic', 'opus', 'claude-opus-4-7', { contextWindow })
+      ]
+    },
+    think: { agent: [route('anthropic', 'fable', 'claude-fable-5')] }
   })
 
 const SURFACES: ReadonlyArray<[SurfaceId, string]> = [
@@ -72,7 +76,7 @@ const SURFACES: ReadonlyArray<[SurfaceId, string]> = [
 // mysteriously on.
 beforeEach(() => {
   __setSurfacesForTests({})
-  __setTierProfilesForTests({ live: otherRoutes() })
+  __setTierProfilesForTests({ live: defaultRoutes() })
 })
 
 afterEach(() => {
@@ -82,7 +86,7 @@ afterEach(() => {
 
 describe('the mode takes effect on all four surfaces', () => {
   for (const [id, path] of SURFACES) {
-    test(`${id} — routed rewrites the model to the tier's primary`, async () => {
+    test(`${id} — routed rewrites the model to the list's primary`, async () => {
       __setSurfacesForTests({ [id]: 'routed' })
       const req = await run(path, { messages: [{ role: 'user', content: 'hi' }] })
       expect(req.body.model).toBe('anthropic,claude-sonnet-5')
@@ -103,6 +107,29 @@ describe('the mode takes effect on all four surfaces', () => {
     const untouched = await run('/v1/chat/completions', { messages: [{ role: 'user', content: 'hi' }] })
     expect(routed.body.model).toBe('anthropic,claude-sonnet-5')
     expect(untouched.body.model).toBe('caller,own-model')
+  })
+})
+
+describe('the scenario is read on all four surfaces', () => {
+  test('each surface’s own thinking switch reaches the Think list', async () => {
+    __setSurfacesForTests({
+      'anthropic-messages': 'routed',
+      'openai-chat': 'routed',
+      'openai-responses': 'routed',
+      'gemini-generate': 'routed'
+    })
+    const hi = [{ role: 'user', content: 'hi' }]
+    const anthropic = await run('/v1/messages', { messages: hi, thinking: { type: 'enabled', budget_tokens: 2048 } })
+    const chat = await run('/v1/chat/completions', { messages: hi, reasoning_effort: 'high' })
+    const responses = await run('/v1/responses', { input: 'hi', reasoning: { effort: 'high' } })
+    const gemini = await run('/v1beta/models/gemini-3-pro:generateContent', {
+      contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+      generationConfig: { thinkingConfig: { thinkingLevel: 'high' } }
+    })
+    for (const req of [anthropic, chat, responses, gemini]) {
+      expect(req.route).toBe('think')
+      expect(req.body.model).toBe('anthropic,claude-fable-5')
+    }
   })
 })
 
@@ -133,7 +160,10 @@ describe('the deliberate asymmetry', () => {
       'openai-responses': 'routed',
       'gemini-generate': 'routed'
     })
-    __setTierProfilesForTests({ live: otherRoutes(100) })
+    // A 100-token window also puts the Long context threshold at 70; with
+    // no Long context list, the request falls back to Default and meets
+    // the gate there.
+    __setTierProfilesForTests({ live: defaultRoutes(100) })
     const long = 'lorem ipsum dolor sit amet '.repeat(200)
 
     const anthropic = await run('/v1/messages', { messages: [{ role: 'user', content: long }] })
