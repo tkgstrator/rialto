@@ -79,7 +79,7 @@ Hono はマッチする middleware を**すべて**走らせるので、OpenAI �
 
 | 事情 | 対処 |
 |---|---|
-| モデルと action が **URL** にあり body に無い | 記述子の `extractModel` / `extractStream` が `body.model` / `body.stream` に畳み込む。下流（要求ティアを `body.model` から読むティアルーター / failover chain / pipeline / JSON-vs-SSE 判定）はすべて body を読むので、ここが2つのワイヤ規約の合流点 |
+| モデルと action が **URL** にあり body に無い | 記述子の `extractModel` / `extractStream` が `body.model` / `body.stream` に畳み込む。下流（passthrough やルートが取らなかったときの宛先 / failover chain / pipeline / JSON-vs-SSE 判定）はすべて body を読むので、ここが2つのワイヤ規約の合流点 |
 | transformer の `endPoint` が `/v1beta/models/:modelAndAction` で、実パスと一致しない | `buildRoutePlan` は `surface.endpoint` で transformer を引く（実パス一致ではない） |
 | 認証ヘッダが `x-goog-api-key` / `?key=` | `createProxyAuth({ credential: 'google' })`。受理するのは発行済みアクセストークンだけ（他の /v1 面と同じ） |
 | エラー封筒が3種目 `{ error: { code, message, status } }` | `buildErrorEnvelope` の `google` 分岐。`status` は google.rpc.Code 名 |
@@ -93,12 +93,12 @@ Google のワイヤ規約に代替が無いのでこの面だけ受理する。`
 
 ## routingMode — 「messages専用に見える」問題の正体
 
-`routed` はティアマップ（モデル名から読んだ要求ティア → そのティアのルートを順にゲートへ通す）→
-failover の全段を通す。詳細は [routing.md](./routing.md)。
+`routed` はシナリオ別のルーティング（入力の長さと thinking でシナリオを、サブエージェントタグでレーンを決め、
+そのリストのルートを順にゲートへ通してペースで並べる）→ failover の全段を通す。詳細は [routing.md](./routing.md)。
 `passthrough` は呼び出し側が `provider,model` を自分で指定する前提で、**全段をスキップ**する
 （サブエージェントタグの除去だけはどちらのモードでも走る — タグは Rialto の内部マーカーで、
 どの上流にも意味が無いため）。ルーティングの機構はこの 2 つだけである（ルール・スロット・
-プリセット・シナリオ別のチェーンは無い）。
+プリセット、モデルを直接並べたチェーンは無い）。
 
 この分岐自体は妥当だった（OpenAI互換クライアントは自分でモデルを選ぶ）。問題は
 `router.ts` に**ハードコードされていて、UIから見えず、切り替えられない**ことだった。
@@ -133,18 +133,19 @@ export const INITIAL_ROUTING_MODE: RoutingMode = 'passthrough'
 seed 値を返すので、「面ごとの既定値」を発明する必要がどこにも無い。
 
 **passthrough が seed なのは、未設定のインストールでルーティングを走らせても何も起きないから。**
-ティアマップにルートが無い状態では、どの要求ティアも呼び出し側の model に素通りする。ルーティングは
+ルートが無い状態では、どのシナリオも同じレーンの default に落ち、その default も空なので呼び出し側の
+model に素通りする。ルーティングは
 振り先（ルートと、それが名指すプロバイダのティアエイリアス）が揃ってから面ごとに有効化するものである。
 
 つまり **新規インストールは `/v1/messages` すらルーティングしない**。旧ビルドからの移行では
 Routing 画面で明示的に `routed` へ切り替える必要がある — ここは旧挙動を踏襲していない、
 意図的な非互換点である。
 
-## profileKey — 面ごとのティアマップ
+## profileKey — 面ごとのルート
 
 `RouterPreferenceProfile.key` は元々「将来の preference presets 用」としてスキーマコメント付きで
 置かれ、`key='live'` のシングルトンのまま眠っていた。面ごとルーティングがその用途である。
-プロファイルの行は、チェーンからティアマップへ移ったあとも同じものを使っている（面と
+プロファイルの行は、モデルのチェーンから provider · tier のルートへ移ったあとも同じものを使っている（面と
 トークンの `profileKey` が指し続けられるように）。
 
 ```
@@ -152,7 +153,7 @@ InboundSurfaceConfig.profileKey → RouterPreferenceProfile.key → TierRoute
 ```
 
 リクエスト時に `router.ts`（`routeRequest`）が inbound path から面を解決し、その
-`profileKey` のティアマップをティアルーターに読ませる。認証したアクセストークンが `profileKey` を
+`profileKey` のルートをルーターに読ませる。認証したアクセストークンが `profileKey` を
 持っていればそちらが面のものに勝つ。これにより **CIのクライアントが叩く面だけ cost-first に固定する**
 といった運用ができる。`profileKey` の無い面は既定プロファイル `live` に解決される。予約キー
 `passthrough` を指す面は、`routingMode` が `routed` でも passthrough として扱われる
@@ -189,7 +190,7 @@ InboundSurfaceConfig.profileKey → RouterPreferenceProfile.key → TierRoute
 
 | 条件 | 追加で要るもの |
 |---|---|
-| 新しいワイヤ形式 | endpoint transformer 1つ（`endPoint` は記述子の `endpoint` と一致させる）。`transformRequestOut`（wire → 内部形）と `transformResponseIn`（内部形 → wire）の両方。加えて `src/llms/router/surface-signals.ts` の `READERS` に signal reader 1つ — ティアマップが `body.model` 以外に読むのは `tokenize`（context ゲート）と `webSearch`（Web 検索ゲート）の 2 つで、reader の無い面は Anthropic の語彙で読まれる。語彙が違えば本文も Web 検索ツールも見えず、両ゲートを素通りしてしまう |
+| 新しいワイヤ形式 | endpoint transformer 1つ（`endPoint` は記述子の `endpoint` と一致させる）。`transformRequestOut`（wire → 内部形）と `transformResponseIn`（内部形 → wire）の両方。加えて `src/llms/router/surface-signals.ts` の `READERS` に signal reader 1つ — ルーターが読むのは `tokenize`（Long context のしきい値と context ゲート）、`thinking`（Think シナリオ）、`webSearch`（Web 検索ゲート）の 3 つで、reader の無い面は Anthropic の語彙で読まれる。語彙が違えば本文も thinking も Web 検索ツールも見えず、どのリクエストも Default に入り、ゲートも素通りしてしまう |
 | 新しいエラー封筒 | `buildErrorEnvelope` に分岐1つ、`unauthorizedResponse` に 401 の形1つ |
 | 新しい非ストリーム集約 | `sse-aggregate/` にファイル1つ（ワイヤ形式ごとに1ファイル）と barrel の1行 |
 | 新しい認証規約 | `presentedSecret` に読み取り1行、`GATE_BY_CREDENTIAL` に1エントリ |
@@ -206,7 +207,7 @@ DBマイグレーションは不要（`InboundSurfaceConfig` は行が無けれ�
 - [`docs/architecture/inbound-parity.md`](./inbound-parity.md) — **面 × 機能のパリティ表**。
   記述子を足せば面は増えるが、増えた面がどこまで実際に動くかは記述子の外側（変換層）で決まる。
   その実態と、未対応セルの理由・担保テストはあちら。
-- [`docs/architecture/routing.md`](./routing.md) — routed な面の後段: ティアマップ（要求ティア・ルート・ゲート・結果）
+- [`docs/architecture/routing.md`](./routing.md) — routed な面の後段: シナリオとレーン・provider · tier のルート・ゲート・ペース・結果
 - [`docs/architecture/request-flow.md`](./request-flow.md) — その後の failover chain と 429 ローテーション
 - [`docs/architecture/pipeline-overview.md`](./pipeline-overview.md) — 起動から応答整形までの通し動線
 - `docs/plan/rialto/master-plan.md` §4.1, §4.2 — 設計の経緯
@@ -237,8 +238,8 @@ DBマイグレーションは不要（`InboundSurfaceConfig` は行が無けれ�
 差分の大半は**モックのダミー値と実データの差**である（このインストールには provider が3件、モックのフィクスチャには7件、など）。
 当時測った Routing — Map / Routing — Rules / Settings — Presets の3画面は、その後ルートごと廃止された
 （ルーティングは chain と passthrough だけになった）ので、表から外してある。Routing — Chain の2行は
-チェーン編集画面のときの数値である。その画面はのちにティアマップの編集画面に作り替えられた
-（シナリオのタブと Agent / Subagent の切り替えは無くなった）ので、いまの画面の差分ではない。
+チェーン編集画面のときの数値である。その画面はのちに v2.89.0 で要求ティアのマップの編集画面に、さらに
+シナリオ × Agent / Subagent の provider · tier の表（`mocks/routing.html`）に作り替えられたので、いまの画面の差分ではない。
 
 10% を超える2画面は、どちらも**モックと実機が別の状態を描いている**ことによる既知差分で、実装の欠落ではない。
 コピーや構造をいじっても下がらないので、追わないこと。

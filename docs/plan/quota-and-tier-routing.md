@@ -1,6 +1,16 @@
 # クォータ運用の修正と Tier Routing への移行
 
-Status: Planning（2026-09-23 承認）
+Status: Planning（2026-09-23 承認）。**P2 のルーティング設計は [scenario-tier-routing.md](./scenario-tier-routing.md) に置き換えられた**（2026-09-24）
+
+> **P2 の「要求 tier → (provider, tier)」の表（ティアマップ）は v2.89.0 で出荷されたが、その後置き換えられた。**
+> 運用者が求めていたのは、シナリオ（default / think / longContext）とレーン（agent / subagent）の振り分けは
+> そのままに、各行の中身をモデル名から provider · tier に替えることだった。キーまで要求 tier に替えたことで、
+> 変換で `think` / `longContext` / subagent のリストが消え、Opus 指定の要求が Sonnet に回るようになった。
+> いまのルーティングは [scenario-tier-routing.md](./scenario-tier-routing.md) の設計（シナリオ × レーンごとの
+> provider · tier のリスト、ペースによる並べ替え、Long context のしきい値の自動調整）で、挙動のリファレンスは
+> [architecture/routing.md](../architecture/routing.md) にある。P2-7 の縮退マイグレーション（#535）は #540 で
+> 取り消された。本書の P0 / P1 と、P2 のうちエイリアス・scheduler の snapshot・ゲート・結果（429 / 400 /
+> passthrough）の考え方は引き継がれている。以下は計画と、その理由の記録としてそのまま残す。
 
 親ドキュメント:
 

@@ -3,7 +3,7 @@
 ## 目的
 
 `/v1/*` に届いた 1 本のリクエストが、どの順序で、どのモジュールを通って、最終的にクライアントへ返るまでの **全体像** を描く。
-[request-flow.md](./request-flow.md) はルーティング判断と 429 ローテーションだけを切り出した拡大図、[routing.md](./routing.md) はティアマップそのもの（データモデル・ゲート・結果・scheduler の snapshot）の参照。本ドキュメントは「サーバ起動 → 1 リクエスト処理 → upstream 呼び出し → 応答整形」の通し動線を扱う。
+[request-flow.md](./request-flow.md) はルーティング判断と 429 ローテーションだけを切り出した拡大図、[routing.md](./routing.md) はルーティングそのもの（データモデル・シナリオとレーン・ゲート・ペース・結果・Long context のしきい値・scheduler の snapshot）の参照。本ドキュメントは「サーバ起動 → 1 リクエスト処理 → upstream 呼び出し → 応答整形」の通し動線を扱う。
 
 ---
 
@@ -41,7 +41,7 @@ flowchart TB
   subgraph REQ["③ Per-Request (1 リクエスト)"]
     direction TB
     R1[HTTP Hono<br/>POST /v1/*]
-    R2[buildRoutePlan<br/>+ routeRequest<br/>ティアマップ → 6 ゲート]
+    R2[buildRoutePlan<br/>+ routeRequest<br/>シナリオ × レーン → 6 ゲート → ペース]
     R3[buildFailoverChain<br/>exhausted 除外]
     R4[attemptChainEntry × N<br/>resolveInvocationForModel<br/>+ runPipeline<br/>+ tryRotateAccount on 429]
     R5[runPipeline<br/>request transformers →<br/>fetchProvider →<br/>response transformers]
@@ -58,7 +58,7 @@ flowchart TB
   REQ -.reads.-> SNAP
   REQ -.read/write.-> SR
   REQ -.reads.-> US
-  R2 -.reads tier map.-> DB
+  R2 -.reads routes.-> DB
   R6 -.writes RequestLog.-> DB
   US -.5min polling.-> DB
   SNAP -.5min tick.-> DB
@@ -79,12 +79,12 @@ flowchart TB
 | | 4. 背景ジョブ | usage capture / auth health / routing scheduler。いずれも fire-and-forget で boot をブロックしない | – | `src/services/usage-job.ts` ほか |
 | ② State | LlmsContext | 4 registries を 1 個に束ねた lazy singleton。DB-backed config 変更時に `resetLlmsContext()` で再生成 | AppConfig → ctx | `src/llms/context.ts` |
 | | failover-state | provider / sub-account / (provider, model) 単位の枯渇フラグ。`until` 時刻 or default 5min で失効 | – | `src/services/failover-state.ts` |
-| | routing-scheduler | 有効なサブスクプロバイダの有効なモデルごとの quota snapshot（`exhausted` / `remainingBudgetPct` / `resetAt`）。5 分 tick、Refresh と Codex のリセット消費の直後にも作り直す。セレクタの quota ゲートが読む | DB → mem | `src/services/routing-scheduler/` |
+| | routing-scheduler | 有効なサブスクプロバイダの有効なモデルごとの quota snapshot（`exhausted` / `remainingBudgetPct` / `projectedPct` / `resetAt`）。5 分 tick、Refresh と Codex のリセット消費の直後にも作り直す。セレクタの quota ゲートとペースの並べ替えが読む。タイマーの tick は Long context のしきい値の調整（1 日 1 回まで）も行い、結果を DB の `constraints` に書く | DB → mem（しきい値は mem → DB） | `src/services/routing-scheduler/` |
 | | session-account-router | session → 選択 sub-account の sticky マップ | – | `src/services/session-account-router.ts` |
 | | usage-service | 5h / weekly ウィンドウのキャッシュ。背景 polling で更新。**ルーティング判断には使われない**（Overview / Subscriptions の表示とアカウント選択の材料） | DB → mem | `src/services/usage-service.ts` |
 | | Postgres | `Provider`/`Model`/`ProviderTierAlias`/`RouterPreferenceProfile`/`TierRoute`/`InboundSurfaceConfig`/`Session`/`RequestLog`/`SubAccountUsage` ほか（`RouterSlot` / `RoutingPreset` は無い。退役した `RouterPreferenceEntry` / `RoutingWeightChange` は contract migration まで残るが、backfill 以外は読まない） | – | `src/prisma/schema.prisma` |
 | ③ Per-Request | HTTP | エンドポイント (`/v1/messages` 等) → 面記述子 → endpoint transformer 解決 | HTTP → ctx | `src/api/v1/route.ts` |
-| | RoutePlan | body parse + ティアマップによるルーティング + persona append。枯渇の 429 と拒否の 400 はここで返す | body → RoutePlan | `src/api/v1/route-plan.ts`<br/>`src/llms/router.ts`<br/>`src/llms/tier-router/` |
+| | RoutePlan | body parse + シナリオ別のルーティング + persona append。枯渇の 429 と拒否の 400 はここで返す | body → RoutePlan | `src/api/v1/route-plan.ts`<br/>`src/llms/router.ts`<br/>`src/llms/tier-router/` |
 | | FailoverChain | primary + fallbacks を exhausted マークで絞る（auth_mode では絞らない） | RoutePlan → string[] | `src/api/v1/candidate-chain.ts` |
 | | ChainEntry loop | 各 entry を試し、429 ならアカウントを回し、それでも駄目なら次へ | string → Response | `src/api/v1/chain-failover.ts` |
 | | runPipeline | request transformers → fetch → response transformers の本処理 | invocation → Response | `src/llms/pipeline.ts` |
@@ -130,11 +130,11 @@ flowchart LR
   REQ --> P1 --> P2 --> P3
 ```
 
-- リクエストはまず **primary の provider** に入る（要求ティアのルートのうち、セレクタのゲートを通った先頭）
+- リクエストはまず **primary の provider** に入る（シナリオとレーンで決まったリストのルートのうち、セレクタのゲートを通り、ペースで並べ替えた先頭）
 - その provider 内で **未枯渇の sub-account** を 1 つ選んで試す（同 session は粘着、初回は balancingScore で選択）
 - 429 を受けたら **同 provider の別 account** に回す（最大 10 回）
-- 同 provider の peer が尽きたら **次の chain entry**（そのティアの次のルート）へ
-- **chain の順序は operator がティアマップに書いたとおり** — subscription のルートの後ろに api_key（例: gemini）のルートを書けば、そこへ落ちる。auth_mode で弾くゲートは無い
+- 同 provider の peer が尽きたら **次の chain entry**（リストの次のルート）へ
+- **chain の順序は operator がリストに書いたとおり**（ペースによる前後の移動を除く） — subscription のルートの後ろに api_key（例: gemini）のルートを書けば、そこへ落ちる。auth_mode で弾くゲートは無い
 
 ```mermaid
 flowchart LR
@@ -203,7 +203,7 @@ flowchart TD
 **重要なルール:**
 
 1. **chain は最初に 1 回だけ作る** — `buildFailoverChain` は entry 開始時のスナップショット。途中で新しい fallback が現れることはない。
-2. **chain の順序は operator の記述そのもの** — 要求ティアのルートを、ティアマップに書かれた順に並べたもの（ゲートで落ちたルートを除く）。auth_mode gate は廃止された。primary が subscription でも、後ろに書いた api_key のルートはそのまま走る。落としたくなければルートに書かない。
+2. **chain の順序は operator の記述そのもの** — シナリオ・レーンのリストのルートを、書かれた順に並べたもの（ゲートで落ちたルートを除き、ペースで余りを先頭へ・超過を末尾へ動かす）。auth_mode gate は廃止された。primary が subscription でも、後ろに書いた api_key のルートはそのまま走る。落としたくなければルートに書かない。
 3. **同 provider の fallback も通る** — 枯渇マークは `(provider, model)` 単位なので、Fable の 429 で同 provider の Opus のルートへ逃げるのは正当。peer が尽きたときに付くのも `markModelExhausted`（その model だけ）である。ただし 5h/weekly quota は **account 単位** で全 model 共通なので、account が枯れた 429 では別 model でも同じ account で 429 になる。provider ごと塞ぐのは `insufficient_quota` の `markProviderExhausted` だけ。
 4. **無効な provider / model は chain に載らない** — `loadTierProfileView` がエイリアスの先の `Model.enabled && Provider.enabled` を `targetEnabled` に折り込み、セレクタがそのルートを落とす。registry も有効なものしか持たないので、ルートの target でも passthrough の `provider,model` でも、無効な pair は `resolveInvocationForModel` が null を返して skip される。
 5. **sub-account は OAuth transformer の `auth()` 内で選ばれる** — chain ループはアカウント名を知らない。transformer が選んだアカウントをその試行の request に `subAccountId` として stamp するので、429 が返ってきたらそれを読む。session 単位の `getActiveAccountForSession(sessionId)` は同じ session の並行リクエストに上書きされうるため、transformer がアカウントを解決する前に失敗した試行のフォールバックでしかない。候補になるのは**有効な provider** の有効な account だけ（`getSubAccountTokensForKind` が `Provider.enabled` で絞る）。
@@ -241,7 +241,7 @@ score = (100 - 当該 weekly 窓の使用率%) / 窓のリセットまでの残�
 | `claude-code` | subscription | claude-sonnet-4-6, claude-opus-4-8 | sonnet → claude-sonnet-4-6、opus → claude-opus-4-8 | A1, A2, A3 |
 | `gemini` | api_key | gemini-2.5-pro | sonnet → gemini-2.5-pro | – |
 
-**`live` profile のティアマップ（要求ティア `sonnet`）**
+**`live` profile の `default` / `agent` のリスト**
 
 | priority | ルート | エイリアスで解決した target |
 |------|-------|-------|
@@ -249,7 +249,7 @@ score = (100 - 当該 weekly 窓の使用率%) / 窓のリセットまでの残�
 | 2 | `claude-code · opus` | `claude-code,claude-opus-4-8` |
 | 3 | `gemini · sonnet` | `gemini,gemini-2.5-pro` |
 
-**chain 構築結果**（`body.model = claude-sonnet-4-6` → 要求ティア `sonnet`）
+**chain 構築結果**（thinking 無し・しきい値以下の入力 → シナリオ `default`・レーン `agent`。どの target も見込みは 60〜100 % で、ペースによる移動は無いとする。`body.model` が何であっても同じ）
 
 | step | 結果 |
 |------|------|
@@ -369,7 +369,7 @@ sequenceDiagram
 #### ケース D: 直前の 429 のマークで、送る前にルートが外れるケース
 
 **直前のリクエスト**が 429 を食って `failover-state` に枯渇マークが残っているとき、次のリクエストでは
-ティアのセレクタが quota ゲートでそのルートを落とし、次のルートを primary にする。マークを付ける
+セレクタが quota ゲートでそのルートを落とし、次のルートを primary にする。マークを付ける
 のは reactive 経路であって、セレクタは**それを読むだけ**である。かつての `applyProactiveFailover` の
 ような、選んだ後にもう一度歩く段は無い — 枯渇と context のゲートはセレクタに吸収された。
 
@@ -377,12 +377,13 @@ sequenceDiagram
 sequenceDiagram
   autonumber
   participant RP as buildRoutePlan
-  participant TR as tier-router<br/>(routeByTier / selectTierRoute)
+  participant TR as tier-router<br/>(routeByScenario / selectTierRoute)
   participant FS as failover-state
   participant SN as routing-scheduler<br/>snapshot
 
-  RP->>TR: routeByTier(requestedModel, profileKey, tokenCount, webSearch)
-  loop ルート = 要求ティアのルート（優先順）
+  RP->>TR: routeByScenario(profileKey, tokenCount, thinking, isSubagent, webSearch)
+  TR->>TR: classify — シナリオとレーン<br/>使えるルートが無ければ default
+  loop ルート = そのシナリオ・レーンのリストのルート（優先順）
     TR->>TR: on/off・エイリアス・web 検索・context
     TR->>FS: isModelExhausted(provider, model)?
     FS-->>TR: マークがあれば skip (reason: exhausted)
@@ -390,6 +391,8 @@ sequenceDiagram
     SN-->>TR: exhausted か 使用率 ≥ quotaSkipPct なら skip
   end
   alt 通ったルートがある
+    TR->>SN: targets[provider,model].projectedPct
+    TR->>TR: ペースで並べ替え<br/>60 % 未満は先頭へ・100 % 超は末尾へ
     TR-->>RP: routed — 先頭が primary、残りが fallbacks
   else quota / error rate で落ちたルートがある
     TR-->>RP: exhausted — 429 + Retry-After<br/>（exhaustedBehavior=passthrough なら素通し）
@@ -399,7 +402,7 @@ sequenceDiagram
 > 枯渇マークは **モデル単位が基本**で、プロバイダ単位のマークもORで効く（`isModelExhausted`）。
 > Fable の 429 が Fable だけを塞ぎ、同一プロバイダ上の Opus のルートには到達できるようにするためである。
 > プロバイダ単位のマーク（`insufficient_quota`）はプロバイダ全体を塞ぐので、そのときは同 provider 別モデルでも救えない。
-> ティアのルートが全部落ちたとき、以前は primary を維持して reactive の 429 経路に任せていたが、いまは
+> リストのルートが全部落ちたとき、以前は primary を維持して reactive の 429 経路に任せていたが、いまは
 > セレクタが `exhausted` を返し、`buildRoutePlan` が upstream へ出さずに 429 + `Retry-After` を返す
 > （`Retry-After` はマークの期限 → snapshot の `resetAt` → どちらも無ければ 30 秒）。
 
@@ -413,12 +416,14 @@ sequenceDiagram
 | 「sticky は永続」 | アカが exhaust マークされた瞬間 `releaseAccountForSession` で破棄 |
 | 「provider exhausted は config 修正まで解けない」 | `until` 時刻 (default 5min / 実 resetAt) で自動失効 |
 | 「週次が減ってきたら先回りで切り替わる」 | weekly drain guard は廃止済み。上流の上限まで走り、実際の 429 で切り替わる。先回りに近いのは profile の `quotaSkipPct` だけで、既定の 100 では残り 0 % になるまでルートを外さない |
-| 「bare な model 名を投げれば provider を探してくれる」 | `routed` な面では要求ティアのルートが使われる。ルートが無い・全部 off のとき、あるいは `passthrough` な面では、bare 名を**有効な**プロバイダがちょうど 1 つ hosts している場合に限りそこへ送る。曖昧・未知・無効なら skip |
-| 「`<RIALTO-SUBAGENT-MODEL>` の中身のモデルに飛ぶ」 | 中身は読まない。有無さえルートを変えない — タグは routed でも passthrough でも最初に取り除かれ、`RequestLog.isSubagent` に記録されるだけ。サブエージェントのリクエストも、自分が要求したティアのルートに従う |
+| 「bare な model 名を投げれば provider を探してくれる」 | `routed` な面ではモデル名は行き先を選ばず、シナリオとレーンのリストのルートが使われる。レーンの default のリストが空・全部 off のとき、あるいは `passthrough` な面では、bare 名を**有効な**プロバイダがちょうど 1 つ hosts している場合に限りそこへ送る。曖昧・未知・無効なら skip |
+| 「`<RIALTO-SUBAGENT-MODEL>` の中身のモデルに飛ぶ」 | 中身は読まない。読むのは有無だけで、有ればそのシナリオの `subagent` レーンのリストに従う。タグは routed でも passthrough でも最初に取り除かれ、`RequestLog.isSubagent` に記録される |
 | 「同 provider 別 model を fallback に入れれば安心」 | 入れてよいし、model 単位の 429（Fable だけ枯れた）には効く。ただし 5h/weekly は account 単位の制限なので、account が枯れた 429 では model を変えても同じ account で同様に 429 |
 | 「Providers 画面で model を OFF にしても、ルートに残っていれば送られる」 | 送られない。`loadTierProfileView` がエイリアスの先の on/off を `targetEnabled` に折り込んでセレクタが落とし、registry にも無いので `resolveInvocationForModel` も skip する。passthrough で手で名指ししても同じ |
-| 「ルートが空なら 429 になる」 | ならない。ルートが 1 本も無い（か全部 off の）ティアは `exhaustedBehavior` に関係なく呼び出し側の `body.model` を素通しする。429 は「quota か error rate で落ちたルートがある」かつ `exhaustedBehavior='429'` のときだけ |
-| 「Haiku の要求は、ルートに Sonnet しか無ければ tier が合わずに落ちる」 | tier を合わせるゲートは無い。`haiku` の行に `claude-code · sonnet` と書けば Haiku の要求は Sonnet へ行く。代替は表に明示的に書くもので、書いていなければ `haiku` のルートは無い = passthrough |
+| 「ルートが空なら 429 になる」 | ならない。think / longContext のリストが空（か全部 off）なら同じレーンの default へ落ち、default も空なら `exhaustedBehavior` に関係なく呼び出し側の `body.model` を素通しする。429 は「quota か error rate で落ちたルートがある」かつ `exhaustedBehavior='429'` のときだけ |
+| 「Haiku を頼めば Haiku が来る」 | 来るとは限らない。routed な面ではモデル名は行き先を選ばず、行き先はシナリオ・レーンのリストに書いた provider · tier で決まる。サブエージェントに Haiku を使わせたいなら、subagent レーンのリストに `claude-code · haiku` を書く |
+| 「このペースだと尽きそうなルートは 429 になる」 | ならない。見込みが 100 % を超えたルートはリストの末尾へ下がるだけで、下に書いたルートが先に使われる。全ルートが超過ならリストの順のまま。止めるのは quota ゲート（使い切り、または `quotaSkipPct` 以上）だけ |
+| 「Long context のしきい値は画面か API で決める」 | 決められない。基準値は default / agent の先頭ルートのモデルのコンテキスト長の 70 % で、scheduler がペースを見て 1 日 1 回まで ±20 % 動かす。保存は tuner の値を DB から引き継ぐので、PUT の body に書いても無視される。止めるだけなら `constraints.autoTuneLongContext = false` |
 | 「新しいモデルが出たらルートを張り替える」 | 張り替えるのはプロバイダのティアエイリアス 1 行だけ。ルートはプロバイダとティアを指し、モデルを指さない。エイリアスは自動では動かない — Refresh は候補を示すだけ |
 | 「設定が合わないと 429 が返る」 | 返らない。エイリアス未設定・web 検索非対応・context 不足で全ルートが受けられないときは 400（面のエラー封筒）。429 は quota と error rate だけ |
 
@@ -459,7 +464,7 @@ lift する一回限りの移行は削除済みで、流れは逆向きになっ
 
 | メンバ | 中身 | 読まれる場所 |
 |--------|------|--------------|
-| `config: ConfigStore` | Providers（有効な provider の有効な model だけ）/ Personas / ActivePersona / 各種スカラを key で引ける薄いラッパ。`Router` は載らない。ティアマップも載らない — それはリクエストごとに Postgres から読む（`loadTierProfileView`） | routeRequest（persona）, chain-failover |
+| `config: ConfigStore` | Providers（有効な provider の有効な model だけ）/ Personas / ActivePersona / 各種スカラを key で引ける薄いラッパ。`Router` は載らない。ルートも載らない — それはリクエストごとに Postgres から読む（`loadTierProfileView`） | routeRequest（persona）, chain-failover |
 | `transformers: TransformerRegistry` | endpoint transformer 群 (`anthropic`, `openai`, `openai-responses`, `gemini`, `claude-code-oauth`, `codex-oauth`) | endpointTransformerMap |
 | `providers: ProviderRegistry` | name → ResolvedProvider Map。`api_base_url` / `api_key` 揃ったものだけ登録 | resolveInvocationForModel |
 | `tokenizers: TokenizerRegistry` | 既定は tiktoken (cl100k_base)。`@huggingface/tokenizers` を使うモデル精確なバックエンドと、API 集計バックエンドも登録できる（`src/llms/tokenizers/`） | routeRequest の token 数計上（context ゲート） |
@@ -525,15 +530,15 @@ flowchart TD
   PARSE --> TAG[stripSubagentTag<br/>タグを除去し isSubagent を記録<br/>※ モードによらず]
   TAG --> MODE{routed な面?<br/>かつ token が passthrough<br/>profile を指していない?}
   MODE -- No --> PT[passthrough<br/>body.model そのまま<br/>route=passthrough, fallbacks=空]
-  MODE -- Yes --> TOK[signalsOf + countTokens<br/>トークン数 / web_search の有無]
+  MODE -- Yes --> TOK[signalsOf + countTokens<br/>トークン数 / thinking / web_search の有無]
   TOK --> PROF[profile 解決<br/>token → surface → live<br/>loadTierProfileView]
-  PROF --> TIER[要求ティア<br/>tierOf body.model / other]
-  TIER --> SEL[selectTierRoute<br/>6 つのゲート]
+  PROF --> SCN[classify<br/>シナリオ: しきい値超え / thinking / default<br/>レーン: タグの有無<br/>使えるルートが無ければ default]
+  SCN --> SEL[selectTierRoute<br/>6 つのゲート → ペース]
   SEL --> OUT{outcome}
   OUT -- exhausted<br/>exhaustedBehavior=429 --> R429[429 + Retry-After<br/>upstream へ出さない]
   OUT -- refused --> R400R[400 面のエラー封筒<br/>upstream へ出さない]
   OUT -- passthrough /<br/>exhausted + passthrough /<br/>例外 --> KEEP[body.model そのまま<br/>route=passthrough, fallbacks=空]
-  OUT -- routed --> RW[body.model = primary<br/>route=要求ティア<br/>fallbacks=残り]
+  OUT -- routed --> RW[body.model = primary<br/>route=シナリオ<br/>fallbacks=残り]
   KEEP --> PERSONA[applyGlobalSystemPrompt<br/>ActivePersona を<br/>cache-safe に append<br/>※ /v1/messages のみ]
   RW --> PERSONA
   PERSONA --> PLAN[(RoutePlan)]
@@ -544,8 +549,8 @@ flowchart TD
 
 ### routeRequest の段階
 
-`src/llms/router.ts`→ `src/llms/tier-router/runtime.ts:routeByTier`
-→ `src/llms/tier-router/select.ts:selectTierRoute`。ゲートと結果の全体は [routing.md](./routing.md)
+`src/llms/router.ts`→ `src/llms/tier-router/runtime.ts:routeByScenario`（`classify` を含む）
+→ `src/llms/tier-router/select.ts:selectTierRoute`。ゲート・ペース・結果の全体は [routing.md](./routing.md)
 が正で、ここでは各段が何を読むかを押さえる。**bare 名からプロバイダを逆引きする段は無い** —
 それは chain walker 側の `resolveInvocationForModel` が、ルートが何も取らなかった（あるいは
 passthrough の）ときに、有効なホストがちょうど 1 つあれば行う。
@@ -553,9 +558,8 @@ passthrough の）ときに、有効なホストがちょうど 1 つあれば�
 **段階 0 — サブエージェントタグ**
 `stripSubagentTag(body.system)` が system[1] のタグの**有無**を返し、閉じたタグを in-place で除去する。
 `RIALTO-SUBAGENT-MODEL` / `CCR-SUBAGENT-MODEL` のどちらでもよい。**モードより先**に走るので、
-passthrough の面でも内部マーカーは上流へ漏れず、`isSubagent` も記録される。**タグは何も選ばない** —
-レーンはもう無く、サブエージェントのリクエストも自分が要求したティアのルートに従う。記録は Activity が
-サブエージェントのトラフィックを見分けるためだけにある。
+passthrough の面でも内部マーカーは上流へ漏れず、`isSubagent` も記録される。routed の面では、この有無が
+**レーン**（`agent` / `subagent`）になる。タグの中身は読まない。
 
 **段階 1 — モード**
 面の `routingMode` が `passthrough`、または認証したトークンの `profileKey` が予約キー `passthrough`
@@ -563,10 +567,13 @@ passthrough の面でも内部マーカーは上流へ漏れず、`isSubagent` �
 `route='passthrough'` / fallbacks `[]` を stamp して返る。persona も付かない。
 
 **段階 2 — シグナルとトークン数**
-`signalsOf(req)` が面ごとの語彙の違いを吸収して `{ tokenize, webSearch, … }` を作り
+`signalsOf(req)` が面ごとの語彙の違いを吸収して `{ tokenize, thinking, webSearch }` を作り
 （`src/llms/router/surface-signals.ts`）、トークナイザが `signals.tokenize` を数える。
 Responses の呼び手は会話を `input` に、Gemini は `contents` に載せるので、`body.messages` を直に数えない。
-数えた値は context ゲートが、`webSearch` は web 検索ゲートが読む。
+数えた値は Long context のしきい値判定と context ゲートが、`thinking` はシナリオの判定が、`webSearch` は
+web 検索ゲートが読む。thinking の読み方は面ごとに違う — Anthropic は `thinking`（`type: 'disabled'` 以外。
+`adaptive` も含む）、OpenAI の 2 面は `reasoning_effort` / `reasoning`（`'none'` 以外。effort の無い
+`reasoning` オブジェクトも含む）、Gemini は `thinkingConfig`（`src/llms/utils/gemini/router-signals.ts`）。
 
 **段階 3 — profile**
 トークンの `profileKey` → 面の `profileKey` → `live`（`DEFAULT_PROFILE_KEY`）。`loadTierProfileView` が
@@ -574,24 +581,32 @@ Responses の呼び手は会話を `input` に、Gemini は `contents` に載せ
 ルートには `targetEnabled`（`Model.enabled && Provider.enabled`）、`hostsWebSearch`、`contextWindow`
 （`Model.contextWindow`）が付く。
 
-**段階 4 — 要求ティア**
-`tierOf(body.model)` — モデル名の部分一致で `fable` / `opus` / `sonnet` / `haiku`。どれでもなければ `other`。
-effort も thinking もトークン数も、どのティアのルートを使うかには関わらない。旧分類器が見ていたこれらの
-シグナルで行き先を変えたいなら、ティアマップにルートとして書く。
+**段階 4 — シナリオとレーン**（`classify`）
+入力トークンが Long context のしきい値を超えれば `longContext`、そうでなく thinking があれば `think`、
+どちらでもなければ `default`。長い入力が先なのは、長いプロンプトは thinking の有無によらず Long context
+だから。しきい値は `default` / `agent` の先頭の使えるルートのモデルのコンテキスト長の 70 %（解決できなければ
+128k）を基準に、scheduler が調整した値を `[30k, 基準値]` に収めたもの（`src/llms/tier-router/threshold.ts`）。
+選んだ `think` / `longContext` のリストに、そのレーンで使えるルート（on・エイリアスあり・target on）が
+1 本も無ければ、同じレーンの `default` に落とす。落とすかどうかは設定だけで決まり、quota は見ない —
+Think のルートが全部枯渇していても、Default のルートを借りずに exhausted になる。
+**呼び出し側のモデル名は、どのリストを使うかに関わらない。**
 
 **段階 5 — 選択**（`selectTierRoute`）
-そのティアのルートを優先順に歩き、6 つのゲート（ルートと target の on/off → エイリアス → web 検索 →
-context → quota → error rate）を順に掛ける。通ったものが `[primary, ...fallbacks]` になる。
+そのリストのルートを優先順に歩き、6 つのゲート（ルートと target の on/off → エイリアス → web 検索 →
+context → quota → error rate）を順に掛ける。通ったものを **ペース**（snapshot の `projectedPct`。
+このペースならリセット時点で予算の何 % を使うか）で並べ替える — 60 % 未満は先頭へ、100 % 超は末尾へ、
+それ以外と読みの無いものはリストの順のまま。各グループの中では元の順を保ち、全部が 100 % 超なら
+リストの順のまま（見込みだけでは断らない）。並べ替えた結果が `[primary, ...fallbacks]` になる。
 結果と `body.model` の関係:
 
 | outcome | `body.model` | fallbacks / 応答 |
 |---|---|---|
-| routed（通ったルートがある） | 先頭ルートの `provider,model` | 残りのルート。route = 要求ティア |
+| routed（通ったルートがある） | ペースで並べ替えた先頭ルートの `provider,model` | 残りのルート。route = シナリオ（default へ落ちたなら `default`） |
 | exhausted（quota か error rate で落ちたルートがある）、`exhaustedBehavior='429'`（既定） | 触らない | — `buildRoutePlan` が 429 + `Retry-After` を返し、upstream へ出さない |
 | 同上、`exhaustedBehavior='passthrough'` | 触らない | `[]`。route = `passthrough` |
 | refused（ルートはあるが、エイリアス未設定・web 検索非対応・context 不足でどれも受けられない） | 触らない | — `buildRoutePlan` が面のエラー封筒で 400 を返す。**`exhaustedBehavior` は見ない**（待っても変わらない） |
-| passthrough（ルートが 0 本、または全部 off） | 触らない。**`exhaustedBehavior` は見ない**（未設定のティアは「意見無し」であって「全部枯渇」ではない） | `[]`。route = `passthrough` |
-| ティアマップの読込失敗（Postgres 不在）/ トークナイザやルーティングが例外 | 触らない。error ログ、route = `passthrough`、`isSubagent` はタグから | `[]` |
+| passthrough（レーンの default のリストのルートが 0 本、または全部 off） | 触らない。**`exhaustedBehavior` は見ない**（未設定のリストは「意見無し」であって「全部枯渇」ではない） | `[]`。route = `passthrough` |
+| プロファイルの読込失敗（Postgres 不在）/ トークナイザやルーティングが例外 | 触らない。error ログ、route = `passthrough`、`isSubagent` はタグから | `[]` |
 
 skip 理由が混ざったときは exhausted が refused より、refused が passthrough より優先する。どれか 1 本でも
 quota か error rate で落ちていれば、待てば通る見込みがあるからである。
@@ -600,7 +615,8 @@ quota か error rate で落ちていれば、待てば通る見込みがある�
 無ければ scheduler の snapshot の `resetAt`、どちらも無ければ 30 秒。
 
 `body.model` が書き換わるのはルートの target に置き換えるときだけ。振り先を捏造する経路は無い。
-テストは `__tests__/llms/route-request.test.ts` と `__tests__/llms/tier-router/select.test.ts`。
+テストは `__tests__/llms/route-request.test.ts`、`__tests__/llms/router.test.ts`（`classify`）と
+`__tests__/llms/tier-router/select.test.ts`。
 
 **persona** — routed な面の `/v1/messages` では、どの出口（routed / passthrough / 例外）でも
 `applyGlobalSystemPrompt` が ActivePersona を append する。persona はインストールの属性であって、ルートが
@@ -612,12 +628,14 @@ upstream がある — codex がその例）。passthrough の面では付かな
 トークン数は `tool_result` の配列 content をブロック単位で数える。中に入れ子になった image /
 document の base64 は（トップレベルの image ブロックと同じく）0 として数える — 文字列化して
 数えていた頃はスクリーンショット 1 枚が 100 万トークンになり、以後のリクエストが全部
-`longContext` シナリオに分類された。いまこの数を読むのは context ゲートなので、数え過ぎはそのまま
-「どのルートの context window にも収まらない」= 400 になる。
+`longContext` シナリオに分類された。この数を読むのは Long context のしきい値判定と context ゲートで、
+数え過ぎはそのまま「Long context のリストへ行く」か「どのルートの context window にも収まらない」= 400 になる。
 
 `contextWindow` が未知（`null`）のモデルは context ゲートで止めない（unknown = allow）。
-先に一律のしきい値で振り分ける `longContext` シナリオは廃止された — 大きすぎるリクエストは、
-収まらないルートを飛ばして次のルートへ行き、どれにも収まらなければ 400 になる。
+しきい値と context ゲートは役割が違う。しきい値はリクエストを `longContext` のリストへ振り分ける
+（基準値が default のモデルのコンテキスト長の 70 % なので、しきい値ちょうどのリクエストは default の
+モデルにもまだ収まる）。context ゲートは振り分けた先のリストで、収まらないルートを飛ばして次のルートへ
+回し、どれにも収まらなければ 400 にする — Long context のリストで収まらなくても default へは戻らない。
 
 上流へ送る変換も同じ扱いにしてある。Anthropic → unified の変換（`toolResultContent`）は
 `tool_result` の配列 content を `JSON.stringify` していたため、Read で読んだスクリーンショットが
@@ -646,15 +664,15 @@ base64 のままプロンプトのテキストとして上流に届き、Codex �
 
 | field | 用途 |
 |-------|------|
-| `routedBody` | ティアマップのルーティングを当てた **per-model shaping 前** の body |
+| `routedBody` | ルーティングを当てた **per-model shaping 前** の body |
 | `headers` | inbound headers コピー |
 | `transformersByName` | このエンドポイント用 transformer の name → instance |
 | `defaultTransformer` | bypass で使う 1 個目 |
-| `route` | 要求ティア（ルートが取ったとき）か `passthrough`。`RequestLog.scenario` 列（名前はティアマップ以前のまま）に記録され、Activity が Route として出す |
+| `route` | シナリオ（ルートが取ったとき。default へ落ちたなら `default`）か `passthrough`。`RequestLog.scenario` 列に記録され、Activity が Scenario として出す（v2.89.0 の行には要求ティアが入っている） |
 | `primaryModel` | `provider,model` 文字列 |
 | `requestedModel` | クライアントが投げてきた元の `body.model`。`RequestLog` に「何を頼まれたか」を「何を送ったか」の隣に残すため |
-| `isSubagent` | サブエージェントタグの有無。`RequestLog.isSubagent` に記録するだけで、何も選ばない |
-| `fallbacks` | セレクタがゲートを通したルートの残り（primary の後ろ、ティアマップの順）。ルートが取らなかったときは空。`buildFailoverChain` は引き直さずこれを読むので、セレクタが選んだ順と reactive 経路が歩く順が必ず一致する |
+| `isSubagent` | サブエージェントタグの有無。routed の面ではこれがレーンを選んだ。`RequestLog.isSubagent` に記録する |
+| `fallbacks` | セレクタがゲートを通したルートの残り（primary の後ろ、ペースで並べ替えた後のリストの順）。ルートが取らなかったときは空。`buildFailoverChain` は引き直さずこれを読むので、セレクタが選んだ順と reactive 経路が歩く順が必ず一致する |
 | `accountSessionKey` | サブアカウント picker が粘着するキー。ヘッダに session id が無ければ `token:<id>`、それも無ければ `anonymous` |
 | `accessTokenId` | このリクエストを認証した `AccessToken`。Activity がクライアント単位に支出を帰属させるため |
 | `path` / `search` | upstream に投げ直す URL 構築用 |
@@ -670,7 +688,7 @@ base64 のままプロンプトのテキストとして上流に届き、Codex �
 - 既に exhausted な `(provider, model)` を除外。
 - 全部 exhausted の場合は元の順序を返す（窓が転がってる可能性に賭ける）。
 
-**auth_mode gate も same-provider gate も無い。** chain の順序は operator がティアマップに書いたルートの順そのものであり、
+**auth_mode gate も same-provider gate も無い。** chain の順序は operator がリストに書いたルートの順そのもの（ペースによる前後の移動を除く）であり、
 「subscription の後に api_key が来てよいか」はルートにそう書いたかどうかで決まる。
 
 ---
@@ -763,7 +781,7 @@ flowchart TD
 して DB に入る。失敗は黙って握り潰す（応答に影響しない）。
 
 行には量のほかに、`context.req` に載って届いた属性が入る: 要求モデル（`requestedModel`）、ルート
-（`scenario` 列。要求ティアか `passthrough`）、`isSubagent`、面、`AccessToken`、そして
+（`scenario` 列。シナリオか `passthrough`）、`isSubagent`、面、`AccessToken`、そして
 **この試行を処理したサブスクのアカウント**（`subAccountId`。OAuth transformer が送信前に試行の request へ
 stamp する。api_key のプロバイダでは null）。アカウントの切り替えで試行ごとに request が作り直されるので、
 記録されるのは成功した試行のアカウントである。Overview とプロバイダのページがアカウントごとの API 換算額を
@@ -829,11 +847,11 @@ cache write のうち 1 時間 TTL の分は `cacheWrite1hTokens` に別に残�
 
 ## サブスクの 429 を 1 本のリクエストで追ってみる
 
-例: `POST /v1/messages` (body.model = `claude-opus-4-8`, stream:true, 5h 窓 99%)
+例: `POST /v1/messages` (body.model = `claude-opus-4-8`, thinking 有効, stream:true, 5h 窓 99%)
 
 1. **HTTP** — `/v1/messages` → `anthropic` endpoint transformer マッチ。
-2. **RoutePlan** — 要求ティアは `opus`。`opus` の先頭ルート `claude-code · opus` をエイリアスで `claude-code,claude-opus-4-8` に解決し、ゲートを通す。枯渇マークは無く、snapshot の使用率が profile の `quotaSkipPct`（既定 100）未満なので primary になる（**99 % でも外さない**。外すのは snapshot が使い切りと読んだときか、`quotaSkipPct` を下げたとき）。
-3. **buildFailoverChain** — `[claude-code,claude-opus-4-8]` + `opus` のルートの残り（api_key のルートも書いてあればそのまま）。
+2. **RoutePlan** — thinking 付きなのでシナリオは `think`、タグが無いのでレーンは `agent`（`body.model` の `opus` は関係ない）。`think` / `agent` の先頭ルート `claude-code · opus` をエイリアスで `claude-code,claude-opus-4-8` に解決し、ゲートを通す。枯渇マークは無く、snapshot の使用率が profile の `quotaSkipPct`（既定 100）未満なので quota ゲートは通る（**99 % でも外さない**。外すのは snapshot が使い切りと読んだときか、`quotaSkipPct` を下げたとき）。このペースだと見込みは 100 % を超えるので、リストの下に別のルートがあればそちらが先頭に来るが、ここでは 1 本だけなので primary のまま。
+3. **buildFailoverChain** — `[claude-code,claude-opus-4-8]` + `think` / `agent` のルートの残り（api_key のルートも書いてあればそのまま）。
 4. **attemptChainEntry** — `resolveInvocationForModel` で per-attempt body 用意。
 5. **runPipeline** (bypass) — `applyBypassAuth` が `claude-code-oauth.auth()` を呼んで、`.credentials.json` から bearer token を取得し `Authorization` ヘッダにセット。`anthropic-beta` から `context-1m-*` を落として `oauth-2025-04-20` を付加。
 6. **fetchProvider** — `api.anthropic.com/v1/messages` に POST、SSE で返ってくる。
@@ -861,6 +879,6 @@ cache write のうち 1 時間 TTL の分は `cacheWrite1hTokens` に別に残�
 ## 関連ドキュメント
 
 - [request-flow.md](./request-flow.md) — 本書の 3〜5 章を拡大した図とシナリオ早見表。
-- [routing.md](./routing.md) — ティアマップ（データモデル・ゲート・結果・scheduler の snapshot・モデルの世代交代・backfill）。
+- [routing.md](./routing.md) — ルーティング（データモデル・シナリオとレーン・ゲート・ペース・結果・Long context のしきい値・scheduler の snapshot・モデルの世代交代・旧チェーンの変換）。
 - [testing-map.md](./testing-map.md) — テストがどこにあり、何を担保しているか。
 - [inbound-surfaces.md](./inbound-surfaces.md) — 受け口レジストリと、そこから導出されるもの。

@@ -219,14 +219,13 @@ Rialto は persona を `cache_control` を持つ system ブロックの**内側*
 
 ### 挿入される範囲
 
-**ルーティングの結果による除外は無い。** routed な `/v1/messages` では、ティアマップのルートが
-見つかって `body.model` が書き換わったときも、要求ティアにルートが無く（あるいは全部 OFF で）
-呼び出し側のモデルのまま送るときも、ティアマップの読み込みやルーティング自体が失敗したときも、
+**ルーティングの結果による除外は無い。** routed な `/v1/messages` では、ルートが見つかって
+`body.model` が書き換わったときも、リストにルートが無く（あるいは全部 OFF で）呼び出し側のモデルの
+まま送るときも、プロファイルの読み込みやルーティング自体が失敗したときも、
 **どの出口でも** persona が付く（`routeRequest` が try/catch の後で付ける）。persona はインストールの
-属性であって、ルートが見つかったかどうかの属性ではないからである。要求ティア（fable / opus /
-sonnet / haiku / other）で persona が変わることも無い。かつての think / longContext / webSearch /
-image といったシナリオ別の経路は、ティアマップ（[routing.md](../architecture/routing.md)）への
-移行で無くなった。
+属性であって、ルートが見つかったかどうかの属性ではないからである。シナリオ（default / think /
+longContext）やレーン（agent / subagent）で persona が変わることも無い — シナリオとレーンが選ぶのは
+ルートだけである（[routing.md](../architecture/routing.md)）。
 
 代わりに**受け口による制限**がある。persona 挿入が走るのは **`/v1/messages` だけ**である
 (`router.ts` の `req.inboundPath` 判定、テストは
@@ -237,7 +236,7 @@ image といったシナリオ別の経路は、ティアマップ（[routing.md
 
 もう一つの制限は**ルーティングモード**で、persona が付くのは routed なトラフィックだけである。
 passthrough の受け口、あるいは予約プロファイル `passthrough` に固定したアクセストークンは
-ティアマップを丸ごと飛ばすので、persona も付かない — passthrough が約束するのは「呼び出し側が
+ルーティングを丸ごと飛ばすので、persona も付かない — passthrough が約束するのは「呼び出し側が
 送ったとおり」であり、persona もその例外ではない。
 
 軽量な内部タスク（タイトル生成など）にキャラ性を出したくない場合は、persona 側に抑制指示を
@@ -248,8 +247,8 @@ passthrough の受け口、あるいは予約プロファイル `passthrough` �
 
 `<RIALTO-SUBAGENT-MODEL>`（旧綴り `<CCR-SUBAGENT-MODEL>` も同じ）は `routeRequest` の**最初**に
 除去され、`RequestLog.isSubagent` として記録される。これはルーティングモードによらない —
-passthrough でもタグは上流へ届かない。タグはもうレーンもルートも選ばない（サブエージェントも
-自分が要求したティアのルートに従う）。persona 挿入はこの除去の**後**で走るため、
+passthrough でもタグは上流へ届かない。routed な面では、タグの有無がレーンを選ぶ（有ればそのシナリオの
+`subagent` レーンのリストに従う。タグの中身は読まない）。persona 挿入はこの除去の**後**で走るため、
 サブエージェントごとの system 内容を上書きせず合成される（persona が付くのは上記のとおり routed な
 `/v1/messages` だけ）。
 ペルソナ側で「サブエージェント文脈ではキャラ性を抑えろ」と書いておくと、

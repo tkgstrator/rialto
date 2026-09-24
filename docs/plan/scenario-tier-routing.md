@@ -110,14 +110,14 @@ Activity の列名は「Route」から「Scenario」に戻す。`RequestLog.scen
 
 | PR | 中身 |
 |---|---|
-| #540 | #535 の取り消し |
-| #539 | モック |
-| 本体（1 本） | スキーマとマイグレーション、変換の作り直し、振り分け（シナリオ判定・ペース・しきい値調整）、API、画面、Activity、seed-demo、テスト、docs |
+| #539 | モック（[mocks/routing.html](../../mocks/routing.html)） |
+| #540 | #535 の取り消し（マージ済み） |
+| 本 PR | スキーマとマイグレーション、変換の作り直し、振り分け（シナリオ判定・ペース・しきい値調整）、API、画面、Activity、seed-demo、テスト、docs |
 
 縮退マイグレーション（旧チェーンの削除）は、本体が本番で一度起動した後に出し直す。
 
 ## Non-goals
 
 - シナリオの追加（`image` / `webSearch` の復活）
-- しきい値の手動上書きの UI（`constraints.longContextThreshold` は API から書ける）
+- しきい値の手動上書き。UI だけでなく API からも書けない — `saveTierProfile` は tuner の状態（`longContextThreshold` / `previousLongContextThreshold` / `longContextTunedAt`）を DB から引き継ぎ、リクエストの値を使わない。編集画面が読み込んだ古い値で、その間の調整を巻き戻さないためである。調整を止めるだけなら `constraints.autoTuneLongContext`（API から書ける）
 - 利用率ダッシュボード（Level 2）

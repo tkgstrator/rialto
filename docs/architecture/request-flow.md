@@ -2,9 +2,9 @@
 
 ## 目的
 
-`POST /v1/*` で Claude Code（または互換クライアント）から入ってきたリクエストが、ティアマップによるルーティング → failover chain → upstream provider 呼び出しまでどう流れるかを可視化する。
+`POST /v1/*` で Claude Code（または互換クライアント）から入ってきたリクエストが、シナリオ別のルーティング → failover chain → upstream provider 呼び出しまでどう流れるかを可視化する。
 特に **multi-account subscription での 429 ローテーション**、**upstream へ出さずに返す 429 / 400**、**無効な target のスキップ** を取りこぼさないこと。
-ティアマップそのもの（データモデル・ゲート・結果・scheduler の snapshot・backfill）は [routing.md](./routing.md) にまとめてある。本書はそれがリクエストの流れのどこに入るかを描く。
+ルーティングそのもの（データモデル・シナリオとレーンの判定・ゲート・ペース・結果・Long context のしきい値・scheduler の snapshot・旧チェーンの変換）は [routing.md](./routing.md) にまとめてある。本書はそれがリクエストの流れのどこに入るかを描く。
 
 実装は以下に分散している:
 
@@ -14,16 +14,18 @@
 - `src/api/v1/invocation.ts` — `resolveInvocationForModel`（候補1件 → 実行可能な invocation）
 - `src/api/v1/chain-failover.ts` — `attemptChainEntry` / `tryRotateAccount`
 - `src/llms/router.ts` — `routeRequest`
-- `src/llms/tier-router/runtime.ts` — `routeByTier`（ティアマップを読み、live state から述語を組む）
-- `src/llms/tier-router/select.ts` — `selectTierRoute`（純粋関数のセレクタ。6 つのゲート）
+- `src/llms/tier-router/runtime.ts` — `routeByScenario` / `classify`（プロファイルを読み、シナリオとレーンを決め、live state から述語を組む）
+- `src/llms/tier-router/select.ts` — `selectTierRoute`（純粋関数のセレクタ。6 つのゲートと、通ったルートのペースによる並べ替え）
+- `src/llms/tier-router/threshold.ts` — Long context のしきい値（自動の基準値と、調整値の範囲）
 - `src/services/tier-route-service.ts` — `loadTierProfileView`（各ルートをエイリアスで解決し、無効な target を `targetEnabled` に折り込んだ profile）
 - `src/llms/pipeline.ts` — `runPipeline` / `handleProviderError`
 
 > **前提**: 以下は面の `routingMode` が `routed` のときの話である。`passthrough`（全面の初期値）、
-> あるいは認証したトークンが予約プロファイル `passthrough` を指すときは、ティアマップ以降の段は丸ごと
+> あるいは認証したトークンが予約プロファイル `passthrough` を指すときは、シナリオの判定以降の段は丸ごと
 > スキップされ、`body.model` がそのまま候補になる（persona も付かない。サブエージェントタグは
-> どちらのモードでも最初に取り除かれる）。ルーティングの機構は **ティアマップと passthrough の
-> 2 つだけ**で、シナリオ・レーン・ルール・スロット・プリセット・カスタムルーターは存在しない。
+> どちらのモードでも最初に取り除かれる）。ルーティングの機構は **シナリオ × レーンのリストと
+> passthrough の 2 つだけ**で、ルール・スロット・プリセット・カスタムルーターは存在しない。
+> routed でも、呼び出し側のモデル名は行き先を選ばない。
 
 ## 全体フロー
 
@@ -37,9 +39,10 @@ flowchart TD
 
   subgraph RS_BOX[routeRequest — routed な面のみ]
     direction TB
-    PROF[profile 解決<br/>token profileKey → surface profileKey → live<br/>loadTierProfileView]
-    PROF --> TIER[要求ティア = tierOf body.model<br/>判定できなければ other]
-    TIER --> SEL[selectTierRoute<br/>ルートを順に: on / エイリアス /<br/>web 検索 / context / quota / error-rate]
+    TAG[サブエージェントタグを除去<br/>有無でレーン agent / subagent<br/>※ 除去は passthrough でも行う]
+    TAG --> PROF[profile 解決<br/>token profileKey → surface profileKey → live<br/>loadTierProfileView]
+    PROF --> SCN[シナリオ = しきい値超え → longContext<br/>thinking → think / それ以外 default<br/>使えるルートが無ければ同じレーンの default]
+    SCN --> SEL[selectTierRoute<br/>ルートを順に: on / エイリアス /<br/>web 検索 / context / quota / error-rate<br/>通ったものをペースで並べ替え]
     SEL --> OUT{outcome}
     OUT -- exhausted かつ<br/>exhaustedBehavior=429 --> R429P[429 + Retry-After<br/>upstream へ出さない]
     OUT -- refused --> R400P[400 面のエラー封筒<br/>upstream へ出さない]
@@ -47,7 +50,7 @@ flowchart TD
     OUT -- routed --> RW[body.model = 先頭ルートの target<br/>残りは fallbacks]
   end
 
-  BR2 --> PROF
+  BR2 --> TAG
   KEEP --> CHAIN
   RW --> CHAIN[buildFailoverChain<br/>primary + fallbacks<br/>exhausted除外]
 
@@ -149,56 +152,60 @@ flowchart TD
 
 ## fallback に掛かるゲート
 
-ゲートは 2 か所にある。**送る前**にはティアのセレクタが各ルートを 6 つのゲート（ルートと target の
-on/off・エイリアス・web 検索・context・quota・error rate。詳細は [routing.md](./routing.md)）に掛け、
-通ったものだけを `[primary, ...fallbacks]` にする。**送った後**の `buildFailoverChain` が落とすのは
+ゲートは 2 か所にある。**送る前**にはセレクタが、シナリオとレーンで決まったリストの各ルートを 6 つのゲート
+（ルートと target の on/off・エイリアス・web 検索・context・quota・error rate。詳細は [routing.md](./routing.md)）
+に掛け、通ったものだけをペースで並べ替えて `[primary, ...fallbacks]` にする。**送った後**の `buildFailoverChain` が落とすのは
 **枯渇マークの付いた候補だけ**である（全候補が枯渇していれば元の順序をそのまま返す — 窓が転がっている
 可能性に賭ける）。かつてあった 2 つのゲートは廃止された。
 
 | かつてのゲート | いま |
 |--------|------|
-| **auth_mode gate**（primary と異なる auth_mode の fallback を除外） | **廃止。** ルートの順序は operator がティアマップに書いたとおりに辿る。subscription のルートの後ろに api_key のルートを書けば、それは走る。走らせたくなければ書かない — ルートの並び自体が「何の後に何が来てよいか」の意思表示である |
+| **auth_mode gate**（primary と異なる auth_mode の fallback を除外） | **廃止。** ルートの順序は operator がリストに書いたとおりに辿る（ペースによる前後の移動を除く）。subscription のルートの後ろに api_key のルートを書けば、それは走る。走らせたくなければ書かない — ルートの並び自体が「何の後に何が来てよいか」の意思表示である |
 | **same-provider gate**（primary と同じ provider の fallback を除外） | **廃止。** 枯渇は `(provider, model)` 単位でマークされるので、同 provider 別ティアのルートは正当な fallback。ただし 5h / weekly の窓は account 単位なので、account が枯れた 429 では別 model でも同じ account で 429 になる |
 | **無効な provider / model** | そもそも primary にも fallback にもならない。`loadTierProfileView` がエイリアスの先の `Model.enabled && Provider.enabled` を `targetEnabled` に折り込み、セレクタが `disabled` として落とす。registry も有効なものしか持たないので、手で名指しした pair も `resolveInvocationForModel` が null で返して次へ進む |
 
 | 場面 | 挙動 |
 |------|------|
-| bare 名 `claude-opus-4-8` を受信 | `routed` な面では要求ティア `opus` のルートが使われる。ルートが無い・全部 off なら `body.model` はそのまま通り、`resolveInvocationForModel` が**有効な**プロバイダをちょうど 1 つ見つけたときだけそこへ送る（0 件・複数件はスキップ → 400）。`passthrough` な面でも同じ解決 |
+| bare 名 `claude-opus-4-8` を受信 | `routed` な面ではモデル名は行き先を選ばない。シナリオとレーンのリストのルートが使われる。レーンの default リストにルートが無い・全部 off なら `body.model` はそのまま通り、`resolveInvocationForModel` が**有効な**プロバイダをちょうど 1 つ見つけたときだけそこへ送る（0 件・複数件はスキップ → 400）。`passthrough` な面でも同じ解決 |
 | primary が subscription で 429 | `tryRotateAccount` で peer サブアカへ回し、尽きたらその model に枯渇マーク → chain の**次のエントリ**へ。それが api_key でも同 provider 別ティアでも、ルートに書いてあれば試す |
 | primary が subscription で 429、fallback 無し | チェーンは primary 1 件のみ。回せなければ 429 を verbatim 返却 |
 | primary が api_key で 429 | その model に枯渇マーク → 次のエントリへ。`insufficient_quota` のときだけ provider ごと塞ぐ |
-| 「サブスク 5h 枯渇したら api_key にフォールバック」を **明示的に** したい | そのティアのルートで、subscription のルートの後ろに api_key のルートを書く。それだけ |
-| ティアのルートがすべて quota か error rate で落ち、profile の `exhaustedBehavior` が `'429'`（既定） | `buildRoutePlan` が 429 + `Retry-After` を返し、upstream へは出さない |
+| 「サブスク 5h 枯渇したら api_key にフォールバック」を **明示的に** したい | そのシナリオ・レーンのリストで、subscription のルートの後ろに api_key のルートを書く。それだけ |
+| リストのルートがすべて quota か error rate で落ち、profile の `exhaustedBehavior` が `'429'`（既定） | `buildRoutePlan` が 429 + `Retry-After` を返し、upstream へは出さない。think / longContext のリストでも default へは落ちない — default へ落ちるのは設定上使えるルートが無いときだけ |
 | ルートはあるが、どれもこのリクエストを受けられない（エイリアス未設定・web 検索非対応・context 不足） | `buildRoutePlan` が面のエラー封筒で 400 を返す。待っても変わらないので 429 にはしない。`exhaustedBehavior` も見ない |
-| ティアにルートが 1 本も無い、または全部 off | `exhaustedBehavior` に関係なく 429 にはならない。呼び出し側の `body.model` がそのまま通る（未設定のティアは「意見無し」であって「全部枯渇」ではない） |
-| ティアマップが読めない（Postgres 不在）/ ルーティングが例外 | `body.model` は触らない。error ログ、route は `passthrough`、`isSubagent` はタグから、fallbacks 空 |
+| think / longContext のリストに使えるルート（on・エイリアスあり・target on）が無い | 同じレーンの default のリストで振り分ける。記録されるシナリオも `default` |
+| レーンの default のリストにルートが 1 本も無い、または全部 off | `exhaustedBehavior` に関係なく 429 にはならない。呼び出し側の `body.model` がそのまま通る（未設定のリストは「意見無し」であって「全部枯渇」ではない） |
+| プロファイルが読めない（Postgres 不在）/ ルーティングが例外 | `body.model` は触らない。error ログ、route は `passthrough`、`isSubagent` はタグから、fallbacks 空 |
 
 ## 代表シナリオ早見表
 
 | # | 状況 | 流れ |
 |---|------|------|
-| 1 | claude-code (sub) `claude-sonnet-4-6` で正常応答 | 要求ティア `sonnet` → `selectTierRoute` が先頭ルート `claude-code · sonnet` をエイリアスで解決 → `attemptChainEntry` → 2xx → SSE 返却 |
+| 1 | claude-code (sub) で thinking 無し・短い入力のリクエストが正常応答 | シナリオ `default`・レーン `agent` → `selectTierRoute` が先頭ルート `claude-code · sonnet` をエイリアスで `claude-sonnet-4-6` に解決 → `attemptChainEntry` → 2xx → SSE 返却 |
 | 2 | 同上で **5h 窓 429**、サブアカ 3 つあり 1 つだけ枯渇 | 429 → `tryRotateAccount` で当該アカ exhaust → 同 entry 再試行 → peer アカで成功 |
 | 3 | 全サブアカが 5h 枯渇 | 429 → 全アカ exhaust → その model に `markModelExhausted` → 次のルート（例 `gemini,gemini-2.5-pro`） |
-| 4 | 直前のリクエストで 429 を食って provider / model に exhausted マークが付いている | セレクタの quota ゲートがマークを読み、投げる前にそのルートを外して次のルートを primary にする。ティアのルートが全部マークで落ちれば `exhaustedBehavior` どおり 429 + `Retry-After`（マークの期限）か passthrough。マークは 429 レスポンスの実 resetAt（無ければ 5 分）で自動失効する。**それより早く外れるのは手動 Refresh と Codex のリセット消費のとき** — 最新の使用量で上限を下回ったアカウントのマークと、最新の値で配信できると分かったモデルのマークを外し、routing snapshot をすぐ作り直す（下の状態ストア表） |
-| 5 | model 名 bare で `claude-opus-4-8` 指定 | 要求ティア `opus` のルートが使われる。effort や thinking で行き先は変わらない（それを見るシナリオ分類は無い）。ルートが無ければ `body.model` がそのまま通り、chain walker が唯一の有効なホストへ解決する |
+| 4 | 直前のリクエストで 429 を食って provider / model に exhausted マークが付いている | セレクタの quota ゲートがマークを読み、投げる前にそのルートを外して次のルートを primary にする。リストのルートが全部マークで落ちれば `exhaustedBehavior` どおり 429 + `Retry-After`（マークの期限）か passthrough。マークは 429 レスポンスの実 resetAt（無ければ 5 分）で自動失効する。**それより早く外れるのは手動 Refresh と Codex のリセット消費のとき** — 最新の使用量で上限を下回ったアカウントのマークと、最新の値で配信できると分かったモデルのマークを外し、routing snapshot をすぐ作り直す（下の状態ストア表） |
+| 5 | model 名 bare で `claude-opus-4-8` 指定 | モデル名では行き先は変わらない。thinking を付けていれば `think`、付けていなければ `default` のリストのルートが使われる（Opus を使わせたいなら、そのリストに `claude-code · opus` のルートを書く）。effort は見ない。レーンの default も空なら `body.model` がそのまま通り、chain walker が唯一の有効なホストへ解決する |
 | 6 | 同じ model を api_key の `anthropic` も hosts している | ルートに書いてある方（エイリアスが指す方）が選ばれる。bare 名のまま通った場合はホストが 2 つあるので曖昧としてスキップ（→ 400） |
 | 7 | subscription primary が 429、fallback に api_key 混在 | ルートの順どおりに api_key fallback も試す。全部枯渇なら最後の 429 を verbatim 返却 |
 | 8 | `anthropic` provider が **api_key 未設定** | registry がこの provider を warn 付きでスキップ → そのルートの候補は `resolveInvocationForModel` が null → 次へ |
-| 9 | inbound `body.model` に `provider,model` 形式（コンマ）が来た | `routed` な面では文字列全体から `tierOf` がティアを読む（`anthropic,claude-sonnet-4-6` なら `sonnet`、ティア名を含まなければ `other`）。そのティアのルートがあれば書き換えられ、無ければ `provider,model` のまま送られる。`passthrough` な面では `provider,model` がそのまま宛先として使われる — OpenAI 互換面が `/v1/models` の id をそのまま投げ返せるのはこの経路。※ `provider,model` は router 出力〜下流の内部表現としても引き続き使用 |
+| 9 | inbound `body.model` に `provider,model` 形式（コンマ）が来た | `routed` な面ではモデル名は読まれない。シナリオとレーンのリストにルートがあれば書き換えられ、default も空なら `provider,model` のまま送られる。`passthrough` な面では `provider,model` がそのまま宛先として使われる — OpenAI 互換面が `/v1/models` の id をそのまま投げ返せるのはこの経路。※ `provider,model` は router 出力〜下流の内部表現としても引き続き使用 |
 | 10 | upstream が 401/403 (subscription) | `handleProviderError` が「OAuth 期限切れ → CLI 再ログイン」と warn、HTTPException として上に伝播 → 429 ではないので verbatim 返却（rotate なし）|
 | 11 | upstream が 400 で `effort` 不一致 | `attempt` 内で `bestSupportedLevel` を読んで effort 差し替え → 同 model に 1 回だけ retry |
 | 12 | 全 fallback exhaust | `lastForwarded` (最後の 429 body) を verbatim 返却 |
-| 13 | ルートのエイリアスの先、または passthrough の `provider,model` が Providers 画面で無効化した model / provider を指す | ルートはセレクタが `disabled` で落とす（ティアの全ルートがそうなら passthrough）。passthrough の pair は registry に無いので `resolveInvocationForModel` が null → skip。全 entry が該当すれば 400 `No usable model`。手で名指ししても転送されない |
-| 14 | `web_search` ツール付きのリクエストで、ティアのルートが Chat Completions のプロバイダだけ | web 検索ゲートで全ルートが落ち、refused → 400。Anthropic / Responses / Gemini の形式で送るルートがあればそちらが選ばれる |
-| 15 | エイリアスを新しいモデルへ昇格した直後 | 次のリクエストからそのティアのルートは新しいモデルへ解決される。ルートは書き換えない — 動くのはエイリアス 1 行だけ |
+| 13 | ルートのエイリアスの先、または passthrough の `provider,model` が Providers 画面で無効化した model / provider を指す | ルートはセレクタが `disabled` で落とす（think / longContext のリストの全ルートがそうなら default へ落ち、default の全ルートがそうなら passthrough）。passthrough の pair は registry に無いので `resolveInvocationForModel` が null → skip。全 entry が該当すれば 400 `No usable model`。手で名指ししても転送されない |
+| 14 | `web_search` ツール付きのリクエストで、リストのルートが Chat Completions のプロバイダだけ | web 検索ゲートで全ルートが落ち、refused → 400。Anthropic / Responses / Gemini の形式で送るルートがあればそちらが選ばれる。Web 検索はシナリオではないので、別のリストへは移らない |
+| 15 | エイリアスを新しいモデルへ昇格した直後 | 次のリクエストから、そのプロバイダのそのティアを名指すルートは（どのシナリオ・レーンでも）新しいモデルへ解決される。ルートは書き換えない — 動くのはエイリアス 1 行だけ。それが default / agent の先頭ルートの解決先なら、Long context のしきい値の基準値も新しいモデルのコンテキスト長に合わせて動く |
+| 16 | `<RIALTO-SUBAGENT-MODEL>` 付きで thinking ありのリクエスト | シナリオ `think`・レーン `subagent` のリスト。そこに使えるルートが無ければ `default` / `subagent`、それも空なら呼び出し側のモデルのまま。agent のリストは借りない |
+| 17 | リストが `[claude-code · opus, claude-code · fable]` で、Opus の見込みが 80 %、Fable が 45 % | Fable は見込み 60 % 未満の「余り」なので先頭へ繰り上がり、primary になる。Opus は fallback。余った Fable を週のリセットで捨てないための動き |
+| 18 | 先頭ルートの見込みが 130 %（このペースだとリセット前に尽きる） | 末尾へ下がり、2 番目のルートが primary になる。先頭ルートは fallback に残る。全ルートが 100 % 超ならリストの順のまま — 見込みだけでは 429 にしない |
 
 ## 関連する状態ストア
 
 | ストア | 役割 | 失効条件 |
 |--------|------|----------|
 | `failover-state` (`isProviderExhausted` / `isAccountExhausted` / `isModelExhausted` / `exhaustedUntil`) | provider / sub-account / (provider, model) 単位の枯渇フラグ。セレクタの quota ゲートと `buildFailoverChain` が読み、429 経路の `Retry-After` はその期限を読む。**プロセスローカル**で、複数インスタンス間では共有されない | `markXxxExhausted(until?)` の `until` 時刻 or デフォルト 5min。成功した試行はそのアカウントのマークを外す。加えて手動 Refresh（`POST /api/subscriptions/refresh`、接続時・Codex のリセット消費後の再取得も同じ経路）が、最新の値を取れたアカウントについて `accountHasHardLimitHit` で判定し直して外す — アカウントのマークはアカウント全体の窓で、モデルのマークはそのモデルに効く窓（Fable の週次窓を含む）で判定する。provider のマーク（`insufficient_quota`）は外さない |
-| `routing-scheduler` (`getRoutingSnapshot`) | quota snapshot。有効なサブスクプロバイダの有効なモデルごとに `{ exhausted, remainingBudgetPct, resetAt }` と、全体の `soonestResetAt`。セレクタの quota ゲート（`quotaSkipPct`）と `Retry-After` が読む。snapshot に無い target（api_key プロバイダ、初回 tick 前）は quota では止めない | 5 分ごとの tick で作り直す。手動 Refresh と Codex のリセット消費の後は `republishRoutingSnapshot()` が、実行中の tick の後にもう 1 回 tick を走らせる（tick は重ならない） |
+| `routing-scheduler` (`getRoutingSnapshot`) | quota snapshot。有効なサブスクプロバイダの有効なモデルごとに `{ exhausted, remainingBudgetPct, projectedPct, resetAt }` と、全体の `soonestResetAt`。セレクタの quota ゲート（`quotaSkipPct`）と `Retry-After` が読み、ペースの並べ替えは `projectedPct` を読む。snapshot に無い target（api_key プロバイダ、初回 tick 前）は quota では止めず、ペースも無い（リストの順のまま） | 5 分ごとの tick で作り直す。手動 Refresh・Codex のリセット消費・モデルを ON にしたエイリアスの昇格の後は `republishRoutingSnapshot()` が、実行中の tick の後にもう 1 回 tick を走らせる（tick は重ならない）。タイマーの tick はその後で Long context のしきい値の調整も行う（プロファイルごとに 1 日 1 回まで） |
 | `model-health` (`errorRateOf` / `sampleCountOf`) | target ごとの直近 5 分の成功 / 429 のリング。セレクタの error-rate ゲートが読み、`minHealthSamples` 件に満たないうちは効かない | 5 分より古いイベントは読むときに捨てる |
 | `session-account-router` (`getActiveAccountForSession`) | session ↔ 選択 sub-account の sticky マップ | `releaseAccountForSession` で剥がす |
 | `subaccount-usage-store` (`getPerAccountUsage`) | DB の `SubAccountUsage` 行をキャッシュ | 周期 polling で更新 |
@@ -212,5 +219,8 @@ on/off・エイリアス・web 検索・context・quota・error rate。詳細は
   `provider 'xxx' skipped — missing required fields: ...` を **warn** で出すので、
   「config 上は居るのに chain walker が見つけられない」状況を即特定できる。
 - ルーティングが何も取らなかったときは `[routing] no route taken` を info で、429 にするときは
-  `[routing] every route of the tier is out of quota — will 429`、400 にするときは
-  `[routing] refused — will 400` を warn で出す。いずれも要求モデル・ティア・各ルートの skip 理由を持つ。
+  `[routing] every route of the list is out of quota — will 429`、400 にするときは
+  `[routing] refused — will 400` を warn で出す。いずれも要求モデル・シナリオ・レーン・各ルートの skip 理由を持つ。
+  ペースで順が変わったときは `[routing] pace reordered the list` を info で出す（先頭へ上げたルートと末尾へ下げたルート）。
+- Long context のしきい値が動いたときは `[routing-scheduler] Long context threshold tuned` を info で出す
+  （プロファイル・前後の値・理由・見込み）。
