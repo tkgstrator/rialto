@@ -308,14 +308,19 @@ export interface RoutingSchedulerStateResponse {
   soonestResetAt: string | null
 }
 
-// ─── Tier map and provider tier aliases ────────────────────────────────
-// Mirrors schemas/api/routing.ts. The stored shape (a route names a
-// provider and a tier) plus, on read, what the tier resolves to today.
+// ─── Scenario routes and provider tier aliases ─────────────────────────
+// Mirrors schemas/api/routing.ts. The stored shape (per scenario and lane,
+// routes that name a provider and a tier) plus, on read, what each tier
+// resolves to today and the Long context threshold in effect.
 
 export type ModelTier = 'fable' | 'opus' | 'sonnet' | 'haiku'
-/** A requested tier: one of the four, or 'other' for a model name with no Claude family. */
-export type RouteTier = ModelTier | 'other'
-export const ROUTE_TIER_ORDER: readonly RouteTier[] = ['fable', 'opus', 'sonnet', 'haiku', 'other']
+export const MODEL_TIER_ORDER: readonly ModelTier[] = ['fable', 'opus', 'sonnet', 'haiku']
+/** Long input, thinking on, or neither. */
+export type RoutingScenario = 'default' | 'think' | 'longContext'
+export const ROUTING_SCENARIO_ORDER: readonly RoutingScenario[] = ['default', 'think', 'longContext']
+/** Whether the request carried the subagent tag. */
+export type RoutingLane = 'agent' | 'subagent'
+export const ROUTING_LANE_ORDER: readonly RoutingLane[] = ['agent', 'subagent']
 
 export interface TierRouteWire {
   provider: string
@@ -341,16 +346,25 @@ export interface RoutingConstraintsWire {
   quotaSkipPct: number
   errorRateSkipPct: number
   minHealthSamples: number
+  /** The tuner's state; not edited on the screen. Null = the automatic base. */
+  longContextThreshold: number | null
+  previousLongContextThreshold: number | null
+  longContextTunedAt: string | null
+  autoTuneLongContext: boolean
 }
+
+export type ScenarioRoutesWire<R> = Record<RoutingScenario, Record<RoutingLane, R[]>>
 
 export interface TierProfileViewWire {
   key: string
-  routes: Record<RouteTier, TierRouteViewWire[]>
+  routes: ScenarioRoutesWire<TierRouteViewWire>
   constraints: RoutingConstraintsWire
+  /** Input tokens over which a request is Long context right now. */
+  longContextThreshold: number
 }
 
 export interface TierProfileWriteWire {
-  routes: Record<RouteTier, TierRouteWire[]>
+  routes: ScenarioRoutesWire<TierRouteWire>
   constraints: RoutingConstraintsWire
 }
 

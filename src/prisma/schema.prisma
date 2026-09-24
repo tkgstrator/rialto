@@ -418,30 +418,35 @@ model ProviderTierAlias {
   @@index([modelId])
 }
 
-// One route of a profile's tier map: a request for `requestedTier` may be
-// served by `provider`'s `targetTier` model, in `priority` order (1 =
-// first). Replaces RouterPreferenceEntry's per-scenario, per-lane,
-// per-model chain. A requested tier with no enabled routes is passed
-// through as the caller sent it, the "no opinion" an empty lane meant.
+// One route of a profile: a request classified into `scenario` (default |
+// think | longContext) on `lane` (agent | subagent) may be served by
+// `provider`'s `targetTier` model, in `priority` order (1 = first). The
+// provider's tier alias says which model that is, so a model release moves
+// one alias instead of every list. Replaced the per-scenario, per-lane,
+// per-model chain; a (scenario, lane) with no usable routes falls back to
+// the same lane's default list, and an empty default passes the request
+// through as the caller sent it.
 model TierRoute {
-  id            String                  @id @default(cuid())
-  profileId     String
-  profile       RouterPreferenceProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  // fable | opus | sonnet | haiku | other — the tier read off the model
-  // name the caller sent, "other" when it names no Claude family.
-  requestedTier String
-  priority      Int
-  providerId    String
-  provider      Provider                @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  id         String                  @id @default(cuid())
+  profileId  String
+  profile    RouterPreferenceProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  // default | think | longContext. Validated by Zod (RoutingScenarioSchema),
+  // kept a string so a new scenario is a code change, not a migration.
+  scenario   String
+  // agent | subagent — whether the request carried the subagent tag.
+  lane       String
+  priority   Int
+  providerId String
+  provider   Provider                @relation(fields: [providerId], references: [id], onDelete: Cascade)
   // fable | opus | sonnet | haiku, resolved through the provider's alias.
-  targetTier    String
+  targetTier String
   // Soft toggle: the route keeps its place while it is out of use.
-  enabled       Boolean                 @default(true)
+  enabled    Boolean                 @default(true)
 
-  @@unique([profileId, requestedTier, priority])
-  // A provider's tier appears once per requested tier: a second copy
-  // would resolve to the same model and could only ever be skipped.
-  @@unique([profileId, requestedTier, providerId, targetTier])
+  @@unique([profileId, scenario, lane, priority])
+  // A provider's tier appears once per list: a second copy would resolve
+  // to the same model and could only ever be skipped.
+  @@unique([profileId, scenario, lane, providerId, targetTier])
   @@index([profileId])
   @@index([providerId])
 }

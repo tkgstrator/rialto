@@ -1,10 +1,11 @@
 /**
- * Wire shapes for the tier map and the provider tier aliases.
+ * Wire shapes for the scenario routes and the provider tier aliases.
  *
  * The stored shapes are the domain layer's (`schemas/domain/tier-route.ts`);
  * what the API adds is each route's resolution — which model its alias
- * names today and whether that model can take traffic — so the Routing
- * screen can show it without a second request per row.
+ * names today and whether that model can take traffic — and the Long
+ * context threshold in effect, so the Routing screen needs no second
+ * request.
  */
 
 import { z } from '@hono/zod-openapi'
@@ -32,21 +33,29 @@ export const TierRouteViewSchema = z
   })
   .openapi('TierRouteView')
 
-export const TierRouteViewsSchema = z
+export const LaneRouteViewsSchema = z
   .object({
-    fable: z.array(TierRouteViewSchema),
-    opus: z.array(TierRouteViewSchema),
-    sonnet: z.array(TierRouteViewSchema),
-    haiku: z.array(TierRouteViewSchema),
-    other: z.array(TierRouteViewSchema)
+    agent: z.array(TierRouteViewSchema),
+    subagent: z.array(TierRouteViewSchema)
   })
-  .openapi('TierRouteViews')
+  .openapi('LaneRouteViews')
+
+export const ScenarioRouteViewsSchema = z
+  .object({
+    default: LaneRouteViewsSchema,
+    think: LaneRouteViewsSchema,
+    longContext: LaneRouteViewsSchema
+  })
+  .openapi('ScenarioRouteViews')
 
 export const TierProfileViewSchema = z
   .object({
     key: z.string().nonempty(),
-    routes: TierRouteViewsSchema,
-    constraints: RoutingConstraintsSchema
+    routes: ScenarioRouteViewsSchema,
+    constraints: RoutingConstraintsSchema,
+    // Input tokens over which a request is Long context right now: the
+    // tuned value, or the automatic base when the tuner has not moved it.
+    longContextThreshold: z.number().int().positive()
   })
   .openapi('TierProfileView')
 
