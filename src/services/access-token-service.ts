@@ -148,6 +148,7 @@ export interface TokenSpendGroup {
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
+  cacheWrite1hTokens: number
 }
 
 /**
@@ -231,7 +232,13 @@ async function spendByToken(onlyId?: string): Promise<Map<string, TokenWindowTot
       accessTokenId: onlyId === undefined ? { not: null } : onlyId,
       createdAt: { gte: since }
     },
-    _sum: { inputTokens: true, outputTokens: true, cacheReadTokens: true, cacheWriteTokens: true }
+    _sum: {
+      inputTokens: true,
+      outputTokens: true,
+      cacheReadTokens: true,
+      cacheWriteTokens: true,
+      cacheWrite1hTokens: true
+    }
   })
   if (groups.length === 0) return new Map()
   const rows: TokenSpendGroup[] = groups.map((g) => ({
@@ -241,7 +248,8 @@ async function spendByToken(onlyId?: string): Promise<Map<string, TokenWindowTot
     inputTokens: g._sum.inputTokens === null ? 0 : g._sum.inputTokens,
     outputTokens: g._sum.outputTokens === null ? 0 : g._sum.outputTokens,
     cacheReadTokens: g._sum.cacheReadTokens === null ? 0 : g._sum.cacheReadTokens,
-    cacheWriteTokens: g._sum.cacheWriteTokens === null ? 0 : g._sum.cacheWriteTokens
+    cacheWriteTokens: g._sum.cacheWriteTokens === null ? 0 : g._sum.cacheWriteTokens,
+    cacheWrite1hTokens: g._sum.cacheWrite1hTokens === null ? 0 : g._sum.cacheWrite1hTokens
   }))
   const priceMap = await buildPriceMap(getPrismaClient(), [...new Set(rows.map((r) => `${r.provider}||${r.model}`))])
   const spend = sumSpendByToken(rows, priceMap)

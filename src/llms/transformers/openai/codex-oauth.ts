@@ -84,7 +84,7 @@ export class CodexOauthTransformer extends OAuthTransformer {
     // See claude-code-oauth: resolved once per request by the route
     // layer, absent only on probe contexts, which stay on the overlay.
     const sessionId = context?.req?.accountSessionKey
-    const { token, accountId } = await this.resolveSubscriptionAuth(provider, sessionId, 'codex', request)
+    const { token, accountId } = await this.resolveSubscriptionAuth(provider, sessionId, 'codex', request, context)
     // biome-ignore plugin: CodexRequestShape adds optional Responses-API-specific fields (store/instructions/input/prompt_cache_key) on top of UnifiedChatRequest; the unified schema cannot model these without leaking codex-specific shape into the shared type.
     const req = request as CodexRequestShape
 

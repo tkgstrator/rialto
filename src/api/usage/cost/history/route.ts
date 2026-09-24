@@ -22,6 +22,7 @@ interface RawLogRow {
   output_tokens: bigint
   cache_read_tokens: bigint
   cache_write_tokens: bigint
+  cache_write_1h_tokens: bigint
 }
 
 export const usageCostHistoryRoute = new OpenAPIHono()
@@ -50,7 +51,8 @@ usageCostHistoryRoute.openapi(
       ? await prisma.$queryRaw`
           SELECT DATE_TRUNC(${trunc}, "createdAt") AS bucket, provider, model,
                  SUM("inputTokens") AS input_tokens, SUM("outputTokens") AS output_tokens,
-                 SUM("cacheReadTokens") AS cache_read_tokens, SUM("cacheWriteTokens") AS cache_write_tokens
+                 SUM("cacheReadTokens") AS cache_read_tokens, SUM("cacheWriteTokens") AS cache_write_tokens,
+                 SUM("cacheWrite1hTokens") AS cache_write_1h_tokens
           FROM "RequestLog"
           WHERE "createdAt" >= ${since}
           GROUP BY bucket, provider, model
@@ -58,7 +60,8 @@ usageCostHistoryRoute.openapi(
       : await prisma.$queryRaw`
           SELECT DATE_TRUNC(${trunc}, "createdAt") AS bucket, provider, model,
                  SUM("inputTokens") AS input_tokens, SUM("outputTokens") AS output_tokens,
-                 SUM("cacheReadTokens") AS cache_read_tokens, SUM("cacheWriteTokens") AS cache_write_tokens
+                 SUM("cacheReadTokens") AS cache_read_tokens, SUM("cacheWriteTokens") AS cache_write_tokens,
+                 SUM("cacheWrite1hTokens") AS cache_write_1h_tokens
           FROM "RequestLog"
           GROUP BY bucket, provider, model
           ORDER BY bucket, provider`
@@ -90,7 +93,8 @@ usageCostHistoryRoute.openapi(
           inputTokens: Number(r.input_tokens),
           outputTokens: Number(r.output_tokens),
           cacheReadTokens: Number(r.cache_read_tokens),
-          cacheWriteTokens: Number(r.cache_write_tokens)
+          cacheWriteTokens: Number(r.cache_write_tokens),
+          cacheWrite1hTokens: Number(r.cache_write_1h_tokens)
         },
         priceMap
       )

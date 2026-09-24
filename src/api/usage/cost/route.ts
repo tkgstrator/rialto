@@ -56,7 +56,13 @@ usageCostRoute.openapi(
     const groups = await prisma.requestLog.groupBy({
       by: ['provider', 'model'],
       where: since ? { createdAt: { gte: since } } : {},
-      _sum: { inputTokens: true, outputTokens: true, cacheReadTokens: true, cacheWriteTokens: true },
+      _sum: {
+        inputTokens: true,
+        outputTokens: true,
+        cacheReadTokens: true,
+        cacheWriteTokens: true,
+        cacheWrite1hTokens: true
+      },
       _count: { id: true },
       orderBy: [{ provider: 'asc' }, { model: 'asc' }]
     })
@@ -99,8 +105,17 @@ usageCostRoute.openapi(
         const outputTokens = g._sum.outputTokens ?? 0
         const cacheReadTokens = g._sum.cacheReadTokens ?? 0
         const cacheWriteTokens = g._sum.cacheWriteTokens ?? 0
+        const cacheWrite1hTokens = g._sum.cacheWrite1hTokens === null ? 0 : g._sum.cacheWrite1hTokens
         const { totalCostUsd } = computeCosts(
-          { provider: g.provider, model: g.model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens },
+          {
+            provider: g.provider,
+            model: g.model,
+            inputTokens,
+            outputTokens,
+            cacheReadTokens,
+            cacheWriteTokens,
+            cacheWrite1hTokens
+          },
           priceMap
         )
         if (totalCostUsd != null) providerTotal = (providerTotal ?? 0) + totalCostUsd

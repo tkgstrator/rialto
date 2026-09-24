@@ -17,6 +17,15 @@ export const UsageBlockSchema = z.object({
   output_tokens: z.number().int().nonnegative().optional(),
   cache_read_input_tokens: z.number().int().nonnegative().optional(),
   cache_creation_input_tokens: z.number().int().nonnegative().optional(),
+  // Anthropic splits the cache writes above by TTL. The 1-hour bucket is
+  // billed at twice the input price against 1.25x for the 5-minute one,
+  // so without the split every 1h write was costed as a 5m write.
+  cache_creation: z
+    .object({
+      ephemeral_5m_input_tokens: z.number().int().nonnegative().optional(),
+      ephemeral_1h_input_tokens: z.number().int().nonnegative().optional()
+    })
+    .optional(),
   // OpenAI Chat Completions
   prompt_tokens: z.number().int().nonnegative().optional(),
   completion_tokens: z.number().int().nonnegative().optional(),
@@ -123,6 +132,10 @@ export const UsageRecordSchema = z.object({
   // Which AccessToken authenticated the request. Null for rows predating
   // tokens, and for traffic on the since-removed envelope bootstrap token.
   accessTokenId: z.string().nonempty().nullable(),
+  // Which subscription account served the request — the one the OAuth
+  // transformer resolved for the attempt that succeeded. Null for
+  // api_key providers, and for rows written before this was recorded.
+  subAccountId: z.string().nonempty().nullable(),
   // Whether the request took the subagent lane (a <RIALTO-SUBAGENT-MODEL>
   // tag was present). Always known at write — the route builder stamps
   // it before the pipeline runs, so this stays a plain boolean.
@@ -131,6 +144,9 @@ export const UsageRecordSchema = z.object({
   outputTokens: z.number().int().nonnegative(),
   cacheReadTokens: z.number().int().nonnegative(),
   cacheWriteTokens: z.number().int().nonnegative(),
+  // The part of cacheWriteTokens written with a 1-hour TTL (included in
+  // it, not added to it). Priced at 2x input instead of 1.25x.
+  cacheWrite1hTokens: z.number().int().nonnegative(),
   totalInputTokens: z.number().int().nonnegative(),
   cacheHitPct: z.number().int().min(0).max(100),
   durationMs: z.number().int().nonnegative(),
