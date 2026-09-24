@@ -91,7 +91,7 @@ export type AnthropicIncomingMessage = z.input<typeof AnthropicIncomingMessageSc
 //
 // Prior to this split the schema was a single object with description /
 // input_schema required, which rejected every server-tool payload — see
-// scenario-router/model-selection.ts which already recognised the
+// router/model-selection.ts which already recognised the
 // `{ type: 'web_search_*' }` shape at the routing layer.
 const AnthropicServerToolTypeSchema = z.string().regex(/^(web_search|computer|bash|text_editor|code_execution)_/)
 

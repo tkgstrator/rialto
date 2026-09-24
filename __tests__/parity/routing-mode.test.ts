@@ -4,7 +4,7 @@
  * Every one of the matrix's ten rows asks whether a surface can express a
  * feature. Before any of them comes a prior question: can routing be
  * turned on per surface at all (master-plan §2-5's second completion
- * condition). This used to be hard-coded in `scenario-router.ts`, where
+ * condition). This used to be hard-coded in `router.ts`, where
  * anything but /v1/messages passed through unconditionally — which made
  * the entire Routing screen a /v1/messages-only screen. The mode is now a
  * per-surface setting, so all four behave symmetrically.
@@ -16,7 +16,7 @@
  *
  * Token counting used to read `body.messages` directly and so always saw
  * 0 in the Responses and Gemini vocabularies. It now goes through the
- * per-surface normalised signals (`scenario-router/surface-signals.ts`)
+ * per-surface normalised signals (`router/surface-signals.ts`)
  * and counts on all four, which is what the tier map's context gate
  * weighs a prompt with.
  */
@@ -26,8 +26,8 @@ import pino from 'pino'
 import type { SurfaceId } from '../../src/llms/inbound/surfaces'
 import { ConfigStore } from '../../src/llms/registry/config'
 import { TokenizerRegistry } from '../../src/llms/registry/tokenizer'
-import { routeRequest } from '../../src/llms/scenario-router'
-import type { RouterRequest } from '../../src/llms/scenario-router/types'
+import { routeRequest } from '../../src/llms/router'
+import type { RouterRequest } from '../../src/llms/router/types'
 import { __setTierProfilesForTests } from '../../src/llms/tier-router/runtime'
 import { __setSurfacesForTests } from '../../src/services/inbound-surface-service'
 import { mapWith, route } from '../llms/tier-fixture'

@@ -18,22 +18,23 @@
  * separate chains. The subagent tag is still stripped (the marker must
  * never reach upstream) and still recorded, but it no longer picks a lane.
  *
- * The file keeps its old name until the directory is renamed; the pieces
- * it uses live under `./scenario-router/` and `./tier-router/`.
+ * The request-shape pieces (signals, the subagent tag, persona) live
+ * under `./router/`; the tier map's selector and runtime under
+ * `./tier-router/`.
  */
 
 import { isRoutedPath, resolveSurfaceForPath } from '../services/inbound-surface-service'
 import { DEFAULT_PROFILE_KEY, PASSTHROUGH_PROFILE_KEY } from '../services/tier-route-service'
-import { applyGlobalSystemPrompt, resolveActivePersonaPrompt } from './scenario-router/persona'
-import { stripSubagentTag } from './scenario-router/request-signals'
-import { signalsOf } from './scenario-router/surface-signals'
-import type { RouterContext, RouterRequest } from './scenario-router/types'
+import { applyGlobalSystemPrompt, resolveActivePersonaPrompt } from './router/persona'
+import { stripSubagentTag } from './router/request-signals'
+import { signalsOf } from './router/surface-signals'
+import type { RouterContext, RouterRequest } from './router/types'
 import { routeByTier } from './tier-router/runtime'
 import type { TokenizeRequest } from './tokenizers/base'
 
-export type { SubscriptionKindProvider } from './scenario-router/subscription-kind'
-export { subscriptionKindOf } from './scenario-router/subscription-kind'
-export type { RouterContext, RouterRequest, RouterRequestBody } from './scenario-router/types'
+export type { SubscriptionKindProvider } from './router/subscription-kind'
+export { subscriptionKindOf } from './router/subscription-kind'
+export type { RouterContext, RouterRequest, RouterRequestBody } from './router/types'
 
 // The route a request that went upstream as sent is recorded under.
 export const PASSTHROUGH_ROUTE = 'passthrough'
