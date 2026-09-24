@@ -247,6 +247,13 @@ model SubAccountQuota {
   headerRemaining     Float?
   headerResetAt       DateTime?
 
+  // Banked rate-limit resets (Codex only), from wham/usage's
+  // `rate_limit_reset_credits`. Available is what the account holds;
+  // applicable is how many the vendor would accept now, which is 0 while
+  // no window is spent. Null for Claude accounts and before first read.
+  resetCreditsAvailable  Int?
+  resetCreditsApplicable Int?
+
   // When the collector last completed a successful upstream refresh for
   // this account. Stale detection: now - quotaRefreshedAt > 3 * TTL_MS.
   quotaRefreshedAt DateTime?

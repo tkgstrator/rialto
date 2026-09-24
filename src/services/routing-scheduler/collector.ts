@@ -53,6 +53,10 @@ interface QuotaUpdate {
   weeklyResetAt: Date | null
   weeklyWindowSeconds: number | null
   scopedWindows: Prisma.InputJsonValue | typeof Prisma.JsonNull
+  // Codex only; a Claude reading leaves them out, so the columns keep
+  // whatever they held (null for a Claude account).
+  resetCreditsAvailable?: number | null
+  resetCreditsApplicable?: number | null
   quotaRefreshedAt: Date
 }
 
@@ -109,6 +113,8 @@ export function mapClaudeToQuota(usage: ClaudeUsage, now: Date): QuotaUpdate {
 // update payload. Uses the wire-value `windowSeconds` from each Codex
 // window when present; Claude's 5h/weekly window lengths are constants.
 export function mapCodexToQuota(usage: CodexUsage, now: Date): QuotaUpdate {
+  // Absent (not just null) on a reading built before the field existed.
+  const credits = usage.resetCredits === undefined ? null : usage.resetCredits
   return {
     fiveHourUsed: numberOrNull(usage.primary?.usedPercent),
     fiveHourLimit: usage.primary ? PCT_LIMIT : null,
@@ -120,6 +126,8 @@ export function mapCodexToQuota(usage: CodexUsage, now: Date): QuotaUpdate {
     weeklyWindowSeconds: numberOrNull(usage.secondary?.windowSeconds),
     // Codex has no per-model weekly windows.
     scopedWindows: Prisma.JsonNull,
+    resetCreditsAvailable: credits === null ? null : credits.available,
+    resetCreditsApplicable: credits === null ? null : credits.applicable,
     quotaRefreshedAt: now
   }
 }

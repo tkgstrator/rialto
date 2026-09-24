@@ -77,7 +77,16 @@ const QuotaSchema = z
     windows: z.array(QuotaWindowSchema),
     // Null only when the usage aggregate could not be read; the quota
     // windows above do not depend on it.
-    usage: AccountUsageSchema.nullable()
+    usage: AccountUsageSchema.nullable(),
+    // Banked rate-limit resets, Codex accounts only (null otherwise, and
+    // before the first poll). `applicable` is how many the vendor would
+    // accept right now — 0 while no window is spent.
+    resetCredits: z
+      .object({
+        available: z.number().int().nonnegative(),
+        applicable: z.number().int().nonnegative().nullable()
+      })
+      .nullable()
   })
   .openapi('OverviewQuota')
 

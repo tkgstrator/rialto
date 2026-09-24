@@ -63,6 +63,7 @@ export interface QuotaRow {
   account: string
   windows: QuotaWindowRow[]
   usage: AccountUsage | null
+  resetCredits: { available: number; applicable: number | null } | null
 }
 
 /**
@@ -414,7 +415,11 @@ function buildQuota(quotas: QuotaRecord[], usage: Map<string, AccountUsage>): Qu
       subAccountId: q.subAccountId,
       account: accountLabel(q),
       windows,
-      usage: carried === undefined ? null : carried
+      usage: carried === undefined ? null : carried,
+      resetCredits:
+        q.resetCreditsAvailable === null
+          ? null
+          : { available: q.resetCreditsAvailable, applicable: q.resetCreditsApplicable }
     })
   }
   return out
