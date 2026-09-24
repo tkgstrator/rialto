@@ -30,12 +30,10 @@ const { renderShell, pill, btn, navTo } = window.Shell
 // stood above ~250px of chain, and the chain still left ~400px of empty
 // page under it.
 //
-// The four strips are two now. Band 1 answers "which surface, and does
-// the router apply to it" — the tabs went single-line and the
-// Routed/Passthrough switch moved into the same row, so a surface's
-// state and the control that changes it finally sit together instead of
-// two strips apart. Band 2 answers "which chain, and what can I do to
-// it": scenario, lane, actions.
+// Band 1 answers "which surface", band 2 "does the router apply to it,
+// and with which profile". Band 3 used to pick a scenario and a lane
+// before any chain showed; with the tier map there is nothing left to
+// pick — the whole profile is one table under it.
 //
 // Both bands span the full width. They used to live inside the left
 // column of a grid, which cost them the 320px the right rail took.
@@ -77,146 +75,153 @@ const surfaceTab = (s) => {
     </button>`
 }
 
-const SCENARIOS = [
-  { id: 'default',     label: 'Default',      count: 5 },
-  { id: 'think',       label: 'Think',        count: 4 },
-  { id: 'longContext', label: 'Long context', count: 3 },
-  { id: 'webSearch',   label: 'Web search',   count: 2 },
-  { id: 'image',       label: 'Image',        count: 2 }
-]
-const ACTIVE_SCENARIO = 'default'
-
-// Underline tabs, the same treatment the surface strip uses. These were
-// filled chips while the two strips sat adjacent — two underline rows
-// stacked read as one nested inside the other, and the surface is the
-// outer axis so it was the wrong one to lose its emphasis. The scope
-// strip sits between them now, so the ambiguity is gone and the two
-// selectors can look like what they both are.
+// ─── Tier map ─────────────────────────────────────────────────────────
+// This used to be a chain per scenario per lane: five scenarios, an agent
+// and a subagent lane each, and every row a model held by name. Two
+// things made it hard to live with. A new model meant replacing its
+// predecessor in every lane that held it. And the tier gates — "up and
+// down", "down only" — decided which rows a request could use, so a
+// Sonnet-only chain with "down only" answered every Haiku call Claude
+// Code makes for its background work with a 429 that never went upstream.
 //
-// The tab spans the band rather than the 32px controls beside it, so its
-// underline lands on the band's own rule instead of floating above it —
-// which is what makes it read as a tab and not as underlined text.
-const scenarioTab = (s) => {
-  const on = s.id === ACTIVE_SCENARIO
-  return `
-    <button class="flex h-full items-center justify-center gap-1.5 border-b-2 px-2.5 text-xs transition-colors ${
-      on ? 'border-b-foreground font-medium' : 'border-b-transparent text-muted-foreground hover:text-foreground'
-    }">
-      ${s.label}<span class="font-mono text-[12px] tabular-nums ${on ? 'text-muted-foreground' : 'text-muted-foreground/70'}">${s.count}</span>
-    </button>`
+// The map replaces both. It is keyed by the tier the caller asked for —
+// read off the model name, "other" when the name says no Claude family —
+// and each route names a provider and a tier on it, not a model. Which
+// model that is, is the provider's tier alias (set on its page, shown
+// here in the Resolves column). A Haiku request goes to Sonnet because a
+// row says so, not because a gate happened to let it through.
+//
+// A tier with no routes passes through: the caller's own model goes
+// upstream, the same "no opinion" an empty lane always meant. Scenarios
+// and lanes are gone; what they were for survives as gates on each
+// route — a target that cannot hold the prompt, or cannot run the web
+// search tool the request carries, is skipped for that request.
+const TIERS = [
+  { id: 'fable',  label: 'Fable',  hint: 'claude-fable-*' },
+  { id: 'opus',   label: 'Opus',   hint: 'claude-opus-*' },
+  { id: 'sonnet', label: 'Sonnet', hint: 'claude-sonnet-*' },
+  { id: 'haiku',  label: 'Haiku',  hint: 'claude-haiku-*' },
+  { id: 'other',  label: 'Other',  hint: 'any other model name' }
+]
+
+// state: ok | used (pct) | exhausted (until) | unset (alias missing) | off (target switched off)
+const ROUTES = {
+  fable: [
+    { provider: 'claude-code', tier: 'fable', model: 'claude-fable-5',   state: 'ok',        on: true },
+    { provider: 'claude-code', tier: 'opus',  model: 'claude-opus-4-8',  state: 'used', pct: 72, on: true }
+  ],
+  opus: [
+    { provider: 'claude-code', tier: 'opus',  model: 'claude-opus-4-8',  state: 'used', pct: 72, on: true },
+    { provider: 'codex',       tier: 'opus',  model: 'gpt-5.5',          state: 'exhausted', until: '14:05', on: true }
+  ],
+  sonnet: [
+    { provider: 'claude-code', tier: 'sonnet', model: 'claude-sonnet-5', state: 'ok',        on: true },
+    { provider: 'codex',       tier: 'sonnet', model: 'gpt-5.5',         state: 'exhausted', until: '14:05', on: true },
+    { provider: 'gemini-cli',  tier: 'sonnet', model: null,              state: 'unset',     on: true },
+    { provider: 'deepseek',    tier: 'sonnet', model: 'deepseek-v4',     state: 'ok', noSearch: true, on: false }
+  ],
+  // The row that fixes the Haiku case: the caller asked for haiku, the
+  // operator decided Sonnet serves it. The arrow says a tier is being
+  // substituted on purpose.
+  haiku: [
+    { provider: 'claude-code', tier: 'sonnet', model: 'claude-sonnet-5', state: 'ok',        on: true }
+  ],
+  other: []
 }
 
-// ─── Preference chain ─────────────────────────────────────────────────
-// Priority order is the whole point, so the row leads with the ordinal
-// and a drag handle. Share is each enabled target's slice of this lane's
-// scheduler weight, apportioned so the column adds up to exactly 100%.
-// A row switched off, or one the scheduler has not scored, takes no
-// slice and reads `–` instead of 0% — it is not competing for the lane.
-const CHAIN = [
-  // Shares are apportioned from the weights 0.60 / 1.00 / 0.00 / 1.00
-  // (total 2.60) by largest remainder, which is what makes 23+39+0+38
-  // land on 100 instead of the 99 that plain rounding gives.
-  { n: 1, target: 'claude-code,claude-opus-4-8',  tier: 'opus',   share: '23%', on: true },
-  { n: 2, target: 'claude-code,claude-fable-5',   tier: 'fable',  share: '39%',     on: true },
-  { n: 3, target: 'codex,gpt-5.5',                tier: 'opus',   share: '0%', on: true },
-  // Tier null on purpose: no Gemini name says a Claude family, so the
-  // router cannot classify it and nobody has set a manualTier in
-  // Providers. It is the row the tier-respect floor below cannot hold.
-  // State `unknown`, but it still takes a share: no quota window means
-  // the scheduler has no reading to publish, not that the target is out
-  // of the running. The pill says the number behind it is a policy
-  // default rather than a measurement.
-  { n: 4, target: 'gemini-cli,gemini-3.1-pro',    tier: null,     share: '38%',   on: true },
-  // Switched off: it takes no share of the lane, so the cell is a dash
-  // rather than a 0% that would read as "lost the apportionment".
-  { n: 5, target: 'claude-code,claude-sonnet-4-6',tier: 'sonnet', share: null,     on: false }
-]
-
-// A chain entry names "provider,model", and the provider is where its
-// credentials, accounts and model list live. The mock set has one detail
-// screen per auth mode, so the vendor half of the pair picks which.
 const SUBSCRIPTION_PROVIDERS = ['claude-code', 'codex', 'gemini-cli']
-const providerHref = (t) =>
-  SUBSCRIPTION_PROVIDERS.includes(t.split(',')[0]) ? 'provider-subscription.html' : 'provider-apikey.html'
-
-// The model half of "provider,model", unless another row in the lane
-// carries the same model under a different provider.
-const modelOf = (t) => t.slice(t.indexOf(',') + 1)
-const ambiguous = new Set(
-  CHAIN.map((e) => modelOf(e.target)).filter((m, i, all) => all.indexOf(m) !== i)
-)
-const label = (t) => (ambiguous.has(modelOf(t)) ? t : modelOf(t))
+const providerHref = (p) => (SUBSCRIPTION_PROVIDERS.includes(p) ? 'provider-subscription.html' : 'provider-apikey.html')
 
 // The screen reads until Edit is pressed; routing.html?edit draws the
-// state after it, so a reviewer sees both without a second copy of the
-// page. Declared before the row template because the chain table is
+// state after it. Declared before the templates because the map is
 // rendered the moment it is defined.
 const EDITING = new URLSearchParams(location.search).has('edit')
 
-// Controls that change the chain exist only while editing. They go
-// invisible rather than absent, so the columns and the row height do not
-// move when Edit is pressed; the toggle stays as a reading of the state.
+// Controls that change the map exist only while editing. They go
+// invisible rather than absent, so columns and row height do not move
+// when Edit is pressed; the toggle stays as a reading of the state.
 const editOnly = EDITING ? '' : 'invisible'
 
-const chainRow = (e) => `
-  <tr ${navTo(providerHref(e.target))} class="border-t border-border/60 transition-colors hover:bg-muted/50 ${e.on ? '' : 'opacity-45'}">
+// One reading per route, in the order a reader asks: can it take traffic,
+// how close is it to not being able to, and when does that change. An
+// unset alias is the operator's to fix on the provider page, so it links
+// there instead of stating a number.
+const stateCell = (r) => {
+  if (r.state === 'ok') return '<span class="text-[12px] text-emerald-600 dark:text-emerald-400">ok</span>'
+  if (r.state === 'used') return `<span class="font-mono text-[12px] tabular-nums ${r.pct >= 90 ? 'text-destructive' : r.pct >= 70 ? 'text-amber-600 dark:text-amber-400' : ''}">${r.pct}% used</span>`
+  if (r.state === 'exhausted') return `<span class="text-[12px] text-destructive">exhausted <span class="font-mono tabular-nums">until ${r.until}</span></span>`
+  return `<span class="text-[12px] text-amber-600 dark:text-amber-400">alias unset</span>`
+}
+
+const routeRow = (group) => (r, i) => `
+  <tr ${navTo(providerHref(r.provider))} class="border-t border-border/60 transition-colors hover:bg-muted/50 ${r.on ? '' : 'opacity-45'}">
     <td class="py-2.5 pl-6 pr-2">
       <div class="flex items-center gap-2">
         <i class="ri-draggable text-base leading-none text-muted-foreground/50 ${editOnly}"></i>
-        <span class="font-mono text-xs tabular-nums text-muted-foreground">${e.n}</span>
+        <span class="font-mono text-xs tabular-nums text-muted-foreground">${i + 1}</span>
       </div>
     </td>
-    <!-- Model name only. The provider half repeats down the column and
-         is one click away on the row itself; it comes back only when two
-         rows in the same lane would otherwise read identically (the same
-         model served by a subscription and by an api_key provider). -->
-    <td class="px-2 font-mono text-xs">${label(e.target)}</td>
-    <td class="px-2">${
-      e.tier === null ? '<span class="text-[12px] text-muted-foreground/50">—</span>' : pill(e.tier, 'mute')
-    }</td>
-    <td class="px-2 text-right font-mono text-xs tabular-nums ${e.share === null ? 'text-muted-foreground' : ''}">${
-      e.share === null ? '–' : e.share
-    }</td>
+    <td class="px-2 text-xs">
+      <span class="font-mono">${r.provider}</span>
+      <span class="text-muted-foreground">·</span>
+      ${r.tier !== group && group !== 'other'
+        ? `<span class="inline-flex items-center gap-1">${pill(r.tier, 'info')}<i class="ri-arrow-left-line text-[11px] text-muted-foreground/60"></i><span class="text-[12px] text-muted-foreground">for ${group}</span></span>`
+        : pill(r.tier, 'mute')}
+    </td>
+    <td class="px-2 font-mono text-xs ${r.model === null ? 'text-muted-foreground/50' : 'text-muted-foreground'}">
+      ${r.model === null ? '<a class="font-sans text-[12px] underline decoration-dotted underline-offset-2">set in Providers</a>' : r.model}
+      ${r.noSearch ? `<span class="ml-1.5 align-[1px]">${pill('no web search', 'mute')}</span>` : ''}
+    </td>
+    <td class="px-2 text-right">${stateCell(r)}</td>
     <td class="py-2.5 pl-2 pr-6">
       <div class="flex items-center justify-end gap-1">
-        <span class="inline-flex h-4 w-7 items-center rounded-full ${e.on ? 'bg-foreground' : 'bg-muted-foreground/30'} px-0.5 ${EDITING ? '' : 'opacity-50'}">
-          <span class="size-3 rounded-full bg-background ${e.on ? 'translate-x-3' : ''}"></span>
+        <span class="inline-flex h-4 w-7 items-center rounded-full ${r.on ? 'bg-foreground' : 'bg-muted-foreground/30'} px-0.5 ${EDITING ? '' : 'opacity-50'}">
+          <span class="size-3 rounded-full bg-background ${r.on ? 'translate-x-3' : ''}"></span>
         </span>
         <button class="ml-1 text-muted-foreground/60 hover:text-foreground ${editOnly}"><i class="ri-more-2-fill text-sm"></i></button>
       </div>
     </td>
   </tr>`
 
-// Share is the one column a reader misreads — it is a slice of the
-// lane's scheduler weight, not a traffic forecast — so the caveat rides
-// on the header as a marker. The dashed four-line box that used to
-// explain it under the table is gone; a table does not need a paragraph.
-const chain = `
+// A group is a header row and its routes. The header carries the tier,
+// what names it (so "other" is not a mystery), and — while editing — the
+// one action that adds to that group, where a reader looks for it.
+const group = (t) => {
+  const routes = ROUTES[t.id]
+  const header = `
+    <tr class="border-t border-border bg-muted/30">
+      <td colspan="5" class="px-6 py-2">
+        <div class="flex h-7 items-center gap-2">
+          <span class="text-xs font-semibold">${t.label}</span>
+          <span class="font-mono text-[12px] text-muted-foreground">${t.hint}</span>
+          <span class="font-mono text-[12px] tabular-nums text-muted-foreground/70">${routes.length}</span>
+          <span class="ml-auto">${EDITING ? btn('Add route', 'ghost', 'ri-add-line') : ''}</span>
+        </div>
+      </td>
+    </tr>`
+  const body =
+    routes.length === 0
+      ? `<tr class="border-t border-border/60"><td colspan="5" class="px-6 py-3 text-[12px] text-muted-foreground">No routes — requests pass through as sent</td></tr>`
+      : routes.map(routeRow(t.id)).join('')
+  return header + body
+}
+
+const map = `
   <table class="w-full table-fixed">
-    <!-- No State column: on most installs it reads "unknown" for most
-         rows, and where it does not, Share already implies it — an
-         exhausted target shows 0%, a disabled one a dash. Passthrough
-         keeps its State; that table has no Share to imply it.
-         (No backticks in here: this comment sits inside a template
-         literal, and one would close the string.) -->
-    <colgroup><col class="w-16"><col><col class="w-20"><col class="w-24"><col class="w-24"></colgroup>
+    <colgroup><col class="w-16"><col class="w-[22rem]"><col><col class="w-44"><col class="w-24"></colgroup>
     <thead>
       <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         <th class="pl-6 pr-2 text-left font-medium">#</th>
-        <th class="px-2 text-left font-medium">Target</th>
-        <th class="px-2 text-left font-medium">Tier</th>
-        <th class="px-2 text-right font-medium">
-          Share <i class="ri-question-line align-[-1px] text-[13px] normal-case text-muted-foreground/50"></i>
-        </th>
+        <th class="px-2 text-left font-medium">Route</th>
+        <th class="px-2 text-left font-medium">Resolves to</th>
+        <th class="px-2 text-right font-medium">State</th>
         <th class="pl-2 pr-6 text-right font-medium">On</th>
       </tr>
     </thead>
-    <tbody>${CHAIN.map(chainRow).join('')}</tbody>
+    <tbody>${TIERS.map(group).join('')}</tbody>
   </table>`
 
-// The header row is h-8 in every cell and in both states: the grid
-// stretches the cells to one height, and a 32px control beside a 16px
-// reading would sink its label below the labels next to it.
+// The header row is h-8 in every cell and in both states.
 const constraintCell = (label, valueHtml, hint) => `
   <div class="border-l-2 border-l-transparent bg-background px-4 py-3 transition-colors hover:border-l-border hover:bg-muted/50">
     <div class="flex min-h-8 items-center gap-2">
@@ -228,13 +233,6 @@ const constraintCell = (label, valueHtml, hint) => `
 
 const reading = (value) => `<span class="ml-auto font-mono text-xs">${value}</span>`
 
-// The same box as the Profile picker's trigger in band 2, so the screen
-// has one look for "this opens a list".
-const selectBox = (value) =>
-  `<button class="ml-auto inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-muted/60">${value} <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i></button>`
-
-// Two choices stay visible side by side, like Routed / Passthrough in
-// band 2 — but the wrapper is pinned to h-8 rather than sized by padding.
 const segmentedBox = (options, active) =>
   `<div class="ml-auto flex h-8 items-center rounded-md border border-border p-0.5">${options
     .map(
@@ -243,12 +241,9 @@ const segmentedBox = (options, active) =>
     )
     .join('')}</div>`
 
-// The unit sits inside the box, so an edited cell still reads as a
-// percentage the way its reading did.
-const percentBox = (value) =>
-  `<span class="ml-auto inline-flex h-8 w-20 items-center justify-end gap-1 rounded-md border border-border px-2.5 font-mono text-xs">${value}<span class="text-muted-foreground">%</span></span>`
+const numberBox = (value, unit) =>
+  `<span class="ml-auto inline-flex h-8 w-20 items-center justify-end gap-1 rounded-md border border-border px-2.5 font-mono text-xs">${value}${unit === '' ? '' : `<span class="text-muted-foreground">${unit}</span>`}</span>`
 
-// One cell, in whichever state the block is in.
 const constraint = (label, value, control, hint) => constraintCell(label, EDITING ? control : reading(value), hint)
 
 document.getElementById('root').innerHTML = `
@@ -278,79 +273,46 @@ document.getElementById('root').innerHTML = `
     </button>
   </div>
 
-  <!-- Band 3 — which chain, and what you can do to it. -->
+  <!-- Band 3 — the map and what you can do to it. No scenario tabs and
+       no Agent / Subagent switch: the map is one table for the profile,
+       grouped by the tier the caller asked for. Edit, then Revert / Save,
+       covers the routes and the constraints under them, because both are
+       one profile and one write. While editing, the surface tabs, the mode
+       switch and the profile picker above are locked: each would load
+       another profile, and the unsaved edit would go with it. -->
   <div class="flex items-center gap-3 border-b border-border px-6 py-2.5">
-    <!-- Equal columns rather than content width. "Long context" is twice
-         "Think", so packed side by side the strip read as five different
-         kinds of thing. auto-cols-fr rather than a fixed width: the
-         labels are translated, and the widest one is not the same string
-         in every locale. -->
-    <div class="-my-2.5 grid grid-flow-col auto-cols-fr gap-0.5 self-stretch">
-      ${SCENARIOS.map(scenarioTab).join('')}
-    </div>
-    <span class="h-4 w-px bg-border"></span>
-    <div class="flex rounded-md border border-border p-0.5">
-      <button class="rounded bg-foreground px-2.5 py-1 text-[12px] font-medium text-background">Agent</button>
-      <button class="rounded px-2.5 py-1 text-[12px] text-muted-foreground hover:text-foreground">Subagent</button>
-    </div>
-    <!-- Edit, then Revert / Save. The screen reads until Edit is pressed:
-         a chain is read far more often than it is changed, and every row
-         carries a drag handle, a toggle and a menu one stray click from
-         changing what routes. One Revert / Save covers the chain and the
-         constraints under it, because both are one profile and one write;
-         Revert throws the unsaved edit away and returns to reading.
-         While editing, the surface tabs, the mode switch and the profile
-         picker above are locked: each would load another profile or hide
-         the chain, and the unsaved edit would go with it. Scenario and
-         lane stay free, because they move within the profile being edited.
-         Add target moved under the table: it does not act on the
-         coordinate this band picks — it acts on the list below it. -->
+    <span class="text-xs font-medium">Tier map</span>
+    <span class="text-[12px] text-muted-foreground">requested tier → provider · tier, top first</span>
     <div class="ml-auto flex items-center gap-2">
       ${EDITING ? `${btn('Revert', 'outline', 'ri-arrow-go-back-line')}${btn('Save', 'primary', 'ri-check-line')}` : btn('Edit', 'outline', 'ri-pencil-line')}
     </div>
   </div>
 
-  ${chain}
+  ${map}
 
-  <!-- The count reads as a total under the thing it counts, and the one
-       action that adds to that list sits with it. "Add target" appends a
-       row to the table directly above, which is where a reader looks for
-       it once they have read the last one. Like every other edit it only
-       exists while editing; the row keeps its h-8 height either way, so
-       the constraints below do not jump when Edit is pressed. -->
   <div class="flex items-center gap-3 border-t border-border/60 px-6 py-2.5">
-    <span class="text-[12px] text-muted-foreground">5 targets · 1 disabled · order is preference, top first</span>
-    <div class="ml-auto flex h-8 items-center gap-2">
-      ${EDITING ? btn('Add target', 'outline', 'ri-add-line') : ''}
-    </div>
+    <span class="text-[12px] text-muted-foreground">9 routes · 1 off · 1 unresolved · a request tries the routes of its tier in order, skipping any that are exhausted, too small for the prompt, or cannot run its tools</span>
   </div>
 
-  <!-- Constraints, three-up, in the space the right rail used to leave
-       empty. The rail ran the full page height for four rows while the
-       chain beside it ended after 250px — a tall column next to a short
-       one, with the empty half carrying the content. They stopped being
-       a column and became a footer to the chain they constrain.
+  <!-- Constraints, four-up, under the map they constrain. Tier
+       substitution is gone: substituting a tier is a row in the map now,
+       written down where a reader can see it, not a gate that decides
+       which rows a request may use.
 
-       All three are the profile's own constraints, which is what makes
-       them belong under this chain. A fourth cell showed a healthiness
-       floor that nothing on the request path read; a reading with no
-       effect invites an edit with no effect, so it went. When the chain
-       has no usable target left, the second cell is the whole decision —
-       answer 429, or send the request on with the model the caller asked
-       for.
-
-       Each cell is a reading until Edit is pressed and the control that
-       sets it after, saved and reverted together with the chain above.
-       Tier substitution offers the two tier gates, escalation and
-       demotion, as one four-way choice. -->
+       When exhausted is the whole decision when every route of a tier is
+       out of quota: answer 429 with Retry-After, or send the request on
+       with the model the caller asked for. A tier whose routes are all
+       refused for another reason — an unset alias, a prompt no route can
+       hold — is answered 400, never 429: waiting would not change it. -->
   <div class="mt-6 border-t border-border">
     <div class="px-6 pt-4 pb-2">
       <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Constraints</h2>
     </div>
-    <div class="grid grid-cols-3 gap-px bg-border/60">
-      ${constraint('Tier substitution', 'up and down', selectBox('up and down'), 'may a request go to a target of another tier')}
-      ${constraint('When exhausted', '429', segmentedBox(['429', 'Passthrough'], '429'), 'no usable target left: answer 429, or pass the request through with the caller’s own model')}
-      ${constraint('Quota skip', '100%', percentBox('100'), 'skip accounts the quota collector reports as spent')}
+    <div class="grid grid-cols-4 gap-px bg-border/60">
+      ${constraint('When exhausted', '429', segmentedBox(['429', 'Passthrough'], '429'), 'every route of the tier is out of quota: answer 429, or pass the request through')}
+      ${constraint('Quota skip', '100%', numberBox('100', '%'), 'skip a route whose accounts are used at or past this')}
+      ${constraint('Error-rate skip', '50%', numberBox('50', '%'), 'skip a route failing this often in the last 5 minutes')}
+      ${constraint('Min samples', '5', numberBox('5', ''), 'requests before the error rate counts')}
     </div>
   </div>`
 
@@ -360,7 +322,7 @@ document.getElementById('root').innerHTML = `
 renderShell({
   active: 'routing',
   navMode: 'cloudflare',
-  crumbs: ['Chain']
+  crumbs: ['Tier map']
 })
 </script>
 </body>
