@@ -24,6 +24,7 @@ import {
   type TierRoute,
   TierRoutesSchema
 } from '../schemas/domain/tier-route'
+import { hostsWebSearch } from '../shared/transformer-chain'
 import { DEFAULT_PROFILE_KEY, PASSTHROUGH_PROFILE_KEY } from './router-preference-service'
 import { aliasKey, resolveTierAliases } from './tier-alias-service'
 
@@ -192,4 +193,78 @@ export async function listTierProfiles(prisma: PrismaClient = getPrismaClient())
     ...withDefault,
     { key: PASSTHROUGH_PROFILE_KEY, routeCount: 0, updatedAt: null, kind: 'passthrough' as const }
   ]
+}
+
+export interface TierRouteResolution {
+  model: string
+  targetEnabled: boolean
+  hostsWebSearch: boolean
+  contextWindow: number | null
+}
+
+export interface TierRouteView extends TierRoute {
+  resolved: TierRouteResolution | null
+}
+
+export interface TierProfileView {
+  key: string
+  routes: Record<RouteTier, TierRouteView[]>
+  constraints: RoutingConstraints
+}
+
+/**
+ * One profile's map with each route resolved through its alias: the model
+ * it reaches today, whether that model can take traffic, whether it can
+ * run the web_search tool, and its context window. What the Routing
+ * screen draws, read in one pass instead of one request per row.
+ */
+export async function loadTierProfileView(
+  profileKey: string = DEFAULT_PROFILE_KEY,
+  prisma: PrismaClient = getPrismaClient()
+): Promise<TierProfileView> {
+  const [profile, aliasRows] = await Promise.all([
+    loadTierProfile(profileKey, prisma),
+    prisma.providerTierAlias.findMany({
+      select: {
+        tier: true,
+        provider: { select: { name: true, apiBaseUrl: true, authMode: true, apiStyle: true, enabled: true } },
+        model: { select: { name: true, enabled: true, apiStyle: true, contextWindow: true } }
+      }
+    })
+  ])
+  const resolution = new Map<string, TierRouteResolution>(
+    aliasRows.map((a) => [
+      `${a.provider.name}|${a.tier}`,
+      {
+        model: a.model.name,
+        targetEnabled: a.model.enabled && a.provider.enabled,
+        hostsWebSearch: hostsWebSearch(
+          {
+            name: a.provider.name,
+            api_base_url: a.provider.apiBaseUrl,
+            auth_mode: a.provider.authMode,
+            api_style: a.provider.apiStyle
+          },
+          a.model.apiStyle === null ? undefined : a.model.apiStyle
+        ),
+        contextWindow: a.model.contextWindow
+      }
+    ])
+  )
+  const view = (routes: TierRoute[]): TierRouteView[] =>
+    routes.map((route) => {
+      const resolved = resolution.get(`${route.provider}|${route.targetTier}`)
+      return { ...route, resolved: resolved === undefined ? null : resolved }
+    })
+  return {
+    key: profileKey,
+    routes: {
+      fable: view(profile.routes.fable),
+      opus: view(profile.routes.opus),
+      sonnet: view(profile.routes.sonnet),
+      haiku: view(profile.routes.haiku),
+      other: view(profile.routes.other)
+    },
+    constraints: profile.constraints
+  }
 }

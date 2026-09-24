@@ -19,17 +19,21 @@ import { oauthRoute } from './api/oauth/route'
 import { overviewRoute } from './api/overview/route'
 import { providerModelRoute } from './api/providers/[name]/models/[model]/route'
 import { providerByNameRoute } from './api/providers/[name]/route'
+import { providerTierAliasRoute } from './api/providers/[name]/tier-aliases/[tier]/route'
 import { providersRoute } from './api/providers/route'
 import { providersTestRoute } from './api/providers/test/route'
 import { refreshModelsRoute } from './api/refresh-models/route'
 import { requestLogsRoute } from './api/request-logs/route'
 import { routerPreferencesRoute } from './api/router-preferences/route'
 import { routerUtilizationRoute } from './api/router-utilization/route'
+import { routingProfileRoute } from './api/routing/profiles/[key]/route'
+import { routingProfilesRoute } from './api/routing/profiles/route'
 import { routingSchedulerStateRoute } from './api/routing-scheduler-state/route'
 import { scrapePricesRoute } from './api/scrape-prices/[vendor]/route'
 import { solverInputRoute } from './api/solver-input/route'
 import { storageRoute } from './api/storage/route'
 import { subscriptionsRoute } from './api/subscriptions/route'
+import { tierAliasesRoute } from './api/tier-aliases/route'
 import { transformersRoute } from './api/transformers/route'
 import { updateCheckRoute } from './api/update/check/route'
 import { updatePerformRoute } from './api/update/perform/route'
@@ -179,6 +183,7 @@ app.route('/', refreshModelsRoute)
 app.route('/', providersRoute)
 app.route('/', providerByNameRoute)
 app.route('/', providerModelRoute)
+app.route('/', providerTierAliasRoute)
 app.route('/', providersTestRoute)
 app.route('/', modelsRoute)
 app.route('/', modelTestRoute)
@@ -188,6 +193,9 @@ app.route('/', requestLogsRoute)
 app.route('/', routerPreferencesRoute)
 app.route('/', routerUtilizationRoute)
 app.route('/', routingSchedulerStateRoute)
+app.route('/', routingProfilesRoute)
+app.route('/', routingProfileRoute)
+app.route('/', tierAliasesRoute)
 app.route('/', solverInputRoute)
 app.route('/', overviewRoute)
 app.route('/', inboundSurfacesRoute)

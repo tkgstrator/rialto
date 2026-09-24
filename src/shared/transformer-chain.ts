@@ -138,3 +138,25 @@ export const modelTransformerChains = (
   }
   return out
 }
+
+// The wire formats whose transformer carries Anthropic's `web_search`
+// server tool across: Responses remaps it to the hosted `web_search`
+// tool, Gemini to `googleSearch`, and Anthropic sends it as-is. Chat
+// Completions has no equivalent, so a request that needs the tool cannot
+// be served there.
+const WEB_SEARCH_STYLES: ReadonlySet<ChainApiStyle> = new Set(['anthropic', 'openai_responses', 'gemini'])
+
+/**
+ * Whether a request carrying the web_search tool can be sent to this model.
+ *
+ * Decided on the same apiStyle the chain is built from — the provider's
+ * effective style, overridden per model only where
+ * `modelTransformerChains` would override it (api_key providers) — so
+ * what the Routing screen badges and what the tier router skips cannot
+ * drift from what actually runs.
+ */
+export const hostsWebSearch = (p: ChainProvider, modelApiStyle: ChainApiStyle | undefined): boolean => {
+  const providerStyle = effectiveApiStyle(p)
+  const style = p.auth_mode !== 'subscription' && modelApiStyle !== undefined ? modelApiStyle : providerStyle
+  return style !== null && WEB_SEARCH_STYLES.has(style)
+}
