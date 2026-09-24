@@ -107,10 +107,9 @@ void startUsageCapture()
 // persist its authStatus so the UI can flag accounts that need
 // re-authentication.
 void startAuthHealthCheck()
-// Routing scheduler. It computes the weights the chain routes on — the
-// operator picks the models and their order, this decides how much of
-// the traffic each one takes. The chain is the only selector, so the
-// scheduler always has a consumer and always runs.
+// Routing scheduler. It publishes the quota snapshot the tier router
+// reads — per subscription model, whether it is out and when it comes
+// back. Every routed request consults it, so it always runs.
 startRoutingScheduler()
 
 const app = new OpenAPIHono()

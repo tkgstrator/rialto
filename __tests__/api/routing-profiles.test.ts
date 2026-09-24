@@ -129,4 +129,11 @@ describe.skipIf(!HAS_DB)('routing profile and tier alias endpoints', () => {
     const list = await (await routingProfilesRoute.fetch(request('GET', '/api/routing/profiles'))).json()
     expect(list.map((p: { key: string }) => p.key)).toEqual(['live', 'passthrough'])
   })
+
+  test('the default stays first once it has a row, ahead of keys that sort before it', async () => {
+    await routingProfileRoute.fetch(request('PUT', '/api/routing/profiles/live', map({})))
+    await routingProfileRoute.fetch(request('PUT', '/api/routing/profiles/cost-first', map({})))
+    const list = await (await routingProfilesRoute.fetch(request('GET', '/api/routing/profiles'))).json()
+    expect(list.map((p: { key: string }) => p.key)).toEqual(['live', 'cost-first', 'passthrough'])
+  })
 })
