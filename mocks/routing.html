@@ -49,31 +49,33 @@ const surfaceTab = (s) => {
 // subagent (a request carrying the subagent tag): one or more provider ·
 // tier combinations, tried top first. The second takes a request only
 // when the first cannot (out of quota, failing, or unable to hold it).
-// That is the whole screen. The model is not picked here: the provider's tier
-// alias, set on its page, says which model "sonnet" is, so a vendor's new
-// model moves one alias instead of this table.
+// That is the whole screen: a provider and a tier, nothing else. The
+// model is neither picked nor shown here — the provider's tier alias, set
+// on its page, says which model "sonnet" is, so a vendor's new model
+// moves one alias instead of this table.
 //
-// Earlier drafts stacked a summary, a quota strip, a status per row and a
-// block of constraints. None of it was asked for: the question an
-// operator brings here is which provider and tier each scenario uses.
-const R = (provider, tier, model, on = true) => ({ provider, tier, model, on })
+// Earlier drafts stacked a summary, a quota strip, a status per row, a
+// block of constraints, and the resolved model beside every combination.
+// None of it was asked for: the question an operator brings here is which
+// provider and tier each scenario uses.
+const R = (provider, tier, on = true) => ({ provider, tier, on })
 const SCENARIOS = [
   {
     label: 'Default',
     when: 'everything the rows below do not catch',
-    agent: [R('claude-code', 'sonnet', 'claude-sonnet-5'), R('codex', 'sonnet', 'gpt-5.5', false)],
-    subagent: [R('claude-code', 'haiku', 'claude-haiku-4-5'), R('claude-code', 'sonnet', 'claude-sonnet-5')]
+    agent: [R('claude-code', 'sonnet'), R('codex', 'sonnet', false)],
+    subagent: [R('claude-code', 'haiku'), R('claude-code', 'sonnet')]
   },
   {
     label: 'Think',
     when: 'extended thinking is on',
-    agent: [R('claude-code', 'opus', 'claude-opus-5'), R('claude-code', 'sonnet', 'claude-sonnet-5')],
-    subagent: [R('claude-code', 'sonnet', 'claude-sonnet-5')]
+    agent: [R('claude-code', 'opus'), R('claude-code', 'sonnet')],
+    subagent: [R('claude-code', 'sonnet')]
   },
   {
     label: 'Long context',
     when: 'input over 200k tokens',
-    agent: [R('claude-code', 'fable', 'claude-fable-5'), R('claude-code', 'opus', 'claude-opus-5')],
+    agent: [R('claude-code', 'fable'), R('claude-code', 'opus')],
     subagent: []
   }
 ]
@@ -82,13 +84,13 @@ const SCENARIOS = [
 // state after it.
 const EDITING = new URLSearchParams(location.search).has('edit')
 
-// What a combination can be: every provider's tiers, with the model each
-// alias names today. A tier whose alias is unset cannot be chosen — it
-// would reach nothing — and says where to set it.
+// What a combination can be: every provider's tiers. A tier the provider
+// has no model for (its alias is unset) cannot be chosen — it would
+// reach nothing.
 const PROVIDERS = [
-  { name: 'claude-code', kind: 'subscription', tiers: [['fable', 'claude-fable-5'], ['opus', 'claude-opus-5'], ['sonnet', 'claude-sonnet-5'], ['haiku', 'claude-haiku-4-5']] },
-  { name: 'codex',       kind: 'subscription', tiers: [['fable', null], ['opus', 'gpt-5.5'], ['sonnet', 'gpt-5.5'], ['haiku', 'gpt-5.4-mini']] },
-  { name: 'openai',      kind: 'api key',      tiers: [['fable', null], ['opus', 'gpt-5.6-sol'], ['sonnet', 'gpt-5.6-terra'], ['haiku', 'gpt-5.6-luna']] }
+  { name: 'claude-code', tiers: [['fable', true], ['opus', true], ['sonnet', true], ['haiku', true]] },
+  { name: 'codex',       tiers: [['fable', false], ['opus', true], ['sonnet', true], ['haiku', true]] },
+  { name: 'openai',      tiers: [['fable', false], ['opus', true], ['sonnet', true], ['haiku', true]] }
 ]
 
 // A combination is shown, not edited in place. Picking one is a
@@ -112,17 +114,16 @@ const combination = (r, i) => `
   <div class="${LINE} min-h-8">
     <i class="ri-draggable text-base leading-none text-muted-foreground/50 ${EDITING ? '' : 'invisible'}"></i>
     <span class="font-mono text-[12px] tabular-nums text-muted-foreground">${i + 1}</span>
-    <div class="flex h-8 items-center gap-2 rounded-md px-2.5 ${EDITING ? 'cursor-pointer border border-border hover:bg-muted/60' : ''} ${r.on ? '' : 'opacity-50'}">
+    <div class="flex h-8 items-center rounded-md px-2.5 ${EDITING ? 'cursor-pointer border border-border hover:bg-muted/60' : ''} ${r.on ? '' : 'opacity-50'}">
       <span class="font-mono text-xs">${r.provider} · ${r.tier}</span>
-      <span class="ml-auto truncate font-mono text-[12px] text-muted-foreground">${r.on ? r.model : 'off'}</span>
     </div>
     ${toggle(r.on)}
     <button class="text-muted-foreground/60 hover:text-foreground ${EDITING ? '' : 'invisible'}"><i class="ri-close-line text-sm"></i></button>
   </div>`
 
 // ─── The dialog ───────────────────────────────────────────────────────
-// Step 1: which provider. Step 2: which of its tiers, each with the model
-// its alias names; an unset alias is disabled and says where to fix it.
+// Step 1: which provider. Step 2: which of its tiers; a tier the provider
+// has no model for is disabled.
 const ADD = new URLSearchParams(location.search).get('add')
 
 const option = (label, detail, { on = false, disabled = false, arrow = false } = {}) => `
@@ -137,7 +138,7 @@ const providerStep = dialog(
   'Add provider · tier — Default, Agent',
   `<div class="grid gap-1">
     <div class="text-[12px] text-muted-foreground">1. Choose a provider</div>
-    ${PROVIDERS.map((p) => option(p.name, `<span class="font-sans">${p.kind}</span>`, { arrow: true })).join('')}
+    ${PROVIDERS.map((p) => option(p.name, '', { arrow: true })).join('')}
   </div>`,
   btn('Cancel', 'ghost')
 )
@@ -150,10 +151,10 @@ const tierStep = dialog(
       <span>·</span><span>2. Choose a tier</span>
     </div>
     ${PROVIDERS[1].tiers
-      .map(([tier, model]) =>
-        model === null
-          ? option(tier, '<span class="font-sans">no model set — set it on the provider page</span>', { disabled: true })
-          : option(tier, model, { on: tier === 'sonnet' })
+      .map(([tier, set]) =>
+        !set
+          ? option(tier, '<span class="font-sans">not set</span>', { disabled: true })
+          : option(tier, '', { on: tier === 'sonnet' })
       )
       .join('')}
   </div>`,

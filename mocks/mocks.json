@@ -23,7 +23,7 @@
       "mock": "routing.html",
       "route": "/routing",
       "group": "Routing",
-      "note": "Routing for one surface's profile: a table of scenarios (Default, Think — extended thinking on, Long context — input over the threshold) by caller (Agent, Subagent — the subagent tag), each cell one or more provider · tier combinations tried top first; a combination switched off keeps its place and is skipped. An empty Think or Long context cell falls back to Default for the same caller; an empty Default passes the requested model through. The model is not picked here: the provider's tier alias says which model the tier is, shown muted beside it, so a model release moves one alias instead of this table."
+      "note": "Routing for one surface's profile: a table of scenarios (Default, Think — extended thinking on, Long context — input over the threshold) by caller (Agent, Subagent — the subagent tag), each cell one or more provider · tier combinations tried top first; a combination switched off keeps its place and is skipped. An empty Think or Long context cell falls back to Default for the same caller; an empty Default passes the requested model through. Only the provider and the tier are shown; the provider's tier alias, set on its page, says which model the tier is, so a model release moves one alias instead of this table."
     },
     {
       "name": "routing-passthrough",
