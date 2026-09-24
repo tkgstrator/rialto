@@ -13,53 +13,22 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, btn, navTo } = window.Shell
+const { renderShell, btn, navTo } = window.Shell
 
-// ─── The fix for "every routing setting is messages-only" ─────────────
-// The old build hard-coded a router bypass for /v1/chat/completions and
-// /v1/responses (scenario-router.ts:117-128) and nothing in the UI said
-// so. Here the surface is the OUTERMOST selector: you pick which wire
-// format you are configuring, then whether the router applies to it at
-// all, and only then the scenario / lane / chain.
-//
-// ─── Two bands, not four ──────────────────────────────────────────────
-// That axis order is right; the earlier draft of this screen just spent
-// a full-width strip on each step of it — surface, then mode + profile,
-// then scenario, then lane — plus a header subtitle restating all three
-// and two separate blocks of prose explaining them. ~364px of chrome
-// stood above ~250px of chain, and the chain still left ~400px of empty
-// page under it.
-//
-// Band 1 answers "which surface", band 2 "does the router apply to it,
-// and with which profile". Band 3 used to pick a scenario and a lane
-// before any chain showed; with the tier map there is nothing left to
-// pick — the whole profile is one table under it.
-//
-// Both bands span the full width. They used to live inside the left
-// column of a grid, which cost them the 320px the right rail took.
-
+// ─── Surfaces ─────────────────────────────────────────────────────────
+// The surface is the outermost selector: pick which wire format you are
+// configuring, then whether the router applies to it at all. A filled
+// dot is routed, a hollow one passthrough — the old build bypassed the
+// router on two surfaces and said so nowhere, so the mode stays visible
+// on every tab.
 const SURFACES = [
-  { id: 'messages',  label: '/v1/messages',         mode: 'routed',      hint: 'Claude Code' },
-  { id: 'chat',      label: '/v1/chat/completions', mode: 'routed',      hint: 'OpenAI SDK' },
-  { id: 'responses', label: '/v1/responses',        mode: 'passthrough', hint: 'Codex CLI' },
-  { id: 'gemini',    label: '/v1beta/models/*',     mode: 'passthrough', hint: 'Gemini CLI' }
+  { id: 'messages',  label: '/v1/messages',         mode: 'routed' },
+  { id: 'chat',      label: '/v1/chat/completions', mode: 'routed' },
+  { id: 'responses', label: '/v1/responses',        mode: 'passthrough' },
+  { id: 'gemini',    label: '/v1beta/models/*',     mode: 'passthrough' }
 ]
 const ACTIVE_SURFACE = 'messages'
 
-// The outermost axis has to be walkable, so picking a passthrough surface
-// lands on the passthrough half of this screen rather than doing nothing.
-//
-// Every tab is the same shape — a dot and a path, filled dot for routed
-// and hollow for passthrough. Uniform on purpose: the controls for the
-// selected surface used to live at the right end of this row, where a
-// switch on the same line as four tabs reads as governing the row rather
-// than one tab, and moving them INSIDE the selected tab only traded that
-// for a row that stretches and reflows every time you switch. They sit
-// in a scope strip of their own now, directly under this row.
-//
-// The dot still carries each surface's mode, which is the fact this
-// screen exists to stop hiding: the old build bypassed the router on two
-// surfaces and said so nowhere.
 const surfaceTab = (s) => {
   const on = s.id === ACTIVE_SURFACE
   const href = s.mode === 'routed' ? 'routing.html' : 'routing-passthrough.html'
@@ -75,269 +44,58 @@ const surfaceTab = (s) => {
     </button>`
 }
 
-// ─── Scenarios, each routed to provider tiers ─────────────────────────
-// Routing picks a scenario from the request itself — long input, thinking
-// on, or neither — and a lane from the subagent tag, and walks that
-// scenario's list for that lane. That is the shape it had before; what
-// changed is what a row names. A row used to hold a model by name, so a
-// vendor's new Sonnet meant replacing it in every list that held the old
-// one. A row now names a provider and a tier on it ("claude-code ·
-// sonnet"), and the provider's tier alias, set on its page, says which
-// model that is: a release moves one alias, not every list.
+// ─── Scenarios ────────────────────────────────────────────────────────
+// Routing is one assignment per scenario: which provider, and which tier
+// on it. That is the whole screen. The model is not picked here — the
+// provider's tier alias, set on its page, says which model "sonnet" is —
+// so a vendor's new model moves one alias instead of this table.
 //
-// Two scenarios the old screen had are gone. Image: every model worth
-// routing to reads images. Web search: a row that cannot run the web
-// search tool a request carries is skipped for that request, so a list
-// of its own bought nothing.
-//
-// Nothing gates a row on the tier the caller asked for any more. That
-// gate is what answered a Haiku call with a 429 when the list held only
-// Sonnet with "down only" set; a row here is used because it is in the
-// list, whatever model name the request carried.
+// Earlier drafts stacked a summary, a quota strip, an ordered list per
+// scenario and lane with a status per row, and a block of constraints.
+// None of it was asked for: the question an operator brings here is
+// which provider and tier each scenario uses.
 const SCENARIOS = [
-  { id: 'default',     label: 'Default',      hint: 'everything the two below do not catch' },
-  { id: 'think',       label: 'Think',        hint: 'extended thinking is on' },
-  { id: 'longContext', label: 'Long context', hint: 'the input is over the threshold (200k tokens)' }
+  { label: 'Default',      when: 'everything the rows below do not catch', provider: 'claude-code', tier: 'sonnet', model: 'claude-sonnet-5' },
+  { label: 'Think',        when: 'extended thinking is on',                provider: 'claude-code', tier: 'opus',   model: 'claude-opus-5' },
+  { label: 'Long context', when: 'input over 200k tokens',                 provider: 'claude-code', tier: 'fable',  model: 'claude-fable-5' },
+  { label: 'Subagent',     when: 'the request carries the subagent tag',   provider: 'claude-code', tier: 'haiku',  model: 'claude-haiku-4-5' }
 ]
-const LANES = [
-  { id: 'agent',    label: 'Agent' },
-  { id: 'subagent', label: 'Subagent' }
-]
-const ACTIVE_SCENARIO = 'default'
-const ACTIVE_LANE = 'agent'
-
-// routing.html?states swaps in lists that exercise every row status.
-const STATES = new URLSearchParams(location.search).has('states')
-
-// exhausted: until when; pct: a nearly spent provider; model null: alias unset.
-const R = (provider, tier, model, extra = {}) => ({ provider, tier, model, on: true, ...extra })
-const SONNET = R('claude-code', 'sonnet', 'claude-sonnet-5')
-const HAIKU = R('claude-code', 'haiku', 'claude-haiku-4-5')
-const OPUS = R('claude-code', 'opus', 'claude-opus-5')
-const FABLE = R('claude-code', 'fable', 'claude-fable-5')
-const ROUTES = STATES
-  ? {
-      default: {
-        agent: [
-          { ...SONNET, exhausted: '14:05' },
-          R('gemini-cli', 'sonnet', null),
-          R('deepseek', 'sonnet', 'deepseek-v4', { noSearch: true }),
-          { ...HAIKU, on: false }
-        ],
-        subagent: [HAIKU]
-      },
-      think: { agent: [{ ...OPUS, pct: 92 }, SONNET], subagent: [] },
-      longContext: { agent: [], subagent: [] }
-    }
-  : {
-      default: { agent: [SONNET, HAIKU], subagent: [HAIKU, SONNET] },
-      think: { agent: [OPUS, SONNET], subagent: [SONNET] },
-      longContext: { agent: [FABLE, OPUS], subagent: [SONNET] }
-    }
-
-// Quota is an account property: every model of a provider draws on the
-// same accounts, so one line per provider says it once.
-const QUOTA = [{ provider: 'claude-code', accounts: 2, pct: STATES ? 92 : 45, resets: 'Fri 09:00' }]
-
-const SUBSCRIPTION_PROVIDERS = ['claude-code', 'codex', 'gemini-cli']
-const providerHref = (p) => (SUBSCRIPTION_PROVIDERS.includes(p) ? 'provider-subscription.html' : 'provider-apikey.html')
 
 // The screen reads until Edit is pressed; routing.html?edit draws the
-// state after it. Declared before the templates because they render the
-// moment they are defined.
+// state after it.
 const EDITING = new URLSearchParams(location.search).has('edit')
 
-// Controls that change a list exist only while editing. They go
-// invisible rather than absent, so columns and row height do not move
-// when Edit is pressed; the toggle stays as a reading of the state.
-const editOnly = EDITING ? '' : 'invisible'
+// Reading: the value as text. Editing: the same value in a select box.
+// The model the tier resolves to rides along muted, so "sonnet" is never
+// a mystery and a changed alias shows up here without an edit.
+const selectBox = (value) =>
+  `<button class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 font-mono text-xs hover:bg-muted/60">${value} <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i></button>`
+const valueCell = (value) => (EDITING ? selectBox(value) : `<span class="font-mono text-xs">${value}</span>`)
 
-// Can this row take a request right now? Off, spent and aliasless rows
-// cannot; the first row that can is the one "used now", the rest are
-// backups in order.
-const usable = (r) => r.on && r.model !== null && r.exhausted === undefined
-const roles = (routes) => {
-  const first = routes.findIndex(usable)
-  return routes.map((r, i) =>
-    !r.on ? 'off' : r.model === null ? 'unset' : r.exhausted !== undefined ? 'exhausted' : i === first ? 'now' : 'backup'
-  )
-}
-
-const statusCell = (r, role) => {
-  const near = r.pct !== undefined ? ` <span class="font-mono text-[12px] tabular-nums text-amber-600 dark:text-amber-400">· ${r.pct}% used</span>` : ''
-  if (role === 'now') return `<span class="text-[12px] font-medium text-emerald-600 dark:text-emerald-400">used now</span>${near}`
-  if (role === 'backup') return `<span class="text-[12px] text-muted-foreground">backup</span>${near}`
-  if (role === 'off') return '<span class="text-[12px] text-muted-foreground">off — skipped</span>'
-  if (role === 'exhausted') return `<span class="text-[12px] text-destructive">out of quota <span class="font-mono tabular-nums">until ${r.exhausted}</span></span>`
-  return '<span class="text-[12px] text-amber-600 dark:text-amber-400">no model set</span>'
-}
-
-// The model leads: it is what a request reaches. The provider and the
-// tier alias that picked it follow, small.
-const modelCell = (r) => `
-  <div class="flex items-center gap-2">
-    ${
-      r.model === null
-        ? `<span class="text-[12px] text-amber-600 dark:text-amber-400">no ${r.tier} model on ${r.provider} —</span> <a class="text-[12px] underline decoration-dotted underline-offset-2">set it on the provider page</a>`
-        : `<span class="font-mono text-xs ${r.on ? 'text-foreground' : 'text-muted-foreground'}">${r.model}</span>`
-    }
-    ${r.noSearch ? pill('no web search', 'mute') : ''}
-  </div>
-  <div class="mt-0.5 font-mono text-[11px] text-muted-foreground">${r.provider} <span class="text-muted-foreground/60">·</span> ${r.tier}</div>`
-
-const routeRow = (rs) => (r, i) => `
-  <tr ${navTo(providerHref(r.provider))} class="border-t border-border/60 transition-colors hover:bg-muted/50 ${r.on ? '' : 'opacity-60'}">
-    <td class="py-2.5 pl-6 pr-2 align-top">
-      <div class="flex items-center gap-2 pt-0.5">
-        <i class="ri-draggable text-base leading-none text-muted-foreground/50 ${editOnly}"></i>
-        <span class="font-mono text-xs tabular-nums text-muted-foreground">${i + 1}</span>
-      </div>
+const row = (sc) => `
+  <tr class="border-t border-border/60">
+    <td class="py-3 pl-6 pr-2">
+      <div class="text-xs font-medium">${sc.label}</div>
+      <div class="text-[12px] text-muted-foreground">${sc.when}</div>
     </td>
-    <td class="px-2 py-2.5">${modelCell(r)}</td>
-    <td class="px-2 py-2.5 text-right align-top"><div class="pt-0.5">${statusCell(r, rs[i])}</div></td>
-    <td class="py-2.5 pl-2 pr-6 align-top">
-      <div class="flex items-center justify-end gap-1 pt-0.5">
-        <span class="inline-flex h-4 w-7 items-center rounded-full ${r.on ? 'bg-foreground' : 'bg-muted-foreground/30'} px-0.5 ${EDITING ? '' : 'opacity-50'}">
-          <span class="size-3 rounded-full bg-background ${r.on ? 'translate-x-3' : ''}"></span>
-        </span>
-        <button class="ml-1 text-muted-foreground/60 hover:text-foreground ${editOnly}"><i class="ri-more-2-fill text-sm"></i></button>
+    <td class="px-2 py-3">${valueCell(sc.provider)}</td>
+    <td class="px-2 py-3">
+      <div class="flex items-center gap-3">
+        ${valueCell(sc.tier)}
+        <span class="font-mono text-[12px] text-muted-foreground">${sc.model}</span>
       </div>
     </td>
   </tr>`
 
-// An empty list is not an error. Think and Long context fall back to
-// Default for the same lane — the request is routed as if it had not been
-// long or thinking — and an empty Default passes the request upstream
-// with the model it asked for.
-const emptyText = (scenario) =>
-  scenario === 'default'
-    ? 'No routes — these requests go upstream with the model they asked for'
-    : 'No routes — these requests use the Default list'
-
-const activeRoutes = ROUTES[ACTIVE_SCENARIO][ACTIVE_LANE]
-const list = `
-  <table class="w-full table-fixed">
-    <colgroup><col class="w-16"><col><col class="w-56"><col class="w-24"></colgroup>
-    <thead>
-      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
-        <th class="pl-6 pr-2 text-left font-medium">#</th>
-        <th class="px-2 text-left font-medium">Model</th>
-        <th class="px-2 text-right font-medium">Status</th>
-        <th class="pl-2 pr-6 text-right font-medium">On</th>
-      </tr>
-    </thead>
-    <tbody>${
-      activeRoutes.length === 0
-        ? `<tr class="border-t border-border/60"><td colspan="4" class="px-6 py-3 text-[12px] text-muted-foreground">${emptyText(ACTIVE_SCENARIO)}</td></tr>`
-        : activeRoutes.map(routeRow(roles(activeRoutes))).join('')
-    }</tbody>
-  </table>
-  ${EDITING ? `<div class="border-t border-border/60 px-6 py-2">${btn('Add route', 'ghost', 'ri-add-line')}</div>` : ''}`
-
-// ─── The summary ──────────────────────────────────────────────────────
-// Every scenario and lane at once, as the model each lands on now and
-// what it falls back to. It is the question the list below cannot
-// answer without clicking through six tabs.
-const outcome = (scenario, lane) => {
-  const routes = ROUTES[scenario][lane]
-  if (routes.length === 0) {
-    return scenario === 'default'
-      ? '<span class="text-muted-foreground">as requested</span>'
-      : '<span class="text-muted-foreground">as Default</span>'
-  }
-  const rs = roles(routes)
-  const now = routes.find((_, i) => rs[i] === 'now')
-  if (now === undefined) return '<span class="text-destructive">nothing can take them now</span>'
-  const backups = routes.filter((_, i) => rs[i] === 'backup').map((r) => r.model)
-  const waiting = routes
-    .filter((_, i) => rs[i] === 'exhausted' && i < routes.indexOf(now))
-    .map((r) => ` <span class="text-[12px] text-destructive">(<span class="font-mono">${r.model}</span> out until <span class="font-mono tabular-nums">${r.exhausted}</span>)</span>`)
-    .join('')
-  const tail = backups.length === 0 ? '' : ` <span class="text-muted-foreground">then</span> ${backups.map((m) => `<span class="font-mono">${m}</span>`).join(' <span class="text-muted-foreground">then</span> ')}`
-  return `<span class="font-mono font-medium">${now.model}</span>${tail}${waiting}`
-}
-const summary = `
-  <table class="w-full table-fixed border-b border-border">
-    <colgroup><col class="w-72"><col><col></colgroup>
-    <thead>
-      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:align-bottom [&>th]:pb-2">
-        <th class="pl-6 pr-2 text-left font-medium">Scenario</th>
-        ${LANES.map((l) => `<th class="px-2 text-left font-medium">${l.label}</th>`).join('')}
-      </tr>
-    </thead>
-    <tbody>${SCENARIOS.map(
-      (sc) => `
-      <tr class="border-t border-border/60 text-xs">
-        <td class="py-2 pl-6 pr-2"><div class="font-medium">${sc.label}</div><div class="text-[12px] text-muted-foreground">${sc.hint}</div></td>
-        ${LANES.map((l) => `<td class="px-2 py-2">${outcome(sc.id, l.id)}</td>`).join('')}
-      </tr>`
-    ).join('')}</tbody>
-  </table>`
-
-const quotaStrip = `
-  <div class="flex items-center gap-4 border-b border-border px-6 py-2.5">
-    <span class="text-[12px] text-muted-foreground">Quota</span>
-    ${QUOTA.map(
-      (q) => `
-      <a ${navTo(providerHref(q.provider))} class="flex items-center gap-2 text-xs hover:underline">
-        <span class="font-mono">${q.provider}</span>
-        <span class="font-mono tabular-nums ${q.pct >= 90 ? 'text-amber-600 dark:text-amber-400' : ''}">${q.pct}% used</span>
-        <span class="text-[12px] text-muted-foreground">${q.accounts} accounts · resets ${q.resets}</span>
-      </a>`
-    ).join('')}
-    <span class="ml-auto text-[12px] text-muted-foreground">api-key providers have no quota to show</span>
-  </div>`
-
-// Underline tabs, as before. The count is the list's length for the lane
-// on show, so a tab that reads 0 is a scenario that falls back to Default.
-const scenarioTab = (sc) => {
-  const on = sc.id === ACTIVE_SCENARIO
-  return `
-    <button class="flex h-full items-center justify-center gap-1.5 border-b-2 px-2.5 text-xs transition-colors ${
-      on ? 'border-b-foreground font-medium' : 'border-b-transparent text-muted-foreground hover:text-foreground'
-    }">
-      ${sc.label}<span class="font-mono text-[12px] tabular-nums ${on ? 'text-muted-foreground' : 'text-muted-foreground/70'}">${ROUTES[sc.id][ACTIVE_LANE].length}</span>
-    </button>`
-}
-
-// The header row is h-8 in every cell and in both states.
-const constraintCell = (label, valueHtml, hint) => `
-  <div class="border-l-2 border-l-transparent bg-background px-4 py-3 transition-colors hover:border-l-border hover:bg-muted/50">
-    <div class="flex min-h-8 items-center gap-2">
-      <span class="text-xs">${label}</span>
-      ${valueHtml}
-    </div>
-    <div class="mt-0.5 text-[12px] text-muted-foreground">${hint}</div>
-  </div>`
-
-const reading = (value) => `<span class="ml-auto font-mono text-xs">${value}</span>`
-
-const segmentedBox = (options, active) =>
-  `<div class="ml-auto flex h-8 items-center rounded-md border border-border p-0.5">${options
-    .map(
-      (o) =>
-        `<button class="flex h-full items-center rounded px-2.5 text-[12px] ${o === active ? 'bg-foreground font-medium text-background' : 'text-muted-foreground hover:text-foreground'}">${o}</button>`
-    )
-    .join('')}</div>`
-
-const numberBox = (value, unit) =>
-  `<span class="ml-auto inline-flex h-8 w-20 items-center justify-end gap-1 rounded-md border border-border px-2.5 font-mono text-xs">${value}${unit === '' ? '' : `<span class="text-muted-foreground">${unit}</span>`}</span>`
-
-const constraint = (label, value, control, hint) => constraintCell(label, EDITING ? control : reading(value), hint)
-
 document.getElementById('root').innerHTML = `
 
-  <!-- Band 1 — which surface. Locked while editing; see band 3. -->
+  <!-- Band 1 — which surface. Locked while editing. -->
   <div class="flex items-center gap-1 border-b border-border pl-4 pr-6 ${EDITING ? '[&>button]:pointer-events-none [&>button]:opacity-50' : ''}">
     ${SURFACES.map(surfaceTab).join('')}
   </div>
 
-  <!-- Band 2 — the selected surface's own settings.
-       It leads with the surface it writes to. That repeats the path from
-       the tab above, and that repetition is the point: parked at the
-       right end of the tab row the same switch read as a screen-wide
-       control, and nothing on it said which surface it was changing.
-       The tinted ground ties the strip to the tabs it hangs from. -->
+  <!-- Band 2 — the selected surface's own settings: routed or
+       passthrough, and which profile it reads. -->
   <div class="flex items-center gap-3 border-b border-border bg-muted/30 px-6 py-2.5">
     <span class="whitespace-nowrap font-mono text-xs">/v1/messages</span>
     <span class="whitespace-nowrap text-[12px] text-muted-foreground">Claude Code</span>
@@ -352,63 +110,27 @@ document.getElementById('root').innerHTML = `
     </button>
   </div>
 
-  <!-- The summary answers "where does each request go" before any tab is
-       picked: every scenario × lane, the model used now, its backups. -->
-  ${summary}
-  ${quotaStrip}
-
-  <!-- Band 3 — which list, and what you can do to it. Scenario tabs and
-       the Agent / Subagent switch, as before; the list names provider
-       tiers now, not models. Edit, then Revert / Save, covers every list
-       and the constraints under them, because they are one profile and
-       one write. While editing, the surface tabs, the mode switch and the
-       profile picker above are locked — each would load another profile,
-       and the unsaved edit would go with it. Scenario and lane stay free:
-       they move within the profile being edited. -->
+  <!-- Band 3 — the assignments, and Edit / Save. -->
   <div class="flex items-center gap-3 border-b border-border px-6 py-2.5">
-    <div class="-my-2.5 grid grid-flow-col auto-cols-fr gap-0.5 self-stretch">
-      ${SCENARIOS.map(scenarioTab).join('')}
-    </div>
-    <span class="h-4 w-px bg-border"></span>
-    <div class="flex rounded-md border border-border p-0.5">
-      ${LANES.map((l) => `<button class="rounded px-2.5 py-1 text-[12px] ${l.id === ACTIVE_LANE ? 'bg-foreground font-medium text-background' : 'text-muted-foreground hover:text-foreground'}">${l.label}</button>`).join('')}
-    </div>
-    <span class="text-[12px] text-muted-foreground">${SCENARIOS.find((sc) => sc.id === ACTIVE_SCENARIO).hint}</span>
+    <span class="text-xs font-medium">Scenarios</span>
+    <span class="text-[12px] text-muted-foreground">each scenario uses one provider and one tier on it</span>
     <div class="ml-auto flex items-center gap-2">
       ${EDITING ? `${btn('Revert', 'outline', 'ri-arrow-go-back-line')}${btn('Save', 'primary', 'ri-check-line')}` : btn('Edit', 'outline', 'ri-pencil-line')}
     </div>
   </div>
 
-  ${list}
+  <table class="w-full table-fixed">
+    <colgroup><col class="w-80"><col class="w-64"><col></colgroup>
+    <thead>
+      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:align-bottom [&>th]:pb-2">
+        <th class="pl-6 pr-2 text-left font-medium">Scenario</th>
+        <th class="px-2 text-left font-medium">Provider</th>
+        <th class="px-2 text-left font-medium">Tier</th>
+      </tr>
+    </thead>
+    <tbody>${SCENARIOS.map(row).join('')}</tbody>
+  </table>`
 
-  <div class="flex items-center gap-3 border-t border-border/60 px-6 py-2.5">
-    <span class="text-[12px] text-muted-foreground">A request takes the first row that can serve it — rows that are off, out of quota, too small for the prompt, or unable to run its tools are skipped. Each row reaches the model its provider's tier alias names.</span>
-  </div>
-
-  <!-- Constraints, under the lists they constrain. Tier substitution is
-       gone: nothing gates a row on the tier the caller asked for.
-
-       When exhausted is the whole decision when every route of a tier is
-       out of quota: answer 429 with Retry-After, or send the request on
-       with the model the caller asked for. A tier whose routes are all
-       refused for another reason — an unset alias, a prompt no route can
-       hold — is answered 400, never 429: waiting would not change it. -->
-  <div class="mt-6 border-t border-border">
-    <div class="px-6 pt-4 pb-2">
-      <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Constraints</h2>
-    </div>
-    <div class="grid grid-cols-5 gap-px bg-border/60">
-      ${constraint('Long context', '200k', numberBox('200000', ''), 'input tokens over which a request is Long context; blank = auto')}
-      ${constraint('When exhausted', '429', segmentedBox(['429', 'Passthrough'], '429'), 'every row of the list is out of quota: answer 429, or pass the request through')}
-      ${constraint('Quota skip', '100%', numberBox('100', '%'), 'skip a route whose accounts are used at or past this')}
-      ${constraint('Error-rate skip', '50%', numberBox('50', '%'), 'skip a route failing this often in the last 5 minutes')}
-      ${constraint('Min samples', '5', numberBox('5', ''), 'requests before the error rate counts')}
-    </div>
-  </div>`
-
-// No header actions, and no subtitle: the subtitle read "Per inbound
-// surface · scenario · lane", which described the strips that used to
-// sit underneath it.
 renderShell({
   active: 'routing',
   navMode: 'cloudflare',

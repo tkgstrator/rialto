@@ -23,14 +23,7 @@
       "mock": "routing.html",
       "route": "/routing",
       "group": "Routing",
-      "note": "Routing for one surface's profile, by scenario. A summary first — for every scenario (Default / Think / Long context) and lane (Agent / Subagent), the model used now and its backups — then quota once per provider, then the list for the selected scenario and lane. Each row names a provider and a tier on it (claude-code · sonnet), resolved through that provider's tier alias, so a model release moves one alias instead of every list; the row leads with the model it reaches and a status naming its role (used now / backup / off). Image and Web search are no longer scenarios, and no tier gate filters rows by the model the caller asked for."
-    },
-    {
-      "name": "routing-states",
-      "mock": "routing.html?states",
-      "route": null,
-      "group": "Routing",
-      "note": "The same screen with lists that exercise every row status: out of quota until a time (the next usable row takes over as used now), nearly spent, no model set for the alias, no web search, a row switched off, and empty lists that fall back to Default. Mock-only: the states come from live quota."
+      "note": "Routing for one surface's profile: one assignment per scenario — Default, Think (extended thinking on), Long context (input over the threshold) and Subagent (the subagent tag) — each a provider and a tier on it. The model is not picked here: the provider's tier alias says which model the tier is, shown muted beside it, so a model release moves one alias instead of this table."
     },
     {
       "name": "routing-passthrough",
@@ -44,7 +37,7 @@
       "mock": "routing.html?edit",
       "route": null,
       "group": "Routing",
-      "note": "The scenario lists after Edit: drag handles, row toggles, the row menu, Add route under the list and the five constraint controls only work in this state, and one Revert / Save in band 3 covers every list and the constraints together. While editing, the surface tabs, the mode switch and the profile picker are disabled; the scenario tabs and the lane switch stay free. Mock-only because the state sits behind a click."
+      "note": "The same table after Edit: provider and tier become select boxes, and one Revert / Save covers every scenario. While editing, the surface tabs, the mode switch and the profile picker are disabled. Mock-only because the state sits behind a click."
     },
     {
       "name": "providers",
