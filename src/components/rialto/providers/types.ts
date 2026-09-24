@@ -7,11 +7,13 @@
  * and `CatalogEntry` come from `@/schemas` because those ARE the wire
  * contract — re-typing them here would let the two drift.
  */
+import type { ModelTier, TierAliasWire } from '@/lib/api'
 import type { CatalogEntry } from '@/schemas/api/catalog'
 import type { Provider } from '@/schemas/domain/provider'
 export type ApiStyle = 'openai_chat' | 'openai_responses' | 'anthropic' | 'gemini'
 export type AuthStatus = 'unknown' | 'live' | 'invalid'
-export type Tier = 'fable' | 'opus' | 'sonnet' | 'haiku'
+/** A Claude family a route can name. The tier-alias wire's own type, so the two cannot drift. */
+export type Tier = ModelTier
 /** Mirrors the OpenAI ReasoningEffort enum the PATCH endpoint accepts. */
 export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 export type TestStatus = 'unknown' | 'ok' | 'fail'
@@ -87,4 +89,4 @@ export interface OAuthSubmitResponse {
   error?: string
 }
 
-export type { CatalogEntry, Provider }
+export type { CatalogEntry, Provider, TierAliasWire }

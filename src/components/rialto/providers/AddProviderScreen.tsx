@@ -12,7 +12,7 @@ import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
-import { enableAllModels, setModelEffort, setModelTier, testModels, toggleModel } from './actions'
+import { enableAllModels, setModelEffort, testModels, toggleModel } from './actions'
 import { ConnectAuthStep } from './ConnectAuthStep'
 import { ConnectModelsStep } from './ConnectModelsStep'
 import { ConnectStepBar } from './ConnectStepBar'
@@ -42,7 +42,7 @@ function ConnectPane({ flow, now, reload }: { flow: ConnectFlow; now: number; re
   // Local to step 3: Enable all and Test all are each one write (or a
   // sequential run of them for Test all), and disabling the two buttons
   // for that stretch is enough to stop a double-click from overlapping two
-  // runs. Nothing else on this step needs it — the per-row toggle / tier /
+  // runs. Nothing else on this step needs it — the per-row toggle and
   // effort writes are small enough to leave unguarded, same as before.
   const [bulkBusy, setBulkBusy] = useState(false)
   if (entry === undefined) {
@@ -65,10 +65,6 @@ function ConnectPane({ flow, now, reload }: { flow: ConnectFlow; now: number; re
         onToggle={(model, next) => {
           if (provider === undefined) return
           toggleModel(provider, model, next).then(reload).catch(fail)
-        }}
-        onTier={(model, next) => {
-          if (provider === undefined) return
-          setModelTier(provider, model, next).then(reload).catch(fail)
         }}
         onEffort={(model, next) => {
           if (provider === undefined) return

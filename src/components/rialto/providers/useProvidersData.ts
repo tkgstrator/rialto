@@ -1,11 +1,12 @@
 /**
  * One load for everything the Providers screens read.
  *
- * Five endpoints because five things own the answer: the provider rows,
+ * Six endpoints because six things own the answer: the provider rows,
  * the OAuth accounts on them, the vendor catalog (display names, cached
- * prices, legacy flags), the live transformer registry, and the quota
- * collector. Only the provider list is required — the rest degrade to
- * empty so a cold install still renders its providers instead of an error.
+ * prices, legacy flags), the live transformer registry, the quota
+ * collector, and the tier aliases. Only the provider list is required —
+ * the rest degrade to empty so a cold install still renders its providers
+ * instead of an error.
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -17,6 +18,7 @@ import type {
   Provider,
   SubscriptionsResponse,
   SubscriptionWire,
+  TierAliasWire,
   TransformersResponse,
   TransformerWire
 } from './types'
@@ -27,6 +29,8 @@ export interface ProvidersData {
   catalog: CatalogEntry[]
   transformers: TransformerWire[]
   quota: QuotaIndex
+  /** Every provider's four tier aliases and the candidates for each. */
+  aliases: TierAliasWire[]
   /**
    * Server-side totals, so the subtitle here reports the same numbers the
    * Overview screen does. Null when the summary endpoint was unreachable —
@@ -50,12 +54,13 @@ export function useProvidersData() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [providers, subs, catalog, transformers, overview] = await Promise.all([
+      const [providers, subs, catalog, transformers, overview, aliases] = await Promise.all([
         api.get<Provider[]>('/providers'),
         api.get<SubscriptionsResponse>('/subscriptions').catch(() => EMPTY_SUBS),
         api.get<CatalogResponse>('/catalog').catch(() => EMPTY_CATALOG),
         api.get<TransformersResponse>('/transformers').catch(() => EMPTY_TRANSFORMERS),
-        api.getOverview({ windowHours: 24 }).catch(() => null)
+        api.getOverview({ windowHours: 24 }).catch(() => null),
+        api.getTierAliases().catch((): TierAliasWire[] => [])
       ])
       setData({
         providers,
@@ -63,6 +68,7 @@ export function useProvidersData() {
         catalog: catalog.entries,
         transformers: transformers.transformers,
         quota: indexQuota(overview === null ? [] : overview.quota),
+        aliases,
         counts:
           overview === null ? null : { providers: overview.providerCount, enabledModels: overview.enabledModelCount },
         now: overview === null ? Date.now() : Date.parse(overview.generatedAt)
