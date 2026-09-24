@@ -14,8 +14,9 @@
  *
  * The tick body is fully try/caught. On failure `consecutiveFailures`
  * increments and the previous snapshot stays published — routing never
- * blocks because compute threw. Test hooks: `runSchedulerTickForTest()`
- * runs one tick synchronously without arming the timer.
+ * blocks because compute threw. `runSchedulerTick()` runs one tick
+ * without arming the timer; `republishRoutingSnapshot()` runs one after
+ * fresh quota has been written. Neither overlaps a tick already running.
  */
 
 import { planCapacityWeight } from '@/shared/plan-capacity'
@@ -241,13 +242,61 @@ const soonestResetOf = (weights: readonly { weight: number; earliestResetAt: num
   return soonest
 }
 
-// The whole tick body — extracted so the test hook can run it without
-// starting a timer.
-export async function runSchedulerTickForTest(prismaOverride?: PrismaClient): Promise<RoutingSnapshot | null> {
+// The tick in flight, and the one queued behind it. Two ticks must not
+// overlap: each damps its weights against the snapshot the other is about
+// to replace, so the second publish would silently discard the first.
+const tickState: {
+  running: Promise<RoutingSnapshot | null> | null
+  queued: Promise<RoutingSnapshot | null> | null
+} = { running: null, queued: null }
+
+const startTick = (collect: boolean, prismaOverride?: PrismaClient): Promise<RoutingSnapshot | null> => {
+  const run = tickBody(collect, prismaOverride).finally(() => {
+    tickState.running = null
+  })
+  tickState.running = run
+  return run
+}
+
+// One scheduler tick. A caller that arrives while one is running shares
+// it — the timer never needs two.
+export function runSchedulerTick(prismaOverride?: PrismaClient): Promise<RoutingSnapshot | null> {
+  return tickState.running !== null ? tickState.running : startTick(true, prismaOverride)
+}
+
+/**
+ * Publish a snapshot computed from what is in the database now.
+ *
+ * For a caller that has just written fresh quota — a manual Refresh, a
+ * spent reset credit. Joining a tick already in flight would not do: it
+ * read SubAccountQuota before the write and would publish the old
+ * reading. So a tick that is running is let finish, and one more starts
+ * after it; callers arriving in the meantime share that one.
+ *
+ * That tick skips the collection step. The caller has already written
+ * the rows it holds fresh readings for, and collecting again would land
+ * the usage cache over them — including the stale value an account whose
+ * upstream call just failed still has there, which the refresh
+ * deliberately left unwritten.
+ */
+export function republishRoutingSnapshot(): Promise<RoutingSnapshot | null> {
+  if (tickState.running === null) return startTick(false)
+  if (tickState.queued !== null) return tickState.queued
+  const queued = tickState.running.then(() => {
+    tickState.queued = null
+    return startTick(false)
+  })
+  tickState.queued = queued
+  return queued
+}
+
+// The whole tick body. Never called directly: `runSchedulerTick` and
+// `republishRoutingSnapshot` are what keep two of these from overlapping.
+async function tickBody(collect: boolean, prismaOverride?: PrismaClient): Promise<RoutingSnapshot | null> {
   const prisma = prismaOverride ?? getPrismaClient()
   try {
     const now = dayjs().valueOf()
-    await refreshQuotaSnapshots(undefined, prisma)
+    if (collect) await refreshQuotaSnapshots(undefined, prisma)
     const { candidates, accounts } = await loadCandidateState(prisma)
     // The routable view, not the editor's: an entry whose model or
     // provider is switched off scores as disabled here for the same
@@ -343,7 +392,7 @@ export function startRoutingScheduler(): void {
     if (!globalThis.__rialtoRoutingSchedulerStarted) return
     const start = dayjs().valueOf()
     globalThis.__rialtoRoutingSchedulerTimer = setTimeout(async () => {
-      await runSchedulerTickForTest()
+      await runSchedulerTick()
       const elapsed = dayjs().valueOf() - start
       const delay = Math.max(1_000, intervalMs - elapsed)
       if (globalThis.__rialtoRoutingSchedulerStarted) {

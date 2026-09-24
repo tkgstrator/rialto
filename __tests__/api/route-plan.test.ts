@@ -31,7 +31,7 @@ import { __setSurfacesForTests, invalidateSurfaceCache } from '../../src/service
 import { __setPreferencesForTests } from '../../src/services/router-preference-service'
 import { __resetModelHealthForTest, recordModelFailure } from '../../src/services/routing-scheduler/model-health'
 import { __resetSchedulerStateForTest } from '../../src/services/routing-scheduler/state'
-import { profileWith } from '../llms/chain-fixture'
+import { entry, profileWith } from '../llms/chain-fixture'
 
 const log = pino({ level: 'silent' })
 
@@ -297,5 +297,86 @@ describe('accountSessionKey', () => {
   test('an unauthenticated-by-token call still gets a key rather than nothing', async () => {
     const result = asPlan(await plan('/v1/chat/completions', { model: 'anthropic,claude-sonnet-5', messages: [] }))
     expect(result.accountSessionKey).toBe('anonymous')
+  })
+})
+
+/**
+ * A chain with entries that yields no primary is not always exhaustion.
+ * Only exhaustion earns a 429: a tier the profile refuses is answered
+ * 400, and a lane whose entries are all switched off passes through like
+ * an empty one. Claude Code sends its background work as Haiku, which is
+ * what made a Sonnet-only "down only" chain answer a 429 that never went
+ * upstream.
+ */
+describe('a chain that yields no primary answers by why', () => {
+  const asResponse = (result: RoutePlan | Response): Response => {
+    if (!(result instanceof Response)) throw new Error('expected a response, got a plan')
+    return result
+  }
+  const haiku = () => ({ model: 'claude-haiku-4-5', messages: [{ role: 'user', content: 'hi' }] })
+
+  beforeEach(() => {
+    __setSurfacesForTests({ 'anthropic-messages': 'routed' })
+    __resetSchedulerStateForTest()
+    __resetModelHealthForTest()
+  })
+
+  afterEach(() => {
+    __resetModelHealthForTest()
+  })
+
+  test('escalation off: a haiku request is served by the sonnet the chain holds', async () => {
+    __setPreferencesForTests({
+      live: profileWith({ 'default.agent': ['anthropic,claude-sonnet-5'] }, { allowEscalation: false })
+    })
+    const result = asPlan(await plan('/v1/messages', haiku()))
+    expect(result.primaryModel).toBe('anthropic,claude-sonnet-5')
+    expect(result.requestedModel).toBe('claude-haiku-4-5')
+  })
+
+  test("tierFallback 'refuse' answers 400, not a 429 with Retry-After", async () => {
+    __setPreferencesForTests({
+      live: profileWith(
+        { 'default.agent': ['anthropic,claude-sonnet-5'] },
+        { allowEscalation: false, tierFallback: 'refuse', exhaustedBehavior: '429' }
+      )
+    })
+    const response = asResponse(await plan('/v1/messages', haiku()))
+    expect(response.status).toBe(400)
+    expect(response.headers.get('Retry-After')).toBeNull()
+    const envelope: unknown = await response.json()
+    expect(envelope).toMatchObject({ error: { type: 'invalid_request_error' } })
+    expect(JSON.stringify(envelope)).toContain('haiku')
+  })
+
+  test("a refused tier under exhaustedBehavior 'passthrough' still sends the caller's own model", async () => {
+    __setPreferencesForTests({
+      live: profileWith(
+        { 'default.agent': ['anthropic,claude-sonnet-5'] },
+        { allowEscalation: false, tierFallback: 'refuse', exhaustedBehavior: 'passthrough' }
+      )
+    })
+    const result = asPlan(await plan('/v1/messages', haiku()))
+    expect(result.primaryModel).toBe('claude-haiku-4-5')
+    expect(result.fallbacks).toEqual([])
+  })
+
+  test('a lane whose entries are all switched off passes through like an empty one', async () => {
+    __setPreferencesForTests({
+      live: profileWith({ 'default.agent': [entry('anthropic,claude-sonnet-5', false)] }, { exhaustedBehavior: '429' })
+    })
+    const result = asPlan(await plan('/v1/messages', haiku()))
+    expect(result.primaryModel).toBe('claude-haiku-4-5')
+  })
+
+  test('a substitute that is itself failing still answers 429', async () => {
+    __setPreferencesForTests({
+      live: profileWith(
+        { 'default.agent': ['anthropic,claude-sonnet-5'] },
+        { allowEscalation: false, exhaustedBehavior: '429' }
+      )
+    })
+    recordModelFailure('anthropic,claude-sonnet-5')
+    expect(asResponse(await plan('/v1/messages', haiku())).status).toBe(429)
   })
 })
