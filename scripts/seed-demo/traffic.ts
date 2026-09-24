@@ -171,6 +171,7 @@ type LogRow = {
   inboundType: string
   surface: string
   accessTokenId: string | null
+  subAccountId: string | null
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number
@@ -223,6 +224,14 @@ export async function seedTraffic(
   const messageRows: MessageRow[] = []
   const logRows: LogRow[] = []
   const counters = { messages: 0, logs: 0, archived: 0 }
+  // Subscription traffic is attributed to an account, as the OAuth
+  // transformer does for real requests; api_key providers have none.
+  const accounts = await prisma.subAccount.findMany({ select: { id: true, provider: { select: { name: true } } } })
+  const accountsByProvider = new Map<string, string[]>()
+  for (const account of accounts) {
+    const list = accountsByProvider.get(account.provider.name)
+    accountsByProvider.set(account.provider.name, list === undefined ? [account.id] : [...list, account.id])
+  }
 
   for (const index of Array.from({ length: options.sessions }, (_, i) => i)) {
     const surface = random.weighted(SURFACES.map((s) => [s, s.weight] as const))
@@ -302,6 +311,18 @@ export async function seedTraffic(
 
     const accessTokenId =
       options.accessTokenIds.length === 0 || random.chance(0.35) ? null : random.pick(options.accessTokenIds)
+    // One account per provider for the whole session, the way the picker
+    // sticks a session to the account it first chose.
+    const sessionAccounts = new Map<string, string>()
+    const accountFor = (providerName: string): string | null => {
+      const sticky = sessionAccounts.get(providerName)
+      if (sticky !== undefined) return sticky
+      const pool = accountsByProvider.get(providerName)
+      if (pool === undefined || pool.length === 0) return null
+      const picked = random.pick(pool)
+      sessionAccounts.set(providerName, picked)
+      return picked
+    }
 
     for (const [turnIndex, plan] of plans.turns.entries()) {
       const totalInputTokens = plan.inputTokens + plan.cacheReadTokens + plan.cacheWriteTokens
@@ -317,6 +338,7 @@ export async function seedTraffic(
         inboundType: surface.inboundType,
         surface: surface.id,
         accessTokenId,
+        subAccountId: accountFor(plan.target.providerName),
         inputTokens: plan.inputTokens,
         outputTokens: plan.outputTokens,
         cacheReadTokens: plan.cacheReadTokens,
