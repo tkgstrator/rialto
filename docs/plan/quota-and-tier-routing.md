@@ -100,6 +100,9 @@ Status: Planning（2026-09-23 承認）
   | `disabled` だけ | passthrough（空のレーンと同じ） |
   | それ以外（refuse による tier_mismatch、全候補の `context_too_small`） | `refusal: string` を返す → 400 |
 
+  - この表は `exhaustedBehavior: '429'` の場合。`'passthrough'` の profile は従来どおり、どの行き止まりでも呼び出し元のモデルで上流に送る（400 も 429 も返さない）。
+  - 実装：#523
+
 - ペースによる拡大（`resolveAllowedTiers`）は**呼ぶのをやめる**。コードの削除は P2 で行う。
 - `routeScenario` は例外をすべて握りつぶす（`scenario-router.ts:80-92`）ので、4xx は throw では返せない。
   - `RouterRequest.routingRefusal?: string`（`scenario-router/types.ts`）を追加する。
