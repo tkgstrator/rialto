@@ -23,7 +23,14 @@
       "mock": "routing.html",
       "route": "/routing",
       "group": "Routing",
-      "note": "Tier map for one surface's profile: requested tier (fable / opus / sonnet / haiku / other) → ordered routes, each a provider and a tier on it, resolved through that provider's tier alias. Replaces the per-scenario, per-lane model chain and the tier-substitution gates."
+      "note": "Where requests go, for one surface's profile. A summary first — per kind of request, the model used now and its backups, identical tiers folded together — then quota once per provider, then the map: per requested tier (fable / opus / sonnet / haiku / other), rows led by the model they reach, with a status that says the row's role (used now / backup / off). Replaces the per-scenario, per-lane model chain and the tier-substitution gates."
+    },
+    {
+      "name": "routing-states",
+      "mock": "routing.html?states",
+      "route": null,
+      "group": "Routing",
+      "note": "The same screen with a map that exercises every row status: out of quota until a time (the next row takes over as used now), nearly spent, no model set for the alias, no web search, and a row switched off. Mock-only: the states come from live quota."
     },
     {
       "name": "routing-passthrough",
