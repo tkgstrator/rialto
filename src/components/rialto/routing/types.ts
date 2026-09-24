@@ -1,68 +1,58 @@
 /**
- * Wire types the Routing screens read.
+ * Shapes the Routing screen holds in memory.
  *
- * `RouterPreferenceEntryWire` in lib/api.ts predates `resolvedTier`, which
- * the server populates on every read (router-preference-service.ts) and the
- * chain table needs for its Tier column. Declared here rather than widened
- * there because lib/api.ts is owned elsewhere during the migration.
+ * The wire types live in lib/api-types.ts. What is declared here is the
+ * editor's own vocabulary: the draft it edits, and the two readings each
+ * route row derives from the loaded profile and the scheduler snapshot.
  */
 
-import type { RequestedModelTier } from '@/schemas/domain/router'
+import type { ModelTier, RouteTier, TierProfileWriteWire, TierRouteResolutionWire, TierRouteWire } from '@/lib/api'
 
-export const SCENARIOS = ['default', 'think', 'longContext', 'webSearch', 'image'] as const
-export type ScenarioKey = (typeof SCENARIOS)[number]
+export type { ModelTier, RouteTier }
 
-export const LANES = ['agent', 'subagent'] as const
-export type Lane = (typeof LANES)[number]
+/** The tiers a route can name on a provider — every requested tier but "other". */
+export const MODEL_TIERS: readonly ModelTier[] = ['fable', 'opus', 'sonnet', 'haiku']
 
-// The selector's own vocabulary, not a copy: the Tier column and the
-// tier floor show what the chain's tier gates will read, and a second
-// definition here would be free to drift from it. Type-only, so the
-// browser bundle takes nothing from the schema module.
-export type Tier = RequestedModelTier
+/**
+ * The profile as the editor holds it: exactly what one PUT writes.
+ *
+ * Routes carry no resolution. Which model a route reaches is the
+ * provider's alias, not something this screen edits, so it is looked up
+ * beside the draft (`resolveRoute`) rather than copied into it — a copy
+ * would have to be kept in step with every add, move and remove.
+ */
+export type TierDraft = TierProfileWriteWire
+export type DraftRoute = TierRouteWire
 
-export interface PreferenceEntry {
-  priority: number
-  target: string
-  enabled: boolean
-  /** Server-computed: Model.manualTier, else inferred from the name. */
-  resolvedTier?: Tier | null
-}
+/**
+ * What a row's "Resolves to" cell can say.
+ *
+ * `pending` is a route added during this edit whose provider · tier the
+ * loaded profile never resolved: the server resolves it on Save. Until
+ * then the provider's alias list can still name the model, which is
+ * shown, but whether that model is switched on or can run web search is
+ * the server's call, so the row claims neither.
+ */
+export type RouteResolution =
+  | { kind: 'resolved'; resolution: TierRouteResolutionWire }
+  | { kind: 'unset' }
+  | { kind: 'pending'; model: string | null }
 
-export type PreferenceByLane = Record<Lane, PreferenceEntry[]>
-export type PreferenceByScenario = Record<ScenarioKey, PreferenceByLane>
+/**
+ * One reading per route, in the order a reader asks: can it take traffic,
+ * how close is it to not being able to, and when does that change.
+ */
+export type RouteState =
+  | { kind: 'ok' }
+  | { kind: 'used'; pct: number }
+  | { kind: 'exhausted'; until: string | null }
+  | { kind: 'unset' }
+  | { kind: 'off' }
+  | { kind: 'pending' }
 
-export interface PreferenceProfile {
-  entriesByScenario: PreferenceByScenario
-  /** Opaque JSONB blob — read for the constraints rail, written back verbatim. */
-  constraints: Record<string, unknown> | null
-}
-
-export interface PreferenceApplyResponse {
-  success: boolean
-  warnings: string[]
-}
-
-/** One row of GET /api/router-preferences/profiles. */
-export interface ProfileSummary {
-  key: string
-  entryCount: number
-  updatedAt: string | null
-  /**
-   * `passthrough` is a reserved key meaning "skip routing", not a stored
-   * chain. Flagged by the server so a picker can tell it apart without
-   * matching on the string — and so an empty chain and a deliberate
-   * mode are never labelled the same way.
-   */
-  kind: 'chain' | 'passthrough'
-}
-
-/** How a target is behaving right now, per the last scheduler tick. */
-
-/** One routable "provider,model" the operator has left enabled. */
+/** One routable "provider,model" the operator has left enabled — the passthrough list. */
 export interface EnabledTarget {
   target: string
   provider: string
   model: string
-  tier: Tier | null
 }
