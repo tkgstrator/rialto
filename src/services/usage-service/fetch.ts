@@ -9,6 +9,7 @@ import { logger } from '../../logger'
 import type {
   ClaudeScopedWindow,
   ClaudeUsage,
+  CodexResetCredits,
   CodexUsage,
   CodexUsageWindowValue,
   GetUsageInput,
@@ -59,6 +60,19 @@ const codexWindowOf = (v: unknown): CodexUsageWindowValue | null => {
   const windowSeconds =
     'limit_window_seconds' in v && typeof v.limit_window_seconds === 'number' ? v.limit_window_seconds : null
   return { usedPercent: v.used_percent, resetAt, windowSeconds }
+}
+
+// `rate_limit_reset_credits` off a wham/usage body, or null when the
+// vendor did not send a readable one. Read defensively, like every other
+// field of these undocumented endpoints.
+const resetCreditsOf = (v: unknown): CodexResetCredits | null => {
+  if (v === null || typeof v !== 'object') return null
+  if (!('available_count' in v) || typeof v.available_count !== 'number') return null
+  const applicable =
+    'applicable_available_count' in v && typeof v.applicable_available_count === 'number'
+      ? v.applicable_available_count
+      : null
+  return { available: v.available_count, applicable }
 }
 
 const requestClaudeUsage = async (info: SubAccountTokenInfo): Promise<ClaudeUsage | null> => {
@@ -198,6 +212,7 @@ const requestCodexUsage = async (info: SubAccountTokenInfo): Promise<CodexUsage 
       planType: typeof j.plan_type === 'string' && j.plan_type.length > 0 ? j.plan_type : null,
       primary: codexWindowOf(primaryWindow),
       secondary: codexWindowOf(secondaryWindow),
+      resetCredits: resetCreditsOf(j.rate_limit_reset_credits),
       capturedAt: dayjs().toISOString()
     }
   } catch (e) {

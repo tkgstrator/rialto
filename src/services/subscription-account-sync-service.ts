@@ -29,6 +29,7 @@ export { buildCodexDiscoveredAccount, claudeAccountFromProfile } from './subscri
 export { recordDiscoveredAccount } from './subscription-account-sync/persist'
 export { type ProfileSyncScope, syncSubAccountProfiles } from './subscription-account-sync/profile-sync'
 export {
+  getSubAccountTokenById,
   getSubAccountTokensForKind,
   getSubAccountTokensForProvider,
   getUsableSubAccountAuth,

@@ -239,6 +239,8 @@ export interface OverviewQuotaRow {
   account: string
   windows: OverviewQuotaWindow[]
   usage: OverviewAccountUsage | null
+  /** Codex banked resets; null for other accounts and before the first poll. */
+  resetCredits: { available: number; applicable: number | null } | null
 }
 
 /** Fields, not prose — the sentence is composed and translated by the
