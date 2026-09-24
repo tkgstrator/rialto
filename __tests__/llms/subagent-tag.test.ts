@@ -4,7 +4,7 @@
  * The string lives in prompts users have already written into their own
  * subagent definitions, so the Rialto rename adds a spelling rather
  * than replacing one. Dropping the old name would silently route every
- * existing subagent request onto the main-agent chain, with nothing in
+ * existing subagent request onto the agent lane's lists, with nothing in
  * the request to explain why — which is the failure these cases exist
  * to prevent.
  */

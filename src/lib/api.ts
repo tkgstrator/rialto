@@ -175,8 +175,8 @@ class ApiClient {
     return this.post<{ archived: number }>('/request-logs/sessions/archive', {})
   }
 
-  // ─── Tier map ────────────────────────────────────────────────────────
-  // A profile's routes per requested tier, each resolved through its
+  // ─── Scenario routes ─────────────────────────────────────────────────
+  // A profile's routes per scenario and lane, each resolved through its
   // provider's alias on read. PUT replaces the whole profile.
   async getTierProfiles(): Promise<TierProfileSummaryWire[]> {
     return this.get<TierProfileSummaryWire[]>('/routing/profiles')

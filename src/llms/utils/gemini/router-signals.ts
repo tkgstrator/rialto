@@ -22,7 +22,13 @@ import type { TokenizeContentBlock, TokenizeMessage, TokenizeTool } from '@/sche
 import type { UnifiedMessage } from '@/schemas/domain/unified'
 import type { GeminiInboundFunctionDeclaration, GeminiInboundTool } from '@/schemas/wire/gemini/content'
 import { GeminiInboundRequestSchema } from '@/schemas/wire/gemini/content'
-import { createToolCallLedger, firstPresent, inboundContentToMessages, inboundSystemMessage } from './inbound-request'
+import {
+  createToolCallLedger,
+  firstPresent,
+  inboundContentToMessages,
+  inboundReasoning,
+  inboundSystemMessage
+} from './inbound-request'
 
 /**
  * The slice of an inbound Gemini body the router branches on.
@@ -38,10 +44,7 @@ const GeminiSignalFieldsSchema = GeminiInboundRequestSchema.pick({
   systemInstruction: true,
   system_instruction: true,
   tools: true,
-  // Validated but no longer read: the thinking config only fed signals
-  // the router has dropped. Kept in the pick so a body whose generation
-  // config the converter will reject still yields no signals, as it did
-  // while the config was read.
+  // `thinkingConfig` is what picks the Think scenario.
   generationConfig: true,
   generation_config: true
 })
@@ -132,6 +135,7 @@ function tokenizeMessageOf(message: UnifiedMessage): TokenizeMessage {
 /** Signals for a body that does not parse as a Gemini request at all. */
 const noSignals = (): RouterSignals => ({
   tokenize: { messages: [], tools: [] },
+  thinking: false,
   webSearch: false
 })
 
@@ -149,6 +153,9 @@ export function readGeminiSignals(body: Record<string, unknown>): RouterSignals 
   if (!parsed.success) return noSignals()
 
   const { contents, tools } = parsed.data
+  const generationConfig = firstPresent(parsed.data.generationConfig, parsed.data.generation_config)
+  const reasoning = inboundReasoning(generationConfig)
+  const level = generationConfig?.thinkingConfig?.thinkingLevel
 
   const ledger = createToolCallLedger()
   const messages = contents.flatMap((content) => inboundContentToMessages(content, ledger).map(tokenizeMessageOf))
@@ -162,6 +169,10 @@ export function readGeminiSignals(body: Record<string, unknown>): RouterSignals 
       system: typeof system?.content === 'string' ? system.content : undefined,
       tools: tokenizeToolsOf(tools)
     },
+    // `inboundReasoning` returning nothing while the client did name a
+    // level means a level we do not recognise. That is still an opt-in:
+    // `none` is recognised, so an unknown value can only ask to think.
+    thinking: reasoning === undefined ? level !== undefined : reasoning.enabled === true,
     webSearch: hasGoogleSearch(tools)
   }
 }

@@ -207,8 +207,7 @@ conversion (`buildParts` in `gemini-inbound-response.ts`) explicitly orders thin
 tools, so the order is forked between surfaces.
 
 `thinking.type === 'adaptive'` sets no unified `reasoning`, because there is no budget to
-translate. Routing does not read it either: the tier map routes on the tier the model name asks
-for, and the think lane that used to count an adaptive request went with the scenario classifier
+translate. Routing does read it: an adaptive request counts as thinking and walks the Think list
 (see [routing.md](./routing.md)).
 
 ### (6) chat/completions × thinking — lost only on the aggregation path
@@ -385,47 +384,47 @@ the entire Routing screen a `/v1/messages`-only screen. The mode is now a value 
 `InboundSurfaceConfig` and all four behave symmetrically
 (`__tests__/parity/routing-mode.test.ts`).
 
-**The router reads the request in each surface's own vocabulary** (2026-09-01, narrowed by the
-tier map). This section once said "a surface can be set to `routed`, but anything other than
-`/v1/messages` falls almost entirely to the `default` lane": the scenario classifier read
-`body.thinking` / `body.output_config.effort` / `tools[].type` directly, so a surface could have
-its mode set while no road existed to the lane behind it. `src/llms/router/surface-signals.ts`
-fixed that by absorbing the per-surface vocabulary differences into one normalised `RouterSignals`.
+**The router reads the request in each surface's own vocabulary** (2026-09-01). This section once
+said "a surface can be set to `routed`, but anything other than `/v1/messages` falls almost
+entirely to the `default` lane": the scenario classifier read `body.thinking` /
+`body.output_config.effort` / `tools[].type` directly, so a surface could have its mode set while
+no road existed to the lane behind it. `src/llms/router/surface-signals.ts` fixed that by absorbing
+the per-surface vocabulary differences into one normalised `RouterSignals`.
 
-The lanes are gone now. The tier map ([routing.md](./routing.md)) routes on the tier the requested
-model name asks for and gates each route on the request, so it reads three things, all of them on
-all four surfaces:
+v2.89.0 routed on the tier the model name asked for instead, and read only the size and the web
+search tool. Routing is by scenario and lane again now ([routing.md](./routing.md)), and the
+normalised signals are exactly what it reads — all three of them, on all four surfaces:
 
 | What the router reads | Where it comes from | Used for |
 |---|---|---|
-| requested tier | `tierOf(body.model)`. The gemini surface folds the model out of the URL into `body.model` before routing, so it is read the same way | which tier's routes to walk. A name with no Claude family (`gpt-*`, `gemini-*`) asks for `other` |
-| `signals.tokenize` | built per surface from `messages` / `input` + `instructions` / `contents` + `systemInstruction` | the context-window gate: a route whose model cannot hold the prompt is skipped |
+| `signals.tokenize` | built per surface from `messages` / `input` + `instructions` / `contents` + `systemInstruction` | the Long context threshold (over it, the Long context list) and the context-window gate: a route whose model cannot hold the prompt is skipped |
+| `signals.thinking` | Anthropic `thinking` (any `type` but `disabled`, `adaptive` included); OpenAI `reasoning_effort` or `reasoning.effort` (anything but `none`), or a `reasoning` object with no effort; Gemini `generationConfig.thinkingConfig`, read through the same `inboundReasoning` the request conversion uses | the Think list |
 | `signals.webSearch` | decided on meaning across each vendor's spelling (a `web_search*` tool type, a function named `web_search*`, `web_search_options`, a `googleSearch*` built-in) | the web-search gate: a route whose wire format cannot carry the tool — Chat Completions, per `hostsWebSearch` — is skipped |
 
-`RouterSignals` still carries `thinking`, `effort` and `toolNames`, and the readers still fill
-them, but nothing on the routing path reads them any more.
+The model name plays no part: in routed mode `body.model` picks nothing. The gemini surface still
+folds the model out of the URL into `body.model`, because passthrough and the chain walker read it.
+Effort levels play no part either — only whether reasoning was asked for — so the old effort →
+longContext escalation and the `minimal` / `none` rounding no longer touch routing on any surface.
 
-The per-surface reading is backed by `__tests__/parity/routing-mode.test.ts`, which checks that
-token counting reads all four vocabularies so the context gate holds on each, and by
-`__tests__/llms/openai-surface-signals.test.ts` / `__tests__/llms/gemini-router-signals.test.ts`,
-which pin each signal to the wire key it reads — a test pre-converted to the Anthropic shape would
-verify nothing about the normalisation. The old per-lane reachability test
-(`routing-lanes.test.ts`) went with the lanes.
+The per-surface reading is backed by `__tests__/parity/routing-mode.test.ts`, which checks that each
+surface's own thinking switch reaches the Think list and that token counting reads all four
+vocabularies so the context gate holds on each, and by `__tests__/llms/openai-surface-signals.test.ts`
+/ `__tests__/llms/gemini-router-signals.test.ts`, which pin each signal to the wire key it reads — a
+test pre-converted to the Anthropic shape would verify nothing about the normalisation. The old
+per-lane reachability test (`routing-lanes.test.ts`) went with the v2.89.0 switch; the Think half
+of it is now in `routing-mode`, and web search is a gate rather than a lane.
 
-Two asymmetries remain, both by design:
+Two asymmetries remain:
 
 - **Persona injection is `/v1/messages` only** (deliberate). Adding a top-level `system` on an
   OpenAI-compatible surface makes the upstream — codex being the standing example — answer 400 for
   an unknown parameter.
-- **Traffic on the OpenAI and Gemini surfaces usually asks for `other`.** Their clients name
-  `gpt-*` / `gemini-*` models, which carry no Claude family, so a routed OpenAI or Gemini surface
-  walks its profile's `other` routes. A profile shared between surfaces shares that `other` list
-  too; point a surface at its own profile (`InboundSurfaceConfig.profileKey`) when the two should
-  route differently.
-
-The two effort asymmetries this section used to list — the OpenAI surfaces never reaching the
-effort → longContext escalation, and `minimal` / `none` rounding up to `low` — described the lanes
-and no longer affect routing.
+- **The subagent lane is reachable from `/v1/messages` only.** The tag is read from the second block
+  of an Anthropic `system` array, which is Claude Code's convention (`stripSubagentTag`). The OpenAI
+  and Gemini shapes carry their system prompt elsewhere (`messages[0]`, `instructions`,
+  `systemInstruction`), so their requests always walk the agent lane. A profile shared between
+  surfaces shares its lists too; point a surface at its own profile
+  (`InboundSurfaceConfig.profileKey`) when the two should route differently.
 
 ## How to fix an unsupported cell
 

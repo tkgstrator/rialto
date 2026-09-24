@@ -14,8 +14,8 @@
  * The other three surfaces must be untouched by both, so they are
  * asserted alongside.
  *
- * On a routed surface the plan is the tier map's answer, and the two
- * outcomes the map hands back as fields — a quota-held tier and a refusal
+ * On a routed surface the plan is the scenario routes' answer, and the
+ * two outcomes they hand back as fields — a quota-held list and a refusal
  * — are answered here without dispatching.
  */
 
@@ -115,6 +115,10 @@ const OPUS = 'anthropic,claude-opus-4-7'
 const sonnetRoute = (over: Parameters<typeof route>[3] = {}) => route('anthropic', 'sonnet', 'claude-sonnet-5', over)
 const opusRoute = (over: Parameters<typeof route>[3] = {}) => route('anthropic', 'opus', 'claude-opus-4-7', over)
 
+// Routes in the Default list of the agent lane: where an ordinary request goes.
+const onDefault = (routes: ReturnType<typeof route>[], constraints: Parameters<typeof mapWith>[1] = {}) =>
+  mapWith({ default: { agent: routes } }, constraints)
+
 // The health gate needs `minHealthSamples` (5 by default) failures
 // before it holds a route.
 const failRepeatedly = (target: string): void => {
@@ -129,9 +133,9 @@ const resetLiveState = (): void => {
 }
 
 // Every surface passthrough unless a test says otherwise: the router then
-// returns before it can consult the map, and body.model reaches the plan
-// verbatim. The empty seed keeps a routed test that forgets its map off
-// Postgres.
+// returns before it can consult the routes, and body.model reaches the
+// plan verbatim. The empty seed keeps a routed test that forgets its map
+// off Postgres.
 beforeEach(() => {
   __setSurfacesForTests({})
   __setTierProfilesForTests({})
@@ -145,31 +149,51 @@ afterEach(() => {
 })
 
 /**
- * On a routed surface the plan is the map's answer. Three outcomes reach
- * the /v1 handler in their own shape: a primary with the rest of the
- * tier's routes behind it; no primary and the caller's own model going
+ * On a routed surface the plan is the scenario list's answer. Three
+ * outcomes reach the /v1 handler in their own shape: a primary with the
+ * rest of the list behind it; no primary and the caller's own model going
  * out alone; or no primary and a 429 that never dispatches at all.
  */
-describe('a routed surface walks the tier map', () => {
+describe('a routed surface walks the scenario routes', () => {
   const body = () => ({ model: 'claude-sonnet-4-5', messages: [{ role: 'user', content: 'hi' }] })
 
   beforeEach(() => {
     __setSurfacesForTests({ 'anthropic-messages': 'routed', 'openai-chat': 'routed' })
   })
 
-  test('the plan carries the primary and the rest of the tier as fallbacks', async () => {
-    __setTierProfilesForTests({ live: mapWith({ sonnet: [sonnetRoute(), opusRoute()] }) })
+  test('the plan carries the primary and the rest of the list as fallbacks', async () => {
+    __setTierProfilesForTests({ live: onDefault([sonnetRoute(), opusRoute()]) })
     const result = asPlan(await plan('/v1/messages', body()))
     expect(result.primaryModel).toBe(SONNET)
     expect(result.fallbacks).toEqual([OPUS])
     expect(result.routedBody.model).toBe(SONNET)
-    expect(result.route).toBe('sonnet')
+    expect(result.route).toBe('default')
+    expect(result.isSubagent).toBe(false)
     // What the client asked for is still recorded next to what was sent.
     expect(result.requestedModel).toBe('claude-sonnet-4-5')
   })
 
+  test('the plan records the scenario and the lane the request was routed by', async () => {
+    __setTierProfilesForTests({
+      live: mapWith({ default: { agent: [sonnetRoute()] }, think: { subagent: [opusRoute()] } })
+    })
+    const result = asPlan(
+      await plan('/v1/messages', {
+        ...body(),
+        thinking: { type: 'enabled', budget_tokens: 2048 },
+        system: [
+          { type: 'text', text: 'preamble' },
+          { type: 'text', text: '<RIALTO-SUBAGENT-MODEL>x</RIALTO-SUBAGENT-MODEL>' }
+        ]
+      })
+    )
+    expect(result.primaryModel).toBe(OPUS)
+    expect(result.route).toBe('think')
+    expect(result.isSubagent).toBe(true)
+  })
+
   test('no primary under exhaustedBehavior passthrough sends the caller’s own model with no fallbacks', async () => {
-    __setTierProfilesForTests({ live: mapWith({ sonnet: [sonnetRoute()] }, { exhaustedBehavior: 'passthrough' }) })
+    __setTierProfilesForTests({ live: onDefault([sonnetRoute()], { exhaustedBehavior: 'passthrough' }) })
     failRepeatedly(SONNET)
     const result = asPlan(await plan('/v1/messages', body()))
     expect(result.primaryModel).toBe('claude-sonnet-4-5')
@@ -178,7 +202,7 @@ describe('a routed surface walks the tier map', () => {
   })
 
   test('no primary under exhaustedBehavior 429 answers 429 with Retry-After and no plan', async () => {
-    __setTierProfilesForTests({ live: mapWith({ sonnet: [sonnetRoute()] }, { exhaustedBehavior: '429' }) })
+    __setTierProfilesForTests({ live: onDefault([sonnetRoute()], { exhaustedBehavior: '429' }) })
     failRepeatedly(SONNET)
     const response = asResponse(await plan('/v1/messages', body()))
     expect(response.status).toBe(429)
@@ -190,7 +214,7 @@ describe('a routed surface walks the tier map', () => {
   })
 
   test('the Retry-After is the held route’s own deadline when a 429 set one', async () => {
-    __setTierProfilesForTests({ live: mapWith({ sonnet: [sonnetRoute()] }, { exhaustedBehavior: '429' }) })
+    __setTierProfilesForTests({ live: onDefault([sonnetRoute()], { exhaustedBehavior: '429' }) })
     markModelExhausted('anthropic', 'claude-sonnet-5', dayjs().add(90, 'second').valueOf())
     const response = asResponse(await plan('/v1/messages', body()))
     expect(response.status).toBe(429)
@@ -199,7 +223,7 @@ describe('a routed surface walks the tier map', () => {
   })
 
   test('the 429 answers in the surface’s own envelope', async () => {
-    __setTierProfilesForTests({ live: mapWith({ sonnet: [sonnetRoute()] }, { exhaustedBehavior: '429' }) })
+    __setTierProfilesForTests({ live: onDefault([sonnetRoute()], { exhaustedBehavior: '429' }) })
     failRepeatedly(SONNET)
     const response = asResponse(await plan('/v1/chat/completions', body()))
     expect(response.status).toBe(429)
@@ -208,8 +232,8 @@ describe('a routed surface walks the tier map', () => {
     expect(envelope).not.toHaveProperty('type')
   })
 
-  test('an empty tier sends the caller’s own model even under exhaustedBehavior 429', async () => {
-    __setTierProfilesForTests({ live: mapWith({ opus: [opusRoute()] }, { exhaustedBehavior: '429' }) })
+  test('an empty Default sends the caller’s own model even under exhaustedBehavior 429', async () => {
+    __setTierProfilesForTests({ live: mapWith({ think: { agent: [opusRoute()] } }, { exhaustedBehavior: '429' }) })
     const result = asPlan(await plan('/v1/messages', body()))
     expect(result.primaryModel).toBe('claude-sonnet-4-5')
     expect(result.fallbacks).toEqual([])
@@ -254,13 +278,13 @@ describe('the gemini surface', () => {
     expect(result.primaryModel).toBe('gemini-3-pro')
   })
 
-  test('the path model is what the tier is read from on a routed gemini surface', async () => {
-    // gemini-3-pro names no Claude family, so it asks for "other".
+  test('on a routed gemini surface the path model is recorded, and the list picks the target', async () => {
     __setSurfacesForTests({ 'gemini-generate': 'routed' })
-    __setTierProfilesForTests({ live: mapWith({ other: [route('google', 'sonnet', 'gemini-3-pro')] }) })
+    __setTierProfilesForTests({ live: onDefault([route('google', 'sonnet', 'gemini-3-flash')]) })
     const result = asPlan(await plan('/v1beta/models/gemini-3-pro:generateContent', { contents: [] }))
-    expect(result.primaryModel).toBe('google,gemini-3-pro')
-    expect(result.route).toBe('other')
+    expect(result.primaryModel).toBe('google,gemini-3-flash')
+    expect(result.requestedModel).toBe('gemini-3-pro')
+    expect(result.route).toBe('default')
   })
 })
 
@@ -347,32 +371,29 @@ describe('accountSessionKey', () => {
 })
 
 /**
- * A tier with routes that yields no primary is not always exhaustion.
- * Only quota or health earns a 429: a map that is configured but cannot
- * take this request is answered 400, and a tier whose routes are all
- * switched off passes through like an empty one. Claude Code sends its
- * background work as Haiku, which is what made a Sonnet-only chain answer
- * a 429 that never went upstream.
+ * A list with routes that yields no primary is not always exhaustion.
+ * Only quota or health earns a 429: a list that is configured but cannot
+ * take this request is answered 400, and a list whose routes are all
+ * switched off passes through like an empty one.
  */
-describe('a tier that yields no primary answers by why', () => {
+describe('a list that yields no primary answers by why', () => {
+  // Claude Code's background work arrives as Haiku; the name picks nothing.
   const haiku = () => ({ model: 'claude-haiku-4-5', messages: [{ role: 'user', content: 'hi' }] })
 
   beforeEach(() => {
     __setSurfacesForTests({ 'anthropic-messages': 'routed', 'openai-chat': 'routed', 'gemini-generate': 'routed' })
   })
 
-  test('a haiku request is served by the sonnet route the map gives it', async () => {
-    __setTierProfilesForTests({ live: mapWith({ haiku: [sonnetRoute()] }) })
+  test('a haiku request is served by the Default route like any other', async () => {
+    __setTierProfilesForTests({ live: onDefault([sonnetRoute()]) })
     const result = asPlan(await plan('/v1/messages', haiku()))
     expect(result.primaryModel).toBe(SONNET)
     expect(result.requestedModel).toBe('claude-haiku-4-5')
-    expect(result.route).toBe('haiku')
+    expect(result.route).toBe('default')
   })
 
   test('a route with no alias answers 400, not a 429 with Retry-After', async () => {
-    __setTierProfilesForTests({
-      live: mapWith({ haiku: [route('anthropic', 'haiku', null)] }, { exhaustedBehavior: '429' })
-    })
+    __setTierProfilesForTests({ live: onDefault([route('anthropic', 'haiku', null)], { exhaustedBehavior: '429' }) })
     const response = asResponse(await plan('/v1/messages', haiku()))
     expect(response.status).toBe(400)
     expect(response.headers.get('Retry-After')).toBeNull()
@@ -385,13 +406,13 @@ describe('a tier that yields no primary answers by why', () => {
     // Passthrough is what to do while quota comes back; nothing comes
     // back for a route that has no model behind it.
     __setTierProfilesForTests({
-      live: mapWith({ haiku: [route('anthropic', 'haiku', null)] }, { exhaustedBehavior: 'passthrough' })
+      live: onDefault([route('anthropic', 'haiku', null)], { exhaustedBehavior: 'passthrough' })
     })
     expect(asResponse(await plan('/v1/messages', haiku())).status).toBe(400)
   })
 
   test('a web_search request no route can run is a 400 in the OpenAI envelope on chat', async () => {
-    __setTierProfilesForTests({ live: mapWith({ haiku: [sonnetRoute({ hostsWebSearch: false })] }) })
+    __setTierProfilesForTests({ live: onDefault([sonnetRoute({ hostsWebSearch: false })]) })
     const response = asResponse(
       await plan('/v1/chat/completions', {
         ...haiku(),
@@ -406,9 +427,7 @@ describe('a tier that yields no primary answers by why', () => {
   })
 
   test('a prompt no route can hold is a 400 in google.rpc.Status shape on gemini', async () => {
-    __setTierProfilesForTests({
-      live: mapWith({ other: [route('google', 'sonnet', 'gemini-3-pro', { contextWindow: 20 })] })
-    })
+    __setTierProfilesForTests({ live: onDefault([route('google', 'sonnet', 'gemini-3-pro', { contextWindow: 20 })]) })
     const long = 'lorem ipsum dolor sit amet '.repeat(50)
     const response = asResponse(
       await plan('/v1beta/models/gemini-3-pro:generateContent', {
@@ -420,17 +439,15 @@ describe('a tier that yields no primary answers by why', () => {
     expect(envelope).toMatchObject({ error: { status: 'INVALID_ARGUMENT', code: 400 } })
   })
 
-  test('a tier whose routes are all switched off passes through like an empty one', async () => {
-    __setTierProfilesForTests({
-      live: mapWith({ haiku: [sonnetRoute({ enabled: false })] }, { exhaustedBehavior: '429' })
-    })
+  test('a list whose routes are all switched off passes through like an empty one', async () => {
+    __setTierProfilesForTests({ live: onDefault([sonnetRoute({ enabled: false })], { exhaustedBehavior: '429' }) })
     const result = asPlan(await plan('/v1/messages', haiku()))
     expect(result.primaryModel).toBe('claude-haiku-4-5')
     expect(result.route).toBe('passthrough')
   })
 
-  test('a substitute that is itself failing still answers 429', async () => {
-    __setTierProfilesForTests({ live: mapWith({ haiku: [sonnetRoute()] }, { exhaustedBehavior: '429' }) })
+  test('a route that is itself failing still answers 429', async () => {
+    __setTierProfilesForTests({ live: onDefault([sonnetRoute()], { exhaustedBehavior: '429' }) })
     failRepeatedly(SONNET)
     expect(asResponse(await plan('/v1/messages', haiku())).status).toBe(429)
   })
@@ -463,9 +480,9 @@ describe('passthrough denial', () => {
     expect(result.primaryModel).toBe(OPUS)
   })
 
-  test('a routed surface ignores the list, even when the map lands on a listed target', async () => {
+  test('a routed surface ignores the list, even when the routes land on a listed target', async () => {
     __setSurfacesForTests({ 'anthropic-messages': 'routed' }, { 'anthropic-messages': [SONNET] })
-    __setTierProfilesForTests({ live: mapWith({ sonnet: [sonnetRoute()] }) })
+    __setTierProfilesForTests({ live: onDefault([sonnetRoute()]) })
     const result = asPlan(await plan('/v1/messages', { model: 'claude-sonnet-4-5', messages: [] }))
     expect(result.primaryModel).toBe(SONNET)
   })

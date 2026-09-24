@@ -7,6 +7,10 @@
  * vouch for — never polled, or its reading gone stale — could still
  * serve, and holding the whole target on it would refuse traffic the
  * upstream would take.
+ *
+ * `projectedPct` is the pace the router orders routes by. How it is
+ * computed is `pace.test.ts`; here, only that the snapshot carries it as
+ * a percentage and leaves it null when there is nothing to judge.
  */
 
 import { describe, expect, test } from 'bun:test'
@@ -79,6 +83,8 @@ describe('targetQuotaOf', () => {
     const out = targetQuotaOf(candidate([account({ fiveHour: spent, refreshedAt: NOW - 4 * TTL })]), NOW, TTL)
     expect(out.exhausted).toBe(false)
     expect(out.remainingBudgetPct).toBeNull()
+    // Nor does it set a pace.
+    expect(out.projectedPct).toBeNull()
   })
 
   test('no accounts at all: unknown, not exhausted', () => {
@@ -87,8 +93,41 @@ describe('targetQuotaOf', () => {
       target: 'claude-code,claude-sonnet-5',
       exhausted: false,
       remainingBudgetPct: null,
+      projectedPct: null,
       resetAt: null
     })
+  })
+
+  test('the pace is carried as a percentage of the budget, to one decimal', () => {
+    // 10% used 30% of the way through the week: a third of the budget
+    // by the reset.
+    const week = 168 * HOUR
+    const acct = account({
+      fiveHour: undefined,
+      weekly: { used: 10, limit: 100, resetAt: NOW + 0.7 * week, windowLengthMs: week }
+    })
+    expect(targetQuotaOf(candidate([acct]), NOW, TTL).projectedPct).toBe(33.3)
+  })
+
+  test('a pace over the budget is served as it is, not capped at 100', () => {
+    const week = 168 * HOUR
+    const acct = account({
+      fiveHour: undefined,
+      weekly: { used: 60, limit: 100, resetAt: NOW + 0.6 * week, windowLengthMs: week }
+    })
+    const out = targetQuotaOf(candidate([acct]), NOW, TTL)
+    expect(out.projectedPct).toBe(150)
+    expect(out.exhausted).toBe(false)
+  })
+
+  test('too early in every window to judge: no pace, whatever the budget says', () => {
+    const acct = account({
+      fiveHour: { used: 20, limit: 100, resetAt: NOW + 4.9 * HOUR, windowLengthMs: 5 * HOUR },
+      weekly: { used: 1, limit: 100, resetAt: NOW + 167 * HOUR, windowLengthMs: 168 * HOUR }
+    })
+    const out = targetQuotaOf(candidate([acct]), NOW, TTL)
+    expect(out.remainingBudgetPct).toBe(80)
+    expect(out.projectedPct).toBeNull()
   })
 
   test("Fable reads its own weekly window, so a spent one holds Fable and leaves Sonnet's budget alone", () => {
@@ -103,6 +142,7 @@ describe('soonestResetOf', () => {
     target,
     exhausted,
     remainingBudgetPct: exhausted ? 0 : 40,
+    projectedPct: null,
     resetAt
   })
 

@@ -1,5 +1,5 @@
 /**
- * One-shot conversion of every profile's old chain into the tier map.
+ * One-shot conversion of every profile's old chain into scenario routes.
  *
  * Runs from `db seed`, which the container entrypoint calls after
  * `migrate deploy` on every start. `RouterPreferenceProfile.chainBackfilledAt`
@@ -22,9 +22,9 @@ import { getPrismaClient } from '../../db/client'
 import type { PrismaClient } from '../../generated/prisma/client'
 import dayjs from '../../lib/dayjs'
 import { logger } from '../../logger'
-import { JsonObjectSchema } from '../../schemas/domain/preset'
+import { ROUTING_LANES, ROUTING_SCENARIOS } from '../../schemas/domain/tier-route'
 import { DEFAULT_PROFILE_KEY } from '../tier-route-service'
-import { type ExistingAlias, planTierRoutes } from './plan-tier-routes'
+import { type ConvertedLane, type ExistingAlias, planTierRoutes } from './plan-tier-routes'
 
 export interface BackfillReport {
   profile: string
@@ -34,15 +34,56 @@ export interface BackfillReport {
   notes: string[]
 }
 
-// The three knobs the old gate read, each defaulted as its schema did.
-const gateKnobs = (constraints: unknown) => {
-  const blob = JsonObjectSchema.safeParse(constraints === null ? {} : constraints)
-  const read = blob.success ? blob.data : {}
-  return {
-    allowEscalation: read.allowEscalation !== false,
-    allowDemotion: read.allowDemotion !== false,
-    tierFallback: read.tierFallback === 'refuse' ? ('refuse' as const) : ('nearest' as const)
+type EntryRow = {
+  scenario: string
+  kind: string
+  priority: number
+  enabled: boolean
+  model: {
+    id: string
+    name: string
+    manualTier: string | null
+    deprecated: boolean
+    enabled: boolean
+    provider: { id: string; name: string; enabled: boolean }
   }
+}
+
+// The chain's entries as the planner's lists, the default agent list
+// first so its models get the providers' slots; the web search and image
+// lists are only counted.
+function lanesOf(entries: readonly EntryRow[]): {
+  lanes: ConvertedLane[]
+  ignoredLanes: { lane: string; count: number }[]
+} {
+  const toInput = (e: EntryRow) => ({
+    priority: e.priority,
+    enabled: e.enabled,
+    model: {
+      id: e.model.id,
+      name: e.model.name,
+      manualTier: e.model.manualTier,
+      deprecated: e.model.deprecated,
+      enabled: e.model.enabled
+    },
+    provider: e.model.provider
+  })
+  const lanes: ConvertedLane[] = ROUTING_SCENARIOS.flatMap((scenario) =>
+    ROUTING_LANES.map((lane) => ({
+      scenario,
+      lane,
+      entries: entries.filter((e) => e.scenario === scenario && e.kind === lane).map(toInput)
+    }))
+  )
+  const converted = new Set(lanes.map((l) => `${l.scenario}/${l.lane}`))
+  const ignored = new Map<string, number>()
+  for (const e of entries) {
+    const lane = `${e.scenario}/${e.kind}`
+    if (converted.has(lane)) continue
+    const seen = ignored.get(lane)
+    ignored.set(lane, seen === undefined ? 1 : seen + 1)
+  }
+  return { lanes, ignoredLanes: [...ignored].map(([lane, count]) => ({ lane, count })) }
 }
 
 export async function backfillTierRoutes(prisma: PrismaClient = getPrismaClient()): Promise<BackfillReport[]> {
@@ -65,12 +106,13 @@ export async function backfillTierRoutes(prisma: PrismaClient = getPrismaClient(
         return { profile: profile.key, outcome: 'already-routed', aliases: 0, routes: 0, notes: [] }
       }
 
-      const [row, entries, others, aliasRows] = await Promise.all([
-        tx.routerPreferenceProfile.findUnique({ where: { id: profile.id }, select: { constraints: true } }),
+      const [entries, aliasRows] = await Promise.all([
         tx.routerPreferenceEntry.findMany({
-          where: { profileId: profile.id, scenario: 'default', kind: 'agent' },
+          where: { profileId: profile.id },
           orderBy: { priority: 'asc' },
           select: {
+            scenario: true,
+            kind: true,
             priority: true,
             enabled: true,
             model: {
@@ -85,11 +127,6 @@ export async function backfillTierRoutes(prisma: PrismaClient = getPrismaClient(
             }
           }
         }),
-        tx.routerPreferenceEntry.groupBy({
-          by: ['scenario', 'kind'],
-          where: { profileId: profile.id, NOT: { scenario: 'default', kind: 'agent' } },
-          _count: { _all: true }
-        }),
         tx.providerTierAlias.findMany({
           select: { providerId: true, tier: true, modelId: true, model: { select: { name: true } } }
         })
@@ -98,23 +135,8 @@ export async function backfillTierRoutes(prisma: PrismaClient = getPrismaClient(
       const aliases = new Map<string, ExistingAlias>(
         aliasRows.map((a) => [`${a.providerId}|${a.tier}`, { modelId: a.modelId, modelName: a.model.name }])
       )
-      const plan = planTierRoutes({
-        entries: entries.map((e) => ({
-          priority: e.priority,
-          enabled: e.enabled,
-          model: {
-            id: e.model.id,
-            name: e.model.name,
-            manualTier: e.model.manualTier,
-            deprecated: e.model.deprecated,
-            enabled: e.model.enabled
-          },
-          provider: e.model.provider
-        })),
-        ...gateKnobs(row === null ? null : row.constraints),
-        aliases,
-        ignoredLanes: others.map((o) => ({ lane: `${o.scenario}/${o.kind}`, count: o._count._all }))
-      })
+      const { lanes, ignoredLanes } = lanesOf(entries)
+      const plan = planTierRoutes({ lanes, aliases, ignoredLanes })
 
       if (plan.aliases.length > 0) await tx.providerTierAlias.createMany({ data: plan.aliases, skipDuplicates: true })
       if (plan.routes.length > 0) {
@@ -132,7 +154,7 @@ export async function backfillTierRoutes(prisma: PrismaClient = getPrismaClient(
     if (report.outcome === 'converted') {
       logger.info(
         { profile: report.profile, aliases: report.aliases, routes: report.routes, notes: report.notes },
-        '[tier-routes] converted the chain into the tier map'
+        '[tier-routes] converted the chain into scenario routes'
       )
     }
     reports.push(report)

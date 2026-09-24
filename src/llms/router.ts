@@ -1,25 +1,24 @@
 /**
- * Request routing through the tier map.
+ * Request routing by scenario.
  *
- * Reads the model the caller asked for, takes its tier (fable / opus /
- * sonnet / haiku, or "other"), and asks the tier map which provider's
- * tier should serve it — rewriting `body.model` to that target and
- * stamping the rest of the route as fallbacks. What it stamps on the
- * request — the route, the subagent flag, the fallbacks — is what the
- * failover path and the usage record read.
+ * Classifies the request — input over the Long context threshold,
+ * thinking on, or neither — and its lane — the subagent tag — and asks
+ * that list which provider tier should serve it: `body.model` becomes the
+ * target, the rest of the list's usable routes the fallbacks, ordered by
+ * pace. What it stamps on the request — the scenario, the subagent flag,
+ * the fallbacks — is what the failover path and the usage record read.
  *
  * The other mode is passthrough: the caller's own `body.model` reaches
  * upstream as-is. Which of the two applies is a property of the inbound
  * surface, or of the token that authenticated the call — not of this file,
  * which only asks.
  *
- * There are no scenarios or lanes any more. A request is routed by the tier
- * it asked for; size, web search and health are gates on each route, not
- * separate chains. The subagent tag is still stripped (the marker must
- * never reach upstream) and still recorded, but it no longer picks a lane.
+ * The model name the caller sent does not pick a route: the list says
+ * which provider tiers serve the scenario, and each route reaches the
+ * model its provider's tier alias names.
  *
  * The request-shape pieces (signals, the subagent tag, persona) live
- * under `./router/`; the tier map's selector and runtime under
+ * under `./router/`; the selector, runtime and threshold under
  * `./tier-router/`.
  */
 
@@ -29,14 +28,14 @@ import { applyGlobalSystemPrompt, resolveActivePersonaPrompt } from './router/pe
 import { stripSubagentTag } from './router/request-signals'
 import { signalsOf } from './router/surface-signals'
 import type { RouterContext, RouterRequest } from './router/types'
-import { routeByTier } from './tier-router/runtime'
+import { routeByScenario } from './tier-router/runtime'
 import type { TokenizeRequest } from './tokenizers/base'
 
 export type { SubscriptionKindProvider } from './router/subscription-kind'
 export { subscriptionKindOf } from './router/subscription-kind'
 export type { RouterContext, RouterRequest, RouterRequestBody } from './router/types'
 
-// The route a request that went upstream as sent is recorded under.
+// The scenario a request that went upstream as sent is recorded under.
 export const PASSTHROUGH_ROUTE = 'passthrough'
 
 // What every exit path leaves on the request. The pipeline reads all
@@ -83,7 +82,7 @@ export async function routeRequest(req: RouterRequest, ctx: RouterContext): Prom
   }
 
   try {
-    await routeThroughTierMap(req, ctx, isSubagent)
+    await routeThroughScenarios(req, ctx, isSubagent)
   } catch (err) {
     // The map lives in Postgres and the tokenizer is a native module;
     // either can be away. Neither is a reason to invent a target: the
@@ -104,7 +103,7 @@ export async function routeRequest(req: RouterRequest, ctx: RouterContext): Prom
   }
 }
 
-async function routeThroughTierMap(req: RouterRequest, ctx: RouterContext, isSubagent: boolean): Promise<void> {
+async function routeThroughScenarios(req: RouterRequest, ctx: RouterContext, isSubagent: boolean): Promise<void> {
   const signals = signalsOf(req)
   const tokenCount = await countRequestTokens(ctx.tokenizers, signals.tokenize)
   req.tokenCount = tokenCount
@@ -117,41 +116,44 @@ async function routeThroughTierMap(req: RouterRequest, ctx: RouterContext, isSub
   const profileKey = req.profileKeyOverride !== undefined ? req.profileKeyOverride : surfaceProfile
 
   const requestedModel = typeof req.body.model === 'string' ? req.body.model : undefined
-  const routing = await routeByTier({
-    requestedModel,
+  const routing = await routeByScenario({
     profileKey,
     requestTokenCount: tokenCount,
+    thinking: signals.thinking,
+    isSubagent,
     needsWebSearch: signals.webSearch
   })
-  const { selection } = routing
+  const { selection, classification } = routing
+  const { scenario, lane } = classification
+  const paced = selection.paced.promoted.length > 0 || selection.paced.steppedDown.length > 0
 
   if (selection.outcome === 'routed' && selection.primary !== null) {
     req.body.model = selection.primary
-    stamp(req, { route: routing.requestedTier, isSubagent, fallbacks: selection.fallbacks })
+    if (paced) {
+      req.log.info({ requestedModel, scenario, lane, paced: selection.paced }, '[routing] pace reordered the list')
+    }
+    stamp(req, { route: scenario, isSubagent, fallbacks: selection.fallbacks })
     return
   }
   if (selection.outcome === 'exhausted' && routing.retryAfterSec !== null) {
     req.quotaExhaustedRetryAfterSec = routing.retryAfterSec
     req.log.warn(
-      { requestedModel, tier: routing.requestedTier, retryAfterSec: routing.retryAfterSec, skipped: selection.skipped },
-      '[routing] every route of the tier is out of quota — will 429'
+      { requestedModel, scenario, lane, retryAfterSec: routing.retryAfterSec, skipped: selection.skipped },
+      '[routing] every route of the list is out of quota — will 429'
     )
-    stamp(req, { route: routing.requestedTier, isSubagent, fallbacks: [] })
+    stamp(req, { route: scenario, isSubagent, fallbacks: [] })
     return
   }
   if (selection.outcome === 'refused' && selection.refusal !== null) {
     req.routingRefusal = selection.refusal
-    req.log.warn(
-      { requestedModel, tier: routing.requestedTier, skipped: selection.skipped },
-      '[routing] refused — will 400'
-    )
-    stamp(req, { route: routing.requestedTier, isSubagent, fallbacks: [] })
+    req.log.warn({ requestedModel, scenario, lane, skipped: selection.skipped }, '[routing] refused — will 400')
+    stamp(req, { route: scenario, isSubagent, fallbacks: [] })
     return
   }
-  // No routes for the tier, every one switched off, or exhausted under
+  // No usable routes in the Default list either, or exhausted under
   // exhaustedBehavior 'passthrough': the caller's own model goes out.
   req.log.info(
-    { requestedModel, tier: routing.requestedTier, outcome: selection.outcome, skipped: selection.skipped },
+    { requestedModel, scenario, lane, outcome: selection.outcome, skipped: selection.skipped },
     "[routing] no route taken — keeping the caller's own model"
   )
   stamp(req, { route: PASSTHROUGH_ROUTE, isSubagent, fallbacks: [] })

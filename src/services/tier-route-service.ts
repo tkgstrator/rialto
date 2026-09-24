@@ -1,27 +1,32 @@
 /**
- * The tier map, stored: one profile's routes per requested tier, and the
- * constraints that go with them.
+ * Scenario routes, stored: one profile's provider · tier lists per
+ * scenario and lane, and the constraints that go with them.
  *
  * Profiles are the same `RouterPreferenceProfile` rows the chain used —
  * a surface's `profileKey` and an access token's `profileKey` keep
  * pointing at them — and the constraints live in the same JSONB column.
  * A save merges its four knobs into that blob rather than replacing it,
- * so a rollback to the build before the tier map still finds the chain's
+ * so a rollback to the build before scenario routes still finds the chain's
  * own knobs where it left them.
  */
 
 import { getPrismaClient } from '../db/client'
 import type { Prisma, PrismaClient } from '../generated/prisma/client'
+import { effectiveLongContextThreshold, longContextBase } from '../llms/tier-router/threshold'
 import { logger } from '../logger'
 import { JsonObjectSchema } from '../schemas/domain/preset'
 import {
-  ROUTE_TIERS,
-  type RouteTier,
+  ROUTING_LANES,
+  ROUTING_SCENARIOS,
   type RoutingConstraints,
   RoutingConstraintsSchema,
+  type RoutingLane,
+  type RoutingScenario,
+  type ScenarioRoutes,
+  ScenarioRoutesSchema,
   type TierProfile,
-  type TierRoute,
-  TierRoutesSchema
+  type TierProfileWrite,
+  type TierRoute
 } from '../schemas/domain/tier-route'
 import { hostsWebSearch } from '../shared/transformer-chain'
 import { aliasKey, resolveTierAliases } from './tier-alias-service'
@@ -43,7 +48,16 @@ export const DEFAULT_PROFILE_KEY = 'live'
  */
 export const PASSTHROUGH_PROFILE_KEY = 'passthrough'
 
-const emptyRoutes = (): Record<RouteTier, TierRoute[]> => ({ fable: [], opus: [], sonnet: [], haiku: [], other: [] })
+const emptyRoutes = (): ScenarioRoutes => ({
+  default: { agent: [], subagent: [] },
+  think: { agent: [], subagent: [] },
+  longContext: { agent: [], subagent: [] }
+})
+
+// Every (scenario, lane) pair, in the order a reader walks them.
+export const SCENARIO_LANES: ReadonlyArray<readonly [RoutingScenario, RoutingLane]> = ROUTING_SCENARIOS.flatMap(
+  (scenario) => ROUTING_LANES.map((lane) => [scenario, lane] as const)
+)
 
 // The constraints a blob describes, every knob defaulted. A blob that
 // fails to parse (hand-edited JSONB) reads as the defaults rather than
@@ -69,20 +83,22 @@ export async function loadTierProfile(
       constraints: true,
       tierRoutes: {
         orderBy: { priority: 'asc' },
-        select: { requestedTier: true, targetTier: true, enabled: true, provider: { select: { name: true } } }
+        select: { scenario: true, lane: true, targetTier: true, enabled: true, provider: { select: { name: true } } }
       }
     }
   })
   if (profile === null) return { routes: emptyRoutes(), constraints: routingConstraintsOf(null) }
-  const grouped: Record<string, unknown[]> = {}
+  const grouped: Record<string, Record<string, unknown[]>> = {}
   for (const row of profile.tierRoutes) {
-    const list = grouped[row.requestedTier]
+    const lanes = grouped[row.scenario] === undefined ? {} : grouped[row.scenario]
+    const list = lanes[row.lane]
     const route = { provider: row.provider.name, targetTier: row.targetTier, enabled: row.enabled }
-    grouped[row.requestedTier] = list === undefined ? [route] : [...list, route]
+    grouped[row.scenario] = { ...lanes, [row.lane]: list === undefined ? [route] : [...list, route] }
   }
-  // Parsed rather than trusted: a tier string an older or newer build
-  // wrote is dropped here instead of reaching a reader that switches on it.
-  const routes = TierRoutesSchema.safeParse(grouped)
+  // Parsed rather than trusted: a scenario, lane or tier string an older
+  // or newer build wrote is dropped here instead of reaching a reader that
+  // switches on it.
+  const routes = ScenarioRoutesSchema.safeParse(grouped)
   if (!routes.success) {
     logger.warn(
       { profileKey, err: routes.error.message },
@@ -112,7 +128,7 @@ export interface SaveOutcome {
  */
 export async function saveTierProfile(
   profileKey: string,
-  profile: TierProfile,
+  profile: TierProfileWrite,
   prisma: PrismaClient = getPrismaClient()
 ): Promise<SaveOutcome> {
   // The reserved key skips routing, so a map stored under it could never
@@ -129,27 +145,29 @@ export async function saveTierProfile(
   const aliases = await resolveTierAliases(prisma)
 
   const rows: Array<Omit<Prisma.TierRouteCreateManyInput, 'profileId'>> = []
-  for (const requestedTier of ROUTE_TIERS) {
+  for (const [scenario, lane] of SCENARIO_LANES) {
+    const where = `${scenario}/${lane}`
     const seen = new Set<string>()
-    for (const route of profile.routes[requestedTier]) {
+    for (const route of profile.routes[scenario][lane]) {
       const id = providerId.get(route.provider)
       if (id === undefined) {
-        warnings.push(`${requestedTier}: provider "${route.provider}" does not exist; route dropped`)
+        warnings.push(`${where}: provider "${route.provider}" does not exist; route dropped`)
         continue
       }
       const key = aliasKey(route.provider, route.targetTier)
       if (seen.has(key)) {
-        warnings.push(`${requestedTier}: ${route.provider} · ${route.targetTier} is listed twice; kept the first`)
+        warnings.push(`${where}: ${route.provider} · ${route.targetTier} is listed twice; kept the first`)
         continue
       }
       seen.add(key)
       if (!aliases.has(key)) {
         warnings.push(
-          `${requestedTier}: ${route.provider} has no ${route.targetTier} alias yet; the route is skipped until one is set`
+          `${where}: ${route.provider} has no ${route.targetTier} alias yet; the route is skipped until one is set`
         )
       }
       rows.push({
-        requestedTier,
+        scenario,
+        lane,
         priority: seen.size,
         providerId: id,
         targetTier: route.targetTier,
@@ -164,7 +182,22 @@ export async function saveTierProfile(
       select: { constraints: true }
     })
     const base = JsonObjectSchema.safeParse(existing === null ? {} : existing.constraints)
-    const constraints = { ...(base.success ? base.data : {}), ...profile.constraints }
+    const stored = routingConstraintsOf(existing === null ? null : existing.constraints)
+    // The tuner owns the Long context threshold: an editor saves the
+    // constraints it loaded, and a tune landing between that load and this
+    // save would otherwise be written back to what the editor last saw.
+    // Only the knobs the body names are written; the rest keep what is
+    // stored (see RoutingConstraintsWriteSchema).
+    const given = Object.fromEntries(
+      Object.entries(profile.constraints).filter(([, v]) => v !== null && v !== undefined)
+    )
+    const constraints = {
+      ...(base.success ? base.data : {}),
+      ...given,
+      longContextThreshold: stored.longContextThreshold,
+      previousLongContextThreshold: stored.previousLongContextThreshold,
+      longContextTunedAt: stored.longContextTunedAt
+    }
     const row = await tx.routerPreferenceProfile.upsert({
       where: { key: profileKey },
       update: { constraints },
@@ -223,10 +256,25 @@ export interface TierRouteView extends TierRoute {
   resolved: TierRouteResolution | null
 }
 
+export type ScenarioRouteViews = Record<RoutingScenario, Record<RoutingLane, TierRouteView[]>>
+
 export interface TierProfileView {
   key: string
-  routes: Record<RouteTier, TierRouteView[]>
+  routes: ScenarioRouteViews
   constraints: RoutingConstraints
+  // Input tokens over which a request is Long context right now.
+  longContextThreshold: number
+}
+
+/** A route that can take traffic: switched on, and resolving to a model that is on. */
+export const isUsableRoute = (r: TierRouteView): boolean => r.enabled && r.resolved?.targetEnabled === true
+
+// The context window of the model the first usable default · agent route
+// reaches — what the Long context base is 70% of. Null when none resolves
+// to a model with a known window.
+export const defaultAgentWindowOf = (routes: ScenarioRouteViews): number | null => {
+  const first = routes.default.agent.find((r) => isUsableRoute(r) && r.resolved?.contextWindow !== null)
+  return first === undefined || first.resolved === null ? null : first.resolved.contextWindow
 }
 
 /**
@@ -273,15 +321,22 @@ export async function loadTierProfileView(
       const resolved = resolution.get(`${route.provider}|${route.targetTier}`)
       return { ...route, resolved: resolved === undefined ? null : resolved }
     })
+  const lanes = (scenario: RoutingScenario): Record<RoutingLane, TierRouteView[]> => ({
+    agent: view(profile.routes[scenario].agent),
+    subagent: view(profile.routes[scenario].subagent)
+  })
+  const routes: ScenarioRouteViews = {
+    default: lanes('default'),
+    think: lanes('think'),
+    longContext: lanes('longContext')
+  }
   return {
     key: profileKey,
-    routes: {
-      fable: view(profile.routes.fable),
-      opus: view(profile.routes.opus),
-      sonnet: view(profile.routes.sonnet),
-      haiku: view(profile.routes.haiku),
-      other: view(profile.routes.other)
-    },
-    constraints: profile.constraints
+    routes,
+    constraints: profile.constraints,
+    longContextThreshold: effectiveLongContextThreshold(
+      profile.constraints.longContextThreshold,
+      longContextBase(defaultAgentWindowOf(routes))
+    )
   }
 }

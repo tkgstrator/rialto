@@ -2,14 +2,15 @@
  * The routing signals a request carries, read out of whichever wire
  * format it arrived in.
  *
- * The tier map gates each route on two questions about a request: will
- * the prompt fit in the route's context window, and did the caller attach
- * a web-search tool the route may not be able to run. Both have to be
+ * Routing asks three questions about a request: did the caller opt into
+ * thinking (the Think scenario), how big is the prompt (the Long context
+ * scenario, and each route's context-window gate), and did it attach a
+ * web-search tool a route may not be able to run. All three have to be
  * answered in the vocabulary the request arrived in — a Responses caller
  * carries its turns in `input`, a Gemini caller in `contents[]`, and each
  * vendor spells its search tool differently. Read only under Anthropic's
  * names, a Responses or Gemini prompt would weigh nothing, no other
- * vendor's search tool would be seen, and both gates would wave those
+ * vendor's search tool would be seen, and the gates would wave those
  * requests through.
  *
  * Extraction lives per surface for the same reason the rest of the
@@ -26,7 +27,7 @@ import { surfaceForPath } from '@/llms/inbound/surfaces'
 import { readGeminiSignals } from '@/llms/utils/gemini/router-signals'
 import type { TokenizeContentBlock, TokenizeMessage, TokenizeRequest, TokenizeTool } from '@/schemas/domain/tokenizer'
 import { isObject } from '../utils/guards'
-import { isWebSearchTool } from './request-signals'
+import { isThinkingEnabled, isWebSearchTool } from './request-signals'
 import type { RouterRequestBody } from './types'
 
 export type RouterSignals = {
@@ -36,6 +37,12 @@ export type RouterSignals = {
    * same number, so a client and the router cannot disagree on a size.
    */
   tokenize: TokenizeRequest
+  /**
+   * Did the caller opt into extended thinking / reasoning? It picks the
+   * Think scenario. Read per surface: Anthropic has `thinking`, OpenAI
+   * its reasoning controls, Gemini `thinkingConfig`.
+   */
+  thinking: boolean
   /**
    * Did the caller attach that surface's web-search tool? A route whose
    * model cannot run it is skipped rather than sent the request without
@@ -52,6 +59,7 @@ const readAnthropicSignals: SignalReader = (body) => ({
     system: body.system,
     tools: body.tools
   },
+  thinking: isThinkingEnabled(body),
   webSearch: Array.isArray(body.tools) && body.tools.some(isWebSearchTool)
 })
 
@@ -233,6 +241,31 @@ function responsesInputItem(item: Record<string, unknown>): TokenizeMessage[] {
   return [{ role, content: openAiTextBlocks(item.content) }]
 }
 
+/**
+ * Whether an OpenAI-shaped caller asked the model to reason — the Think
+ * scenario.
+ *
+ * OpenAI has no `thinking` field, so the opt-in is read off the reasoning
+ * controls, mirroring the Anthropic rule: presence of a control is the
+ * opt-in and `'none'` — OpenAI's own "do not reason" — the opt-out. Chat
+ * Completions names it `reasoning_effort` at the top level, Responses
+ * nests it as `reasoning.effort`; both spellings are read on both
+ * surfaces, since clients send whichever their SDK version emits. A
+ * `reasoning` object carrying no effort still counts: Codex CLI sends
+ * `reasoning: {summary: 'auto'}`, and asking for a reasoning summary is
+ * asking for reasoning. Absence is not an opt-in even though both vendors
+ * reason server-side by default: Think grades the client's intent.
+ */
+function openAiReasoningRequested(body: RouterRequestBody): boolean {
+  const flat = body.reasoning_effort
+  if (typeof flat === 'string' && flat.length > 0) return flat !== 'none'
+  const reasoning = body.reasoning
+  if (!isObject(reasoning)) return false
+  const nested = reasoning.effort
+  if (typeof nested === 'string' && nested.length > 0) return nested !== 'none'
+  return true
+}
+
 const readOpenAiChatSignals: SignalReader = (body) => ({
   // No `system`: Chat carries the system prompt as `messages[0]`, and
   // the surface never receives a top-level one — persona injection is
@@ -241,6 +274,7 @@ const readOpenAiChatSignals: SignalReader = (body) => ({
     messages: openAiChatMessages(body.messages),
     tools: openAiTokenizeTools(body.tools)
   },
+  thinking: openAiReasoningRequested(body),
   webSearch: openAiWebSearch(body)
 })
 
@@ -252,6 +286,7 @@ const readOpenAiResponsesSignals: SignalReader = (body) => ({
     system: typeof body.instructions === 'string' ? body.instructions : undefined,
     tools: openAiTokenizeTools(body.tools)
   },
+  thinking: openAiReasoningRequested(body),
   webSearch: openAiWebSearch(body)
 })
 

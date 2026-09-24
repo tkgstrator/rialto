@@ -11,7 +11,13 @@
  */
 
 import type { PrismaClient } from '../../src/generated/prisma/client'
-import type { ModelTier, RouteTier, TierRoute, TierRoutes } from '../../src/schemas/domain/tier-route'
+import type {
+  ModelTier,
+  RoutingLane,
+  RoutingScenario,
+  ScenarioRoutes,
+  TierRoute
+} from '../../src/schemas/domain/tier-route'
 import { saveTierProfile } from '../../src/services/tier-route-service'
 import { DEMO_PROFILE_KEY } from './demo-rows'
 import type { DemoTarget } from './targets'
@@ -94,46 +100,43 @@ async function seedAliases(prisma: PrismaClient, targets: DemoTarget[]): Promise
   return { aliases, written: rows.length }
 }
 
-// Up to three providers per tier, in `order`. Haiku also gets the first
-// provider's Sonnet as a substitution, switched off, so the screen shows
-// both a substituted route and the per-route toggle in a non-default
-// state. "Other" goes to the first provider that is not a subscription —
-// the one a gpt-* or gemini-* caller can plausibly be served by.
-function buildRoutes(aliases: AliasMap, order: (tier: ModelTier) => string[], subscriptions: Set<string>): TierRoutes {
-  const routesFor = (tier: ModelTier): TierRoute[] =>
-    order(tier)
-      .filter((provider) => aliases.get(provider)?.has(tier) === true)
-      .slice(0, 3)
-      .map((provider) => ({ provider, targetTier: tier, enabled: true }))
-  const haiku = routesFor('haiku')
-  const sonnet = routesFor('sonnet')
-  const substitute = sonnet.length === 0 ? [] : [{ ...sonnet[0], enabled: false }]
-  const other = sonnet.filter((r) => !subscriptions.has(r.provider)).slice(0, 1)
-  return {
-    fable: routesFor('fable'),
-    opus: routesFor('opus'),
-    sonnet,
-    haiku: [...haiku, ...substitute],
-    other: other.length > 0 ? other : sonnet.slice(0, 1)
-  }
+// The tiers each list asks for, most wanted first — the shape a Claude
+// plan install typically has: Sonnet for ordinary work, Opus when thinking,
+// Fable for long input, and the smaller model first for subagents.
+const LIST_TIERS: Record<RoutingScenario, Record<RoutingLane, ModelTier[]>> = {
+  default: { agent: ['sonnet', 'haiku'], subagent: ['haiku', 'sonnet'] },
+  think: { agent: ['opus', 'sonnet'], subagent: ['sonnet'] },
+  longContext: { agent: ['fable', 'opus'], subagent: [] }
 }
 
-/** What each requested tier resolves to, first route first — what the traffic seed samples from. */
-export type ResolvedRoutes = Record<RouteTier, DemoTarget[]>
+// For each list, each wanted tier from the first provider in `order` that
+// has it. The default agent list's second route is switched off, so the
+// screen shows the toggle in its non-default state.
+function buildRoutes(aliases: AliasMap, order: (tier: ModelTier) => string[]): ScenarioRoutes {
+  const routesFor = (scenario: RoutingScenario, lane: RoutingLane): TierRoute[] =>
+    LIST_TIERS[scenario][lane].flatMap((tier, i) => {
+      const provider = order(tier).find((p) => aliases.get(p)?.has(tier) === true)
+      const off = scenario === 'default' && lane === 'agent' && i === 1
+      return provider === undefined ? [] : [{ provider, targetTier: tier, enabled: !off }]
+    })
+  const lanes = (scenario: RoutingScenario) => ({ agent: routesFor(scenario, 'agent'), subagent: routesFor(scenario, 'subagent') })
+  return { default: lanes('default'), think: lanes('think'), longContext: lanes('longContext') }
+}
 
-const resolve = (routes: TierRoutes, aliases: AliasMap): ResolvedRoutes => {
-  const targetsOf = (tier: RouteTier): DemoTarget[] =>
-    routes[tier].flatMap((r) => {
+/** What each list resolves to, first route first — what the traffic seed samples from. */
+export type ResolvedRoutes = Record<RoutingScenario, Record<RoutingLane, DemoTarget[]>>
+
+const resolve = (routes: ScenarioRoutes, aliases: AliasMap): ResolvedRoutes => {
+  const targetsOf = (list: TierRoute[]): DemoTarget[] =>
+    list.flatMap((r) => {
       const model = r.enabled ? aliases.get(r.provider)?.get(r.targetTier) : undefined
       return model === undefined ? [] : [model]
     })
-  return {
-    fable: targetsOf('fable'),
-    opus: targetsOf('opus'),
-    sonnet: targetsOf('sonnet'),
-    haiku: targetsOf('haiku'),
-    other: targetsOf('other')
-  }
+  const lanes = (scenario: RoutingScenario) => ({
+    agent: targetsOf(routes[scenario].agent),
+    subagent: targetsOf(routes[scenario].subagent)
+  })
+  return { default: lanes('default'), think: lanes('think'), longContext: lanes('longContext') }
 }
 
 export interface TierMapReport {
@@ -145,7 +148,16 @@ export interface TierMapReport {
   resolved: Record<string, ResolvedRoutes>
 }
 
-const DEFAULT_CONSTRAINTS = { exhaustedBehavior: '429', quotaSkipPct: 100, errorRateSkipPct: 0.5, minHealthSamples: 5 } as const
+const DEFAULT_CONSTRAINTS = {
+  exhaustedBehavior: '429',
+  quotaSkipPct: 100,
+  errorRateSkipPct: 0.5,
+  minHealthSamples: 5,
+  longContextThreshold: null,
+  previousLongContextThreshold: null,
+  longContextTunedAt: null,
+  autoTuneLongContext: true
+} as const
 
 /**
  * Seed the aliases and the `live` map (only while unset) and always
@@ -162,7 +174,7 @@ export async function seedTierMap(prisma: PrismaClient, targets: DemoTarget[]): 
   const bySubscription = [...providers].sort(
     (a, b) => Number(subscriptions.has(b)) - Number(subscriptions.has(a)) || a.localeCompare(b)
   )
-  const liveRoutes = buildRoutes(aliases, () => bySubscription, subscriptions)
+  const liveRoutes = buildRoutes(aliases, () => bySubscription)
   const liveRouteCount = await prisma.tierRoute.count({ where: { profile: { key: 'live' } } })
   const liveIsEmpty = liveRouteCount === 0
   if (liveIsEmpty) {
@@ -170,15 +182,14 @@ export async function seedTierMap(prisma: PrismaClient, targets: DemoTarget[]): 
     warnings.push(...outcome.warnings)
   }
 
-  // Cheapest provider first for each tier, plus constraints that differ
-  // from the defaults so the constraints block has something to show.
+  // Cheapest provider first for each tier.
   const cheapestFirst = (tier: ModelTier): string[] =>
     [...providers].sort((a, b) => {
       const ma = aliases.get(a)?.get(tier)
       const mb = aliases.get(b)?.get(tier)
       return (ma === undefined ? Number.MAX_SAFE_INTEGER : costOf(ma)) - (mb === undefined ? Number.MAX_SAFE_INTEGER : costOf(mb))
     })
-  const costRoutes = buildRoutes(aliases, cheapestFirst, subscriptions)
+  const costRoutes = buildRoutes(aliases, cheapestFirst)
   const outcome = await saveTierProfile(
     DEMO_PROFILE_KEY,
     { routes: costRoutes, constraints: { ...DEFAULT_CONSTRAINTS, quotaSkipPct: 90, exhaustedBehavior: 'passthrough' } },

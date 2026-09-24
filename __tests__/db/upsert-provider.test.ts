@@ -11,9 +11,9 @@
  * routine save.
  *
  * These tests pin the fix: upsertProvider must upsert only the target
- * row and leave every other Provider / chain entry / SubAccount intact.
+ * row and leave every other Provider / route / SubAccount intact.
  * The one deletion that does cascade — deleting a provider outright —
- * has to say how many chain entries went with it.
+ * has to say how many routes went with it, and from which lists.
  */
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
@@ -21,6 +21,7 @@ import { getPrismaClient } from '../../src/db/client'
 import { applyUiConfig, deleteProviderByName, ensurePreferenceProfile, upsertProvider } from '../../src/services/config'
 import { setTierAlias } from '../../src/services/tier-alias-service'
 import { loadTierProfile, saveTierProfile } from '../../src/services/tier-route-service'
+import { profileWith } from '../llms/tier-fixture'
 import { HAS_DB, resetDbTables, teardownPrisma } from './helpers'
 
 describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', () => {
@@ -173,29 +174,29 @@ describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', (
     })
     await setTierAlias('anthropic', 'sonnet', 'claude-sonnet-5')
     await setTierAlias('openai', 'haiku', 'gpt-5-nano')
-    const outcome = await saveTierProfile('live', {
-      routes: {
-        fable: [],
-        opus: [{ provider: 'anthropic', targetTier: 'sonnet', enabled: true }],
-        sonnet: [
-          { provider: 'anthropic', targetTier: 'sonnet', enabled: true },
-          { provider: 'openai', targetTier: 'haiku', enabled: true }
-        ],
-        haiku: [],
-        other: []
-      },
-      constraints: { exhaustedBehavior: '429', quotaSkipPct: 100, errorRateSkipPct: 0.5, minHealthSamples: 5 }
-    })
+    const outcome = await saveTierProfile(
+      'live',
+      profileWith({
+        default: {
+          agent: [
+            { provider: 'anthropic', targetTier: 'sonnet', enabled: true },
+            { provider: 'openai', targetTier: 'haiku', enabled: true }
+          ],
+          subagent: [{ provider: 'anthropic', targetTier: 'sonnet', enabled: true }]
+        },
+        think: { agent: [{ provider: 'anthropic', targetTier: 'sonnet', enabled: true }] }
+      })
+    )
     expect(outcome.warnings).toEqual([])
   }
 
-  const sonnetRoutes = async (): Promise<string[]> =>
-    (await loadTierProfile('live')).routes.sonnet.map((r) => `${r.provider} · ${r.targetTier}`)
+  const defaultRoutes = async (): Promise<string[]> =>
+    (await loadTierProfile('live')).routes.default.agent.map((r) => `${r.provider} · ${r.targetTier}`)
 
   test('editing a provider does not remove routes naming another provider', async () => {
     await seedTwoProvidersWithRoutes()
 
-    // Edit openai — the sonnet primary is anthropic and must survive
+    // Edit openai — the Default primary is anthropic and must survive
     // because the CRUD path never touches sibling providers.
     const { warnings } = await upsertProvider({
       name: 'openai',
@@ -206,7 +207,7 @@ describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', (
     })
     expect(warnings).toEqual([])
 
-    expect(await sonnetRoutes()).toEqual(['anthropic · sonnet', 'openai · haiku'])
+    expect(await defaultRoutes()).toEqual(['anthropic · sonnet', 'openai · haiku'])
   })
 
   test('removing a model through the CRUD path reports the tier alias it unsets', async () => {
@@ -222,32 +223,29 @@ describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', (
     expect(warnings[0]).toContain('Unset 1 tier alias')
     expect(warnings[0]).toContain('openai · haiku')
     // The route stays, skipped until the alias is set again.
-    expect(await sonnetRoutes()).toEqual(['anthropic · sonnet', 'openai · haiku'])
+    expect(await defaultRoutes()).toEqual(['anthropic · sonnet', 'openai · haiku'])
   })
 
-  test('deleting a provider reports every route that went with it, by profile and tier', async () => {
+  test('deleting a provider reports every route that went with it, by profile, scenario and lane', async () => {
     await seedTwoProvidersWithRoutes()
     const { warnings } = await deleteProviderByName('anthropic')
     expect(warnings).toHaveLength(1)
-    expect(warnings[0]).toContain('Removed 2 tier routes')
-    expect(warnings[0]).toContain('live/opus')
-    expect(warnings[0]).toContain('live/sonnet')
-    expect(await sonnetRoutes()).toEqual(['openai · haiku'])
-    expect((await loadTierProfile('live')).routes.opus).toEqual([])
+    expect(warnings[0]).toContain('Removed 3 tier routes')
+    expect(warnings[0]).toContain('live/default/agent')
+    expect(warnings[0]).toContain('live/default/subagent')
+    expect(warnings[0]).toContain('live/think/agent')
+    expect(await defaultRoutes()).toEqual(['openai · haiku'])
+    const after = await loadTierProfile('live')
+    expect(after.routes.default.subagent).toEqual([])
+    expect(after.routes.think.agent).toEqual([])
   })
 
   test('deleting a provider no route names reports nothing', async () => {
     await seedTwoProvidersWithRoutes()
-    await saveTierProfile('live', {
-      routes: {
-        fable: [],
-        opus: [],
-        sonnet: [{ provider: 'anthropic', targetTier: 'sonnet', enabled: true }],
-        haiku: [],
-        other: []
-      },
-      constraints: { exhaustedBehavior: '429', quotaSkipPct: 100, errorRateSkipPct: 0.5, minHealthSamples: 5 }
-    })
+    await saveTierProfile(
+      'live',
+      profileWith({ default: { agent: [{ provider: 'anthropic', targetTier: 'sonnet', enabled: true }] } })
+    )
     const { warnings } = await deleteProviderByName('openai')
     expect(warnings).toEqual([])
   })

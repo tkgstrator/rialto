@@ -33,7 +33,7 @@ const planFor = (path: string, fallbacks: readonly string[]): RoutePlan => ({
   headers: {},
   transformersByName: new Map(),
   defaultTransformer: new OpenAITransformer(),
-  route: 'fable',
+  route: 'default',
   primaryModel: 'sub,fable',
   isSubagent: false,
   fallbacks,

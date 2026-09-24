@@ -59,6 +59,11 @@ export interface TargetQuotaState {
   // Capacity-weighted remaining budget across the target's accounts,
   // 0..100. Null when no account has a fresh reading.
   remainingBudgetPct: number | null
+  // Where the target lands at its reset if use keeps its current pace, as
+  // a percentage of the budget: 100 = exactly spent. Over 100 the router
+  // steps down to the next route; well under it, the route is pulled to
+  // the front. Null until a window is far enough in to judge.
+  projectedPct: number | null
   // When the budget next refills: for an exhausted target, when its
   // first account can serve again.
   resetAt: number | null

@@ -90,9 +90,9 @@ export const PipelineRequestSchema = z.object({
   url: z.string().nonempty(),
   provider: z.string().nonempty().optional(),
   model: z.string().nonempty().optional(),
-  // The requested tier a tier-map route served ('sonnet', 'other', …), or
-  // 'passthrough' when the request went upstream as sent. Written to the
-  // RequestLog row's `scenario` column, the name it had before the map.
+  // The scenario whose list served the request ('default', 'think',
+  // 'longContext'), or 'passthrough' when it went upstream as sent.
+  // Written to the RequestLog row's `scenario` column.
   route: z.string().nonempty().optional(),
   // The client's original body.model, captured before routing
   // rewrote it. Carried so the usage-capture step can persist "what was

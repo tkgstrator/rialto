@@ -3,7 +3,7 @@
  * single-click surface writes (mode, profile), and the toast plumbing they
  * all share.
  *
- * Kept out of the screen component for the same reason `useTierMapEditing`
+ * Kept out of the screen component for the same reason `useScenarioEditing`
  * is: every one of these is a short "call the API, then toast" shape, and
  * inlining them pushed the screen's cognitive complexity past the Biome
  * limit on its own conditionals.
@@ -12,46 +12,33 @@ import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import type { InboundSurfaceWire, RoutingMode, SurfaceId, TierProfileSaveOutcome } from '@/lib/api'
-import { applyConstraintEdit, type ConstraintEdit } from './derive'
-import type { TierDraft } from './types'
 
-/** The constraint cells that take typed text, and so can hold a value that is not one yet. */
-export type TypedConstraint = 'quotaSkipPct' | 'errorRateSkipPct' | 'minHealthSamples'
-
-export interface TierMapWriteActions {
+export interface RoutingWriteActions {
   editing: boolean
   saving: boolean
-  /** Every typed cell holds a value the profile can store. */
-  constraintsValid: boolean
-  onConstraintValidity: (field: TypedConstraint, valid: boolean) => void
   onEdit: () => void
   onRevert: () => void
   onSave: () => void
-  onConstraintEdit: (edit: ConstraintEdit) => void
   onMode: (mode: RoutingMode) => void
   onProfile: (key: string) => void
 }
 
-export function useTierMapActions(
+export function useRoutingActions(
   surface: InboundSurfaceWire | undefined,
   profileKey: string | null,
-  setDraft: React.Dispatch<React.SetStateAction<TierDraft>>,
   save: () => Promise<TierProfileSaveOutcome>,
   reset: () => void,
   onSaved: () => void,
   setMode: (surface: SurfaceId, routingMode: RoutingMode) => Promise<void>,
   setSurfaceProfile: (surface: SurfaceId, routingMode: RoutingMode, profileKey: string) => Promise<void>
-): TierMapWriteActions {
+): RoutingWriteActions {
   const { t } = useTranslation()
   const [saving, setSaving] = useState(false)
-  // The typed cells currently holding text that is not a value. A set
-  // rather than one flag: fixing one cell must not clear another's error.
-  const [invalid, setInvalid] = useState<ReadonlySet<TypedConstraint>>(new Set())
 
   // Edit mode belongs to the profile it was entered on, rather than being
   // a bare boolean: should the profile change underneath anyway, the
-  // freshly loaded map comes up read-only instead of inheriting an edit
-  // session that was never its own.
+  // freshly loaded routes come up read-only instead of inheriting an edit
+  // session that was never their own.
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const editing = editingKey !== null && editingKey === profileKey
 
@@ -62,20 +49,7 @@ export function useTierMapActions(
 
   const fail = useCallback((err: unknown) => notify(err instanceof Error ? err.message : String(err), false), [notify])
 
-  const onConstraintValidity = useCallback((field: TypedConstraint, valid: boolean) => {
-    setInvalid((prev) => {
-      if (valid === !prev.has(field)) return prev
-      const next = new Set(prev)
-      if (valid) next.delete(field)
-      else next.add(field)
-      return next
-    })
-  }, [])
-
-  const onEdit = useCallback(() => {
-    setInvalid(new Set())
-    setEditingKey(profileKey)
-  }, [profileKey])
+  const onEdit = useCallback(() => setEditingKey(profileKey), [profileKey])
 
   const onRevert = useCallback(() => {
     reset()
@@ -86,7 +60,7 @@ export function useTierMapActions(
     setSaving(true)
     save()
       .then((outcome) => {
-        notify(outcome.success ? t('routing.tiers.saved') : t('routing.tiers.saveFailed'), outcome.success)
+        notify(outcome.success ? t('routing.scenarios.saved') : t('routing.scenarios.saveFailed'), outcome.success)
         // Warnings name what the server dropped (an unknown provider, a
         // duplicate) or kept but cannot use yet (an unset alias). They
         // are not failures, so each gets its own toast rather than being
@@ -103,15 +77,9 @@ export function useTierMapActions(
       .finally(() => setSaving(false))
   }, [save, notify, fail, onSaved, t])
 
-  const onConstraintEdit = useCallback(
-    (edit: ConstraintEdit) =>
-      setDraft((prev) => ({ ...prev, constraints: applyConstraintEdit(prev.constraints, edit) })),
-    [setDraft]
-  )
-
-  // The mode, the profile and the reset apply on click — there is no
-  // Save for them, in the design or here, because each is a single
-  // choice rather than an edit in progress. That only reads as
+  // The mode and the profile apply on click — there is no Save for
+  // them, in the design or here, because each is a single choice rather
+  // than an edit in progress. That only reads as
   // deliberate if the write is acknowledged; silence is
   // indistinguishable from a dropped click, which is what makes people
   // go looking for a Save button.
@@ -143,16 +111,5 @@ export function useTierMapActions(
     [surface, setSurfaceProfile, notify, fail, t]
   )
 
-  return {
-    editing,
-    saving,
-    constraintsValid: invalid.size === 0,
-    onConstraintValidity,
-    onEdit,
-    onRevert,
-    onSave,
-    onConstraintEdit,
-    onMode,
-    onProfile
-  }
+  return { editing, saving, onEdit, onRevert, onSave, onMode, onProfile }
 }

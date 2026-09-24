@@ -3,14 +3,15 @@
  *
  * Two layers, deliberately:
  *   - `readSignals` on its own — a pure function of (body, inboundPath),
- *     so each of the two signals can be pinned to the exact wire key it
+ *     so each of the three signals can be pinned to the exact wire key it
  *     reads. A regression here names the signal it broke.
- *   - `routeRequest` end to end — the point of the exercise. The tier map
- *     gates each route on both signals: the prompt's size against
- *     the route's context window, and a web_search tool against whether
- *     the route can run it. Neither exists under Anthropic's names on an
- *     OpenAI caller, so without the per-surface readers both gates would
- *     wave every OpenAI request through.
+ *   - `routeRequest` end to end — the point of the exercise. The thinking
+ *     signal picks the Think scenario, and each route is gated on the
+ *     other two: the prompt's size against the route's context window,
+ *     and a web_search tool against whether the route can run it. None
+ *     exists under Anthropic's names on an OpenAI caller, so without the
+ *     per-surface readers every OpenAI request would land on Default and
+ *     both gates would wave it through.
  *
  * The readers see the RAW inbound body on purpose. The endpoint
  * transformers that normalise these shapes run inside the pipeline,
@@ -163,6 +164,48 @@ describe('webSearch', () => {
   })
 })
 
+describe('thinking', () => {
+  test('chat: `reasoning_effort` opts in, and its own `none` opts out', () => {
+    expect(signals(CHAT, { reasoning_effort: 'high' }).thinking).toBe(true)
+    expect(signals(CHAT, { reasoning_effort: 'minimal' }).thinking).toBe(true)
+    expect(signals(CHAT, { reasoning_effort: 'none' }).thinking).toBe(false)
+  })
+
+  test('responses: `reasoning.effort` opts in, and `none` opts out', () => {
+    expect(signals(RESPONSES, { reasoning: { effort: 'medium' } }).thinking).toBe(true)
+    expect(signals(RESPONSES, { reasoning: { effort: 'none' } }).thinking).toBe(false)
+  })
+
+  test('a `reasoning` object with no effort still asks for reasoning', () => {
+    // What Codex CLI sends: asking for a reasoning summary is asking the
+    // model to reason.
+    expect(signals(RESPONSES, { reasoning: { summary: 'auto' } }).thinking).toBe(true)
+    expect(signals(RESPONSES, { reasoning: {} }).thinking).toBe(true)
+  })
+
+  test('both spellings are read on both surfaces, since SDK versions differ in which they send', () => {
+    expect(signals(CHAT, { reasoning: { effort: 'low' } }).thinking).toBe(true)
+    expect(signals(RESPONSES, { reasoning_effort: 'low' }).thinking).toBe(true)
+  })
+
+  test('no reasoning control is not an opt-in, though both vendors reason by default', () => {
+    // Think grades the client's intent, not the upstream's default.
+    expect(signals(CHAT, { messages: [{ role: 'user', content: 'hi' }] }).thinking).toBe(false)
+    expect(signals(RESPONSES, { input: 'hi' }).thinking).toBe(false)
+  })
+
+  test('a control of the wrong shape is "not thinking" rather than a crash', () => {
+    expect(signals(CHAT, { reasoning_effort: '' }).thinking).toBe(false)
+    expect(signals(CHAT, { reasoning_effort: 3 }).thinking).toBe(false)
+    expect(signals(RESPONSES, { reasoning: 'high' }).thinking).toBe(false)
+    expect(signals(RESPONSES, { reasoning: null }).thinking).toBe(false)
+  })
+
+  test('Anthropic `thinking` means nothing on an OpenAI surface', () => {
+    expect(signals(CHAT, { thinking: { type: 'enabled', budget_tokens: 1024 } }).thinking).toBe(false)
+  })
+})
+
 describe('the surfaces stay distinct', () => {
   test('a responses body read as chat sees nothing, and vice versa', () => {
     // The registry lookup is what separates them; if it regressed to one
@@ -182,16 +225,20 @@ beforeAll(async () => {
   await tokenizers.initialize()
 })
 
-// The caller's model names no Claude family, so it asks for the "other"
-// tier. Three routes, one distinct model each, so the assertion names the
-// gate that decided: `fast` holds a short prompt and no web search,
-// `searcher` can search but holds no more, `big` holds anything.
+// Three Default routes, one distinct model each, so the assertion names
+// the gate that decided: `fast` holds a short prompt and no web search,
+// `searcher` can search but holds no more, `big` holds anything. `fast`'s
+// window also puts the Long context threshold at 350 tokens; with no Long
+// context list, a longer prompt falls back to Default and meets the gates
+// there. Think has a model of its own.
+const DEFAULT_ROUTES = [
+  route('p', 'haiku', 'fast', { hostsWebSearch: false, contextWindow: 500 }),
+  route('p', 'sonnet', 'searcher', { hostsWebSearch: true, contextWindow: 500 }),
+  route('p', 'opus', 'big', { hostsWebSearch: false, contextWindow: 1_000_000 })
+]
 const ROUTES = mapWith({
-  other: [
-    route('p', 'haiku', 'fast', { hostsWebSearch: false, contextWindow: 500 }),
-    route('p', 'sonnet', 'searcher', { hostsWebSearch: true, contextWindow: 500 }),
-    route('p', 'opus', 'big', { hostsWebSearch: false, contextWindow: 1_000_000 })
-  ]
+  default: { agent: DEFAULT_ROUTES },
+  think: { agent: [route('p', 'fable', 'thinker', { contextWindow: 1_000_000 })] }
 })
 
 async function routeOn(
@@ -217,10 +264,37 @@ afterEach(() => {
 })
 
 describe('the gates see an OpenAI caller', () => {
-  test('an ordinary request goes to the first route, the rest behind it', async () => {
+  test('an ordinary request goes to the first Default route, the rest behind it', async () => {
     const req = await routeOn(CHAT, { messages: [{ role: 'user', content: 'hi' }] })
     expect(req.body.model).toBe('p,fast')
     expect(req.resolvedFallbacks).toEqual(['p,searcher', 'p,big'])
+    expect(req.route).toBe('default')
+  })
+
+  test('chat: `reasoning_effort` walks the Think list', async () => {
+    const req = await routeOn(CHAT, { messages: [{ role: 'user', content: 'hi' }], reasoning_effort: 'high' })
+    expect(req.body.model).toBe('p,thinker')
+    expect(req.route).toBe('think')
+  })
+
+  test('responses: `reasoning` walks the Think list, and `effort: none` stays on Default', async () => {
+    const thinking = await routeOn(RESPONSES, { input: 'hi', reasoning: { effort: 'medium', summary: 'auto' } })
+    expect(thinking.body.model).toBe('p,thinker')
+    expect(thinking.route).toBe('think')
+    const off = await routeOn(RESPONSES, { input: 'hi', reasoning: { effort: 'none' } })
+    expect(off.body.model).toBe('p,fast')
+    expect(off.route).toBe('default')
+  })
+
+  test('a reasoning request with no Think routes falls back to Default', async () => {
+    const defaultOnly = mapWith({ default: { agent: DEFAULT_ROUTES } })
+    const req = await routeOn(
+      CHAT,
+      { messages: [{ role: 'user', content: 'hi' }], reasoning_effort: 'high' },
+      defaultOnly
+    )
+    expect(req.body.model).toBe('p,fast')
+    expect(req.route).toBe('default')
   })
 
   test('chat: a web_search function skips the routes that cannot run it', async () => {
@@ -246,7 +320,7 @@ describe('the gates see an OpenAI caller', () => {
   })
 
   test('a web_search request no route can run is refused, not sent without its tool', async () => {
-    const noSearch = mapWith({ other: [route('p', 'haiku', 'fast', { hostsWebSearch: false })] })
+    const noSearch = mapWith({ default: { agent: [route('p', 'haiku', 'fast', { hostsWebSearch: false })] } })
     const req = await routeOn(RESPONSES, { input: 'hi', tools: [{ type: 'web_search' }] }, noSearch)
     expect(req.body.model).toBe('caller,own')
     expect(req.routingRefusal).toContain('web_search')
@@ -282,7 +356,7 @@ describe('the gates see an OpenAI caller', () => {
   })
 
   test('a prompt no route can hold is refused on an OpenAI surface too', async () => {
-    const small = mapWith({ other: [route('p', 'haiku', 'fast', { contextWindow: 500 })] })
+    const small = mapWith({ default: { agent: [route('p', 'haiku', 'fast', { contextWindow: 500 })] } })
     const req = await routeOn(RESPONSES, { input: 'lorem ipsum dolor sit amet '.repeat(300) }, small)
     expect(req.body.model).toBe('caller,own')
     expect(req.routingRefusal).toContain('context window')

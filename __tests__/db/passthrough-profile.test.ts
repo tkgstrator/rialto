@@ -5,7 +5,7 @@
  * makes it all-or-nothing: every client on an endpoint is routed, or
  * none is. Pointing a token or a surface at this key opts that traffic
  * out on its own, so what has to hold is that it never behaves like a
- * tier map — it cannot be written to, it does not appear as one in the
+ * stored map — it cannot be written to, it does not appear as one in the
  * picker, and a surface carrying it is passthrough whatever its mode
  * column says.
  */
@@ -18,12 +18,8 @@ import {
   PASSTHROUGH_PROFILE_KEY,
   saveTierProfile
 } from '../../src/services/tier-route-service'
+import { profileWith } from '../llms/tier-fixture'
 import { HAS_DB, resetDbTables, teardownPrisma } from './helpers'
-
-const emptyMap = () => ({
-  routes: { fable: [], opus: [], sonnet: [], haiku: [], other: [] },
-  constraints: { exhaustedBehavior: '429' as const, quotaSkipPct: 100, errorRateSkipPct: 0.5, minHealthSamples: 5 }
-})
 
 describe.skipIf(!HAS_DB)('passthrough profile', () => {
   beforeEach(async () => {
@@ -42,7 +38,7 @@ describe.skipIf(!HAS_DB)('passthrough profile', () => {
   })
 
   test('refuses to store a map, rather than storing one that never runs', async () => {
-    const outcome = await saveTierProfile(PASSTHROUGH_PROFILE_KEY, emptyMap())
+    const outcome = await saveTierProfile(PASSTHROUGH_PROFILE_KEY, profileWith({}))
     expect(outcome.success).toBe(false)
     expect(outcome.warnings.join(' ')).toContain('reserved')
     expect(await getPrismaClient().routerPreferenceProfile.count()).toBe(0)

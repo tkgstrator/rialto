@@ -3,18 +3,18 @@
  *
  * This is what Activity, Overview's spend and recent-session blocks, and
  * the per-token cost column all read. Rows are generated against the same
- * tier maps the routing seed wrote, so what Activity says was used and
+ * scenario routes the routing seed wrote, so what Activity says was used and
  * what Routing says is configured tell the same story — a demo where the
  * two disagree is worse than no demo at all.
  */
 
 import type { PrismaClient } from '../../src/generated/prisma/client'
-import type { RouteTier } from '../../src/schemas/domain/tier-route'
+import type { RoutingLane, RoutingScenario } from '../../src/schemas/domain/tier-route'
 import { CURATED_CONVERSATIONS, FILLER_TURNS } from './conversations'
 import { DEMO_PROFILE_KEY, demoId, demoSessionId } from './demo-rows'
 import type { Random } from './random'
 import type { ResolvedRoutes } from './routing'
-import { type DemoTarget, inferTier } from './targets'
+import type { DemoTarget } from './targets'
 
 interface SurfaceSpec {
   id: string
@@ -100,7 +100,7 @@ const uuidish = (random: Random): string =>
   `${hex(random, 8)}-${hex(random, 4)}-4${hex(random, 3)}-a${hex(random, 3)}-${hex(random, 12)}`
 
 interface TurnPlan {
-  route: RouteTier | typeof PASSTHROUGH_ROUTE
+  route: RoutingScenario | typeof PASSTHROUGH_ROUTE
   isSubagent: boolean
   target: DemoTarget
   requestedModel: string
@@ -126,18 +126,33 @@ const pickFromRoutes = (routes: DemoTarget[], random: Random): DemoTarget => {
 // Where a request goes: through its surface's map when the tier has a
 // route, else upstream as sent — to the model it named when the demo
 // catalog has it.
+// How a Claude Code session's requests split, roughly: most ordinary,
+// a good share with thinking on, a few over the Long context threshold.
+const SCENARIO_WEIGHTS: ReadonlyArray<readonly [RoutingScenario, number]> = [
+  ['default', 70],
+  ['think', 20],
+  ['longContext', 10]
+]
+
+// Where a request goes: its scenario's list for its lane, else the Default
+// list for that lane, else upstream as sent — to the model it named when
+// the demo catalog has it.
 function destinationOf(
   surface: SurfaceSpec,
   requestedModel: string,
+  scenario: RoutingScenario,
+  lane: RoutingLane,
   resolved: Record<string, ResolvedRoutes>,
   targets: DemoTarget[],
   random: Random
 ): { route: TurnPlan['route']; target: DemoTarget } | null {
-  const tier = inferTier(requestedModel)
-  const requested: RouteTier = tier === null ? 'other' : tier
-  const map = surface.profile === null ? undefined : resolved[surface.profile]
-  const routes = map === undefined ? [] : map[requested]
-  if (routes.length > 0) return { route: requested, target: pickFromRoutes(routes, random) }
+  const lists = surface.profile === null ? undefined : resolved[surface.profile]
+  if (lists !== undefined) {
+    const own = lists[scenario][lane]
+    if (own.length > 0) return { route: scenario, target: pickFromRoutes(own, random) }
+    const fallback = lists.default[lane]
+    if (fallback.length > 0) return { route: 'default', target: pickFromRoutes(fallback, random) }
+  }
   const named = targets.find((t) => t.modelName === requestedModel)
   if (named !== undefined) return { route: PASSTHROUGH_ROUTE, target: named }
   return targets.length === 0 ? null : { route: PASSTHROUGH_ROUTE, target: random.pick(targets) }
@@ -152,17 +167,18 @@ function planTurn(
   turnIndex: number
 ): TurnPlan | null {
   const requestedModel = random.pick(surface.requestedModels)
-  const destination = destinationOf(surface, requestedModel, resolved, targets, random)
+  const isSubagent = random.chance(0.15)
+  const scenario = random.weighted(SCENARIO_WEIGHTS)
+  const destination = destinationOf(surface, requestedModel, scenario, isSubagent ? 'subagent' : 'agent', resolved, targets, random)
   if (destination === null) return null
   const { route, target } = destination
-  const isSubagent = random.chance(0.15)
   const status = random.weighted(STATUS_WEIGHTS)
   // The larger tiers answer longer and slower.
-  const heavy = route === 'opus' || route === 'fable'
+  const heavy = route === 'think' || route === 'longContext'
 
   // Context grows with the turn index; a few requests start where the
   // others end up, the way a long agent session does.
-  const base = random.chance(0.08) ? random.int(120_000, 420_000) : random.int(1_800, 26_000)
+  const base = scenario === 'longContext' ? random.int(420_000, 820_000) : random.int(1_800, 26_000)
   const growth = Math.round(base * (1 + turnIndex * 0.12))
   // A resumed conversation reads most of its context from cache. The
   // first turn writes it instead — that asymmetry is the whole reason
@@ -197,7 +213,7 @@ type LogRow = {
   provider: string
   model: string
   requestedModel: string
-  // The route the request took (its requested tier, or "passthrough").
+  // The scenario whose list served the request, or "passthrough".
   // The column keeps its pre-tier-map name.
   scenario: string
   isSubagent: boolean

@@ -27,7 +27,7 @@ export interface DemoTarget {
 
 // Same substring rule the router uses (router/request-signals.ts's
 // tierOf), duplicated here so the seed does not import the request path.
-export const inferTier = (modelName: string): Tier | null => {
+const inferTier = (modelName: string): Tier | null => {
   const lower = modelName.toLowerCase()
   if (lower.includes('fable')) return 'fable'
   if (lower.includes('opus')) return 'opus'

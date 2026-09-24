@@ -50,13 +50,15 @@ async function runRouter(
   return req
 }
 
-// The router's behaviour depends on the surface's mode and the map, so
-// the tests set both rather than inheriting whatever a fresh install
+// The router's behaviour depends on the surface's mode and the routes,
+// so the tests set both rather than inheriting whatever a fresh install
 // seeds. All three surfaces are routed, so the OpenAI cases are held back
 // by the persona gate itself and not by the passthrough early return.
 beforeEach(() => {
   __setSurfacesForTests({ 'anthropic-messages': 'routed', 'openai-chat': 'routed', 'openai-responses': 'routed' })
-  __setTierProfilesForTests({ live: mapWith({ sonnet: [route('anthropic', 'sonnet', 'claude-sonnet-5')] }) })
+  __setTierProfilesForTests({
+    live: mapWith({ default: { agent: [route('anthropic', 'sonnet', 'claude-sonnet-5')] } })
+  })
 })
 
 afterEach(() => {
@@ -73,13 +75,13 @@ describe('routeRequest — persona gate', () => {
   test('does NOT touch body.system on /v1/chat/completions (OpenAI inbound)', async () => {
     const req = await runRouter('/v1/chat/completions', { messages: [{ role: 'user', content: 'hi' }] })
     // Routed, so the gate — not a skipped router — is what kept it out.
-    expect(req.route).toBe('sonnet')
+    expect(req.route).toBe('default')
     expect(req.body.system).toBeUndefined()
   })
 
   test('does NOT touch body.system on /v1/responses (OpenAI inbound)', async () => {
     const req = await runRouter('/v1/responses', { input: 'hi' })
-    expect(req.route).toBe('sonnet')
+    expect(req.route).toBe('default')
     expect(req.body.system).toBeUndefined()
   })
 

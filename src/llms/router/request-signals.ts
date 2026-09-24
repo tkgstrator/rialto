@@ -1,7 +1,7 @@
 /**
  * Readers for what a request carries on the wire, one question each.
  *
- * None of them sees the tier map or the inbound surface: they answer
+ * None of them sees the routes or the inbound surface: they answer
  * "what did the client send?" and nothing more. That is what lets the
  * tier router and the services beside it share `tierOf` without any of
  * them owning it — the model-name tier is read in exactly one place, so
@@ -10,6 +10,22 @@
 
 import type { RequestedModelTier } from '@/schemas/domain/router'
 import type { RouterRequestBody } from './types'
+
+/**
+ * Whether the caller opted into extended thinking — the Think scenario.
+ *
+ * Presence of `thinking` is the opt-in and `type: 'disabled'` the
+ * explicit opt-out; 'enabled' and 'adaptive' both count. A field that is
+ * not an object, or a discriminator that is not a string, is "not
+ * thinking", so a malformed body never lands on the Think list.
+ */
+export function isThinkingEnabled(body: RouterRequestBody): boolean {
+  const t = body.thinking
+  if (t === null || typeof t !== 'object') return false
+  const type: unknown = Reflect.get(t, 'type')
+  if (typeof type !== 'string') return false
+  return type !== 'disabled'
+}
 
 // Bucket a model string into one of the four CC families. Case-
 // insensitive substring match: `claude-opus-4-7` → 'opus', `gpt-5` →
