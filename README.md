@@ -11,13 +11,13 @@
 ## ✨ Features
 
 - **Four inbound surfaces** — Anthropic Messages (`/v1/messages`), OpenAI Chat Completions, OpenAI Responses, and Gemini `generateContent`. Everything a surface needs is one descriptor, so all four get the same auth, error envelopes, streaming and request history.
-- **Chain routing** — an ordered `provider,model` chain per scenario (`default`, `think` (Plan Mode), `longContext`, `webSearch`) and per lane (`agent` / `subagent`). The selector walks it, skipping targets that are exhausted or switched off, and the rest of the chain is the failover list.
+- **Tier routing** — a tier map per profile: the tier the caller asked for, read off the model name (`fable` / `opus` / `sonnet` / `haiku`, or `other`), maps to an ordered list of routes, each naming a provider and a tier on it. Which model that is comes from the provider's *tier alias*, so a new model release moves one alias instead of every route. The first route that can take the request serves it; the rest are the failover list.
 - **Passthrough** — or let the caller pick: a surface (or a single access token) in passthrough mode sends the caller's own `body.model` upstream untouched.
-- **Failover with account rotation** — a 429 rotates to a peer subscription account first, then walks the rest of the chain. The chain's order is honoured as written, a subscription primary falling back to an api_key entry included.
+- **Failover with account rotation** — a 429 rotates to a peer subscription account first, then walks the rest of the tier's routes. The map's order is honoured as written, a subscription route falling back to an api_key route included.
 - **Personas** — append a named system prompt to every routed `/v1/messages` request without touching Claude Code. Manage the library and pick the active one under Settings → Personas.
 - **Multi-provider support** — connect API-key providers (Anthropic, OpenAI, DeepSeek, Gemini, Groq, OpenRouter, …) or subscription-based providers (Claude Code OAuth, OpenAI Codex), with several accounts per subscription provider.
-- **Subscription monitoring** — each account's rate-limit windows, refreshed on demand from the Subscriptions list, and the exhaustion state the router reads.
-- **Usage & cost** — spend for today, this week and this month on Overview; per-provider cost by day or week, and per-account subscription usage, under Activity → Usage.
+- **Subscription monitoring** — each account's rate-limit windows, refreshed on demand from the Subscriptions list, and the exhaustion state the router reads. A refresh reaches routing at once, and a Codex account's banked rate-limit resets can be spent from its provider page.
+- **Usage & cost** — spend for today, this week and this month on Overview; per-provider cost by day or week, and per-account subscription usage, under Activity → Usage. Overview and each subscription provider's page also show, per account, what its traffic would have cost at API prices — this week and over 30 days.
 - **Request history** — browse past sessions with per-request stats and archived conversation transcripts.
 - **Issued access tokens** — individually revocable and rotatable, attributable per request, and scopeable to a set of surfaces and one routing profile.
 - **Web management UI** — full browser-based configuration in English, Japanese or Chinese; no manual JSON editing required.
@@ -31,8 +31,8 @@ The web UI (served on port **3456** by default) gives you full control over ever
 | Screen | Route | Purpose |
 |--------|-------|---------|
 | **Overview** | `/overview` | Spend, subscription quota windows, and requests / errors per inbound surface at a glance |
-| **Routing** | `/routing` | Each surface's routing mode and profile, the chain per scenario and lane, the profile's constraints, and the targets a passthrough surface may name |
-| **Providers** | `/providers` | Two lists — `/providers/subscriptions` and `/providers/api-keys` — plus `/providers/connect` to add one and `/providers/<name>` for models, prices, context windows, connectivity tests and the read-only derived request shape |
+| **Routing** | `/routing` | Each surface's routing mode and profile, the profile's tier map (the routes per requested tier, the model each one reaches today, and its quota state), the profile's constraints, and the targets a passthrough surface may name |
+| **Providers** | `/providers` | Two lists — `/providers/subscriptions` and `/providers/api-keys` — plus `/providers/connect` to add one and `/providers/<name>` for tier aliases, models, prices, context windows, connectivity tests and the read-only derived request shape |
 | **Access tokens** | `/access-tokens` | Issue, scope, rotate and revoke the tokens clients use on `/v1/*` |
 | **Activity** | `/activity` | Sessions, per-request logs (`/activity/requests`), subscription usage (`/activity/usage`), and server logs (`/activity/logs`) |
 | **Settings** | `/settings` | Server, Access (admin access: Cloudflare Access, and how to get back in if it breaks), Logging, Personas, Status line, Advanced (config document, health) |
@@ -123,7 +123,9 @@ Rialto can route through subscription-based providers without a per-call API key
 
 Codex's browser sign-in is not offered: its OAuth client only redirects to `http://localhost:1455/auth/callback` on the machine the browser runs on, which a remote or containerised install never receives. The loopback listener behind it (port `1455`, still published by `compose.yaml`) is no longer used by the UI.
 
-Rialto stores the encrypted tokens and refreshes them. A provider may hold several accounts; which one serves a request is decided per request (see [Effort, tier, and fallbacks](#effort-tier-and-fallbacks)). The Subscriptions list has a **Refresh** button (`POST /api/subscriptions/refresh`) that re-syncs every account on an enabled subscription provider and re-polls its usage past the 5-minute cache.
+Rialto stores the encrypted tokens and refreshes them. A provider may hold several accounts; which one serves a request is decided per request (see [Failover and account rotation](#failover-and-account-rotation)). The Subscriptions list has a **Refresh** button (`POST /api/subscriptions/refresh`) that re-syncs every account on an enabled subscription provider and re-polls its usage past the 5-minute cache. Routing reads the fresh numbers immediately rather than at the next scheduler tick: the refresh republishes the quota snapshot and lifts the exhaustion marks an earlier 429 left on an account the vendor has since reset.
+
+A Codex account can hold *banked* rate-limit resets. Its row on the provider page shows how many it holds, and **Use reset** spends one (`POST /api/subscriptions/accounts/{id}/reset-usage`) after a confirmation that says when the next one lapses. The button is live only while the vendor would accept a reset, which is while a window is spent. The account's usage is then re-read the same way as a refresh, so routing picks it up as soon as the reset lands. Nothing spends a reset automatically.
 
 > **Terms of service notice:** Using a Claude Code subscription to serve requests from applications other than Claude Code may violate [Anthropic's usage policies](https://www.anthropic.com/legal/aup). Use this feature at your own discretion and risk.
 
@@ -148,10 +150,10 @@ Each surface has one stored mode:
 
 | Mode | Behaviour |
 |---|---|
-| `passthrough` | The caller picked the model. Scenario classification, the chain and proactive failover are all skipped. |
-| `routed` | The chain runs: scenario classification → chain walk → failover. |
+| `passthrough` | The caller picked the model. The tier map is skipped. |
+| `routed` | The tier map runs: requested tier → the first route that passes every gate → failover. |
 
-**Every surface starts in `passthrough`.** Routing an unconfigured install does nothing useful — with no chain the selector falls straight through to the caller's own model — so routing is something you switch on, per surface, once there is something to route to. Each surface also draws from a routing profile (`live` by default); the Routing page's profile picker lets you point, say, a CI client's surface at a cost-first chain. A second profile is created by writing to it: `PUT /api/router-preferences?profile=<key>`. See [Chain and passthrough](#chain-and-passthrough) for what each mode does with `body.model`.
+**Every surface starts in `passthrough`.** Routing an unconfigured install does nothing useful — with an empty tier map every request falls straight through to the caller's own model — so routing is something you switch on, per surface, once there is something to route to. Each surface also draws from a routing profile (`live` by default); the Routing page's profile picker lets you point, say, a CI client's surface at a cost-first map. A second profile is created by writing to it: `PUT /api/routing/profiles/<key>`. See [Tier map and passthrough](#tier-map-and-passthrough) for what each mode does with `body.model`.
 
 ## ⚙️ Configuration
 
@@ -184,68 +186,78 @@ The scalar keys above (everything but `Personas`, `ActivePersona` and `StatusLin
 
 Keys an older build wrote for mechanisms that no longer exist are ignored. `Router`, `CUSTOM_ROUTER_PATH`, `LiveRoutingName`, `CROSS_PROVIDER_FALLBACK` and the retired admin key `APIKEY` are stripped on every read; `POST /api/config` drops them with a warning, and the next save removes them from the file. An `APIKEY` environment variable is not read either. `ROUTER_MODE` merely survives as an unknown key and is read by nothing.
 
-### Providers, models and the chain (database)
+### Providers, models and the tier map (database)
 
-Providers, models, the preference chains and each surface's routing mode live in PostgreSQL and are managed through the web UI (`POST /api/config`, `PUT /api/router-preferences`, `POST /api/inbound-surfaces`). The `Providers` key **inside** `config.json` is a one-way mirror written back from the database after each save — editing it by hand has no effect and is overwritten on the next write. Nothing about routing is mirrored to disk any more.
+Providers, models, tier aliases, each profile's tier map and each surface's routing mode live in PostgreSQL and are managed through the web UI (`POST /api/config`, `PUT /api/providers/{name}/tier-aliases/{tier}`, `PUT /api/routing/profiles/{key}`, `POST /api/inbound-surfaces`). The `Providers` key **inside** `config.json` is a one-way mirror written back from the database after each save — editing it by hand has no effect and is overwritten on the next write. Nothing about routing is mirrored to disk any more.
 
-### Chain and passthrough
+### Tier map and passthrough
 
 Those are the only two things Rialto does with `body.model`.
 
-**Chain** (`routed`). The request is classified into a scenario and a lane, and the selector walks that lane's ordered `provider,model` chain from the profile the request resolves to — the access token's profile if it names one, otherwise the surface's, otherwise `live`. The first entry that is switched on, not exhausted and able to hold the request becomes `body.model`; the rest of the chain rides along as the failover list. Two things on the profile decide what happens when the walk finds nothing:
+**Tier map** (`routed`). The request routes through a profile — the access token's profile if it names one, otherwise the surface's, otherwise `live`. Its *requested tier* is read off `body.model`: a name containing `fable`, `opus`, `sonnet` or `haiku` (checked in that order) asks for that tier, and anything else — `gpt-5.5`, `gemini-2.5-pro`, a custom id — asks for `other`. The profile lists an ordered set of routes for each of the five, and each route names a provider and a tier on it (`claude-code · sonnet`); the provider's [tier alias](#tier-aliases) says which model that is today. Serving a Haiku request with Sonnet is simply a route in the `haiku` group that names a provider's `sonnet` — a substitution is written in the map, not decided by a gate.
 
-- `exhaustedBehavior` — the lane has entries but every one of them is gated out. `429` (the default) answers the client with a `rate_limit_error` and a `Retry-After` header (seconds until the earliest window reset, or 30 when none is known) without touching any upstream; `passthrough` sends the caller's own `body.model` instead, with no fallbacks.
-- A lane with **no entries at all** never 429s, whatever `exhaustedBehavior` says: an unconfigured lane is "no opinion", and the caller's own model goes out as sent. The same happens if the chain cannot be loaded or routing fails for any other reason — Rialto never invents a target, it only ever replaces `body.model` with a chain entry.
+The routes are tried in order, and a route serves only if it passes every gate:
+
+1. the route, its model and its provider are all switched on;
+2. the provider has an alias for the tier the route names;
+3. if the request carries a web-search tool, the model can run it — the Anthropic, OpenAI Responses and Gemini request shapes carry it across, Chat Completions cannot;
+4. the model's context window holds the prompt (an unknown window is allowed);
+5. it is not out of quota: no exhaustion mark from an earlier 429 on that model or its provider, and the routing scheduler's snapshot does not report it spent, or used at or past the profile's `quotaSkipPct` (only subscription targets have a reading);
+6. its error rate over the last five minutes is under `errorRateSkipPct`, once it has at least `minHealthSamples` samples.
+
+The first route that passes becomes `body.model`; the others that pass ride along, in map order, as the failover list. When none passes, the reason decides the answer:
+
+| Situation | Answer |
+|---|---|
+| The tier has no routes, or every route or its target is switched off | The caller's own `body.model` goes out as sent. **Never a 429**, whatever `exhaustedBehavior` says: an unconfigured tier is "no opinion" |
+| At least one route was held back by quota or error rate | `exhaustedBehavior`: `429` (the default) answers `rate_limit_error` with a `Retry-After` header — seconds until the first held-back route can serve again (its 429 mark's deadline, else its reset in the snapshot; 30 when neither is known) — without touching any upstream; `passthrough` sends the caller's own `body.model` instead, with no fallbacks |
+| Nothing was held back on quota, but the routes cannot take *this* request — alias unset, no web search, prompt too big | **400** in the surface's error envelope (`invalid_request_error`, or `INVALID_ARGUMENT` on the Gemini surface). Waiting would not change it, so it is not dressed up as a 429 |
+
+If the map cannot be loaded or routing fails for any other reason, the caller's own model goes out as sent. Rialto never invents a target: it only ever replaces `body.model` with a route's model.
+
+The profile carries four constraints, edited on the Routing page: `exhaustedBehavior` (`429` / `passthrough`), `quotaSkipPct` (default 100), `errorRateSkipPct` (a fraction, default 0.5) and `minHealthSamples` (default 5). There is nothing else to tune — no scenarios, lanes, long-context threshold or weights.
 
 **Passthrough** (`passthrough`, or an access token pinned to the reserved `passthrough` profile). The caller's `body.model` goes upstream as sent: `provider,model`, or a bare model name that exactly one enabled provider hosts. A surface can deny specific `provider,model` pairs in this mode (Routing → Reachable targets).
 
-Either way, a provider or model switched off on the Providers page is never dispatched — not from a chain entry, not from a passthrough request, not as a failover target, and not through a disabled subscription provider's accounts. Naming one by hand is refused rather than forwarded.
+Either way, a provider or model switched off on the Providers page is never dispatched — not from a route, not from a passthrough request, not as a failover target, and not through a disabled subscription provider's accounts. Naming one by hand is refused rather than forwarded.
 
-### Routing scenarios
+The route a request took is recorded on its request log — the requested tier, or `passthrough` — and shown as **Route** under Activity. The full reference is [docs/architecture/routing.md](docs/architecture/routing.md).
 
-Configure the chain for each scenario on the **Routing** page. Classification runs in this order and stops at the first match:
+### Tier aliases
 
-| Scenario | When it is used |
-|----------|----------------|
-| `longContext` | Token count over the threshold; or, checked after the two below, a heavy effort / tier signal |
-| `webSearch` | The request carries a web-search tool: a tool whose `type` starts with `web_search`, a function named `web_search*`, or top-level `web_search_options` |
-| `think` | The request opts into extended thinking (`thinking.type` is `enabled` or `adaptive`; an explicit `disabled` does *not* count) |
-| `default` | Everything else |
+A route names a provider and a tier, never a model. Which model `claude-code · sonnet` means is that provider's *tier alias*, set in the **Tier aliases** strip on the provider's page — one slot each for `fable`, `opus`, `sonnet` and `haiku`. When a vendor ships a new Sonnet, you move that one alias and every route that names the provider's Sonnet follows it.
 
-An `image` scenario also exists in the chain editor, but nothing classifies a request into it in this build — a chain configured there is never selected. There is **no `background` scenario.** It was folded into `default` by the `20260728_router_rules_drop_background` migration.
+**An alias never moves by itself.** A catalog Refresh can discover the new model, and the strip then counts it as a candidate ("1 new"), but a new model's price, entitlement and behaviour are for you to look at before every Sonnet request lands on it. Choosing it in the picker and saving the page points the alias at it and switches the model on. The picker offers every model the provider lists, not only the ones whose name says the tier, so a provider whose model names say no Claude family — Codex, OpenAI — can be aliased too.
 
-Each scenario has two lanes — `agent` for ordinary traffic and `subagent` for requests carrying a subagent tag — and each lane has its own ordered chain. A scenario is only chosen when its lane holds at least one enabled entry; otherwise the request lands on `default`.
+A Claude subscription provider gets its aliases from its preset's default models as soon as its models are created, so a freshly connected Claude subscription routes without a trip to the strip. Codex's model names say no Claude family, so its aliases are yours to set.
 
-**The `longContext` threshold is not a fixed number.** A positive `longContextThreshold` in the profile's constraints wins outright — it round-trips through `PUT /api/router-preferences`; the Routing page has no field for it in this build. With no configured value it is 70 % of the declared context window of the chain's first enabled `default` / `agent` entry, leaving headroom for the reply. If neither resolves, it falls back to 128 000 tokens.
+A route whose alias is unset is kept (saving the map only warns) and skipped at request time. If that leaves the tier with nothing that can serve and no route was held back on quota, the request is refused with a 400, as above.
 
-### Effort, tier, and fallbacks
+### Failover and account rotation
 
-Beyond the scenario triggers above, the router grades each request and walks an ordered fallback list:
+The tier's routes are the failover list; within one route, a subscription provider's accounts are rotated first:
 
-- **Grading signals** — `output_config.effort` (`high` / `xhigh` / `max` → heavy → `longContext`; `low` / `medium` → explicitly light) and the requested model tier from `body.model` (a name containing `opus` → heavy). Tier is read only when effort is absent so older Claude Code traffic still grades correctly; an explicit low/medium effort suppresses the tier escalation so callers can downgrade an opus request.
-- **Per-scenario fallback chains** — the router walks `[primary, ...fallbacks]` and picks the first candidate that is not marked exhausted and whose declared `contextWindow` can hold the request.
-- **Capability gate** — fail-over never lands on a model whose declared `contextWindow` cannot hold the request. Models with no declared window are allowed (unknown = allow, conservative default).
-- **Account rotation on 429** — for a subscription provider, a 429 marks that sub-account exhausted (until the reset of a binding window that is at least 90 % full, or five minutes if none is known) and retries the same chain entry on a peer account, up to ten rotations. Only when no peer is left does the model get marked and the walker move to the next chain entry. OpenAI's `insufficient_quota` marks the whole provider at once.
-- **Chain order is honoured as written** — there is no `auth_mode` gate. A subscription primary keeps the api_key fallbacks listed after it, and a same-provider fallback is walked too, because exhaustion is marked per `(provider, model)`. If you do not want a subscription to spill onto per-token billing, do not put the api_key entry after it.
+- **Account rotation on 429** — for a subscription provider, a 429 marks that sub-account exhausted (until the reset of a binding window that is at least 90 % full, or five minutes if none is known) and retries the same target on a peer account, up to ten rotations. Only when no peer is left does the model get marked and the walker move to the next route. OpenAI's `insufficient_quota` marks the whole provider at once. A later success on the account lifts its mark.
+- **The map's order is honoured as written** — there is no `auth_mode` gate. A subscription route keeps the api_key routes listed after it, and another tier of the same provider is walked too, because exhaustion is marked per `(provider, model)`. If you do not want a subscription to spill onto per-token billing, do not put the api_key route after it.
 - **Multi-account balancing** — with several enabled accounts on the same provider, the account picker drops accounts whose recorded binding windows are already at 99 %, reuses the sticky session→account mapping when it still points at a survivor, and otherwise picks the account with the highest required burn rate — `remaining % ÷ hours until reset`, taken over its tightest binding weekly window — i.e. the one most at risk of leaving quota unspent. Ties go to the least recently picked account.
 
-Decisions are logged structurally: a proactive drop logs `{ from, to, scenario, tokenCount, trace }`, and a dead-chain warning fires when every candidate is rejected so you can see what was tried and why. Each `trace` entry carries one of `kept` / `exhausted` / `capability` / `malformed`.
+Decisions are logged structurally. When a tier has no usable route, the log lists each skipped route with its reason — `disabled` / `alias_unset` / `no_web_search` / `context_too_small` / `exhausted` / `error_rate` — at `warn` when the answer is a 429 or a 400, and at `info` when the caller's own model goes out.
 
-> **There is no weekly drain guard.** Earlier builds pre-empted a subscription provider once its weekly window crossed a linear drain target. That is gone: subscription providers run to their upstream limit and are rotated reactively on the 429 that actually happens, which is the signal that is never wrong.
+> **There is no weekly drain guard.** Earlier builds pre-empted a subscription provider once its weekly window crossed a linear drain target. That is gone: a subscription target is held back only when the scheduler's snapshot says it is spent — or used at or past `quotaSkipPct`, which defaults to 100 — and otherwise runs to its upstream limit and is rotated on the 429 that actually happens.
 
 ### Personas
 
-A *persona* is a named system-prompt fragment appended to every routed `/v1/messages` request after scenario routing. Use them to give Claude Code a consistent voice / role / set of working rules without editing Claude Code itself.
+A *persona* is a named system-prompt fragment appended to every routed `/v1/messages` request after tier routing. Use them to give Claude Code a consistent voice / role / set of working rules without editing Claude Code itself.
 
 - **Library** — `Personas` is a top-level array on the disk envelope. Each entry has a stable uuid `id`, a free-form `name` (display label, need not be unique), and the `prompt` text. New installs ship with a small starter library; existing installs keep what they have on disk.
 - **Active selection** — at most one persona is active per install. Its uuid id is the top-level `ActivePersona` key, on the disk envelope and on the `/api/config` wire alike. `null` / absent / empty string means "no persona". There are no per-project or per-session override files.
 - **Injection** — the active persona's `prompt` is appended to the LAST system block carrying `cache_control` (falling back to the last string text block). This keeps the persona *inside* the cached prefix, so it consumes no extra cache breakpoint and stays byte-stable across requests (preserving Anthropic's prompt cache). String and undefined `system` values are concatenated; multi-block array systems are mutated in place.
-- **Surface restriction** — persona injection runs on **`/v1/messages` only**, and only on routed traffic: a passthrough surface, or a token pinned to the `passthrough` profile, skips the router and the persona with it. The OpenAI-compat and Gemini surfaces reject an enriched `system` field outright (Codex answers `Unsupported parameter: system`), so the enrichment is skipped there rather than breaking the request. Every scenario on `/v1/messages` inherits the active persona — there is no per-scenario exclusion.
-- **Subagent interaction** — persona injection runs *after* subagent-tag handling, so a subagent's per-call system content composes with — rather than clobbers — the persona.
+- **Surface restriction** — persona injection runs on **`/v1/messages` only**, and only on routed traffic: a passthrough surface, or a token pinned to the `passthrough` profile, skips the tier map and the persona with it. The OpenAI-compat and Gemini surfaces reject an enriched `system` field outright (Codex answers `Unsupported parameter: system`), so the enrichment is skipped there rather than breaking the request. Every routed request on `/v1/messages` inherits the active persona, whichever route served it — including one the map had no route for, which goes out on the caller's own model.
+- **Subagent interaction** — persona injection runs *after* the subagent tag is stripped, so a subagent's per-call system content composes with — rather than clobbers — the persona.
 
 Both the library and the active selection live under **Settings → Personas** (`/settings/personas`). "No persona" is the no-op default.
 
-For authoring high-fidelity personas (structural patterns, anti-pattern cataloguing, thought-process control for `think` requests), see [docs/guides/persona-authoring.md](docs/guides/persona-authoring.md).
+For authoring high-fidelity personas (structural patterns, anti-pattern cataloguing, thought-process control), see [docs/guides/persona-authoring.md](docs/guides/persona-authoring.md).
 
 ### Transformers
 
@@ -275,18 +287,18 @@ A model whose own API style disagrees with its provider's — a Codex-family mod
 
 There is no transformer setting to configure per provider. The Providers page shows the derived chain read-only under **Request shape**, which is the first thing worth checking when a request misbehaves.
 
-### Subagent routing
+### Subagent tag
 
-A subagent tag in the prompt routes that subagent onto the scenario's **`subagent` lane**:
+A subagent tag at the start of the second system block marks the request as subagent traffic:
 
 ```
 <RIALTO-SUBAGENT-MODEL>subagent</RIALTO-SUBAGENT-MODEL>
 Please help me analyze this code...
 ```
 
-**Only the tag's presence matters — its contents are ignored.** The tag selects the lane; the model comes from that lane's configuration on the **Routing** page. This is deliberate: it makes subagent routing editable in one place instead of scattered across every subagent's prompt file. The tag is stripped before the request goes upstream, so the marker never reaches the vendor. A subagent lane with no entries behaves like any empty lane: the caller's own model passes through.
+**It no longer selects anything.** The tier map has no subagent lane: a subagent's request is routed by the tier its own model name asks for, like any other. The tag is still read — only its presence; its contents are ignored — and recorded on the request log so Activity can tell subagent traffic apart. It is stripped before the request goes upstream on every surface, passthrough included, so the marker never reaches the vendor.
 
-`<CCR-SUBAGENT-MODEL>` is the pre-rename spelling and is still accepted, because it lives in prompts people have already written. A tag whose body still names an old `provider,model` pair keeps working; the pair is simply not read.
+`<CCR-SUBAGENT-MODEL>` is the pre-rename spelling and is still recognised and stripped, because it lives in prompts people have already written. A tag whose body still names an old `provider,model` pair is harmless; the pair is simply not read.
 
 ## 🔀 OpenAI-compatible and Gemini-compatible API surfaces
 
@@ -347,7 +359,7 @@ for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.
 
 Any client that supports overriding `base_url` / `baseURL` works the same way.
 
-**What applies on these surfaces.** Failover, account rotation, and the `provider,model` addressing always apply. Chain routing applies only once you switch the surface from `passthrough` to `routed`. Persona injection does **not** apply — it is `/v1/messages` only (see Personas above).
+**What applies on these surfaces.** Failover, account rotation, and the `provider,model` addressing always apply. Tier routing applies only once you switch the surface from `passthrough` to `routed` — and a model name that says no Claude family (`codex,gpt-5.5`, `gemini-2.5-pro`) asks for the `other` tier, so it is served by the profile's `other` routes, or passes through as sent when that group is empty. Persona injection does **not** apply — it is `/v1/messages` only (see Personas above).
 
 ## 📊 Logging
 
@@ -372,7 +384,7 @@ A request made on the host is exempt from the admin gate, and that check reads n
 
 ## ⬆️ Upgrading from the pre-rename build
 
-Home directory, environment variables, database names, Docker image and thinking-signature prefixes all changed with the rename to Rialto, and the slot / rules / preset routing of earlier builds collapsed into chain and passthrough. See [docs/guides/migration-v3.md](docs/guides/migration-v3.md) (Japanese).
+Home directory, environment variables, database names, Docker image and thinking-signature prefixes all changed with the rename to Rialto, and the slot / rules / preset routing of earlier builds collapsed into chain and passthrough. The per-scenario chain has since been replaced by the tier map: on the first start of a build that has it, `db seed` (which the container entrypoint runs) converts each profile's `default` / `agent` chain into tier aliases and routes, once per profile. The other scenarios and the subagent lanes are not converted — nothing can reproduce them per tier — so re-add what you still want by hand. See [docs/guides/migration-v3.md](docs/guides/migration-v3.md) (Japanese).
 
 ## 🛠️ Development
 
@@ -439,7 +451,7 @@ bunx knip                 # dead-code inventory
 | `bun run db:migrate:deploy` | Apply existing migrations (production / CI) |
 | `bun run db:migrate:test` | Apply migrations to the separate `rialto_test` database |
 | `bun run db:reset` | Drop and recreate the schema (destructive) |
-| `bun run db:seed` | Idempotent seed — the `live` preference profile, empty until you fill it in |
+| `bun run db:seed` | Idempotent seed — the `live` routing profile, with an empty tier map until you fill it in; also converts each profile's pre-tier-map chain into the tier map, once |
 | `bun run db:seed:demo` | Dev-only demo data for every screen; `-- --clean` removes it. See [docs/guides/demo-data.md](docs/guides/demo-data.md) |
 | `bun run db:studio` | Open Prisma Studio |
 
@@ -468,6 +480,7 @@ Tagging `v*.*.*` builds and publishes `ghcr.io/tkgstrator/rialto` for `linux/amd
 
 - [`docs/architecture/inbound-surfaces.md`](docs/architecture/inbound-surfaces.md) — the surface registry and what derives from it
 - [`docs/architecture/inbound-parity.md`](docs/architecture/inbound-parity.md) — which feature applies on which surface
+- [`docs/architecture/routing.md`](docs/architecture/routing.md) — the tier map: data model, gates, outcomes, the quota snapshot, model releases
 - [`docs/architecture/pipeline-overview.md`](docs/architecture/pipeline-overview.md) — boot → request → upstream → response, end to end
 - [`docs/architecture/request-flow.md`](docs/architecture/request-flow.md) — routing decisions and 429 rotation, in detail
 - [`docs/architecture/testing-map.md`](docs/architecture/testing-map.md) — where the tests are and what they cover

@@ -14,6 +14,39 @@ Status: Planning（2026-09-23 承認）
 - **P1**：アカウント単位の可視化と Codex のリセット
 - **P2**：Routing を「要求 tier → (provider, tier 別名)」の表に作り直す
 
+実装後の挙動のリファレンスは [architecture/routing.md](../architecture/routing.md)（英語）にある。本書は計画と、その理由の記録として残す。
+
+---
+
+## 実装状況（2026-09-24 時点）
+
+| Phase | PR | 状態 | 内容 |
+|---|---|---|---|
+| P0-1 | #523 | オープン | 偽の 429 の解消、ペースによる拡大の停止 |
+| P0-2 | #524 | オープン | Refresh での再同期、マーク解除、snapshot の再作成 |
+| P1-1 | #525 | オープン | `RequestLog.subAccountId` と 1 時間 TTL 分 |
+| mock | #526 | オープン | P1-2 / P1-3 / P2 の画面モック |
+| P1-2 | #527 | オープン | アカウント別の API 換算額 |
+| P1-3 | #528 | オープン | Codex のバンク済みリセット |
+| P1 UI | #532 | draft | P1-2 / P1-3 の画面（Overview とプロバイダのページ） |
+| P2-1 | #529 | オープン | 拡張マイグレーション、domain schema、サービス、`ensurePresetAliases` |
+| P2-2 | #530 | オープン | backfill の planner と seed のフック |
+| P2-3 | #531 | オープン | routing / 別名の API と純粋な選択器 |
+| P2-4 + P2-5 | 1 本の PR | draft | 切り替え（新 UI、`routeRequest`、旧 routing の削除）と scheduler の縮小 |
+| P2-6 | 本 PR | — | docs と `CLAUDE.md` |
+| P2-7 | — | release A 待ち | 縮退マイグレーション（ガード付き）、backfill の削除 |
+
+### 計画からの変更
+
+- **P2-5 は P2-4 に畳み込んだ。** 切り替え後の runtime（`src/llms/tier-router/runtime.ts`）の quota gate は、P2-5 で入れる snapshot の `targets`（対象ごとの `{exhausted, remainingBudgetPct, resetAt}`）を読む。切り替えがこの形に依存するので、scheduler の縮小・`/api/routing-scheduler-state` の形の変更・`RoutingWeightChange` への書き込みの停止も同じ PR に入れた。
+- **`RequestLog.scenario` は改名していない。** 計画では Prisma のフィールドを `route String? @map("scenario")` にするはずだったが、`@map` も付けず `scenario` のまま、要求 tier か `passthrough` を書いている。API の DTO（`schemas/api/request-log.ts`）とブラウザ側の型も `scenario` のままで、Activity の列の表示名だけが「Route」になった。tier map 以前の行には、旧分類器が選んだシナリオが残っている。
+- **Overview の failover の欄は、weight の行の代わりに認証失敗の行を出す。** weight が無くなったので、429 で拒否されたアカウントと、資格情報が通らなくなったアカウント（`authStatus = 'invalid'`、有効なプロバイダのものだけ）を並べる（`overview-service.ts` の `buildFailover`）。
+- **プロバイダのページの別名ピッカーは、名前で当たった候補だけでなく、そのプロバイダのモデルをすべて出す。** 候補は `tierOf` でモデル名から tier を引くので、Claude の系列名を持たない Codex / OpenAI のモデルは候補に一つも出ず、そのままでは別名を付けられないため。
+- **昇格はピッカーで選ぶことで行う。** 別の「昇格」ボタンは無い。ピッカーで選んでページを保存すると `PUT /api/providers/{name}/tier-aliases/{tier}` が別名をセットし、同じトランザクションでモデルを有効にする。
+- **別名の PUT は snapshot を作り直さない。** 計画の API 表にあった `republishRoutingSnapshot` は呼んでいない。モデルが新たに有効になったときだけ、設定ファイルへの同期と LLM context のリセットを行う。新しく有効になったモデルは次の tick まで snapshot に載らないが、snapshot に無い対象は quota で止めない（`tier-router/runtime.ts`）ので、昇格した直後のリクエストもそのモデルに向く。
+- **`scenario-router/` から `router/` への `git mv` は P2-6 に入れていない。** P2-6 はドキュメントだけの PR にしたため。`src/llms/scenario-router.ts` と `src/llms/scenario-router/` は旧名のまま。
+- **`Model.manualTier` は P2-7 まで読まれている。** UI と PATCH からは外したが、backfill（`plan-tier-routes.ts`）と別名の候補一覧（`tier-alias-service.ts` の `modelTierOf`）が、手で設定された tier を名前からの推定より優先して読む。列は P2-7 の縮退マイグレーションで消える。
+
 ---
 
 ## 0. 現状（コードを読んで確認した事実）
