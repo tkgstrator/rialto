@@ -13,7 +13,7 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, meter, btn, navTo, tierCell, sortTh, toast } = window.Shell
+const { renderShell, pill, meter, btn, navTo, sortTh, toast, dialog } = window.Shell
 
 // Providers / Subscriptions / Models / Transformers were four separate
 // screens. They are one thing — "where requests can go" — so they become
@@ -24,22 +24,20 @@ const { renderShell, pill, meter, btn, navTo, tierCell, sortTh, toast } = window
 // detail mocks, and picking a row is how a reviewer crosses from the
 // subscription detail to the API-key one.
 
-// The page reads until Edit is pressed, the same as the API-key detail:
-// the tier pickers and the switches were live all the time. `?edit` draws
-// the state after Edit. Declared first because the model table is rendered
-// the moment it is defined.
-const EDITING = new URLSearchParams(location.search).has('edit')
+// The page reads until Edit is pressed, the same as the API-key detail.
+// `?edit` draws the state after Edit. `?codex` draws the same page for a
+// Codex provider — the one whose accounts carry banked resets — and
+// `?codex&reset` the confirmation that spending one opens. Declared first
+// because the tables are rendered the moment they are defined.
+const params = new URLSearchParams(location.search)
+const EDITING = params.has('edit')
+const CODEX = params.has('codex')
+const CONFIRM_RESET = CODEX && params.has('reset')
 
 // Actions that reload the page or leave it would drop an unsaved edit, so
 // they are locked until Save or Revert.
 const lockedWhileEditing = EDITING ? 'pointer-events-none opacity-50' : ''
 const withClass = (html, cls) => (cls === '' ? html : html.replace('class="', `class="${cls} `))
-
-// A read-only tier cell: the picker's own tone, without the chevron that
-// says it opens.
-const READ_TONE = { manual: 'bg-muted text-foreground', auto: 'text-muted-foreground', unset: 'text-muted-foreground/50' }
-const tierRead = (tier, source) =>
-  `<span class="inline-flex items-center rounded px-1.5 py-0.5 text-[12px] ${READ_TONE[source]}">${source === 'unset' ? '—' : tier}</span>`
 
 // The pill switch, a reading of the state until Edit is pressed.
 const toggle = (on) => `
@@ -47,43 +45,122 @@ const toggle = (on) => `
     <span class="size-3 rounded-full bg-background ${on ? 'translate-x-3' : ''}"></span>
   </span>`
 
+// ─── Tier aliases ─────────────────────────────────────────────────────
+// Routing no longer names models. A route says "claude-code · sonnet",
+// and the alias here says which model that is on this provider. When the
+// vendor ships a new Sonnet, this strip is the one place that changes —
+// the chains in Routing, which used to hold the model by name in every
+// scenario and lane, do not move.
+//
+// An alias never moves by itself. Refresh can only discover a model; it
+// appears as a candidate ("1 new" — a model of the same tier that showed
+// up after the alias was last set), and Promote is what points the alias
+// at it and switches it on. A price list, a plan's entitlements and a
+// model's behaviour are all things an operator wants to have looked at
+// before every Sonnet request lands somewhere new.
+//
+// Codex names no Claude family, so its aliases are whatever the operator
+// decided a "sonnet" request should run on there. One is left unset on
+// purpose: an unset alias is what Routing shows as "alias unset" on any
+// route that points at it.
+const ALIASES = CODEX
+  ? [
+      { tier: 'fable',  model: null,            candidates: 0 },
+      { tier: 'opus',   model: 'gpt-5.5',       candidates: 0 },
+      { tier: 'sonnet', model: 'gpt-5.5',       candidates: 0 },
+      { tier: 'haiku',  model: 'gpt-5.3-codex-spark', candidates: 0 }
+    ]
+  : [
+      { tier: 'fable',  model: 'claude-fable-5',   candidates: 0 },
+      { tier: 'opus',   model: 'claude-opus-4-8',  candidates: 1 },
+      { tier: 'sonnet', model: 'claude-sonnet-5',  candidates: 0 },
+      { tier: 'haiku',  model: 'claude-haiku-4-5', candidates: 0 }
+    ]
+
+// One cell per tier: the tier, the model it resolves to, and — when
+// Refresh found one — how many newer models of that tier are waiting.
+// While editing the model becomes the same select box the rest of the app
+// uses for "this opens a list"; the list holds the provider's models of
+// that tier, candidates first, each with Promote.
+const aliasCell = (a) => `
+  <div class="border-l-2 border-l-transparent bg-background px-4 py-3 transition-colors hover:border-l-border hover:bg-muted/50">
+    <!-- Fixed height, so a "new" badge does not push this cell's model
+         below its neighbours'. -->
+    <div class="flex h-5 items-center gap-2">
+      <span class="text-[12px] uppercase tracking-wider text-muted-foreground/70">${a.tier}</span>
+      ${a.candidates > 0 ? `<span class="ml-auto">${pill(`${a.candidates} new`, 'info')}</span>` : ''}
+    </div>
+    <div class="mt-1.5 flex min-h-8 items-center">
+      ${
+        EDITING
+          ? `<button class="inline-flex h-8 w-full items-center justify-between gap-1.5 rounded-md border border-border px-2.5 font-mono text-xs hover:bg-muted/60">${a.model === null ? '<span class="text-muted-foreground/60">unset</span>' : a.model} <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i></button>`
+          : a.model === null
+            ? '<span class="text-[12px] text-muted-foreground/60">unset — routes to this tier are refused</span>'
+            : `<span class="font-mono text-xs">${a.model}</span>`
+      }
+    </div>
+  </div>`
+
+const aliases = `
+  <div class="flex items-center gap-3 px-6 pt-5 pb-3">
+    <h3 class="text-sm font-semibold">Tier aliases</h3>
+    <span class="text-[12px] text-muted-foreground">what Routing reaches when a route names this provider and a tier</span>
+  </div>
+  <div class="grid grid-cols-4 gap-px border-y border-border bg-border/60">${ALIASES.map(aliasCell).join('')}</div>`
+
 // ─── Model table for the selected provider ────────────────────────────
 // Prices stay in separate columns (in / cached / out) — one packed
 // "$3/$0.30/$15" cell is unreadable and unsortable.
-// `tierSource` is the fact the old pill could not carry. Every name here
-// but one contains its family, so the router infers it; `claude-mythos-5`
-// does not, and only exists as a tier because someone set one.
-const MODELS = [
-  { name: 'claude-fable-5',    tier: 'fable',  tierSource: 'auto',   ctx: '500k', inp: '—', cache: '—', out: '—', test: 'ok',      on: true },
-  { name: 'claude-opus-4-8',   tier: 'opus',   tierSource: 'auto',   ctx: '200k', inp: '—', cache: '—', out: '—', test: 'ok',      on: true },
-  { name: 'claude-opus-4-7',   tier: 'opus',   tierSource: 'auto',   ctx: '200k', inp: '—', cache: '—', out: '—', test: 'ok',      on: true },
-  { name: 'claude-sonnet-5',   tier: 'sonnet', tierSource: 'auto',   ctx: '1M',   inp: '—', cache: '—', out: '—', test: 'ok',      on: true },
-  { name: 'claude-sonnet-4-6', tier: 'sonnet', tierSource: 'auto',   ctx: '1M',   inp: '—', cache: '—', out: '—', test: 'ok',      on: true },
-  { name: 'claude-haiku-4-5',  tier: 'haiku',  tierSource: 'auto',   ctx: '200k', inp: '—', cache: '—', out: '—', test: 'fail',    on: true },
-  { name: 'claude-mythos-5',   tier: 'fable',  tierSource: 'manual', ctx: '500k', inp: '—', cache: '—', out: '—', test: 'unknown', on: false }
-]
+//
+// The Tier column became Alias. A model is reached through the alias that
+// names it, and only that way, so the column says which tier (if any)
+// this model currently serves on this provider. There is no per-model
+// tier to set any more: the manual tier existed so a chain could classify
+// a model it held by name, and chains no longer hold models by name.
+// `claude-opus-5` is the candidate the Opus cell above counts: listed,
+// switched off, serving nothing until it is promoted.
+const MODELS = CODEX
+  ? [
+      { name: 'gpt-5.5',             alias: 'opus · sonnet', ctx: '400k', test: 'ok',      on: true },
+      { name: 'gpt-5.3-codex-spark', alias: 'haiku',         ctx: '128k', test: 'ok',      on: true },
+      { name: 'gpt-5.3-codex',       alias: null,            ctx: '400k', test: 'unknown', on: false }
+    ]
+  : [
+      { name: 'claude-opus-5',     alias: null,     isNew: true, ctx: '500k', test: 'unknown', on: false },
+      { name: 'claude-fable-5',    alias: 'fable',  ctx: '500k', test: 'ok',      on: true },
+      { name: 'claude-opus-4-8',   alias: 'opus',   ctx: '200k', test: 'ok',      on: true },
+      { name: 'claude-opus-4-7',   alias: null,     ctx: '200k', test: 'ok',      on: true },
+      { name: 'claude-sonnet-5',   alias: 'sonnet', ctx: '1M',   test: 'ok',      on: true },
+      { name: 'claude-sonnet-4-6', alias: null,     ctx: '1M',   test: 'ok',      on: true },
+      { name: 'claude-haiku-4-5',  alias: 'haiku',  ctx: '200k', test: 'fail',    on: true }
+    ]
 
 const testIcon = { ok: '<i class="ri-check-line text-emerald-600 dark:text-emerald-400"></i>', fail: '<i class="ri-close-line text-destructive"></i>', unknown: '<i class="ri-subtract-line text-muted-foreground/50"></i>' }
 
+const aliasRead = (alias) =>
+  alias === null
+    ? '<span class="text-[12px] text-muted-foreground/50">—</span>'
+    : `<span class="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[12px]">${alias}</span>`
+
 const modelRow = (m) => `
   <tr class="border-t border-border/60 transition-colors hover:bg-muted/50 ${m.on ? '' : 'opacity-45'}">
-    <td class="py-2.5 pl-6 pr-2 font-mono text-xs">${m.name}</td>
-    <td class="px-2">${EDITING ? tierCell(m.tier, m.tierSource) : tierRead(m.tier, m.tierSource)}</td>
+    <td class="py-2.5 pl-6 pr-2 font-mono text-xs">${m.name}${m.isNew ? ` <span class="ml-1 align-[1px]">${pill('new', 'info')}</span>` : ''}</td>
+    <td class="px-2">${aliasRead(m.alias)}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${m.ctx}</td>
-    <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${m.inp}</td>
-    <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${m.cache}</td>
-    <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${m.out}</td>
+    <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">—</td>
+    <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">—</td>
+    <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">—</td>
     <td class="px-2 text-center text-sm leading-none">${testIcon[m.test]}</td>
     <td class="py-2.5 pl-2 pr-6 text-right">${toggle(m.on)}</td>
   </tr>`
 
 const models = `
   <table class="w-full table-fixed">
-    <colgroup><col><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-16"><col class="w-20"></colgroup>
+    <colgroup><col><col class="w-28"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-16"><col class="w-20"></colgroup>
     <thead>
       <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         ${sortTh('Model', 'pl-6 pr-2')}
-        ${sortTh('Tier', 'px-2', 'left', true, 'desc')}
+        ${sortTh('Alias', 'px-2', 'left', true, 'desc')}
         ${sortTh('Context', 'px-2', 'right')}
         ${sortTh('In /1M', 'px-2', 'right')}
         ${sortTh('Cached', 'px-2', 'right')}
@@ -95,50 +172,71 @@ const models = `
     <tbody>${MODELS.map(modelRow).join('')}</tbody>
   </table>`
 
-// Every window the account is under, not just the weekly one.
+// ─── Accounts ─────────────────────────────────────────────────────────
+// Every window the account is under, not just the weekly one: all of them
+// bind, and the per-model row is the only place a Fable ceiling shows.
 //
-// This drew one meter and called it the account, picking the 7-day
-// because it is the one an operator plans around. But all of them bind:
-// an account at 0% for the week is still unroutable while its 5-hour
-// window is spent, and the per-model row is the only place a Fable
-// ceiling is visible at all. Showing one and labelling it "weekly" made
-// the other two look like they did not exist.
+// Under the windows, what the account carried. A subscription has no
+// per-token price, so the figure is what the same tokens would have cost
+// at the model's API price — "API equiv", never a bill — over the weekly
+// window the account is in now, and over 30 days next to the plan's
+// monthly price. The ratio is the question an operator with several
+// accounts actually asks: which plan is earning its fee.
 //
-// The first account is this install's, from GET /api/usage: 5-hour 0%
-// with no reset time yet, 7-day at 100%, and the weeklyScoped row the
-// collector reports, which on this account is Fable. The second is
-// invented so the panel shows more than one row — its windows are the
-// same three, because those are the ones Claude actually publishes. No
-// row is singled out: no account is designated any more, the proxy picks
-// between them per request.
-const ACCOUNTS = [
-  // Full addresses, not the elided ones this fixture used to carry. They
-  // were shortened to survive a 288px-narrower pane; drawn short, the
-  // panel looked comfortable at a width it never had.
-  {
-    // "Max 20x", not "Max": Max is two plans, and which one decides how
-    // much headroom the meters below are a percentage of.
-    label: 'tkgstrator@gmail.com', plan: 'Max 20x', auth: 'live',
-    windows: [
-      { label: '5-hour',        pct: 0,   resets: '—' },
-      { label: '7-day',         pct: 100, resets: '2d 09h' },
-      { label: '7-day · Fable', pct: 9,   resets: '2d 09h' }
+// Codex accounts also carry banked resets. The count comes from the same
+// usage poll as the windows; spending one is the one action on this page
+// that acts on a single account, and it is never done for the operator —
+// banked resets expire, and whether to spend one now is a judgement the
+// page can inform but not make.
+const ACCOUNTS = CODEX
+  ? [
+      {
+        label: 'tkgstrator@gmail.com', plan: 'Pro', auth: 'live',
+        windows: [
+          { label: '5-hour', pct: 100, resets: '3h 12m' },
+          { label: 'weekly', pct: 64,  resets: '4d 02h' }
+        ],
+        week: { tokens: '38.2M', cost: '$412' },
+        month: { cost: '$1.31k', fee: '$200', ratio: '×6.6' },
+        resets: { available: 2, expires: 'Oct 14' }
+      },
+      {
+        label: 'team.codex@example.com', plan: 'Plus', auth: 'live',
+        windows: [
+          { label: '5-hour', pct: 18, resets: '4h 40m' },
+          { label: 'weekly', pct: 31, resets: '6d 11h' }
+        ],
+        week: { tokens: '4.10M', cost: '$47.9' },
+        month: { cost: '$96.2', fee: '$20', ratio: '×4.8' },
+        resets: { available: 0, expires: null }
+      }
     ]
-  },
-  {
-    label: 'second.account@gmail.com', plan: 'Pro', auth: 'live',
-    windows: [
-      { label: '5-hour',        pct: 12, resets: '1h 47m' },
-      { label: '7-day',         pct: 22, resets: '3d 04h' },
-      { label: '7-day · Fable', pct: 4,  resets: '3d 04h' }
+  : [
+      {
+        // "Max 20x", not "Max": Max is two plans, and which one decides how
+        // much headroom the meters below are a percentage of.
+        label: 'tkgstrator@gmail.com', plan: 'Max 20x', auth: 'live',
+        windows: [
+          { label: '5-hour',        pct: 0,   resets: '—' },
+          { label: '7-day',         pct: 100, resets: '2d 09h' },
+          { label: '7-day · Fable', pct: 9,   resets: '2d 09h' }
+        ],
+        week: { tokens: '61.4M', cost: '$684' },
+        month: { cost: '$2.20k', fee: '$200', ratio: '×11' }
+      },
+      {
+        label: 'second.account@gmail.com', plan: 'Pro', auth: 'live',
+        windows: [
+          { label: '5-hour',        pct: 12, resets: '1h 47m' },
+          { label: '7-day',         pct: 22, resets: '3d 04h' },
+          { label: '7-day · Fable', pct: 4,  resets: '3d 04h' }
+        ],
+        week: { tokens: '2.04M', cost: '$18.7' },
+        month: { cost: '$61.0', fee: '$20', ratio: '×3.1' }
+      }
     ]
-  }
-]
 
 // One row per window: label, bar, percentage, and the clock it resets on.
-// The bar is what carries the shape at a glance, so it keeps the slack;
-// the label and the two numbers are fixed so three rows line up as a
-// small table rather than three ragged lines.
 const windowLine = (w) => `
   <div class="mt-1.5 flex items-center gap-2">
     <span class="w-24 shrink-0 truncate text-[12px] text-muted-foreground">${w.label}</span>
@@ -147,33 +245,99 @@ const windowLine = (w) => `
     <span class="w-14 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${w.resets}</span>
   </div>`
 
+// Usage lines share the window rows' label column, so the two blocks read
+// as one small table. One figure per cell: tokens, cost, and — on the
+// 30-day line — the plan's fee and the ratio, each right-aligned mono.
+const usageLine = (label, cells) => `
+  <div class="mt-1.5 flex items-center gap-2">
+    <span class="w-24 shrink-0 truncate text-[12px] text-muted-foreground">${label}</span>
+    <span class="min-w-0 flex-1"></span>
+    ${cells.map((c) => `<span class="${c.w} shrink-0 text-right font-mono text-[12px] tabular-nums ${c.mute ? 'text-muted-foreground' : ''}">${c.v}</span>`).join('')}
+  </div>`
+
+const resetLine = (r) => `
+  <div class="mt-2.5 flex items-center gap-2 border-t border-border/60 pt-2.5">
+    <span class="w-24 shrink-0 text-[12px] text-muted-foreground">Banked resets</span>
+    <span class="font-mono text-[12px] tabular-nums">${r.available}</span>
+    ${r.expires === null ? '' : `<span class="text-[12px] text-muted-foreground">next expires ${r.expires}</span>`}
+    <span class="ml-auto">${
+      r.available > 0
+        ? withClass(btn('Use reset', 'outline', 'ri-restart-line'), lockedWhileEditing)
+        : '<span class="text-[12px] text-muted-foreground/60">none to spend</span>'
+    }</span>
+  </div>`
+
 // An account's meters are a snapshot; the history behind them is Usage.
 const accountRow = (a) => `
-  <div ${navTo('activity-usage.html')} class="px-4 py-3 transition-colors hover:bg-muted/50">
-    <div class="flex items-center gap-2">
+  <div class="px-4 py-3 transition-colors hover:bg-muted/50">
+    <div ${navTo('activity-usage.html')} class="flex items-center gap-2">
       <span class="text-xs font-medium">${a.label}</span>
       ${pill(a.plan, 'info')}
       <span class="ml-auto text-[12px] text-muted-foreground/70">resets in</span>
     </div>
     ${a.windows.map(windowLine).join('')}
+    <div class="mt-2.5 flex items-center gap-2 text-[12px] uppercase tracking-wider text-muted-foreground/60">
+      <span class="w-24 shrink-0">API equiv</span>
+      <span class="min-w-0 flex-1"></span>
+      <span class="w-16 shrink-0 text-right">tokens</span>
+      <span class="w-14 shrink-0 text-right">cost</span>
+      <span class="w-12 shrink-0 text-right">fee</span>
+      <span class="w-10 shrink-0 text-right">×</span>
+    </div>
+    ${usageLine('this week', [
+      { v: a.week.tokens, w: 'w-16' },
+      { v: a.week.cost, w: 'w-14' },
+      { v: '', w: 'w-12' },
+      { v: '', w: 'w-10' }
+    ])}
+    ${usageLine('30 days', [
+      { v: '', w: 'w-16' },
+      { v: a.month.cost, w: 'w-14' },
+      { v: a.month.fee, w: 'w-12', mute: true },
+      { v: a.month.ratio, w: 'w-10' }
+    ])}
+    ${a.resets === undefined ? '' : resetLine(a.resets)}
     <div class="mt-2 text-[12px] text-muted-foreground">auth ${a.auth}</div>
   </div>`
+
+const PROVIDER = CODEX
+  ? { title: 'Codex', url: 'https://chatgpt.com/backend-api/codex/responses', style: 'openai_responses', pipeline: 'codex-oauth', endpoint: '/v1/responses', crumb: 'Codex', count: '2 of 3 enabled' }
+  : { title: 'Claude Code', url: 'https://api.anthropic.com/v1/messages', style: 'anthropic', pipeline: 'claude-code-oauth', endpoint: '/v1/messages', crumb: 'Claude Code', count: '6 of 7 enabled' }
+
+// Spending a banked reset cannot be undone and the vendor keeps no
+// "unspend", so it asks first, and says what it does in the vendor's own
+// terms: both windows go back to 0%, one credit is gone.
+const resetDialog = dialog(
+  'Use a banked reset on tkgstrator@gmail.com?',
+  `<div class="grid gap-3 text-xs leading-relaxed text-muted-foreground">
+     <p>OpenAI resets this account's <span class="text-foreground">5-hour and weekly</span> windows to 0%. The
+       credit is spent at once and cannot be returned.</p>
+     <div class="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 rounded-md border border-border px-3 py-2.5">
+       <span>Banked resets</span><span class="text-right font-mono tabular-nums text-foreground">2 → 1</span>
+       <span>Next expires</span><span class="text-right font-mono tabular-nums text-foreground">Oct 14</span>
+       <span>5-hour now</span><span class="text-right font-mono tabular-nums text-foreground">100%, resets in 3h 12m</span>
+     </div>
+     <p>Routing picks the account up as soon as the reset lands — no need to wait for the next usage poll.</p>
+   </div>`,
+  `${btn('Cancel', 'outline', '', 'provider-subscription.html?codex')}${btn('Use reset', 'danger', 'ri-restart-line')}`
+)
 
 document.getElementById('root').innerHTML = `
   <div class="min-w-0">
       <div class="flex items-center gap-3 border-b border-border px-6 py-4">
         <div>
           <div class="flex items-center gap-2">
-            <h2 class="text-sm font-semibold">Claude Code</h2>
+            <h2 class="text-sm font-semibold">${PROVIDER.title}</h2>
             ${pill('subscription', 'info')}
             ${pill('live', 'ok')}
           </div>
-          <p class="mt-0.5 font-mono text-[12px] text-muted-foreground">https://api.anthropic.com/v1/messages</p>
+          <p class="mt-0.5 font-mono text-[12px] text-muted-foreground">${PROVIDER.url}</p>
         </div>
-        <!-- Edit, then Revert / Save, for the switch Routing reads and each
-             model's tier and switch. The accounts are read-only either way:
-             they change by signing in, not by editing this page. Test all is
-             locked while editing, like the page actions above. -->
+        <!-- Edit, then Revert / Save, for the switch Routing reads, the tier
+             aliases and each model's switch. The accounts are read-only
+             either way: they change by signing in, and a reset is an action
+             on the vendor's side, not an edit of this page — which is also
+             why Use reset is locked while an edit is open. -->
         <div class="ml-auto flex items-center gap-2">
           <span class="flex items-center gap-1.5 pr-1 text-[12px] text-muted-foreground">Routable ${toggle(true)}</span>
           ${withClass(btn('Test all', 'outline', 'ri-pulse-line'), lockedWhileEditing)}
@@ -192,11 +356,7 @@ document.getElementById('root').innerHTML = `
           </div>
           <div class="px-2 pb-4">${ACCOUNTS.map(accountRow).join('')}</div>
         </div>
-        <!-- Read-only. There is nothing to pick here: the wire shape is a
-             function of apiStyle + authMode, and all six registered
-             transformers are endpoint- or auth-bound. Shown because
-             "what does this provider actually speak" is worth seeing
-             when a request misbehaves. -->
+        <!-- Read-only. The wire shape is a function of apiStyle + authMode. -->
         <div>
           <div class="px-6 pt-5 pb-2">
             <h3 class="text-sm font-semibold">Request shape</h3>
@@ -204,7 +364,7 @@ document.getElementById('root').innerHTML = `
           <div class="px-6 pb-4">
             <div class="flex items-baseline gap-3 border-l-2 border-l-transparent py-1.5 transition-colors hover:border-l-border">
               <span class="text-[12px] text-muted-foreground">API style</span>
-              <span class="ml-auto font-mono text-[12px]">anthropic</span>
+              <span class="ml-auto font-mono text-[12px]">${PROVIDER.style}</span>
             </div>
             <div class="flex items-baseline gap-3 border-l-2 border-l-transparent py-1.5 transition-colors hover:border-l-border">
               <span class="text-[12px] text-muted-foreground">Auth</span>
@@ -212,23 +372,24 @@ document.getElementById('root').innerHTML = `
             </div>
             <div class="flex items-baseline gap-3 border-l-2 border-l-transparent py-1.5 transition-colors hover:border-l-border">
               <span class="text-[12px] text-muted-foreground">Pipeline</span>
-              <span class="ml-auto font-mono text-[12px]">claude-code-oauth</span>
+              <span class="ml-auto font-mono text-[12px]">${PROVIDER.pipeline}</span>
             </div>
             <div class="flex items-baseline gap-3 border-l-2 border-l-transparent py-1.5 transition-colors hover:border-l-border">
               <span class="text-[12px] text-muted-foreground">Endpoint</span>
-              <span class="ml-auto font-mono text-[12px]">/v1/messages</span>
+              <span class="ml-auto font-mono text-[12px]">${PROVIDER.endpoint}</span>
             </div>
             <p class="mt-3 text-[12px] leading-relaxed text-muted-foreground">
-              Derived from the API style — not configurable. Per-model overrides live in the
-              model row below.
+              Derived from the API style — not configurable.
             </p>
           </div>
         </div>
       </div>
 
+      ${aliases}
+
       <div class="flex items-center gap-3 px-6 pt-5 pb-3">
         <h3 class="text-sm font-semibold">Models</h3>
-        <span class="text-[12px] text-muted-foreground">6 of 7 enabled</span>
+        <span class="text-[12px] text-muted-foreground">${PROVIDER.count}</span>
         <div class="ml-auto flex items-center gap-2">
           <div class="flex h-7 items-center gap-2 rounded-md border border-border px-2.5 text-xs text-muted-foreground">
             <i class="ri-search-line text-sm"></i> Filter
@@ -239,37 +400,32 @@ document.getElementById('root').innerHTML = `
       <div class="px-6 py-4">
         <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
           <i class="ri-information-line mr-1 align-[-1px]"></i>
-          Tier is read from the model name when the name says a family —
-          <span class="font-mono">fable</span> / <span class="font-mono">opus</span> /
-          <span class="font-mono">sonnet</span> / <span class="font-mono">haiku</span>. Those cells are
-          plain. <span class="font-mono">claude-mythos-5</span> says none of them, so its tier was set
-          by hand and is shown solid. Press Edit to override or clear one; Routing's
-          <span class="font-medium text-foreground">tier respect</span> floor is what reads it.
+          Routing reaches a model only through a tier alias above. A model Refresh discovers is listed
+          here switched off and marked <span class="font-medium text-foreground">new</span>; it serves
+          nothing until an alias is pointed at it with <span class="font-medium text-foreground">Promote</span>,
+          which also switches it on.
         </div>
       </div>
       <div class="h-8"></div>
+      ${CONFIRM_RESET ? resetDialog : ''}
   </div>`
 
 renderShell({
   active: 'providers',
   sub: 'subscriptions',
   navMode: 'cloudflare',
-  crumbs: [{ label: 'Subscriptions', href: 'providers.html' }, 'Claude Code'],
+  crumbs: [{ label: 'Subscriptions', href: 'providers.html' }, PROVIDER.crumb],
   subtitle: '7 providers · 23 models enabled · 3 subscription accounts',
-  // One Refresh, under one backdrop: this provider's accounts — re-checked,
-  // with their windows read now, even while the provider is switched off,
-  // which is exactly when an operator wants to know whether its credentials
-  // still work — plus the catalog's prices and models. It replaced
-  // "Refresh prices" here and "Sync models" beside Test all. Both actions
-  // are locked while an edit is open.
+  // One Refresh: this provider's accounts — re-checked, with their windows
+  // and banked resets read now, and the exhaustion marks routing holds
+  // against them reconsidered on the spot — plus the catalog's prices and
+  // models. Both actions are locked while an edit is open.
   actions:
     withClass(btn('Refresh', 'ghost', 'ri-refresh-line'), lockedWhileEditing) +
     withClass(btn('Add subscription', 'primary', 'ri-add-line', 'providers-connect.html'), lockedWhileEditing),
-  // Drawn here because a refresh is the app's longest action and the one
-  // whose result is hardest to see on the screen that started it. It says
-  // what was refreshed; an account that could not be is named instead.
-  // Not drawn over the edit state, which a refresh cannot start from.
-  ...(EDITING ? {} : { toast: toast('Refreshed usage, prices and models', 'ok') })
+  ...(EDITING || CONFIRM_RESET
+    ? {}
+    : { toast: toast('Refreshed usage, prices and models', 'ok', CODEX ? '' : '1 new model: claude-opus-5 — promote it from the Opus alias') })
 })
 </script>
 </body>

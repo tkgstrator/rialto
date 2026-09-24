@@ -28,11 +28,11 @@ const TAB = new URLSearchParams(location.search).get('tab') === 'conversation' ?
 // One row per upstream call, newest first. `requested` vs `sent` is the
 // routing decision made visible — the old UI logged it but never showed it.
 const CALLS = [
-  { t: '14:05:47', requested: 'claude-haiku-4-5',  sent: 'claude-code,claude-haiku-4-5', scenario: 'default', lane: 'subagent', in: '9,118',  out: '402',   ms: '812',   cost: '$0.01', status: 200 },
-  { t: '14:03:02', requested: 'claude-sonnet-4-5', sent: 'claude-code,claude-fable-5',   scenario: 'default', lane: 'agent',    in: '53,010', out: '3,442', ms: '4,411', cost: '$0.39', status: 200 },
-  { t: '14:03:02', requested: 'claude-sonnet-4-5', sent: 'codex,gpt-5.5',                scenario: 'default', lane: 'agent',    in: '0',      out: '0',     ms: '—',     cost: '–',     status: 429 },
-  { t: '14:02:33', requested: 'claude-sonnet-4-5', sent: 'claude-code,claude-opus-4-8',  scenario: 'default', lane: 'agent',    in: '52,884', out: '2,918', ms: '3,806', cost: '$0.34', status: 200 },
-  { t: '14:02:11', requested: 'claude-sonnet-4-5', sent: 'claude-code,claude-opus-4-8',  scenario: 'default', lane: 'agent',    in: '48,210', out: '1,204', ms: '2,140', cost: '$0.21', status: 200 }
+  { t: '14:05:47', requested: 'claude-haiku-4-5',  sent: 'claude-code,claude-haiku-4-5', route: 'haiku', lane: 'subagent', in: '9,118',  out: '402',   ms: '812',   cost: '$0.01', status: 200 },
+  { t: '14:03:02', requested: 'claude-sonnet-4-5', sent: 'claude-code,claude-fable-5',   route: 'sonnet', lane: 'agent',    in: '53,010', out: '3,442', ms: '4,411', cost: '$0.39', status: 200 },
+  { t: '14:03:02', requested: 'claude-sonnet-4-5', sent: 'codex,gpt-5.5',                route: 'sonnet', lane: 'agent',    in: '0',      out: '0',     ms: '—',     cost: '–',     status: 429 },
+  { t: '14:02:33', requested: 'claude-sonnet-4-5', sent: 'claude-code,claude-opus-4-8',  route: 'sonnet', lane: 'agent',    in: '52,884', out: '2,918', ms: '3,806', cost: '$0.34', status: 200 },
+  { t: '14:02:11', requested: 'claude-sonnet-4-5', sent: 'claude-code,claude-opus-4-8',  route: 'sonnet', lane: 'agent',    in: '48,210', out: '1,204', ms: '2,140', cost: '$0.21', status: 200 }
 ]
 
 // A table, not the rail's stacked cards: at full width the same fields
@@ -48,7 +48,7 @@ const callRow = (c) => `
     <td class="px-3">${c.status === 200 ? pill('200', 'ok') : pill(String(c.status), 'bad')}</td>
     <td class="truncate px-3 font-mono text-[12px] text-muted-foreground">${c.requested}</td>
     <td class="truncate px-3 font-mono text-[12px]">${c.sent}</td>
-    <td class="px-3"><div class="flex gap-1.5">${pill(c.scenario, 'mute')}${pill(c.lane, 'mute')}</div></td>
+    <td class="px-3"><div class="flex gap-1.5">${pill(c.route, 'mute')}${c.lane === 'subagent' ? pill('subagent', 'mute') : ''}</div></td>
     <td class="px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${c.in}</td>
     <td class="px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${c.out}</td>
     <td class="px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${c.ms}</td>
@@ -67,7 +67,7 @@ const trace = `
         <th class="px-3 text-left">Status</th>
         <th class="px-3 text-left">Requested</th>
         <th class="px-3 text-left">Sent</th>
-        <th class="px-3 text-left">Scenario</th>
+        <th class="px-3 text-left">Route</th>
         <th class="px-3 text-right">Input</th>
         <th class="px-3 text-right">Output</th>
         <th class="px-3 text-right">ms</th>

@@ -23,7 +23,7 @@
       "mock": "routing.html",
       "route": "/routing",
       "group": "Routing",
-      "note": "Preference chain for one surface/scenario/lane. Absorbs RouterPreferences + TierEditor + RouterUtilization."
+      "note": "Tier map for one surface's profile: requested tier (fable / opus / sonnet / haiku / other) → ordered routes, each a provider and a tier on it, resolved through that provider's tier alias. Replaces the per-scenario, per-lane model chain and the tier-substitution gates."
     },
     {
       "name": "routing-passthrough",
@@ -37,7 +37,7 @@
       "mock": "routing.html?edit",
       "route": null,
       "group": "Routing",
-      "note": "The chain after Edit. The screen reads until then: drag handles, row toggles, the row menu, Add target and the constraint controls only work in this state, and one Revert / Save in band 3 covers the chain and its constraints together, because one write carries both. While editing, the surface tabs, the mode switch and the profile picker are disabled: each would load another profile or hide the chain, and the unsaved edit would go with it. Mock-only because the state sits behind a click, so there is no route that lands on it."
+      "note": "The tier map after Edit: drag handles, row toggles, the row menu, Add route per tier group and the four constraint controls only work in this state, and one Revert / Save in band 3 covers the routes and their constraints together. While editing, the surface tabs, the mode switch and the profile picker are disabled. Mock-only because the state sits behind a click."
     },
     {
       "name": "providers",
@@ -58,7 +58,21 @@
       "mock": "provider-subscription.html",
       "route": "/providers/claude-code",
       "group": "Providers",
-      "note": "One subscription provider: accounts, request shape, models. Full width now that the rail is gone — reached from the Subscriptions list, back via the breadcrumb, the same way a token detail works."
+      "note": "One subscription provider: accounts, request shape, models. Full width now that the rail is gone — reached from the Subscriptions list, back via the breadcrumb, the same way a token detail works. Adds the tier-alias strip (the one pointer a new model release moves) and, per account, the tokens and API-equivalent cost it carried this week and over 30 days against its plan fee."
+    },
+    {
+      "name": "provider-subscription-codex",
+      "mock": "provider-subscription.html?codex",
+      "route": null,
+      "group": "Providers",
+      "note": "The same page for a Codex provider: aliases the operator chose (Codex names no Claude family), and per account the banked resets the usage poll reports with a Use reset action. Mock-only until P1-3 lands."
+    },
+    {
+      "name": "provider-subscription-codex-reset",
+      "mock": "provider-subscription.html?codex&reset",
+      "route": null,
+      "group": "Providers",
+      "note": "Use reset, confirmed: spending a banked reset cannot be undone, so it asks first and says what happens in the vendor's terms. Behind a click, so mock-only."
     },
     {
       "name": "provider-subscription-edit",
