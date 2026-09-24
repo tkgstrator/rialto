@@ -2,8 +2,8 @@
  * The Routing screen when the selected surface does not go through the
  * router.
  *
- * The tier map is not just irrelevant here, it would be actively
- * misleading — nothing in it runs. What matters instead is the set of
+ * The scenario routes are not just irrelevant here, they would be actively
+ * misleading — none of them runs. What matters instead is the set of
  * `provider,model` strings a caller is allowed to name, so that is what
  * the screen shows: the target, its switch and a copy affordance.
  *

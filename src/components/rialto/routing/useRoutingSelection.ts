@@ -5,9 +5,10 @@
  * "the routing for /v1/responses" is the thing this screen exists to make
  * discussable, and in local state it survives neither a reload nor a link.
  *
- * It used to carry a scenario and a lane beside it. The tier map is one
- * table per profile, so there is nothing left to pick below the surface;
- * a stale `?scenario=` or `?lane=` in an old link is simply ignored.
+ * It used to carry a scenario and a lane beside it. Those are the rows and
+ * columns of one table now, all on screen at once, so there is nothing
+ * left to pick below the surface; a stale `?scenario=` or `?lane=` in an
+ * old link is simply ignored.
  */
 import { useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
