@@ -9,7 +9,6 @@
  */
 
 import type { Logger } from 'pino'
-import type { ScenarioType } from '@/schemas/domain/scenario'
 import type { ConfigStore } from '../registry/config'
 import type { TokenizerRegistry } from '../registry/tokenizer'
 import type { TokenizeMessage, TokenizeSystem, TokenizeTool } from '../tokenizers/base'
@@ -42,27 +41,32 @@ export type RouterRequest = {
   // over the inbound surface's own profile; absent means use the
   // surface's.
   profileKeyOverride?: string
-  scenarioType?: ScenarioType
+  // Set by routeRequest: the requested tier a route served ('sonnet',
+  // 'other', …), or 'passthrough' when the request went upstream as sent.
+  // Recorded on the RequestLog row.
+  route?: string
   tokenCount?: number
   // Normalised routing signals for this request, in whatever wire format
   // it arrived in. Filled lazily by `signalsOf` so a caller that builds a
   // RouterRequest by hand does not have to know about surfaces.
   signals?: RouterSignals
-  // Set by the classifier: true when the request carried a
-  // <RIALTO-SUBAGENT-MODEL> tag, so the chain's `subagent` lane is walked
-  // instead of the `agent` lane.
+  // True when the request carried a <RIALTO-SUBAGENT-MODEL> tag (stripped
+  // before it can reach upstream). Recorded; it no longer picks a lane.
   isSubagent?: boolean
-  // Set by routeScenario: the rest of the chain after the primary, in
-  // chain order. Both the proactive (applyProactiveFailover) and reactive
-  // (buildFailoverChain) failover paths read this rather than re-deriving
-  // it, so the two walk the same list.
+  // Set by routeRequest: the rest of the tier's routes after the primary,
+  // in map order. The reactive failover path (buildFailoverChain) walks
+  // this list.
   resolvedFallbacks?: string[]
-  // Set when every candidate in the chain failed the selector's gates
-  // AND the profile's `exhaustedBehavior` is '429'. The value is the
-  // number of seconds until the earliest binding-window reset — the
-  // caller returns a 429 with `Retry-After: <seconds>` instead of
-  // dispatching upstream. Absent on the passthrough branch.
+  // Set when every route of the tier was held back by quota or health
+  // AND the profile's `exhaustedBehavior` is '429': seconds until the
+  // first of them can serve again. The caller returns a 429 with
+  // `Retry-After` instead of dispatching upstream.
   quotaExhaustedRetryAfterSec?: number
+  // Set when the map cannot take this request at all — every route is
+  // configured but refused it (alias unset, no web search, prompt too
+  // big). The caller answers 400; a 429 would promise a wait that never
+  // helps.
+  routingRefusal?: string
 }
 
 export type RouterContext = {

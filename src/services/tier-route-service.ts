@@ -25,8 +25,24 @@ import {
   TierRoutesSchema
 } from '../schemas/domain/tier-route'
 import { hostsWebSearch } from '../shared/transformer-chain'
-import { DEFAULT_PROFILE_KEY, PASSTHROUGH_PROFILE_KEY } from './router-preference-service'
 import { aliasKey, resolveTierAliases } from './tier-alias-service'
+
+/**
+ * The profile every surface uses until it is pointed somewhere else.
+ * `RouterPreferenceProfile.key` keys several profiles; this one always
+ * exists (the seed creates it) and is what an unconfigured surface reads.
+ */
+export const DEFAULT_PROFILE_KEY = 'live'
+
+/**
+ * Reserved key meaning "do not route this traffic at all".
+ *
+ * Routing mode is otherwise a property of the inbound surface, which makes
+ * it all-or-nothing for everyone on that endpoint. A client that names its
+ * own targets — a script, a CI runner — is opted out by pointing its access
+ * token at this key. It is never a stored map; saving one is refused.
+ */
+export const PASSTHROUGH_PROFILE_KEY = 'passthrough'
 
 const emptyRoutes = (): Record<RouteTier, TierRoute[]> => ({ fable: [], opus: [], sonnet: [], haiku: [], other: [] })
 

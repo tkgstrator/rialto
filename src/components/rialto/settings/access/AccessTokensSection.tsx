@@ -104,8 +104,8 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
   useEffect(() => {
     load()
     api
-      .get<{ profiles: { key: string }[] }>('/router-preferences/profiles')
-      .then((res) => setProfiles(res.profiles))
+      .getTierProfiles()
+      .then(setProfiles)
       .catch(() => {
         // The picker falls back to "follow the endpoint", which is the
         // server's own default when profileKey is null.

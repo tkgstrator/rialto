@@ -11,7 +11,7 @@ import { ModelTestStatus, type PrismaClient } from '../../generated/prisma/clien
 import { resetLlmsContext } from '../../llms'
 import { logger } from '../../logger'
 import { applyProviderRow } from './apply'
-import { chainEntryCascadeWarning } from './apply/chain-entries'
+import { routeCascadeWarning } from './apply/tier-route-cascade'
 import { toProvider } from './compose'
 import { syncToConfigFile } from './sync-to-disk'
 
@@ -74,11 +74,11 @@ export async function deleteProviderByName(name: string): Promise<{ warnings: st
   await prisma.$transaction(async (tx) => {
     const p = await tx.provider.findUnique({ where: { name } })
     if (!p) throw new Error(`Provider "${name}" not found`)
-    const cascade = await chainEntryCascadeWarning(tx, { providerId: p.id }, `deleted provider "${name}"`)
+    const cascade = await routeCascadeWarning(tx, p.id, `deleted provider "${name}"`)
     if (cascade !== null) warnings.push(cascade)
     await tx.provider.delete({ where: { id: p.id } })
   })
-  if (warnings.length > 0) logger.warn({ provider: name, warnings }, '[config] provider delete cascaded to chain')
+  if (warnings.length > 0) logger.warn({ provider: name, warnings }, '[config] provider delete cascaded to the tier map')
   await syncToConfigFile()
   resetLlmsContext()
   return { warnings }

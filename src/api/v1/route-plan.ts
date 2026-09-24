@@ -17,7 +17,7 @@ import type { Context } from 'hono'
 import '../context'
 import type { PipelineRequest } from '@/schemas/domain/pipeline'
 import { RecordSchema } from '@/schemas/primitives/record'
-import { type LlmsContext, type RouterRequest, routeScenario, type ScenarioType, type Transformer } from '../../llms'
+import { type LlmsContext, PASSTHROUGH_ROUTE, type RouterRequest, routeRequest, type Transformer } from '../../llms'
 import { surfaceForPath } from '../../llms/inbound/surfaces'
 import { sessionIdFromRequest } from '../../llms/pipeline/session-id'
 import { passthroughDenial } from '../../services/inbound-surface-service'
@@ -38,9 +38,9 @@ function endpointTransformerMap(ctx: LlmsContext): Map<string, Map<string, Trans
 // ─── Route plan shape ──────────────────────────────────────────────────
 
 // Resolved once per inbound request, before any model is picked off the
-// failover chain. routeScenario has run, so `primaryModel` is the
-// "provider,model" it landed on and `scenarioType` selects the matching
-// fallback chain. `routedBody` is the post-routeScenario body BEFORE
+// failover chain. routeRequest has run, so `primaryModel` is the
+// "provider,model" it landed on and `route` names the tier-map row that
+// chose it. `routedBody` is the post-routeRequest body BEFORE
 // per-model shaping (effort clamp, internal-field strip) so every chain
 // attempt re-derives those from a clean copy.
 export interface RoutePlan {
@@ -48,20 +48,20 @@ export interface RoutePlan {
   headers: Record<string, string>
   transformersByName: Map<string, Transformer>
   defaultTransformer: Transformer
-  scenarioType: ScenarioType
+  // The requested tier a route served, or 'passthrough'. Recorded on the
+  // RequestLog row (its `scenario` column, which predates the tier map).
+  route: string
   primaryModel: string
   // The client's original body.model (pre-routing), carried through to the
   // usage-capture step so every request_logs row records "what was asked
   // for" next to "what was actually sent". Absent when the body had no
   // usable model string.
   requestedModel?: string
-  // Whether the request carried a <RIALTO-SUBAGENT-MODEL> tag, i.e. which
-  // lane of the chain the primary came from. Recorded on the request log
-  // so Activity can tell the two apart.
+  // Whether the request carried a <RIALTO-SUBAGENT-MODEL> tag. Recorded on
+  // the request log so Activity can tell subagent traffic apart.
   isSubagent: boolean
-  // The rest of the chain after the primary, as the selector resolved
-  // it. buildFailoverChain reads this rather than re-looking-up so the
-  // reactive path walks the same chain the proactive path did.
+  // The rest of the tier's routes after the primary, as the selector
+  // resolved them. buildFailoverChain walks this list.
   fallbacks: readonly string[]
   path: string
   search: string
@@ -159,12 +159,12 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
     headers[k] = v
   })
 
-  // Capture what the client asked for BEFORE routeScenario rewrites
+  // Capture what the client asked for BEFORE routeRequest rewrites
   // body.model in place — this is the only point the original is visible.
   const requestedModel = typeof body.model === 'string' && body.model.length > 0 ? body.model : undefined
 
   // Chain routing: rewrite body.model to the resolved provider,model and
-  // stamp req.scenarioType. We keep the request object so we can read
+  // stamp req.route. We keep the request object so we can read
   // the scenario and the chain back below.
   const routeReq: RouterRequest = {
     body: body as PipelineRequest['body'] & { model: string },
@@ -180,13 +180,13 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
     // traffic keeps the default.
     profileKeyOverride: token?.profileKey === null ? undefined : token?.profileKey
   }
-  await routeScenario(routeReq, { config: ctx.config, tokenizers: ctx.tokenizers })
-  const scenarioType: ScenarioType = routeReq.scenarioType !== undefined ? routeReq.scenarioType : 'default'
+  await routeRequest(routeReq, { config: ctx.config, tokenizers: ctx.tokenizers })
+  const route = routeReq.route !== undefined ? routeReq.route : PASSTHROUGH_ROUTE
 
-  // The chain gated every candidate out and the profile's
-  // `exhaustedBehavior` is '429'. Return the rate-limit response verbatim
-  // so no upstream dispatch happens. `Retry-After` carries the seconds
-  // until the earliest binding-window reset.
+  // Every route of the requested tier is out of quota and the profile's
+  // `exhaustedBehavior` is '429'. Answered here so no upstream dispatch
+  // happens; `Retry-After` carries the seconds until the first of those
+  // routes can serve again.
   const retryAfter = routeReq.quotaExhaustedRetryAfterSec
   if (typeof retryAfter === 'number' && retryAfter > 0) {
     return new Response(
@@ -194,7 +194,7 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
         buildErrorEnvelope({
           shape,
           status: 429,
-          from: 'Preference chain exhausted; retry after the window resets.'
+          from: 'Every route for this model tier is out of quota; retry after the window resets.'
         })
       ),
       {
@@ -204,16 +204,24 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
     )
   }
 
+  // The map refused the request by configuration — a route with no alias,
+  // no route that can run its web_search tool, a prompt no route can hold.
+  // Answered 400 and never dispatched: unlike exhaustion, waiting would
+  // not change it.
+  if (routeReq.routingRefusal !== undefined) {
+    return c.json(buildErrorEnvelope({ shape, status: 400, from: routeReq.routingRefusal }), 400)
+  }
+
   // A passthrough surface can refuse a target. The check lives here and
-  // not in `routeScenario` because that function never throws — it
+  // not in `routeRequest` because that function never throws — it
   // catches everything and falls back, so a rejection raised inside it
   // would be swallowed and the request would go upstream anyway. Here we
   // still have the inbound path and the client's error shape, which is
   // what a refusal has to answer in.
   //
-  // It runs after routeScenario on purpose: in routed mode body.model is
+  // It runs after routeRequest on purpose: in routed mode body.model is
   // no longer the caller's string, and `passthroughDenial` returns
-  // undefined for routed surfaces rather than judging a value the chain
+  // undefined for routed surfaces rather than judging a value a route
   // already replaced.
   const denial = await passthroughDenial(path, typeof body.model === 'string' ? body.model : undefined)
   if (denial !== undefined) {
@@ -231,7 +239,7 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
     accountSessionKey: resolveInboundSession(headers, body, tokenId),
     transformersByName,
     defaultTransformer,
-    scenarioType,
+    route,
     primaryModel,
     requestedModel,
     isSubagent: routeReq.isSubagent === true,

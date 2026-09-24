@@ -9,13 +9,13 @@ import { AuthMode, type Model as DbModel, type Provider as DbProvider } from '..
 import { ensurePresetAliases } from '../../tier-alias-service'
 import { apiStyleForVendor } from '../api-style'
 import type { Tx } from '../apply'
-import { chainEntryCascadeWarning } from './chain-entries'
+import { routeCascadeWarning } from './tier-route-cascade'
 import { apiKeyForStorage } from './fields'
 import { applyModelEnabledFlips, reconcileModelRows } from './model-rows'
 import { applySubscriptionAccountToggles } from './subscription-toggles'
 
 // Delete providers the UI no longer lists. Their models cascade, and so
-// do the chain entries naming those models — counted first so the
+// do the tier aliases and routes naming them — counted first so the
 // operator is told which chains just got shorter.
 export async function deleteRemovedProviders(
   tx: Tx,
@@ -25,7 +25,7 @@ export async function deleteRemovedProviders(
 ): Promise<void> {
   for (const ex of existing) {
     if (incomingByName.has(ex.name)) continue
-    const cascade = await chainEntryCascadeWarning(tx, { providerId: ex.id }, `deleted provider "${ex.name}"`)
+    const cascade = await routeCascadeWarning(tx, ex.id, `deleted provider "${ex.name}"`)
     if (cascade !== null) warnings.push(cascade)
     await tx.provider.delete({ where: { id: ex.id } })
   }

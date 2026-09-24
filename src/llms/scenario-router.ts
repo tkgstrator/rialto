@@ -1,188 +1,156 @@
 /**
- * Chain routing.
+ * Request routing through the tier map.
  *
- * Reads the inbound request, classifies it into a scenario and a lane
- * (agent / subagent), and walks the preference chain for that pair to
- * rewrite `body.model` to the target the request should actually hit.
- * What it stamps on the request — the scenario, the lane, the rest of
- * the chain — is what the failover paths and the log lines read.
+ * Reads the model the caller asked for, takes its tier (fable / opus /
+ * sonnet / haiku, or "other"), and asks the tier map which provider's
+ * tier should serve it — rewriting `body.model` to that target and
+ * stamping the rest of the route as fallbacks. What it stamps on the
+ * request — the route, the subagent flag, the fallbacks — is what the
+ * failover path and the usage record read.
  *
  * The other mode is passthrough: the caller's own `body.model` reaches
  * upstream as-is. Which of the two applies is a property of the inbound
- * surface, or of the token that authenticated the call — not of this
- * file, which only asks.
+ * surface, or of the token that authenticated the call — not of this file,
+ * which only asks.
  *
- * This file wires the pieces together; the pieces themselves live under
- * `./scenario-router/`: shared types, proactive failover, the
- * classifier, and persona/system-prompt injection.
+ * There are no scenarios or lanes any more. A request is routed by the tier
+ * it asked for; size, web search and health are gates on each route, not
+ * separate chains. The subagent tag is still stripped (the marker must
+ * never reach upstream) and still recorded, but it no longer picks a lane.
+ *
+ * The file keeps its old name until the directory is renamed; the pieces
+ * it uses live under `./scenario-router/` and `./tier-router/`.
  */
 
-import type { ScenarioType } from '@/schemas/domain/scenario'
 import { isRoutedPath, resolveSurfaceForPath } from '../services/inbound-surface-service'
-import {
-  DEFAULT_PROFILE_KEY,
-  loadRoutableProfile,
-  PASSTHROUGH_PROFILE_KEY
-} from '../services/router-preference-service'
-import { chainRoutingOf, resolveQuotaAwareSelection } from './quota-router/runtime'
-import { applyProactiveFailover } from './scenario-router/failover'
-import { classifyRequest } from './scenario-router/model-selection'
+import { DEFAULT_PROFILE_KEY, PASSTHROUGH_PROFILE_KEY } from '../services/tier-route-service'
 import { applyGlobalSystemPrompt, resolveActivePersonaPrompt } from './scenario-router/persona'
 import { stripSubagentTag } from './scenario-router/request-signals'
 import { signalsOf } from './scenario-router/surface-signals'
-import type { ConfigProvider, RouterContext, RouterRequest } from './scenario-router/types'
+import type { RouterContext, RouterRequest } from './scenario-router/types'
+import { routeByTier } from './tier-router/runtime'
 import type { TokenizeRequest } from './tokenizers/base'
 
-export type { ScenarioType } from '@/schemas/domain/scenario'
-export type { SubscriptionKindProvider } from './scenario-router/failover'
-export { applyProactiveFailover, candidateUsable, subscriptionKindOf } from './scenario-router/failover'
-export type { ChainRouting, EffortLevel, ModelTier } from './scenario-router/model-selection'
-export { classifyRequest, isHeavyRequest } from './scenario-router/model-selection'
+export type { SubscriptionKindProvider } from './scenario-router/subscription-kind'
+export { subscriptionKindOf } from './scenario-router/subscription-kind'
 export type { RouterContext, RouterRequest, RouterRequestBody } from './scenario-router/types'
+
+// The route a request that went upstream as sent is recorded under.
+export const PASSTHROUGH_ROUTE = 'passthrough'
 
 // What every exit path leaves on the request. The pipeline reads all
 // three, so a branch that forgets one hands it an undefined it has to
 // guess at.
-type Outcome = { scenarioType: ScenarioType; isSubagent: boolean; fallbacks: string[] }
+type Outcome = { route: string; isSubagent: boolean; fallbacks: string[] }
 
 function stamp(req: RouterRequest, outcome: Outcome): void {
-  req.scenarioType = outcome.scenarioType
+  req.route = outcome.route
   req.isSubagent = outcome.isSubagent
   req.resolvedFallbacks = outcome.fallbacks
 }
 
 /**
- * Mutates `req.body.model` to the selected target and stamps the
- * scenario, lane and fallback chain onto the request.
+ * Mutates `req.body.model` to the selected target and stamps the route,
+ * the subagent flag and the fallbacks onto the request.
  *
- * Never throws, and never rewrites `body.model` to anything but a chain
- * target: when the chain has nothing for this request — no entries, every
- * entry gated, the chain failed to load, routing itself threw — the
- * caller's own model stays exactly as it was sent.
+ * Never throws, and never rewrites `body.model` to anything but a route's
+ * target: when the map has nothing for this request — no routes for its
+ * tier, every route switched off, the map failed to load, routing itself
+ * threw — the caller's own model stays exactly as it was sent. Two
+ * outcomes are handed back as fields instead, because the /v1 handler
+ * answers them without dispatching: a tier whose routes are all out of
+ * quota under exhaustedBehavior '429' (`quotaExhaustedRetryAfterSec`), and
+ * a map that cannot take this request at all (`routingRefusal`, a 400).
  */
-export async function routeScenario(req: RouterRequest, ctx: RouterContext): Promise<void> {
-  // Passthrough: the caller hand-picks its target with `provider,model`
-  // in body.model and expects that exact model to reach upstream. Skip
-  // the whole selector, leave body.model as-is, and stamp
-  // default-scenario metadata so the downstream pipeline has the fields
-  // it reads.
-  //
-  // Which traffic that is comes from configuration: every surface
-  // carries an explicit mode set from the Routing screen, and a token
-  // may name the reserved passthrough profile to opt one client out
-  // without changing the mode for everyone else sharing the endpoint.
+export async function routeRequest(req: RouterRequest, ctx: RouterContext): Promise<void> {
+  // Passthrough: the caller hand-picks its target and expects that exact
+  // model upstream. Which traffic that is comes from configuration: every
+  // surface carries an explicit mode, and a token may name the reserved
+  // passthrough profile to opt one client out.
   const forcedPassthrough = req.profileKeyOverride === PASSTHROUGH_PROFILE_KEY
   if (forcedPassthrough || !(await isRoutedPath(req.inboundPath))) {
-    stamp(req, { scenarioType: 'default', isSubagent: false, fallbacks: [] })
+    stamp(req, { route: PASSTHROUGH_ROUTE, isSubagent: false, fallbacks: [] })
     return
   }
 
+  // Stripped first, and whatever happens next: the tag is a Rialto marker
+  // and must never reach an upstream, including on the failure path.
+  const isSubagent = stripSubagentTag(req.body.system)
   try {
-    await routeThroughChain(req, ctx)
+    await routeThroughTierMap(req, ctx, isSubagent)
   } catch (err) {
-    // The chain lives in Postgres and the tokenizer is a native module;
+    // The map lives in Postgres and the tokenizer is a native module;
     // either can be away. Neither is a reason to invent a target: the
-    // caller's model is the only one we know it can use, so it stays,
-    // and the request goes out as passthrough would have sent it. The
-    // tag is still stripped so the marker never reaches upstream — the
-    // classifier already did so when the failure came after it.
-    req.log.error({ err }, "[routing] chain routing failed; keeping the caller's own model")
-    const isSubagent = req.isSubagent !== undefined ? req.isSubagent : stripSubagentTag(req.body.system)
-    stamp(req, { scenarioType: 'default', isSubagent, fallbacks: [] })
+    // caller's model is the only one we know it can use, so it stays.
+    req.log.error({ err }, "[routing] tier routing failed; keeping the caller's own model")
+    stamp(req, { route: PASSTHROUGH_ROUTE, isSubagent, fallbacks: [] })
   }
 
-  // Append the active persona's prompt to user-facing routes. AFTER the
-  // subagent tag has been stripped so it composes with — rather than
-  // clobbers — any per-call system content, and on every routed exit
-  // path, since the persona is a property of the install and not of
-  // whether the chain found a primary. Empty is a no-op, keeping the
-  // cached prefix byte-stable.
-  //
-  // Gated to Anthropic-shape inbound (/v1/messages) only: persona is an
-  // Anthropic-idiom convenience the Claude Code client expects, and
-  // injecting it on an OpenAI-compat caller adds a stray top-level
-  // `system` field the OpenAI wire format doesn't model — upstreams that
-  // strictly allow-list top-level params (codex is one) then reject the
-  // whole request with 400 `Unsupported parameter: system`.
-  // `inboundPath` is absent on the pre-existing test callers that
-  // predate this hook; treat that as "unknown, apply the enrichment".
+  // Append the active persona's prompt to Anthropic-shape inbound only,
+  // after the tag is gone, on every routed exit path — the persona is a
+  // property of the install, not of whether a route was found. Empty is a
+  // no-op, keeping the cached prefix byte-stable. OpenAI-shape callers
+  // get exactly what they sent: upstreams that allow-list top-level
+  // params (codex) reject a stray `system`. `inboundPath` is absent on
+  // test callers that predate this hook; they get the enrichment.
   if (req.inboundPath === undefined || req.inboundPath === '/v1/messages') {
     req.body.system = applyGlobalSystemPrompt(req.body.system, resolveActivePersonaPrompt(ctx.config))
   }
 }
 
-async function routeThroughChain(req: RouterRequest, ctx: RouterContext): Promise<void> {
-  const tokenCount = await countRequestTokens(ctx.tokenizers, signalsOf(req).tokenize)
+async function routeThroughTierMap(req: RouterRequest, ctx: RouterContext, isSubagent: boolean): Promise<void> {
+  const signals = signalsOf(req)
+  const tokenCount = await countRequestTokens(ctx.tokenizers, signals.tokenize)
   req.tokenCount = tokenCount
 
-  // Which preference profile this request routes through. The token
-  // that authenticated the call wins when it names one — that is what
-  // makes per-client routing possible — otherwise the inbound surface's
-  // profile applies, which is the default for everyone.
+  // The token that authenticated the call wins when it names a profile —
+  // that is what makes per-client routing possible — otherwise the
+  // surface's, which is the default for everyone.
   const surface = await resolveSurfaceForPath(req.inboundPath)
   const surfaceProfile = surface === undefined ? DEFAULT_PROFILE_KEY : surface.profileKey
   const profileKey = req.profileKeyOverride !== undefined ? req.profileKeyOverride : surfaceProfile
 
-  // The profile is loaded before classification because the classifier
-  // needs it first: a scenario only wins when the chain has an entry to
-  // serve it. One read serves both the classifier and the selector.
-  const profile = await loadRoutableProfile(profileKey)
-  const providers = ctx.config.get<ConfigProvider[]>('providers', [])
-  const chain = chainRoutingOf(profile, providers)
-
-  const { scenarioType, isSubagent } = classifyRequest(req, tokenCount, chain)
   const requestedModel = typeof req.body.model === 'string' ? req.body.model : undefined
-  const selected = await resolveQuotaAwareSelection({
+  const routing = await routeByTier({
     requestedModel,
-    isSubagent,
-    scenario: scenarioType,
-    requestTokenCount: tokenCount,
     profileKey,
-    profile
+    requestTokenCount: tokenCount,
+    needsWebSearch: signals.webSearch
   })
+  const { selection } = routing
 
-  if (selected.selection.primary === null) {
-    if (selected.retryAfterSec !== null) {
-      // Every candidate was gated out AND the profile's
-      // `exhaustedBehavior` is '429' (the selector returns a non-null
-      // retryAfterSec only in that case). Stamp the seconds on the
-      // request so the /v1 handler can reply with a rate_limit_error +
-      // Retry-After header without dispatching upstream.
-      req.quotaExhaustedRetryAfterSec = selected.retryAfterSec
-      req.log.warn(
-        { retryAfterSec: selected.retryAfterSec, skipped: selected.selection.skipped },
-        '[routing] preference chain exhausted — will 429'
-      )
-    } else {
-      // No primary, no Retry-After: an empty lane, or every candidate
-      // gated under `exhaustedBehavior: 'passthrough'`. The caller's own
-      // model stays in place and goes out with no fallbacks.
-      req.log.info(
-        { scenario: scenarioType, skipped: selected.selection.skipped },
-        "[routing] chain has no primary — keeping the caller's own model"
-      )
-    }
-    stamp(req, { scenarioType, isSubagent, fallbacks: [] })
+  if (selection.outcome === 'routed' && selection.primary !== null) {
+    req.body.model = selection.primary
+    stamp(req, { route: routing.requestedTier, isSubagent, fallbacks: selection.fallbacks })
     return
   }
-
-  const fallbacks = selected.selection.fallbacks
-  req.body.model = applyProactiveFailover(
-    selected.selection.primary,
-    scenarioType,
-    fallbacks,
-    tokenCount,
-    ctx.config,
-    req.log
+  if (selection.outcome === 'exhausted' && routing.retryAfterSec !== null) {
+    req.quotaExhaustedRetryAfterSec = routing.retryAfterSec
+    req.log.warn(
+      { requestedModel, tier: routing.requestedTier, retryAfterSec: routing.retryAfterSec, skipped: selection.skipped },
+      '[routing] every route of the tier is out of quota — will 429'
+    )
+    stamp(req, { route: routing.requestedTier, isSubagent, fallbacks: [] })
+    return
+  }
+  if (selection.outcome === 'refused' && selection.refusal !== null) {
+    req.routingRefusal = selection.refusal
+    req.log.warn({ requestedModel, tier: routing.requestedTier, skipped: selection.skipped }, '[routing] refused — will 400')
+    stamp(req, { route: routing.requestedTier, isSubagent, fallbacks: [] })
+    return
+  }
+  // No routes for the tier, every one switched off, or exhausted under
+  // exhaustedBehavior 'passthrough': the caller's own model goes out.
+  req.log.info(
+    { requestedModel, tier: routing.requestedTier, outcome: selection.outcome, skipped: selection.skipped },
+    "[routing] no route taken — keeping the caller's own model"
   )
-  stamp(req, { scenarioType, isSubagent, fallbacks })
+  stamp(req, { route: PASSTHROUGH_ROUTE, isSubagent, fallbacks: [] })
 }
 
 // Counted from the request's normalised signals rather than from
 // `body.messages` directly: a Responses caller carries its turns in
-// `input` and a Gemini caller in `contents`, so reading the Anthropic
-// key made the size-based longContext branch permanently see 0 tokens
-// on those surfaces.
+// `input` and a Gemini caller in `contents`.
 async function countRequestTokens(tokenizers: RouterContext['tokenizers'], tokenize: TokenizeRequest): Promise<number> {
   const result = await tokenizers.countTokens(tokenize)
   return result.tokenCount
