@@ -145,6 +145,15 @@ describe('routeRequest: the subagent tag', () => {
     expect(textOf(req.body.system, 1)).toBe('')
   })
 
+  test('is stripped and recorded on a passthrough surface too, where the caller keeps its model', async () => {
+    __setSurfacesForTests({ 'anthropic-messages': 'passthrough' })
+    const req = await routeWithSystem(systemWith('<RIALTO-SUBAGENT-MODEL>x</RIALTO-SUBAGENT-MODEL>'))
+    expect(req.route).toBe('passthrough')
+    expect(req.body.model).toBe('claude-sonnet-4-5')
+    expect(req.isSubagent).toBe(true)
+    expect(textOf(req.body.system, 1)).toBe('')
+  })
+
   test('an unclosed tag still counts as present and is left as sent', async () => {
     const req = await routeWithSystem(systemWith('<RIALTO-SUBAGENT-MODEL>anthropic,x'))
     expect(req.isSubagent).toBe(true)
