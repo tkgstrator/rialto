@@ -23,7 +23,7 @@
       "mock": "routing.html",
       "route": "/routing",
       "group": "Routing",
-      "note": "Tier map for one surface's profile: requested tier (fable / opus / sonnet / haiku / other) → ordered routes, each a provider and a tier on it, resolved through that provider's tier alias. Replaces the per-scenario, per-lane model chain and the tier-substitution gates."
+      "note": "Routing for one surface's profile: a table of scenarios (Default, Think — extended thinking on, Long context — input over the threshold) by caller (Agent, Subagent — the subagent tag), each cell one or more provider · tier combinations tried top first; a combination switched off keeps its place and is skipped. An empty Think or Long context cell falls back to Default for the same caller; an empty Default passes the requested model through. Only the provider and the tier are shown; the provider's tier alias, set on its page, says which model the tier is, so a model release moves one alias instead of this table."
     },
     {
       "name": "routing-passthrough",
@@ -37,7 +37,21 @@
       "mock": "routing.html?edit",
       "route": null,
       "group": "Routing",
-      "note": "The tier map after Edit: drag handles, row toggles, the row menu, Add route per tier group and the four constraint controls only work in this state, and one Revert / Save in band 3 covers the routes and their constraints together. While editing, the surface tabs, the mode switch and the profile picker are disabled. Mock-only because the state sits behind a click."
+      "note": "The same table after Edit: each combination line can be dragged, switched on or off, removed, or clicked to change it; Add opens the two-step dialog. One Revert / Save covers the whole table. While editing, the surface tabs, the mode switch and the profile picker are disabled. Mock-only because the state sits behind a click."
+    },
+    {
+      "name": "routing-add-provider",
+      "mock": "routing.html?edit&add",
+      "route": null,
+      "group": "Routing",
+      "note": "Adding a combination, step 1: choose a provider. Mock-only: the dialog sits behind a click."
+    },
+    {
+      "name": "routing-add-tier",
+      "mock": "routing.html?edit&add=tier",
+      "route": null,
+      "group": "Routing",
+      "note": "Adding a combination, step 2: choose one of that provider's tiers, each with the model its alias names; a tier whose alias is unset is disabled and says where to set it. Back returns to step 1. Mock-only."
     },
     {
       "name": "providers",
