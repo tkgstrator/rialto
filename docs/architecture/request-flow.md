@@ -163,7 +163,7 @@ flowchart TD
 | 1 | claude-code (sub) `claude-sonnet-4-6` で正常応答 | `classifyRequest` → `resolveQuotaAwareSelection` → `attemptChainEntry` → 2xx → SSE 返却 |
 | 2 | 同上で **5h 窓 429**、サブアカ 3 つあり 1 つだけ枯渇 | 429 → `tryRotateAccount` で当該アカ exhaust → 同 entry 再試行 → peer アカで成功 |
 | 3 | 全サブアカが 5h 枯渇 | 429 → 全アカ exhaust → `markProviderExhausted` → 次 fallback (例 `gemini,gemini-2.5-pro`) |
-| 4 | 直前のリクエストで 429 を食って provider / model に exhausted マークが付いている | `applyProactiveFailover` が投げる前に primary を捨てて次の候補へ。マークは 429 レスポンスの実 resetAt（無ければ 5 分）で自動失効する |
+| 4 | 直前のリクエストで 429 を食って provider / model に exhausted マークが付いている | `applyProactiveFailover` が投げる前に primary を捨てて次の候補へ。マークは 429 レスポンスの実 resetAt（無ければ 5 分）で自動失効する。**それより早く外れるのは手動 Refresh のとき** — 最新の使用量で上限を下回ったアカウントのマークと、最新の値で配信できると分かったモデルのマークを外し、routing snapshot を作り直す（下の状態ストア表） |
 | 5 | model 名 bare で `claude-opus-4-8` 指定 | `classifyScenario` が effort/tier シグナル（opus → heavy）で `longContext` レーンに寄せ（そのレーンに entry があれば）、chain の設定値が使われる。レーンに primary が無ければ `body.model` がそのまま通り、chain walker が唯一の有効なホストへ解決する |
 | 6 | 同じ model を api_key の `anthropic` も hosts している | chain に書いてある方が選ばれる。bare 名のまま通った場合はホストが 2 つあるので曖昧としてスキップ（→ 400） |
 | 7 | subscription primary が 429、fallback に api_key 混在 | chain の順どおりに api_key fallback も試す。全部枯渇なら最後の 429 を verbatim 返却 |
@@ -178,7 +178,8 @@ flowchart TD
 
 | ストア | 役割 | 失効条件 |
 |--------|------|----------|
-| `failover-state` (`isProviderExhausted` / `isAccountExhausted`) | provider / sub-account 単位の枯渇フラグ | `markXxxExhausted(until?)` の `until` 時刻 or デフォルト 5min |
+| `failover-state` (`isProviderExhausted` / `isAccountExhausted` / `isModelExhausted`) | provider / sub-account / (provider, model) 単位の枯渇フラグ。**プロセスローカル**で、複数インスタンス間では共有されない | `markXxxExhausted(until?)` の `until` 時刻 or デフォルト 5min。加えて手動 Refresh（`POST /api/subscriptions/refresh`、接続時・リセット後の再取得も同じ経路）が、最新の値を取れたアカウントについて `accountHasHardLimitHit` で判定し直して外す — アカウントのマークはアカウント全体の窓で、モデルのマークはそのモデルに効く窓（Fable の週次窓を含む）で判定する。provider のマーク（`insufficient_quota`）は外さない |
+| `routing-scheduler` (`getRoutingSnapshot`) | quota snapshot（重み・`soonestResetAt`）。selector の exhaustion 判定が読む | 5 分ごとの tick で作り直す。手動 Refresh の後は `republishRoutingSnapshot()` が、実行中の tick の後にもう 1 回 tick を走らせる（tick は重ならない） |
 | `session-account-router` (`getActiveAccountForSession`) | session ↔ 選択 sub-account の sticky マップ | `releaseAccountForSession` で剥がす |
 | `subaccount-usage-store` (`getPerAccountUsage`) | DB の `SubAccountUsage` 行をキャッシュ | 周期 polling で更新 |
 | `usage-service` (`getKindWindowHeadroom`) | weekly / 5h ウィンドウのキャッシュ。**ルーティング判断からは外れた** — 現在の呼び出し元はテストと UI 表示のみで、`applyProactiveFailover` はこれを読まない | 周期 polling で更新 |
