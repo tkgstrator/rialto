@@ -361,3 +361,70 @@ export interface RouterUtilizationResponse {
   perAccount: RouterUtilizationPerAccountRow[]
   suggestions: RouterUtilizationSuggestion[]
 }
+
+// ─── Tier map and provider tier aliases ────────────────────────────────
+// Mirrors schemas/api/routing.ts. The stored shape (a route names a
+// provider and a tier) plus, on read, what the tier resolves to today.
+
+export type ModelTier = 'fable' | 'opus' | 'sonnet' | 'haiku'
+/** A requested tier: one of the four, or 'other' for a model name with no Claude family. */
+export type RouteTier = ModelTier | 'other'
+export const ROUTE_TIER_ORDER: readonly RouteTier[] = ['fable', 'opus', 'sonnet', 'haiku', 'other']
+
+export interface TierRouteWire {
+  provider: string
+  targetTier: ModelTier
+  enabled: boolean
+}
+
+export interface TierRouteResolutionWire {
+  model: string
+  /** The model and its provider are both switched on. */
+  targetEnabled: boolean
+  hostsWebSearch: boolean
+  contextWindow: number | null
+}
+
+export interface TierRouteViewWire extends TierRouteWire {
+  /** Null when the provider has no alias for `targetTier`. */
+  resolved: TierRouteResolutionWire | null
+}
+
+export interface RoutingConstraintsWire {
+  exhaustedBehavior: '429' | 'passthrough'
+  quotaSkipPct: number
+  errorRateSkipPct: number
+  minHealthSamples: number
+}
+
+export interface TierProfileViewWire {
+  key: string
+  routes: Record<RouteTier, TierRouteViewWire[]>
+  constraints: RoutingConstraintsWire
+}
+
+export interface TierProfileWriteWire {
+  routes: Record<RouteTier, TierRouteWire[]>
+  constraints: RoutingConstraintsWire
+}
+
+export interface TierProfileSummaryWire {
+  key: string
+  routeCount: number
+  updatedAt: string | null
+  kind: 'map' | 'passthrough'
+}
+
+export interface TierProfileSaveOutcome {
+  success: boolean
+  warnings: string[]
+}
+
+export interface TierAliasWire {
+  provider: string
+  tier: ModelTier
+  model: string | null
+  updatedAt: string | null
+  /** Models of this tier on the provider; `isNew` appeared after the alias was set. */
+  candidates: Array<{ model: string; enabled: boolean; isNew: boolean }>
+}

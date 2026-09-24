@@ -4,6 +4,7 @@ import type {
   IdentityResponse,
   InboundSurfaceWire,
   InboundType,
+  ModelTier,
   OverviewResponse,
   RequestLogItem,
   RouterPreferenceProfileWire,
@@ -14,6 +15,11 @@ import type {
   SessionMessageItem,
   SessionSummary,
   SurfaceId,
+  TierAliasWire,
+  TierProfileSaveOutcome,
+  TierProfileSummaryWire,
+  TierProfileViewWire,
+  TierProfileWriteWire,
   UpdateCheckResponse
 } from '@/lib/api-types'
 import type { Config } from '@/types'
@@ -179,6 +185,38 @@ class ApiClient {
 
   async putRouterPreferences(profile: RouterPreferenceProfileWire): Promise<RouterPreferencesApplyResponse> {
     return this.put<RouterPreferencesApplyResponse>('/router-preferences', profile)
+  }
+
+  // ─── Tier map ────────────────────────────────────────────────────────
+  // A profile's routes per requested tier, each resolved through its
+  // provider's alias on read. PUT replaces the whole profile.
+  async getTierProfiles(): Promise<TierProfileSummaryWire[]> {
+    return this.get<TierProfileSummaryWire[]>('/routing/profiles')
+  }
+
+  async getTierProfile(key: string): Promise<TierProfileViewWire> {
+    return this.get<TierProfileViewWire>(`/routing/profiles/${encodeURIComponent(key)}`)
+  }
+
+  async putTierProfile(key: string, profile: TierProfileWriteWire): Promise<TierProfileSaveOutcome> {
+    return this.put<TierProfileSaveOutcome>(`/routing/profiles/${encodeURIComponent(key)}`, profile)
+  }
+
+  // ─── Provider tier aliases ───────────────────────────────────────────
+  async getTierAliases(): Promise<TierAliasWire[]> {
+    return this.get<TierAliasWire[]>('/tier-aliases')
+  }
+
+  // Point the provider's tier at a model — "promote". Switches the model
+  // on as well.
+  async setTierAlias(provider: string, tier: ModelTier, model: string): Promise<{ enabledModel: boolean }> {
+    return this.put<{ enabledModel: boolean }>(`/providers/${encodeURIComponent(provider)}/tier-aliases/${tier}`, {
+      model
+    })
+  }
+
+  async clearTierAlias(provider: string, tier: ModelTier): Promise<void> {
+    await this.apiFetch<void>(`/providers/${encodeURIComponent(provider)}/tier-aliases/${tier}`, { method: 'DELETE' })
   }
 
   // Router scheduler snapshot (Phase 5). Read-only. Cold-boot returns
