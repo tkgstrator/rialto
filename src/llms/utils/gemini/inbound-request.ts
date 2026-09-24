@@ -314,12 +314,19 @@ export function inboundSystemMessage(instruction: GeminiInboundContent | undefin
  * `budget_tokens` — the two surfaces must not disagree about what
  * "8192 tokens of thinking" means.
  */
+// Gemini's -1 budget is "dynamic thinking": think, and let the model decide
+// how much. The shared budget bucketing reads every budget at or below 0 as
+// "none" — right for Anthropic's, where only 0 exists — so this one is
+// caught first, or a client asking Gemini to think got thinking switched
+// off upstream.
+const DYNAMIC_THINKING_BUDGET = -1
+
 function inboundEffort(thinking: GeminiInboundThinkingConfig): ThinkLevel | undefined {
   const level = ThinkLevelSchema.safeParse(thinking.thinkingLevel)
   if (level.success) {
     return level.data
   }
-  if (thinking.thinkingBudget !== undefined) {
+  if (thinking.thinkingBudget !== undefined && thinking.thinkingBudget !== DYNAMIC_THINKING_BUDGET) {
     return getThinkLevel(thinking.thinkingBudget)
   }
   return undefined
@@ -332,17 +339,18 @@ export function inboundReasoning(config: GeminiInboundGenerationConfig | undefin
     return undefined
   }
   const effort = inboundEffort(thinking)
-  // `includeThoughts` on its own asks for the reasoning to be returned
-  // without saying how much to spend — unified spells that as enabled
-  // with no effort hint.
-  if (effort === undefined && !thinking.includeThoughts) {
+  const dynamic = thinking.thinkingBudget === DYNAMIC_THINKING_BUDGET
+  // `includeThoughts` on its own, or a dynamic budget, asks for thinking
+  // without saying how much to spend — unified spells that as enabled with
+  // no effort hint.
+  if (effort === undefined && !thinking.includeThoughts && !dynamic) {
     return undefined
   }
   const reasoning: NonNullable<UnifiedChatRequest['reasoning']> = { enabled: effort !== 'none' }
   if (effort !== undefined) {
     reasoning.effort = effort
   }
-  if (thinking.thinkingBudget !== undefined) {
+  if (thinking.thinkingBudget !== undefined && !dynamic) {
     reasoning.max_tokens = thinking.thinkingBudget
   }
   return reasoning

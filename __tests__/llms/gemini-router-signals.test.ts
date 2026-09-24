@@ -162,6 +162,10 @@ describe('thinking', () => {
     expect(withThinking({ thinkingBudget: 0 }).thinking).toBe(false)
   })
 
+  test("a -1 budget is Gemini's dynamic thinking: it asks to think, not to stop", () => {
+    expect(withThinking({ thinkingBudget: -1 }).thinking).toBe(true)
+  })
+
   test('includeThoughts alone asks for thinking', () => {
     expect(withThinking({ includeThoughts: true }).thinking).toBe(true)
     expect(withThinking({}).thinking).toBe(false)
