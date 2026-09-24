@@ -6,7 +6,7 @@
  * a surface's `profileKey` and an access token's `profileKey` keep
  * pointing at them — and the constraints live in the same JSONB column.
  * A save merges its four knobs into that blob rather than replacing it,
- * so a rollback to the build before the tier map still finds the chain's
+ * so a rollback to the build before scenario routes still finds the chain's
  * own knobs where it left them.
  */
 
@@ -25,6 +25,7 @@ import {
   type ScenarioRoutes,
   ScenarioRoutesSchema,
   type TierProfile,
+  type TierProfileWrite,
   type TierRoute
 } from '../schemas/domain/tier-route'
 import { hostsWebSearch } from '../shared/transformer-chain'
@@ -127,7 +128,7 @@ export interface SaveOutcome {
  */
 export async function saveTierProfile(
   profileKey: string,
-  profile: TierProfile,
+  profile: TierProfileWrite,
   prisma: PrismaClient = getPrismaClient()
 ): Promise<SaveOutcome> {
   // The reserved key skips routing, so a map stored under it could never
@@ -185,9 +186,14 @@ export async function saveTierProfile(
     // The tuner owns the Long context threshold: an editor saves the
     // constraints it loaded, and a tune landing between that load and this
     // save would otherwise be written back to what the editor last saw.
+    // Only the knobs the body names are written; the rest keep what is
+    // stored (see RoutingConstraintsWriteSchema).
+    const given = Object.fromEntries(
+      Object.entries(profile.constraints).filter(([, v]) => v !== null && v !== undefined)
+    )
     const constraints = {
       ...(base.success ? base.data : {}),
-      ...profile.constraints,
+      ...given,
       longContextThreshold: stored.longContextThreshold,
       previousLongContextThreshold: stored.previousLongContextThreshold,
       longContextTunedAt: stored.longContextTunedAt

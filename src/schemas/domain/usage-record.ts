@@ -111,11 +111,10 @@ export const UsageRecordSchema = z.object({
   sessionId: z.string().nonempty(),
   provider: z.string().nonempty(),
   model: z.string().nonempty(),
-  // The client's original body.model (pre-routing) and the route that
-  // served it — the requested tier ('sonnet', 'other', …) or
-  // 'passthrough'. The column is still called `scenario`: rows written
-  // before the tier map hold the scenario the old chain chose, and are
-  // read as they were. Null when the capture site couldn't read them.
+  // The client's original body.model (pre-routing) and the scenario whose
+  // list served it ('default', 'think', 'longContext') or 'passthrough'.
+  // Rows v2.89.0 wrote hold a requested tier instead, and are read as they
+  // were. Null when the capture site couldn't read them.
   requestedModel: z.string().nonempty().nullable(),
   scenario: z.string().nonempty().nullable(),
   // Which wire format the request came in on. 'anthropic' for

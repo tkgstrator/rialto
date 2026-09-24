@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Dev-only: fill an install with demo data so all six screens have
- * something to render — providers and models, tier aliases and tier maps,
+ * something to render — providers and models, tier aliases and scenario routes,
  * subscription quota, access tokens, and a month of traffic behind
  * Activity and Overview.
  *
@@ -17,7 +17,7 @@
  *   - Rows in tables that also hold real data carry a `demo-` id, so a
  *     re-run replaces exactly its own output and `--clean` removes it.
  *   - Live configuration that cannot carry a marker (tier aliases, the
- *     `live` tier map, surface routing modes, an account's quota) is
+ *     `live` routes, surface routing modes, an account's quota) is
  *     written ONLY while still unset. Running this against a configured
  *     install adds traffic without re-pointing anything.
  */
@@ -73,7 +73,7 @@ async function main(): Promise<void> {
     for (const [table, count] of Object.entries(removed)) {
       if (count > 0) line(table, count)
     }
-    console.error('\nTier aliases, the `live` tier map and surface modes are left as they are —')
+    console.error('\nTier aliases, the `live` routes and surface modes are left as they are —')
     console.error('the seed only ever writes those while unset, so it has nothing of its own to take back.')
     await prisma.$disconnect()
     return
@@ -100,7 +100,7 @@ async function main(): Promise<void> {
   console.error(`demo data seeded (replaced ${removedTotal} rows from a previous run)\n`)
   line('routable targets', `${targets.length}${registeredVendors ? ' (fallback catalog registered)' : ''}`)
   line('tier aliases', `${tierMap.aliasesWritten} set`)
-  line('tier maps', `live: ${tierMap.live}, ${tierMap.demoProfile}: written`)
+  line('scenario routes', `live: ${tierMap.live}, ${tierMap.demoProfile}: written`)
   line('surface modes', `${surfaces.updated.length} set, ${surfaces.skipped.length} left as configured`)
   line('subscription accounts', `${accounts.createdAccounts} created`)
   line('quota rows', `${accounts.createdQuotas} quota, ${accounts.createdUsageRows} per-metric`)

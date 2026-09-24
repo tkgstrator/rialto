@@ -1,5 +1,5 @@
 /**
- * Re-run the chain → tier map conversion for one profile.
+ * Re-run the chain → scenario routes conversion for one profile.
  *
  *   bun run scripts/rebackfill-tier-routes.ts --profile <key>
  *   bun run db:seed

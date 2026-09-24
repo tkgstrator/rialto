@@ -83,7 +83,7 @@ export type TierSkipReason =
   | 'error_rate'
 
 /**
- *   - routed      a primary and the rest as fallbacks, in map order;
+ *   - routed      a primary and the rest as fallbacks, in pace order;
  *   - passthrough nothing usable because nothing is configured: no routes,
  *                 or every route or target switched off — the caller's own
  *                 model goes upstream, as an empty lane always meant;

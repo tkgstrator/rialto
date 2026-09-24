@@ -2,14 +2,15 @@
  * The routing signals a request carries, read out of whichever wire
  * format it arrived in.
  *
- * The tier map gates each route on two questions about a request: will
- * the prompt fit in the route's context window, and did the caller attach
- * a web-search tool the route may not be able to run. Both have to be
+ * Routing asks three questions about a request: did the caller opt into
+ * thinking (the Think scenario), how big is the prompt (the Long context
+ * scenario, and each route's context-window gate), and did it attach a
+ * web-search tool a route may not be able to run. All three have to be
  * answered in the vocabulary the request arrived in — a Responses caller
  * carries its turns in `input`, a Gemini caller in `contents[]`, and each
  * vendor spells its search tool differently. Read only under Anthropic's
  * names, a Responses or Gemini prompt would weigh nothing, no other
- * vendor's search tool would be seen, and both gates would wave those
+ * vendor's search tool would be seen, and the gates would wave those
  * requests through.
  *
  * Extraction lives per surface for the same reason the rest of the

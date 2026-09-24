@@ -5,9 +5,9 @@
 //   - Model:                   one row per model name, child of Provider
 //   - RouterPreferenceProfile: a named routing profile; `live` is the default every surface uses
 //   - ProviderTierAlias:       which of a provider's models each tier (fable/opus/sonnet/haiku) is
-//   - TierRoute:               a profile's tier map — per requested tier, the ordered provider·tiers
+//   - TierRoute:               a profile's routes — per scenario and lane, the ordered provider·tiers
 //   - RouterPreferenceEntry, RoutingWeightChange, ScenarioKey, Model.manualTier: retired,
-//     read only by the one-shot tier-map backfill; dropped by the contract migration
+//     read only by the one-shot conversion into TierRoute; dropped by the contract migration
 // Everything else here is the archive behind Activity and Overview, the
 // subscription accounts and their observed quota, and issued credentials.
 //
@@ -366,8 +366,9 @@ model Model {
 
 // A named routing profile. One row per profile holds the constraint knobs
 // (exhaustedBehavior, quotaSkipPct, errorRateSkipPct, minHealthSamples);
-// its tier map is TierRoute. The retired RouterPreferenceEntry chain hangs
-// off it too, until the contract migration drops it.
+// its routes are TierRoute, and the Long context tuner keeps its state in
+// the same JSONB. The retired RouterPreferenceEntry chain hangs off it
+// too, until the contract migration drops it.
 //
 // `live` is the default profile every surface routes through until it
 // is pointed at another one (InboundSurfaceConfig.profileKey), and a
@@ -451,7 +452,7 @@ model TierRoute {
   @@index([providerId])
 }
 
-// Retired: the per-scenario, per-lane chain the tier map replaced. Read
+// Retired: the per-scenario, per-lane chain of models TierRoute replaced. Read
 // only by the one-shot backfill into TierRoute; dropped by the contract
 // migration once every profile carries chainBackfilledAt.
 model RouterPreferenceEntry {
@@ -614,18 +615,17 @@ model RequestLog {
   provider         String
   model            String
   // What the client (Claude Code) asked for in body.model BEFORE routing
-  // rewrote it, and the route it took: the requested tier whose tier-map
-  // routes served it (fable / opus / sonnet / haiku / other), or
-  // "passthrough". The column keeps its old name; rows from before the
-  // tier map carry the scenario the retired classifier chose. Both null
+  // rewrote it, and the scenario whose list served it (default / think /
+  // longContext), or "passthrough". Rows written by v2.89.0 carry the
+  // requested tier it routed by (fable / opus / sonnet / haiku / other),
+  // and older ones the old chain's scenario. Both null
   // for rows written before this landed (backfill is not possible — the
   // original request is gone), so readers treat null as "untracked".
   // `model`/`provider` above stay the actual upstream target.
   requestedModel   String?
   scenario         String?
-  // Whether the request carried a <RIALTO-SUBAGENT-MODEL> tag. It selects
-  // nothing any more — the tier map has no subagent lane — but is still
-  // recorded so Activity can tell the two apart. Null for rows written
+  // Whether the request carried a <RIALTO-SUBAGENT-MODEL> tag, which picks
+  // the subagent lane of the scenario's routes. Null for rows written
   // before this column landed (untracked); true / false thereafter. Kept nullable so a reader
   // can distinguish "no data" from "data says agent".
   isSubagent       Boolean?

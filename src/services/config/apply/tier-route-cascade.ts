@@ -1,5 +1,5 @@
 /**
- * What a model or provider deletion takes out of the tier map.
+ * What a model or provider deletion takes out of the scenario routes.
  *
  * Both cascade in the database: a deleted model takes the tier aliases
  * that named it, a deleted provider takes its aliases and every route that

@@ -1,7 +1,7 @@
 /**
  * Readers for what a request carries on the wire, one question each.
  *
- * None of them sees the tier map or the inbound surface: they answer
+ * None of them sees the routes or the inbound surface: they answer
  * "what did the client send?" and nothing more. That is what lets the
  * tier router and the services beside it share `tierOf` without any of
  * them owning it — the model-name tier is read in exactly one place, so

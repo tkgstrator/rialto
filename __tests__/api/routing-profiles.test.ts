@@ -150,6 +150,25 @@ describe.skipIf(!HAS_DB)('routing profile and tier alias endpoints', () => {
     expect(body.longContextThreshold).toBe(400_000)
   })
 
+  test('a knob the body leaves out keeps its stored value: an API save cannot switch the tuner back on', async () => {
+    await getPrismaClient().routerPreferenceProfile.create({
+      data: { key: 'live', constraints: { autoTuneLongContext: false, quotaSkipPct: 90 } }
+    })
+    const put = await routingProfileRoute.fetch(
+      request('PUT', '/api/routing/profiles/live', {
+        routes: { default: { agent: [{ provider: 'claude-code', targetTier: 'sonnet', enabled: true }] } },
+        constraints: { exhaustedBehavior: 'passthrough' }
+      })
+    )
+    expect(put.status).toBe(200)
+    const body = await (await routingProfileRoute.fetch(request('GET', '/api/routing/profiles/live'))).json()
+    expect(body.constraints).toMatchObject({
+      exhaustedBehavior: 'passthrough',
+      quotaSkipPct: 90,
+      autoTuneLongContext: false
+    })
+  })
+
   test('the reserved passthrough key is refused', async () => {
     const res = await routingProfileRoute.fetch(request('PUT', '/api/routing/profiles/passthrough', map({})))
     expect(res.status).toBe(400)

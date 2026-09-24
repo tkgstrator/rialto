@@ -99,3 +99,27 @@ export const TierProfileSchema = z.object({
   constraints: RoutingConstraintsSchema
 })
 export type TierProfile = z.infer<typeof TierProfileSchema>
+
+// What a save may carry. A knob the body leaves out (null) keeps its stored
+// value, where the defaulted read schema would quietly reset it — a caller
+// that omitted autoTuneLongContext would switch the tuner back on. The
+// tuner's own state is not writable at all; unknown keys are dropped.
+export const RoutingConstraintsWriteSchema = z.object({
+  exhaustedBehavior: z.enum(['429', 'passthrough']).nullable().default(null),
+  quotaSkipPct: z.number().min(0).max(100).nullable().default(null),
+  errorRateSkipPct: z.number().min(0).max(1).nullable().default(null),
+  minHealthSamples: z.number().int().min(0).nullable().default(null),
+  autoTuneLongContext: z.boolean().nullable().default(null)
+})
+
+export const TierProfileWriteSchema = z.object({
+  routes: ScenarioRoutesSchema,
+  constraints: RoutingConstraintsWriteSchema.default({
+    exhaustedBehavior: null,
+    quotaSkipPct: null,
+    errorRateSkipPct: null,
+    minHealthSamples: null,
+    autoTuneLongContext: null
+  })
+})
+export type TierProfileWrite = z.infer<typeof TierProfileWriteSchema>

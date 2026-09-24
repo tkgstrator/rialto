@@ -12,9 +12,9 @@ export interface RequestLogItem {
   sessionId: string
   provider: string
   model: string
-  // What the client asked for pre-routing, and the route it took: the
-  // requested tier whose routes served it, or "passthrough". Older rows
-  // carry the scenario the retired classifier chose. Null on rows written
+  // What the client asked for pre-routing, and the scenario whose list
+  // served it, or "passthrough". Rows v2.89.0 wrote carry a requested tier
+  // instead. Null on rows written
   // before routing capture landed.
   requestedModel: string | null
   scenario: string | null

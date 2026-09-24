@@ -15,7 +15,7 @@ routingProfileRoute.openapi(
     responses: {
       200: {
         description:
-          "The profile's tier map, each route resolved through its provider's alias. A profile with no row reads as empty",
+          "The profile's routes per scenario and lane, each resolved through its provider's alias, and the Long context threshold in effect. A profile with no row reads as empty",
         content: { 'application/json': { schema: TierProfileViewSchema } }
       }
     }

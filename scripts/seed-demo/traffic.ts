@@ -3,7 +3,7 @@
  *
  * This is what Activity, Overview's spend and recent-session blocks, and
  * the per-token cost column all read. Rows are generated against the same
- * tier maps the routing seed wrote, so what Activity says was used and
+ * scenario routes the routing seed wrote, so what Activity says was used and
  * what Routing says is configured tell the same story — a demo where the
  * two disagree is worse than no demo at all.
  */
@@ -213,7 +213,7 @@ type LogRow = {
   provider: string
   model: string
   requestedModel: string
-  // The route the request took (its requested tier, or "passthrough").
+  // The scenario whose list served the request, or "passthrough".
   // The column keeps its pre-tier-map name.
   scenario: string
   isSubagent: boolean

@@ -9,7 +9,11 @@
  */
 
 import { z } from '@hono/zod-openapi'
-import { ModelTierSchema, RoutingConstraintsSchema, TierProfileSchema } from '../domain/tier-route'
+import {
+  ModelTierSchema,
+  RoutingConstraintsSchema,
+  TierProfileWriteSchema as DomainWriteSchema
+} from '../domain/tier-route'
 
 export const TierRouteResolutionSchema = z
   .object({
@@ -59,7 +63,7 @@ export const TierProfileViewSchema = z
   })
   .openapi('TierProfileView')
 
-export const TierProfileWriteSchema = TierProfileSchema.openapi('TierProfileWrite')
+export const TierProfileWriteSchema = DomainWriteSchema.openapi('TierProfileWrite')
 
 export const TierProfileSummarySchema = z
   .object({

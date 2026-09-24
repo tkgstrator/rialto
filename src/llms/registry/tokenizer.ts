@@ -1,7 +1,7 @@
 /**
  * Tokenizer registry used by the router to estimate request token
- * counts. The tier map's context-window gate compares that count with
- * each route's window, off the cl100k_base tiktoken count — the same
+ * counts. The Long context threshold and each route's context-window gate
+ * are compared against the cl100k_base tiktoken count — the same
  * heuristic the legacy TokenizerService applied when no per-provider
  * override was set.
  *
