@@ -3,10 +3,10 @@
  *
  * Two layers, deliberately:
  *   - `readSignals` on its own — a pure function of (body, inboundPath),
- *     so each of the five signals can be pinned to the exact wire key it
+ *     so each of the two signals can be pinned to the exact wire key it
  *     reads. A regression here names the signal it broke.
  *   - `routeRequest` end to end — the point of the exercise. The tier map
- *     gates each route on two of these signals: the prompt's size against
+ *     gates each route on both signals: the prompt's size against
  *     the route's context window, and a web_search tool against whether
  *     the route can run it. Neither exists under Anthropic's names on an
  *     OpenAI caller, so without the per-surface readers both gates would
@@ -133,97 +133,6 @@ describe('tokenize', () => {
   })
 })
 
-describe('effort and thinking', () => {
-  test('chat reads the flat `reasoning_effort`', () => {
-    const s = signals(CHAT, { reasoning_effort: 'high' })
-    expect(s.effort).toBe('high')
-    expect(s.thinking).toBe(true)
-  })
-
-  test('responses reads the nested `reasoning.effort`', () => {
-    const s = signals(RESPONSES, { reasoning: { effort: 'medium' } })
-    expect(s.effort).toBe('medium')
-    expect(s.thinking).toBe(true)
-  })
-
-  test('both spellings are accepted on both surfaces', () => {
-    // One vendor vocabulary; which one a client sends depends on its SDK
-    // version, and Rialto's own chat transformer rewrites flat → nested.
-    expect(signals(CHAT, { reasoning: { effort: 'high' } }).effort).toBe('high')
-    expect(signals(RESPONSES, { reasoning_effort: 'high' }).effort).toBe('high')
-  })
-
-  test('the flat spelling wins when a body carries both', () => {
-    expect(signals(CHAT, { reasoning_effort: 'high', reasoning: { effort: 'low' } }).effort).toBe('high')
-  })
-
-  test('minimal and none fold onto low, the router enum having no lower rung', () => {
-    expect(signals(CHAT, { reasoning_effort: 'minimal' }).effort).toBe('low')
-    expect(signals(CHAT, { reasoning_effort: 'none' }).effort).toBe('low')
-  })
-
-  test('`none` is the explicit opt-OUT, so it is not a thinking request', () => {
-    // OpenAI's analogue of Anthropic's `thinking: {type: 'disabled'}`.
-    expect(signals(CHAT, { reasoning_effort: 'none' }).thinking).toBe(false)
-    expect(signals(RESPONSES, { reasoning: { effort: 'none' } }).thinking).toBe(false)
-  })
-
-  test('saying nothing is not an opt-in', () => {
-    const s = signals(CHAT, { messages: [{ role: 'user', content: 'hi' }] })
-    expect(s.thinking).toBe(false)
-    expect(s.effort).toBeUndefined()
-  })
-
-  test('a reasoning object without an effort still counts as thinking', () => {
-    // Codex CLI sends `reasoning: {summary: 'auto'}`.
-    const s = signals(RESPONSES, { reasoning: { summary: 'auto' } })
-    expect(s.thinking).toBe(true)
-    expect(s.effort).toBeUndefined()
-  })
-
-  test('an unknown effort value reads as "said nothing"', () => {
-    expect(signals(CHAT, { reasoning_effort: 'turbo' }).effort).toBeUndefined()
-  })
-
-  test('the anthropic `thinking` field is not read on an OpenAI surface', () => {
-    // A body that would be a thinking request on /v1/messages must not be
-    // one here — the field is not part of this wire format.
-    expect(signals(CHAT, { thinking: { type: 'enabled' } }).thinking).toBe(false)
-  })
-})
-
-describe('toolNames', () => {
-  test('chat returns the nested function names', () => {
-    const s = signals(CHAT, {
-      tools: [
-        { type: 'function', function: { name: 'Read' } },
-        { type: 'function', function: { name: 'Bash' } }
-      ]
-    })
-    expect(s.toolNames).toEqual(['Read', 'Bash'])
-  })
-
-  test('responses reads names off the flat tool entries', () => {
-    const s = signals(RESPONSES, {
-      tools: [
-        { type: 'function', name: 'Read' },
-        { type: 'function', name: 'Bash' }
-      ]
-    })
-    expect(s.toolNames).toEqual(['Read', 'Bash'])
-  })
-
-  test('a hosted tool is identified by its type, which is what the operator sees', () => {
-    const s = signals(RESPONSES, { tools: [{ type: 'web_search' }, { type: 'file_search' }] })
-    expect(s.toolNames).toEqual(['web_search', 'file_search'])
-  })
-
-  test('no tools is an empty list, not a crash', () => {
-    expect(signals(CHAT, {}).toolNames).toEqual([])
-    expect(signals(CHAT, { tools: 'nonsense' }).toolNames).toEqual([])
-  })
-})
-
 describe('webSearch', () => {
   test('responses hosted tool, including the versioned and preview spellings', () => {
     expect(signals(RESPONSES, { tools: [{ type: 'web_search' }] }).webSearch).toBe(true)
@@ -246,6 +155,11 @@ describe('webSearch', () => {
   test('an ordinary tool set does not trip it', () => {
     const s = signals(CHAT, { tools: [{ type: 'function', function: { name: 'Read' } }] })
     expect(s.webSearch).toBe(false)
+  })
+
+  test('no tools, or a tools value that is not a list, is false rather than a crash', () => {
+    expect(signals(CHAT, {}).webSearch).toBe(false)
+    expect(signals(CHAT, { tools: 'nonsense' }).webSearch).toBe(false)
   })
 })
 

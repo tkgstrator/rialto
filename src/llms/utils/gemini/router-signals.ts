@@ -1,14 +1,12 @@
 /**
  * Gemini routing signals: what a `/v1beta/models/*` request tells the
- * scenario router.
+ * tier router.
  *
- * The classifier and the rule predicates ask their questions in one
- * normalised vocabulary (`RouterSignals`). Until this reader existed the
- * gemini surface had no entry in that registry, so every Gemini request
- * answered the Anthropic questions with "nothing": `contents[]` counted
- * as zero tokens, `thinkingConfig` was invisible, and the longContext /
- * think / webSearch lanes stayed unreachable no matter what an operator
- * configured on the Routing screen.
+ * The router's context-window and web-search gates ask their questions
+ * in one normalised vocabulary (`RouterSignals`). Read in the Anthropic
+ * one, every Gemini request answers them with "nothing": `contents[]`
+ * counts as zero tokens and a `googleSearch` tool goes unseen, so
+ * neither gate could ever hold a Gemini request back.
  *
  * The extraction runs through `inbound-request.ts` — the same converter
  * the routed path uses to turn a Gemini body into the unified shape —
@@ -19,19 +17,12 @@
  * accepts is collapsed in exactly one place.
  */
 
-import type { EffortLevel } from '@/llms/scenario-router/request-signals'
 import type { RouterSignals } from '@/llms/scenario-router/surface-signals'
 import type { TokenizeContentBlock, TokenizeMessage, TokenizeTool } from '@/schemas/domain/tokenizer'
-import type { ThinkLevel, UnifiedMessage } from '@/schemas/domain/unified'
+import type { UnifiedMessage } from '@/schemas/domain/unified'
 import type { GeminiInboundFunctionDeclaration, GeminiInboundTool } from '@/schemas/wire/gemini/content'
 import { GeminiInboundRequestSchema } from '@/schemas/wire/gemini/content'
-import {
-  createToolCallLedger,
-  firstPresent,
-  inboundContentToMessages,
-  inboundReasoning,
-  inboundSystemMessage
-} from './inbound-request'
+import { createToolCallLedger, firstPresent, inboundContentToMessages, inboundSystemMessage } from './inbound-request'
 
 /**
  * The slice of an inbound Gemini body the router branches on.
@@ -47,12 +38,13 @@ const GeminiSignalFieldsSchema = GeminiInboundRequestSchema.pick({
   systemInstruction: true,
   system_instruction: true,
   tools: true,
+  // Validated but no longer read: the thinking config only fed signals
+  // the router has dropped. Kept in the pick so a body whose generation
+  // config the converter will reject still yields no signals, as it did
+  // while the config was read.
   generationConfig: true,
   generation_config: true
 })
-
-/** Effort vocabulary the rule predicates match against. */
-const EFFORT_LEVELS: readonly EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max']
 
 /**
  * Keys on a `tools[]` entry that are not a built-in tool.
@@ -76,22 +68,10 @@ const builtinToolKeys = (tool: GeminiInboundTool): string[] =>
  * snake_case proto name of either. Matched on a normalised prefix rather
  * than an exact list for the same reason `thinkingLevel` is read as a
  * free string — Google adds spellings faster than we ship, and a
- * webSearch lane that silently stops matching is worse than one that
+ * web-search gate that silently stops matching is worse than one that
  * over-matches a future `googleSearchSomething`.
  */
 const isGoogleSearchKey = (key: string): boolean => key.toLowerCase().replaceAll('_', '').startsWith('googlesearch')
-
-/**
- * Tool identities as Gemini names them: the declared function names,
- * plus the key of each built-in. Built-ins are included because they are
- * the only name a `hasTool` rule could ever match them by — a
- * `{ googleSearch: {} }` entry declares no functions at all.
- */
-const geminiToolNames = (tools: readonly GeminiInboundTool[]): string[] =>
-  tools.flatMap((tool) => [
-    ...tool.functionDeclarations.flatMap((decl) => (decl.name.length > 0 ? [decl.name] : [])),
-    ...builtinToolKeys(tool)
-  ])
 
 const hasGoogleSearch = (tools: readonly GeminiInboundTool[]): boolean =>
   tools.some((tool) => builtinToolKeys(tool).some(isGoogleSearchKey))
@@ -101,8 +81,8 @@ const hasGoogleSearch = (tools: readonly GeminiInboundTool[]): boolean =>
  *
  * `parametersJsonSchema` is where the newer GenAI SDKs put it; leaving
  * it unread would undercount a tool-heavy request by the whole size of
- * its schemas, which is exactly the request most likely to be near the
- * longContext threshold.
+ * its schemas, which is exactly the request most likely to be near a
+ * route's context window.
  */
 function declarationSchema(decl: GeminiInboundFunctionDeclaration): Record<string, unknown> {
   const parameters = isRecord(decl.parameters) ? decl.parameters : undefined
@@ -149,30 +129,9 @@ function tokenizeMessageOf(message: UnifiedMessage): TokenizeMessage {
   return { role: message.role, content: blocks }
 }
 
-/**
- * Grade `thinkingConfig` onto the router's effort vocabulary.
- *
- * `thinkingLevel` is read against the effort names first so a level
- * Google adds later (`xhigh`, `max`) is honoured the moment it appears,
- * without a release here. Only when the raw level means nothing to the
- * router does it fall back to the converter's bucketing, which is also
- * what turns an older model's `thinkingBudget` into a level — that
- * bucketing is shared with `/v1/messages`, so the two surfaces cannot
- * disagree about what "8192 tokens of thinking" is worth.
- */
-function effortOf(level: string | undefined, bucketed: ThinkLevel | undefined): EffortLevel | undefined {
-  const direct = level === undefined ? undefined : EFFORT_LEVELS.find((known) => known === level.toLowerCase())
-  if (direct !== undefined) return direct
-  if (bucketed === undefined || bucketed === 'none') return undefined
-  return bucketed
-}
-
 /** Signals for a body that does not parse as a Gemini request at all. */
 const noSignals = (): RouterSignals => ({
   tokenize: { messages: [], tools: [] },
-  thinking: false,
-  effort: undefined,
-  toolNames: [],
   webSearch: false
 })
 
@@ -190,9 +149,6 @@ export function readGeminiSignals(body: Record<string, unknown>): RouterSignals 
   if (!parsed.success) return noSignals()
 
   const { contents, tools } = parsed.data
-  const generationConfig = firstPresent(parsed.data.generationConfig, parsed.data.generation_config)
-  const reasoning = inboundReasoning(generationConfig)
-  const level = generationConfig?.thinkingConfig?.thinkingLevel
 
   const ledger = createToolCallLedger()
   const messages = contents.flatMap((content) => inboundContentToMessages(content, ledger).map(tokenizeMessageOf))
@@ -206,13 +162,6 @@ export function readGeminiSignals(body: Record<string, unknown>): RouterSignals 
       system: typeof system?.content === 'string' ? system.content : undefined,
       tools: tokenizeToolsOf(tools)
     },
-    // `inboundReasoning` returning nothing while the client did name a
-    // level means the level is one we do not recognise. That is still an
-    // opt-in: `none` is recognised, so an unknown value can only be a
-    // request to think.
-    thinking: reasoning === undefined ? level !== undefined : reasoning.enabled === true,
-    effort: effortOf(level, reasoning?.effort),
-    toolNames: geminiToolNames(tools),
     webSearch: hasGoogleSearch(tools)
   }
 }
