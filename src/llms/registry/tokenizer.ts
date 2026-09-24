@@ -1,8 +1,9 @@
 /**
- * Tokenizer registry used by the scenario router to estimate request
- * token counts. Our app routes scenario thresholds (`longContext`) off
- * the cl100k_base tiktoken count — the same heuristic the legacy
- * TokenizerService applied when no per-provider override was set.
+ * Tokenizer registry used by the router to estimate request token
+ * counts. The tier map's context-window gate compares that count with
+ * each route's window, off the cl100k_base tiktoken count — the same
+ * heuristic the legacy TokenizerService applied when no per-provider
+ * override was set.
  *
  * The registry keeps an eagerly-initialised fallback tokenizer plus a
  * lazy cache of additional ones, in case a future config wants to

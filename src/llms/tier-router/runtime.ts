@@ -16,7 +16,7 @@ import { exhaustedUntil, isModelExhausted } from '../../services/failover-state'
 import { getRoutingSnapshot } from '../../services/routing-scheduler'
 import { errorRateOf, sampleCountOf } from '../../services/routing-scheduler/model-health'
 import { loadTierProfileView, type TierProfileView } from '../../services/tier-route-service'
-import { tierOf } from '../scenario-router/request-signals'
+import { tierOf } from '../router/request-signals'
 import { selectTierRoute, type TierCandidate, type TierSelection } from './select'
 
 // Profiles seeded by a test in place of the database; `null` reads the

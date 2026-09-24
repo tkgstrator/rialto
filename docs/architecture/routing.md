@@ -50,14 +50,14 @@ In both modes the subagent tag is stripped first and recorded as `RequestLog.isS
 
 ## One request
 
-`routeRequest` (`src/llms/scenario-router.ts`, the file keeps its old name) → `routeByTier`
+`routeRequest` (`src/llms/router.ts`) → `routeByTier`
 (`src/llms/tier-router/runtime.ts`) → `selectTierRoute` (`src/llms/tier-router/select.ts`, pure).
 
 1. **Strip the subagent tag** and remember whether it was there — in every mode.
 2. **Mode.** Passthrough stamps `route = 'passthrough'` and returns: `body.model` is untouched,
    there are no fallbacks, and no persona is added.
 3. **Signals.** `signalsOf` reads the request in its own wire vocabulary
-   (`src/llms/scenario-router/surface-signals.ts`); routing uses two of them — what to hand the
+   (`src/llms/router/surface-signals.ts`); routing uses two of them — what to hand the
    tokenizer, and whether the request carries a web-search tool. The token count comes from
    `src/llms/tokenizers/`.
 4. **Profile.** The token's `profileKey` wins, else the surface's, else `live`.

@@ -380,7 +380,7 @@ non-stream retry as "JSON but not a Message (HTTP 200)", blaming a proxy. Now
 
 Before the matrix comes a prior question: can routing be turned on per surface at all
 (master-plan §2-5's second completion condition). This used to be hard-coded in
-`scenario-router.ts`, where anything but `/v1/messages` passed through unconditionally — which made
+`router.ts`, where anything but `/v1/messages` passed through unconditionally — which made
 the entire Routing screen a `/v1/messages`-only screen. The mode is now a value on
 `InboundSurfaceConfig` and all four behave symmetrically
 (`__tests__/parity/routing-mode.test.ts`).
@@ -389,7 +389,7 @@ the entire Routing screen a `/v1/messages`-only screen. The mode is now a value 
 tier map). This section once said "a surface can be set to `routed`, but anything other than
 `/v1/messages` falls almost entirely to the `default` lane": the scenario classifier read
 `body.thinking` / `body.output_config.effort` / `tools[].type` directly, so a surface could have
-its mode set while no road existed to the lane behind it. `src/llms/scenario-router/surface-signals.ts`
+its mode set while no road existed to the lane behind it. `src/llms/router/surface-signals.ts`
 fixed that by absorbing the per-surface vocabulary differences into one normalised `RouterSignals`.
 
 The lanes are gone now. The tier map ([routing.md](./routing.md)) routes on the tier the requested

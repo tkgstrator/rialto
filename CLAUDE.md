@@ -23,7 +23,7 @@ is not a dependency either; that code was absorbed into `src/llms/`.
 |---|---|
 | `src/index.ts` | Hono (`OpenAPIHono`) entry. Mounts `/api/*`, the inbound surfaces, `/health`, and the OAuth loopback `/callback` |
 | `src/api/` | One `route.ts` per endpoint, Next.js-style directory naming (`providers/[name]/models/[model]/route.ts`) |
-| `src/llms/` | Transformers, request pipeline, the router (`scenario-router.ts` → `tier-router/`), tokenizers, inbound-surface descriptors |
+| `src/llms/` | Transformers, request pipeline, the router (`router.ts` → `tier-router/`), tokenizers, inbound-surface descriptors |
 | `src/services/` | config, OAuth, usage, the tier map and tier aliases, routing-scheduler (quota snapshot), access tokens, model tests |
 | `src/vendors/` | Per-vendor catalog + pricing adapters (`VendorProvider`): fetch a vendor's live model list, scrape its published prices, read per-model context windows. Read by `model-sync-service` / `catalog-service`, **never on the request path**. Named `vendors` and not `providers` because `src/llms/registry/provider.ts` is a different thing — see below |
 | `src/schemas/` | Zod, split into four layers — `primitives / wire / domain / api`. There is **no** global `@/schemas` barrel; import from the layer. `wire` / `domain` / `api` each expose one; `primitives` has no barrel because nothing composes the layer as a whole — import `primitives/record` and friends by name |
@@ -136,7 +136,7 @@ model, so a vendor's new release moves one alias instead of every route that mea
   `routingMode`, so a new family is a code change, not a migration. Storage:
   `src/services/tier-route-service.ts` and `src/services/tier-alias-service.ts`.
 
-`routeRequest` (`src/llms/scenario-router.ts`; the file and directory keep their old name)
+`routeRequest` (`src/llms/router.ts`)
 strips the subagent tag, resolves the profile — the authenticating token's `profileKey`
 wins, else the surface's, else `DEFAULT_PROFILE_KEY = 'live'` — and hands the requested
 model to `src/llms/tier-router/runtime.ts`. The requested tier is `tierOf(body.model)`, a
@@ -428,7 +428,7 @@ Please help me analyze this code...
 
 **It selects nothing.** There are no lanes any more: a subagent's request is routed by
 the tier its own `body.model` asks for, like any other (`docs/architecture/routing.md`).
-`stripSubagentTag` (`src/llms/scenario-router/request-signals.ts`) returns whether the
+`stripSubagentTag` (`src/llms/router/request-signals.ts`) returns whether the
 tag was there and strips it in place; `routeRequest` calls it **first, in every mode** —
 routed or passthrough — so the internal marker never reaches upstream, and records the
 answer as `RequestLog.isSubagent` so Activity can tell the two kinds of traffic apart.

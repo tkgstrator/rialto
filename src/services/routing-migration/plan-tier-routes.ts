@@ -28,7 +28,7 @@
  * Every such difference is a note.
  */
 
-import { tierOf } from '../../llms/scenario-router/request-signals'
+import { tierOf } from '../../llms/router/request-signals'
 import { type ModelTier, ModelTierSchema, ROUTE_TIERS, type RouteTier } from '../../schemas/domain/tier-route'
 
 export interface ChainEntryInput {

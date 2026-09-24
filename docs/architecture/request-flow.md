@@ -13,7 +13,7 @@
 - `src/api/v1/candidate-chain.ts` — `buildFailoverChain`（試す候補の順序）
 - `src/api/v1/invocation.ts` — `resolveInvocationForModel`（候補1件 → 実行可能な invocation）
 - `src/api/v1/chain-failover.ts` — `attemptChainEntry` / `tryRotateAccount`
-- `src/llms/scenario-router.ts` — `routeRequest`（ファイル名は旧名のまま）
+- `src/llms/router.ts` — `routeRequest`
 - `src/llms/tier-router/runtime.ts` — `routeByTier`（ティアマップを読み、live state から述語を組む）
 - `src/llms/tier-router/select.ts` — `selectTierRoute`（純粋関数のセレクタ。6 つのゲート）
 - `src/services/tier-route-service.ts` — `loadTierProfileView`（各ルートをエイリアスで解決し、無効な target を `targetEnabled` に折り込んだ profile）

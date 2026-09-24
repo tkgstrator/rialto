@@ -11,7 +11,7 @@
  *
  * 1. **The answer has to agree with the router.** The router's
  *    context-window gate counts the same request with the same registry
- *    (`scenario-router.ts` → `countRequestTokens`) and skips every route
+ *    (`router.ts` → `countRequestTokens`) and skips every route
  *    too small to hold it. If this endpoint asked Anthropic instead, a
  *    caller could be told it is comfortably under its limit while Rialto
  *    has already skipped routes as too small for it, or refused it — two
@@ -34,8 +34,8 @@
 
 import { Hono } from 'hono'
 import { TokenizerRegistry } from '@/llms/registry/tokenizer'
-import { readSignals } from '@/llms/scenario-router/surface-signals'
-import type { RouterRequestBody } from '@/llms/scenario-router/types'
+import { readSignals } from '@/llms/router/surface-signals'
+import type { RouterRequestBody } from '@/llms/router/types'
 import { logger } from '@/logger'
 
 export const countTokensRoute = new Hono()

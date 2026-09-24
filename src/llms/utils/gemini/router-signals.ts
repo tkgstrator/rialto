@@ -17,7 +17,7 @@
  * accepts is collapsed in exactly one place.
  */
 
-import type { RouterSignals } from '@/llms/scenario-router/surface-signals'
+import type { RouterSignals } from '@/llms/router/surface-signals'
 import type { TokenizeContentBlock, TokenizeMessage, TokenizeTool } from '@/schemas/domain/tokenizer'
 import type { UnifiedMessage } from '@/schemas/domain/unified'
 import type { GeminiInboundFunctionDeclaration, GeminiInboundTool } from '@/schemas/wire/gemini/content'

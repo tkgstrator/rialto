@@ -4,7 +4,7 @@
  * `ConfigProvider` is the runtime provider view the subscription-kind
  * sniffer (`subscription-kind.ts`) reads; the `Router*` types are the
  * router's public request/context shapes, re-exported from the top-level
- * `scenario-router.ts` for external callers.
+ * `router.ts` for external callers.
  */
 
 import type { Logger } from 'pino'

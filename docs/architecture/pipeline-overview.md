@@ -84,7 +84,7 @@ flowchart TB
 | | usage-service | 5h / weekly ウィンドウのキャッシュ。背景 polling で更新。**ルーティング判断には使われない**（Overview / Subscriptions の表示とアカウント選択の材料） | DB → mem | `src/services/usage-service.ts` |
 | | Postgres | `Provider`/`Model`/`ProviderTierAlias`/`RouterPreferenceProfile`/`TierRoute`/`InboundSurfaceConfig`/`Session`/`RequestLog`/`SubAccountUsage` ほか（`RouterSlot` / `RoutingPreset` は無い。退役した `RouterPreferenceEntry` / `RoutingWeightChange` は contract migration まで残るが、backfill 以外は読まない） | – | `src/prisma/schema.prisma` |
 | ③ Per-Request | HTTP | エンドポイント (`/v1/messages` 等) → 面記述子 → endpoint transformer 解決 | HTTP → ctx | `src/api/v1/route.ts` |
-| | RoutePlan | body parse + ティアマップによるルーティング + persona append。枯渇の 429 と拒否の 400 はここで返す | body → RoutePlan | `src/api/v1/route-plan.ts`<br/>`src/llms/scenario-router.ts`<br/>`src/llms/tier-router/` |
+| | RoutePlan | body parse + ティアマップによるルーティング + persona append。枯渇の 429 と拒否の 400 はここで返す | body → RoutePlan | `src/api/v1/route-plan.ts`<br/>`src/llms/router.ts`<br/>`src/llms/tier-router/` |
 | | FailoverChain | primary + fallbacks を exhausted マークで絞る（auth_mode では絞らない） | RoutePlan → string[] | `src/api/v1/candidate-chain.ts` |
 | | ChainEntry loop | 各 entry を試し、429 ならアカウントを回し、それでも駄目なら次へ | string → Response | `src/api/v1/chain-failover.ts` |
 | | runPipeline | request transformers → fetch → response transformers の本処理 | invocation → Response | `src/llms/pipeline.ts` |
@@ -544,7 +544,7 @@ flowchart TD
 
 ### routeRequest の段階
 
-`src/llms/scenario-router.ts`（ファイル名は旧名のまま）→ `src/llms/tier-router/runtime.ts:routeByTier`
+`src/llms/router.ts`→ `src/llms/tier-router/runtime.ts:routeByTier`
 → `src/llms/tier-router/select.ts:selectTierRoute`。ゲートと結果の全体は [routing.md](./routing.md)
 が正で、ここでは各段が何を読むかを押さえる。**bare 名からプロバイダを逆引きする段は無い** —
 それは chain walker 側の `resolveInvocationForModel` が、ルートが何も取らなかった（あるいは
@@ -564,7 +564,7 @@ passthrough の面でも内部マーカーは上流へ漏れず、`isSubagent` �
 
 **段階 2 — シグナルとトークン数**
 `signalsOf(req)` が面ごとの語彙の違いを吸収して `{ tokenize, webSearch, … }` を作り
-（`src/llms/scenario-router/surface-signals.ts`）、トークナイザが `signals.tokenize` を数える。
+（`src/llms/router/surface-signals.ts`）、トークナイザが `signals.tokenize` を数える。
 Responses の呼び手は会話を `input` に、Gemini は `contents` に載せるので、`body.messages` を直に数えない。
 数えた値は context ゲートが、`webSearch` は web 検索ゲートが読む。
 

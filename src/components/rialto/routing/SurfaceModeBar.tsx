@@ -9,7 +9,7 @@
  *
  * The mode switch writes straight through: there is no draft state for a
  * boolean whose whole purpose is to be flipped and observed. Both
- * controls change what actually routes — `scenario-router.ts` resolves
+ * controls change what actually routes — `router.ts` resolves
  * the surface for the inbound path and runs that surface's profile.
  */
 

@@ -206,8 +206,8 @@ thinking（Extended Thinking）を有効にして使う前提のキャラに限�
 ### キャッシュとの相性
 
 Rialto は persona を `cache_control` を持つ system ブロックの**内側**に append する
-(実装は `src/llms/scenario-router/persona.ts` の `applyGlobalSystemPrompt`。
-呼び出しは `src/llms/scenario-router.ts` の `routeRequest` 末尾)。
+(実装は `src/llms/router/persona.ts` の `applyGlobalSystemPrompt`。
+呼び出しは `src/llms/router.ts` の `routeRequest` 末尾)。
 このため:
 
 - **長さの runtime コストは prompt cache でほぼ吸収される**
@@ -229,7 +229,7 @@ image といったシナリオ別の経路は、ティアマップ（[routing.md
 移行で無くなった。
 
 代わりに**受け口による制限**がある。persona 挿入が走るのは **`/v1/messages` だけ**である
-(`scenario-router.ts` の `req.inboundPath` 判定、テストは
+(`router.ts` の `req.inboundPath` 判定、テストは
 `__tests__/llms/persona-inbound-gate.test.ts`)。OpenAI 互換面 (`/v1/chat/completions` /
 `/v1/responses`) と Gemini 面では走らない — OpenAI 形のボディにトップレベル `system` を
 足すと codex が `Unsupported parameter: system` で 400 を返し、寛容な upstream でも
@@ -422,5 +422,5 @@ Rialto は `src/shared/data/personas.ts` で 4 つの seed persona (イレイナ
 
 - 本家ヤッチョ GPT (for Claude): `https://github.com/tsukumijima/YacchoGPT`
 - Rialto のペルソナ機能概要: `README.md` の "Personas" セクション
-- 挿入実装: `src/llms/scenario-router/persona.ts` の `resolveActivePersonaPrompt` と `applyGlobalSystemPrompt`（呼び出しは `src/llms/scenario-router.ts` の `routeRequest`）
+- 挿入実装: `src/llms/router/persona.ts` の `resolveActivePersonaPrompt` と `applyGlobalSystemPrompt`（呼び出しは `src/llms/router.ts` の `routeRequest`）
 - Seed ライブラリ: `src/shared/data/personas.ts`

@@ -17,7 +17,7 @@
 import { getPrismaClient } from '../db/client'
 import type { Prisma, PrismaClient } from '../generated/prisma/client'
 import dayjs from '../lib/dayjs'
-import { tierOf } from '../llms/scenario-router/request-signals'
+import { tierOf } from '../llms/router/request-signals'
 import { type ModelTier, ModelTierSchema } from '../schemas/domain/tier-route'
 import { SUBSCRIPTION_PRESETS } from '../shared/data/subscriptions'
 

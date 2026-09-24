@@ -44,7 +44,7 @@
  */
 
 import dayjs from '../lib/dayjs'
-import { tierOf } from '../llms/scenario-router/request-signals'
+import { tierOf } from '../llms/router/request-signals'
 import { isAccountExhausted } from './failover-state'
 import {
   type AccountUsageMap,

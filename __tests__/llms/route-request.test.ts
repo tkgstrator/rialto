@@ -29,8 +29,8 @@ import pino from 'pino'
 import dayjs from '../../src/lib/dayjs'
 import { ConfigStore } from '../../src/llms/registry/config'
 import { TokenizerRegistry } from '../../src/llms/registry/tokenizer'
-import { PASSTHROUGH_ROUTE, routeRequest } from '../../src/llms/scenario-router'
-import type { RouterRequest, RouterRequestBody } from '../../src/llms/scenario-router/types'
+import { PASSTHROUGH_ROUTE, routeRequest } from '../../src/llms/router'
+import type { RouterRequest, RouterRequestBody } from '../../src/llms/router/types'
 import { __setTierProfilesForTests } from '../../src/llms/tier-router/runtime'
 import {
   clearModelExhaustion,

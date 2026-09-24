@@ -25,7 +25,7 @@ export interface DemoTarget {
   inputPer1M: number | null
 }
 
-// Same substring rule the router uses (scenario-router/request-signals.ts's
+// Same substring rule the router uses (router/request-signals.ts's
 // tierOf), duplicated here so the seed does not import the request path.
 export const inferTier = (modelName: string): Tier | null => {
   const lower = modelName.toLowerCase()

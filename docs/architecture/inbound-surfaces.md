@@ -101,7 +101,7 @@ failover の全段を通す。詳細は [routing.md](./routing.md)。
 プリセット・シナリオ別のチェーンは無い）。
 
 この分岐自体は妥当だった（OpenAI互換クライアントは自分でモデルを選ぶ）。問題は
-`scenario-router.ts` に**ハードコードされていて、UIから見えず、切り替えられない**ことだった。
+`router.ts` に**ハードコードされていて、UIから見えず、切り替えられない**ことだった。
 
 ```ts
 // 旧: 固定・不可視
@@ -151,7 +151,7 @@ Routing 画面で明示的に `routed` へ切り替える必要がある — こ
 InboundSurfaceConfig.profileKey → RouterPreferenceProfile.key → TierRoute
 ```
 
-リクエスト時に `scenario-router.ts`（`routeRequest`）が inbound path から面を解決し、その
+リクエスト時に `router.ts`（`routeRequest`）が inbound path から面を解決し、その
 `profileKey` のティアマップをティアルーターに読ませる。認証したアクセストークンが `profileKey` を
 持っていればそちらが面のものに勝つ。これにより **CIのクライアントが叩く面だけ cost-first に固定する**
 といった運用ができる。`profileKey` の無い面は既定プロファイル `live` に解決される。予約キー
@@ -189,7 +189,7 @@ InboundSurfaceConfig.profileKey → RouterPreferenceProfile.key → TierRoute
 
 | 条件 | 追加で要るもの |
 |---|---|
-| 新しいワイヤ形式 | endpoint transformer 1つ（`endPoint` は記述子の `endpoint` と一致させる）。`transformRequestOut`（wire → 内部形）と `transformResponseIn`（内部形 → wire）の両方。加えて `src/llms/scenario-router/surface-signals.ts` の `READERS` に signal reader 1つ — ティアマップが `body.model` 以外に読むのは `tokenize`（context ゲート）と `webSearch`（Web 検索ゲート）の 2 つで、reader の無い面は Anthropic の語彙で読まれる。語彙が違えば本文も Web 検索ツールも見えず、両ゲートを素通りしてしまう |
+| 新しいワイヤ形式 | endpoint transformer 1つ（`endPoint` は記述子の `endpoint` と一致させる）。`transformRequestOut`（wire → 内部形）と `transformResponseIn`（内部形 → wire）の両方。加えて `src/llms/router/surface-signals.ts` の `READERS` に signal reader 1つ — ティアマップが `body.model` 以外に読むのは `tokenize`（context ゲート）と `webSearch`（Web 検索ゲート）の 2 つで、reader の無い面は Anthropic の語彙で読まれる。語彙が違えば本文も Web 検索ツールも見えず、両ゲートを素通りしてしまう |
 | 新しいエラー封筒 | `buildErrorEnvelope` に分岐1つ、`unauthorizedResponse` に 401 の形1つ |
 | 新しい非ストリーム集約 | `sse-aggregate/` にファイル1つ（ワイヤ形式ごとに1ファイル）と barrel の1行 |
 | 新しい認証規約 | `presentedSecret` に読み取り1行、`GATE_BY_CREDENTIAL` に1エントリ |
