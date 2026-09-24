@@ -54,7 +54,7 @@ In both modes the subagent tag is stripped first and recorded as `RequestLog.isS
 - **`image` and `webSearch` are no longer scenarios.** Every model worth routing to reads images,
   and a request carrying a web-search tool is served by the routes that can run it — a gate, not
   a list of its own (gate 3 below).
-- **The model name the caller sent picks nothing.** The list says which provider tiers serve the
+- **The model name does not choose the scenario.** Its tier only limits forbidden escalation destinations. The list says which provider tiers serve the
   scenario; `body.model` is only what goes out when nothing is routed.
 - **Cascades.** Deleting a model unsets the aliases that named it; deleting a provider removes its
   aliases and every route that named it. The apply layer counts both before the delete and returns
@@ -194,6 +194,7 @@ Stored in `RouterPreferenceProfile.constraints` and defaulted by `RoutingConstra
 
 | Key | Default | Meaning |
 |---|---|---|
+| `blockedEscalationTiers` | `[]` | Forbid upward moves into these tiers; same-tier routes and all demotions remain eligible |
 | `exhaustedBehavior` | `'429'` | What an exhausted list answers: 429 + `Retry-After`, or the caller's own model upstream |
 | `quotaSkipPct` | `100` | Skip a route whose snapshot budget is used at or past this percentage |
 | `errorRateSkipPct` | `0.5` | Skip a route whose 5-minute error rate is at or above this (0–1)… |
@@ -207,6 +208,16 @@ A blob that still carries retired keys (`allowEscalation`, `tierFallback`, the s
 knobs) parses; they are ignored, and a save merges the constraints over the blob rather than
 replacing it, so a rollback to an older build still finds its own keys. A blob that does not parse
 reads as the defaults.
+
+The Routing screen exposes `blockedEscalationTiers` as a multi-select below the scenario table,
+using the same Edit / Revert / Save controls. With Opus and Fable selected, Sonnet cannot escalate
+to either, but Haiku may still escalate to Sonnet. Same-tier routing and demotion are always
+allowed, including pace-driven demotion. The gate runs before pace ordering for both primary and
+fallback candidates. Tier order is Fable > Opus > Sonnet > Haiku; the caller's model family is
+inferred from its model name, excluding an optional provider prefix. Unknown caller tiers retain
+normal routing rather than guessing their rank. If every configured route is blocked, the existing
+400 refusal applies; exhausted allowed routes still follow `exhaustedBehavior`. Passthrough is
+unchanged. An omitted write preserves the stored restriction; an empty array clears it.
 
 ## The Long context threshold
 
@@ -362,7 +373,8 @@ badge with an on/off switch, a drag handle and a remove button. Adding or changi
 dialog with two selects, the provider and under it the tier. The tier select opens up once a
 provider is chosen, and lists a tier the provider has no model for as disabled, because it would
 reach nothing. The screen shows no model names, no status or
-quota column and no constraints block: the question an operator brings to it is which provider and
+quota column. Below the table, escalation destinations can be blocked by tier; demotion stays
+allowed. The question an operator brings to the table is which provider and
 tier each scenario uses; which model that is belongs to the provider's page, and quota to Overview
 and the provider pages.
 

@@ -181,6 +181,8 @@
       "passthroughNote": "このサーフェスを <mono>Routed</mono> に切り替えると、Claude Code と同じクォータ考慮のフェイルオーバーを {{client}} にも適用できます。呼び出し元は今までどおり自分のモデル名を送れます。それは最終ターゲットではなく、分類器が読む <mono>requestedModel</mono> として扱われるようになります。"
     },
     "scenarios": {
+      "blockedEscalationTiers": "エスカレーション先として禁止するTier",
+      "blockedEscalationHint": "選択したTierへの昇格だけを禁止します。同Tierへのルーティングと降格は許可されます。",
       "crumb": "シナリオ",
       "title": "シナリオ",
       "hint": "シナリオごとのプロバイダー · ティアの組み合わせ。エージェント用とサブエージェント用があり、上から順に試します",
