@@ -88,7 +88,7 @@ scheduler の snapshot は、ターゲットごとに `projectedPct` を載せ�
 
 - 表は「シナリオ × Agent / Subagent」。各セルに provider と tier バッジの組み合わせを上から並べる。
 - 各行には並べ替え、ON / OFF、削除、クリックでの変更がある。
-- 追加はダイアログで行う。①プロバイダ → ②Tier。そのプロバイダにモデルのない Tier は選べない。
+- 追加と変更はダイアログで行う。プロバイダのセレクトの下に Tier のセレクトがあり、プロバイダを選ぶと Tier が選べるようになる。そのプロバイダにモデルのない Tier は選べない。
 - 要約、使用量、状態、制約の欄は出さない。モデル名も出さない。
 
 Activity の列名は「Route」から「Scenario」に戻す。`RequestLog.scenario` にシナリオ（または `passthrough`）を書く。

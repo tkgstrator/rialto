@@ -359,8 +359,9 @@ then its mode and profile, then shows the profile as one table: a row per scenar
 Long context — the last with the threshold in effect, "input over 700k tokens (auto)") and a column
 per lane (Agent, Subagent). Each cell lists its routes top first, each line a provider and a tier
 badge with an on/off switch, a drag handle and a remove button. Adding or changing a line is a
-two-step dialog — the provider, then one of its tiers — in which a tier the provider has no model
-for is disabled, because it would reach nothing. The screen shows no model names, no status or
+dialog with two selects, the provider and under it the tier. The tier select opens up once a
+provider is chosen, and lists a tier the provider has no model for as disabled, because it would
+reach nothing. The screen shows no model names, no status or
 quota column and no constraints block: the question an operator brings to it is which provider and
 tier each scenario uses; which model that is belongs to the provider's page, and quota to Overview
 and the provider pages.

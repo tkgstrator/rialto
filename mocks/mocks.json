@@ -44,14 +44,14 @@
       "mock": "routing.html?edit&add",
       "route": null,
       "group": "Routing",
-      "note": "Adding a combination, step 1: choose a provider. Mock-only: the dialog sits behind a click."
+      "note": "Adding a combination, nothing chosen yet: a Provider select, and under it a Tier select that stays disabled until a provider is chosen; Add is disabled. Mock-only: the dialog sits behind a click."
     },
     {
       "name": "routing-add-tier",
       "mock": "routing.html?edit&add=tier",
       "route": null,
       "group": "Routing",
-      "note": "Adding a combination, step 2: choose one of that provider's tiers, each with the model its alias names; a tier whose alias is unset is disabled and says where to set it. Back returns to step 1. Mock-only."
+      "note": "Adding a combination, provider chosen: the Tier select offers that provider's tiers, one it has no model for (or the cell already holds) listed disabled with the reason; with both chosen, Add is enabled. Mock-only."
     },
     {
       "name": "providers",

@@ -97,12 +97,12 @@ const PROVIDERS = [
   { name: 'openai',      tiers: [['fable', false], ['opus', true], ['sonnet', true], ['haiku', true]] }
 ]
 
-// A combination is shown, not edited in place. Picking one is a
-// decision in two steps — which provider, then which of its tiers — so
-// it happens in a dialog (?edit&add, ?edit&add=tier), opened by Add or
-// by clicking a line to change it. An earlier draft put a provider
-// select and a tier select side by side on every line: two controls for
-// one decision, the second's options depending on the first.
+// A combination is shown, not edited in place. It is picked in a dialog
+// (?edit&add, ?edit&add=tier), opened by Add or by clicking a line to
+// change it: a provider select, and under it a tier select that opens up
+// once a provider is chosen. An earlier draft put both selects side by
+// side on every line of the table, which crowded every row with controls
+// for a decision made once.
 //
 // Every line is the same grid in both states, so the columns line up
 // down a cell and across the table: handle, order, the combination, on,
@@ -127,45 +127,38 @@ const combination = (r, i) => `
   </div>`
 
 // ─── The dialog ───────────────────────────────────────────────────────
-// Step 1: which provider. Step 2: which of its tiers; a tier the provider
-// has no model for is disabled.
+// Two selects, one under the other: the provider, then the tier. The tier
+// select stays disabled until a provider is chosen, and then offers that
+// provider's tiers — a tier it has no model for is listed disabled. Native
+// selects, the same bordered box with a chevron the rest of the app uses.
 const ADD = new URLSearchParams(location.search).get('add')
 
-// A provider reads as its name; a tier reads as the same badge it wears in
-// the table, so the two steps pick visibly different kinds of thing. The
-// chosen line is ringed rather than filled: a muted fill would swallow
-// the muted badge inside it.
-const option = (label, detail, { on = false, disabled = false, arrow = false, tier = false } = {}) => `
-  <button class="flex h-10 w-full items-center gap-3 rounded-md px-3 text-left ${disabled ? 'cursor-not-allowed text-muted-foreground/50' : on ? 'ring-1 ring-foreground/20' : 'hover:bg-muted/60'}">
-    <span class="w-4">${on ? '<i class="ri-check-line text-sm"></i>' : ''}</span>
-    ${tier ? `<span class="${disabled ? 'opacity-50' : ''}">${pill(label, 'mute')}</span>` : `<span class="font-mono text-xs">${label}</span>`}
-    <span class="ml-auto text-[12px] ${disabled ? '' : 'font-mono text-muted-foreground'}">${detail}</span>
-    ${arrow ? '<i class="ri-arrow-right-s-line text-sm text-muted-foreground"></i>' : ''}
-  </button>`
+const field = (label, value, { disabled = false, placeholder = false } = {}) => `
+  <div class="grid gap-1.5">
+    <label class="text-xs ${disabled ? 'text-muted-foreground' : ''}">${label}</label>
+    <div class="relative">
+      <div class="flex h-8 w-full items-center rounded-md border border-border pl-3 pr-8 font-mono text-xs ${disabled ? 'opacity-50' : ''} ${placeholder ? 'text-muted-foreground' : ''}">${value}</div>
+      <i class="ri-arrow-down-s-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"></i>
+    </div>
+  </div>`
 
+// ?edit&add — nothing chosen yet: the tier select waits for a provider.
 const providerStep = dialog(
   'Add provider · tier — Default, Agent',
-  `<div class="grid gap-1">
-    <div class="text-[12px] text-muted-foreground">1. Choose a provider</div>
-    ${PROVIDERS.map((p) => option(p.name, '', { arrow: true })).join('')}
+  `<div class="grid gap-4">
+    ${field('Provider', 'Choose a provider', { placeholder: true })}
+    ${field('Tier', 'Choose a provider first', { disabled: true, placeholder: true })}
   </div>`,
-  btn('Cancel', 'ghost')
+  `${btn('Cancel', 'ghost')}<span class="pointer-events-none opacity-50">${btn('Add', 'primary', 'ri-add-line')}</span>`
 )
 
+// ?edit&add=tier — codex chosen: its tiers are offered (fable, which
+// codex has no model for, listed disabled), and sonnet is picked.
 const tierStep = dialog(
   'Add provider · tier — Default, Agent',
-  `<div class="grid gap-1">
-    <div class="flex items-center gap-2 text-[12px] text-muted-foreground">
-      <button class="inline-flex items-center gap-1 hover:text-foreground"><i class="ri-arrow-left-s-line text-sm"></i>codex</button>
-      <span>·</span><span>2. Choose a tier</span>
-    </div>
-    ${PROVIDERS[1].tiers
-      .map(([tier, set]) =>
-        !set
-          ? option(tier, '<span class="font-sans">not set</span>', { disabled: true, tier: true })
-          : option(tier, '', { on: tier === 'sonnet', tier: true })
-      )
-      .join('')}
+  `<div class="grid gap-4">
+    ${field('Provider', 'codex')}
+    ${field('Tier', 'sonnet')}
   </div>`,
   `${btn('Cancel', 'ghost')}${btn('Add', 'primary', 'ri-add-line')}`
 )
