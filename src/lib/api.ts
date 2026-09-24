@@ -240,22 +240,9 @@ class ApiClient {
     return this.get<RoutingSchedulerStateResponse>('/routing-scheduler-state')
   }
 
-  // Set a per-model manual tier override (Tier Editor). Send null to
-  // clear and fall back to name inference. Reuses PATCH
-  // /api/providers/{name}/models/{model}.
-  async setModelTier(
-    providerName: string,
-    modelName: string,
-    manualTier: 'fable' | 'opus' | 'sonnet' | 'haiku' | null
-  ): Promise<{ success: boolean }> {
-    return this.apiFetch<{ success: boolean }>(
-      `/providers/${encodeURIComponent(providerName)}/models/${encodeURIComponent(modelName)}`,
-      { method: 'PATCH', body: JSON.stringify({ manualTier }) }
-    )
-  }
-
   // Set a per-model reasoning-effort override. Send null to clear and
-  // fall back to the vendor default. Reuses the same PATCH endpoint.
+  // fall back to the vendor default. Reuses PATCH
+  // /api/providers/{name}/models/{model}.
   async setModelReasoningEffort(
     providerName: string,
     modelName: string,

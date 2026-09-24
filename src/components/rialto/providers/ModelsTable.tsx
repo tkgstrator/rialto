@@ -12,9 +12,10 @@ import { useTranslation } from 'react-i18next'
 import { Pill, Toggle } from '@/components/rialto/primitives'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
 import { fmtCost } from '@/lib/sessions/format'
-import { fmtContext, type ModelRow, type TierSource } from './derive'
+import { fmtContext, type ModelRow } from './derive'
 import { SwitchReading } from './SwitchReading'
-import type { ReasoningEffort, TestStatus, Tier } from './types'
+import { TIERS } from './tier-aliases'
+import type { ReasoningEffort, TestStatus } from './types'
 
 const TEST_ICON: Record<TestStatus, string> = {
   ok: 'ri-check-line text-emerald-600 dark:text-emerald-400',
@@ -26,13 +27,11 @@ function TestIcon({ status }: { status: TestStatus }) {
   return <i className={TEST_ICON[status]} />
 }
 
-/** The three states an override cell can be in, and what each says. */
-const CELL_TONE: Record<TierSource, string> = {
-  // Someone chose this.
-  manual: 'bg-muted text-foreground',
-  // Inferred from the name; true until the name changes.
-  auto: 'text-muted-foreground',
-  // Neither — the router cannot classify this model at all.
+/** The two states an effort cell can be in: someone chose one, or the vendor picks. */
+type CellTone = 'set' | 'unset'
+
+const CELL_TONE: Record<CellTone, string> = {
+  set: 'bg-muted text-foreground',
   unset: 'text-muted-foreground/50'
 }
 
@@ -54,7 +53,7 @@ function OverrideCell({
   onChange
 }: {
   value: string
-  tone: TierSource
+  tone: CellTone
   label: string
   options: readonly { value: string; label: string }[]
   onChange: (next: string) => void
@@ -85,11 +84,11 @@ function OverrideCell({
 }
 
 /**
- * The same cell while the page reads: the picker's tone, so a manual tier
- * still stands out from an inferred one, without the chevron that says it
- * opens.
+ * The same cell while the page reads: the picker's tone, so a chosen
+ * effort still stands out from the vendor default, without the chevron
+ * that says it opens.
  */
-function ReadCell({ value, tone }: { value: string; tone: TierSource }) {
+function ReadCell({ value, tone }: { value: string; tone: CellTone }) {
   return (
     <span className={cn('inline-flex items-center rounded px-1.5 py-0.5 text-[12px]', CELL_TONE[tone])}>{value}</span>
   )
@@ -97,7 +96,7 @@ function ReadCell({ value, tone }: { value: string; tone: TierSource }) {
 
 type ModelSortKey =
   | 'name'
-  | 'tier'
+  | 'alias'
   | 'contextWindow'
   | 'inputPer1M'
   | 'cachedInputPer1M'
@@ -106,21 +105,30 @@ type ModelSortKey =
   | 'enabled'
 
 // Sorting reads the row's own field for every column, so what the header
-// orders by is what the cell shows. `tier` and `test` are short enums
-// rendered as a pill / glyph; sorting them alphabetically groups like
-// with like, which is the whole point of clicking those two.
-const modelSortValue = (row: ModelRow, key: ModelSortKey): SortValue => row[key]
+// orders by is what the cell shows. `test` is a short enum rendered as a
+// glyph; sorting it alphabetically groups like with like, which is the
+// whole point of clicking it. The alias sorts by the first tier a model
+// serves, in strip order — fable first ascending — rather than by the
+// label, which would put haiku ahead of opus; a model serving none is
+// missing, and sorts last either way.
+const modelSortValue = (row: ModelRow, key: ModelSortKey): SortValue => {
+  if (key !== 'alias') return row[key]
+  const first = row.aliasTiers[0]
+  return first === undefined ? null : TIERS.indexOf(first)
+}
 
 const NUM_CELL = 'px-2 text-right font-mono text-xs tabular-nums'
 const HEAD_CELL = 'px-2 text-right font-medium'
 
 function Head({
   withOverride,
+  withAlias,
   hasCached,
   hasShape,
   sort
 }: {
   withOverride: boolean
+  withAlias: boolean
   hasCached: boolean
   hasShape: boolean
   sort: ReturnType<typeof useTableSort<ModelRow, ModelSortKey>>
@@ -132,9 +140,11 @@ function Head({
         <SortTh sortKey='name' sort={sort} className='pl-6 pr-2 text-left'>
           {t('providers.models.colModel')}
         </SortTh>
-        <SortTh sortKey='tier' sort={sort} className='px-2 text-left'>
-          {t('providers.models.colTier')}
-        </SortTh>
+        {withAlias ? (
+          <SortTh sortKey='alias' sort={sort} className='px-2 text-left'>
+            {t('providers.models.colAlias')}
+          </SortTh>
+        ) : null}
         <SortTh sortKey='contextWindow' sort={sort} className={HEAD_CELL} align='right'>
           {t('providers.models.colContext')}
         </SortTh>
@@ -149,8 +159,8 @@ function Head({
         <SortTh sortKey='outputPer1M' sort={sort} className={HEAD_CELL} align='right'>
           {t('providers.models.colOut')}
         </SortTh>
-        {/* The two override pickers are controls, not values the operator
-            scans down a column, so they stay unsorted. */}
+        {/* The shape reading and the effort picker describe a request, not
+            a value the operator scans down a column, so they stay unsorted. */}
         {withOverride && hasShape ? (
           <th className='px-2 text-left font-medium'>{t('providers.models.colShape')}</th>
         ) : null}
@@ -167,45 +177,29 @@ function Head({
 }
 
 const DASH = '—'
-const TIERS: readonly Tier[] = ['fable', 'opus', 'sonnet', 'haiku']
 const EFFORTS: readonly ReasoningEffort[] = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 
 // Narrowing by lookup rather than by assertion: the select hands back a
-// string, and the only strings that mean anything are the ones in these
-// tables. Anything else — including the dash — clears the override.
-const toTier = (value: string): Tier | null => {
-  const found = TIERS.find((tier) => tier === value)
-  return found === undefined ? null : found
-}
+// string, and the only strings that mean anything are the ones in this
+// table. Anything else — including the dash — clears the override.
 const toEffort = (value: string): ReasoningEffort | null => {
   const found = EFFORTS.find((effort) => effort === value)
   return found === undefined ? null : found
 }
 
-/** The tier column: a picker while editing, the reading otherwise. */
-function TierCell({
-  row,
-  editable,
-  onTier
-}: {
-  row: ModelRow
-  editable: boolean
-  onTier: (model: string, next: Tier | null) => void
-}) {
-  const { t } = useTranslation()
-  const value = row.tier === null ? DASH : row.tier
-  if (!editable) return <ReadCell value={value} tone={row.tierSource} />
+/**
+ * The alias column: which tiers this model answers for on its provider.
+ *
+ * A reading on both sides of Edit. The alias is set from the strip above
+ * the table, one pointer per tier, and a second control for the same
+ * pointer here would be one more place for the two to disagree.
+ */
+function AliasCell({ row }: { row: ModelRow }) {
+  if (row.aliasTiers.length === 0) return <span className='text-[12px] text-muted-foreground/50'>{DASH}</span>
   return (
-    <OverrideCell
-      value={value}
-      tone={row.tierSource}
-      label={t('providers.models.setTier', { model: row.name })}
-      options={[
-        { value: DASH, label: t('providers.models.tierAuto') },
-        ...TIERS.map((option) => ({ value: option, label: option }))
-      ]}
-      onChange={(next) => onTier(row.name, toTier(next))}
-    />
+    <span className='inline-flex items-center whitespace-nowrap rounded bg-muted px-1.5 py-0.5 text-[12px]'>
+      {row.aliasTiers.join(' · ')}
+    </span>
   )
 }
 
@@ -221,7 +215,7 @@ function EffortCell({
 }) {
   const { t } = useTranslation()
   const value = row.effort === null ? DASH : row.effort
-  const tone = row.effort === null ? 'unset' : 'manual'
+  const tone = row.effort === null ? 'unset' : 'set'
   if (!editable) return <ReadCell value={value} tone={tone} />
   return (
     <OverrideCell
@@ -240,20 +234,20 @@ function EffortCell({
 function Row({
   row,
   withOverride,
+  withAlias,
   editable,
   hasCached,
   hasShape,
   onToggle,
-  onTier,
   onEffort
 }: {
   row: ModelRow
   withOverride: boolean
+  withAlias: boolean
   editable: boolean
   hasCached: boolean
   hasShape: boolean
   onToggle: (model: string, next: boolean) => void
-  onTier: (model: string, next: Tier | null) => void
   onEffort: (model: string, next: ReasoningEffort | null) => void
 }) {
   const { t } = useTranslation()
@@ -268,12 +262,17 @@ function Row({
       <td className='py-2.5 pl-6 pr-2'>
         <div className='flex items-center gap-2'>
           <span className='font-mono text-xs'>{row.name}</span>
+          {/* A refresh found it after its tier's alias was set, and it
+              serves nothing until someone promotes it. */}
+          {row.isNew ? <Pill tone='info'>{t('providers.models.new')}</Pill> : null}
           {row.legacy ? <Pill tone='mute'>{t('providers.models.legacy')}</Pill> : null}
         </div>
       </td>
-      <td className='px-2'>
-        <TierCell row={row} editable={editable} onTier={onTier} />
-      </td>
+      {withAlias ? (
+        <td className='px-2'>
+          <AliasCell row={row} />
+        </td>
+      ) : null}
       <td className={cn(NUM_CELL, 'text-muted-foreground')}>{fmtContext(row.contextWindow)}</td>
       <td className={cn(NUM_CELL, priceTone)}>{fmtCost(row.inputPer1M)}</td>
       {hasCached ? <td className={cn(NUM_CELL, 'text-muted-foreground')}>{fmtCost(row.cachedInputPer1M)}</td> : null}
@@ -307,9 +306,9 @@ export function ModelsTable({
   limit,
   offset = 0,
   withOverride,
+  withAlias = false,
   editable = true,
   onToggle,
-  onTier,
   onEffort
 }: {
   rows: ModelRow[]
@@ -319,12 +318,15 @@ export function ModelsTable({
   limit?: number
   offset?: number
   withOverride: boolean
+  /** The Alias column. A provider's page has the aliases to fill it; the
+   *  add-provider wizard does not load them, and a column of dashes there
+   *  would say "serves nothing" about models it cannot see the aliases of. */
+  withAlias?: boolean
   /** False while a provider's page reads: the pickers and switches show
    *  their values and take no input until Edit is pressed. The
    *  add-provider wizard's table is always editable. */
   editable?: boolean
   onToggle: (model: string, next: boolean) => void
-  onTier: (model: string, next: Tier | null) => void
   onEffort: (model: string, next: ReasoningEffort | null) => void
 }) {
   const { t } = useTranslation()
@@ -338,6 +340,11 @@ export function ModelsTable({
   // says the same thing the dashes did, in no space at all.
   const hasCached = rows.some((row) => row.cachedInputPer1M !== null)
   const hasShape = rows.some((row) => row.apiStyleOverride !== null)
+  // Wide enough for "opus · sonnet" wherever a model serves two tiers. The
+  // subscription table has the room to spare anyway; the api_key one,
+  // with Shape and Effort beside it, keeps the narrow column until a row
+  // needs more.
+  const aliasWidth = !withOverride || rows.some((row) => row.aliasTiers.length > 1) ? 'w-28' : 'w-20'
 
   if (rows.length === 0) {
     return <div className='px-6 pb-6 text-xs text-muted-foreground'>{t('providers.models.empty')}</div>
@@ -346,7 +353,7 @@ export function ModelsTable({
     <table className='w-full table-fixed'>
       <colgroup>
         <col />
-        <col className='w-20' />
+        {withAlias ? <col className={aliasWidth} /> : null}
         <col className='w-20' />
         <col className='w-20' />
         {hasCached ? <col className='w-20' /> : null}
@@ -356,18 +363,18 @@ export function ModelsTable({
         <col className={withOverride ? 'w-14' : 'w-16'} />
         <col className={withOverride ? 'w-16' : 'w-20'} />
       </colgroup>
-      <Head withOverride={withOverride} hasCached={hasCached} hasShape={hasShape} sort={sort} />
+      <Head withOverride={withOverride} withAlias={withAlias} hasCached={hasCached} hasShape={hasShape} sort={sort} />
       <tbody>
         {(limit === undefined ? sort.sorted : sort.sorted.slice(offset, offset + limit)).map((row) => (
           <Row
             key={row.name}
             row={row}
             withOverride={withOverride}
+            withAlias={withAlias}
             editable={editable}
             hasCached={hasCached}
             hasShape={hasShape}
             onToggle={onToggle}
-            onTier={onTier}
             onEffort={onEffort}
           />
         ))}
