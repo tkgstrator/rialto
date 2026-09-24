@@ -63,6 +63,11 @@ export type RouterRequest = {
   // caller returns a 429 with `Retry-After: <seconds>` instead of
   // dispatching upstream. Absent on the passthrough branch.
   quotaExhaustedRetryAfterSec?: number
+  // Set when the chain refused the request by configuration rather than
+  // quota: every target is a tier the profile will not substitute, or
+  // none can hold the prompt. The caller answers 400 with this text; a
+  // 429 would send the client into retries that can never succeed.
+  routingRefusal?: string
 }
 
 export type RouterContext = {

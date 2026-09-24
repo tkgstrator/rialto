@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import { selectByPreference } from '../../../src/llms/quota-router/selection'
 import type { PreferenceConstraints, RouterPreferenceEntry } from '../../../src/schemas/domain/preference'
 
@@ -308,4 +308,92 @@ test('opus request with strict tier: sonnet is demotion, blocked; sonnet in loos
     ...ALL_HEALTHY
   })
   expect(loose.primary).toBe('claude-code,claude-sonnet-5')
+})
+
+/**
+ * Nearest-tier retry. The directional gates are a preference about which
+ * tier serves a request; when they alone leave nothing, the refused
+ * candidates get a second pass, nearest tier first and the cheaper side
+ * before the pricier one. `tierFallback: 'refuse'` keeps them hard.
+ */
+describe('nearest-tier retry', () => {
+  // "down only" on the Routing screen: escalation off, demotion on.
+  const DOWN_ONLY: PreferenceConstraints = { ...CONSTRAINTS_STRICT, allowDemotion: true }
+
+  test('a haiku request on a sonnet-only chain with escalation off is served by sonnet', () => {
+    const result = selectByPreference({
+      entries: [entry(1, 'claude-code,claude-sonnet-5')],
+      constraints: DOWN_ONLY,
+      requestedTier: 'haiku',
+      isSubagent: false,
+      ...ALL_HEALTHY
+    })
+    expect(result.primary).toBe('claude-code,claude-sonnet-5')
+    expect(result.substituted).toBe(true)
+    // The substitute passed, so its tier_mismatch no longer describes it.
+    expect(result.skipped).toEqual([])
+  })
+
+  test("tierFallback 'refuse' keeps the gate hard", () => {
+    const result = selectByPreference({
+      entries: [entry(1, 'claude-code,claude-sonnet-5')],
+      constraints: { ...DOWN_ONLY, tierFallback: 'refuse' },
+      requestedTier: 'haiku',
+      isSubagent: false,
+      ...ALL_HEALTHY
+    })
+    expect(result.primary).toBeNull()
+    expect(result.substituted).toBe(false)
+    expect(result.skipped).toEqual([{ target: 'claude-code,claude-sonnet-5', reason: 'tier_mismatch' }])
+  })
+
+  test('equally distant tiers: the cheaper one comes first, then chain order', () => {
+    const result = selectByPreference({
+      entries: [entry(1, 'claude-code,claude-opus-5'), entry(2, 'claude-code,claude-haiku-4-5')],
+      constraints: CONSTRAINTS_STRICT,
+      requestedTier: 'sonnet',
+      isSubagent: false,
+      ...ALL_HEALTHY
+    })
+    expect(result.primary).toBe('claude-code,claude-haiku-4-5')
+    expect(result.fallbacks).toEqual(['claude-code,claude-opus-5'])
+  })
+
+  test('nearer tiers come before farther ones', () => {
+    const result = selectByPreference({
+      entries: [entry(1, 'claude-code,claude-fable-5'), entry(2, 'claude-code,claude-sonnet-5')],
+      constraints: DOWN_ONLY,
+      requestedTier: 'haiku',
+      isSubagent: false,
+      ...ALL_HEALTHY
+    })
+    expect(result.primary).toBe('claude-code,claude-sonnet-5')
+    expect(result.fallbacks).toEqual(['claude-code,claude-fable-5'])
+  })
+
+  test('a substitute is still held to the exhaustion gate, and reports it', () => {
+    const result = selectByPreference({
+      entries: [entry(1, 'claude-code,claude-sonnet-5')],
+      constraints: DOWN_ONLY,
+      requestedTier: 'haiku',
+      isSubagent: false,
+      isExhausted: () => true,
+      errorRate: () => 0
+    })
+    expect(result.primary).toBeNull()
+    expect(result.skipped).toEqual([{ target: 'claude-code,claude-sonnet-5', reason: 'exhausted' }])
+  })
+
+  test('no retry while a candidate of an allowed tier passes', () => {
+    const result = selectByPreference({
+      entries: [entry(1, 'claude-code,claude-sonnet-5'), entry(2, 'claude-code,claude-haiku-4-5')],
+      constraints: DOWN_ONLY,
+      requestedTier: 'haiku',
+      isSubagent: false,
+      ...ALL_HEALTHY
+    })
+    expect(result.primary).toBe('claude-code,claude-haiku-4-5')
+    expect(result.fallbacks).toEqual([])
+    expect(result.substituted).toBe(false)
+  })
 })
