@@ -8,7 +8,7 @@
  * the functions below and nowhere else in the scheduler.
  */
 
-import type { AccountQuotaState, ModelCandidateState } from './types'
+import type { AccountQuotaState, ModelCandidateState, QuotaWindowState } from './types'
 
 const STALE_MULTIPLIER = 3 // "stale" when refreshedAt older than 3 * ttlMs
 
@@ -120,4 +120,45 @@ export const earliestReset = (candidate: ModelCandidateState): number | null => 
     }
   }
   return earliest
+}
+
+// ─── Pace ─────────────────────────────────────────────────────────────
+// Early in a window a few requests look like a runaway pace, so a window
+// is not judged until this much of it has passed.
+export const PACE_MIN_ELAPSED = 0.1
+
+// Where one window lands at its reset if use keeps its current pace:
+// used% ÷ elapsed share, 1 = exactly spent at the reset. Null when the
+// window's length or reset is unknown or too little of it has passed.
+const windowProjection = (w: QuotaWindowState, now: number): number | null => {
+  if (w.limit <= 0 || w.resetAt === null || w.windowLengthMs === null || w.windowLengthMs <= 0) return null
+  const elapsed = (now - (w.resetAt - w.windowLengthMs)) / w.windowLengthMs
+  if (elapsed < PACE_MIN_ELAPSED || elapsed > 1) return null
+  return w.used / w.limit / elapsed
+}
+
+/**
+ * The pace a target is on: where its accounts land at their resets if use
+ * keeps going as it has, 1 = exactly spent. Per account, the tightest of
+ * the windows that bind the model (Fable reads its own weekly window, as
+ * its budget does); across accounts, weighted by plan capacity, since the
+ * account picker spreads a target's traffic over all of them. Null when no
+ * account has a window far enough in to judge.
+ */
+export const projectedUsage = (candidate: ModelCandidateState, now: number, ttlMs: number): number | null => {
+  const useScopedFable = isFableTarget(candidate)
+  const perAccount = candidate.accounts.flatMap((acct) => {
+    if (!accountKnown(acct) || accountStale(acct, now, ttlMs)) return []
+    const windows =
+      useScopedFable && acct.scopedFable !== undefined ? [acct.scopedFable] : [acct.fiveHour, acct.weekly]
+    const projections = windows.flatMap((w) => {
+      const p = w === undefined ? null : windowProjection(w, now)
+      return p === null ? [] : [p]
+    })
+    if (projections.length === 0) return []
+    return [{ projection: Math.max(...projections), weight: acct.planWeight > 0 ? acct.planWeight : 1 }]
+  })
+  if (perAccount.length === 0) return null
+  const total = perAccount.reduce((sum, a) => sum + a.weight, 0)
+  return perAccount.reduce((sum, a) => sum + a.projection * a.weight, 0) / total
 }

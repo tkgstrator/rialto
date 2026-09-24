@@ -44,10 +44,10 @@ export async function aliasCascadeWarning(
 export async function routeCascadeWarning(tx: Tx, providerId: string, subject: string): Promise<string | null> {
   const rows = await tx.tierRoute.findMany({
     where: { providerId },
-    select: { requestedTier: true, profile: { select: { key: true } } }
+    select: { scenario: true, lane: true, profile: { select: { key: true } } }
   })
   if (rows.length === 0) return null
   const noun = rows.length === 1 ? 'tier route' : 'tier routes'
-  const where = tally(rows.map((r) => `${r.profile.key}/${r.requestedTier}`))
+  const where = tally(rows.map((r) => `${r.profile.key}/${r.scenario}/${r.lane}`))
   return `Removed ${rows.length} ${noun} naming ${subject}: ${where}.`
 }

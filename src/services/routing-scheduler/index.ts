@@ -35,6 +35,7 @@ import { holdSpentAccount } from './account-limit'
 import { refreshQuotaSnapshots } from './collector'
 import { publishSnapshot, __resetSchedulerStateForTest as resetStateForTest } from './state'
 import { soonestResetOf, targetQuotaOf } from './targets'
+import { tuneLongContextThresholds } from './threshold-tuner'
 import type {
   AccountQuotaState,
   AccountQuotaView,
@@ -246,6 +247,9 @@ async function tickBody(collect: boolean, prismaOverride?: PrismaClient): Promis
       soonestResetAt: soonestResetOf(targets.values())
     }
     publishSnapshot(snapshot)
+    // Timer ticks only: a republish after a Refresh is about fresh quota,
+    // and the tuner acts at most once a day anyway.
+    if (collect) await tuneLongContextThresholds(prisma, snapshot, now)
     counters.consecutiveFailures = 0
     return snapshot
   } catch (err) {

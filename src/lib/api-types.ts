@@ -285,6 +285,7 @@ export interface RoutingSchedulerTargetState {
   target: string // "provider,model"
   exhausted: boolean // out of use on quota right now
   remainingBudgetPct: number | null // 0..100, null = unknown (api_key targets, cold start)
+  projectedPct: number | null // use at the reset if the pace holds; over 100 steps down
   resetAt: string | null // ISO; when the binding window resets
 }
 

@@ -18,6 +18,8 @@ const TargetStateDtoSchema = z
     target: z.string().nonempty(),
     exhausted: z.boolean(),
     remainingBudgetPct: z.number().min(0).max(100).nullable(),
+    // Projected use at the reset, % of the budget; over 100 steps down.
+    projectedPct: z.number().min(0).nullable(),
     resetAt: z.string().nonempty().nullable()
   })
   .openapi('RoutingTargetState')
@@ -98,6 +100,7 @@ routingSchedulerStateRoute.openapi(getRoute, async (c) => {
         target: t.target,
         exhausted: t.exhausted,
         remainingBudgetPct: t.remainingBudgetPct,
+        projectedPct: t.projectedPct,
         resetAt: isoOrNull(t.resetAt)
       })),
       accounts: snap.accounts.map((a) => ({
