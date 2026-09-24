@@ -343,6 +343,7 @@ export interface TierRouteViewWire extends TierRouteWire {
 }
 
 export interface RoutingConstraintsWire {
+  blockedEscalationTiers: ModelTier[]
   exhaustedBehavior: '429' | 'passthrough'
   quotaSkipPct: number
   errorRateSkipPct: number

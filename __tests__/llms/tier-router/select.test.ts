@@ -25,6 +25,7 @@ import { DEFAULT_CONSTRAINTS } from '../tier-fixture'
 const candidate = (target: string | null, over: Partial<TierCandidate> = {}): TierCandidate => ({
   route: target === null ? 'x · sonnet' : target,
   target,
+  targetTier: 'sonnet',
   enabled: true,
   targetEnabled: true,
   hostsWebSearch: true,
@@ -36,6 +37,7 @@ const candidate = (target: string | null, over: Partial<TierCandidate> = {}): Ti
 const select = (candidates: TierCandidate[], over: Partial<TierSelectInput> = {}) =>
   selectTierRoute({
     candidates,
+    requestedTier: 'sonnet',
     constraints: DEFAULT_CONSTRAINTS,
     needsWebSearch: false,
     requestTokenCount: 1_000,
@@ -182,5 +184,74 @@ describe('selectTierRoute: pace', () => {
       candidate('claude-code,claude-sonnet-5', { route: 'claude-code · sonnet', projectedPct: 20 })
     ])
     expect(out.paced).toEqual({ promoted: ['claude-code · sonnet'], steppedDown: ['claude-code · fable'] })
+  })
+})
+
+describe('blocked escalation destinations', () => {
+  const constraints = {
+    ...DEFAULT_CONSTRAINTS,
+    blockedEscalationTiers: ['opus', 'fable']
+  } satisfies TierSelectInput['constraints']
+  const routes = [
+    candidate('a,fable', { targetTier: 'fable', projectedPct: 10 }),
+    candidate('a,opus', { targetTier: 'opus' }),
+    candidate('a,sonnet', { targetTier: 'sonnet' }),
+    candidate('a,haiku', { targetTier: 'haiku' })
+  ]
+
+  test('Sonnet cannot escalate into blocked tiers, including surplus primary and fallbacks', () => {
+    const out = select(routes, { constraints })
+    expect(orderOf(out)).toEqual(['a,sonnet', 'a,haiku'])
+    expect(out.skipped.map((entry) => entry.reason)).toEqual(['escalation_blocked', 'escalation_blocked'])
+    expect(out.paced.promoted).toEqual([])
+  })
+
+  test('Haiku can still escalate to Sonnet', () => {
+    expect(orderOf(select(routes, { constraints, requestedTier: 'haiku' }))).toEqual(['a,sonnet', 'a,haiku'])
+  })
+
+  test('same-tier requests and every demotion remain eligible even if all tiers are selected', () => {
+    const allBlocked = {
+      ...constraints,
+      blockedEscalationTiers: ['fable', 'opus', 'sonnet', 'haiku']
+    } satisfies TierSelectInput['constraints']
+    expect(orderOf(select(routes, { constraints: allBlocked, requestedTier: 'fable' }))).toEqual([
+      'a,fable',
+      'a,opus',
+      'a,sonnet',
+      'a,haiku'
+    ])
+    expect(orderOf(select(routes, { constraints: allBlocked, requestedTier: 'opus' }))).toEqual([
+      'a,opus',
+      'a,sonnet',
+      'a,haiku'
+    ])
+  })
+
+  test('demotions can still be promoted by pace', () => {
+    const out = select(
+      [
+        candidate('a,fable', { targetTier: 'fable', projectedPct: 120 }),
+        candidate('a,opus', { targetTier: 'opus', projectedPct: 20 })
+      ],
+      { constraints, requestedTier: 'fable' }
+    )
+    expect(orderOf(out)).toEqual(['a,opus', 'a,fable'])
+  })
+
+  test('exhaustion does not reintroduce blocked escalation', () => {
+    const out = select(routes, { constraints, isExhausted: () => true })
+    expect(out).toMatchObject({ outcome: 'exhausted', primary: null, fallbacks: [] })
+  })
+
+  test('only blocked routes refuse instead of silently escalating', () => {
+    const out = select(routes.slice(0, 2), { constraints })
+    expect(out).toMatchObject({ outcome: 'refused', primary: null, fallbacks: [] })
+    expect(out.refusal).toContain('forbids escalation')
+  })
+
+  test('an unknown caller tier and an empty restriction list preserve existing routing', () => {
+    expect(select(routes, { constraints, requestedTier: undefined }).primary).toBe('a,fable')
+    expect(select(routes).primary).toBe('a,fable')
   })
 })
