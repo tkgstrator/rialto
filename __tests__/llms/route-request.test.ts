@@ -871,3 +871,22 @@ describe('the persona rides on every routed /v1/messages exit', () => {
     expect(req.body.system).toBeUndefined()
   })
 })
+
+describe('escalation restrictions reach the request path', () => {
+  test.each(['agent', 'subagent'] as const)('restricts primary and fallbacks on the %s lane', async (lane) => {
+    const routes = [route('claude-code', 'fable', 'claude-fable-5-1'), opusRoute(), sonnetRoute(), codexRoute()]
+    __setTierProfilesForTests({
+      live: mapWith({ default: { [lane]: routes } }, { blockedEscalationTiers: ['opus', 'fable'] })
+    })
+    publishQuota({ 'claude-code,claude-fable-5-1': { projectedPct: 10 } })
+    const req = await run({ body: lane === 'subagent' ? { system: subagentSystem() } : {} })
+    expect(req.body.model).toBe(SONNET)
+    expect(req.resolvedFallbacks).toEqual([CODEX])
+    expect(req.routingRefusal).toBeUndefined()
+  })
+
+  test('provider-qualified models infer tier from the model, not the provider name', async () => {
+    __setTierProfilesForTests({ live: onDefault([opusRoute(), sonnetRoute()], { blockedEscalationTiers: ['opus'] }) })
+    expect((await run({ model: 'fable-provider,claude-sonnet-5' })).body.model).toBe(SONNET)
+  })
+})

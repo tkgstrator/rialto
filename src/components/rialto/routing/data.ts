@@ -12,6 +12,7 @@ import { useConfig } from '@/components/ConfigProvider'
 import {
   api,
   type InboundSurfaceWire,
+  type ModelTier,
   type RoutingMode,
   type SurfaceId,
   type TierAliasWire,
@@ -106,6 +107,8 @@ export function useSurfaces(): SurfacesState {
 export interface ScenarioProfileState {
   /** The profile as last read, resolutions included. Null until the first read lands. */
   view: TierProfileViewWire | null
+  blockedEscalationTiers: ModelTier[]
+  setBlockedEscalationTiers: React.Dispatch<React.SetStateAction<ModelTier[]>>
   draft: ScenarioDraft
   setDraft: React.Dispatch<React.SetStateAction<ScenarioDraft>>
   loading: boolean
@@ -126,6 +129,7 @@ export interface ScenarioProfileState {
 export function useScenarioProfile(profileKey: string | null): ScenarioProfileState {
   const mounted = useMountedRef()
   const [view, setView] = useState<TierProfileViewWire | null>(null)
+  const [blockedEscalationTiers, setBlockedEscalationTiers] = useState<ModelTier[]>([])
   const [draft, setDraft] = useState<ScenarioDraft>(emptyDraft)
   // Server snapshot in write shape, kept so the toolbar can tell an
   // edited profile from a freshly loaded one without diffing against a
@@ -145,6 +149,7 @@ export function useScenarioProfile(profileKey: string | null): ScenarioProfileSt
         if (!mounted.current || currentKey.current !== key) return
         const loaded = draftOf(res)
         setView(res)
+        setBlockedEscalationTiers(res.constraints.blockedEscalationTiers)
         setDraft(loaded)
         setBaseline(loaded)
         setError(null)
@@ -162,25 +167,48 @@ export function useScenarioProfile(profileKey: string | null): ScenarioProfileSt
     if (profileKey !== null) load(profileKey)
   }, [profileKey, load])
 
-  const dirty = useMemo(() => draftDiffers(draft, baseline), [draft, baseline])
+  const dirty = useMemo(
+    () =>
+      draftDiffers(draft, baseline) ||
+      (view !== null &&
+        JSON.stringify([...blockedEscalationTiers].sort()) !==
+          JSON.stringify([...view.constraints.blockedEscalationTiers].sort())),
+    [draft, baseline, blockedEscalationTiers, view]
+  )
 
   // Save is the PUT and then a fresh read: the write answers only with
   // warnings, and the Long context threshold that follows from the new
   // Default routes is the server's to say.
   //
-  // The constraints go back exactly as they were read. Nothing on this
-  // screen edits them, and they carry the Long context tuner's state,
-  // which a write built from defaults would reset.
+  // Only the escalation restriction is edited here; keep the other
+  // constraints from the read, with tuner-owned state protected server-side.
   const save = useCallback(async (): Promise<TierProfileSaveOutcome> => {
     if (profileKey === null || view === null || view.key !== profileKey) return { success: false, warnings: [] }
-    const outcome = await api.putTierProfile(profileKey, { routes: draft, constraints: view.constraints })
+    const outcome = await api.putTierProfile(profileKey, {
+      routes: draft,
+      constraints: { ...view.constraints, blockedEscalationTiers }
+    })
     if (outcome.success) await load(profileKey)
     return outcome
-  }, [draft, view, profileKey, load])
+  }, [draft, view, profileKey, load, blockedEscalationTiers])
 
-  const reset = useCallback(() => setDraft(baseline), [baseline])
+  const reset = useCallback(() => {
+    setDraft(baseline)
+    setBlockedEscalationTiers(view === null ? [] : view.constraints.blockedEscalationTiers)
+  }, [baseline, view])
 
-  return { view, draft, setDraft, loading, error, dirty, save, reset }
+  return {
+    view,
+    draft,
+    setDraft,
+    blockedEscalationTiers,
+    setBlockedEscalationTiers,
+    loading,
+    error,
+    dirty,
+    save,
+    reset
+  }
 }
 
 export interface ProfilesState {
