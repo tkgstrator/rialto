@@ -73,7 +73,19 @@ bun run mocks:css      # compile mocks/_shared/mock.css with the project's own T
 bun run mocks:serve    # http://localhost:16176/mocks/index.html
 bun run mocks:shoot    # screenshot mock + implementation at deviceScaleFactor 2
 bun run mocks:diff     # pixel diff. Judge by report.json's `regions`, not the headline %
+bun run mocks:config   # regenerate mocks/mock-diff.yaml from mocks/mocks.json
 ```
+
+The **Mock Diff Viewer** (`mock-diff` sidecar in `.devcontainer/compose.yaml`) shows
+the same mocks against their implementations at **http://localhost:16175/mock-diff/**:
+the dev server relays that path to it through `@qtmleap/vite-plugin-mock-diff`
+(`vite.config.mts`). Its workspace config `mocks/mock-diff.yaml` is generated from
+`mocks.json` — edit the registry, run `mocks:config`, commit both;
+`__tests__/lib/mock-diff-config.test.ts` fails when they drift. The chosen design per
+screen is `mocks/mock-diff.adopted.yaml`, which the viewer writes. The sidecar shares
+the app container's network, so it captures the app from loopback and passes the
+local-access gate. Mock states chosen by a query string (`routing.html?edit`) load
+through the relay, so they capture only while the dev server is up.
 
 ## Core Architecture
 
@@ -615,6 +627,11 @@ There is no dependency graph to learn — this is one package. Two rules matter:
 ## Development Notes
 
 1. **Runtime / package manager**: bun. Use `bun` and `bunx`, never npm/npx.
+   `bun install` needs `GH_TOKEN` (a token with `read:packages`): the
+   `@qtmleap` scope comes from GitHub Packages (`bunfig.toml`). `.envrc` and the
+   devcontainer's `postCreateCommand.sh` fill it from `gh auth token`; CI, the
+   weekly update job and Dependabot read the repository secret of that name, and
+   the Docker build takes it as the `gh_token` build secret.
 2. **Formatting and lint**: Biome (`biome.json`, plus local rules in `biome-plugins/`).
    No `??`, no `let`, no type assertions, no `while`. `files.includes` covers
    `src/**` **and `__tests__/**`** — tests were outside it for a long time, which is

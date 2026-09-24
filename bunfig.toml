@@ -7,3 +7,11 @@ preload = ["./__tests__/setup.ts"]
 coverageReporter = ["text", "lcov"]
 coverageDir = "coverage"
 coverageSkipTestFiles = true
+
+# @qtmleap packages (the Mock Diff Viewer's Vite plugin) live on GitHub
+# Packages, which asks for a token even to read. GH_TOKEN is a
+# token with read:packages: `gh auth token` in the devcontainer (.envrc and
+# postCreateCommand.sh export it), a repository secret in CI and in the
+# Docker build. Not GITHUB_*: GitHub refuses secret names with that prefix.
+[install.scopes]
+"@qtmleap" = { url = "https://npm.pkg.github.com/", token = "$GH_TOKEN" }
