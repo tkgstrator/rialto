@@ -31,7 +31,7 @@ In both modes the subagent tag is stripped first and recorded as `RequestLog.isS
 
 | Table | Key | What it says |
 |---|---|---|
-| `RouterPreferenceProfile` | `key` (`live` is the default) | A named profile. `constraints` (JSONB) holds the four knobs below; `chainBackfilledAt` marks the one-shot conversion of its old chain |
+| `RouterPreferenceProfile` | `key` (`live` is the default) | A named profile. `constraints` (JSONB) holds the four knobs below |
 | `TierRoute` | `(profileId, requestedTier, priority)` | "A request for `requestedTier` may be served by `provider`'s `targetTier`", in `priority` order (1 first). `enabled` is a soft toggle that keeps the route's place |
 | `ProviderTierAlias` | `(providerId, tier)` | "`tier` on this provider is `model`." The one pointer a model release moves |
 | `InboundSurfaceConfig.profileKey` / `AccessToken.profileKey` | — | Which profile a surface, or one client, routes through |
@@ -223,36 +223,24 @@ per-model manual tier (`manualTier`) on the provider page and in the model PATCH
 
 ## From the chain to the tier map
 
-`db seed` converts each profile's old chain once (`src/services/routing-migration/`);
-[migration-v3.md](../guides/migration-v3.md) has the operator-facing version.
+Two releases, expand then contract; [migration-v3.md](../guides/migration-v3.md) has the
+operator-facing version.
 
-- **When.** `entrypoint.sh` runs `prisma db seed` after `migrate deploy` on every start;
-  `RouterPreferenceProfile.chainBackfilledAt` makes it once per profile, and a profile that already
-  has tier routes is only marked. `live` goes first so the default profile claims the aliases.
-- **Failure stops the container.** Each profile converts in its own transaction, but the error is not
-  swallowed: carrying on would start the new build with that profile silently empty, every request
-  on it passed through.
-- **What it reads:** the `default` / `agent` chain, for every requested tier. The classifier sent a
-  request to the other scenarios by size, thinking or effort, not by the tier it asked for, so no tier
-  row can reproduce them; their entries, and the subagent lanes', are counted in the notes.
-- **What it reproduces,** per requested tier: the chain's order; an entry the profile's
-  `allowEscalation` / `allowDemotion` would have refused, as a route switched off; when that leaves
-  the tier nothing that can serve, the refused routes switched back on, nearest tier first and the
-  cheaper side on a tie, as the interim nearest-tier fallback did — unless the profile set
-  `tierFallback: 'refuse'`; and every entry for `other`, which the gate never applied to. Aliases
-  are claimed from the chain — an entry of the tier being converted first, routable before
-  switched off, then priority — and an existing alias is never overwritten.
-- **What it does not:** pace widening, and two models of the same provider and tier, which collapse
-  into one route to that provider's alias. Every such difference is a note in the seed log.
-- **Re-running** one profile: `bun run scripts/rebackfill-tier-routes.ts --profile <key>` deletes its
-  tier routes and clears its mark, and the next `bun run db:seed` converts the chain again. Aliases
-  are left as they are. It exists for a rollback: while the previous image runs, Routing edits land
-  only in the old chain.
-
-A later release's contract migration (P2-7 in the plan) drops `RouterPreferenceEntry`,
-`RoutingWeightChange`, the `ScenarioKey` / `RouterPreferenceKind` enums, `Model.manualTier` and
-`chainBackfilledAt`, together with the backfill and its re-run script. Until then the backfill and
-the alias candidate list still read `Model.manualTier`.
+- **The converting release** kept the old chain tables and converted each profile's chain at
+  `db seed`, once (marked per profile): the `default` / `agent` chain became each requested tier's
+  routes and the provider aliases they needed; the other scenarios' and the subagent lanes' entries
+  were only counted in the log, because no tier row can reproduce a lane the classifier chose by
+  size, thinking or effort. A profile that failed to convert failed the seed and stopped the
+  container rather than start with that profile silently empty. The conversion lives in the git
+  history (`src/services/routing-migration/`), not in the tree.
+- **The contract release** (`20260925000000_drop_retired_routing_chain`) drops
+  `RouterPreferenceEntry`, `RoutingWeightChange`, the `ScenarioKey` / `RouterPreferenceKind` enums,
+  `Model.manualTier` and the conversion's marker, with the conversion and its re-run script. Its
+  first statement refuses to go on while any profile still holds a chain that was never converted
+  — which only happens when it is deployed straight over a build older than the converting
+  release. The check runs before any DDL, so a refusal drops nothing; the error names the way
+  back: `prisma migrate resolve --rolled-back 20260925000000_drop_retired_routing_chain`, start the
+  converting release once, deploy again.
 
 ## Tests
 
@@ -261,7 +249,6 @@ the alias candidate list still read `Model.manualTier`.
 | `__tests__/llms/tier-router/select.test.ts` | The gates, their order, and the four outcomes |
 | `__tests__/llms/route-request.test.ts` | `routeRequest` end to end with seeded maps: the outcome contract, profiles, marks, the snapshot, the subagent tag, the persona |
 | `__tests__/api/route-plan.test.ts` | 429 + `Retry-After` and the refusal 400 in each surface's envelope |
-| `__tests__/services/plan-tier-routes.test.ts` / `__tests__/db/backfill-tier-routes.test.ts` | The backfill planner, and its idempotence against the database |
 | `__tests__/db/tier-route-service.test.ts` / `__tests__/db/tier-alias-service.test.ts` / `__tests__/api/routing-profiles.test.ts` | Storage, candidates, promotion and the API |
 | `__tests__/services/routing-scheduler/{targets,tick-targets,tick-concurrency}.test.ts` | The per-target reading, which targets are published, and that ticks never overlap |
 
