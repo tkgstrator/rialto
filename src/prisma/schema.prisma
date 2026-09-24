@@ -25,9 +25,10 @@ datasource db {
 
 // Retired with the per-scenario chains; kept only until the contract
 // migration drops RouterPreferenceEntry. The scenarios a request was
-// classified into, each owning its own chain lanes. `default` is the catch-all; the rest are reached only when the
-// chain has an entry for them. The former `background` scenario was
-// folded into `default` (migration `20260728_router_rules_drop_background`).
+// classified into, each owning its own chain lanes. `default` was the
+// catch-all; the rest were reached only when the chain had an entry for
+// them. The former `background` scenario was folded into `default`
+// (migration `20260728_router_rules_drop_background`).
 enum ScenarioKey {
   default
   think
