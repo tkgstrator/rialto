@@ -198,9 +198,9 @@ export function ActivityRequests() {
       // could not be asked, although the row had the answer all along.
       client: tokenNameOf(log.accessTokenId, tokenNames, surfaces.clientOf(log.surface)),
       lane: lane(log.isSubagent),
-      // The route the router took: the requested tier whose routes served
-      // it, or "passthrough". Stored in the column still named `scenario`,
-      // which held the classifier's scenario before the tier map.
+      // The scenario the router classified the request into, or
+      // "passthrough" when it went upstream as sent — the stored value,
+      // shown as it is.
       rule: log.scenario
     }))
   }, [page, surfaces.pathOf, surfaces.clientOf, tokenNames])

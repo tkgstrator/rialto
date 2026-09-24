@@ -43,8 +43,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `configEnvelopeSchema.test.ts` | `ConfigEnvelopeSchema` の受理／拒否（特に `API_TIMEOUT_MS` の coercion） |
 | `config-salvage.test.ts` | 壊れた `config.json` から `Personas` を救い出す経路（`APIKEY` はもう救わない）と、資格情報を決して生成しないこと |
 | `cloudflare-access.test.ts` | Access assertion の検証（署名 + audience） |
-| `routing-constraints.test.ts` | Routing 画面の制約セル。各セルの編集が自分のノブだけを書き換えること、Error-rate skip はパーセントで編集し 0〜1 の比率で保存すること、パーセントは 0〜100 の整数・Min samples は非負整数だけ通ること |
-| `tier-map.test.ts` | Routing 画面のティアマップ。ドラフトが PUT の形だけを持ち手で戻した編集を変更扱いしないこと、ルートの解決先（読み込んだプロファイル → エイリアス一覧 → 保存待ち）、スケジューラの `targets` から State（ok / N% used / exhausted / alias unset / off）を出すこと、ティア代替の判定と並べ替え・重複・フッターの件数 |
+| `routing-scenarios.test.ts` | Routing 画面のシナリオ表。ドラフトはシナリオ × レーンのルートだけを持ち（解決先も制約も持たない）、手で戻した編集を変更扱いしないこと。追加・変更・削除・並べ替え・ON / OFF が対象のセルだけを書き換え、元のドラフトを変えないこと。同じセルへの同じ provider · tier は追加も変更も拒むこと（変更中の行自身は数えない）、範囲外の操作は何もしないこと。ダイアログの Tier 候補（エイリアスの無い Tier は `unset`、セルにある組み合わせは `taken`、エイリアス一覧が読めないときは何も `unset` にしない）と、Long context のしきい値の表記（`700k` / `35.8k` / `1.2M`） |
 | `long-context-beta.test.ts` | `context-1m-*` beta ヘッダの取り回し |
 | `message-content.test.ts` | メッセージ本文の正規化 |
 | `models-build-rows.test.ts` | Providers 画面のモデル行の組み立て |

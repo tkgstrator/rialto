@@ -1,11 +1,11 @@
 /**
  * Data hooks for the Routing screen.
  *
- * Four independent stores back it — the surface registry, the profile's
- * tier map, the providers' tier aliases and the scheduler snapshot — and
- * each half of the screen needs a different subset, so they are separate
- * hooks rather than one page-wide fetch. The scheduler is the only polled
- * one: it is the only store that changes without an operator action.
+ * Three independent stores back it — the surface registry, the profile's
+ * scenario routes and the providers' tier aliases — and each half of the
+ * screen needs a different subset, so they are separate hooks rather than
+ * one page-wide fetch. None is polled: each changes only on an operator
+ * action, and this screen makes the ones that change here.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useConfig } from '@/components/ConfigProvider'
@@ -13,7 +13,6 @@ import {
   api,
   type InboundSurfaceWire,
   type RoutingMode,
-  type RoutingSchedulerStateResponse,
   type SurfaceId,
   type TierAliasWire,
   type TierProfileSaveOutcome,
@@ -21,9 +20,7 @@ import {
   type TierProfileViewWire
 } from '@/lib/api'
 import { draftDiffers, draftOf, emptyDraft, enabledProviderNames, enabledTargets } from './derive'
-import type { EnabledTarget, TierDraft } from './types'
-
-const SCHEDULER_POLL_MS = 30_000
+import type { EnabledTarget, ScenarioDraft } from './types'
 
 const message = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
@@ -106,11 +103,11 @@ export function useSurfaces(): SurfacesState {
   return { surfaces, loading, error, reload, setMode, setProfile, setTargetAllowed }
 }
 
-export interface TierProfileState {
+export interface ScenarioProfileState {
   /** The profile as last read, resolutions included. Null until the first read lands. */
   view: TierProfileViewWire | null
-  draft: TierDraft
-  setDraft: React.Dispatch<React.SetStateAction<TierDraft>>
+  draft: ScenarioDraft
+  setDraft: React.Dispatch<React.SetStateAction<ScenarioDraft>>
   loading: boolean
   error: string | null
   dirty: boolean
@@ -119,20 +116,21 @@ export interface TierProfileState {
 }
 
 /**
- * One profile's tier map, addressed by key, and the draft edited over it.
+ * One profile's scenario routes, addressed by key, and the draft edited
+ * over them.
  *
- * A surface names the profile its map comes from, so switching the
- * surface tab can switch which map is on screen. A null key defers the
+ * A surface names the profile its routes come from, so switching the
+ * surface tab can switch which profile is on screen. A null key defers the
  * fetch until the surface registry has landed.
  */
-export function useTierProfile(profileKey: string | null): TierProfileState {
+export function useScenarioProfile(profileKey: string | null): ScenarioProfileState {
   const mounted = useMountedRef()
   const [view, setView] = useState<TierProfileViewWire | null>(null)
-  const [draft, setDraft] = useState<TierDraft>(emptyDraft)
+  const [draft, setDraft] = useState<ScenarioDraft>(emptyDraft)
   // Server snapshot in write shape, kept so the toolbar can tell an
-  // edited map from a freshly loaded one without diffing against a
+  // edited profile from a freshly loaded one without diffing against a
   // re-fetch.
-  const [baseline, setBaseline] = useState<TierDraft>(emptyDraft)
+  const [baseline, setBaseline] = useState<ScenarioDraft>(emptyDraft)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   // The key the screen currently shows. A read for a key the operator has
@@ -167,14 +165,18 @@ export function useTierProfile(profileKey: string | null): TierProfileState {
   const dirty = useMemo(() => draftDiffers(draft, baseline), [draft, baseline])
 
   // Save is the PUT and then a fresh read: the write answers only with
-  // warnings, and what each route now resolves to — a route added in this
-  // edit, an alias the server found unset — is the server's to say.
+  // warnings, and the Long context threshold that follows from the new
+  // Default routes is the server's to say.
+  //
+  // The constraints go back exactly as they were read. Nothing on this
+  // screen edits them, and they carry the Long context tuner's state,
+  // which a write built from defaults would reset.
   const save = useCallback(async (): Promise<TierProfileSaveOutcome> => {
-    if (profileKey === null) return { success: false, warnings: [] }
-    const outcome = await api.putTierProfile(profileKey, draft)
+    if (profileKey === null || view === null || view.key !== profileKey) return { success: false, warnings: [] }
+    const outcome = await api.putTierProfile(profileKey, { routes: draft, constraints: view.constraints })
     if (outcome.success) await load(profileKey)
     return outcome
-  }, [draft, profileKey, load])
+  }, [draft, view, profileKey, load])
 
   const reset = useCallback(() => setDraft(baseline), [baseline])
 
@@ -199,7 +201,7 @@ export function useProfiles(): ProfilesState {
       })
       .catch(() => {
         // The picker degrades to the surface's own key; a failed list is
-        // not worth blocking the map behind an error banner.
+        // not worth blocking the routes behind an error banner.
       })
   }, [mounted])
 
@@ -212,8 +214,8 @@ export function useProfiles(): ProfilesState {
  * Every provider's four tier aliases.
  *
  * Read once per visit. The aliases are edited on the provider pages, not
- * here; this screen only needs them to say what a route added during an
- * edit — and each choice in the Add route dialog — will resolve to.
+ * here; this screen only needs them to say which tiers the add dialog can
+ * offer for a provider — a tier with no model behind it reaches nothing.
  */
 export function useTierAliases(): TierAliasWire[] | null {
   const mounted = useMountedRef()
@@ -226,43 +228,12 @@ export function useTierAliases(): TierAliasWire[] | null {
         if (mounted.current) setAliases(res)
       })
       .catch(() => {
-        // Without the list a new route reads "resolved on save" instead of
-        // naming its model — less informative, never wrong.
+        // Without the list the dialog offers every tier (see
+        // `tierOptions`); the server's save warnings name an unset one.
       })
   }, [mounted])
 
   return aliases
-}
-
-export interface SchedulerState {
-  snapshot: RoutingSchedulerStateResponse | null
-  reload: () => void
-}
-
-export function useScheduler(): SchedulerState {
-  const mounted = useMountedRef()
-  const [snapshot, setSnapshot] = useState<RoutingSchedulerStateResponse | null>(null)
-
-  const reload = useCallback(() => {
-    api
-      .getRoutingSchedulerState()
-      .then((res) => {
-        if (mounted.current) setSnapshot(res)
-      })
-      .catch(() => {
-        // A missing snapshot reads as "ok" on every row, which is also how
-        // the router treats a target it has no reading for; surfacing a
-        // fetch error here would bury the map itself.
-      })
-  }, [mounted])
-
-  useEffect(() => {
-    reload()
-    const id = setInterval(reload, SCHEDULER_POLL_MS)
-    return () => clearInterval(id)
-  }, [reload])
-
-  return { snapshot, reload }
 }
 
 /** Every routable target, derived from the config the shell already loaded. */
@@ -271,7 +242,7 @@ export function useEnabledTargets(): EnabledTarget[] {
   return useMemo(() => (config === null ? [] : enabledTargets(config.Providers)), [config])
 }
 
-/** The providers a new route may name, from the same config. */
+/** The providers a new combination may name, from the same config. */
 export function useEnabledProviders(): string[] {
   const { config } = useConfig()
   return useMemo(() => (config === null ? [] : enabledProviderNames(config.Providers)), [config])
