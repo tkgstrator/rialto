@@ -249,6 +249,13 @@ model SubAccountQuota {
   headerRemaining     Float?
   headerResetAt       DateTime?
 
+  // Banked rate-limit resets (Codex only), from wham/usage's
+  // `rate_limit_reset_credits`. Available is what the account holds;
+  // applicable is how many the vendor would accept now, which is 0 while
+  // no window is spent. Null for Claude accounts and before first read.
+  resetCreditsAvailable  Int?
+  resetCreditsApplicable Int?
+
   // When the collector last completed a successful upstream refresh for
   // this account. Stale detection: now - quotaRefreshedAt > 3 * TTL_MS.
   quotaRefreshedAt DateTime?
@@ -621,10 +628,20 @@ model RequestLog {
   // a dangling id that still tells you the requests came from one
   // client.
   accessTokenId    String?
+  // Which subscription account served the request: the one the OAuth
+  // transformer resolved for the attempt that succeeded. Null for
+  // api_key providers and for rows written before this landed. Not a
+  // foreign key, for the same reason as accessTokenId: an account can be
+  // removed, and its history is still worth attributing to one account.
+  subAccountId     String?
   inputTokens      Int      @default(0)
   outputTokens     Int      @default(0)
   cacheReadTokens  Int      @default(0)
   cacheWriteTokens Int      @default(0)
+  // The part of cacheWriteTokens written with a 1-hour TTL — included in
+  // it, not added. Priced at 2x input against 1.25x for the 5-minute
+  // TTL; zero for vendors that do not split cache writes by TTL.
+  cacheWrite1hTokens Int    @default(0)
   totalInputTokens Int      @default(0)
   cacheHitPct      Int      @default(0)
   durationMs       Int      @default(0)

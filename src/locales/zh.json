@@ -293,7 +293,22 @@
       "resetsIn": "重置于",
       "windowFiveHour": "5 小时",
       "windowSevenDay": "7 天",
-      "windowScoped": "7 天 · {{model}}"
+      "windowScoped": "7 天 · {{model}}",
+      "usageHeader": "API 等价",
+      "usageTokens": "Token 数",
+      "usageCost": "费用",
+      "usageFee": "月费",
+      "usageThisWeek": "本周",
+      "usage30d": "30 天",
+      "resetCredits": "已存重置",
+      "resetNone": "没有可用的",
+      "resetUse": "使用重置",
+      "resetNotApplicable": "仅在某个窗口用尽时才能使用重置",
+      "resetNoneLeft": "此账户已没有可用的重置",
+      "resetConfirmTitle": "要对 {{account}} 使用重置吗？",
+      "resetConfirmDescription": "OpenAI 会将此账户的 5 小时和每周窗口重置为 0%。重置会立即消耗，无法退回。\n\n已存重置：{{available}} → {{remaining}}。下一个将在 {{expires}} 过期。\n\n重置生效后，路由会立即重新使用此账户。",
+      "resetDone": "已使用重置（剩余 {{remaining}}）。路由会重新使用此账户。",
+      "resetDoneUnread": "已使用重置（剩余 {{remaining}}）。未能读取用量，进度条将在下次读取时更新。"
     },
     "shape": {
       "title": "请求形态",
@@ -854,7 +869,11 @@
     "quotaLimitCount_one": "{{count}} 个限制",
     "quotaLimitCount_other": "{{count}} 个限制",
     "resetsDueShort": "待刷新",
-    "quotaLimitCount": "{{count}} 个限制"
+    "quotaLimitCount": "{{count}} 个限制",
+    "usageWeek": "本周 · API 等价",
+    "usage30d": "30 天 · API 等价",
+    "usageTokens": "{{tokens}} Token",
+    "usageFee": "对比月费 {{fee}}"
   },
   "system": {
     "notFound": {

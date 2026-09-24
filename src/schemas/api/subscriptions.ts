@@ -103,3 +103,40 @@ export const EnabledModelsResponseSchema = z
     models: z.array(EnabledModelSchema)
   })
   .openapi('EnabledModelsResponse')
+
+// ─── Banked rate-limit resets (Codex) ──────────────────────────────────
+
+export const ResetCreditSchema = z
+  .object({
+    id: z.string().nonempty(),
+    grantedAt: z.string().nonempty().nullable(),
+    // Unspent credits lapse; the one closest to lapsing is spent first.
+    expiresAt: z.string().nonempty().nullable()
+  })
+  .openapi('ResetCredit')
+
+export const ResetCreditsResponseSchema = z
+  .object({
+    // Spendable credits, soonest to expire first.
+    credits: z.array(ResetCreditSchema),
+    // How many the vendor would accept right now, from the last usage
+    // poll. 0 while no window is spent; null when not read yet.
+    applicable: z.number().int().nonnegative().nullable()
+  })
+  .openapi('ResetCreditsResponse')
+
+export const UseResetResponseSchema = z
+  .object({
+    spentCreditId: z.string().nonempty(),
+    // Credits left after this one, as far as the list read before
+    // spending knew.
+    remaining: z.number().int().nonnegative(),
+    // Whether the follow-up usage poll answered. When it did, routing has
+    // already dropped the account's exhaustion marks and republished.
+    refreshed: z.boolean()
+  })
+  .openapi('UseResetResponse')
+
+export const SubscriptionActionErrorSchema = z
+  .object({ error: z.string().nonempty() })
+  .openapi('SubscriptionActionError')
