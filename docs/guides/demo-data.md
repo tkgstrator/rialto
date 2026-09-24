@@ -27,8 +27,7 @@ usage samples, and any subscription account it had to invent. `--clean`
 deletes exactly those and nothing else, matched on the id prefix. The one
 exception is the `cost-first` profile, which is matched on its key instead:
 the key is reserved for the seed, and the profile's tier routes cascade
-with it. (`--clean` also still removes `RoutingWeightChange` rows an older
-seed wrote; the scheduler writes none any more, and neither does the seed.)
+with it.
 
 **Yours — written only while still unset, and never taken back:** some
 configuration is a singleton per key and cannot carry a marker — a

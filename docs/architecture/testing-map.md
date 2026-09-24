@@ -73,7 +73,6 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `disabled-targets.test.ts` | 無効な Provider / Model がどの経路からも送られないこと — ルートの解決がルート自身のスイッチとターゲットのスイッチ（`targetEnabled`）を分けて返し、セレクタがターゲットの切れたルートを飛ばすこと、スイッチの切れたモデルをエイリアスで昇格すると ON になること、registry が有効なものだけを持つので passthrough の `provider,model` も `resolveInvocationForModel` が拒否すること、bare 名の解決、サブスクリプションのアカウントプール |
 | `tier-route-service.test.ts` | 保存されるティアマップ。保存はプロファイル全体の置き換えで、順序どおり・全ティアが揃って読み返せること、存在しないプロバイダと重複は警告付きで捨て、エイリアス未設定のルートは警告付きで残すこと、予約キー `passthrough` はルートを持てないこと、制約はブロブへマージされ置き換えではないこと、プロファイル一覧が既定を先頭・予約キーを末尾に出すこと |
 | `tier-alias-service.test.ts` | プロバイダのティアエイリアス。後から現れた同 tier のモデルは置き換えではなく `isNew` の候補になること、全プロバイダの 4 tier が設定の有無によらず並ぶこと、昇格がスイッチの切れたモデルを ON にすること、未知のプロバイダ / モデルの拒否と解除の結果、Claude のサブスク preset が tier ごとに preset の先頭のモデルでエイリアスを作り既存のエイリアスは触らないこと、Claude のファミリ名を持たない Codex には作らないこと |
-| `backfill-tier-routes.test.ts` | seed 時に旧チェーンをティアマップへ変換する処理。default / agent のチェーンを変換して `chainBackfilledAt` を打ち 2 回目は何もしないこと、すでにルートを持つプロファイルは印だけ付けること、既定プロファイルが先にエイリアスを取り他のプロファイルはそれを通して解決し、その旨をメモに残すこと、チェーンの無いプロファイルはルート無しで印が付く（空レーンと同じく素通しになる）こと |
 | `account-usage-service.test.ts` | アカウントごとの API 換算使用量。いまの週次窓の開始（リセット時刻から窓の長さを引く。Codex は上流の窓の長さを使い、リセットが過ぎていればそこから新しい窓、読めなければ直近 7 日）、サブスクのモデルを同名の有料モデルの価格で換算すること、「価格不明」（null）と「トラフィック無し」（0）を分けること、価格の無いモデルが価格の付いた分を消さないこと、割安度は額と月額の両方が要ること、各アカウントが自分の行しか見ないこと |
 | `access-token-service.test.ts` | トークンの発行・解決・失効。保存は sha256 のみ |
 | `inbound-surface-service.test.ts` | 面ごとの `routingMode` / `profileKey` の解決と `ensureInboundSurfaces` の冪等性 |
@@ -144,7 +143,6 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `model-test/probes.test.ts` | api_key の Responses 疎通確認は `max_output_tokens: 16` を送り続けること（公開 Responses API は 16 未満を 400 にする）。Codex 側と取り違えて「直さない」ための対 |
 | `subscription-account-sync-service.test.ts` / `subscription-account-sync/crypto.test.ts` | サブアカウント同期と `RIALTO_ACCOUNT_ENCRYPTION_KEY` による暗号化 |
 | `codex-auth.test.ts` | Codex のトークンリフレッシュ |
-| `plan-tier-routes.test.ts` | 旧チェーン → ティアマップの planner（純関数、DB 無し）を決定ごとに。Sonnet だけのチェーンで「下げのみ」なら Haiku は Sonnet が担い続けること（P0-1 の nearest）、`tierFallback: 'refuse'` なら拒否されていたルートを OFF のまま残すこと、フォールバックは近い tier・同距離なら安い側から、同じ provider・tier の 2 モデルは 1 本のルートになること、Claude のファミリ名を持たないモデルは担っていた tier のエイリアスにすること、既存のエイリアスは上書きせずモデルの変化をメモに残すこと、エイリアスは OFF のものより配信できるモデルが先に取ること、OFF の entry は OFF のルートになること、後から来た有効な重複が先の OFF のルートを救うこと、変換しないレーンの件数をメモに残すこと |
 | `cost-service.test.ts` | `computeCosts` が cache write を TTL で分けて値付けすること — 5 分は入力単価の 1.25 倍、1 時間は 2 倍。`cacheWrite1hTokens` は `cacheWriteTokens` の内訳なので足さずに割ること、内訳が総量を超えたら総量で切ること、価格の無いモデルは価格無しのまま |
 | `codex-reset-service.test.ts` | Codex のバンク済みリセット（上流はスタブ、クレジット一覧は実レスポンスの fixture）。使えるのは available かつプランが対応するクレジットで、失効の近い順に並ぶこと、消費はそのクレジットを冪等キー付きで送り、返す前に使用量を取り直して routing に反映させること、ベンダの拒否は 409（取り直さない）、ベンダ障害は 502、Claude のアカウントは何も送らずに拒否、ルートがサービスのステータスで答えること |
 | `routing-scheduler/collector.test.ts` | 上流の使用量（Claude の 5h / 7d / per-model、Codex の primary / secondary）を `SubAccountQuota` の窓へ写すこと。Codex は上流の `window_seconds` を保ち（Claude は固定長）、読めない `resetsAt` は null にする |
