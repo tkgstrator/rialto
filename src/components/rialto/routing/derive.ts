@@ -1,325 +1,270 @@
 /**
- * Pure derivations shared by the Routing screens.
+ * Pure derivations for the Routing screen.
  *
- * The chain table, the map and the passthrough list all have to answer
- * "what state is this target in" and "what tier is this model"; keeping
- * the answers here stops three screens from drifting into three sets of
- * thresholds.
+ * Everything here answers a question a row or a cell asks of the loaded
+ * profile, the draft and the scheduler snapshot — what a route resolves
+ * to, what state it is in, whether the draft differs from what is saved —
+ * without touching React, so each answer can be tested on its own.
  */
-import type { RoutingSchedulerStateResponse, RoutingSchedulerWeightEntry } from '@/lib/api'
+import type {
+  RoutingConstraintsWire,
+  RoutingSchedulerStateResponse,
+  RoutingSchedulerTargetState,
+  TierAliasWire,
+  TierProfileViewWire,
+  TierRouteResolutionWire
+} from '@/lib/api'
+import { ROUTE_TIER_ORDER } from '@/lib/api-types'
 import type { Provider } from '@/schemas/domain/provider'
-import type { EnabledTarget, PreferenceByScenario, Tier } from './types'
-import { SCENARIOS } from './types'
-
-/** Split a "provider,model" target. A malformed row keeps the raw string as its model. */
-export function splitTarget(target: string): { provider: string; model: string } {
-  const comma = target.indexOf(',')
-  if (comma <= 0) return { provider: '', model: target }
-  return { provider: target.slice(0, comma), model: target.slice(comma + 1) }
-}
-
-/**
- * Name-based tier inference. Mirrors `inferTier` in
- * services/router-preference-service.ts — the server resolves the tier for
- * preference entries, but the passthrough list and the model picker draw
- * from /api/config, which carries only the manual overrides.
- */
-export function inferTier(modelName: string): Tier | null {
-  const lower = modelName.toLowerCase()
-  if (lower.includes('fable')) return 'fable'
-  if (lower.includes('opus')) return 'opus'
-  if (lower.includes('sonnet')) return 'sonnet'
-  if (lower.includes('haiku')) return 'haiku'
-  return null
-}
+import type { DraftRoute, EnabledTarget, ModelTier, RouteResolution, RouteState, RouteTier, TierDraft } from './types'
 
 /**
  * Every "provider,model" the operator has left routable: providers switched
  * off and models in `transformer._disabledModels` drop out, matching the
- * gate ModelsDashboard and TierEditor apply.
+ * gate the Providers screen applies.
  */
 export function enabledTargets(providers: readonly Provider[]): EnabledTarget[] {
   const out: EnabledTarget[] = []
   for (const provider of providers) {
     if (provider.enabled === false) continue
     const disabled = new Set(provider.transformer?._disabledModels)
-    const manual = provider.modelManualTiers
     for (const model of [...provider.models].sort((a, b) => a.localeCompare(b))) {
       if (disabled.has(model)) continue
-      const override = manual === undefined ? undefined : manual[model]
-      out.push({
-        target: `${provider.name},${model}`,
-        provider: provider.name,
-        model,
-        tier: override === undefined ? inferTier(model) : override
-      })
+      out.push({ target: `${provider.name},${model}`, provider: provider.name, model })
     }
   }
   return out
 }
 
-/** Weight snapshot keyed by target, so a row can look up its own live numbers. */
-export function weightIndex(state: RoutingSchedulerStateResponse | null): Map<string, RoutingSchedulerWeightEntry> {
-  const out = new Map<string, RoutingSchedulerWeightEntry>()
-  if (state === null) return out
-  for (const entry of state.weights) out.set(entry.target, entry)
+/**
+ * The providers a new route may name.
+ *
+ * A switched-off provider is left out rather than offered: a route to it
+ * would be kept but never taken, and the Add route dialog is where that
+ * mistake is cheapest to prevent.
+ */
+export function enabledProviderNames(providers: readonly Provider[]): string[] {
+  return providers.filter((provider) => provider.enabled !== false).map((provider) => provider.name)
+}
+
+/** The scheduler's per-target readings keyed by "provider,model", so a row can look up its own. */
+export function targetIndex(state: RoutingSchedulerStateResponse | null): Map<string, RoutingSchedulerTargetState> {
+  const out = new Map<string, RoutingSchedulerTargetState>()
+  // A server from before the scheduler published per-target readings
+  // answers without `targets`; every row reading "ok" is better than the
+  // screen failing to render.
+  if (state === null || !Array.isArray(state.targets)) return out
+  for (const entry of state.targets) out.set(entry.target, entry)
   return out
 }
 
 /**
- * How a chain row names its target.
+ * One key per provider · tier.
  *
- * "provider,model" repeats the provider down the whole column — in a
- * lane that is usually one subscription, every row starts with the same
- * eleven characters before it says anything. The model name is the part
- * that differs, and the provider is one click away on the row itself.
- *
- * The exception is the case that makes the short form a lie: the same
- * model reached through two providers (a Claude subscription and an
- * api_key Anthropic account, say), which is an ordinary failover chain
- * and would otherwise render as two identical rows. Those keep the full
- * pair — both of them, so the column does not silently use two
- * conventions for what looks like the same thing.
+ * Tier first: a tier name never contains a colon, so the key cannot be
+ * ambiguous whatever the provider happens to be called.
  */
-export function targetLabels(targets: readonly string[]): Map<string, string> {
-  const seen = new Map<string, number>()
-  for (const target of targets) {
-    const { model } = splitTarget(target)
-    const count = seen.get(model)
-    seen.set(model, count === undefined ? 1 : count + 1)
-  }
-  const out = new Map<string, string>()
-  for (const target of targets) {
-    const { model } = splitTarget(target)
-    out.set(target, seen.get(model) === 1 ? model : target)
-  }
-  return out
+export const routeKey = (provider: string, tier: ModelTier): string => `${tier}:${provider}`
+
+/** Constraints as the server defaults them — what a profile with no row reads as. */
+export const DEFAULT_CONSTRAINTS: RoutingConstraintsWire = {
+  exhaustedBehavior: '429',
+  quotaSkipPct: 100,
+  errorRateSkipPct: 0.5,
+  minHealthSamples: 5
 }
 
-export interface ShareRow {
-  target: string
-  enabled: boolean
-  weight: number | undefined
-}
-
-/**
- * Each enabled target's slice of the lane's published weight, as whole
- * percents that add up to exactly 100.
- *
- * Apportioned by largest remainder rather than rounded independently:
- * three equal targets round to 33/33/33 and the column visibly fails to
- * add up, which is the entire thing this is here to avoid.
- *
- * A row that is switched off, or that the scheduler has not scored, maps
- * to null — it is not competing for the lane, so it takes no slice and
- * shows a dash rather than a 0% that would read as "came last".
- */
-export function chainShares(rows: readonly ShareRow[]): Map<string, number | null> {
-  const out = new Map<string, number | null>()
-  for (const row of rows) out.set(row.target, row.enabled && row.weight !== undefined ? 0 : null)
-
-  const eligible = rows.filter((row) => row.enabled && row.weight !== undefined && row.weight > 0)
-  const total = eligible.reduce((sum, row) => sum + (row.weight === undefined ? 0 : row.weight), 0)
-  if (total <= 0) return out
-
-  const exact = eligible.map((row) => {
-    const value = ((row.weight === undefined ? 0 : row.weight) / total) * 100
-    const floor = Math.floor(value)
-    return { target: row.target, floor, remainder: value - floor }
-  })
-  const assigned = exact.reduce((sum, entry) => sum + entry.floor, 0)
-  // Ties broken by the order the chain is already in, which is the
-  // operator's own priority order — the only tiebreak that is not
-  // arbitrary from where they are sitting.
-  const ranked = [...exact].sort((a, b) => b.remainder - a.remainder)
-  for (const [index, entry] of ranked.entries()) {
-    out.set(entry.target, entry.floor + (index < 100 - assigned ? 1 : 0))
-  }
-  return out
-}
-
-// `hasBudgetReading` and `targetState` lived here, with STATE_TONE and
-// STATE_LABEL_KEYS below them. They classified a target as ready /
-// throttled / exhausted / unknown for a State column that neither table
-// carries any more: the chain shows Share, which already says an
-// exhausted target is at 0% and a disabled one at a dash, and a
-// passthrough surface is never scored at all, so its column read
-// `unknown` on every row of every install.
-
-// `schedulerRuns`, `activeSelector` and `MODE_FOR_SELECTOR` lived here.
-// They existed to answer "which of the two selectors is live", and to
-// warn that the scheduler publishes nothing under the other one. The
-// chain is the only selector now, so the scheduler always runs and the
-// question has one answer.
-
-/**
- * The scheduler ran and had nothing to score.
- *
- * Turning the mode on is only half of what a live reading needs: the
- * tick builds its weights entirely from `RouterPreferenceEntry` rows, so
- * on an install with no chain configured it publishes an empty snapshot
- * and the Share column stays empty. Saying "set ROUTER_MODE to
- * quota-aware to see live numbers" and leaving it there sends an
- * operator to flip a switch that changes nothing on their screen.
- *
- * Gated on having ticked at least once. A cold boot in quota-aware mode
- * also has no weights yet, and that one resolves on its own.
- */
-export function schedulerScoredNothing(state: RoutingSchedulerStateResponse | null): boolean {
-  if (state === null) return false
-  return state.tickAt !== null && state.weights.length === 0
-}
-
-/**
- * The scheduler is armed but has not produced a snapshot yet.
- *
- * The other way the Share column comes up empty, and the one that had no
- * note. `schedulerScoredNothing` deliberately waits for a first tick, so
- * between boot and that tick (the interval defaults to five minutes)
- * every row reads a dash with nothing on screen saying why, which is
- * indistinguishable from a lane nobody has configured.
- */
-export function schedulerNotTickedYet(state: RoutingSchedulerStateResponse | null): boolean {
-  if (state === null) return false
-  return state.tickAt === null
-}
-
-/** Empty profile shape — every scenario and lane present, so tabs never branch on "missing". */
-export function emptyByScenario(): PreferenceByScenario {
+export function emptyDraft(): TierDraft {
   return {
-    default: { agent: [], subagent: [] },
-    think: { agent: [], subagent: [] },
-    longContext: { agent: [], subagent: [] },
-    webSearch: { agent: [], subagent: [] },
-    image: { agent: [], subagent: [] }
+    routes: { fable: [], opus: [], sonnet: [], haiku: [], other: [] },
+    constraints: { ...DEFAULT_CONSTRAINTS }
   }
 }
 
-/** Distinct targets referenced anywhere in the profile, in first-seen order. */
-export function profileTargets(byScenario: PreferenceByScenario): string[] {
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const scenario of SCENARIOS) {
-    for (const lane of ['agent', 'subagent'] as const) {
-      for (const entry of byScenario[scenario][lane]) {
-        if (seen.has(entry.target)) continue
-        seen.add(entry.target)
-        out.push(entry.target)
-      }
+/**
+ * The write-shaped copy of a loaded profile.
+ *
+ * Built field by field in a fixed order rather than spread from the view,
+ * so the draft and its baseline serialise identically and `draftDiffers`
+ * can compare them as strings.
+ */
+export function draftOf(view: TierProfileViewWire): TierDraft {
+  const routes = emptyDraft().routes
+  for (const tier of ROUTE_TIER_ORDER) {
+    routes[tier] = view.routes[tier].map((route) => ({
+      provider: route.provider,
+      targetTier: route.targetTier,
+      enabled: route.enabled
+    }))
+  }
+  const c = view.constraints
+  return {
+    routes,
+    constraints: {
+      exhaustedBehavior: c.exhaustedBehavior,
+      quotaSkipPct: c.quotaSkipPct,
+      errorRateSkipPct: c.errorRateSkipPct,
+      minHealthSamples: c.minHealthSamples
     }
+  }
+}
+
+/** Whether an edit has changed anything one PUT would write. */
+export function draftDiffers(a: TierDraft, b: TierDraft): boolean {
+  return JSON.stringify(a) !== JSON.stringify(b)
+}
+
+/**
+ * Every resolution the loaded profile carries, keyed by provider · tier.
+ *
+ * The same provider · tier resolves identically in every group — the
+ * alias belongs to the provider, not to the route — so a route moved or
+ * re-added during an edit can borrow a resolution from any group.
+ */
+export function resolutionIndex(view: TierProfileViewWire | null): Map<string, TierRouteResolutionWire | null> {
+  const out = new Map<string, TierRouteResolutionWire | null>()
+  if (view === null) return out
+  for (const tier of ROUTE_TIER_ORDER) {
+    for (const route of view.routes[tier]) out.set(routeKey(route.provider, route.targetTier), route.resolved)
   }
   return out
 }
 
+/** The model each provider · tier alias names today, or null where none is set. */
+export function aliasIndex(aliases: readonly TierAliasWire[] | null): Map<string, string | null> {
+  const out = new Map<string, string | null>()
+  if (aliases === null) return out
+  for (const alias of aliases) out.set(routeKey(alias.provider, alias.tier), alias.model)
+  return out
+}
+
 /**
- * Total entries across every scenario and lane.
+ * What a row resolves to: the server's answer where the loaded profile
+ * has one, else the alias list's, else nothing until Save.
+ */
+export function resolveRoute(
+  route: DraftRoute,
+  resolutions: ReadonlyMap<string, TierRouteResolutionWire | null>,
+  aliases: ReadonlyMap<string, string | null>
+): RouteResolution {
+  const key = routeKey(route.provider, route.targetTier)
+  const resolved = resolutions.get(key)
+  if (resolved === null) return { kind: 'unset' }
+  if (resolved !== undefined) return { kind: 'resolved', resolution: resolved }
+  const alias = aliases.get(key)
+  if (alias === null) return { kind: 'unset' }
+  return { kind: 'pending', model: alias === undefined ? null : alias }
+}
+
+/**
+ * A route's state, from the scheduler's reading of the target it resolves to.
  *
- * Zero means the profile has never been configured, which is not the same
- * as a chain that routes nowhere: the request passes through with the
- * model the caller asked for. The two need different empty states.
+ * `exhausted` is the scheduler's own verdict — the same one the tier
+ * router skips a route on — so a row reads "exhausted" exactly when a
+ * request would pass it by for quota. A target the scheduler has no
+ * budget for (an api_key provider, a cold start) is not held back on
+ * quota by the router, so it is not here either: `ok`.
+ *
+ * The route's own switch is not a state. A switched-off row is already
+ * dimmed with its toggle off; its State still reports what the target
+ * would do if switched back on, which is the thing worth knowing before
+ * flipping it.
  */
-export function profileEntryCount(byScenario: PreferenceByScenario): number {
-  return SCENARIOS.reduce(
-    (total, scenario) => total + byScenario[scenario].agent.length + byScenario[scenario].subagent.length,
-    0
-  )
-}
-
-/** Renumber a chain so `priority` matches list position after a move or a delete. */
-export function renumber<T extends { priority: number }>(entries: readonly T[]): T[] {
-  return entries.map((entry, index) => ({ ...entry, priority: index + 1 }))
+export function routeState(
+  resolution: RouteResolution,
+  provider: string,
+  targets: ReadonlyMap<string, RoutingSchedulerTargetState>
+): RouteState {
+  if (resolution.kind === 'unset') return { kind: 'unset' }
+  if (resolution.kind === 'pending') return { kind: 'pending' }
+  if (!resolution.resolution.targetEnabled) return { kind: 'off' }
+  const reading = targets.get(`${provider},${resolution.resolution.model}`)
+  if (reading === undefined) return { kind: 'ok' }
+  if (reading.exhausted) return { kind: 'exhausted', until: reading.resetAt }
+  const remaining = reading.remainingBudgetPct
+  return remaining !== null && remaining < 100 ? { kind: 'used', pct: Math.round(100 - remaining) } : { kind: 'ok' }
 }
 
 /**
- * The two tier gates as the one four-way answer the constraints footer
- * offers. Two booleans read worse than one answer: the operator would
- * have to combine them in their head to know what the selector does.
+ * Whether a route answers its group with another tier on purpose.
+ *
+ * "Other" is the group of names with no Claude family, so there is no
+ * tier to substitute for — any tier a route names there is simply the
+ * tier it names.
  */
-export type TierSubstitution = 'upDown' | 'up' | 'down' | 'same'
-
-export type ExhaustedBehavior = '429' | 'passthrough'
-
-// An absent gate reads as the schema's default, true, so a profile whose
-// constraints were never written shows what the selector actually does.
-const gate = (constraints: Record<string, unknown> | null, key: string): boolean => {
-  const value = constraints === null ? undefined : constraints[key]
-  return typeof value === 'boolean' ? value : true
+export function substitutes(group: RouteTier, target: ModelTier): boolean {
+  return group !== 'other' && group !== target
 }
 
-export function tierSubstitutionOf(constraints: Record<string, unknown> | null): TierSubstitution {
-  const up = gate(constraints, 'allowEscalation')
-  const down = gate(constraints, 'allowDemotion')
-  if (up && down) return 'upDown'
-  if (up) return 'up'
-  if (down) return 'down'
-  return 'same'
+/** Move one route within its group; an out-of-range target leaves the list as it was. */
+export function moveRoute(routes: readonly DraftRoute[], from: number, to: number): DraftRoute[] {
+  if (from === to || from < 0 || to < 0 || from >= routes.length || to >= routes.length) return [...routes]
+  const next = [...routes]
+  const [pulled] = next.splice(from, 1)
+  next.splice(to, 0, pulled)
+  return next
 }
 
-const SUBSTITUTION_GATES: Record<TierSubstitution, { allowEscalation: boolean; allowDemotion: boolean }> = {
-  upDown: { allowEscalation: true, allowDemotion: true },
-  up: { allowEscalation: true, allowDemotion: false },
-  down: { allowEscalation: false, allowDemotion: true },
-  same: { allowEscalation: false, allowDemotion: false }
+/** Whether a group already holds this provider · tier — the duplicate the server would drop. */
+export function hasRoute(routes: readonly DraftRoute[], provider: string, tier: ModelTier): boolean {
+  return routes.some((route) => route.provider === provider && route.targetTier === tier)
 }
 
-export function exhaustedBehaviorOf(constraints: Record<string, unknown> | null): ExhaustedBehavior {
-  return constraints !== null && constraints.exhaustedBehavior === 'passthrough' ? 'passthrough' : '429'
+export interface MapCounts {
+  total: number
+  off: number
+  unresolved: number
 }
 
-export function quotaSkipPctOf(constraints: Record<string, unknown> | null): number {
-  const value = constraints === null ? undefined : constraints.quotaSkipPct
-  return typeof value === 'number' ? value : 100
+/** The footer's totals across every group of the draft. */
+export function mapCounts(draft: TierDraft, resolve: (route: DraftRoute) => RouteResolution): MapCounts {
+  const all = ROUTE_TIER_ORDER.flatMap((tier) => draft.routes[tier])
+  return {
+    total: all.length,
+    off: all.filter((route) => !route.enabled).length,
+    unresolved: all.filter((route) => resolve(route).kind === 'unset').length
+  }
 }
 
 export type ConstraintEdit =
-  | { kind: 'tierSubstitution'; value: TierSubstitution }
-  | { kind: 'exhaustedBehavior'; value: ExhaustedBehavior }
+  | { kind: 'exhaustedBehavior'; value: RoutingConstraintsWire['exhaustedBehavior'] }
   | { kind: 'quotaSkipPct'; value: number }
+  | { kind: 'errorRateSkipPct'; value: number }
+  | { kind: 'minHealthSamples'; value: number }
 
 /**
- * One edit, merged over the blob that is there.
+ * One edit, merged over the constraints that are there.
  *
- * The blob carries knobs this screen does not show — the longContext
- * threshold, the scheduler's scoring factors — and the PUT replaces the
- * whole column, so an edit that rebuilt the object from the three cells
- * would silently reset every one of them.
+ * The error-rate cell is edited as a percentage because that is how it
+ * reads; the profile stores it as a fraction, which is what the router
+ * compares against, so the conversion happens exactly once, here.
  */
-export function applyConstraintEdit(
-  constraints: Record<string, unknown> | null,
-  edit: ConstraintEdit
-): Record<string, unknown> {
-  const base = constraints === null ? {} : constraints
-  if (edit.kind === 'tierSubstitution') return { ...base, ...SUBSTITUTION_GATES[edit.value] }
-  if (edit.kind === 'exhaustedBehavior') return { ...base, exhaustedBehavior: edit.value }
-  return { ...base, quotaSkipPct: edit.value }
+export function applyConstraintEdit(constraints: RoutingConstraintsWire, edit: ConstraintEdit): RoutingConstraintsWire {
+  if (edit.kind === 'exhaustedBehavior') return { ...constraints, exhaustedBehavior: edit.value }
+  if (edit.kind === 'quotaSkipPct') return { ...constraints, quotaSkipPct: edit.value }
+  if (edit.kind === 'errorRateSkipPct') return { ...constraints, errorRateSkipPct: edit.value / 100 }
+  return { ...constraints, minHealthSamples: edit.value }
 }
 
-/**
- * Whether two blobs differ in anything this screen writes.
- *
- * Compared by reading rather than by bytes: picking "up and down" on a
- * profile that never stored the gates writes two `true`s the defaults
- * already meant, and a Save lit up by that would ask the operator to
- * write a change that changes nothing. Keys the screen does not edit are
- * carried through untouched by `applyConstraintEdit`, so they cannot
- * differ between an edit and its baseline.
- */
-export function constraintsDiffer(a: Record<string, unknown> | null, b: Record<string, unknown> | null): boolean {
-  return (
-    tierSubstitutionOf(a) !== tierSubstitutionOf(b) ||
-    exhaustedBehaviorOf(a) !== exhaustedBehaviorOf(b) ||
-    quotaSkipPctOf(a) !== quotaSkipPctOf(b)
-  )
-}
+/** The stored error-rate fraction as the whole percentage its cell shows. */
+export const errorRatePctOf = (constraints: RoutingConstraintsWire): number =>
+  Math.round(constraints.errorRateSkipPct * 100)
 
 /**
- * A Quota skip entry as a whole percentage, 0–100, or null when the text
- * is not one. Whole only: the cell reads as `100%`, and a fraction there
- * would be a precision the quota readings it is compared with do not have.
+ * A percentage entry as a whole number, 0–100, or null when the text is
+ * not one. Whole only: the cells read as `100%`, and a fraction there
+ * would be a precision the readings it is compared with do not have.
  */
-export function parseQuotaSkipPct(text: string): number | null {
+export function parseWholePercent(text: string): number | null {
   const trimmed = text.trim()
   if (!/^\d{1,3}$/.test(trimmed)) return null
   const value = Number(trimmed)
   return value <= 100 ? value : null
+}
+
+/** A sample count: a non-negative whole number of sensible size, or null. */
+export function parseSampleCount(text: string): number | null {
+  const trimmed = text.trim()
+  if (!/^\d{1,6}$/.test(trimmed)) return null
+  return Number(trimmed)
 }

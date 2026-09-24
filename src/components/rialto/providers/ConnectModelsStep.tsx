@@ -9,7 +9,7 @@ import { Trans, useTranslation } from 'react-i18next'
 import { Pill, RButton } from '@/components/rialto/primitives'
 import { buildModelRows, enabledCountOf, listedModelsOf } from './derive'
 import { ModelsTable } from './ModelsTable'
-import type { CatalogEntry, Provider, ReasoningEffort, Tier } from './types'
+import type { CatalogEntry, Provider, ReasoningEffort } from './types'
 import { vendorLabel } from './vendor-labels'
 
 export function ConnectModelsStep({
@@ -23,7 +23,6 @@ export function ConnectModelsStep({
   connectedAccount,
   busy,
   onToggle,
-  onTier,
   onEffort,
   onEnableAll,
   onTestAll
@@ -33,7 +32,6 @@ export function ConnectModelsStep({
   connectedAccount: string | null
   busy: boolean
   onToggle: (model: string, next: boolean) => void
-  onTier: (model: string, next: Tier | null) => void
   onEffort: (model: string, next: ReasoningEffort | null) => void
   onEnableAll: () => void
   onTestAll: () => void
@@ -94,7 +92,6 @@ export function ConnectModelsStep({
         rows={buildModelRows(provider, entry)}
         withOverride={isApiKey}
         onToggle={onToggle}
-        onTier={onTier}
         onEffort={onEffort}
       />
       <div className='h-6' />

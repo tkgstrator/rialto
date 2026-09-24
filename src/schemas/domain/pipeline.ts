@@ -90,8 +90,11 @@ export const PipelineRequestSchema = z.object({
   url: z.string().nonempty(),
   provider: z.string().nonempty().optional(),
   model: z.string().nonempty().optional(),
-  scenarioType: z.string().nonempty().optional(),
-  // The client's original body.model, captured before scenario routing
+  // The requested tier a tier-map route served ('sonnet', 'other', …), or
+  // 'passthrough' when the request went upstream as sent. Written to the
+  // RequestLog row's `scenario` column, the name it had before the map.
+  route: z.string().nonempty().optional(),
+  // The client's original body.model, captured before routing
   // rewrote it. Carried so the usage-capture step can persist "what was
   // asked for" alongside "what was actually sent".
   requestedModel: z.string().nonempty().optional(),
@@ -124,6 +127,12 @@ export const PipelineRequestSchema = z.object({
   // provider's stored active account. Absent on probe contexts, which
   // deliberately test that active account.
   accountSessionKey: z.string().nonempty().optional(),
+  // The subscription account this attempt runs on, stamped by the OAuth
+  // transformer when it resolves one. A per-attempt value on a
+  // per-attempt object — account rotation builds a fresh request — so
+  // it names the account that actually served (or 429'd) THIS call,
+  // which the session-wide sticky map cannot once requests overlap.
+  subAccountId: z.string().nonempty().optional(),
   tokenCount: z.number().optional()
 })
 export type PipelineRequest = z.infer<typeof PipelineRequestSchema>

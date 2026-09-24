@@ -39,33 +39,37 @@ export async function captureUsage(
   const tokens = computeTokenStats(usage)
   const view = viewPipelineBody(body)
 
-  // The client's original model, the routing lane, and the subagent flag
-  // all ride on context.req (stamped in resolveInvocationForModel).
-  // requestedModel / scenario fall back to null so a request that never
-  // went through scenario routing still records a valid row; isSubagent
+  // The client's original model, the route that served it, and the
+  // subagent flag all ride on context.req (stamped in
+  // resolveInvocationForModel). requestedModel / route fall back to null
+  // so a request that never went through routing still records a valid
+  // row; isSubagent
   // is always known (defaults false at the route builder), so it stays a
   // plain boolean here.
   const requestedModel = context.req?.requestedModel
-  const scenario = context.req?.scenarioType
+  const route = context.req?.route
   const isSubagent = context.req?.isSubagent === true
   const inboundType = context.req?.inboundType
   const surface = context.req?.surface
   const accessTokenId = context.req?.accessTokenId
+  const subAccountId = context.req?.subAccountId
 
   await deps.recordUsage?.({
     sessionId,
     provider: provider.name,
     model: view.model !== undefined ? view.model : 'unknown',
     requestedModel: requestedModel !== undefined ? requestedModel : null,
-    scenario: scenario !== undefined ? scenario : null,
+    scenario: route !== undefined ? route : null,
     inboundType: inboundType !== undefined ? inboundType : null,
     surface: surface !== undefined ? surface : null,
     accessTokenId: accessTokenId !== undefined ? accessTokenId : null,
+    subAccountId: subAccountId !== undefined ? subAccountId : null,
     isSubagent,
     inputTokens: tokens.rawInput,
     outputTokens: tokens.outputTokens,
     cacheReadTokens: tokens.cachedTokens,
     cacheWriteTokens: tokens.writtenTokens,
+    cacheWrite1hTokens: tokens.writtenTokens1h,
     totalInputTokens: tokens.totalInputTokens,
     cacheHitPct: tokens.cacheHitPct,
     durationMs,
@@ -76,6 +80,10 @@ export async function captureUsage(
 type TokenStats = {
   cachedTokens: number
   writtenTokens: number
+  // The 1-hour-TTL part of writtenTokens. Clamped to it, so a breakdown
+  // that disagrees with the total can skew the price but never count a
+  // write twice.
+  writtenTokens1h: number
   outputTokens: number
   rawInput: number
   totalInputTokens: number
@@ -121,6 +129,7 @@ function cachedInputTokens(usage: UsageBlock): CachedInput {
 function computeTokenStats(usage: UsageBlock): TokenStats {
   const cached = cachedInputTokens(usage)
   const writtenTokens = numberOrZero(usage.cache_creation_input_tokens)
+  const writtenTokens1h = Math.min(numberOrZero(usage.cache_creation?.ephemeral_1h_input_tokens), writtenTokens)
   const outputTokens =
     numberOrZero(usage.output_tokens) ||
     numberOrZero(usage.completion_tokens) ||
@@ -138,7 +147,15 @@ function computeTokenStats(usage: UsageBlock): TokenStats {
   const rawInput = cached.countedInsideReportedInput ? Math.max(reportedInput - cached.tokens, 0) : reportedInput
   const totalInputTokens = rawInput + writtenTokens + cached.tokens
   const cacheHitPct = totalInputTokens > 0 ? Math.round((cached.tokens / totalInputTokens) * 100) : 0
-  return { cachedTokens: cached.tokens, writtenTokens, outputTokens, rawInput, totalInputTokens, cacheHitPct }
+  return {
+    cachedTokens: cached.tokens,
+    writtenTokens,
+    writtenTokens1h,
+    outputTokens,
+    rawInput,
+    totalInputTokens,
+    cacheHitPct
+  }
 }
 
 /** Coerce an optional `unknown` numeric usage field to a finite number, defaulting to 0. */

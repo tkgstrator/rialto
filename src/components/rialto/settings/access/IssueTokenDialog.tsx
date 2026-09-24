@@ -13,7 +13,7 @@
  * client gets its own routing without a second config axis — so both are
  * first-class fields here rather than an advanced disclosure. Both lists
  * come from the server (`/api/inbound-surfaces`,
- * `/api/router-preferences/profiles`); nothing about them is hardcoded.
+ * `/api/routing/profiles`); nothing about them is hardcoded.
  */
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'

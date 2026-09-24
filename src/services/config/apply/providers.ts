@@ -6,15 +6,16 @@
 
 import type { Provider } from '@/schemas/domain/provider'
 import { AuthMode, type Model as DbModel, type Provider as DbProvider } from '../../../generated/prisma/client'
+import { ensurePresetAliases } from '../../tier-alias-service'
 import { apiStyleForVendor } from '../api-style'
 import type { Tx } from '../apply'
-import { chainEntryCascadeWarning } from './chain-entries'
 import { apiKeyForStorage } from './fields'
 import { applyModelEnabledFlips, reconcileModelRows } from './model-rows'
 import { applySubscriptionAccountToggles } from './subscription-toggles'
+import { routeCascadeWarning } from './tier-route-cascade'
 
 // Delete providers the UI no longer lists. Their models cascade, and so
-// do the chain entries naming those models — counted first so the
+// do the tier aliases and routes naming them — counted first so the
 // operator is told which chains just got shorter.
 export async function deleteRemovedProviders(
   tx: Tx,
@@ -24,7 +25,7 @@ export async function deleteRemovedProviders(
 ): Promise<void> {
   for (const ex of existing) {
     if (incomingByName.has(ex.name)) continue
-    const cascade = await chainEntryCascadeWarning(tx, { providerId: ex.id }, `deleted provider "${ex.name}"`)
+    const cascade = await routeCascadeWarning(tx, ex.id, `deleted provider "${ex.name}"`)
     if (cascade !== null) warnings.push(cascade)
     await tx.provider.delete({ where: { id: ex.id } })
   }
@@ -93,6 +94,10 @@ export async function applyProviderRow(
   // _disabledModels selection (must run after reconcileModelRows so
   // the freshly-created rows exist).
   await applyModelEnabledFlips(tx, provider, inc, prevEnabledByName)
+  // A subscription provider saved with its preset's models gets the tier
+  // aliases the preset implies, in the same transaction, so it routes the
+  // moment it exists. Aliases already set are left alone.
+  await ensurePresetAliases(tx, provider.id)
 }
 
 export async function applyProviders(tx: Tx, incoming: Provider[], warnings: string[]): Promise<void> {

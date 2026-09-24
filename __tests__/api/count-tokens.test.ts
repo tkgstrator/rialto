@@ -103,11 +103,11 @@ describe('registration in the surface registry', () => {
   })
 
   test('returns the same number the router does, so counting cannot fork', async () => {
-    // Half the reason this endpoint exists. The longContext lane counts
-    // the same request through the same registry to route it, so a
-    // different number here means a caller who believes it has headroom
-    // is in fact being sent down the long-context lane.
-    const { readSignals } = await import('../../src/llms/scenario-router/surface-signals')
+    // Half the reason this endpoint exists. The router's context-window
+    // gate counts the same request through the same registry to route it,
+    // so a different number here means a caller who believes it has
+    // headroom is in fact being held off the routes too small for it.
+    const { readSignals } = await import('../../src/llms/router/surface-signals')
     const { TokenizerRegistry } = await import('../../src/llms/registry/tokenizer')
     const pino = (await import('pino')).default
 
@@ -118,7 +118,7 @@ describe('registration in the surface registry', () => {
     }
     const tokenizers = new TokenizerRegistry(pino({ level: 'silent' }))
     await tokenizers.initialize()
-    // The same path `countRequestTokens` takes in scenario-router.ts.
+    // The same path `countRequestTokens` takes in router.ts.
     const viaRouter = await tokenizers.countTokens(readSignals(body, '/v1/messages').tokenize)
 
     expect(await countOf(body)).toBe(viaRouter.tokenCount)

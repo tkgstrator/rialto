@@ -109,3 +109,13 @@ export function shortId(id: string): string {
   if (id.length <= 16) return id
   return `${id.slice(0, 8)}…${id.slice(-3)}`
 }
+
+/**
+ * The 30-day API-equivalent cost over the plan fee, as "×1.6". Whole
+ * numbers from ten up — "×11" says what "×11.3" says — and a dash when
+ * either side is unknown.
+ */
+export function fmtValueRatio(ratio: number | null): string {
+  if (ratio === null) return '–'
+  return `×${ratio >= 10 ? ratio.toFixed(0) : ratio.toFixed(1)}`
+}

@@ -96,7 +96,7 @@ const planFor = (path: string): RoutePlan => ({
   headers: {},
   transformersByName: new Map(),
   defaultTransformer: new OpenAITransformer(),
-  scenarioType: 'default',
+  route: 'passthrough',
   primaryModel: 'p,m',
   isSubagent: false,
   fallbacks: [],
@@ -203,5 +203,76 @@ describe('token counts, by upstream wire format', () => {
       ctxWithSession()
     )
     expect(row).toMatchObject({ inputTokens: 30, outputTokens: 9 })
+  })
+})
+
+// ─── (3) the serving account and the cache-write TTL split ─────────
+
+describe('the account that served, and 1-hour cache writes', () => {
+  test('the account the OAuth transformer stamped reaches the row', async () => {
+    const row = await rowFor(
+      json({ usage: { input_tokens: 10, output_tokens: 4 } }),
+      ctxWithSession({ subAccountId: 'acct-anna' })
+    )
+    expect(row?.subAccountId).toBe('acct-anna')
+  })
+
+  test('traffic no account served (api_key) records null, not a guess', async () => {
+    const row = await rowFor(json({ usage: { input_tokens: 10, output_tokens: 4 } }), ctxWithSession())
+    expect(row?.subAccountId).toBeNull()
+  })
+
+  test('anthropic (JSON): the 1-hour share of cache writes is kept beside the total', async () => {
+    const row = await rowFor(
+      json({
+        usage: {
+          input_tokens: 10,
+          output_tokens: 4,
+          cache_creation_input_tokens: 900,
+          cache_creation: { ephemeral_5m_input_tokens: 300, ephemeral_1h_input_tokens: 600 }
+        }
+      }),
+      ctxWithSession()
+    )
+    expect(row).toMatchObject({ cacheWriteTokens: 900, cacheWrite1hTokens: 600 })
+  })
+
+  test('anthropic (SSE): the split rides on message_start through the delta merge', async () => {
+    const row = await rowFor(
+      sse(
+        `data: ${JSON.stringify({
+          type: 'message_start',
+          message: {
+            usage: {
+              input_tokens: 10,
+              cache_creation_input_tokens: 500,
+              cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 500 }
+            }
+          }
+        })}\n\n` + `data: ${JSON.stringify({ type: 'message_delta', usage: { output_tokens: 4 } })}\n\n`
+      ),
+      ctxWithSession()
+    )
+    expect(row).toMatchObject({ cacheWriteTokens: 500, cacheWrite1hTokens: 500, outputTokens: 4 })
+  })
+
+  test('a breakdown larger than the total is clamped, never counted twice', async () => {
+    const row = await rowFor(
+      json({
+        usage: {
+          input_tokens: 10,
+          output_tokens: 4,
+          cache_creation_input_tokens: 100,
+          cache_creation: { ephemeral_1h_input_tokens: 400 }
+        }
+      }),
+      ctxWithSession()
+    )
+    expect(row).toMatchObject({ cacheWriteTokens: 100, cacheWrite1hTokens: 100 })
+  })
+
+  test('a vendor without a TTL split records no 1-hour writes', async () => {
+    const row = await rowFor(json({ usage: { prompt_tokens: 20, completion_tokens: 7 } }), ctxWithSession())
+    expect(row?.cacheWrite1hTokens).toBe(0)
   })
 })

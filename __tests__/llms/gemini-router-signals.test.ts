@@ -2,11 +2,10 @@
  * Routing-signal extraction for the gemini surface.
  *
  * `/v1beta/models/*` is the one surface of the four that puts the body,
- * the system prompt, the thinking config and the tools under different
- * keys than Anthropic. While it had no reader, all of that read as
- * absent: `contents` was never counted so longContext always saw 0
- * tokens, `thinkingConfig` was invisible, and `functionDeclarations`
- * never reached hasTool.
+ * the system prompt and the tools under different keys than Anthropic.
+ * While it had no reader, all of that read as absent: `contents` was
+ * never counted, so the context-window gate always saw 0 tokens, and a
+ * `googleSearch` tool never reached the web-search gate.
  *
  * These go through `readSignals` rather than calling the reader
  * directly. Covering the surface-id → reader registration is what stops
@@ -15,8 +14,8 @@
 
 import { describe, expect, test } from 'bun:test'
 import { TokenizerRegistry } from '../../src/llms/registry/tokenizer'
-import { readSignals } from '../../src/llms/scenario-router/surface-signals'
-import type { RouterRequestBody } from '../../src/llms/scenario-router/types'
+import { readSignals } from '../../src/llms/router/surface-signals'
+import type { RouterRequestBody } from '../../src/llms/router/types'
 
 const GEMINI_PATH = '/v1beta/models/gemini-3-pro:generateContent'
 
@@ -121,72 +120,7 @@ describe('tokenize — counting contents[]', () => {
   })
 })
 
-describe('thinking / effort — generationConfig.thinkingConfig', () => {
-  const thinkingConfig = (config: Record<string, unknown>, key = 'generationConfig') =>
-    signals({ [key]: { thinkingConfig: config } })
-
-  test('thinkingLevel maps straight onto effort', () => {
-    expect(thinkingConfig({ thinkingLevel: 'high' })).toMatchObject({ thinking: true, effort: 'high' })
-    expect(thinkingConfig({ thinkingLevel: 'low' })).toMatchObject({ thinking: true, effort: 'low' })
-  })
-
-  test('thinkingLevel: none is an explicit opt-out', () => {
-    expect(thinkingConfig({ thinkingLevel: 'none' })).toMatchObject({ thinking: false, effort: undefined })
-  })
-
-  test('thinkingBudget becomes effort through the same buckets as /v1/messages', () => {
-    expect(thinkingConfig({ thinkingBudget: 512 })).toMatchObject({ thinking: true, effort: 'low' })
-    expect(thinkingConfig({ thinkingBudget: 8192 })).toMatchObject({ thinking: true, effort: 'medium' })
-    expect(thinkingConfig({ thinkingBudget: 32_000 })).toMatchObject({ thinking: true, effort: 'high' })
-    expect(thinkingConfig({ thinkingBudget: 0 })).toMatchObject({ thinking: false, effort: undefined })
-  })
-
-  test('includeThoughts alone means thinking with no stated intensity', () => {
-    expect(thinkingConfig({ includeThoughts: true })).toMatchObject({ thinking: true, effort: undefined })
-  })
-
-  test('an unknown thinkingLevel still sets thinking', () => {
-    // So a value Google adds later does not silently fall to the default
-    // lane.
-    expect(thinkingConfig({ thinkingLevel: 'ultra' })).toMatchObject({ thinking: true, effort: undefined })
-  })
-
-  test('a value in the router effort vocabulary is taken even when ThinkLevel lacks it', () => {
-    expect(thinkingConfig({ thinkingLevel: 'max' })).toMatchObject({ thinking: true, effort: 'max' })
-    expect(thinkingConfig({ thinkingLevel: 'XHIGH' })).toMatchObject({ thinking: true, effort: 'xhigh' })
-  })
-
-  test('reads snake_case generation_config too', () => {
-    expect(thinkingConfig({ thinkingLevel: 'high' }, 'generation_config')).toMatchObject({
-      thinking: true,
-      effort: 'high'
-    })
-  })
-
-  test('no thinkingConfig means no thinking request', () => {
-    expect(signals({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] })).toMatchObject({
-      thinking: false,
-      effort: undefined
-    })
-  })
-})
-
-describe('toolNames / webSearch', () => {
-  test('returns functionDeclarations[].name in the vendor vocabulary', () => {
-    expect(
-      signals({
-        tools: [{ functionDeclarations: [{ name: 'search_web' }, { name: 'read_file' }] }]
-      }).toolNames
-    ).toEqual(['search_web', 'read_file'])
-  })
-
-  test('a built-in tool surfaces under its key, the only name hasTool can match', () => {
-    expect(signals({ tools: [{ googleSearch: {} }, { urlContext: {} }] }).toolNames).toEqual([
-      'googleSearch',
-      'urlContext'
-    ])
-  })
-
+describe('webSearch', () => {
   test('googleSearch sets webSearch', () => {
     expect(signals({ tools: [{ googleSearch: {} }] }).webSearch).toBe(true)
   })
@@ -202,7 +136,7 @@ describe('toolNames / webSearch', () => {
     expect(signals({ tools: [{ codeExecution: {} }] }).webSearch).toBe(false)
   })
 
-  test('empty when there are no tools', () => {
-    expect(signals({ contents: [] })).toMatchObject({ toolNames: [], webSearch: false })
+  test('false when there are no tools', () => {
+    expect(signals({ contents: [] }).webSearch).toBe(false)
   })
 })

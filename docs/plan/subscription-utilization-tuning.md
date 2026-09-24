@@ -1,5 +1,7 @@
 # Subscription Utilization Tuning（Router 使用率の可視化と自動調整）
 
+> **置き換え済み（2026-09）:** 本書のルーティング設計はティアマップ（要求ティア → プロバイダのティアエイリアス）に置き換えられた。現行の設計は [quota-and-tier-routing.md](./quota-and-tier-routing.md) を参照。
+
 Status: Planning
 
 ## 目的

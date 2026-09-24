@@ -75,10 +75,15 @@ const SHARED_VOCABULARY = new Set([
   'providers.rail.oauth',
   'routing.chain.modePassthroughLabel',
   'routing.chain.modeRoutedLabel',
-  'routing.common.laneAgent',
-  'routing.common.laneSubagent',
   'routing.common.modePassthrough',
   'routing.common.modeRouted',
+  // The four Claude families, as the tier map's group names. They are the
+  // words the router reads out of a model name, and the same words stand
+  // in every route's tier pill beside them.
+  'routing.tiers.tierFable',
+  'routing.tiers.tierHaiku',
+  'routing.tiers.tierOpus',
+  'routing.tiers.tierSonnet',
   'settings.access.badgeConfigured',
   'settings.access.guardAccessTitle',
   'settings.access.issueNamePlaceholder',

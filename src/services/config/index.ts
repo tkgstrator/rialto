@@ -14,7 +14,6 @@ export {
   deleteProviderByName,
   getProviders,
   setModelEnabled,
-  setModelManualTier,
   setModelReasoningEffort,
   upsertProvider
 } from './crud'

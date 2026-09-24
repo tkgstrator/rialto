@@ -166,8 +166,8 @@ export function TokenDetail() {
 
   useEffect(() => {
     api
-      .get<{ profiles: { key: string }[] }>('/router-preferences/profiles')
-      .then((res) => setProfiles(res.profiles))
+      .getTierProfiles()
+      .then(setProfiles)
       .catch(() => {
         // The picker falls back to "follow the endpoint", which is the
         // server's own default when profileKey is null.

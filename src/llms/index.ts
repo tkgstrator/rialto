@@ -16,12 +16,12 @@ export {
 } from './pipeline'
 export type { ResolvedProvider } from './registry/provider'
 export {
+  PASSTHROUGH_ROUTE,
   type RouterContext,
   type RouterRequest,
-  routeScenario,
-  type ScenarioType,
+  routeRequest,
   subscriptionKindOf
-} from './scenario-router'
+} from './router'
 // Re-export the transformer base + concrete types for callers that need
 // to compare names / endpoints.
 export { Transformer } from './transformers/base'

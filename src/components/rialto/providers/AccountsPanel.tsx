@@ -16,11 +16,20 @@
 
 import { cn } from 'cn'
 import { useTranslation } from 'react-i18next'
-import { Meter, Pill } from '@/components/rialto/primitives'
-import { fmtUntil } from '@/lib/rialto/format'
+import { Meter, Pill, RButton } from '@/components/rialto/primitives'
+import type { OverviewAccountUsage } from '@/lib/api-types'
+import { fmtUntil, fmtValueRatio } from '@/lib/rialto/format'
+import { fmtCost, fmtTokens } from '@/lib/sessions/format'
 import type { SeatKind } from '@/shared/plan-capacity'
 import { planLabel } from '@/shared/plan-label'
-import { type AccountQuota, accountLabel, type QuotaIndex, quotaForAccount } from './derive'
+import {
+  type AccountExtras,
+  type AccountExtrasIndex,
+  type AccountQuota,
+  accountLabel,
+  type QuotaIndex,
+  quotaForAccount
+} from './derive'
 import type { AuthStatus, SubAccountWire, SubscriptionWire } from './types'
 
 // Same three states the provider rail labels, so an account and its
@@ -66,16 +75,126 @@ function WindowLine({ row, now }: { row: AccountQuota; now: number }) {
 
 const DASH = '—'
 
+// One figure per cell, right-aligned mono, on the windows' label column so
+// the usage lines read as more rows of the same small table.
+function Figures({ label, cells }: { label: string; cells: { text: string; width: string; mute?: boolean }[] }) {
+  return (
+    <div className='mt-1.5 flex items-center gap-2'>
+      <span className='w-24 shrink-0 truncate text-[12px] text-muted-foreground'>{label}</span>
+      <span className='min-w-0 flex-1' />
+      {cells.map((cell) => (
+        <span
+          key={cell.width}
+          className={cn(
+            cell.width,
+            'shrink-0 text-right font-mono text-[12px] tabular-nums',
+            cell.mute ? 'text-muted-foreground' : ''
+          )}
+        >
+          {cell.text}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * What the account carried, at the models' API prices — "API equivalent",
+ * never a bill: a subscription has no per-token price. This week is the
+ * weekly window the bars above measure; 30 days sits against the plan's
+ * monthly fee, and the ratio of the two is the question an operator with
+ * several accounts asks — which plan earns its fee.
+ */
+function UsageLines({ usage, fee }: { usage: OverviewAccountUsage; fee: number | null }) {
+  const { t } = useTranslation()
+  return (
+    <>
+      <div className='mt-2.5 flex items-center gap-2 text-[12px] uppercase tracking-wider text-muted-foreground/60'>
+        <span className='w-24 shrink-0'>{t('providers.accounts.usageHeader')}</span>
+        <span className='min-w-0 flex-1' />
+        <span className='w-16 shrink-0 text-right'>{t('providers.accounts.usageTokens')}</span>
+        <span className='w-14 shrink-0 text-right'>{t('providers.accounts.usageCost')}</span>
+        <span className='w-12 shrink-0 text-right'>{t('providers.accounts.usageFee')}</span>
+        <span className='w-10 shrink-0 text-right'>×</span>
+      </div>
+      <Figures
+        label={t('providers.accounts.usageThisWeek')}
+        cells={[
+          { text: fmtTokens(usage.window.totalTokens), width: 'w-16' },
+          { text: fmtCost(usage.window.costUsd), width: 'w-14' },
+          { text: '', width: 'w-12' },
+          { text: '', width: 'w-10' }
+        ]}
+      />
+      <Figures
+        label={t('providers.accounts.usage30d')}
+        cells={[
+          { text: '', width: 'w-16' },
+          { text: fmtCost(usage.last30d.costUsd), width: 'w-14' },
+          { text: fee === null ? '–' : fmtCost(fee), width: 'w-12', mute: true },
+          { text: fmtValueRatio(usage.valueRatio), width: 'w-10' }
+        ]}
+      />
+    </>
+  )
+}
+
+/**
+ * Banked Codex resets: how many, and the one action on this page that acts
+ * on a single account. Only offered while the vendor would accept one — it
+ * reports 0 applicable while no window is spent — and never spent without
+ * the confirmation the screen shows first.
+ */
+function ResetLine({
+  credits,
+  locked,
+  onUse
+}: {
+  credits: NonNullable<AccountExtras['resetCredits']>
+  locked: boolean
+  onUse: () => void
+}) {
+  const { t } = useTranslation()
+  const applies = credits.applicable === null || credits.applicable > 0
+  return (
+    <div className='mt-2.5 flex items-center gap-2 border-t border-border/60 pt-2.5'>
+      <span className='w-24 shrink-0 text-[12px] text-muted-foreground'>{t('providers.accounts.resetCredits')}</span>
+      <span className='font-mono text-[12px] tabular-nums'>{credits.available}</span>
+      <span className='ml-auto'>
+        {credits.available === 0 ? (
+          <span className='text-[12px] text-muted-foreground/60'>{t('providers.accounts.resetNone')}</span>
+        ) : (
+          <RButton
+            variant='outline'
+            icon='ri-restart-line'
+            disabled={locked || !applies}
+            title={applies ? undefined : t('providers.accounts.resetNotApplicable')}
+            onClick={onUse}
+          >
+            {t('providers.accounts.resetUse')}
+          </RButton>
+        )}
+      </span>
+    </div>
+  )
+}
+
 function AccountRow({
   account,
   kind,
   quota,
-  now
+  extras,
+  now,
+  locked,
+  onUseReset
 }: {
   account: SubAccountWire
   kind: SeatKind
   quota: QuotaIndex
+  extras: AccountExtras | undefined
   now: number
+  locked: boolean
+  onUseReset: (account: SubAccountWire) => void
 }) {
   const { t } = useTranslation()
   const windows = quotaForAccount(quota, account.id)
@@ -94,6 +213,12 @@ function AccountRow({
       {windows.map((row) => (
         <WindowLine key={`${row.window}-${row.scope}`} row={row} now={now} />
       ))}
+      {extras === undefined || extras.usage === null ? null : (
+        <UsageLines usage={extras.usage} fee={account.monthlyPriceUsd} />
+      )}
+      {extras === undefined || extras.resetCredits === null ? null : (
+        <ResetLine credits={extras.resetCredits} locked={locked} onUse={() => onUseReset(account)} />
+      )}
       <div className='mt-2 flex items-center gap-2 text-[12px] text-muted-foreground'>
         {/* The rail translates this same enum; interpolating it raw here
             printed "認証 live" beside the rail's 稼働中. */}
@@ -109,11 +234,18 @@ function AccountRow({
 export function AccountsPanel({
   subscription,
   quota,
-  now
+  accounts: extrasIndex,
+  now,
+  locked,
+  onUseReset
 }: {
   subscription: SubscriptionWire | undefined
   quota: QuotaIndex
+  accounts: AccountExtrasIndex
   now: number
+  /** An edit, a save or another action is out: the reset waits. */
+  locked: boolean
+  onUseReset: (account: SubAccountWire) => void
 }) {
   const { t } = useTranslation()
   const accounts = subscription === undefined ? [] : subscription.accounts
@@ -130,7 +262,16 @@ export function AccountsPanel({
       ) : (
         <div className='px-2 pb-4'>
           {accounts.map((a) => (
-            <AccountRow key={a.id} account={a} kind={kind} quota={quota} now={now} />
+            <AccountRow
+              key={a.id}
+              account={a}
+              kind={kind}
+              quota={quota}
+              extras={extrasIndex.get(a.id)}
+              now={now}
+              locked={locked}
+              onUseReset={onUseReset}
+            />
           ))}
         </div>
       )}
