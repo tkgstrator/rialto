@@ -18,9 +18,7 @@ export type RouterRequestBody = {
   messages?: TokenizeMessage[]
   system?: TokenizeSystem
   tools?: TokenizeTool[]
-  thinking?: unknown
   metadata?: { user_id?: string }
-  output_config?: Record<string, unknown>
   [extra: string]: unknown
 }
 
