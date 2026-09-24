@@ -46,6 +46,9 @@ export interface AccountUsage {
   windowStart: string
   window: UsageFigures
   last30d: UsageFigures
+  // The plan's monthly price the ratio divides by, so a reader can show
+  // both sides of it. Null when the plan is unknown or free.
+  monthlyPriceUsd: number | null
   // 30-day API-equivalent cost over the plan's monthly price. Null when
   // either side is unknown.
   valueRatio: number | null
@@ -194,6 +197,7 @@ export async function usageByAccount(
         priceMap
       ),
       last30d,
+      monthlyPriceUsd: account.monthlyPriceUsd,
       valueRatio: valueRatioOf(last30d.costUsd, account.monthlyPriceUsd)
     })
   }

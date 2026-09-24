@@ -231,6 +231,7 @@ export interface OverviewAccountUsage {
   windowStart: string
   window: OverviewUsageFigures
   last30d: OverviewUsageFigures
+  monthlyPriceUsd: number | null
   valueRatio: number | null
 }
 
@@ -382,4 +383,19 @@ export interface RouterUtilizationResponse {
   perTarget: RouterUtilizationPerTargetRow[]
   perAccount: RouterUtilizationPerAccountRow[]
   suggestions: RouterUtilizationSuggestion[]
+}
+
+/** GET /api/subscriptions/accounts/{id}/reset-credits. Mirrors ResetCreditsResponse. */
+export interface ResetCreditsResponse {
+  credits: Array<{ id: string; grantedAt: string | null; expiresAt: string | null }>
+  /** How many OpenAI would accept right now — 0 while no window is spent. */
+  applicable: number | null
+}
+
+/** POST /api/subscriptions/accounts/{id}/reset-usage. Mirrors UseResetResponse. */
+export interface UseResetResponse {
+  spentCreditId: string
+  remaining: number
+  /** The follow-up usage poll answered, so routing already sees the reset. */
+  refreshed: boolean
 }

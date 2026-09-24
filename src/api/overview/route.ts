@@ -62,6 +62,7 @@ const AccountUsageSchema = z
     windowStart: z.string().nonempty(),
     window: UsageFiguresSchema,
     last30d: UsageFiguresSchema,
+    monthlyPriceUsd: z.number().nullable(),
     // 30-day API-equivalent cost over the plan's monthly price; null when
     // either is unknown.
     valueRatio: z.number().nullable()
