@@ -33,8 +33,8 @@ Status: Planning（2026-09-23 承認）
 | P2-2 | #530 | オープン | backfill の planner と seed のフック |
 | P2-3 | #531 | オープン | routing / 別名の API と純粋な選択器 |
 | P2-4 + P2-5 | #533 | draft | 切り替え（新 UI、`routeRequest`、旧 routing の削除）と scheduler の縮小 |
-| P2-6 | #534 | draft | docs と `CLAUDE.md`、`scenario-router/` → `router/` の改名 |
-| P2-7 | #535 | draft・release A 待ち | 縮退マイグレーション（ガード付き）、backfill の削除 |
+| P2-6 | 本 PR | draft | docs と `CLAUDE.md`、`scenario-router/` → `router/` の改名 |
+| P2-7 | 本 PR の次 | draft・release A 待ち | 縮退マイグレーション（ガード付き）、backfill の削除 |
 
 ### 計画からの変更
 

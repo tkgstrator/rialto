@@ -230,15 +230,17 @@ context gate. A `tool_result`'s array content is walked block by block, so an im
 document payload nested in a tool result weighs nothing — the same as a top-level image
 block; serialising it as text once made one screenshot count as a million tokens.
 
-**The chain is gone, not converted here.** The release that introduced the tier map converted
-every profile's old chain at `db seed`, once. The following release's migration
-(`20260925000000_drop_retired_routing_chain`) dropped `RouterPreferenceEntry`,
-`RoutingWeightChange`, the `ScenarioKey` / `RouterPreferenceKind` enums, `Model.manualTier` and
-the conversion's marker, together with the conversion itself. It refuses to run while a profile
-still holds a chain that was never converted — that is, when it is deployed straight over a
-build older than the converting release — and says how to recover: resolve the failed
-migration, start the converting release once, deploy again. Details:
-`docs/guides/migration-v3.md`.
+**The chain was converted once, at seed.** `db seed` runs
+`src/services/routing-migration/backfill-tier-routes.ts` for every profile whose
+`RouterPreferenceProfile.chainBackfilledAt` is unset, `live` first: the `default` / `agent`
+chain becomes each requested tier's routes and the provider aliases they need; the other
+scenarios' and the subagent lanes' entries are only counted in the log. A profile that fails
+to convert fails the seed, and `set -e` in `entrypoint.sh` stops the container rather than
+start it with that profile silently empty. `scripts/rebackfill-tier-routes.ts --profile <key>`
+clears one profile so the next seed converts it again. `RouterPreferenceEntry`,
+`RoutingWeightChange`, `ScenarioKey` and `Model.manualTier` are still in the schema, read only
+by the backfill (and `manualTier` by the alias candidate list), until a later release's
+contract migration drops them. Details: `docs/guides/migration-v3.md`.
 
 **There is no weekly drain guard on the request path.** Subscription providers run to their
 upstream limit and are rotated reactively; the quota gate reads the snapshot, not a drain
@@ -320,11 +322,12 @@ The schema is well past the three tables the first PR shipped; the column commen
 | Table | Notes |
 |-------|-------|
 | `Provider` | unique `name`, `apiBaseUrl`, `apiKey`, `authMode`, `apiStyle`, `enabled`. **No account is designated** — `activeSubscriptionAccountId` is gone (migration `20260910084500_drop_provider_active_subscription_account`); which SubAccount serves a request is decided per request, and "can this provider authenticate" is asked of its accounts as a set (`src/shared/subscription-credential.ts`). **There is no `transformer` column** — the chain is derived (see Transformer System) and the `transformer._disabledModels` the UI reads is synthesized from `Model.enabled` by `toWireTransformer` |
-| `Model` | FK to Provider with `onDelete: Cascade`, composite unique `(providerId, name)`, optional per-model `apiStyle` override. `enabled` is the per-model switch; `Provider.enabled` gates the whole provider above it. There is no manual tier override: a model's tier is what its name says, and a model whose name says none is reached through an alias set by hand |
+| `Model` | FK to Provider with `onDelete: Cascade`, composite unique `(providerId, name)`, optional per-model `apiStyle` override. `enabled` is the per-model switch; `Provider.enabled` gates the whole provider above it. `manualTier` is retired — nothing writes it; the backfill and the alias candidate list read it until the contract migration drops it |
 | `SubAccount` / `SubAccountUsage` / `SubAccountQuota` | subscription accounts, their observed windows (`SubAccountUsage` for the account picker, `SubAccountQuota` for the scheduler's quota snapshot), and Codex's banked resets (`resetCreditsAvailable`) |
-| `RouterPreferenceProfile` | a named profile (`live` is the default): `constraints` (JSONB, no DDL to add a knob) holds the four routing knobs |
+| `RouterPreferenceProfile` | a named profile (`live` is the default): `constraints` (JSONB, no DDL to add a knob) holds the four routing knobs; `chainBackfilledAt` marks the one-shot conversion of its old chain |
 | `TierRoute` | the tier map: `(profile, requestedTier, priority) → (provider, targetTier, enabled)`. A provider deletion cascades to its routes, and the apply layer counts them first and warns per profile / tier |
 | `ProviderTierAlias` | `(provider, tier) → model`, unique per provider and tier. A model deletion unsets the aliases naming it (cascade, counted and warned about); an unset alias leaves the routes through it skipped. **There is no `RouterSlot` table** (dropped by `20260910095324_drop_router_slot_and_routing_preset`, together with `RoutingPreset`) |
+| `RouterPreferenceEntry` / `RoutingWeightChange` | retired: the per-scenario chain, now read only by the backfill, and the scheduler's weight log, written by nothing. Both are dropped by a later release's contract migration |
 | `InboundSurfaceConfig` | one row per surface: `routingMode` + `profileKey` + `deniedTargets` |
 | `AccessToken` | issued `/v1/*` credentials — sha256 only, optional surface and routing-profile scope |
 | `Session` / `Message` / `RequestLog` / `UsageSnapshot` | the archive behind Activity and Overview. `RequestLog.scenario` stores the route (requested tier or `passthrough`); `subAccountId` the subscription account that served the request (not a foreign key, like `accessTokenId`), which is what lets `src/services/account-usage-service.ts` price each account's traffic at API rates for Overview and the provider pages; `cacheWrite1hTokens` the 1-hour-TTL share of the cache writes, priced at 2× input against 1.25× for 5 minutes (`src/services/cost-service.ts`) |
@@ -395,7 +398,7 @@ Database tooling (`bun run`, from the repo root — there is no `packages/`):
 - `db:migrate:deploy` — apply existing migrations (production / CI).
 - `db:migrate:test` — apply them to `rialto_test`. **Separate database; CI fails without it.**
 - `db:reset` — drop and recreate the schema (destructive).
-- `db:seed` — `src/prisma/seed.ts`; idempotent, creates the `live` preference profile (no routes until the operator adds them). No slot rows — there is no such table — and no placeholder Providers.
+- `db:seed` — `src/prisma/seed.ts`; idempotent, creates the `live` preference profile (no routes until the operator adds them), then converts every profile's old chain into the tier map once (`backfillTierRoutes`, marked on `chainBackfilledAt`). A conversion failure fails the seed on purpose. No slot rows — there is no such table — and no placeholder Providers.
 - `db:seed:demo` — `scripts/seed-demo-data.ts`; dev-only demo data for every screen (traffic, tier aliases and tier maps, quota, tokens). Rows it owns carry a `demo-` id and `-- --clean` removes them; the demo `cost-first` profile is rewritten on every run; live config (tier aliases, the `live` tier map, surface modes, an account's quota) is written only while unset. Never wired into `db:seed`. See `docs/guides/demo-data.md`.
 - `db:studio` — open Prisma Studio.
 

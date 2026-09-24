@@ -436,13 +436,7 @@ Refresh 時）に、`defaultEnabledModels` のうち名前がそのティアを�
 
 ### 9-3. backfill が変換するもの
 
-移行は 2 つのリリースで進んだ。ティアマップを入れたリリース（以下 release A）が旧チェーンを
-変換し、次のリリース（release B）が旧テーブルを変換処理ごと消した（§9-6）。以下は release A の
-変換の記録である。コードは release B で削除され、git の履歴（`src/services/routing-migration/`）
-にだけ残る。release A より前のビルドから上げるときは、**必ず release A を一度起動してから**
-release B 以降に上げること。
-
-**いつ走るか。** release A の `db seed`（`src/prisma/seed.ts`）が
+**いつ走るか。** `db seed`（`src/prisma/seed.ts`）が
 `src/services/routing-migration/backfill-tier-routes.ts` を呼ぶ。コンテナでは `entrypoint.sh` が
 `migrate deploy` の後に毎回 `db seed` を流すので、新しいイメージの初回起動で走る（ローカルでは
 `bun run db:seed`）。`RouterPreferenceProfile.chainBackfilledAt` の印でプロファイルごとに
@@ -485,35 +479,30 @@ ON にしたもの、変換しなかったレーンの件数 — は、すべて
 - **ペースによるティアの拡大。** 偽の 429 を塞いだ時点ですでに呼んでいなかった。
 - **scheduler の重み。** 変換する対象ではなく、計算そのものが無くなった（§9-2）。
 
-### 9-5. やり直すとき（release A でロールバック中に編集した場合）
+### 9-5. やり直すとき（ロールバック中に編集した場合）
 
-release A の間は、旧イメージに戻しても同じ DB で動いた（マイグレーションが追加だけだったため）。
-ただしその間の Routing 画面の編集は旧チェーン（`RouterPreferenceEntry`）にしか入らないので、
-release A に戻す前に `scripts/rebackfill-tier-routes.ts --profile <key>` でそのプロファイルの
-ルートを消して印を外し、次の `db seed` で変換し直していた。このスクリプトも release B で消えた。
-
-**release B 以降は、release A より前のイメージにも release A 自身にも戻せない。** 旧チェーンの
-テーブルと変換の印の列が無いので、release A の seed が止まる。戻す必要があるなら、release B を
-入れる前に取った DB のダンプから戻す。
-
-### 9-6. 旧テーブルを消したリリース（release B）
-
-release B のマイグレーション `20260925000000_drop_retired_routing_chain` が、旧チェーン
-（`RouterPreferenceEntry`）・`RoutingWeightChange`・`ScenarioKey` / `RouterPreferenceKind` の enum・
-`Model.manualTier`・変換の印（`RouterPreferenceProfile.chainBackfilledAt`）を消し、変換処理と
-再変換スクリプトも削除した。モデルのティアは名前だけで決まる。系列名を持たないモデル（Codex の
-`gpt-*` など）は、プロバイダのページで手でエイリアスにする。
-
-**ガード。** マイグレーションは最初に、チェーンを持つのに変換の印が無いプロファイルを探し、
-あれば例外で止まる。release A を飛ばして release A より前のビルドから直接上げた場合だけ起きる。
-DDL より前に止まるので、何も消えていない。Prisma は失敗したマイグレーションとして記録するので、
-次の手順で戻す:
+印の付いたプロファイルは二度と変換されない。一方、旧イメージに戻している間の Routing 画面の編集は
+旧チェーン（`RouterPreferenceEntry`）にしか入らない。そのため**ロールバック中は Routing を
+編集しない**のが運用上の決まりである。やむを得ず編集したら、新しいイメージに戻す前に:
 
 ```shell
-bunx prisma migrate resolve --rolled-back 20260925000000_drop_retired_routing_chain
-# release A のイメージを一度起動する（entrypoint.sh の db seed がチェーンを変換する）
-# そのうえで release B 以降をもう一度デプロイする
+bun run scripts/rebackfill-tier-routes.ts --profile <key>
+bun run db:seed        # コンテナなら、次の起動で entrypoint.sh が流す
 ```
+
+スクリプトはそのプロファイルの `TierRoute` を消して印を外すだけで、次の `db seed` が旧チェーンから
+変換し直す。エイリアスは触らない — backfill は既存のエイリアスを上書きしないので、その間に
+プロバイダのページで変えたエイリアスも保たれる。
+
+### 9-6. 旧テーブルが消えるのは次のリリース
+
+この移行は expand / contract の 2 段で進める。いまのリリースは追加だけで、旧チェーン
+（`RouterPreferenceEntry`）・`RoutingWeightChange`・`ScenarioKey` / `RouterPreferenceKind` の enum・
+`Model.manualTier`・印の `chainBackfilledAt` はスキーマに残っている（backfill とエイリアスの候補
+一覧はまだ `Model.manualTier` を読む。画面と PATCH からはすでに消えた）。後のリリース（P2-7）の
+縮退マイグレーションがこれらを backfill と再変換スクリプトごと削除する。計画上、そのリリースは
+ティアマップのリリースが本番で一度起動し、全プロファイルに印が付いてから出す — 旧チェーンを
+変換する機会を飛ばさないためである。
 
 ---
 
