@@ -41,8 +41,11 @@ import { getPrismaClient } from '../db/client'
 import { AuthMode, type Prisma, type PrismaClient } from '../generated/prisma/client'
 import { logger } from '../logger'
 import type { SubscriptionRefreshResponse } from '../schemas/api/subscriptions'
+import { clearAccountExhaustion, clearModelExhaustion, isAccountExhausted, modelMarksFor } from './failover-state'
+import { republishRoutingSnapshot } from './routing-scheduler'
 import { refreshQuotaSnapshots } from './routing-scheduler/collector'
-import { recordPerAccountUsage } from './subaccount-usage-store'
+import { accountHasHardLimitHit } from './session-account-router'
+import { getPerAccountUsage, recordPerAccountUsage } from './subaccount-usage-store'
 import {
   getSubAccountTokensForProvider,
   type ProfileSyncScope,
@@ -68,9 +71,77 @@ function coalesce(
   return run
 }
 
+// Drop the in-process exhaustion marks a fresh reading contradicts.
+//
+// A 429 marks its account out until the window it hit resets
+// (`chain-failover.ts` `tryRotateAccount`), and on a weekly window that
+// can be days. Nothing else ever lifts the mark early, so an account the
+// vendor reset — a banked reset spent from the Codex app or `/limit-reset`,
+// or a limit the vendor lifted for everyone — stayed behind its peers until
+// the original reset time. The operator's Refresh is where that is
+// noticed, so it is where the marks are reconsidered.
+//
+// Only accounts whose upstream call succeeded are judged, and each mark
+// against the windows that bind for it, with the picker's own predicate:
+//   - an account mark goes when no account-wide window is spent;
+//   - a model mark goes when some freshly read account on its provider
+//     can serve that model, per-model windows (Fable's weekly) included.
+// Provider marks are left alone: they come from `insufficient_quota`, an
+// api_key spend cap no subscription reading can speak for, and expire on
+// their own short cooldown.
+async function releaseRecoveredMarks(
+  fresh: { claude: readonly { subAccountId: string }[]; codex: readonly { subAccountId: string }[] },
+  prisma: PrismaClient
+): Promise<void> {
+  const accounts = [
+    ...fresh.claude.map((c) => ({ id: c.subAccountId, kind: 'claude' as const })),
+    ...fresh.codex.map((x) => ({ id: x.subAccountId, kind: 'codex' as const }))
+  ]
+  if (accounts.length === 0) return
+  const ids = accounts.map((a) => a.id)
+  const [usageById, owners] = await Promise.all([
+    getPerAccountUsage(ids, prisma),
+    prisma.subAccount.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, provider: { select: { name: true } } }
+    })
+  ])
+  const providerOf = new Map(owners.map((o) => [o.id, o.provider.name]))
+  const now = Date.now()
+  const canServe = (account: { id: string; kind: 'claude' | 'codex' }, model: string | undefined): boolean => {
+    const usage = usageById.get(account.id)
+    return usage === undefined || !accountHasHardLimitHit(usage, account.kind, model, now)
+  }
+
+  for (const account of accounts) {
+    if (isAccountExhausted(account.id) && canServe(account, undefined)) {
+      clearAccountExhaustion(account.id)
+      logger.info(
+        { subAccountId: account.id },
+        '[subscriptions] refresh: account is under its limits again; mark lifted'
+      )
+    }
+  }
+
+  const providers = new Set(owners.map((o) => o.provider.name))
+  for (const provider of providers) {
+    const members = accounts.filter((account) => providerOf.get(account.id) === provider)
+    for (const model of modelMarksFor(provider)) {
+      if (!members.some((account) => canServe(account, model))) continue
+      clearModelExhaustion(provider, model)
+      logger.info({ provider, model }, '[subscriptions] refresh: model is servable again; mark lifted')
+    }
+  }
+}
+
 // Land a forced poll in the two current-state tables. An account whose
 // upstream call failed is left out: its last cached value can still be in
 // the poll result, and writing it would stamp a stale reading as fresh.
+//
+// Then make routing read it now rather than at the next scheduler tick:
+// lift the marks the reading contradicts and publish a snapshot computed
+// after the write. Awaited, so the response a caller gets describes the
+// routing that is already in effect.
 async function landFreshUsage(usage: AccountUsagePoll, prisma: PrismaClient): Promise<void> {
   const usageFailed = new Set(usage.failed)
   const fresh = {
@@ -82,6 +153,8 @@ async function landFreshUsage(usage: AccountUsagePoll, prisma: PrismaClient): Pr
   if (quota.failed > 0) {
     logger.warn(quota, '[subscriptions] refresh: SubAccountQuota upsert failed for some accounts')
   }
+  await releaseRecoveredMarks(fresh, prisma)
+  await republishRoutingSnapshot()
 }
 
 interface RefreshPlan {
