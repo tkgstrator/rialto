@@ -7,66 +7,64 @@
  * even lax upstreams (openai chat) see a field the wire format
  * doesn't model.
  *
- * These tests exercise routeScenario directly with an inboundPath and
+ * These tests exercise routeRequest directly with an inboundPath and
  * assert `body.system` (the field the pipeline actually reads for
  * persona) is only touched on the Anthropic path. The active persona is
  * the top-level `ActivePersona` on the ConfigStore.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import pino from 'pino'
 import { ConfigStore } from '../../src/llms/registry/config'
 import { TokenizerRegistry } from '../../src/llms/registry/tokenizer'
-import { routeScenario } from '../../src/llms/scenario-router'
+import { routeRequest } from '../../src/llms/scenario-router'
 import type { RouterRequest } from '../../src/llms/scenario-router/types'
+import { __setTierProfilesForTests } from '../../src/llms/tier-router/runtime'
 import { __setSurfacesForTests } from '../../src/services/inbound-surface-service'
-import { __setPreferencesForTests } from '../../src/services/router-preference-service'
-import { profileWith } from './chain-fixture'
+import { mapWith, route } from './tier-fixture'
 
 const log = pino({ level: 'silent' })
+const tokenizers = new TokenizerRegistry(log)
 
-const PROVIDERS = [
-  {
-    name: 'anthropic',
-    auth_mode: 'api_key',
-    api_key: 'sk-x',
-    api_base_url: 'https://api.anthropic.com/v1/messages',
-    models: ['claude-sonnet-5']
-  }
-]
-
-async function runRouter(path: string | undefined, body: Record<string, unknown>): Promise<RouterRequest> {
-  const config = new ConfigStore({
-    Providers: PROVIDERS,
-    providers: PROVIDERS,
-    Personas: [{ id: 'p1', name: 'brief', prompt: 'You are terse.' }],
-    ActivePersona: 'p1'
-  })
-  const tokenizers = new TokenizerRegistry(log)
+beforeAll(async () => {
   await tokenizers.initialize()
+})
+
+const personaConfig = (activePersona: string): ConfigStore =>
+  new ConfigStore({
+    Personas: [{ id: 'p1', name: 'brief', prompt: 'You are terse.' }],
+    ActivePersona: activePersona
+  })
+
+async function runRouter(
+  path: string | undefined,
+  body: Record<string, unknown>,
+  config: ConfigStore = personaConfig('p1')
+): Promise<RouterRequest> {
   const req: RouterRequest = {
-    body: { ...body, model: 'anthropic,claude-sonnet-5' } as RouterRequest['body'],
+    body: { ...body, model: 'anthropic,claude-sonnet-5' },
     log,
     inboundPath: path
   }
-  await routeScenario(req, { config, tokenizers })
+  await routeRequest(req, { config, tokenizers })
   return req
 }
 
-// The router's behaviour depends on the surface's mode and the chain, so
+// The router's behaviour depends on the surface's mode and the map, so
 // the tests set both rather than inheriting whatever a fresh install
-// seeds. These cases describe the routed path.
+// seeds. All three surfaces are routed, so the OpenAI cases are held back
+// by the persona gate itself and not by the passthrough early return.
 beforeEach(() => {
-  __setSurfacesForTests({ 'anthropic-messages': 'routed' })
-  __setPreferencesForTests({ live: profileWith({ 'default.agent': ['anthropic,claude-sonnet-5'] }) })
+  __setSurfacesForTests({ 'anthropic-messages': 'routed', 'openai-chat': 'routed', 'openai-responses': 'routed' })
+  __setTierProfilesForTests({ live: mapWith({ sonnet: [route('anthropic', 'sonnet', 'claude-sonnet-5')] }) })
 })
 
 afterEach(() => {
   __setSurfacesForTests({})
-  __setPreferencesForTests(null)
+  __setTierProfilesForTests(null)
 })
 
-describe('routeScenario — persona gate', () => {
+describe('routeRequest — persona gate', () => {
   test('applies persona on /v1/messages (Anthropic inbound)', async () => {
     const req = await runRouter('/v1/messages', { messages: [{ role: 'user', content: 'hi' }] })
     expect(req.body.system).toBe('You are terse.')
@@ -74,11 +72,14 @@ describe('routeScenario — persona gate', () => {
 
   test('does NOT touch body.system on /v1/chat/completions (OpenAI inbound)', async () => {
     const req = await runRouter('/v1/chat/completions', { messages: [{ role: 'user', content: 'hi' }] })
+    // Routed, so the gate — not a skipped router — is what kept it out.
+    expect(req.route).toBe('sonnet')
     expect(req.body.system).toBeUndefined()
   })
 
   test('does NOT touch body.system on /v1/responses (OpenAI inbound)', async () => {
     const req = await runRouter('/v1/responses', { input: 'hi' })
+    expect(req.route).toBe('sonnet')
     expect(req.body.system).toBeUndefined()
   })
 
@@ -96,20 +97,7 @@ describe('routeScenario — persona gate', () => {
   })
 
   test('a persona id that matches nothing in the library is a no-op', async () => {
-    const config = new ConfigStore({
-      Providers: PROVIDERS,
-      providers: PROVIDERS,
-      Personas: [{ id: 'p1', name: 'brief', prompt: 'You are terse.' }],
-      ActivePersona: 'gone'
-    })
-    const tokenizers = new TokenizerRegistry(log)
-    await tokenizers.initialize()
-    const req: RouterRequest = {
-      body: { model: 'anthropic,claude-sonnet-5', messages: [{ role: 'user', content: 'hi' }] },
-      log,
-      inboundPath: '/v1/messages'
-    }
-    await routeScenario(req, { config, tokenizers })
+    const req = await runRouter('/v1/messages', { messages: [{ role: 'user', content: 'hi' }] }, personaConfig('gone'))
     expect(req.body.system).toBeUndefined()
   })
 })

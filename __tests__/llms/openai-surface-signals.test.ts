@@ -5,26 +5,29 @@
  *   - `readSignals` on its own — a pure function of (body, inboundPath),
  *     so each of the five signals can be pinned to the exact wire key it
  *     reads. A regression here names the signal it broke.
- *   - `routeScenario` end to end — the point of the exercise. Before the
- *     per-surface readers, an OpenAI caller marked `routed` still only
- *     ever classified as `default`, because none of the fields the other
- *     lanes test for exist under Anthropic's names.
+ *   - `routeRequest` end to end — the point of the exercise. The tier map
+ *     gates each route on two of these signals: the prompt's size against
+ *     the route's context window, and a web_search tool against whether
+ *     the route can run it. Neither exists under Anthropic's names on an
+ *     OpenAI caller, so without the per-surface readers both gates would
+ *     wave every OpenAI request through.
  *
  * The readers see the RAW inbound body on purpose. The endpoint
  * transformers that normalise these shapes run inside the pipeline,
  * which is after `buildRoutePlan` has already routed the request.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import pino from 'pino'
 import { ConfigStore } from '../../src/llms/registry/config'
 import { TokenizerRegistry } from '../../src/llms/registry/tokenizer'
-import { routeScenario } from '../../src/llms/scenario-router'
+import { routeRequest } from '../../src/llms/scenario-router'
 import { readSignals } from '../../src/llms/scenario-router/surface-signals'
 import type { RouterRequest, RouterRequestBody } from '../../src/llms/scenario-router/types'
+import { __setTierProfilesForTests } from '../../src/llms/tier-router/runtime'
 import { __setSurfacesForTests } from '../../src/services/inbound-surface-service'
-import { __setPreferencesForTests } from '../../src/services/router-preference-service'
-import { profileWith } from './chain-fixture'
+import type { TierProfileView } from '../../src/services/tier-route-service'
+import { mapWith, route } from './tier-fixture'
 
 const CHAT = '/v1/chat/completions'
 const RESPONSES = '/v1/responses'
@@ -183,8 +186,8 @@ describe('effort and thinking', () => {
   })
 
   test('the anthropic `thinking` field is not read on an OpenAI surface', () => {
-    // A body that would be a think-lane request on /v1/messages must not
-    // be one here — the field is not part of this wire format.
+    // A body that would be a thinking request on /v1/messages must not be
+    // one here — the field is not part of this wire format.
     expect(signals(CHAT, { thinking: { type: 'enabled' } }).thinking).toBe(false)
   })
 })
@@ -256,45 +259,39 @@ describe('the surfaces stay distinct', () => {
   })
 })
 
-// ─── End to end: the signals actually reach the lanes ──────────────────
+// ─── End to end: the signals actually reach the gates ─────────────────
 
 const log = pino({ level: 'silent' })
+const tokenizers = new TokenizerRegistry(log)
 
-const PROVIDERS = [
-  {
-    name: 'p',
-    auth_mode: 'api_key' as const,
-    api_key: 'sk-x',
-    api_base_url: 'https://example.invalid/v1/chat/completions',
-    models: ['fast', 'thinker', 'searcher', 'big']
-  }
-]
+beforeAll(async () => {
+  await tokenizers.initialize()
+})
 
-// One distinct model per lane so the assertion names the lane that won.
-// A small explicit threshold keeps the longContext case to a fixture the
-// eye can check rather than 60k tokens of lorem ipsum.
-const LANES = { default: 'p,fast', think: 'p,thinker', webSearch: 'p,searcher', longContext: 'p,big' }
+// The caller's model names no Claude family, so it asks for the "other"
+// tier. Three routes, one distinct model each, so the assertion names the
+// gate that decided: `fast` holds a short prompt and no web search,
+// `searcher` can search but holds no more, `big` holds anything.
+const ROUTES = mapWith({
+  other: [
+    route('p', 'haiku', 'fast', { hostsWebSearch: false, contextWindow: 500 }),
+    route('p', 'sonnet', 'searcher', { hostsWebSearch: true, contextWindow: 500 }),
+    route('p', 'opus', 'big', { hostsWebSearch: false, contextWindow: 1_000_000 })
+  ]
+})
 
-const chainOf = (agent: Partial<typeof LANES>) =>
-  profileWith(Object.fromEntries(Object.entries(agent).map(([scenario, target]) => [`${scenario}.agent`, [target]])), {
-    longContextThreshold: 500
-  })
-
-async function route(
+async function routeOn(
   path: string,
   body: Record<string, unknown>,
-  agent: Partial<typeof LANES> = LANES
+  map: TierProfileView = ROUTES
 ): Promise<RouterRequest> {
-  __setPreferencesForTests({ live: chainOf(agent) })
-  const config = new ConfigStore({ Providers: PROVIDERS, providers: PROVIDERS })
-  const tokenizers = new TokenizerRegistry(log)
-  await tokenizers.initialize()
-  const req: RouterRequest = { body: { model: 'caller,own', ...body }, log, inboundPath: path }
-  await routeScenario(req, { config, tokenizers })
+  __setTierProfilesForTests({ live: map })
+  const req: RouterRequest = { body: { ...body, model: 'caller,own' }, log, inboundPath: path }
+  await routeRequest(req, { config: new ConfigStore({}), tokenizers })
   return req
 }
 
-// Surface modes and the seeded chain live in module-scoped caches shared
+// Surface modes and the seeded map live in module-scoped caches shared
 // with every other test file in this process, so reset on both sides.
 beforeEach(() => {
   __setSurfacesForTests({ 'openai-chat': 'routed', 'openai-responses': 'routed' })
@@ -302,65 +299,58 @@ beforeEach(() => {
 
 afterEach(() => {
   __setSurfacesForTests({})
-  __setPreferencesForTests(null)
+  __setTierProfilesForTests(null)
 })
 
-describe('the lanes are reachable from an OpenAI surface', () => {
-  test('chat: reasoning_effort lands on the think lane', async () => {
-    const req = await route(CHAT, {
-      messages: [{ role: 'user', content: 'hi' }],
-      reasoning_effort: 'medium'
-    })
-    expect(req.scenarioType).toBe('think')
-    expect(req.body.model).toBe('p,thinker')
-  })
-
-  test('responses: reasoning.effort lands on the think lane', async () => {
-    const req = await route(RESPONSES, { input: 'hi', reasoning: { effort: 'medium' } })
-    expect(req.scenarioType).toBe('think')
-    expect(req.body.model).toBe('p,thinker')
-  })
-
-  test("reasoning_effort 'none' stays on default", async () => {
-    // The explicit opt-out. A think lane that swallowed this would put
-    // the cheapest traffic on the most expensive slot.
-    const req = await route(CHAT, {
-      messages: [{ role: 'user', content: 'hi' }],
-      reasoning_effort: 'none'
-    })
-    expect(req.scenarioType).toBe('default')
+describe('the gates see an OpenAI caller', () => {
+  test('an ordinary request goes to the first route, the rest behind it', async () => {
+    const req = await routeOn(CHAT, { messages: [{ role: 'user', content: 'hi' }] })
     expect(req.body.model).toBe('p,fast')
+    expect(req.resolvedFallbacks).toEqual(['p,searcher', 'p,big'])
   })
 
-  test('chat: a web_search function lands on the webSearch lane', async () => {
-    const req = await route(CHAT, {
+  test('chat: a web_search function skips the routes that cannot run it', async () => {
+    const req = await routeOn(CHAT, {
       messages: [{ role: 'user', content: 'hi' }],
       tools: [{ type: 'function', function: { name: 'web_search' } }]
     })
-    expect(req.scenarioType).toBe('webSearch')
+    expect(req.body.model).toBe('p,searcher')
+    expect(req.resolvedFallbacks).toEqual([])
+  })
+
+  test('chat: `web_search_options` alone is a web search request too', async () => {
+    const req = await routeOn(CHAT, {
+      messages: [{ role: 'user', content: 'hi' }],
+      web_search_options: { search_context_size: 'medium' }
+    })
     expect(req.body.model).toBe('p,searcher')
   })
 
-  test('responses: the hosted web_search tool lands on the webSearch lane', async () => {
-    const req = await route(RESPONSES, { input: 'hi', tools: [{ type: 'web_search' }] })
-    expect(req.scenarioType).toBe('webSearch')
+  test('responses: the hosted web_search tool skips the routes that cannot run it', async () => {
+    const req = await routeOn(RESPONSES, { input: 'hi', tools: [{ type: 'web_search' }] })
     expect(req.body.model).toBe('p,searcher')
   })
 
-  test('responses: a long `input` lands on the longContext lane', async () => {
+  test('a web_search request no route can run is refused, not sent without its tool', async () => {
+    const noSearch = mapWith({ other: [route('p', 'haiku', 'fast', { hostsWebSearch: false })] })
+    const req = await routeOn(RESPONSES, { input: 'hi', tools: [{ type: 'web_search' }] }, noSearch)
+    expect(req.body.model).toBe('caller,own')
+    expect(req.routingRefusal).toContain('web_search')
+  })
+
+  test('responses: a long `input` skips the routes too small to hold it', async () => {
     // The signal that was structurally unreachable: token counting read
     // `body.messages`, which a Responses caller never sends.
-    const req = await route(RESPONSES, { input: 'lorem ipsum dolor sit amet '.repeat(300) })
+    const req = await routeOn(RESPONSES, { input: 'lorem ipsum dolor sit amet '.repeat(300) })
     expect(req.tokenCount).toBeGreaterThan(500)
-    expect(req.scenarioType).toBe('longContext')
     expect(req.body.model).toBe('p,big')
   })
 
-  test('chat: a long tool manifest counts toward the threshold', async () => {
+  test('chat: a long tool manifest counts toward the context gate', async () => {
     // `tools[].function` had to be remapped onto TokenizeTool for this;
     // read verbatim, none of its three fields lines up and a big manifest
     // weighed nothing.
-    const req = await route(CHAT, {
+    const req = await routeOn(CHAT, {
       messages: [{ role: 'user', content: 'hi' }],
       tools: [
         {
@@ -374,49 +364,13 @@ describe('the lanes are reachable from an OpenAI surface', () => {
       ]
     })
     expect(req.tokenCount).toBeGreaterThan(500)
-    expect(req.scenarioType).toBe('longContext')
-  })
-
-  test('chat: a high effort escalates to longContext when no think lane is set', async () => {
-    // `isHeavyRequest` grades high/xhigh/max as heavy. With a think
-    // primary configured the think lane outranks it — see the next test —
-    // so this drops that lane to isolate the effort mapping.
-    const req = await route(
-      CHAT,
-      { messages: [{ role: 'user', content: 'hi' }], reasoning_effort: 'high' },
-      {
-        default: LANES.default,
-        longContext: LANES.longContext
-      }
-    )
-    expect(req.scenarioType).toBe('longContext')
     expect(req.body.model).toBe('p,big')
   })
 
-  test("chat: a 'minimal' effort suppresses the opus-tier escalation", async () => {
-    // Folded onto `low`, which `isHeavyRequest` reads as explicitly
-    // light — so an opus-named model no longer drags the request into
-    // longContext. Mapping it to undefined instead would let the tier win.
-    const req = await route(
-      CHAT,
-      { model: 'caller,claude-opus-4-7', messages: [{ role: 'user', content: 'hi' }], reasoning_effort: 'minimal' },
-      { default: LANES.default, longContext: LANES.longContext }
-    )
-    expect(req.scenarioType).toBe('default')
-  })
-
-  test('the think lane outranks the effort escalation, as it does on Anthropic', async () => {
-    // Consequence of OpenAI having ONE reasoning knob where Anthropic has
-    // two: any non-'none' effort is also a reasoning opt-in, so a
-    // high-effort request cannot reach longContext while a think primary
-    // exists. There is no OpenAI field that says "work hard, don't think".
-    const req = await route(CHAT, { messages: [{ role: 'user', content: 'hi' }], reasoning_effort: 'high' })
-    expect(req.scenarioType).toBe('think')
-  })
-
-  test('an ordinary request still lands on default', async () => {
-    const req = await route(CHAT, { messages: [{ role: 'user', content: 'hi' }] })
-    expect(req.scenarioType).toBe('default')
-    expect(req.body.model).toBe('p,fast')
+  test('a prompt no route can hold is refused on an OpenAI surface too', async () => {
+    const small = mapWith({ other: [route('p', 'haiku', 'fast', { contextWindow: 500 })] })
+    const req = await routeOn(RESPONSES, { input: 'lorem ipsum dolor sit amet '.repeat(300) }, small)
+    expect(req.body.model).toBe('caller,own')
+    expect(req.routingRefusal).toContain('context window')
   })
 })
