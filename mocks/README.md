@@ -69,8 +69,8 @@ node_modules/remixicon/
 
 | ファイル | ビュー | 統合元 |
 |---|---|---|
-| `routing.html` | Chain | RouterPreferences / TierEditor / RouterUtilization |
-| `routing-passthrough.html` | Chain (passthrough) | — |
+| `routing.html` | Tier map | RouterPreferences / TierEditor / RouterUtilization |
+| `routing-passthrough.html` | Tier map (passthrough) | — |
 
 ### Providers
 
