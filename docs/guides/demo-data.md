@@ -1,7 +1,7 @@
 # Demo data
 
 `bun run db:seed:demo` fills a development install with enough data that
-all five screens render something real: providers and models, tier
+all six screens render something real: providers and models, tier
 aliases and tier maps, subscription quota, access tokens, and a month of
 traffic behind Activity and Overview.
 

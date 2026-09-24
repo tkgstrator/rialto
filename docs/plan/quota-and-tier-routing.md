@@ -32,9 +32,9 @@ Status: Planning（2026-09-23 承認）
 | P2-1 | #529 | オープン | 拡張マイグレーション、domain schema、サービス、`ensurePresetAliases` |
 | P2-2 | #530 | オープン | backfill の planner と seed のフック |
 | P2-3 | #531 | オープン | routing / 別名の API と純粋な選択器 |
-| P2-4 + P2-5 | 1 本の PR | draft | 切り替え（新 UI、`routeRequest`、旧 routing の削除）と scheduler の縮小 |
-| P2-6 | 本 PR | — | docs と `CLAUDE.md` |
-| P2-7 | — | release A 待ち | 縮退マイグレーション（ガード付き）、backfill の削除 |
+| P2-4 + P2-5 | #533 | draft | 切り替え（新 UI、`routeRequest`、旧 routing の削除）と scheduler の縮小 |
+| P2-6 | 本 PR | draft | docs と `CLAUDE.md`、`scenario-router/` → `router/` の改名 |
+| P2-7 | 本 PR の次 | draft・release A 待ち | 縮退マイグレーション（ガード付き）、backfill の削除 |
 
 ### 計画からの変更
 
@@ -43,8 +43,8 @@ Status: Planning（2026-09-23 承認）
 - **Overview の failover の欄は、weight の行の代わりに認証失敗の行を出す。** weight が無くなったので、429 で拒否されたアカウントと、資格情報が通らなくなったアカウント（`authStatus = 'invalid'`、有効なプロバイダのものだけ）を並べる（`overview-service.ts` の `buildFailover`）。
 - **プロバイダのページの別名ピッカーは、名前で当たった候補だけでなく、そのプロバイダのモデルをすべて出す。** 候補は `tierOf` でモデル名から tier を引くので、Claude の系列名を持たない Codex / OpenAI のモデルは候補に一つも出ず、そのままでは別名を付けられないため。
 - **昇格はピッカーで選ぶことで行う。** 別の「昇格」ボタンは無い。ピッカーで選んでページを保存すると `PUT /api/providers/{name}/tier-aliases/{tier}` が別名をセットし、同じトランザクションでモデルを有効にする。
-- **別名の PUT は snapshot を作り直さない。** 計画の API 表にあった `republishRoutingSnapshot` は呼んでいない。モデルが新たに有効になったときだけ、設定ファイルへの同期と LLM context のリセットを行う。新しく有効になったモデルは次の tick まで snapshot に載らないが、snapshot に無い対象は quota で止めない（`tier-router/runtime.ts`）ので、昇格した直後のリクエストもそのモデルに向く。
-- **`scenario-router/` から `router/` への `git mv` は P2-6 に入れていない。** P2-6 はドキュメントだけの PR にしたため。`src/llms/scenario-router.ts` と `src/llms/scenario-router/` は旧名のまま。
+- **P2-6 には `scenario-router/` から `router/` への `git mv` も入れた。** `src/llms/scenario-router.ts` は `src/llms/router.ts` に、`src/llms/scenario-router/` は `src/llms/router/` になった（テストの `scenario-router.test.ts` も `router.test.ts`）。
+- **サブエージェントタグは passthrough でも除去する。** 旧実装は passthrough の判定で先に return していたため、タグが上流に届き、そのリクエストはメインエージェントとして記録されていた。`routeRequest` の最初で除去・記録するようにした。
 - **`Model.manualTier` は P2-7 まで読まれている。** UI と PATCH からは外したが、backfill（`plan-tier-routes.ts`）と別名の候補一覧（`tier-alias-service.ts` の `modelTierOf`）が、手で設定された tier を名前からの推定より優先して読む。列は P2-7 の縮退マイグレーションで消える。
 
 ---
