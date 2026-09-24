@@ -11,15 +11,15 @@
 ## ✨ 功能
 
 - **四个入口面（inbound surface）** — Anthropic Messages（`/v1/messages`）、OpenAI Chat Completions、OpenAI Responses 以及 Gemini `generateContent`。一个入口面所需的全部知识都集中在一个描述符里，因此四个面共享同一套认证、错误信封、流式传输与请求历史。
-- **链式路由** — 每个场景（`default`、`think`（计划模式）、`longContext`、`webSearch`）× 每条通道（`agent` / `subagent`）各有一条有序的 `provider,model` 链。选择器沿链遍历，跳过已耗尽或已关闭的目标，链的其余部分就是兜底列表。
+- **层级路由** — 每个路由配置一张层级映射表：把调用方请求的层级（从模型名读出的 `fable` / `opus` / `sonnet` / `haiku`，或 `other`）映射到一组有序的路线，每条路线点名一个提供商及其上的一个层级。它对应哪个模型由提供商的*层级别名*决定，因此新模型发布时只需挪动一个别名，而不必改动每条路线。第一条能接下请求的路线负责处理，其余构成兜底列表。
 - **直通（passthrough）** — 或者让调用方自己选：处于 passthrough 模式的入口面（或单个访问令牌）会把调用方自己的 `body.model` 原样送往上游。
-- **带账户轮换的故障切换** — 收到 429 时先轮换到对等的订阅账户，账户耗尽后再继续遍历链的其余部分。链的顺序按你写的执行，包括订阅型 primary 落到 api_key 条目。
+- **带账户轮换的故障切换** — 收到 429 时先轮换到对等的订阅账户，账户耗尽后再继续遍历该层级其余的路线。映射表的顺序按你写的执行，包括订阅型路线落到 api_key 路线。
 - **人格** — 在不修改 Claude Code 的前提下，为每个走路由的 `/v1/messages` 请求追加一段命名的系统提示。人格库的管理和当前人格的选择都在 Settings → Personas。
 - **多提供商支持** — 连接 API Key 型提供商（Anthropic、OpenAI、DeepSeek、Gemini、Groq、OpenRouter 等）或订阅型提供商（Claude Code OAuth、OpenAI Codex），一个订阅型提供商可挂多个账户。
-- **订阅监控** — 每个账户的速率限制窗口，可在 Subscriptions 列表随时刷新，路由器读取的耗尽状态也来自这里。
-- **用量与成本** — Overview 显示今天、本周、本月的支出；Activity → Usage 显示按日或按周的各提供商费用，以及各账户的订阅用量。
+- **订阅监控** — 每个账户的速率限制窗口，可在 Subscriptions 列表随时刷新，路由器读取的耗尽状态也来自这里。刷新会立即作用于路由；Codex 账户积攒的速率限制重置可在其提供商页面上使用。
+- **用量与成本** — Overview 显示今天、本周、本月的支出；Activity → Usage 显示按日或按周的各提供商费用，以及各账户的订阅用量。Overview 与各订阅型提供商页面还会按账户显示其流量若按 API 价格计算的金额（本周与最近 30 天）。
 - **请求历史** — 浏览过去的会话，包含每个请求的统计信息和已归档的对话记录。
-- **签发式访问令牌** — 可单独吊销和轮换、可按请求归因，并可限定到若干入口面和一条路由配置链。
+- **签发式访问令牌** — 可单独吊销和轮换、可按请求归因，并可限定到若干入口面和一个路由配置。
 - **Web 管理界面** — 完整的浏览器端配置管理，提供英文、日文和中文；无需手动编辑 JSON。
 - **转换器管道** — 转换链由提供商的 API 风格与认证模式推导而来，因此界面上展示的就是实际运行的。
 - **Docker 优先部署** — 包含 PostgreSQL 和 Redis 的一键 `docker compose up -d`。
@@ -31,8 +31,8 @@ Web 界面（默认在端口 **3456** 提供服务）让你全面掌控网关的
 | 页面 | 路由 | 用途 |
 |------|------|------|
 | **Overview** | `/overview` | 一览支出、订阅配额窗口，以及每个入口面的请求数 / 错误数 |
-| **Routing** | `/routing` | 每个入口面的路由模式与配置链、按场景与通道展示的链条、配置链的约束，以及直通入口面允许点名的目标 |
-| **Providers** | `/providers` | 两个列表——`/providers/subscriptions` 与 `/providers/api-keys`——外加用于添加的 `/providers/connect`，以及查看模型、价格、上下文窗口、连接测试和只读推导请求形状的 `/providers/<name>` |
+| **Routing** | `/routing` | 每个入口面的路由模式与路由配置、该配置的层级映射表（每个请求层级的路线、各路线此刻到达的模型及其配额状态）、配置的约束，以及直通入口面允许点名的目标 |
+| **Providers** | `/providers` | 两个列表——`/providers/subscriptions` 与 `/providers/api-keys`——外加用于添加的 `/providers/connect`，以及查看层级别名、模型、价格、上下文窗口、连接测试和只读推导请求形状的 `/providers/<name>` |
 | **Access tokens** | `/access-tokens` | 签发、限定范围、轮换和吊销客户端在 `/v1/*` 上使用的令牌 |
 | **Activity** | `/activity` | 会话、逐请求日志（`/activity/requests`）、订阅用量（`/activity/usage`）与服务器日志（`/activity/logs`）|
 | **Settings** | `/settings` | Server、Access（管理访问：Cloudflare Access，以及它出故障时如何重新进入）、Logging、Personas、Status line、Advanced（配置文档、健康状态）|
@@ -59,7 +59,7 @@ curl -fsSL https://raw.githubusercontent.com/tkgstrator/rialto/master/compose.ya
 
 > **没有管理密钥。** 运行 Rialto 那台机器上的浏览器不受管理网关限制，远程管理访问经由 Cloudflare Access。Access 出故障时，SSH 登录宿主机并转发端口即可——见[对外公开部署](#-对外公开部署)。
 >
-> **`/v1/*` 只接受访问令牌。** 客户端使用你在 **Access tokens** 页面签发的*访问令牌*连接。令牌可单独吊销、可按请求归因，并可限定到若干入口面与一条路由配置链。一个令牌都没签发的部署无法代理任何请求。
+> **`/v1/*` 只接受访问令牌。** 客户端使用你在 **Access tokens** 页面签发的*访问令牌*连接。令牌可单独吊销、可按请求归因，并可限定到若干入口面与一个路由配置。一个令牌都没签发的部署无法代理任何请求。
 
 **步骤 2 — 启动服务：**
 
@@ -123,7 +123,9 @@ Rialto 可以在没有逐次调用 API Key 的情况下经由订阅型提供商�
 
 不提供 Codex 的浏览器登录：其 OAuth 客户端只会跳回*浏览器所在机器*上的 `http://localhost:1455/auth/callback`，远程或容器中运行的 Rialto 永远收不到。其背后的回环监听器（端口 `1455`，`compose.yaml` 仍然发布）已不再被 UI 使用。
 
-Rialto 会保存加密后的令牌并负责刷新。一个提供商可以持有多个账户，由哪个账户处理请求按每个请求决定（见[effort、层级与兜底](#effort层级与兜底)）。Subscriptions 列表上有一个 **Refresh** 按钮（`POST /api/subscriptions/refresh`），它会重新同步已启用订阅型提供商上的每个账户，并越过 5 分钟缓存重新拉取用量。
+Rialto 会保存加密后的令牌并负责刷新。一个提供商可以持有多个账户，由哪个账户处理请求按每个请求决定（见[故障切换与账户轮换](#故障切换与账户轮换)）。Subscriptions 列表上有一个 **Refresh** 按钮（`POST /api/subscriptions/refresh`），它会重新同步已启用订阅型提供商上的每个账户，并越过 5 分钟缓存重新拉取用量。路由会立即读取新数值，而不必等下一次调度器 tick：刷新会重新发布配额快照，并解除此前 429 留在某账户上、而厂商已为其重置的耗尽标记。
+
+Codex 账户可以持有*积攒的*速率限制重置。提供商页面上的账户行会显示剩余次数，**Use reset** 会使用一次（`POST /api/subscriptions/accounts/{id}/reset-usage`），使用前的确认会显示下一次到期的时间。只有厂商会接受重置时——也就是某个窗口已用尽时——按钮才可用。随后该账户的用量会按与刷新相同的路径重新读取，因此重置一生效，路由就会重新使用该账户。重置永远不会被自动使用。
 
 > **服务条款提示：** 使用 Claude Code 订阅来服务 Claude Code 以外的应用程序，可能违反 [Anthropic 的使用政策](https://www.anthropic.com/legal/aup)。是否使用该功能请自行判断并承担风险。
 
@@ -148,10 +150,10 @@ Rialto 不只是 Claude Code 的代理。入口处接收四种线路格式，每
 
 | 模式 | 行为 |
 |---|---|
-| `passthrough` | 模型由调用方指定。场景分类、链与主动故障切换全部跳过。 |
-| `routed` | 走链：场景分类 → 沿链遍历 → 故障切换。 |
+| `passthrough` | 模型由调用方指定。层级映射表被跳过。 |
+| `routed` | 走层级映射表：请求层级 → 通过全部门槛的第一条路线 → 故障切换。 |
 
-**所有入口面初始都是 `passthrough`。** 对一个尚未配置的部署做路由毫无意义——没有链时，选择器只会径直落回调用方自己的模型——因此路由是在有了可路由目标之后，按入口面逐个开启的。每个入口面从一条路由配置链取链（默认为 `live`）；Routing 页面的配置链选择器可以把比如 CI 客户端所用的那个面指向 cost-first 链。第二条配置链通过写入即可创建：`PUT /api/router-preferences?profile=<key>`。两种模式各自如何处理 `body.model`，见[链与直通](#链与直通)。
+**所有入口面初始都是 `passthrough`。** 对一个尚未配置的部署做路由毫无意义——层级映射表为空时，每个请求都会径直落回调用方自己的模型——因此路由是在有了可路由目标之后，按入口面逐个开启的。每个入口面从一个路由配置取层级映射表（默认为 `live`）；Routing 页面的路由配置选择器可以把比如 CI 客户端所用的那个面指向 cost-first 的映射表。第二个路由配置通过写入即可创建：`PUT /api/routing/profiles/<key>`。两种模式各自如何处理 `body.model`，见[层级映射表与直通](#层级映射表与直通)。
 
 ## ⚙️ 配置
 
@@ -184,68 +186,78 @@ Rialto 不只是 Claude Code 的代理。入口处接收四种线路格式，每
 
 旧版本为已不存在的机制写下的键一律忽略。`Router`、`CUSTOM_ROUTER_PATH`、`LiveRoutingName`、`CROSS_PROVIDER_FALLBACK` 以及已废弃的管理密钥 `APIKEY` 会在每次读取时被剔除；`POST /api/config` 会带着警告丢弃它们，下一次保存时把它们从文件中清掉。`APIKEY` 环境变量同样不会被读取。`ROUTER_MODE` 只是作为未知键留在文件里，没有任何代码读取它。
 
-### 提供商、模型与链（数据库）
+### 提供商、模型与层级映射表（数据库）
 
-提供商、模型、偏好链以及每个入口面的路由模式存放在 PostgreSQL 中，通过 Web 界面（`POST /api/config`、`PUT /api/router-preferences`、`POST /api/inbound-surfaces`）管理。`config.json` **内部**的 `Providers` 键是每次保存后从数据库回写的单向镜像——手工修改不会产生任何效果，并会在下一次写入时被覆盖。路由相关的内容不再镜像到磁盘。
+提供商、模型、层级别名、每个路由配置的层级映射表以及每个入口面的路由模式存放在 PostgreSQL 中，通过 Web 界面（`POST /api/config`、`PUT /api/providers/{name}/tier-aliases/{tier}`、`PUT /api/routing/profiles/{key}`、`POST /api/inbound-surfaces`）管理。`config.json` **内部**的 `Providers` 键是每次保存后从数据库回写的单向镜像——手工修改不会产生任何效果，并会在下一次写入时被覆盖。路由相关的内容不再镜像到磁盘。
 
-### 链与直通
+### 层级映射表与直通
 
 这是 Rialto 对 `body.model` 会做的仅有的两件事。
 
-**链**（`routed`）。请求先被分类到一个场景和一条通道，选择器再沿该通道的有序 `provider,model` 链遍历。链来自请求解析到的配置链——访问令牌指定了就用它的，否则用入口面的，再否则用 `live`。第一个已启用、未耗尽且装得下本次请求的条目成为 `body.model`，链的其余部分作为兜底列表随行。遍历一无所获时的行为由配置链上的两点决定：
+**层级映射表**（`routed`）。请求经由一个路由配置进行路由——访问令牌指定了就用它的，否则用入口面的，再否则用 `live`。*请求层级*从 `body.model` 读取：名字中含有 `fable`、`opus`、`sonnet` 或 `haiku`（按此顺序判断）即请求该层级，其余一切——`gpt-5.5`、`gemini-2.5-pro`、自定义 id——都请求 `other`。路由配置为这五者各自持有一组有序的路线，每条路线点名一个提供商及其上的一个层级（`claude-code · sonnet`）；它此刻对应哪个模型，由该提供商的[层级别名](#层级别名)决定。想用 Sonnet 处理 Haiku 请求，只需在 `haiku` 组里放一条指向某提供商 `sonnet` 的路线——层级替换写在映射表里，而不是由某个门槛决定。
 
-- `exhaustedBehavior` — 通道有条目，但每一条都被门槛拦下。`429`（默认）不触碰任何上游，直接向客户端返回 `rate_limit_error` 和 `Retry-After` 头（距最早的窗口重置的秒数，未知时为 30）；`passthrough` 则改为发送调用方自己的 `body.model`，且没有兜底。
-- **一个条目都没有**的通道永远不会返回 429，无论 `exhaustedBehavior` 是什么：未配置的通道是「没有意见」，调用方自己的模型按原样送出。链无法加载、或路由因其他原因失败时也一样——Rialto 从不凭空编造目标，它只会把 `body.model` 替换成链上的某个条目。
+路线按顺序尝试，只有通过全部门槛的路线才能处理请求：
 
-**直通**（`passthrough`，或被固定到保留配置链 `passthrough` 的访问令牌）。调用方的 `body.model` 按原样送往上游：`provider,model`，或恰好只有一个已启用提供商托管的裸模型名。在这种模式下，入口面可以拒绝特定的 `provider,model` 组合（Routing → Reachable targets）。
+1. 路线本身、它的模型和提供商都已启用；
+2. 该提供商为路线所点名的层级设置了别名；
+3. 若请求携带网页搜索工具，模型必须能执行它——Anthropic、OpenAI Responses 与 Gemini 的请求形状能承载它，Chat Completions 不能；
+4. 模型的上下文窗口装得下这段提示（窗口未知则放行）；
+5. 配额未耗尽：没有此前 429 留在该模型或其提供商上的耗尽标记，且路由调度器的快照没有报告它已用尽、或已用量达到配置的 `quotaSkipPct`（只有订阅型目标才有读数）；
+6. 最近 5 分钟的错误率低于 `errorRateSkipPct`（样本数达到 `minHealthSamples` 之后才判断）。
 
-无论哪种模式，在 Providers 页面关闭的提供商或模型都不会被派发——不会来自链条目，不会来自直通请求，不会作为兜底目标，也不会经由已关闭的订阅型提供商的账户。手工点名也会被拒绝而不是转发。
+第一条通过的路线成为 `body.model`，其余同样通过的路线按映射表顺序作为兜底列表随行。一条都没通过时，由原因决定应答：
 
-### 路由场景
+| 情形 | 应答 |
+|---|---|
+| 该层级没有路线，或所有路线或其目标都已关闭 | 调用方自己的 `body.model` 按原样送出。无论 `exhaustedBehavior` 是什么，**永远不会返回 429**——未配置的层级是「没有意见」 |
+| 至少有一条路线因配额或错误率被拦下 | 按 `exhaustedBehavior`：`429`（默认）不触碰任何上游，返回 `rate_limit_error` 和 `Retry-After` 头——距被拦下的路线中最早恢复者的秒数（取其 429 标记的截止时间，否则取快照中的重置时间；都未知时为 30）；`passthrough` 则改为发送调用方自己的 `body.model`，且没有兜底 |
+| 没有路线因配额被拦下，但没有一条路线能接下*这个*请求——别名未设置、不支持网页搜索、提示过大 | 以该入口面的错误信封返回 **400**（`invalid_request_error`，Gemini 面为 `INVALID_ARGUMENT`）。等待也改变不了什么，所以不伪装成 429 |
 
-在 **Routing** 页面为每个场景配置链。分类按以下顺序进行，命中第一个即停止：
+映射表无法加载、或路由因其他原因失败时，调用方自己的模型按原样送出。Rialto 从不凭空编造目标，它只会把 `body.model` 替换成某条路线的模型。
 
-| 场景 | 触发时机 |
-|------|---------|
-| `longContext` | token 数超过阈值；或者——在下面两项之后检查——「重」的 effort / 层级信号 |
-| `webSearch` | 请求携带网页搜索工具：`type` 以 `web_search` 开头的工具、名为 `web_search*` 的函数，或顶层的 `web_search_options` |
-| `think` | 请求显式开启了扩展思考（`thinking.type` 为 `enabled` 或 `adaptive`；显式的 `disabled` **不算**）|
-| `default` | 其余所有请求 |
+路由配置只有四个约束，在 Routing 页面编辑：`exhaustedBehavior`（`429` / `passthrough`）、`quotaSkipPct`（默认 100）、`errorRateSkipPct`（比例，默认 0.5）和 `minHealthSamples`（默认 5）。除此之外没有别的可调——没有场景、没有通道、没有长上下文阈值，也没有权重。
 
-链编辑器里还有一个 `image` 场景，但本版本中没有任何代码把请求分类到它——配置在那里的链永远不会被选中。**不存在 `background` 场景。** 迁移 `20260728_router_rules_drop_background` 已把它折叠进 `default`。
+**直通**（`passthrough`，或被固定到保留路由配置 `passthrough` 的访问令牌）。调用方的 `body.model` 按原样送往上游：`provider,model`，或恰好只有一个已启用提供商托管的裸模型名。在这种模式下，入口面可以拒绝特定的 `provider,model` 组合（Routing → Reachable targets）。
 
-每个场景有两条通道——普通流量走 `agent`，携带子代理标签的请求走 `subagent`——每条通道各自拥有独立的有序链。只有当通道上至少有一个已启用条目时，该场景才会被选中；否则请求落到 `default`。
+无论哪种模式，在 Providers 页面关闭的提供商或模型都不会被派发——不会来自路线，不会来自直通请求，不会作为兜底目标，也不会经由已关闭的订阅型提供商的账户。手工点名也会被拒绝而不是转发。
 
-**`longContext` 的阈值不是一个固定数字。** 配置链约束中的正数 `longContextThreshold` 优先——它通过 `PUT /api/router-preferences` 往返，本版本的 Routing 页面没有对应的输入框。未配置时取链上 `default` / `agent` 通道第一个已启用条目所声明的上下文窗口的 70 %（为回复留出余量）。两者都无法解析时，才回退到 128 000 token。
+请求所走的路线——请求层级，或 `passthrough`——会记录在请求日志里，并在 Activity 中以 **Route** 列显示。完整参考见 [docs/architecture/routing.md](docs/architecture/routing.md)。
 
-### effort、层级与兜底
+### 层级别名
 
-除了上面的场景触发器，路由器还会对每个请求做分级，并按顺序遍历兜底链：
+路线点名的是提供商和层级，而不是模型。`claude-code · sonnet` 指哪个模型，由该提供商的*层级别名*决定，在提供商页面的 **Tier aliases** 栏里为 `fable`、`opus`、`sonnet`、`haiku` 各设一个。厂商发布新的 Sonnet 时，只需挪动这一个别名，所有指向该提供商 Sonnet 的路线都会随之改变。
 
-- **分级信号** — `output_config.effort`（`high` / `xhigh` / `max` → 重 → `longContext`；`low` / `medium` → 显式的轻），以及从 `body.model` 解析出的请求模型层级（名字含 `opus` → 重）。层级只在 effort 缺失时才读取，因此旧版 Claude Code 流量仍能正确分级；显式的 low/medium effort 会抑制层级升级，让调用方主动把 opus 请求降级。
-- **每场景兜底链** — 路由器遍历 `[primary, ...fallbacks]`，挑选第一个既未被标记耗尽、其声明的 `contextWindow` 又装得下本次请求的候选。
-- **能力门** — 切换永远不会落到一个 `contextWindow` 容不下本次请求的模型上。未声明窗口的模型默认放行（unknown = allow，保守默认值）。
-- **429 时的账户轮换** — 订阅型提供商返回 429 时，会把该子账户标记为耗尽（直到某个已用满 90 % 以上的绑定窗口重置；无从得知时则为 5 分钟），并在对等账户上重试同一条链条目，最多轮换 10 次。只有当对等账户全部用尽时，才会标记该模型并前进到下一个链条目。OpenAI 的 `insufficient_quota` 会一次性标记整个提供商。
-- **链的顺序按你写的执行** — 不存在 `auth_mode` 门。订阅型 primary 会保留写在它后面的 api_key 兜底，同一提供商的兜底也会被遍历（耗尽是按 `(provider, model)` 标记的）。如果不想让订阅额度溢出到按量计费，就不要把 api_key 条目写在它后面。
+**别名永远不会自己移动。** 目录的 Refresh 可以发现新模型，这一栏也会把它计为候选（「1 new」），但新模型的价格、使用资格和行为，应当在所有 Sonnet 请求落到它上面之前由人来确认。在选择器里选中它并保存页面，别名就会指向它，同时该模型被启用。选择器列出的是提供商的全部模型，而不只是名字表明该层级的那些，因此模型名不带 Claude 系列的提供商——Codex、OpenAI——同样可以设置别名。
+
+Claude 订阅型提供商在其模型创建时，会依照预设的默认模型自动获得别名，因此刚连接的 Claude 订阅即可直接路由。Codex 的模型名不带 Claude 系列，其别名需要你自己设置。
+
+别名未设置的路线会被保留（保存映射表时只会给出警告），但在请求时会被跳过。若因此该层级已没有能处理的路线，且没有路线因配额被拦下，请求就会如上所述以 400 拒绝。
+
+### 故障切换与账户轮换
+
+层级的路线就是兜底列表；在同一条路线内部，先轮换订阅型提供商的账户：
+
+- **429 时的账户轮换** — 订阅型提供商返回 429 时，会把该子账户标记为耗尽（直到某个已用满 90 % 以上的绑定窗口重置；无从得知时则为 5 分钟），并在对等账户上重试同一个目标，最多轮换 10 次。只有当对等账户全部用尽时，才会标记该模型并前进到下一条路线。OpenAI 的 `insufficient_quota` 会一次性标记整个提供商。该账户之后一旦请求成功，标记即被解除。
+- **映射表的顺序按你写的执行** — 不存在 `auth_mode` 门。订阅型路线会保留写在它后面的 api_key 路线，同一提供商的其他层级也会被遍历（耗尽是按 `(provider, model)` 标记的）。如果不想让订阅额度溢出到按量计费，就不要把 api_key 路线写在它后面。
 - **多账户均衡** — 当同一提供商上启用了多个账户时，账户选择器先剔除已记录的绑定窗口已达 99 % 的账户，若粘性的会话→账户映射仍指向幸存者则复用它，否则挑选所需消耗速率最高的账户——`剩余百分比 ÷ 距离重置的小时数`，取其最紧的绑定周窗口——也就是最有可能把配额浪费掉的那一个。平局时选最久未被选中的账户。
 
-决策会以结构化日志记录：主动放弃 primary 时输出 `{ from, to, scenario, tokenCount, trace }`，所有候选都被拒绝时输出 dead-chain 警告，让你能看清尝试了什么、为何被拒。`trace` 中每一项都带有 `kept` / `exhausted` / `capability` / `malformed` 之一。
+决策会以结构化日志记录。某个层级没有可用路线时，日志会列出每条被跳过的路线及其原因——`disabled` / `alias_unset` / `no_web_search` / `context_too_small` / `exhausted` / `error_rate`——应答为 429 或 400 时以 `warn` 输出，送出调用方自己的模型时以 `info` 输出。
 
-> **不存在周维度排空守卫。** 早期版本会在订阅型提供商的周窗口越过线性排空目标时提前切换。这已经删除：订阅型提供商现在会一直跑到上游上限，并根据真实发生的 429 做被动轮换——因为只有这个信号永远不会错。
+> **不存在周维度排空守卫。** 早期版本会在订阅型提供商的周窗口越过线性排空目标时提前切换。这已经删除：只有当调度器的快照报告订阅型目标已用尽——或已用量达到默认为 100 的 `quotaSkipPct`——时才会拦下它，否则它会一直跑到上游上限，并根据真实发生的 429 做轮换。
 
 ### 人格
 
-*人格*是一段命名的系统提示片段，在场景判定之后，会被追加到每一个走路由的 `/v1/messages` 请求里。借助它可以在不修改 Claude Code 本体的前提下，让 Claude Code 始终保持某种口吻、角色或工作守则。
+*人格*是一段命名的系统提示片段，在层级路由之后，会被追加到每一个走路由的 `/v1/messages` 请求里。借助它可以在不修改 Claude Code 本体的前提下，让 Claude Code 始终保持某种口吻、角色或工作守则。
 
 - **人格库** — `Personas` 是磁盘 envelope 上的顶层数组。每个条目都带有一个稳定的 uuid `id`、显示用的 `name`（无需唯一）和正文 `prompt`。新装环境会附带一个小型的初始人格库；既有环境则保留磁盘上已经存在的内容。
 - **当前激活** — 每个部署最多只能有一个激活的人格。它的 uuid id 就是顶层的 `ActivePersona` 键，在磁盘 envelope 和 `/api/config` 的线路上位置相同。`null` / 缺失 / 空字符串表示「无人格」。不存在项目级或会话级的覆盖文件。
 - **注入方式** — 把当前人格的 `prompt` 追加到带有 `cache_control` 的最后一个 system 块上（若没有则退回到最后一个字符串文本块）。这样人格就被收纳进缓存前缀的*内部*，既不会消耗额外的 cache 断点，又能在多次请求之间保持字节级稳定（保留 Anthropic 的 prompt cache）。当 `system` 为字符串 / 未定义时进行拼接；多块数组形式则原地修改。
-- **入口面限制** — 人格注入**只在 `/v1/messages` 上运行**，而且只对 routed 流量生效：passthrough 入口面，或固定到 `passthrough` 配置链的令牌，会整个跳过路由器，人格也随之跳过。OpenAI 兼容面与 Gemini 面根本不接受被撑大的 `system` 字段（Codex 会返回 `Unsupported parameter: system`），因此宁可跳过注入也不让请求失败。在 `/v1/messages` 上，**所有场景**都会继承当前人格——不存在按场景的例外。
-- **与子代理交互** — 人格注入在子代理标签处理*之后*执行，所以子代理的逐次系统内容不会被覆盖，而是与人格合成。
+- **入口面限制** — 人格注入**只在 `/v1/messages` 上运行**，而且只对 routed 流量生效：passthrough 入口面，或固定到 `passthrough` 路由配置的令牌，会跳过层级映射表，人格也随之跳过。OpenAI 兼容面与 Gemini 面根本不接受被撑大的 `system` 字段（Codex 会返回 `Unsupported parameter: system`），因此宁可跳过注入也不让请求失败。在 `/v1/messages` 上，每个走路由的请求都会继承当前人格，无论由哪条路线处理——包括映射表没有路线、按调用方自己的模型送出的请求。
+- **与子代理交互** — 人格注入在子代理标签被剥离*之后*执行，所以子代理的逐次系统内容不会被覆盖，而是与人格合成。
 
 人格库的管理和当前激活人格的切换都在 **Settings → Personas**（`/settings/personas`）。「无人格」是默认的 no-op。
 
-关于如何撰写高还原度的人格（结构模板、反模式列举、`think` 请求下的思考过程控制），请参见 [docs/guides/persona-authoring.md](docs/guides/persona-authoring.md)。
+关于如何撰写高还原度的人格（结构模板、反模式列举、思考过程控制），请参见 [docs/guides/persona-authoring.md](docs/guides/persona-authoring.md)。
 
 ### 转换器
 
@@ -275,18 +287,18 @@ Anthropic 提供商没有转换步骤，是因为请求本就是该线路格式�
 
 没有任何可按提供商配置的转换器设置。推导出的链以只读形式显示在 Providers 页面的 **Request shape** 中，请求异常时应首先查看这里。
 
-### 子代理路由
+### 子代理标签
 
-提示词中的子代理标签会把该子代理导向场景的 **`subagent` 通道**：
+位于第二个 system 块开头的子代理标签，会把该请求标记为子代理流量：
 
 ```
 <RIALTO-SUBAGENT-MODEL>subagent</RIALTO-SUBAGENT-MODEL>
 Please help me analyze this code...
 ```
 
-**只有标签的存在与否有意义，其内容会被忽略。** 标签只负责选择通道；模型来自 **Routing** 页面上该通道的配置。这是刻意的设计——让子代理路由集中在一处编辑，而不是散落在每个子代理的提示词文件里。标签会在请求发往上游之前被剥离，因此这个内部标记不会到达厂商。没有条目的 subagent 通道与任何空通道行为一致：调用方自己的模型原样通过。
+**它已不再选择任何东西。** 层级映射表没有子代理通道：子代理的请求与其他请求一样，按其自身模型名所请求的层级路由。标签仍会被读取——只看是否存在，内容被忽略——并记录到请求日志中，以便在 Activity 里区分子代理流量。在所有入口面上（包括直通），标签都会在请求发往上游之前被剥离，因此这个内部标记不会到达厂商。
 
-`<CCR-SUBAGENT-MODEL>` 是改名前的写法，因为它存在于人们已经写好的提示词里，所以仍被接受。标签正文里仍写着旧的 `provider,model` 组合也照常工作——只是那个组合不会被读取而已。
+`<CCR-SUBAGENT-MODEL>` 是改名前的写法，因为它存在于人们已经写好的提示词里，所以仍会被识别并剥离。标签正文里仍写着旧的 `provider,model` 组合也无妨——只是那个组合不会被读取而已。
 
 ## 🔀 OpenAI 兼容与 Gemini 兼容入口面
 
@@ -347,7 +359,7 @@ for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.
 
 任何支持覆盖 `base_url` / `baseURL` 的客户端都同理。
 
-**这些入口面上哪些能力生效。** 故障切换、账户轮换以及 `provider,model` 寻址始终生效。链式路由只有在把该入口面从 `passthrough` 切换为 `routed` 之后才生效。人格注入**不**生效——它只作用于 `/v1/messages`（见上文「人格」）。
+**这些入口面上哪些能力生效。** 故障切换、账户轮换以及 `provider,model` 寻址始终生效。层级路由只有在把该入口面从 `passthrough` 切换为 `routed` 之后才生效——而且不带 Claude 系列的模型名（`codex,gpt-5.5`、`gemini-2.5-pro`）请求的是 `other` 层级，因此会由路由配置中 `other` 组的路线处理，该组为空时则按原样通过。人格注入**不**生效——它只作用于 `/v1/messages`（见上文「人格」）。
 
 ## 📊 日志
 
@@ -372,7 +384,7 @@ ssh -L 3456:localhost:3456 <host>
 
 ## ⬆️ 从改名前的版本升级
 
-主目录、环境变量、数据库名、Docker 镜像以及 thinking signature 前缀都随着改名为 Rialto 而变化，早期版本的槽位 / 规则 / 预设路由也已合并为链与直通。请参见 [docs/guides/migration-v3.md](docs/guides/migration-v3.md)（日文）。
+主目录、环境变量、数据库名、Docker 镜像以及 thinking signature 前缀都随着改名为 Rialto 而变化，早期版本的槽位 / 规则 / 预设路由也已合并为链与直通。此后，按场景划分的链又被层级映射表取代：在带有层级映射表的版本首次启动时，`db seed`（容器入口脚本会执行它）会把每个路由配置的 `default` / `agent` 链转换为层级别名和路线，每个配置只转换一次。其他场景与子代理通道不会被转换——它们无法按层级重现——仍需要的部分请手工补回。请参见 [docs/guides/migration-v3.md](docs/guides/migration-v3.md)（日文）。
 
 ## 🛠️ 开发
 
@@ -439,7 +451,7 @@ bunx knip                 # 死代码盘点
 | `bun run db:migrate:deploy` | 应用已有迁移（生产 / CI）|
 | `bun run db:migrate:test` | 把迁移应用到独立的 `rialto_test` 数据库 |
 | `bun run db:reset` | 删除并重建 schema（破坏性）|
-| `bun run db:seed` | 幂等的种子数据——`live` 偏好配置链，在你填入内容之前为空 |
+| `bun run db:seed` | 幂等的种子数据——`live` 路由配置，在你填入内容之前层级映射表为空；同时把层级映射表之前各配置的链一次性转换为层级映射表 |
 | `bun run db:seed:demo` | 仅供开发的各页面演示数据；`-- --clean` 可将其移除。见 [docs/guides/demo-data.md](docs/guides/demo-data.md) |
 | `bun run db:studio` | 打开 Prisma Studio |
 
@@ -468,6 +480,7 @@ bunx knip                 # 死代码盘点
 
 - [`docs/architecture/inbound-surfaces.md`](docs/architecture/inbound-surfaces.md) — 入口面注册表，以及由它推导出的一切
 - [`docs/architecture/inbound-parity.md`](docs/architecture/inbound-parity.md) — 哪个功能在哪个入口面上生效
+- [`docs/architecture/routing.md`](docs/architecture/routing.md) — 层级映射表：数据模型、门槛、结果、配额快照、模型发布的处理
 - [`docs/architecture/pipeline-overview.md`](docs/architecture/pipeline-overview.md) — 启动 → 请求 → 上游 → 响应整形的完整链路
 - [`docs/architecture/request-flow.md`](docs/architecture/request-flow.md) — 路由决策与 429 轮换的放大图
 - [`docs/architecture/testing-map.md`](docs/architecture/testing-map.md) — 测试在哪里、覆盖了什么

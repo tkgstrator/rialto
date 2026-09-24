@@ -14,8 +14,8 @@
 
 import { describe, expect, test } from 'bun:test'
 import { TokenizerRegistry } from '../../src/llms/registry/tokenizer'
-import { readSignals } from '../../src/llms/scenario-router/surface-signals'
-import type { RouterRequestBody } from '../../src/llms/scenario-router/types'
+import { readSignals } from '../../src/llms/router/surface-signals'
+import type { RouterRequestBody } from '../../src/llms/router/types'
 
 const GEMINI_PATH = '/v1beta/models/gemini-3-pro:generateContent'
 

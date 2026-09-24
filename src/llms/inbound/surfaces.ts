@@ -14,7 +14,7 @@
  * it.
  *
  * Whether the router applies is NOT part of the descriptor. It was
- * hardcoded in `scenario-router.ts` — /v1/messages routed, the
+ * hardcoded in `router.ts` — /v1/messages routed, the
  * OpenAI-compat surfaces bypassed — which is why every routing screen in
  * the old UI was silently a `/v1/messages`-only screen. It now lives per
  * surface in `InboundSurfaceConfig` as an explicit stored mode, so the
@@ -82,7 +82,7 @@ export interface InboundSurface {
   aggregateSse: SseAggregator
   /**
    * The model, for a surface that carries it in the URL instead of
-   * `body.model`. Everything downstream — the scenario router, the
+   * `body.model`. Everything downstream — the tier router, the
    * failover chain, the pipeline — reads `body.model`, so the route
    * folds this in before any of them run.
    *

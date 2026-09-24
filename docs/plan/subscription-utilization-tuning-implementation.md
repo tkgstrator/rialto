@@ -1,5 +1,7 @@
 # Subscription Utilization Tuning 実装計画（Level 2 / Level 4）
 
+> **置き換え済み（2026-09）:** 本書のルーティング設計はティアマップ（要求ティア → プロバイダのティアエイリアス）に置き換えられた。現行の設計は [quota-and-tier-routing.md](./quota-and-tier-routing.md) を参照。
+
 Status: Draft (implementation-level)
 
 親ドキュメント: [subscription-utilization-tuning.md](./subscription-utilization-tuning.md)（スコープ・動機・レベル定義はそちらが正）

@@ -9,7 +9,7 @@
  * to prevent.
  */
 import { describe, expect, test } from 'bun:test'
-import { stripSubagentTag } from '../../src/llms/scenario-router/request-signals'
+import { stripSubagentTag } from '../../src/llms/router/request-signals'
 
 // The tag is only recognised in the SECOND system block, which is where
 // Claude Code puts it; a system array is [preamble, subagent marker].

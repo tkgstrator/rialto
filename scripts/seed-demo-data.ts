@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Dev-only: fill an install with demo data so all five screens have
+ * Dev-only: fill an install with demo data so all six screens have
  * something to render — providers and models, tier aliases and tier maps,
  * subscription quota, access tokens, and a month of traffic behind
  * Activity and Overview.
@@ -111,7 +111,7 @@ async function main(): Promise<void> {
   line('chat messages', traffic.messages)
 
   for (const warning of tierMap.warnings) console.error(`  warning: ${warning}`)
-  console.error('\nOpen http://localhost:16175/ — Overview, Routing, Providers, Activity and Settings are populated.')
+  console.error('\nOpen http://localhost:16175/ — Overview, Routing, Providers, Access tokens, Activity and Settings are populated.')
 
   await prisma.$disconnect()
 }

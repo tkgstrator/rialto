@@ -7,7 +7,7 @@
  *
  * The `Tokenize*` family describes the structured request a Tokenizer
  * `countTokens()` receives — the Anthropic-shaped envelope of
- * messages / system / tools that the scenario router hands off.
+ * messages / system / tools that the router hands off.
  */
 
 import { z } from '@hono/zod-openapi'

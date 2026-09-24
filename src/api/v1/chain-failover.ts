@@ -42,7 +42,7 @@ import { forwardUpstreamError, isInsufficientQuota, isLongContextGate, isRateLim
 // (mark didn't take, accounts vanished mid-flight) — not a tuning knob.
 const MAX_ACCOUNT_ROTATIONS = 10
 
-// Provider view the kind sniffer needs; aliased from scenario-router's
+// Provider view the kind sniffer needs; aliased from router's
 // public ConfigProvider so the route layer builds the same minimal shape
 // it would have built inline.
 export type SubscriptionKindProvider = Parameters<typeof subscriptionKindOf>[1][number]
