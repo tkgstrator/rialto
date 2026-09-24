@@ -40,13 +40,44 @@ const QuotaWindowSchema = z
   })
   .openapi('OverviewQuotaWindow')
 
+// What an account carried over one span, at the models' API prices —
+// "API equivalent", never a bill. `costUsd` is null when traffic exists
+// but none of it could be priced, and 0 when there was no traffic.
+const UsageFiguresSchema = z
+  .object({
+    requests: z.number().int().nonnegative(),
+    inputTokens: z.number().int().nonnegative(),
+    outputTokens: z.number().int().nonnegative(),
+    cacheReadTokens: z.number().int().nonnegative(),
+    cacheWriteTokens: z.number().int().nonnegative(),
+    totalTokens: z.number().int().nonnegative(),
+    costUsd: z.number().nullable()
+  })
+  .openapi('OverviewUsageFigures')
+
+const AccountUsageSchema = z
+  .object({
+    // Start of the weekly window the account is in now, as its vendor
+    // meters it — the span `window` covers.
+    windowStart: z.string().nonempty(),
+    window: UsageFiguresSchema,
+    last30d: UsageFiguresSchema,
+    // 30-day API-equivalent cost over the plan's monthly price; null when
+    // either is unknown.
+    valueRatio: z.number().nullable()
+  })
+  .openapi('OverviewAccountUsage')
+
 const QuotaSchema = z
   .object({
     subAccountId: z.string().nonempty(),
     account: z.string().nonempty(),
     // Every limit the account is under, shortest window first. An account
     // has several and any one of them hitting 100% stops it.
-    windows: z.array(QuotaWindowSchema)
+    windows: z.array(QuotaWindowSchema),
+    // Null only when the usage aggregate could not be read; the quota
+    // windows above do not depend on it.
+    usage: AccountUsageSchema.nullable()
   })
   .openapi('OverviewQuota')
 

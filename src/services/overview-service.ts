@@ -10,6 +10,8 @@
 import { z } from 'zod'
 import { getPrismaClient } from '../db/client'
 import dayjs from '../lib/dayjs'
+import { logger } from '../logger'
+import { type AccountUsage, usageByAccount } from './account-usage-service'
 import { buildPriceMap, computeCosts, type PriceEntry } from './cost-service'
 import { listSurfaces } from './inbound-surface-service'
 
@@ -60,6 +62,7 @@ export interface QuotaRow {
   subAccountId: string
   account: string
   windows: QuotaWindowRow[]
+  usage: AccountUsage | null
 }
 
 /**
@@ -377,7 +380,7 @@ function scopedWindows(raw: unknown): QuotaWindowRow[] {
   return out
 }
 
-function buildQuota(quotas: QuotaRecord[]): QuotaRow[] {
+function buildQuota(quotas: QuotaRecord[], usage: Map<string, AccountUsage>): QuotaRow[] {
   const flat: Array<{
     window: string
     used: (q: QuotaRecord) => number | null
@@ -406,7 +409,13 @@ function buildQuota(quotas: QuotaRecord[]): QuotaRow[] {
     }
     windows.push(...scopedWindows(q.scopedWindows))
     if (windows.length === 0) continue
-    out.push({ subAccountId: q.subAccountId, account: accountLabel(q), windows })
+    const carried = usage.get(q.subAccountId)
+    out.push({
+      subAccountId: q.subAccountId,
+      account: accountLabel(q),
+      windows,
+      usage: carried === undefined ? null : carried
+    })
   }
   return out
 }
@@ -478,7 +487,11 @@ interface ResolvedSurfaceLike {
 
 function loadQuotas() {
   return getPrismaClient().subAccountQuota.findMany({
-    include: { subAccount: { select: { id: true, label: true, plan: true, provider: { select: { name: true } } } } }
+    include: {
+      subAccount: {
+        select: { id: true, label: true, plan: true, monthlyPriceUsd: true, provider: { select: { name: true } } }
+      }
+    }
   })
 }
 
@@ -563,6 +576,20 @@ export async function getOverview(windowHours: number): Promise<OverviewResponse
     ])
 
   const priceMap = await buildPriceMap(prisma, [...new Set(spendBuckets.map((b) => priceKey(b.provider, b.model)))])
+  // Per-account usage is an addition to the quota rows, not a condition
+  // of them: if the aggregate fails, the windows still render and the
+  // usage lines say they could not be read.
+  const usage = await usageByAccount(
+    quotas.map((q) => ({
+      subAccountId: q.subAccountId,
+      weeklyResetAt: q.weeklyResetAt,
+      weeklyWindowSeconds: q.weeklyWindowSeconds,
+      monthlyPriceUsd: q.subAccount.monthlyPriceUsd
+    }))
+  ).catch((err: unknown) => {
+    logger.warn({ err }, '[overview] per-account usage aggregate failed')
+    return new Map<string, AccountUsage>()
+  })
 
   return {
     windowHours,
@@ -571,7 +598,7 @@ export async function getOverview(windowHours: number): Promise<OverviewResponse
     enabledModelCount,
     surfaces: buildSurfaces(surfaceConfigs, windowLogs),
     spend: buildSpend(spendBuckets, priceMap),
-    quota: buildQuota(quotas),
+    quota: buildQuota(quotas, usage),
     failover: buildFailover(quotas, weightChanges),
     recentSessions: buildRecentSessions(windowLogs, priceMap)
   }
