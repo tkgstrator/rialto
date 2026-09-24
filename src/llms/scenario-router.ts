@@ -143,20 +143,30 @@ async function routeThroughChain(req: RouterRequest, ctx: RouterContext): Promis
 
   if (selected.selection.primary === null) {
     if (selected.retryAfterSec !== null) {
-      // Every candidate was gated out AND the profile's
-      // `exhaustedBehavior` is '429' (the selector returns a non-null
-      // retryAfterSec only in that case). Stamp the seconds on the
-      // request so the /v1 handler can reply with a rate_limit_error +
-      // Retry-After header without dispatching upstream.
+      // Every candidate was gated out, at least one of them by exhaustion
+      // or error rate, AND the profile's `exhaustedBehavior` is '429'.
+      // Stamp the seconds on the request so the /v1 handler can reply
+      // with a rate_limit_error + Retry-After header without dispatching
+      // upstream.
       req.quotaExhaustedRetryAfterSec = selected.retryAfterSec
       req.log.warn(
         { retryAfterSec: selected.retryAfterSec, skipped: selected.selection.skipped },
         '[routing] preference chain exhausted — will 429'
       )
+    } else if (selected.refusal !== null) {
+      // Gated out by configuration — a tier the profile refuses, or a
+      // prompt no target can hold. Handed to the /v1 handler as a field
+      // because this function never throws; it answers 400.
+      req.routingRefusal = selected.refusal
+      req.log.warn(
+        { refusal: selected.refusal, skipped: selected.selection.skipped },
+        '[routing] chain refused — will 400'
+      )
     } else {
-      // No primary, no Retry-After: an empty lane, or every candidate
-      // gated under `exhaustedBehavior: 'passthrough'`. The caller's own
-      // model stays in place and goes out with no fallbacks.
+      // No primary, no Retry-After, no refusal: an empty lane, a lane
+      // whose entries are all switched off, or every candidate gated
+      // under `exhaustedBehavior: 'passthrough'`. The caller's own model
+      // stays in place and goes out with no fallbacks.
       req.log.info(
         { scenario: scenarioType, skipped: selected.selection.skipped },
         "[routing] chain has no primary — keeping the caller's own model"
@@ -167,6 +177,12 @@ async function routeThroughChain(req: RouterRequest, ctx: RouterContext): Promis
   }
 
   const fallbacks = selected.selection.fallbacks
+  if (selected.selection.substituted) {
+    req.log.info(
+      { requestedModel, primary: selected.selection.primary, skipped: selected.selection.skipped },
+      '[routing] no target of an allowed tier; serving from the nearest tier'
+    )
+  }
   req.body.model = applyProactiveFailover(
     selected.selection.primary,
     scenarioType,
