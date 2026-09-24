@@ -4,7 +4,7 @@
  * `buildRoutePlan` runs once per inbound request, before any model has
  * been chosen: it resolves the surface, parses the body, folds in
  * whatever the surface carries in the URL rather than the body, runs
- * scenario routing to land on a primary "provider,model", and bundles
+ * tier routing to land on a primary "provider,model", and bundles
  * what the chain walker needs for the rest of the request.
  *
  * The two later stages live next door, because they run per candidate
@@ -109,7 +109,7 @@ function resolveInboundSession(
  *
  * Gemini names the model and the streaming choice in the path
  * (`/v1beta/models/gemini-3-pro:streamGenerateContent`) and puts neither
- * in the body. Everything downstream — the scenario router, the failover
+ * in the body. Everything downstream — the tier router, the failover
  * chain, the pipeline, the JSON-vs-SSE relay decision — reads
  * `body.model` and `body.stream`, so this is where the two wire
  * conventions are reconciled. A no-op for the surfaces whose body
@@ -163,18 +163,18 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   // body.model in place — this is the only point the original is visible.
   const requestedModel = typeof body.model === 'string' && body.model.length > 0 ? body.model : undefined
 
-  // Chain routing: rewrite body.model to the resolved provider,model and
-  // stamp req.route. We keep the request object so we can read
-  // the scenario and the chain back below.
+  // Tier routing: rewrite body.model to the resolved provider,model and
+  // stamp req.route. We keep the request object so we can read the
+  // route, the fallbacks and the 429 / 400 outcomes back below.
   const routeReq: RouterRequest = {
     body: body as PipelineRequest['body'] & { model: string },
     log: ctx.log,
-    // The scenario router uses this to gate Anthropic-idiom mutations
+    // The router uses this to gate Anthropic-idiom mutations
     // (persona injection etc.) so OpenAI-compat callers on
     // /v1/chat/completions and /v1/responses get the exact request
     // they sent rather than one enriched for Claude Code.
     inboundPath: path,
-    // A token may pin its client to a named preference chain, which
+    // A token may pin its client to a named routing profile, which
     // then wins over the surface's own profile. This is the point of
     // per-client tokens: a CI runner on cost-first while interactive
     // traffic keeps the default.
@@ -243,9 +243,9 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
     primaryModel,
     requestedModel,
     isSubagent: routeReq.isSubagent === true,
-    // The rest of the chain the selector resolved for this request.
+    // The rest of the routes the selector resolved for this request.
     // buildFailoverChain reads this directly so the reactive path walks
-    // the same chain the proactive path did.
+    // exactly the routes the selector passed.
     fallbacks: Array.isArray(routeReq.resolvedFallbacks) ? routeReq.resolvedFallbacks : [],
     path,
     search: url.search,

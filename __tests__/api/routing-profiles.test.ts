@@ -4,8 +4,9 @@
  * Pinned: a profile reads back with each route resolved through its alias
  * (the model, whether it can take traffic, web search, context window);
  * an unset alias reads as null rather than failing the page; the reserved
- * passthrough key is refused; promoting a model switches it on; clearing
- * an alias that is not there is a 404.
+ * passthrough key is refused; promoting a model switches it on and puts it
+ * in the quota snapshot at once; clearing an alias that is not there is a
+ * 404.
  */
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
@@ -14,6 +15,8 @@ import { routingProfileRoute } from '../../src/api/routing/profiles/[key]/route'
 import { routingProfilesRoute } from '../../src/api/routing/profiles/route'
 import { tierAliasesRoute } from '../../src/api/tier-aliases/route'
 import { getPrismaClient } from '../../src/db/client'
+import { getRoutingSnapshot } from '../../src/services/routing-scheduler'
+import { __resetSchedulerStateForTest } from '../../src/services/routing-scheduler/state'
 import { HAS_DB, resetDbTables, teardownPrisma } from '../db/helpers'
 
 const request = (method: string, path: string, body?: unknown): Request =>
@@ -30,6 +33,7 @@ const map = (routes: Record<string, unknown[]>) => ({
 describe.skipIf(!HAS_DB)('routing profile and tier alias endpoints', () => {
   beforeEach(async () => {
     await resetDbTables()
+    __resetSchedulerStateForTest()
     const prisma = getPrismaClient()
     const claude = await prisma.provider.create({
       data: {
@@ -100,6 +104,10 @@ describe.skipIf(!HAS_DB)('routing profile and tier alias endpoints', () => {
     expect(model?.enabled).toBe(true)
     const list = await (await tierAliasesRoute.fetch(request('GET', '/api/tier-aliases'))).json()
     expect(list.find((a: { tier: string }) => a.tier === 'opus')).toMatchObject({ model: 'claude-opus-5' })
+    // The promoted model is a new quota target; the snapshot is republished
+    // rather than left for the next tick.
+    const snapshot = getRoutingSnapshot()
+    expect(snapshot === null ? [] : [...snapshot.targets.keys()]).toContain('claude-code,claude-opus-5')
   })
 
   test('an unknown provider or model is a 404, and so is clearing an alias that is not set', async () => {
@@ -120,5 +128,12 @@ describe.skipIf(!HAS_DB)('routing profile and tier alias endpoints', () => {
   test('profiles are listed with the default first', async () => {
     const list = await (await routingProfilesRoute.fetch(request('GET', '/api/routing/profiles'))).json()
     expect(list.map((p: { key: string }) => p.key)).toEqual(['live', 'passthrough'])
+  })
+
+  test('the default stays first once it has a row, ahead of keys that sort before it', async () => {
+    await routingProfileRoute.fetch(request('PUT', '/api/routing/profiles/live', map({})))
+    await routingProfileRoute.fetch(request('PUT', '/api/routing/profiles/cost-first', map({})))
+    const list = await (await routingProfilesRoute.fetch(request('GET', '/api/routing/profiles'))).json()
+    expect(list.map((p: { key: string }) => p.key)).toEqual(['live', 'cost-first', 'passthrough'])
   })
 })

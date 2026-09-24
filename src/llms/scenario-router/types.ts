@@ -1,11 +1,10 @@
 /**
- * Shared types for the scenario router split.
+ * Shared types for the request router.
  *
- * `ConfigProvider` is the runtime provider view the failover walker
- * (`failover.ts`) and the chain projection (`quota-router/runtime.ts`)
- * read; the `Router*` types are the router's public request/context
- * shapes, re-exported from the top-level `scenario-router.ts` for
- * external callers.
+ * `ConfigProvider` is the runtime provider view the subscription-kind
+ * sniffer (`subscription-kind.ts`) reads; the `Router*` types are the
+ * router's public request/context shapes, re-exported from the top-level
+ * `scenario-router.ts` for external callers.
  */
 
 import type { Logger } from 'pino'
@@ -19,9 +18,7 @@ export type RouterRequestBody = {
   messages?: TokenizeMessage[]
   system?: TokenizeSystem
   tools?: TokenizeTool[]
-  thinking?: unknown
   metadata?: { user_id?: string }
-  output_config?: Record<string, unknown>
   [extra: string]: unknown
 }
 

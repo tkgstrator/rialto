@@ -3,6 +3,7 @@ import { resetLlmsContext } from '../../../../../llms'
 import { RoutingErrorSchema, SetTierAliasSchema } from '../../../../../schemas/api/routing'
 import { ModelTierSchema } from '../../../../../schemas/domain/tier-route'
 import { syncToConfigFile } from '../../../../../services/config/sync-to-disk'
+import { republishRoutingSnapshot } from '../../../../../services/routing-scheduler'
 import { clearTierAlias, setTierAlias } from '../../../../../services/tier-alias-service'
 import { validationErrorHook } from '../../../../zod-response'
 
@@ -47,6 +48,11 @@ providerTierAliasRoute.openapi(
     if (outcome.enabledModel) {
       await syncToConfigFile()
       resetLlmsContext()
+      // A model switched on here is a new target for the quota snapshot.
+      // Until a tick reads it, the router would treat it as having no
+      // quota at all; republish so the first request after a promotion
+      // is already judged on the model's accounts.
+      await republishRoutingSnapshot()
     }
     return c.json({ enabledModel: outcome.enabledModel }, 200)
   }

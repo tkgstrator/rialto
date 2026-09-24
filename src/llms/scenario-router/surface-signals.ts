@@ -2,25 +2,23 @@
  * The routing signals a request carries, read out of whichever wire
  * format it arrived in.
  *
- * The classifier and the rule predicates used to read `req.body`
- * directly, in Anthropic's vocabulary: `thinking.type`,
- * `output_config.effort`, and `tools[].type` matching `web_search*`.
- * That is only the shape `/v1/messages` sends. Phase 2-3 made the
- * routing *mode* switchable per surface, but the lanes behind the mode
- * stayed unreachable for the other three — an openai-chat or gemini
- * caller could be marked `routed` and would still only ever classify as
- * `default`, because none of the signals the other lanes test for exist
- * under those names. The modes were honest; the router behind them was
- * not.
+ * The tier map gates each route on two questions about a request: will
+ * the prompt fit in the route's context window, and did the caller attach
+ * a web-search tool the route may not be able to run. Both have to be
+ * answered in the vocabulary the request arrived in — a Responses caller
+ * carries its turns in `input`, a Gemini caller in `contents[]`, and each
+ * vendor spells its search tool differently. Read only under Anthropic's
+ * names, a Responses or Gemini prompt would weigh nothing, no other
+ * vendor's search tool would be seen, and both gates would wave those
+ * requests through.
  *
  * Extraction lives per surface for the same reason the rest of the
  * inbound knowledge does (`src/llms/inbound/surfaces.ts`): adding a
  * fifth surface should mean adding one entry here, not hunting for
  * every place a vocabulary leaked into the router.
  *
- * The set is deliberately small. This is what the scenario lanes and the
- * rule predicates actually test — not a general model of a request.
- * Anything the router does not branch on has no business being
+ * The set is deliberately small: what those two gates read, and nothing
+ * else. Anything the router does not branch on has no business being
  * normalised here.
  */
 
@@ -28,40 +26,25 @@ import { surfaceForPath } from '@/llms/inbound/surfaces'
 import { readGeminiSignals } from '@/llms/utils/gemini/router-signals'
 import type { TokenizeContentBlock, TokenizeMessage, TokenizeRequest, TokenizeTool } from '@/schemas/domain/tokenizer'
 import { isObject } from '../utils/guards'
-import { type EffortLevel, isThinkingEnabled, isWebSearchTool, readEffort } from './request-signals'
+import { isWebSearchTool } from './request-signals'
 import type { RouterRequestBody } from './types'
 
 export type RouterSignals = {
-  /** What to hand the tokenizer for the size-based `longContext` branch. */
-  tokenize: TokenizeRequest
-  /** Did the caller opt INTO extended thinking / reasoning? */
-  thinking: boolean
-  /** How heavy the caller says the work is, when it says at all. */
-  effort: EffortLevel | undefined
   /**
-   * Identity of each attached tool, in the surface's own vocabulary —
-   * Anthropic names tools by `type`, OpenAI by the function name. The
-   * `hasTool` rule predicate globs against these, so what an operator
-   * types in the Rules screen is whatever their own client sends.
+   * What to hand the tokenizer. The count is weighed against each
+   * route's context window, and `/v1/messages/count_tokens` reports the
+   * same number, so a client and the router cannot disagree on a size.
    */
-  toolNames: string[]
+  tokenize: TokenizeRequest
   /**
-   * Did the caller attach that surface's web-search tool? Separate from
-   * `toolNames` because every vendor spells it differently, and the
-   * `webSearch` lane asks a semantic question rather than a glob.
+   * Did the caller attach that surface's web-search tool? A route whose
+   * model cannot run it is skipped rather than sent the request without
+   * its tool. Read per surface because every vendor spells it differently.
    */
   webSearch: boolean
 }
 
 type SignalReader = (body: RouterRequestBody) => RouterSignals
-
-/** Tool identities as Anthropic names them: the block's `type`. */
-const anthropicToolNames = (tools: unknown): string[] => {
-  if (!Array.isArray(tools)) return []
-  return tools
-    .map((tool) => (tool !== null && typeof tool === 'object' ? Reflect.get(tool, 'type') : undefined))
-    .filter((t): t is string => typeof t === 'string')
-}
 
 const readAnthropicSignals: SignalReader = (body) => ({
   tokenize: {
@@ -69,124 +52,20 @@ const readAnthropicSignals: SignalReader = (body) => ({
     system: body.system,
     tools: body.tools
   },
-  thinking: isThinkingEnabled(body),
-  effort: readEffort(body),
-  toolNames: anthropicToolNames(body.tools),
   webSearch: Array.isArray(body.tools) && body.tools.some(isWebSearchTool)
 })
 
 // ─── OpenAI: /v1/chat/completions and /v1/responses ────────────────────
 //
 // Both surfaces speak one vendor vocabulary and differ only in where
-// they put things, so the signals that do not move (`effort`,
-// `thinking`, `toolNames`, `webSearch`) are read by one set of helpers
-// and only `tokenize` gets a reader per surface.
+// they put things, so `webSearch`, which does not move, is read by one
+// helper and only `tokenize` gets a reader per surface.
 //
 // These run on the RAW inbound body. The endpoint transformers that
-// normalise these shapes (`OpenAITransformer.transformRequestOut` folds
-// `reasoning_effort` into `reasoning.effort`;
-// `convertResponsesRequestToUnified` turns `input` into `messages`) run
-// in the pipeline, which is AFTER `buildRoutePlan` has already routed.
-// Reading the normalised shape here is therefore not an option — it does
-// not exist yet.
-
-/**
- * OpenAI's reasoning-effort vocabulary mapped onto the router's.
- *
- * `EffortLevel` was written against Anthropic's `output_config.effort`
- * and has no rung below `low`, while OpenAI publishes two: `minimal`
- * and `none`. Both fold onto `low` rather than onto `undefined`, because
- * `undefined` means "the caller said nothing" and `isHeavyRequest` then
- * falls through to escalating on the requested model tier. A caller
- * asking for the cheapest reasoning HAS said something, and `low` is the
- * bucket that suppresses that escalation — which is also the only value
- * an operator can select for it in the Rules screen, whose `effort`
- * predicate is an `EffortLevel` set.
- *
- * `max` is not an OpenAI value. It is accepted anyway so a caller
- * proxying an Anthropic-shaped effort through an OpenAI-compat client
- * is not silently downgraded to "said nothing".
- */
-const OPENAI_EFFORT: Partial<Record<string, EffortLevel>> = {
-  none: 'low',
-  minimal: 'low',
-  low: 'low',
-  medium: 'medium',
-  high: 'high',
-  xhigh: 'xhigh',
-  max: 'max'
-}
-
-/**
- * The raw effort string, wherever this caller put it.
- *
- * Chat Completions names it `reasoning_effort` at the top level;
- * Responses nests it as `reasoning.effort`. Both spellings are read on
- * both surfaces deliberately: they are one vendor's vocabulary, Rialto's
- * own chat transformer rewrites the flat form into the nested one, and
- * clients in the wild send whichever their SDK version emits.
- */
-function openAiEffortValue(body: RouterRequestBody): string | undefined {
-  const flat = body.reasoning_effort
-  if (typeof flat === 'string' && flat.length > 0) return flat
-  const reasoning = body.reasoning
-  if (!isObject(reasoning)) return undefined
-  const nested = reasoning.effort
-  return typeof nested === 'string' && nested.length > 0 ? nested : undefined
-}
-
-function openAiEffort(body: RouterRequestBody): EffortLevel | undefined {
-  const value = openAiEffortValue(body)
-  return value === undefined ? undefined : OPENAI_EFFORT[value]
-}
-
-/**
- * Whether the caller asked the model to reason before answering.
- *
- * OpenAI has no `thinking` field, so the question `thinking` actually
- * asks — "did the client opt into extended reasoning?" — has to be read
- * off the reasoning controls. The predicate mirrors the Anthropic one
- * rather than inventing a second rule: there, PRESENCE of `thinking` is
- * the opt-in and `type: 'disabled'` the explicit opt-out; here, presence
- * of a reasoning control is the opt-in and `'none'` — OpenAI's own "do
- * not reason" value — the explicit opt-out.
- *
- * Absence is not an opt-in on either surface even though both vendors
- * reason by default server-side, because the `think` lane grades client
- * INTENT. Treating an omitted field as thinking would put every plain
- * chat completion on the think slot, which is the exact miscount the
- * Anthropic reader's `'disabled'` carve-out exists to avoid.
- *
- * A `reasoning` object carrying no effort still counts: Codex CLI sends
- * `reasoning: {summary: 'auto'}`, and asking for a reasoning summary is
- * asking for reasoning.
- */
-function openAiReasoningRequested(body: RouterRequestBody): boolean {
-  const value = openAiEffortValue(body)
-  if (value !== undefined) return value !== 'none'
-  return isObject(body.reasoning)
-}
-
-/**
- * Tool identities as OpenAI names them.
- *
- * Chat wraps a function tool as `{type:'function', function:{name}}` and
- * Responses flattens it to `{type:'function', name}`; hosted tools
- * (`web_search`, `file_search`, `code_interpreter`, `mcp`) carry no name
- * on either surface, so their `type` IS their identity. Returned in the
- * vendor's own spelling, because the `hasTool` predicate globs against
- * this list and what an operator types in the Rules screen should be the
- * name their own client sends.
- */
-function openAiToolNames(tools: unknown): string[] {
-  if (!Array.isArray(tools)) return []
-  return tools.flatMap((tool) => {
-    if (!isObject(tool)) return []
-    const name = openAiToolName(tool)
-    if (name !== undefined) return [name]
-    return typeof tool.type === 'string' ? [tool.type] : []
-  })
-}
+// normalise these shapes (`convertResponsesRequestToUnified` turns
+// `input` into `messages`) run in the pipeline, which is AFTER
+// `buildRoutePlan` has already routed. Reading the normalised shape here
+// is therefore not an option — it does not exist yet.
 
 /** A tool's declared name, from either the nested or the flat shape. */
 function openAiToolName(tool: Record<string, unknown>): string | undefined {
@@ -271,8 +150,9 @@ function openAiTextBlocks(content: unknown): TokenizeContentBlock[] {
  * `input_schema`. Without this remap an OpenAI caller's tools count as
  * zero tokens — none of `TokenizeTool`'s three fields is where it looks
  * — and a large tool manifest is exactly what pushes an agentic
- * conversation over the longContext threshold. Hosted tools have no
- * schema to weigh and drop out here; `toolNames` still reports them.
+ * conversation past a route's context window. Hosted tools have no
+ * schema to weigh and drop out here; the one the router cares about,
+ * web search, is read separately by `openAiWebSearch`.
  */
 function openAiTokenizeTools(tools: unknown): TokenizeTool[] {
   if (!Array.isArray(tools)) return []
@@ -295,8 +175,9 @@ function openAiTokenizeTools(tools: unknown): TokenizeTool[] {
  * and usually leaves `content` null — Anthropic puts the same payload in
  * a `tool_use` content block, which the tokenizer DOES count. Left
  * as-is, every tool call in an agentic conversation weighs zero and a
- * Chat caller never reaches the size-based longContext branch: the same
- * class of undercount as `input` counting zero on Responses.
+ * Chat caller's conversation never looks too big for any route's context
+ * window: the same class of undercount as `input` counting zero on
+ * Responses.
  */
 function openAiChatMessages(messages: unknown): TokenizeMessage[] {
   if (!Array.isArray(messages)) return []
@@ -360,9 +241,6 @@ const readOpenAiChatSignals: SignalReader = (body) => ({
     messages: openAiChatMessages(body.messages),
     tools: openAiTokenizeTools(body.tools)
   },
-  thinking: openAiReasoningRequested(body),
-  effort: openAiEffort(body),
-  toolNames: openAiToolNames(body.tools),
   webSearch: openAiWebSearch(body)
 })
 
@@ -374,9 +252,6 @@ const readOpenAiResponsesSignals: SignalReader = (body) => ({
     system: typeof body.instructions === 'string' ? body.instructions : undefined,
     tools: openAiTokenizeTools(body.tools)
   },
-  thinking: openAiReasoningRequested(body),
-  effort: openAiEffort(body),
-  toolNames: openAiToolNames(body.tools),
   webSearch: openAiWebSearch(body)
 })
 
@@ -409,10 +284,10 @@ export function readSignals(body: RouterRequestBody, inboundPath: string | undef
 /**
  * Signals for a request, computed once and cached on it.
  *
- * Cached because the classifier and every rule predicate ask for the
- * same answers, and a gemini `contents[]` walk is not free. Stored on
- * the request rather than threaded through because that is how the
- * router already carries derived state (`scenarioType`, `tokenCount`).
+ * Cached because a gemini `contents[]` walk is not free, and the body
+ * does not change while the request is being routed. Stored on the
+ * request rather than threaded through because that is how the router
+ * already carries derived state (`tokenCount`, `route`).
  */
 export function signalsOf(req: {
   body: RouterRequestBody

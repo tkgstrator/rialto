@@ -63,19 +63,24 @@ function stamp(req: RouterRequest, outcome: Outcome): void {
  * a map that cannot take this request at all (`routingRefusal`, a 400).
  */
 export async function routeRequest(req: RouterRequest, ctx: RouterContext): Promise<void> {
+  // Stripped first, whatever happens next — passthrough included: the tag
+  // is a Rialto marker, meaningless to any upstream, and a caller that
+  // writes it into its prompts does so whichever mode its surface is in.
+  // Passthrough only promises the caller's own model; it used to return
+  // before this line, so the tag went upstream and every such request
+  // was recorded as a main-agent call.
+  const isSubagent = stripSubagentTag(req.body.system)
+
   // Passthrough: the caller hand-picks its target and expects that exact
   // model upstream. Which traffic that is comes from configuration: every
   // surface carries an explicit mode, and a token may name the reserved
   // passthrough profile to opt one client out.
   const forcedPassthrough = req.profileKeyOverride === PASSTHROUGH_PROFILE_KEY
   if (forcedPassthrough || !(await isRoutedPath(req.inboundPath))) {
-    stamp(req, { route: PASSTHROUGH_ROUTE, isSubagent: false, fallbacks: [] })
+    stamp(req, { route: PASSTHROUGH_ROUTE, isSubagent, fallbacks: [] })
     return
   }
 
-  // Stripped first, and whatever happens next: the tag is a Rialto marker
-  // and must never reach an upstream, including on the failure path.
-  const isSubagent = stripSubagentTag(req.body.system)
   try {
     await routeThroughTierMap(req, ctx, isSubagent)
   } catch (err) {
