@@ -47,8 +47,8 @@ fi
 # The builder's `bun install` reads @qtmleap packages from GitHub Packages
 # (bunfig.toml); the same gh token reads them. Passed as a build secret, so
 # it stays out of the image.
-export GH_PACKAGES_TOKEN="${GH_PACKAGES_TOKEN:-$(gh auth token)}"
-docker build --secret id=gh_packages_token,env=GH_PACKAGES_TOKEN \
+export GH_TOKEN="${GH_TOKEN:-$(gh auth token)}"
+docker build --secret id=gh_token,env=GH_TOKEN \
   -t "${IMAGE_NAME}:${IMAGE_TAG}" -f "${ROOT}/Dockerfile" "${ROOT}"
 docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "${IMAGE_NAME}:${LATEST_TAG}"
 docker push "${IMAGE_NAME}:${IMAGE_TAG}"

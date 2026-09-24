@@ -28,10 +28,10 @@ COPY src ./src
 # The devDependencies include @qtmleap packages from GitHub Packages, which
 # wants a token even to read (bunfig.toml). It comes in as a build secret,
 # so no layer of the image holds it:
-#   docker build --secret id=gh_packages_token,env=GH_PACKAGES_TOKEN .
+#   docker build --secret id=gh_token,env=GH_TOKEN .
 # The runtime stage installs production dependencies only and needs none.
-RUN --mount=type=secret,id=gh_packages_token \
-    export GH_PACKAGES_TOKEN="$(cat /run/secrets/gh_packages_token 2>/dev/null)"; \
+RUN --mount=type=secret,id=gh_token \
+    export GH_TOKEN="$(cat /run/secrets/gh_token 2>/dev/null)"; \
     bun install --frozen-lockfile || bun install --frozen-lockfile
 RUN bunx prisma generate
 RUN bun run build

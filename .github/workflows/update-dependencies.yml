@@ -39,7 +39,7 @@ jobs:
       - name: Update dependencies
         # @qtmleap packages come from GitHub Packages (bunfig.toml).
         env:
-          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           held='["prisma","@prisma/client","@prisma/adapter-pg"]'
           names=$(jq -r --argjson held "$held" '

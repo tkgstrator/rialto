@@ -9,7 +9,7 @@ on:
 # needs a token even to read (bunfig.toml). Dependabot's PRs get it from the
 # Dependabot secret of the same name, not this one.
 env:
-  GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+  GH_TOKEN: ${{ secrets.GH_TOKEN }}
 
 jobs:
   commitlint:

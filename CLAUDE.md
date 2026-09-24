@@ -627,11 +627,11 @@ There is no dependency graph to learn — this is one package. Two rules matter:
 ## Development Notes
 
 1. **Runtime / package manager**: bun. Use `bun` and `bunx`, never npm/npx.
-   `bun install` needs `GH_PACKAGES_TOKEN` (a token with `read:packages`): the
+   `bun install` needs `GH_TOKEN` (a token with `read:packages`): the
    `@qtmleap` scope comes from GitHub Packages (`bunfig.toml`). `.envrc` and the
    devcontainer's `postCreateCommand.sh` fill it from `gh auth token`; CI, the
    weekly update job and Dependabot read the repository secret of that name, and
-   the Docker build takes it as the `gh_packages_token` build secret.
+   the Docker build takes it as the `gh_token` build secret.
 2. **Formatting and lint**: Biome (`biome.json`, plus local rules in `biome-plugins/`).
    No `??`, no `let`, no type assertions, no `while`. `files.includes` covers
    `src/**` **and `__tests__/**`** — tests were outside it for a long time, which is

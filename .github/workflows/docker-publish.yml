@@ -65,7 +65,7 @@ jobs:
           # GitHub Packages (bunfig.toml). A secret mount, not a build arg,
           # so the token stays out of the image.
           secrets: |
-            gh_packages_token=${{ secrets.GH_PACKAGES_TOKEN }}
+            gh_token=${{ secrets.GH_TOKEN }}
 
       - name: Image digest
         run: echo ${{ steps.meta.outputs.digest }}
