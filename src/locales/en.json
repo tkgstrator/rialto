@@ -181,6 +181,8 @@
       "passthroughNote": "Switch this surface to <mono>Routed</mono> to give {{client}} the same quota-aware failover Claude Code gets. Callers keep sending their own model string — it becomes the <mono>requestedModel</mono> the classifier reads, rather than the final target."
     },
     "scenarios": {
+      "blockedEscalationTiers": "Blocked escalation destinations",
+      "blockedEscalationHint": "Only escalation into selected tiers is blocked. Same-tier routing and demotion remain allowed.",
       "crumb": "Scenarios",
       "title": "Scenarios",
       "hint": "provider · tier combinations per scenario, for the agent and for subagents, tried top first",

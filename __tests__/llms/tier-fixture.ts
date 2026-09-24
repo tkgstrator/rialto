@@ -73,6 +73,7 @@ function fill<T>(spec: RoutesSpec<T>): Record<RoutingScenario, Record<RoutingLan
 
 // Every knob at the schema's default, so a test names only what it is about.
 export const DEFAULT_CONSTRAINTS: RoutingConstraints = {
+  blockedEscalationTiers: [],
   exhaustedBehavior: '429',
   quotaSkipPct: 100,
   errorRateSkipPct: 0.5,

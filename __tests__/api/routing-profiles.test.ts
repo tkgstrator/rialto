@@ -66,6 +66,24 @@ describe.skipIf(!HAS_DB)('routing profile and tier alias endpoints', () => {
 
   afterAll(teardownPrisma)
 
+  test('escalation restrictions round-trip, survive omitted writes, and clear with an empty list', async () => {
+    const path = '/api/routing/profiles/live'
+    const save = await routingProfileRoute.fetch(
+      request('PUT', path, map({}, { blockedEscalationTiers: ['opus', 'fable'] }))
+    )
+    expect(save.status).toBe(200)
+    const read = await routingProfileRoute.fetch(request('GET', path))
+    expect((await read.json()).constraints.blockedEscalationTiers).toEqual(['opus', 'fable'])
+    const omitted = await routingProfileRoute.fetch(request('PUT', path, { routes: map({}).routes }))
+    expect(omitted.status).toBe(200)
+    const kept = await routingProfileRoute.fetch(request('GET', path))
+    expect((await kept.json()).constraints.blockedEscalationTiers).toEqual(['opus', 'fable'])
+    const clear = await routingProfileRoute.fetch(request('PUT', path, map({}, { blockedEscalationTiers: [] })))
+    expect(clear.status).toBe(200)
+    const cleared = await routingProfileRoute.fetch(request('GET', path))
+    expect((await cleared.json()).constraints.blockedEscalationTiers).toEqual([])
+  })
+
   test('a saved map reads back with each route resolved, and an unset alias as null', async () => {
     const alias = await providerTierAliasRoute.fetch(
       request('PUT', '/api/providers/claude-code/tier-aliases/sonnet', { model: 'claude-sonnet-5' })

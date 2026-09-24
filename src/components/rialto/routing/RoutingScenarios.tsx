@@ -25,6 +25,7 @@ import {
   useSurfaces,
   useTierAliases
 } from './data'
+import { EscalationRestrictions } from './EscalationRestrictions'
 import { PassthroughPanel } from './PassthroughPanel'
 import { SurfaceBar } from './RoutingTabs'
 import { ScenarioTable } from './ScenarioTable'
@@ -133,6 +134,11 @@ function RoutedBody({ profileKey, profile, actions, providers, aliases }: Routed
           actions={editing}
           providers={providers}
           aliases={aliases}
+        />
+        <EscalationRestrictions
+          selected={profile.blockedEscalationTiers}
+          onChange={profile.setBlockedEscalationTiers}
+          editing={actions.editing}
         />
       </div>
     </>
