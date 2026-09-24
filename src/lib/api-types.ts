@@ -12,8 +12,10 @@ export interface RequestLogItem {
   sessionId: string
   provider: string
   model: string
-  // What the client asked for pre-routing, and the routing lane it hit.
-  // Null on rows written before routing capture landed.
+  // What the client asked for pre-routing, and the route it took: the
+  // requested tier whose routes served it, or "passthrough". Older rows
+  // carry the scenario the retired classifier chose. Null on rows written
+  // before routing capture landed.
   requestedModel: string | null
   scenario: string | null
   // Which inbound surface served the request (an `InboundSurface.id`
@@ -279,40 +281,6 @@ export interface OverviewResponse {
   recentSessions: OverviewRecentSession[]
 }
 
-export interface RouterPreferenceEntryWire {
-  priority: number
-  target: string
-  enabled: boolean
-  // Optional per-entry override of the global escalation / demotion
-  // gates. Undefined = inherit the global constraint.
-  allowEscalation?: boolean
-  allowDemotion?: boolean
-}
-
-export type PreferenceScenarioKey = 'default' | 'think' | 'longContext' | 'webSearch' | 'image'
-export type PreferenceKind = 'agent' | 'subagent'
-
-// Each scenario carries two independent ordered chains: `agent` for
-// main-agent traffic, `subagent` for requests carrying a
-// <RIALTO-SUBAGENT-MODEL> tag. Both are always present so the UI can
-// render an empty tab without a "missing" branch.
-export interface PreferenceEntriesByKindWire {
-  agent: RouterPreferenceEntryWire[]
-  subagent: RouterPreferenceEntryWire[]
-}
-
-export type PreferenceEntriesByScenarioWire = Record<PreferenceScenarioKey, PreferenceEntriesByKindWire>
-
-export interface RouterPreferenceProfileWire {
-  entriesByScenario: PreferenceEntriesByScenarioWire
-  constraints: Record<string, unknown> | null
-}
-
-export interface RouterPreferencesApplyResponse {
-  success: boolean
-  warnings: string[]
-}
-
 export interface RoutingSchedulerTargetState {
   target: string // "provider,model"
   exhausted: boolean // out of use on quota right now
@@ -338,46 +306,6 @@ export interface RoutingSchedulerStateResponse {
   targets: RoutingSchedulerTargetState[]
   accounts: RoutingSchedulerAccountView[]
   soonestResetAt: string | null
-}
-
-export interface RouterUtilizationPerScenarioRow {
-  scenario: string
-  total: number
-  ok: number
-  err429: number
-  errOther: number
-}
-
-export interface RouterUtilizationPerTargetRow {
-  requestedModel: string | null
-  sentTo: string
-  count: number
-}
-
-export interface RouterUtilizationPerAccountRow {
-  subAccountId: string
-  providerName: string
-  kind: 'claude' | 'codex'
-  currentBudgetPct: number | null
-  fiveHourResetAt: string | null
-  weeklyResetAt: string | null
-  stale: boolean
-}
-
-export interface RouterUtilizationSuggestion {
-  kind: 'primary_never_reached' | 'fallback_over_used' | 'exhausted_no_secondary'
-  target: string
-  detail: string
-  proposedDiff: Record<string, unknown>
-}
-
-export interface RouterUtilizationResponse {
-  windowHours: number
-  generatedAt: string
-  perScenario: RouterUtilizationPerScenarioRow[]
-  perTarget: RouterUtilizationPerTargetRow[]
-  perAccount: RouterUtilizationPerAccountRow[]
-  suggestions: RouterUtilizationSuggestion[]
 }
 
 // ─── Tier map and provider tier aliases ────────────────────────────────

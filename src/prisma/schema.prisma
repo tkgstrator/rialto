@@ -3,8 +3,11 @@
 // The upstreams and how traffic is routed to them:
 //   - Provider:                one row per LLM provider account (api_base_url + api_key)
 //   - Model:                   one row per model name, child of Provider
-//   - RouterPreferenceProfile: a named chain; `live` is the default every surface uses
-//   - RouterPreferenceEntry:   the ordered targets of a chain, per scenario and lane
+//   - RouterPreferenceProfile: a named routing profile; `live` is the default every surface uses
+//   - ProviderTierAlias:       which of a provider's models each tier (fable/opus/sonnet/haiku) is
+//   - TierRoute:               a profile's tier map — per requested tier, the ordered provider·tiers
+//   - RouterPreferenceEntry, RoutingWeightChange, ScenarioKey, Model.manualTier: retired,
+//     read only by the one-shot tier-map backfill; dropped by the contract migration
 // Everything else here is the archive behind Activity and Overview, the
 // subscription accounts and their observed quota, and issued credentials.
 //
@@ -20,8 +23,9 @@ datasource db {
   provider = "postgresql"
 }
 
-// The scenarios a request is classified into, each owning its own chain
-// lanes. `default` is the catch-all; the rest are reached only when the
+// Retired with the per-scenario chains; kept only until the contract
+// migration drops RouterPreferenceEntry. The scenarios a request was
+// classified into, each owning its own chain lanes. `default` is the catch-all; the rest are reached only when the
 // chain has an entry for them. The former `background` scenario was
 // folded into `default` (migration `20260728_router_rules_drop_background`).
 enum ScenarioKey {
@@ -262,8 +266,10 @@ model SubAccountQuota {
   updatedAt        DateTime  @updatedAt
 }
 
-// Audit log of scheduler weight adjustments. One row per (tick, target)
-// whose published weight changed. Pruned after 14 days from the tick
+// Retired: the scheduler publishes quota, not weights, and writes no rows
+// here any more; dropped by the contract migration. Was the audit log of
+// scheduler weight adjustments, one row per (tick, target) whose
+// published weight changed. Pruned after 14 days from the tick
 // path, mirroring UsageSnapshot's retention pattern.
 model RoutingWeightChange {
   id         String   @id @default(cuid())
@@ -298,6 +304,9 @@ model Model {
   // Null means "use the provider's apiStyle"; set explicitly (seeded)
   // for the models that need a different endpoint.
   apiStyle          ApiStyle?
+  // Retired: nothing writes it any more (the tier alias replaced it), and
+  // it is dropped by the contract migration. Until then the tier-map
+  // backfill and the alias candidate list still read it.
   // Manual tier override used by the quota-aware preference selector.
   // Null = fall back to name-substring inference (tierOf) which only
   // recognises the four Claude families; setting this lets operators
@@ -354,10 +363,10 @@ model Model {
   @@index([providerId])
 }
 
-// The chain (docs/plan/quota-aware-preference-router.md §6.3). One row
-// per named profile holds the constraint knobs; ordered entries
-// reference Models directly, and cascade when a model is deleted — the
-// apply layer counts them first and warns.
+// A named routing profile. One row per profile holds the constraint knobs
+// (exhaustedBehavior, quotaSkipPct, errorRateSkipPct, minHealthSamples);
+// its tier map is TierRoute. The retired RouterPreferenceEntry chain hangs
+// off it too, until the contract migration drops it.
 //
 // `live` is the default profile every surface routes through until it
 // is pointed at another one (InboundSurfaceConfig.profileKey), and a
@@ -436,6 +445,9 @@ model TierRoute {
   @@index([providerId])
 }
 
+// Retired: the per-scenario, per-lane chain the tier map replaced. Read
+// only by the one-shot backfill into TierRoute; dropped by the contract
+// migration once every profile carries chainBackfilledAt.
 model RouterPreferenceEntry {
   id        String                  @id @default(cuid())
   profileId String
@@ -595,16 +607,20 @@ model RequestLog {
   session          Session  @relation(fields: [sessionId], references: [id])
   provider         String
   model            String
-  // What the client (Claude Code) asked for in body.model BEFORE scenario
-  // routing rewrote it, and which routing lane it fell into. Both null for
-  // rows written before this landed (backfill is not possible — the
+  // What the client (Claude Code) asked for in body.model BEFORE routing
+  // rewrote it, and the route it took: the requested tier whose tier-map
+  // routes served it (fable / opus / sonnet / haiku / other), or
+  // "passthrough". The column keeps its old name; rows from before the
+  // tier map carry the scenario the retired classifier chose. Both null
+  // for rows written before this landed (backfill is not possible — the
   // original request is gone), so readers treat null as "untracked".
   // `model`/`provider` above stay the actual upstream target.
   requestedModel   String?
   scenario         String?
-  // Whether the request carried a <RIALTO-SUBAGENT-MODEL> tag and was routed
-  // through the subagent lane. Null for rows written before this column
-  // landed (untracked); true / false thereafter. Kept nullable so a reader
+  // Whether the request carried a <RIALTO-SUBAGENT-MODEL> tag. It selects
+  // nothing any more — the tier map has no subagent lane — but is still
+  // recorded so Activity can tell the two apart. Null for rows written
+  // before this column landed (untracked); true / false thereafter. Kept nullable so a reader
   // can distinguish "no data" from "data says agent".
   isSubagent       Boolean?
   // Which wire format the client came in on: 'anthropic' for

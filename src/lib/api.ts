@@ -8,9 +8,6 @@ import type {
   OverviewResponse,
   RequestLogItem,
   ResetCreditsResponse,
-  RouterPreferenceProfileWire,
-  RouterPreferencesApplyResponse,
-  RouterUtilizationResponse,
   RoutingMode,
   RoutingSchedulerStateResponse,
   SessionMessageItem,
@@ -178,17 +175,6 @@ class ApiClient {
     return this.post<{ archived: number }>('/request-logs/sessions/archive', {})
   }
 
-  // Router preferences (Phase 6). The singleton preference chain that
-  // the quota-aware router walks. GET is empty on a fresh DB, PUT
-  // replaces the whole chain atomically.
-  async getRouterPreferences(): Promise<RouterPreferenceProfileWire> {
-    return this.get<RouterPreferenceProfileWire>('/router-preferences')
-  }
-
-  async putRouterPreferences(profile: RouterPreferenceProfileWire): Promise<RouterPreferencesApplyResponse> {
-    return this.put<RouterPreferencesApplyResponse>('/router-preferences', profile)
-  }
-
   // ─── Tier map ────────────────────────────────────────────────────────
   // A profile's routes per requested tier, each resolved through its
   // provider's alias on read. PUT replaces the whole profile.
@@ -252,15 +238,6 @@ class ApiClient {
       `/providers/${encodeURIComponent(providerName)}/models/${encodeURIComponent(modelName)}`,
       { method: 'PATCH', body: JSON.stringify({ reasoningEffort }) }
     )
-  }
-
-  // Router utilization dashboard (Phase 7). Aggregations over the
-  // requested window in hours (default 24).
-  async getRouterUtilization(params?: { windowHours?: number }): Promise<RouterUtilizationResponse> {
-    const q = new URLSearchParams()
-    if (params?.windowHours != null) q.set('windowHours', String(params.windowHours))
-    const qs = q.toString()
-    return this.get<RouterUtilizationResponse>(`/router-utilization${qs ? `?${qs}` : ''}`)
   }
 
   // Overview screen. One call for the whole summary so its blocks all

@@ -1,14 +1,13 @@
 /**
  * Scheduler ticks never overlap.
  *
- * Each tick damps its weights against the snapshot it read on the way in,
- * so two overlapping ticks would both damp against the same baseline and
- * the second publish would silently discard the first. The timer shares a
- * tick already in flight; a republish after fresh quota has been written
+ * Two overlapping ticks could publish out of order and put a reading the
+ * other had already replaced back in front of the router. The timer shares
+ * a tick already in flight; a republish after fresh quota has been written
  * waits for it and runs one more, because joining it would publish the
  * reading from before the write.
  *
- * DB-gated: a tick reads the chain and SubAccountQuota.
+ * DB-gated: a tick reads the subscription providers and SubAccountQuota.
  */
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'

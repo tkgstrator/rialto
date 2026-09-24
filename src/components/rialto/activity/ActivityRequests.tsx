@@ -198,8 +198,9 @@ export function ActivityRequests() {
       // could not be asked, although the row had the answer all along.
       client: tokenNameOf(log.accessTokenId, tokenNames, surfaces.clientOf(log.surface)),
       lane: lane(log.isSubagent),
-      // No Rule entity exists yet; the scenario IS the routing decision
-      // that matched, so it fills this column until rules are persisted.
+      // The route the router took: the requested tier whose routes served
+      // it, or "passthrough". Stored in the column still named `scenario`,
+      // which held the classifier's scenario before the tier map.
       rule: log.scenario
     }))
   }, [page, surfaces.pathOf, surfaces.clientOf, tokenNames])

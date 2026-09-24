@@ -54,11 +54,6 @@ export const ModelTestAllResponseSchema = z
 // missing fields as "no change".
 export const UpdateModelBodySchema = z.object({
   enabled: z.boolean().optional(),
-  // Manual tier override consumed by the quota-aware selector. Send
-  // one of the four canonical tiers to set, or null to clear the
-  // override (fall back to name inference). Omit the field entirely
-  // to leave the current value untouched.
-  manualTier: z.enum(['fable', 'opus', 'sonnet', 'haiku']).nullable().optional(),
   // Manual reasoning-effort override for OpenAI / OpenAI-Responses /
   // Codex models. null clears the override (vendor default = medium);
   // omit to leave the current value untouched. Enum mirrors the values

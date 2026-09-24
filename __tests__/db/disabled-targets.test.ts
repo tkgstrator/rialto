@@ -3,8 +3,8 @@
  *
  * `Provider.enabled` and `Model.enabled` are the Providers screen's two
  * switches. They used to gate only what `/v1/models` advertised and
- * what the Routing screen offered: a chain entry written before the
- * switch flipped kept routing to it, a passthrough caller naming the
+ * what the Routing screen offered: a route written before the switch
+ * flipped kept routing to it, a passthrough caller naming the
  * pair by hand was dispatched, and a disabled subscription provider's
  * accounts still fed the per-request picker. These pin the door shut
  * on all of them.
@@ -18,13 +18,9 @@ import { getPrismaClient } from '../../src/db/client'
 import { getLlmsContext, resetLlmsContext } from '../../src/llms'
 import { AnthropicTransformer } from '../../src/llms/transformers/anthropic'
 import { applyUiConfig } from '../../src/services/config'
-import {
-  foldTargetEnabled,
-  loadRoutableProfile,
-  loadRouterPreferences
-} from '../../src/services/router-preference-service'
 import { getSubAccountTokensForKind } from '../../src/services/subscription-account-sync/read'
-import { entry, profileWith } from '../llms/chain-fixture'
+import { setTierAlias } from '../../src/services/tier-alias-service'
+import { loadTierProfileView, saveTierProfile } from '../../src/services/tier-route-service'
 import { HAS_DB, resetDbTables, teardownPrisma } from './helpers'
 
 const TEST_KEY_HEX = 'ab'.repeat(32)
@@ -45,28 +41,13 @@ const plan = (): RoutePlan => ({
   headers: {},
   transformersByName: new Map(),
   defaultTransformer: new AnthropicTransformer(),
-  scenarioType: 'default',
+  route: 'sonnet',
   primaryModel: 'x',
   isSubagent: false,
   fallbacks: [],
   path: '/v1/messages',
   search: '',
   accountSessionKey: 'anonymous'
-})
-
-describe('folding the target switches into the entry (no DB)', () => {
-  test('an entry whose target is off reads as disabled on the request path only', () => {
-    const editor = profileWith({ 'default.agent': [entry('a,m', true, false), 'a,n'] })
-    const routable = foldTargetEnabled(editor)
-    expect(editor.entriesByScenario.default.agent[0].enabled).toBe(true)
-    expect(routable.entriesByScenario.default.agent[0].enabled).toBe(false)
-    expect(routable.entriesByScenario.default.agent[1].enabled).toBe(true)
-  })
-
-  test('an entry without the field — a seeded fixture — counts as on', () => {
-    const routable = foldTargetEnabled(profileWith({ 'think.agent': ['a,m'] }))
-    expect(routable.entriesByScenario.think.agent[0].enabled).toBe(true)
-  })
 })
 
 describe.skipIf(!HAS_DB)('disabled targets (DB)', () => {
@@ -108,45 +89,57 @@ describe.skipIf(!HAS_DB)('disabled targets (DB)', () => {
     })
   }
 
-  test('the chain reports the target switch separately, and the request path folds it', async () => {
+  test('a route reports its target switch apart from its own, so the selector skips it', async () => {
     await seedProviders()
     const prisma = getPrismaClient()
-    const live = await prisma.routerPreferenceProfile.upsert({
-      where: { key: 'live' },
-      update: {},
-      create: { key: 'live' }
-    })
+    // Aliases written directly: setTierAlias switches the model it points
+    // at back on, and the point is what the read reports about a target
+    // that is off.
     const models = await prisma.model.findMany({ include: { provider: true } })
-    const byTarget = new Map(models.map((m) => [`${m.provider.name},${m.name}`, m.id]))
-    const idOf = (target: string): string => {
-      const id = byTarget.get(target)
-      if (id === undefined) throw new Error(`fixture did not seed ${target}`)
-      return id
+    const idOf = (provider: string, model: string): { providerId: string; modelId: string } => {
+      const row = models.find((m) => m.provider.name === provider && m.name === model)
+      if (row === undefined) throw new Error(`fixture did not seed ${provider},${model}`)
+      return { providerId: row.providerId, modelId: row.id }
     }
-    // Written directly rather than through applyRouterPreferences: the
-    // apply path resolves targets by name and would happily store these
-    // too, but the point is what the READ reports about them.
-    const targets = ['anthropic,claude-sonnet-5', 'openai,gpt-5-mini', 'openai,gpt-5']
-    await prisma.routerPreferenceEntry.createMany({
-      data: targets.map((target, idx) => ({
-        profileId: live.id,
-        scenario: 'default',
-        kind: 'agent',
-        priority: idx + 1,
-        modelId: idOf(target)
-      }))
+    // Saving the providers already aliased the Claude-named models by
+    // name; these replace that with the exact pairs under test.
+    await prisma.providerTierAlias.deleteMany({})
+    await prisma.providerTierAlias.createMany({
+      data: [
+        { ...idOf('anthropic', 'claude-sonnet-5'), tier: 'sonnet' },
+        { ...idOf('openai', 'gpt-5-mini'), tier: 'haiku' },
+        { ...idOf('openai', 'gpt-5'), tier: 'sonnet' }
+      ]
+    })
+    await saveTierProfile('live', {
+      routes: {
+        fable: [],
+        opus: [],
+        sonnet: [
+          { provider: 'anthropic', targetTier: 'sonnet', enabled: true },
+          { provider: 'openai', targetTier: 'haiku', enabled: true },
+          { provider: 'openai', targetTier: 'sonnet', enabled: true }
+        ],
+        haiku: [],
+        other: []
+      },
+      constraints: { exhaustedBehavior: '429', quotaSkipPct: 100, errorRateSkipPct: 0.5, minHealthSamples: 5 }
     })
 
-    const editor = await loadRouterPreferences()
-    const lane = editor.entriesByScenario.default.agent
-    expect(lane.map((e) => [e.target, e.enabled, e.targetEnabled])).toEqual([
-      ['anthropic,claude-sonnet-5', true, false],
-      ['openai,gpt-5-mini', true, false],
-      ['openai,gpt-5', true, true]
+    const view = await loadTierProfileView('live')
+    expect(view.routes.sonnet.map((r) => [r.provider, r.enabled, r.resolved?.targetEnabled])).toEqual([
+      ['anthropic', true, false],
+      ['openai', true, false],
+      ['openai', true, true]
     ])
+  })
 
-    const routable = await loadRoutableProfile()
-    expect(routable.entriesByScenario.default.agent.map((e) => e.enabled)).toEqual([false, false, true])
+  test('promoting a switched-off model through its alias switches it on', async () => {
+    await seedProviders()
+    const outcome = await setTierAlias('openai', 'haiku', 'gpt-5-mini')
+    expect(outcome).toEqual({ ok: true, enabledModel: true })
+    const row = await getPrismaClient().model.findFirst({ where: { name: 'gpt-5-mini' } })
+    expect(row?.enabled).toBe(true)
   })
 
   test('the registry holds only enabled models of enabled providers, so invocation refuses the rest', async () => {
