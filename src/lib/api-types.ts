@@ -215,10 +215,33 @@ export interface OverviewQuotaWindow {
 }
 
 /** One subscription account and every limit it is under, shortest first. */
+/** One span of an account's traffic at API prices. Mirrors OverviewUsageFigures. */
+export interface OverviewUsageFigures {
+  requests: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  totalTokens: number
+  /** Null: traffic exists but none of it priced. 0: no traffic. */
+  costUsd: number | null
+}
+
+export interface OverviewAccountUsage {
+  windowStart: string
+  window: OverviewUsageFigures
+  last30d: OverviewUsageFigures
+  monthlyPriceUsd: number | null
+  valueRatio: number | null
+}
+
 export interface OverviewQuotaRow {
   subAccountId: string
   account: string
   windows: OverviewQuotaWindow[]
+  usage: OverviewAccountUsage | null
+  /** Codex banked resets; null for other accounts and before the first poll. */
+  resetCredits: { available: number; applicable: number | null } | null
 }
 
 /** Fields, not prose — the sentence is composed and translated by the
@@ -427,4 +450,19 @@ export interface TierAliasWire {
   updatedAt: string | null
   /** Models of this tier on the provider; `isNew` appeared after the alias was set. */
   candidates: Array<{ model: string; enabled: boolean; isNew: boolean }>
+}
+
+/** GET /api/subscriptions/accounts/{id}/reset-credits. Mirrors ResetCreditsResponse. */
+export interface ResetCreditsResponse {
+  credits: Array<{ id: string; grantedAt: string | null; expiresAt: string | null }>
+  /** How many OpenAI would accept right now — 0 while no window is spent. */
+  applicable: number | null
+}
+
+/** POST /api/subscriptions/accounts/{id}/reset-usage. Mirrors UseResetResponse. */
+export interface UseResetResponse {
+  spentCreditId: string
+  remaining: number
+  /** The follow-up usage poll answered, so routing already sees the reset. */
+  refreshed: boolean
 }

@@ -1,10 +1,14 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import {
+  ResetCreditsResponseSchema,
+  SubscriptionActionErrorSchema,
   SubscriptionRefreshErrorSchema,
   SubscriptionRefreshRequestSchema,
   SubscriptionRefreshResponseSchema,
-  SubscriptionsResponseSchema
+  SubscriptionsResponseSchema,
+  UseResetResponseSchema
 } from '../../schemas/api/subscriptions'
+import { listResetCredits, ResetCreditError, spendResetCredit } from '../../services/codex-reset-service'
 import { syncSubAccountProfiles } from '../../services/subscription-account-sync-service'
 import { getSubscriptionsInfo } from '../../services/subscription-info-service'
 import { refreshProviderSubscriptions, refreshSubscriptions } from '../../services/subscription-refresh-service'
@@ -80,3 +84,70 @@ subscriptionsRoute.openapi(refreshSubscriptionsRoute, async (c) => {
   if (outcome === null) return c.json({ error: `No subscription provider is named ${provider}` }, 404)
   return c.json(outcome, 200)
 })
+
+// ─── Banked rate-limit resets (Codex) ──────────────────────────────────
+// The first actions on a single account. Both read the vendor live: the
+// list because a credit may have been spent from the Codex app since the
+// last poll, the spend because it must spend a credit that still exists.
+
+const accountParams = z.object({ id: z.string().nonempty() })
+
+const actionError = (description: string) => ({
+  description,
+  content: { 'application/json': { schema: SubscriptionActionErrorSchema } }
+})
+
+subscriptionsRoute.openapi(
+  createRoute({
+    method: 'get',
+    path: '/api/subscriptions/accounts/{id}/reset-credits',
+    request: { params: accountParams },
+    responses: {
+      200: {
+        description: "The account's spendable reset credits, soonest to lapse first, and how many apply right now",
+        content: { 'application/json': { schema: ResetCreditsResponseSchema } }
+      },
+      404: actionError('No subscription account has this id'),
+      409: actionError('Not a Codex account, nothing to spend, or OpenAI refused the spend'),
+      502: actionError('OpenAI could not be reached or answered in a shape Rialto does not recognise')
+    }
+  }),
+  async (c) => {
+    try {
+      return c.json(await listResetCredits(c.req.valid('param').id), 200)
+    } catch (err) {
+      if (!(err instanceof ResetCreditError)) throw err
+      if (err.status === 404) return c.json({ error: err.message }, 404)
+      if (err.status === 409) return c.json({ error: err.message }, 409)
+      return c.json({ error: err.message }, 502)
+    }
+  }
+)
+
+subscriptionsRoute.openapi(
+  createRoute({
+    method: 'post',
+    path: '/api/subscriptions/accounts/{id}/reset-usage',
+    request: { params: accountParams },
+    responses: {
+      200: {
+        description:
+          "Spent the credit closest to lapsing. The account's usage has been re-polled, and routing has dropped its exhaustion marks",
+        content: { 'application/json': { schema: UseResetResponseSchema } }
+      },
+      404: actionError('No subscription account has this id'),
+      409: actionError('Not a Codex account, nothing to spend, or OpenAI refused the spend'),
+      502: actionError('OpenAI could not be reached or answered in a shape Rialto does not recognise')
+    }
+  }),
+  async (c) => {
+    try {
+      return c.json(await spendResetCredit(c.req.valid('param').id), 200)
+    } catch (err) {
+      if (!(err instanceof ResetCreditError)) throw err
+      if (err.status === 404) return c.json({ error: err.message }, 404)
+      if (err.status === 409) return c.json({ error: err.message }, 409)
+      return c.json({ error: err.message }, 502)
+    }
+  }
+)

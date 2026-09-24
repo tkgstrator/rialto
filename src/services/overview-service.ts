@@ -10,6 +10,8 @@
 import { z } from 'zod'
 import { getPrismaClient } from '../db/client'
 import dayjs from '../lib/dayjs'
+import { logger } from '../logger'
+import { type AccountUsage, usageByAccount } from './account-usage-service'
 import { buildPriceMap, computeCosts, type PriceEntry } from './cost-service'
 import { listSurfaces } from './inbound-surface-service'
 
@@ -60,6 +62,8 @@ export interface QuotaRow {
   subAccountId: string
   account: string
   windows: QuotaWindowRow[]
+  usage: AccountUsage | null
+  resetCredits: { available: number; applicable: number | null } | null
 }
 
 /**
@@ -151,6 +155,7 @@ function sumCost(
     outputTokens: number
     cacheReadTokens: number
     cacheWriteTokens: number
+    cacheWrite1hTokens: number
   }>,
   priceMap: Map<string, PriceEntry>
 ): number | null {
@@ -180,6 +185,7 @@ type WindowLog = {
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
+  cacheWrite1hTokens: number
   totalInputTokens: number
   createdAt: Date
 }
@@ -211,6 +217,7 @@ type SpendBucket = {
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
+  cacheWrite1hTokens: number
 }
 
 // Raw rows are unknown until parsed; the sums come back as double
@@ -222,7 +229,8 @@ const SpendBucketSchema = z.object({
   inputTokens: z.number(),
   outputTokens: z.number(),
   cacheReadTokens: z.number(),
-  cacheWriteTokens: z.number()
+  cacheWriteTokens: z.number(),
+  cacheWrite1hTokens: z.number()
 })
 
 type QuotaRecord = Awaited<ReturnType<typeof loadQuotas>>[number]
@@ -373,7 +381,7 @@ function scopedWindows(raw: unknown): QuotaWindowRow[] {
   return out
 }
 
-function buildQuota(quotas: QuotaRecord[]): QuotaRow[] {
+function buildQuota(quotas: QuotaRecord[], usage: Map<string, AccountUsage>): QuotaRow[] {
   const flat: Array<{
     window: string
     used: (q: QuotaRecord) => number | null
@@ -402,7 +410,17 @@ function buildQuota(quotas: QuotaRecord[]): QuotaRow[] {
     }
     windows.push(...scopedWindows(q.scopedWindows))
     if (windows.length === 0) continue
-    out.push({ subAccountId: q.subAccountId, account: accountLabel(q), windows })
+    const carried = usage.get(q.subAccountId)
+    out.push({
+      subAccountId: q.subAccountId,
+      account: accountLabel(q),
+      windows,
+      usage: carried === undefined ? null : carried,
+      resetCredits:
+        q.resetCreditsAvailable === null
+          ? null
+          : { available: q.resetCreditsAvailable, applicable: q.resetCreditsApplicable }
+    })
   }
   return out
 }
@@ -474,7 +492,11 @@ interface ResolvedSurfaceLike {
 
 function loadQuotas() {
   return getPrismaClient().subAccountQuota.findMany({
-    include: { subAccount: { select: { id: true, label: true, plan: true, provider: { select: { name: true } } } } }
+    include: {
+      subAccount: {
+        select: { id: true, label: true, plan: true, monthlyPriceUsd: true, provider: { select: { name: true } } }
+      }
+    }
   })
 }
 
@@ -499,7 +521,8 @@ async function loadSpendBuckets(
            SUM(r."inputTokens")::double precision AS "inputTokens",
            SUM(r."outputTokens")::double precision AS "outputTokens",
            SUM(r."cacheReadTokens")::double precision AS "cacheReadTokens",
-           SUM(r."cacheWriteTokens")::double precision AS "cacheWriteTokens"
+           SUM(r."cacheWriteTokens")::double precision AS "cacheWriteTokens",
+           SUM(r."cacheWrite1hTokens")::double precision AS "cacheWrite1hTokens"
     FROM "RequestLog" r
     JOIN (VALUES
             (${windows[0].label}, ${windows[0].from}::timestamptz, ${windows[0].to}::timestamptz),
@@ -546,6 +569,7 @@ export async function getOverview(windowHours: number): Promise<OverviewResponse
           outputTokens: true,
           cacheReadTokens: true,
           cacheWriteTokens: true,
+          cacheWrite1hTokens: true,
           totalInputTokens: true,
           createdAt: true
         },
@@ -557,6 +581,20 @@ export async function getOverview(windowHours: number): Promise<OverviewResponse
     ])
 
   const priceMap = await buildPriceMap(prisma, [...new Set(spendBuckets.map((b) => priceKey(b.provider, b.model)))])
+  // Per-account usage is an addition to the quota rows, not a condition
+  // of them: if the aggregate fails, the windows still render and the
+  // usage lines say they could not be read.
+  const usage = await usageByAccount(
+    quotas.map((q) => ({
+      subAccountId: q.subAccountId,
+      weeklyResetAt: q.weeklyResetAt,
+      weeklyWindowSeconds: q.weeklyWindowSeconds,
+      monthlyPriceUsd: q.subAccount.monthlyPriceUsd
+    }))
+  ).catch((err: unknown) => {
+    logger.warn({ err }, '[overview] per-account usage aggregate failed')
+    return new Map<string, AccountUsage>()
+  })
 
   return {
     windowHours,
@@ -565,7 +603,7 @@ export async function getOverview(windowHours: number): Promise<OverviewResponse
     enabledModelCount,
     surfaces: buildSurfaces(surfaceConfigs, windowLogs),
     spend: buildSpend(spendBuckets, priceMap),
-    quota: buildQuota(quotas),
+    quota: buildQuota(quotas, usage),
     failover: buildFailover(quotas, weightChanges),
     recentSessions: buildRecentSessions(windowLogs, priceMap)
   }

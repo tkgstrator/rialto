@@ -19,6 +19,7 @@
 import type { Context } from 'hono'
 import { type LlmsContext, subscriptionKindOf } from '../../llms'
 import {
+  clearAccountExhaustion,
   isAccountExhausted,
   markAccountExhausted,
   markLongContextDenied,
@@ -69,6 +70,14 @@ export type ChainCtx = {
 // the outer walker can return it after the whole chain is exhausted.
 export type ChainEntryOutcome = { kind: 'done'; response: Response } | { kind: 'next'; forwarded: Response | null }
 
+// The subscription account an attempt ran on. The OAuth transformer
+// stamps it on the attempt's own request before sending, so it stays
+// right while another request of the same session is in flight; the
+// session's last-resolved account is only a fallback for an attempt that
+// failed before the transformer resolved one.
+export const attemptAccountOf = (inv: ResolvedInvocation, sessionId: string): string | null =>
+  inv.request.subAccountId !== undefined ? inv.request.subAccountId : getActiveAccountForSession(sessionId)
+
 // Run one chain entry — including any account-level rotations within
 // the same subscription provider — and report whether to return now or
 // advance.
@@ -104,6 +113,13 @@ export async function attemptChainEntry(chain: ChainCtx, model: string): Promise
       } catch {
         // Never let telemetry break the request path.
       }
+      // A success proves the account serves right now, whatever an
+      // earlier 429 concluded about it, so its exhaustion mark goes and
+      // peers stop being preferred over it. Only the per-attempt stamp is
+      // trusted here: the session-wide fallback could name the account a
+      // concurrent request just got refused on.
+      const served = inv.request.subAccountId
+      if (served !== undefined && isAccountExhausted(served)) clearAccountExhaustion(served)
       return { kind: 'done', response }
     } catch (caught) {
       err = caught
@@ -124,7 +140,7 @@ export async function attemptChainEntry(chain: ChainCtx, model: string): Promise
     // quota error for a request that never hit a quota.
     if (!longContextRetried && isLongContextGate(err)) {
       longContextRetried = true
-      const deniedAccount = getActiveAccountForSession(sessionId)
+      const deniedAccount = attemptAccountOf(inv, sessionId)
       markLongContextDenied(inv.provider.name, deniedAccount)
       ctx.log.warn(
         { provider: inv.provider.name, model: inv.request.model, subAccountId: deniedAccount },
@@ -248,7 +264,7 @@ async function tryRotateAccount(
   const kind = subscriptionKindOf(inv.provider.name, providers)
   if (kind === null) return false
 
-  const failedAcct = getActiveAccountForSession(sessionId)
+  const failedAcct = attemptAccountOf(inv, sessionId)
   if (failedAcct === null || triedAccounts.has(failedAcct)) return false
 
   triedAccounts.add(failedAcct)

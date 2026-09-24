@@ -52,6 +52,7 @@ export async function captureUsage(
   const inboundType = context.req?.inboundType
   const surface = context.req?.surface
   const accessTokenId = context.req?.accessTokenId
+  const subAccountId = context.req?.subAccountId
 
   await deps.recordUsage?.({
     sessionId,
@@ -62,11 +63,13 @@ export async function captureUsage(
     inboundType: inboundType !== undefined ? inboundType : null,
     surface: surface !== undefined ? surface : null,
     accessTokenId: accessTokenId !== undefined ? accessTokenId : null,
+    subAccountId: subAccountId !== undefined ? subAccountId : null,
     isSubagent,
     inputTokens: tokens.rawInput,
     outputTokens: tokens.outputTokens,
     cacheReadTokens: tokens.cachedTokens,
     cacheWriteTokens: tokens.writtenTokens,
+    cacheWrite1hTokens: tokens.writtenTokens1h,
     totalInputTokens: tokens.totalInputTokens,
     cacheHitPct: tokens.cacheHitPct,
     durationMs,
@@ -77,6 +80,10 @@ export async function captureUsage(
 type TokenStats = {
   cachedTokens: number
   writtenTokens: number
+  // The 1-hour-TTL part of writtenTokens. Clamped to it, so a breakdown
+  // that disagrees with the total can skew the price but never count a
+  // write twice.
+  writtenTokens1h: number
   outputTokens: number
   rawInput: number
   totalInputTokens: number
@@ -122,6 +129,7 @@ function cachedInputTokens(usage: UsageBlock): CachedInput {
 function computeTokenStats(usage: UsageBlock): TokenStats {
   const cached = cachedInputTokens(usage)
   const writtenTokens = numberOrZero(usage.cache_creation_input_tokens)
+  const writtenTokens1h = Math.min(numberOrZero(usage.cache_creation?.ephemeral_1h_input_tokens), writtenTokens)
   const outputTokens =
     numberOrZero(usage.output_tokens) ||
     numberOrZero(usage.completion_tokens) ||
@@ -139,7 +147,15 @@ function computeTokenStats(usage: UsageBlock): TokenStats {
   const rawInput = cached.countedInsideReportedInput ? Math.max(reportedInput - cached.tokens, 0) : reportedInput
   const totalInputTokens = rawInput + writtenTokens + cached.tokens
   const cacheHitPct = totalInputTokens > 0 ? Math.round((cached.tokens / totalInputTokens) * 100) : 0
-  return { cachedTokens: cached.tokens, writtenTokens, outputTokens, rawInput, totalInputTokens, cacheHitPct }
+  return {
+    cachedTokens: cached.tokens,
+    writtenTokens,
+    writtenTokens1h,
+    outputTokens,
+    rawInput,
+    totalInputTokens,
+    cacheHitPct
+  }
 }
 
 /** Coerce an optional `unknown` numeric usage field to a finite number, defaulting to 0. */

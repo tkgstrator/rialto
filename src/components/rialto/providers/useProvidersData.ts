@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/lib/api'
-import { indexQuota, type QuotaIndex } from './derive'
+import { type AccountExtrasIndex, indexAccountExtras, indexQuota, type QuotaIndex } from './derive'
 import type {
   CatalogEntry,
   CatalogResponse,
@@ -27,6 +27,8 @@ export interface ProvidersData {
   catalog: CatalogEntry[]
   transformers: TransformerWire[]
   quota: QuotaIndex
+  /** Per account: what it carried at API prices, and its banked resets. */
+  accounts: AccountExtrasIndex
   /**
    * Server-side totals, so the subtitle here reports the same numbers the
    * Overview screen does. Null when the summary endpoint was unreachable —
@@ -63,6 +65,7 @@ export function useProvidersData() {
         catalog: catalog.entries,
         transformers: transformers.transformers,
         quota: indexQuota(overview === null ? [] : overview.quota),
+        accounts: indexAccountExtras(overview === null ? [] : overview.quota),
         counts:
           overview === null ? null : { providers: overview.providerCount, enabledModels: overview.enabledModelCount },
         now: overview === null ? Date.now() : Date.parse(overview.generatedAt)

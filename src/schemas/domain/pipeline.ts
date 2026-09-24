@@ -127,6 +127,12 @@ export const PipelineRequestSchema = z.object({
   // provider's stored active account. Absent on probe contexts, which
   // deliberately test that active account.
   accountSessionKey: z.string().nonempty().optional(),
+  // The subscription account this attempt runs on, stamped by the OAuth
+  // transformer when it resolves one. A per-attempt value on a
+  // per-attempt object — account rotation builds a fresh request — so
+  // it names the account that actually served (or 429'd) THIS call,
+  // which the session-wide sticky map cannot once requests overlap.
+  subAccountId: z.string().nonempty().optional(),
   tokenCount: z.number().optional()
 })
 export type PipelineRequest = z.infer<typeof PipelineRequestSchema>
