@@ -88,18 +88,18 @@ enum ApiStyle {
 }
 
 model Provider {
-  id                          String       @id @default(cuid())
-  name                        String       @unique
-  apiBaseUrl                  String
+  id                   String              @id @default(cuid())
+  name                 String              @unique
+  apiBaseUrl           String
   // Null means "unset" — the user hasn't supplied a key yet (fresh
   // seed) or has cleared it. An empty string is never stored; "no key"
   // is always NULL so the wire shape and UI stay consistent.
-  apiKey                      String?
-  authMode                    AuthMode     @default(api_key)
+  apiKey               String?
+  authMode             AuthMode            @default(api_key)
   // Request shape for this provider's chat endpoint. Seeded explicitly
   // for every provider; the default only covers a row created before
   // the seed runs.
-  apiStyle                    ApiStyle     @default(openai_chat)
+  apiStyle             ApiStyle            @default(openai_chat)
   // Whether this provider is offered for routing at all. This used to be
   // `providerEnabled` inside a free-form `transformer` JSONB blob, which
   // meant the one question the scheduler asks most often could not be
@@ -111,17 +111,19 @@ model Provider {
   //
   // Defaults true because the blob's absence meant "enabled" — only an
   // explicit `providerEnabled: false` turned a provider off.
-  enabled                     Boolean      @default(true)
+  enabled              Boolean             @default(true)
   // No account is designated. A subscription provider's accounts are all
   // candidates; which one serves a request is decided per request by
   // session-account-router, and "can this provider authenticate" is asked
   // of the accounts as a set (shared/subscription-credential.ts). The
   // dropped `activeSubscriptionAccountId` made both answers hostage to
   // one promoted row.
-  subscriptionAccounts        SubAccount[] @relation("ProviderSubscriptionAccounts")
-  models                      Model[]
-  createdAt                   DateTime     @default(now())
-  updatedAt                   DateTime     @updatedAt
+  subscriptionAccounts SubAccount[]        @relation("ProviderSubscriptionAccounts")
+  models               Model[]
+  tierAliases          ProviderTierAlias[]
+  tierRoutes           TierRoute[]
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
 }
 
 model SubAccount {
@@ -168,8 +170,8 @@ model SubAccount {
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
 
-  usage              SubAccountUsage[]
-  quota              SubAccountQuota?
+  usage SubAccountUsage[]
+  quota SubAccountQuota?
 
   @@unique([providerId, sourcePath])
   @@index([providerId])
@@ -280,28 +282,28 @@ model RoutingWeightChange {
 }
 
 model Model {
-  id                  String                  @id @default(cuid())
-  providerId          String
-  provider            Provider                @relation(fields: [providerId], references: [id], onDelete: Cascade)
-  name                String
+  id                String                  @id @default(cuid())
+  providerId        String
+  provider          Provider                @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  name              String
   // Whether this model is offered for routing / tested. Authoritative
   // (replaces the old provider.transformer._disabledModels list).
   // Defaults false: a model being registered/seeded does NOT make it
   // routable. Subscription presets seed their curated default set as
   // enabled; everything else stays off until the user enables it.
-  enabled             Boolean                 @default(false)
+  enabled           Boolean                 @default(false)
   // Per-model request-shape override. A single api_key provider (e.g.
   // openai) hosts both chat models and Responses-only models (codex
   // family), so the provider-level apiStyle isn't granular enough.
   // Null means "use the provider's apiStyle"; set explicitly (seeded)
   // for the models that need a different endpoint.
-  apiStyle            ApiStyle?
+  apiStyle          ApiStyle?
   // Manual tier override used by the quota-aware preference selector.
   // Null = fall back to name-substring inference (tierOf) which only
   // recognises the four Claude families; setting this lets operators
   // classify third-party models (gpt-5.6-*, gemini-*, ...) as one of
   // fable / opus / sonnet / haiku so tier-respect constraints match.
-  manualTier          String?
+  manualTier        String?
   // Manual reasoning-effort override for OpenAI / OpenAI-Responses /
   // Codex models. Null = pass the request through untouched (vendor
   // default = 'medium'). Non-null values mirror the OpenAI OpenAPI
@@ -310,42 +312,43 @@ model Model {
   // request's `reasoning_effort` (Chat Completions) or
   // `reasoning.effort` (Responses) at build time. Not every reasoning
   // model accepts every value; upstream 400s surface as request errors.
-  reasoningEffort     String?
+  reasoningEffort   String?
   // True when the vendor has marked this model as deprecated upstream.
   // The flag is seeded from src/shared/data/deprecations.ts at
   // boot and on the UI refresh-models action; we never delete the row
   // because the user may still be routing to it.
-  deprecated          Boolean                 @default(false)
+  deprecated        Boolean                 @default(false)
   // True when the model sits under the vendor's "legacy" / older-gen
   // pricing surface (scraped `legacy` flag). Distinct from `deprecated`:
   // a model can be legacy-priced but not formally deprecated.
-  legacy              Boolean                 @default(false)
+  legacy            Boolean                 @default(false)
   // Official per-1M-token USD prices scraped from the vendor pricing
   // page (src/shared/data/providers/<vendor>/prices.json).
   // Null for subscription-auth models and any api_key model the scrape
   // didn't cover.
-  inputPer1M          Float?
-  outputPer1M         Float?
+  inputPer1M        Float?
+  outputPer1M       Float?
   // USD per 1M cached-input (cache-read) tokens, scraped alongside
   // input/output. Null when the vendor doesn't publish a cache rate.
-  cachedInputPer1M    Float?
+  cachedInputPer1M  Float?
   // Max context window in tokens, scraped from the vendor's model
   // pages alongside pricing. Null when the vendor doesn't publish it
   // (older Anthropic ids absent from the comparison table, Gemini
   // pending, subscription-only models).
-  contextWindow       Int?
+  contextWindow     Int?
   // Last real-inference connectivity test outcome + timestamps.
   // testCheckedAt is set on every attempt; testPassedAt only on the
   // most recent success (kept even after a later failure so the UI can
   // show "last passed on ..."). testError holds the latest failure
   // reason for display.
-  testStatus          ModelTestStatus         @default(unknown)
-  testCheckedAt       DateTime?
-  testPassedAt        DateTime?
-  testError           String?
-  preferenceEntries   RouterPreferenceEntry[]
-  createdAt           DateTime                @default(now())
-  updatedAt           DateTime                @updatedAt
+  testStatus        ModelTestStatus         @default(unknown)
+  testCheckedAt     DateTime?
+  testPassedAt      DateTime?
+  testError         String?
+  preferenceEntries RouterPreferenceEntry[]
+  tierAliases       ProviderTierAlias[]
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
 
   @@unique([providerId, name])
   @@index([providerId])
@@ -360,14 +363,77 @@ model Model {
 // is pointed at another one (InboundSurfaceConfig.profileKey), and a
 // token may pin its client to a profile of its own (AccessToken.profileKey).
 model RouterPreferenceProfile {
-  id          String                  @id @default(cuid())
-  key         String                  @unique @default("live")
+  id                String                  @id @default(cuid())
+  key               String                  @unique @default("live")
   // Constraint knobs as JSONB (allowEscalation / exhaustedBehavior /
   // longContextThreshold / ...). JSONB so adding a knob is not a
   // migration; the schema layer supplies every default.
-  constraints Json?
-  updatedAt   DateTime                @updatedAt
-  entries     RouterPreferenceEntry[]
+  constraints       Json?
+  updatedAt         DateTime                @updatedAt
+  entries           RouterPreferenceEntry[]
+  tierRoutes        TierRoute[]
+  // When the one-shot backfill turned this profile's old chain into tier
+  // routes (routing-migration/backfill-tier-routes.ts). Null until then;
+  // it is what makes the backfill run once per profile however many
+  // times the container starts, and what the contract migration checks
+  // before it drops the old chain. Goes with RouterPreferenceEntry.
+  chainBackfilledAt DateTime?
+}
+
+// "Which model is <tier> on this provider." Routing names a provider and a
+// tier; this row says which model that is. When a vendor ships a new
+// Sonnet, this is the one pointer that moves — every route that names
+// the provider's sonnet follows it. It never moves by itself: a catalog
+// refresh can only discover a model, and promoting it is an operator's
+// decision (tier-alias-service.ts).
+//
+// Cascades both ways: deleting the model or the provider removes the
+// alias, and a route that named it reads as unresolved rather than
+// pointing at nothing.
+model ProviderTierAlias {
+  id         String   @id @default(cuid())
+  providerId String
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  // fable | opus | sonnet | haiku. Validated by Zod (ModelTierSchema), kept
+  // a string like InboundSurfaceConfig.routingMode so a new model family
+  // is a code change, not a migration.
+  tier       String
+  modelId    String
+  model      Model    @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  // When the alias was last pointed somewhere. A model of the same tier
+  // created after this is a candidate an operator has not looked at yet.
+  updatedAt  DateTime @updatedAt
+
+  @@unique([providerId, tier])
+  @@index([modelId])
+}
+
+// One route of a profile's tier map: a request for `requestedTier` may be
+// served by `provider`'s `targetTier` model, in `priority` order (1 =
+// first). Replaces RouterPreferenceEntry's per-scenario, per-lane,
+// per-model chain. A requested tier with no enabled routes is passed
+// through as the caller sent it, the "no opinion" an empty lane meant.
+model TierRoute {
+  id            String                  @id @default(cuid())
+  profileId     String
+  profile       RouterPreferenceProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  // fable | opus | sonnet | haiku | other — the tier read off the model
+  // name the caller sent, "other" when it names no Claude family.
+  requestedTier String
+  priority      Int
+  providerId    String
+  provider      Provider                @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  // fable | opus | sonnet | haiku, resolved through the provider's alias.
+  targetTier    String
+  // Soft toggle: the route keeps its place while it is out of use.
+  enabled       Boolean                 @default(true)
+
+  @@unique([profileId, requestedTier, priority])
+  // A provider's tier appears once per requested tier: a second copy
+  // would resolve to the same model and could only ever be skipped.
+  @@unique([profileId, requestedTier, providerId, targetTier])
+  @@index([profileId])
+  @@index([providerId])
 }
 
 model RouterPreferenceEntry {
