@@ -1,35 +1,41 @@
 /**
- * Turn one profile's old chain into provider tier aliases and tier routes.
+ * Turn one profile's old chain into provider tier aliases and scenario
+ * routes.
  *
  * Pure: the database runner (`backfill-tier-routes.ts`) loads the chain
  * and writes what this returns. Kept apart so every decision below is
  * tested without a database — this runs once per profile, on a live
  * install, and what it gets wrong silently re-routes traffic.
  *
- * What is read: the profile's default/agent chain, for every requested
- * tier. Other scenarios and the subagent lanes are not converted — the
- * classifier sent a request there by size, thinking or effort, not by the
- * tier it asked for, so no single tier row can reproduce them; they are
- * counted in the notes for the operator to re-add by hand.
+ * The old chain already had the shape routing has again: a list per
+ * scenario and lane. What changes is what a row holds — a provider and a
+ * tier on it instead of a model — so the conversion is mostly one of
+ * naming:
  *
- * What is reproduced, per requested tier T:
- *   - the order: routes keep the chain's priority order;
- *   - the tier gates: an entry the profile's allowEscalation /
- *     allowDemotion would refuse for T becomes a route switched off;
- *   - the nearest-tier fallback (P0-1): when the gates leave T with
- *     nothing that can serve, the refused entries are switched on,
- *     nearest tier first and the cheaper side first on a tie — unless the
- *     profile set tierFallback 'refuse';
- *   - "other" (a model name with no Claude family): every entry, as the
- *     gates never applied to an unclassifiable request.
+ *   - every entry of default / think / longContext, in both the agent and
+ *     the subagent lane, becomes a route in the same list, in the same
+ *     order, switched on or off as the entry was;
+ *   - the route names the entry's provider and the tier its model is (a
+ *     manual tier when one was set, else what the name says), and the
+ *     provider's alias for that tier is claimed for the model when the
+ *     slot is free;
+ *   - a model whose name says no tier (a gpt-* on Codex) is aliased as a
+ *     tier its provider has free, and reached through that;
+ *   - two entries that land on the same provider · tier in one list
+ *     become one route.
  *
- * What is not: pace widening, and a chain holding two models of the same
- * provider and tier (they become one route to that provider's alias).
- * Every such difference is a note.
+ * The webSearch and image lanes are not converted — they are no longer
+ * scenarios — and are counted in the notes. Every other difference is a
+ * note too.
  */
 
 import { tierOf } from '../../llms/router/request-signals'
-import { type ModelTier, ModelTierSchema, ROUTE_TIERS, type RouteTier } from '../../schemas/domain/tier-route'
+import {
+  type ModelTier,
+  ModelTierSchema,
+  type RoutingLane,
+  type RoutingScenario
+} from '../../schemas/domain/tier-route'
 
 export interface ChainEntryInput {
   priority: number
@@ -49,11 +55,17 @@ export interface ExistingAlias {
   modelName: string
 }
 
-export interface PlanInput {
+export interface ConvertedLane {
+  scenario: RoutingScenario
+  lane: RoutingLane
   entries: readonly ChainEntryInput[]
-  allowEscalation: boolean
-  allowDemotion: boolean
-  tierFallback: 'nearest' | 'refuse'
+}
+
+export interface PlanInput {
+  // The lists to convert, in the order their entries claim aliases: the
+  // default agent list first, so the models most traffic reaches get the
+  // provider's slots.
+  lanes: readonly ConvertedLane[]
   // Aliases already in the database, keyed `${providerId}|${tier}`. Never
   // overwritten: an alias another profile (or an operator) set wins.
   aliases: ReadonlyMap<string, ExistingAlias>
@@ -68,7 +80,8 @@ export interface PlannedAlias {
 }
 
 export interface PlannedRoute {
-  requestedTier: RouteTier
+  scenario: RoutingScenario
+  lane: RoutingLane
   priority: number
   providerId: string
   targetTier: ModelTier
@@ -81,11 +94,14 @@ export interface PlanOutput {
   notes: string[]
 }
 
-const TIERS = ModelTierSchema.options
 const key = (providerId: string, tier: ModelTier): string => `${providerId}|${tier}`
 const label = (e: ChainEntryInput): string => `${e.provider.name},${e.model.name}`
 
-// The tier the old selector saw: a manual tier when set, else the name.
+// Slots a tierless model takes when its provider has one free, the tier
+// most traffic asks for first.
+const FREE_SLOT_ORDER: readonly ModelTier[] = ['sonnet', 'opus', 'haiku', 'fable']
+
+// The tier the old chain saw: a manual tier when set, else the name.
 const tierOfEntry = (e: ChainEntryInput): ModelTier | null => {
   if (e.model.manualTier !== null) {
     const manual = ModelTierSchema.safeParse(e.model.manualTier)
@@ -95,52 +111,25 @@ const tierOfEntry = (e: ChainEntryInput): ModelTier | null => {
   return inferred === undefined ? null : inferred
 }
 
-// Whether the entry, its model and its provider are all switched on —
-// what the old request path folded into the entry before selecting.
+// Whether the entry, its model and its provider are all switched on.
 const routable = (e: ChainEntryInput): boolean => e.enabled && e.model.enabled && e.provider.enabled
 
-// The old tier gate for requested tier T (quota-router/selection.ts
-// `tierMatches`, less the pace override the runtime has stopped passing).
-const gateAllows = (t: ModelTier | null, requested: RouteTier, input: PlanInput): boolean => {
-  if (requested === 'other' || t === null || t === requested) return true
-  return TIERS.indexOf(t) < TIERS.indexOf(requested) ? input.allowEscalation : input.allowDemotion
-}
-
-// Nearest tier first, the cheaper side first on a tie — the order the
-// P0-1 retry used. Unknown tiers were never refused, so never retried.
-const retryRank = (t: ModelTier | null, requested: ModelTier): number => {
-  if (t === null) return Number.MAX_SAFE_INTEGER
-  const idx = TIERS.indexOf(t)
-  const req = TIERS.indexOf(requested)
-  return Math.abs(idx - req) * 2 + (idx < req ? 1 : 0)
-}
-
-/**
- * Which tier of its provider an entry's model is reached through.
- *
- * Its own tier when it has one. A model with none (a gpt-* on Codex) was
- * admitted for any requested tier, so it is aliased as the tier being
- * converted when it holds that slot, else as a tier it already holds (so
- * the route still reaches this model), else as the tier being converted;
- * for "other", the first slot its provider still has free.
- */
-const slotOf = (e: ChainEntryInput, requested: RouteTier, aliases: ReadonlyMap<string, ExistingAlias>): ModelTier => {
-  const own = tierOfEntry(e)
-  if (own !== null) return own
-  const holds = (tier: ModelTier): boolean => aliases.get(key(e.provider.id, tier))?.modelId === e.model.id
-  if (requested !== 'other' && holds(requested)) return requested
-  const held = TIERS.find(holds)
+// The slot a tierless model is reached through: one its provider already
+// points at it, else the first free one, else sonnet (reached through
+// whatever holds it, which the notes say).
+const slotForTierless = (e: ChainEntryInput, aliases: ReadonlyMap<string, ExistingAlias>): ModelTier => {
+  const held = FREE_SLOT_ORDER.find((tier) => aliases.get(key(e.provider.id, tier))?.modelId === e.model.id)
   if (held !== undefined) return held
-  if (requested !== 'other') return requested
-  const free = (['sonnet', 'opus', 'haiku', 'fable'] as const).find((tier) => !aliases.has(key(e.provider.id, tier)))
+  const free = FREE_SLOT_ORDER.find((tier) => !aliases.has(key(e.provider.id, tier)))
   return free === undefined ? 'sonnet' : free
 }
 
-// Sort key for claiming an alias: an entry of the tier being converted
-// before one of another tier, a routable entry before one switched off,
-// then chain order; among same-priority ties a non-deprecated model, then
-// the name, so the outcome does not depend on row order.
-type Claim = { entry: ChainEntryInput; requested: RouteTier; slot: ModelTier; rank: (string | number)[] }
+const slotOf = (e: ChainEntryInput, aliases: ReadonlyMap<string, ExistingAlias>): ModelTier => {
+  const own = tierOfEntry(e)
+  return own === null ? slotForTierless(e, aliases) : own
+}
+
+type Claim = { entry: ChainEntryInput; rank: (string | number)[] }
 
 const compareRank = (a: Claim, b: Claim): number => {
   for (const [i, value] of a.rank.entries()) {
@@ -151,131 +140,80 @@ const compareRank = (a: Claim, b: Claim): number => {
   return 0
 }
 
-// Pass 1 — aliases. Every (requested tier, entry) pair bids for its
-// provider's slot; the best-ranked bid for an empty slot takes it. Returns
-// the aliases created; `aliases` is updated in place with them.
-function claimAliases(
-  entries: readonly ChainEntryInput[],
-  initial: ReadonlyMap<string, ExistingAlias>,
-  aliases: Map<string, ExistingAlias>
-): PlannedAlias[] {
-  const claims: Claim[] = ROUTE_TIERS.flatMap((requested) =>
-    entries.map((entry) => {
-      const t = tierOfEntry(entry)
-      return {
-        entry,
-        requested,
-        slot: slotOf(entry, requested, initial),
-        rank: [
-          t === requested ? 0 : t === null ? 2 : 1,
-          routable(entry) ? 0 : 1,
-          entry.priority,
-          entry.model.deprecated ? 1 : 0,
-          entry.model.name
-        ]
-      }
-    })
+// Pass 1 — aliases. Entries bid for their provider's slot in rank order:
+// routable before switched off, then list order (the default agent list
+// first), priority, a non-deprecated model, the name. Tiered models bid
+// before tierless ones, so a named Sonnet is not displaced from the
+// sonnet slot by a gpt-* that could have taken any slot. `aliases` is
+// updated in place with what is created.
+function claimAliases(input: PlanInput, aliases: Map<string, ExistingAlias>): PlannedAlias[] {
+  const claims: Claim[] = input.lanes.flatMap((lane, laneIndex) =>
+    lane.entries.map((entry) => ({
+      entry,
+      rank: [
+        tierOfEntry(entry) === null ? 1 : 0,
+        routable(entry) ? 0 : 1,
+        laneIndex,
+        entry.priority,
+        entry.model.deprecated ? 1 : 0,
+        entry.model.name
+      ]
+    }))
   )
   const created: PlannedAlias[] = []
   for (const claim of [...claims].sort(compareRank)) {
-    const k = key(claim.entry.provider.id, claim.slot)
+    const slot = slotOf(claim.entry, aliases)
+    const k = key(claim.entry.provider.id, slot)
     if (aliases.has(k)) continue
     aliases.set(k, { modelId: claim.entry.model.id, modelName: claim.entry.model.name })
-    created.push({ providerId: claim.entry.provider.id, tier: claim.slot, modelId: claim.entry.model.id })
+    created.push({ providerId: claim.entry.provider.id, tier: slot, modelId: claim.entry.model.id })
   }
   return created
 }
 
-type Hop = {
-  k: string
-  providerId: string
-  targetTier: ModelTier
-  enabled: boolean
-  // Switched on in the chain but refused by the tier gate for this tier.
-  gated: boolean
-  t: ModelTier | null
-  routable: boolean
-}
+type Hop = { k: string; providerId: string; targetTier: ModelTier; enabled: boolean }
 
-// Pass 2, one requested tier: the chain in order, one hop per
-// provider·tier, each switched on only where the old gate allowed it.
-function hopsFor(
-  requested: RouteTier,
-  entries: readonly ChainEntryInput[],
-  aliases: ReadonlyMap<string, ExistingAlias>,
-  input: PlanInput,
-  notes: string[]
-): Hop[] {
+// Pass 2, one list: the chain in order, one route per provider · tier.
+function routesFor(lane: ConvertedLane, aliases: ReadonlyMap<string, ExistingAlias>, notes: string[]): Hop[] {
+  const where = `${lane.scenario}/${lane.lane}`
   const hops: Hop[] = []
-  for (const entry of entries) {
-    const t = tierOfEntry(entry)
-    const allowed = gateAllows(t, requested, input)
-    const slot = slotOf(entry, requested, aliases)
+  for (const entry of [...lane.entries].sort((a, b) => a.priority - b.priority)) {
+    const slot = slotOf(entry, aliases)
     const k = key(entry.provider.id, slot)
     const resolved = aliases.get(k)
     if (resolved !== undefined && resolved.modelId !== entry.model.id) {
       notes.push(
-        `${requested}: ${label(entry)} is reached through ${entry.provider.name}'s ${slot} alias, which is ${resolved.modelName}`
+        `${where}: ${label(entry)} is reached through ${entry.provider.name}'s ${slot} alias, which is ${resolved.modelName}`
       )
     }
     const existing = hops.findIndex((h) => h.k === k)
     if (existing >= 0) {
-      notes.push(
-        `${requested}: ${label(entry)} collapsed into the ${entry.provider.name} · ${slot} route already listed`
-      )
-      // A later duplicate that can serve rescues a route switched off
-      // earlier, taking its position the way the chain would have.
-      if (entry.enabled && allowed && routable(entry) && !hops[existing].enabled) {
+      notes.push(`${where}: ${label(entry)} collapsed into the ${entry.provider.name} · ${slot} route already listed`)
+      // A later duplicate that is on rescues a route switched off earlier,
+      // taking its position the way the chain would have.
+      if (entry.enabled && !hops[existing].enabled) {
         const [hop] = hops.splice(existing, 1)
-        hops.push({ ...hop, enabled: true, gated: false, routable: true })
+        hops.push({ ...hop, enabled: true })
       }
       continue
     }
-    if (entry.enabled && !allowed) {
-      notes.push(`${requested}: ${label(entry)} was refused by tier substitution; added switched off`)
-    }
-    hops.push({
-      k,
-      providerId: entry.provider.id,
-      targetTier: slot,
-      enabled: entry.enabled && allowed,
-      gated: entry.enabled && !allowed,
-      t,
-      routable: routable(entry)
-    })
+    hops.push({ k, providerId: entry.provider.id, targetTier: slot, enabled: entry.enabled })
   }
   return hops
 }
 
-// The P0-1 fallback: when nothing of an allowed tier can serve, the
-// refused hops do, nearest tier first. Array sort is stable, so equal
-// ranks keep chain order; hops that were never candidates follow.
-function withNearestFallback(requested: RouteTier, hops: Hop[], input: PlanInput, notes: string[]): Hop[] {
-  if (requested === 'other' || input.tierFallback === 'refuse') return hops
-  if (hops.some((h) => h.enabled && h.routable)) return hops
-  const refused = hops.filter((h) => h.gated)
-  if (refused.length === 0) return hops
-  notes.push(`${requested}: no route of an allowed tier; the nearest tier serves it, as it did`)
-  return [
-    ...[...refused]
-      .sort((a, b) => retryRank(a.t, requested) - retryRank(b.t, requested))
-      .map((h) => ({ ...h, enabled: true })),
-    ...hops.filter((h) => !h.gated)
-  ]
-}
-
 const laneNote = (lane: { lane: string; count: number }): string =>
-  `${lane.lane}: ${lane.count} entr${lane.count === 1 ? 'y' : 'ies'} not converted (lanes other than default/agent are gone)`
+  `${lane.lane}: ${lane.count} entr${lane.count === 1 ? 'y' : 'ies'} not converted (web search and image are no longer scenarios)`
 
 export function planTierRoutes(input: PlanInput): PlanOutput {
   const notes: string[] = []
-  const entries = [...input.entries].sort((a, b) => a.priority - b.priority)
   const aliases = new Map(input.aliases)
-  const created = claimAliases(entries, input.aliases, aliases)
-  const routes = ROUTE_TIERS.flatMap((requested) =>
-    withNearestFallback(requested, hopsFor(requested, entries, aliases, input, notes), input, notes).map(
+  const created = claimAliases(input, aliases)
+  const routes = input.lanes.flatMap((lane) =>
+    routesFor(lane, aliases, notes).map(
       (h, i): PlannedRoute => ({
-        requestedTier: requested,
+        scenario: lane.scenario,
+        lane: lane.lane,
         priority: i + 1,
         providerId: h.providerId,
         targetTier: h.targetTier,

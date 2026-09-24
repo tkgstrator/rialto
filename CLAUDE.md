@@ -24,7 +24,7 @@ is not a dependency either; that code was absorbed into `src/llms/`.
 | `src/index.ts` | Hono (`OpenAPIHono`) entry. Mounts `/api/*`, the inbound surfaces, `/health`, and the OAuth loopback `/callback` |
 | `src/api/` | One `route.ts` per endpoint, Next.js-style directory naming (`providers/[name]/models/[model]/route.ts`) |
 | `src/llms/` | Transformers, request pipeline, the router (`router.ts` → `tier-router/`), tokenizers, inbound-surface descriptors |
-| `src/services/` | config, OAuth, usage, the tier map and tier aliases, routing-scheduler (quota snapshot), access tokens, model tests |
+| `src/services/` | config, OAuth, usage, scenario routes and tier aliases, routing-scheduler (quota snapshot, pace, the Long context tuner), access tokens, model tests |
 | `src/vendors/` | Per-vendor catalog + pricing adapters (`VendorProvider`): fetch a vendor's live model list, scrape its published prices, read per-model context windows. Read by `model-sync-service` / `catalog-service`, **never on the request path**. Named `vendors` and not `providers` because `src/llms/registry/provider.ts` is a different thing — see below |
 | `src/schemas/` | Zod, split into four layers — `primitives / wire / domain / api`. There is **no** global `@/schemas` barrel; import from the layer. `wire` / `domain` / `api` each expose one; `primitives` has no barrel because nothing composes the layer as a whole — import `primitives/record` and friends by name |
 | `src/components/rialto/` | The UI — six screens (Overview / Routing / Providers / Access tokens / Activity / Settings). Access tokens is top level, beside Providers: Providers is outbound, it is the same question inbound. Settings → Access keeps only admin access |
@@ -37,7 +37,7 @@ is not a dependency either; that code was absorbed into `src/llms/`.
 | `__tests__/` | Mirrors the `src/` tree |
 | `mocks/` | Human-approved static HTML mocks. These are the implementation target for the UI, not throwaway sketches |
 | `docs/plan/rialto/master-plan.md` | The refactor plan and its phase-by-phase tracking table |
-| `docs/architecture/` | Inbound surfaces, routing (the tier map), pipeline, request flow, testing map |
+| `docs/architecture/` | Inbound surfaces, routing (scenarios and provider tiers), pipeline, request flow, testing map |
 
 ## Commands
 
@@ -102,7 +102,7 @@ per-surface default made the UI explain which of two identical values was "the
 shipped one". Every surface has one explicit stored mode in `InboundSurfaceConfig`,
 seeded at boot by `ensureInboundSurfaces()` from the single
 `INITIAL_ROUTING_MODE = 'passthrough'`. Passthrough is the seed because routing an
-unconfigured install does nothing useful: with no routes the tier map falls straight
+unconfigured install does nothing useful: with no routes the router falls straight
 through to the caller's own model. **A fresh install does not route `/v1/messages` —
 turn it on in Routing.**
 
@@ -112,88 +112,122 @@ Details: `docs/architecture/inbound-surfaces.md`.
 
 ### 2. Routing System
 
-**Two modes, one map.** Every inbound surface stores one `routingMode`, and a request
-is either **routed** through the tier map or **passed through** untouched. Nothing else
-picks a model: there are no scenarios, no lanes, no slot table, no rule stack, no custom
-router hook and no peer injection. The operator writes which provider tiers may serve
-which requested tier, and in what order; nothing computes weights. Reference:
-`docs/architecture/routing.md`.
+**Two modes, one selector.** Every inbound surface stores one `routingMode`, and a request is
+either **routed** — classified into a scenario and a lane, and served from that list — or
+**passed through** untouched. Nothing else picks a model: there is no slot table, no rule stack,
+no custom router hook and no peer injection, and in routed mode the model name the caller sent
+picks nothing. The operator writes which provider tiers serve each scenario and lane, in what
+order; the scheduler's pace reading may move a route to the front or the back of the routes that
+pass. Reference: `docs/architecture/routing.md`; the design and its reasons:
+`docs/plan/scenario-tier-routing.md` (Japanese).
 
-**The tier map** (`routingMode = 'routed'`). Routing names a provider and a tier, never a
-model, so a vendor's new release moves one alias instead of every route that meant it:
+**Routes** (`routingMode = 'routed'`). A route names a provider and a tier, never a model, so a
+vendor's new release moves one alias instead of every list that meant it:
 
-- **`TierRoute`** `(profile, requestedTier, priority) → (provider, targetTier, enabled)`.
-  `requestedTier` is `fable` / `opus` / `sonnet` / `haiku` / `other`; `targetTier` is one of
-  the first four. A substitution is a route written down (`haiku → [claude-code · sonnet]`),
-  not a gate.
-- **`ProviderTierAlias`** `(provider, tier) → model` — which model "that provider's sonnet"
-  is today. Set on the provider's page; a catalog refresh only lists a newer model as a
-  candidate (`isNew`), and promoting it (choosing it in the picker, which also switches the
-  model on) is always the operator's call. Claude subscription presets get their aliases
-  automatically when their models are created (`ensurePresetAliases`); Codex names no
-  Claude family, so its aliases are set by hand.
-- Tiers are strings validated by Zod (`src/schemas/domain/tier-route.ts`), like
-  `routingMode`, so a new family is a code change, not a migration. Storage:
-  `src/services/tier-route-service.ts` and `src/services/tier-alias-service.ts`.
+- **`TierRoute`** `(profile, scenario, lane, priority) → (provider, targetTier, enabled)`.
+  `scenario` is `default` / `think` / `longContext`, `lane` is `agent` / `subagent`, `targetTier`
+  is `fable` / `opus` / `sonnet` / `haiku`. A provider's tier appears at most once per list.
+- **`ProviderTierAlias`** `(provider, tier) → model` — which model "that provider's sonnet" is
+  today. Set on the provider's page; a catalog refresh only lists a newer model as a candidate
+  (`isNew`), and promoting it (choosing it in the picker, which also switches the model on) is
+  always the operator's call. Claude subscription presets get their aliases automatically when
+  their models are created (`ensurePresetAliases`); Codex names no Claude family, so its aliases
+  are set by hand.
+- Scenarios, lanes and tiers are strings validated by Zod (`src/schemas/domain/tier-route.ts`),
+  like `routingMode`, so a new one is a code change, not a migration. `image` and `webSearch` are
+  not scenarios: every model worth routing to reads images, and web search is a gate (below).
+  Storage: `src/services/tier-route-service.ts` and `src/services/tier-alias-service.ts`.
 
-`routeRequest` (`src/llms/router.ts`)
-strips the subagent tag, resolves the profile — the authenticating token's `profileKey`
-wins, else the surface's, else `DEFAULT_PROFILE_KEY = 'live'` — and hands the requested
-model to `src/llms/tier-router/runtime.ts`. The requested tier is `tierOf(body.model)`, a
-substring match on the family name, or `other` when there is none. `loadTierProfileView`
-reads the profile's routes and every alias in one pass, and the pure selector
-`src/llms/tier-router/select.ts` walks the tier's routes in order, skipping one that fails
-a gate:
+`routeRequest` (`src/llms/router.ts`) → `routeByScenario` / `classify`
+(`src/llms/tier-router/runtime.ts`) → the pure selector `selectTierRoute`
+(`src/llms/tier-router/select.ts`):
 
-1. the route and its target (`Model.enabled && Provider.enabled`) are switched on;
-2. its provider has an alias for the tier it names;
-3. it can run the request's web-search tool, when there is one (`hostsWebSearch` in
-   `src/shared/transformer-chain.ts`, decided on the same apiStyle the transformer chain
-   is built from);
-4. its `Model.contextWindow` holds the prompt (unknown = allowed);
-5. it is not out of quota — no 429 exhaustion mark, and the scheduler snapshot's reading
-   for it is neither spent nor used at or past `quotaSkipPct`;
-6. its 5-minute error rate is under `errorRateSkipPct`, once it has `minHealthSamples`
-   samples.
+1. Strip the subagent tag — first, in every mode, passthrough included — and take the lane from it.
+2. A passthrough surface, or a token or surface on the reserved profile: done.
+3. Resolve the profile — the authenticating token's `profileKey` wins, else the surface's, else
+   `DEFAULT_PROFILE_KEY = 'live'` — and read its routes and every alias in one pass
+   (`loadTierProfileView`).
+4. Pick the scenario: input tokens over the Long context threshold → `longContext`; else thinking
+   on → `think`; else `default`. Thinking is read per surface — Anthropic `thinking` (anything but
+   `type: 'disabled'`), OpenAI `reasoning_effort` / `reasoning` (anything but `'none'`), Gemini
+   `thinkingConfig` — in `src/llms/router/surface-signals.ts`, `request-signals.ts` and
+   `src/llms/utils/gemini/router-signals.ts`.
+5. A `think` / `longContext` list with no usable route in the lane (switched on, alias set, target
+   on) falls back to the same lane's `default` list. The fallback reads configuration only: a list
+   whose routes are all out of quota answers as exhausted rather than borrowing Default's.
+6. Walk the list through the gates, skipping a route that fails one:
+   1. the route and its target (`Model.enabled && Provider.enabled`) are switched on;
+   2. its provider has an alias for the tier it names;
+   3. it can run the request's web-search tool, when there is one (`hostsWebSearch` in
+      `src/shared/transformer-chain.ts`, decided on the same apiStyle the transformer chain is
+      built from);
+   4. its `Model.contextWindow` holds the prompt (unknown = allowed);
+   5. it is not out of quota — no 429 exhaustion mark, and the scheduler snapshot's reading for
+      it is neither spent nor used at or past `quotaSkipPct`;
+   6. its 5-minute error rate is under `errorRateSkipPct`, once it has `minHealthSamples` samples.
+7. Order the routes that passed by **pace** — the snapshot's `projectedPct`, where the target lands
+   at its quota reset if use keeps going: below 60 % moves to the front (quota paid for would go
+   unused — Fable, typically), above 100 % to the back (the route the operator listed below it
+   takes the traffic before the limit is hit), the rest and targets with no reading keep list
+   order. List order holds within each band, and when every route is over pace the first still
+   leads: a projection never refuses a request. The first route becomes `body.model`, the rest the
+   fallbacks.
 
-Every route that passes is kept: the first becomes `body.model`, the rest the fallbacks.
-`src/api/v1/` does the rest — `buildRoutePlan` runs the router once per request and answers
-the 429 / 400 below; `buildFailoverChain` orders `[primary, ...fallbacks]` minus exhausted
-marks; `attemptChainEntry` walks it, rotating subscription accounts inside one route on 429
-before moving to the next.
+`src/api/v1/` does the rest — `buildRoutePlan` runs the router once per request and answers the
+429 / 400 below; `buildFailoverChain` orders `[primary, ...fallbacks]` minus exhausted marks;
+`attemptChainEntry` walks it, rotating subscription accounts inside one route on 429 before moving
+to the next.
 
-**The map's order is followed as written.** There is no `auth_mode` gate: a subscription
-route keeps the api_key routes after it, and two routes on the same provider are
-legitimate because exhaustion is marked per `(provider, model)`. A route the operator did
-not want would not be in the list.
+**The list's order is followed as written**, pace aside. There is no `auth_mode` gate: a
+subscription route keeps the api_key routes after it, and two routes on the same provider are
+legitimate because exhaustion is marked per `(provider, model)`. A route the operator did not want
+would not be in the list.
 
-**What each outcome answers.** The contract, pinned by `__tests__/llms/route-request.test.ts`
-and `__tests__/llms/tier-router/select.test.ts`:
+**What each outcome answers.** The contract, pinned by `__tests__/llms/route-request.test.ts` and
+`__tests__/llms/tier-router/select.test.ts`:
 
 | Situation | `body.model` | Response |
 |---|---|---|
-| A route passed | the first passing route's model; the rest are fallbacks | goes upstream |
-| The tier has **no routes**, or every route or target is switched off | untouched, no fallbacks. **Never a 429**, whatever `exhaustedBehavior` says: an unconfigured tier is "no opinion", not "everything is exhausted" | goes upstream as the caller sent it |
+| A route passed | the first route after pace ordering; the rest are fallbacks | goes upstream |
+| The lane's `default` list (chosen, or fallen back to) has **no routes**, or every route or target on it is switched off | untouched, no fallbacks. **Never a 429**, whatever `exhaustedBehavior` says: an unconfigured list is "no opinion", not "everything is exhausted" | goes upstream as the caller sent it |
 | Nothing passed and a route was held by quota or error rate, profile `exhaustedBehavior = '429'` (the default) | untouched | 429 + `Retry-After` (the mark's deadline, else the snapshot's reset, else 30 s) from `buildRoutePlan`, no upstream dispatch |
 | Same, `exhaustedBehavior = 'passthrough'` | untouched, no fallbacks | goes upstream as the caller sent it |
 | Nothing passed, nothing held by quota or error rate, and a route was skipped for an unset alias, no web search, or a prompt too big | untouched | **400** in the surface's error envelope (`routingRefusal`), whatever `exhaustedBehavior` says — waiting would not change it |
-| The map fails to load (Postgres away), or routing throws | untouched; logged at `error`; fallbacks `[]` | goes upstream as the caller sent it |
+| The profile fails to load (Postgres away), or routing throws | untouched; logged at `error`; fallbacks `[]` | goes upstream as the caller sent it |
 
-`routeRequest` never invents a target: `body.model` is only ever rewritten to a route's
-resolved model. A bare model name that reaches the chain walker this way is resolved to the
-one enabled provider hosting it (`src/api/v1/invocation.ts`), or refused.
-`RequestLog.scenario` (the column keeps its name) records the route: the requested tier, or
-`passthrough` when the request went upstream as sent. Activity labels it "Route".
+`routeRequest` never invents a target: `body.model` is only ever rewritten to a route's resolved
+model. A bare model name that reaches the chain walker this way is resolved to the one enabled
+provider hosting it (`src/api/v1/invocation.ts`), or refused. `RequestLog.scenario` records the
+scenario the request was served under (after any fallback to `default`), or `passthrough` when it
+went upstream as sent; Activity labels the column "Scenario". A 429 or 400 from `buildRoutePlan`
+dispatches nothing and writes no row.
 
-**Constraints are four knobs** in `RouterPreferenceProfile.constraints`: `exhaustedBehavior`
-(`'429'`), `quotaSkipPct` (100), `errorRateSkipPct` (0.5) and `minHealthSamples` (5). A blob
-still carrying retired keys (`longContextThreshold`, `allowEscalation`, `tierFallback`, …)
-parses; they are ignored.
+**The Long context threshold is automatic, then tuned.** The base
+(`src/llms/tier-router/threshold.ts`) is 70 % (`LONG_CONTEXT_AUTO_RATIO`) of the context window of
+the model the first usable `default` / `agent` route reaches — the rest is room for the reply —
+or `DEFAULT_LONG_CONTEXT_THRESHOLD = 128_000` when none resolves to a known window. It follows the
+Default alias. On timer ticks (not on a republish), `src/services/routing-scheduler/threshold-tuner.ts`
+moves each profile's value at most once a day by 20 %, by the pace of its first usable
+`longContext` / `agent` route: below 60 % → lower (more requests reach the model the operator most
+wants used), above 100 % → raise, no reading → no change. The value stays within
+`[LONG_CONTEXT_FLOOR = 30_000, base]` — never above the base, because a request that big would not
+fit the Default model it is being kept on. A lowering is rolled back when that route reads
+exhausted within the day; `constraints.autoTuneLongContext = false` stops the tuner (API only, not
+on the screen). Every change is logged at `info`.
+
+**Constraints** live in `RouterPreferenceProfile.constraints`: four knobs — `exhaustedBehavior`
+(`'429'`), `quotaSkipPct` (100), `errorRateSkipPct` (0.5), `minHealthSamples` (5) — plus the
+tuner's state (`longContextThreshold`, null = the base; `previousLongContextThreshold`;
+`longContextTunedAt`) and its kill switch `autoTuneLongContext`. `saveTierProfile` keeps the
+tuner's three keys from the database whatever the request carries, so an editor's stale copy never
+undoes a tune — and there is no manual threshold, not even through the API.
+`GET /api/routing/profiles/{key}` returns the value in effect as `longContextThreshold`. A blob
+still carrying retired keys (`allowEscalation`, `tierFallback`, …) parses; they are ignored.
 
 **Passthrough** (`routingMode = 'passthrough'`, or a token or surface whose `profileKey` is
 the reserved `PASSTHROUGH_PROFILE_KEY = 'passthrough'`). The caller's own `body.model` goes
-upstream — `provider,model`, or a bare name hosted by exactly one enabled provider. The map,
-its gates and the persona are skipped; `passthroughDenial` may refuse a `provider,model` the
+upstream — `provider,model`, or a bare name hosted by exactly one enabled provider. Classification,
+the gates and the persona are skipped; `passthroughDenial` may refuse a `provider,model` the
 surface's `deniedTargets` lists. The reserved key is not a stored profile and cannot hold
 routes (`saveTierProfile` refuses it).
 
@@ -201,51 +235,62 @@ routes (`saveTierProfile` refuses it).
 provider registry and the `providers` view from enabled providers and enabled models only —
 the same predicate `/v1/models` advertises (`getEnabledModels`), so the menu and the door
 agree. `loadTierProfileView` folds `Model.enabled && Provider.enabled` into each route's
-`targetEnabled`, which gate 1 reads and the Routing screen shows apart from the route's own
-switch; `resolveInvocationForModel` returns null for a pair outside the registry; and the
-per-request subscription account pool (`subscription-account-sync/read.ts`) filters
-`Provider.enabled`. A `provider,model` naming a disabled or uncatalogued model is refused,
+`targetEnabled`, which gate 1 and the Default fallback read and the Routing screen shows apart
+from the route's own switch; `resolveInvocationForModel` returns null for a pair outside the
+registry; and the per-request subscription account pool (`subscription-account-sync/read.ts`)
+filters `Provider.enabled`. A `provider,model` naming a disabled or uncatalogued model is refused,
 not forwarded.
 
-**The routing scheduler publishes quota, not weights.** `src/services/routing-scheduler/`
-ticks every `ROUTING_SCHEDULER_INTERVAL_MS` (5 minutes) and publishes, for every enabled
-model of every enabled subscription provider — whichever profile names it —
-`{ exhausted, remainingBudgetPct, resetAt }` plus `soonestResetAt`;
-`/api/routing-scheduler-state` serves it as `targets`. A target it has never seen (api_key
-providers, a cold start) is not held on quota. It used to compute a weight per chain entry,
-but the request path only ever asked whether a weight was zero; it writes nothing to
-`RoutingWeightChange` any more, and Overview's failover feed shows 429s and rejected
-credentials where the weight moves used to be. The snapshot, the exhaustion marks and the
-error-rate ring are process-local.
+**The routing scheduler publishes quota and pace, not weights.** `src/services/routing-scheduler/`
+ticks every `ROUTING_SCHEDULER_INTERVAL_MS` (5 minutes) and publishes, for every enabled model of
+every enabled subscription provider — whichever profile names it —
+`{ exhausted, remainingBudgetPct, projectedPct, resetAt }` plus `soonestResetAt`;
+`/api/routing-scheduler-state` serves it as `targets`. `projectedPct` is `projectedUsage` in
+`quota-math.ts`: per window, used % ÷ the share of the window elapsed, judged only after 10 % of it
+has passed (`PACE_MIN_ELAPSED` — early on, a few requests look like a runaway pace); per account,
+the tightest of its binding windows (5h and weekly; Fable reads its own weekly window); across
+accounts, weighted by plan capacity (`planCapacityWeight`), because the account picker spreads the
+target's traffic over all of them. A target it has never seen (api_key providers, a cold start) is
+not held on quota and has no pace. It writes nothing to `RoutingWeightChange` any more, and
+Overview's failover feed shows 429s and rejected credentials where the weight moves used to be.
+The snapshot, the exhaustion marks and the error-rate ring are process-local.
 
-**Gone with the chain:** the scenarios (`think` / `longContext` / `webSearch` / `image`) and
-the `longContext` threshold — a prompt too big for a route now fails over by the context
-gate; the `agent` / `subagent` lanes; `quota-router` and `applyProactiveFailover` (both
-folded into the selector); `allowEscalation` / `allowDemotion` / `tierFallback` and the
-pace-based tier widening; `/api/router-preferences`, `/api/router-utilization` and
-`/api/solver-input`; the per-model manual tier (`manualTier`) on the provider page and in
-the model PATCH; the scheduler's weights. The token count still goes through
-`src/llms/tokenizers/` (tiktoken, or model-accurate `@huggingface/tokenizers`), for the
-context gate. A `tool_result`'s array content is walked block by block, so an image or
-document payload nested in a tool result weighs nothing — the same as a top-level image
-block; serialising it as text once made one screenshot count as a million tokens.
+**Gone:** the requested tier as a routing key — `tierOf(body.model)` and the `other` tier of
+v2.89.0; `tierOf` survives only for alias candidates and the chain conversion — and the `image` /
+`webSearch` scenarios; `quota-router` and `applyProactiveFailover` (both folded into the selector);
+`allowEscalation` / `allowDemotion` / `tierFallback` and the pace-based tier widening;
+`/api/router-preferences`, `/api/router-utilization` and `/api/solver-input`; the per-model manual
+tier (`manualTier`) on the provider page and in the model PATCH; the scheduler's weights. The token
+count goes through `src/llms/tokenizers/` (tiktoken, or model-accurate `@huggingface/tokenizers`),
+for the Long context threshold and the context gate. A `tool_result`'s array content is walked
+block by block, so an image or document payload nested in a tool result weighs nothing — the same
+as a top-level image block; serialising it as text once made one screenshot count as a million
+tokens and pushed every later request in that session into `longContext`.
 
-**The chain was converted once, at seed.** `db seed` runs
-`src/services/routing-migration/backfill-tier-routes.ts` for every profile whose
-`RouterPreferenceProfile.chainBackfilledAt` is unset, `live` first: the `default` / `agent`
-chain becomes each requested tier's routes and the provider aliases they need; the other
-scenarios' and the subagent lanes' entries are only counted in the log. A profile that fails
-to convert fails the seed, and `set -e` in `entrypoint.sh` stops the container rather than
-start it with that profile silently empty. `scripts/rebackfill-tier-routes.ts --profile <key>`
-clears one profile so the next seed converts it again. `RouterPreferenceEntry`,
-`RoutingWeightChange`, `ScenarioKey` and `Model.manualTier` are still in the schema, read only
-by the backfill (and `manualTier` by the alias candidate list), until a later release's
-contract migration drops them. Details: `docs/guides/migration-v3.md`.
+**The chain is converted at seed, by scenario.** v2.89.0 converted only the `default` / `agent`
+chain into a map keyed by the tier the caller asked for, and its contract migration (#535) was
+reverted (#540), so the old chain is still in the database. Migration
+`20260925010000_key_tier_routes_by_scenario` drops the rows keyed by requested tier (a requested
+tier is not a scenario), re-keys `TierRoute` by scenario and lane, and clears every profile's
+`chainBackfilledAt`. The next `db seed` then runs
+`src/services/routing-migration/backfill-tier-routes.ts` for every unmarked profile, `live` first:
+every entry of `default` / `think` / `longContext` in both lanes becomes a route in the same list,
+in the same order and on/off state, naming its provider and its model's tier, and claims that
+provider's alias when the slot is free (an existing alias is never overwritten). `webSearch` /
+`image` entries are only counted in the log. Edits made on the v2.89.0 tier-map screen are not
+carried over. A profile that fails to convert fails the seed, and `set -e` in `entrypoint.sh` stops
+the container rather than start it with that profile silently empty.
+`scripts/rebackfill-tier-routes.ts --profile <key>` clears one profile so the next seed converts it
+again. `RouterPreferenceEntry`, `RoutingWeightChange`, `ScenarioKey` and `Model.manualTier` stay in
+the schema, read only by the backfill (and `manualTier` by the alias candidate list), until a later
+contract migration drops them once this build has run in production. Details:
+`docs/guides/migration-v3.md`.
 
 **There is no weekly drain guard on the request path.** Subscription providers run to their
-upstream limit and are rotated reactively; the quota gate reads the snapshot, not a drain
-target. `getKindWindowHeadroom` / `drainTarget` still exist in `src/services/usage-service/`,
-but nothing on the request path calls them — the only callers left are tests.
+upstream limit and are rotated reactively; the quota gate reads the snapshot, and pace only
+reorders routes that are still open. `getKindWindowHeadroom` / `drainTarget` still exist in
+`src/services/usage-service/`, but nothing on the request path calls them — the only callers left
+are tests.
 
 **There is no `ROUTER_MODE`.** It, `ROUTER_SHADOW` and `ROUTER_ROLLOUT_PCT`
 selected between two selectors and moved traffic between them a percentage at a
@@ -324,13 +369,13 @@ The schema is well past the three tables the first PR shipped; the column commen
 | `Provider` | unique `name`, `apiBaseUrl`, `apiKey`, `authMode`, `apiStyle`, `enabled`. **No account is designated** — `activeSubscriptionAccountId` is gone (migration `20260910084500_drop_provider_active_subscription_account`); which SubAccount serves a request is decided per request, and "can this provider authenticate" is asked of its accounts as a set (`src/shared/subscription-credential.ts`). **There is no `transformer` column** — the chain is derived (see Transformer System) and the `transformer._disabledModels` the UI reads is synthesized from `Model.enabled` by `toWireTransformer` |
 | `Model` | FK to Provider with `onDelete: Cascade`, composite unique `(providerId, name)`, optional per-model `apiStyle` override. `enabled` is the per-model switch; `Provider.enabled` gates the whole provider above it. `manualTier` is retired — nothing writes it; the backfill and the alias candidate list read it until the contract migration drops it |
 | `SubAccount` / `SubAccountUsage` / `SubAccountQuota` | subscription accounts, their observed windows (`SubAccountUsage` for the account picker, `SubAccountQuota` for the scheduler's quota snapshot), and Codex's banked resets (`resetCreditsAvailable`) |
-| `RouterPreferenceProfile` | a named profile (`live` is the default): `constraints` (JSONB, no DDL to add a knob) holds the four routing knobs; `chainBackfilledAt` marks the one-shot conversion of its old chain |
-| `TierRoute` | the tier map: `(profile, requestedTier, priority) → (provider, targetTier, enabled)`. A provider deletion cascades to its routes, and the apply layer counts them first and warns per profile / tier |
+| `RouterPreferenceProfile` | a named profile (`live` is the default): `constraints` (JSONB, no DDL to add a knob) holds the four routing knobs, the Long context tuner's state (`longContextThreshold` / `previousLongContextThreshold` / `longContextTunedAt`, written by the tuner and kept by every save) and its kill switch `autoTuneLongContext`; `chainBackfilledAt` marks the one-shot conversion of its old chain |
+| `TierRoute` | the routes: `(profile, scenario, lane, priority) → (provider, targetTier, enabled)`, unique per provider · tier within one list. Keyed by scenario and lane since migration `20260925010000_key_tier_routes_by_scenario`, which dropped the v2.89.0 rows keyed by requested tier. A provider deletion cascades to its routes, and the apply layer counts them first and warns per profile / scenario / lane |
 | `ProviderTierAlias` | `(provider, tier) → model`, unique per provider and tier. A model deletion unsets the aliases naming it (cascade, counted and warned about); an unset alias leaves the routes through it skipped. **There is no `RouterSlot` table** (dropped by `20260910095324_drop_router_slot_and_routing_preset`, together with `RoutingPreset`) |
-| `RouterPreferenceEntry` / `RoutingWeightChange` | retired: the per-scenario chain, now read only by the backfill, and the scheduler's weight log, written by nothing. Both are dropped by a later release's contract migration |
+| `RouterPreferenceEntry` / `RoutingWeightChange` | retired: the per-scenario, per-lane chain of concrete models, now read only by the backfill (every lane of it is still there: #540 reverted the contract migration that would have dropped it), and the scheduler's weight log, written by nothing. Both are dropped by a later contract migration |
 | `InboundSurfaceConfig` | one row per surface: `routingMode` + `profileKey` + `deniedTargets` |
 | `AccessToken` | issued `/v1/*` credentials — sha256 only, optional surface and routing-profile scope |
-| `Session` / `Message` / `RequestLog` / `UsageSnapshot` | the archive behind Activity and Overview. `RequestLog.scenario` stores the route (requested tier or `passthrough`); `subAccountId` the subscription account that served the request (not a foreign key, like `accessTokenId`), which is what lets `src/services/account-usage-service.ts` price each account's traffic at API rates for Overview and the provider pages; `cacheWrite1hTokens` the 1-hour-TTL share of the cache writes, priced at 2× input against 1.25× for 5 minutes (`src/services/cost-service.ts`) |
+| `Session` / `Message` / `RequestLog` / `UsageSnapshot` | the archive behind Activity and Overview. `RequestLog.scenario` stores the scenario the request was served under (`default` / `think` / `longContext`) or `passthrough` — older rows hold the requested tier (v2.89.0) or the chain's scenario; `subAccountId` the subscription account that served the request (not a foreign key, like `accessTokenId`), which is what lets `src/services/account-usage-service.ts` price each account's traffic at API rates for Overview and the provider pages; `cacheWrite1hTokens` the 1-hour-TTL share of the cache writes, priced at 2× input against 1.25× for 5 minutes (`src/services/cost-service.ts`) |
 
 Boot sequence — top-level statements in `src/index.ts`, not a `getServer()`:
 
@@ -368,7 +413,7 @@ DDL is not created at boot either: `entrypoint.sh` runs `prisma migrate deploy` 
 Config API (`src/api/config/route.ts`, service in `src/services/config/`):
 
 - `GET /api/config` returns `composeUiConfig()` (envelope on disk + DB-resident config).
-- `POST /api/config` calls `applyUiConfig(body)`: diffs the incoming UI payload inside a single Prisma transaction and returns `{ success, warnings[] }`. A removed model unsets the tier aliases naming it and a removed provider takes its tier routes with it (both cascade), so the apply layer counts them **before** the delete and warns with which provider tiers or which profile / tier routes went; the retired keys (`Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK` / `APIKEY`) are dropped with a warning and never stored. `ActivePersona` is an ordinary top-level key: `''` / `null` clears it, absent leaves it alone. Envelope keys land on disk via `writeConfigFile` after the DB transaction commits, and `applyEnvelopeToEnv` re-mirrors them onto `process.env` — so envelope changes are hot, without a restart.
+- `POST /api/config` calls `applyUiConfig(body)`: diffs the incoming UI payload inside a single Prisma transaction and returns `{ success, warnings[] }`. A removed model unsets the tier aliases naming it and a removed provider takes its tier routes with it (both cascade), so the apply layer counts them **before** the delete and warns with which provider tiers or which profile / scenario / lane routes went; the retired keys (`Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK` / `APIKEY`) are dropped with a warning and never stored. `ActivePersona` is an ordinary top-level key: `''` / `null` clears it, absent leaves it alone. Envelope keys land on disk via `writeConfigFile` after the DB transaction commits, and `applyEnvelopeToEnv` re-mirrors them onto `process.env` — so envelope changes are hot, without a restart.
 
 Key features (disk envelope):
 - Environment variable interpolation (`$VAR_NAME` or `${VAR_NAME}`)
@@ -398,8 +443,8 @@ Database tooling (`bun run`, from the repo root — there is no `packages/`):
 - `db:migrate:deploy` — apply existing migrations (production / CI).
 - `db:migrate:test` — apply them to `rialto_test`. **Separate database; CI fails without it.**
 - `db:reset` — drop and recreate the schema (destructive).
-- `db:seed` — `src/prisma/seed.ts`; idempotent, creates the `live` preference profile (no routes until the operator adds them), then converts every profile's old chain into the tier map once (`backfillTierRoutes`, marked on `chainBackfilledAt`). A conversion failure fails the seed on purpose. No slot rows — there is no such table — and no placeholder Providers.
-- `db:seed:demo` — `scripts/seed-demo-data.ts`; dev-only demo data for every screen (traffic, tier aliases and tier maps, quota, tokens). Rows it owns carry a `demo-` id and `-- --clean` removes them; the demo `cost-first` profile is rewritten on every run; live config (tier aliases, the `live` tier map, surface modes, an account's quota) is written only while unset. Never wired into `db:seed`. See `docs/guides/demo-data.md`.
+- `db:seed` — `src/prisma/seed.ts`; idempotent, creates the `live` preference profile (no routes until the operator adds them), then converts every unmarked profile's old chain into scenario routes once — `default` / `think` / `longContext` in both lanes (`backfillTierRoutes`, marked on `chainBackfilledAt`, which the `20260925010000` migration cleared on every profile). A conversion failure fails the seed on purpose. No slot rows — there is no such table — and no placeholder Providers.
+- `db:seed:demo` — `scripts/seed-demo-data.ts`; dev-only demo data for every screen (traffic, tier aliases and scenario routes, quota, tokens). Rows it owns carry a `demo-` id and `-- --clean` removes them; the demo `cost-first` profile is rewritten on every run; live config (tier aliases, the `live` routes, surface modes, an account's quota) is written only while unset. Never wired into `db:seed`. See `docs/guides/demo-data.md`.
 - `db:studio` — open Prisma Studio.
 
 Never edit DDL directly; always go through Prisma migrations.
@@ -419,29 +464,35 @@ Two separate logging systems:
 
 ## Subagent Routing
 
-A subagent tag in the second system block marks a request as a subagent's:
+A subagent tag in the second system block selects the scenario's **`subagent` lane**:
 
 ```
 <RIALTO-SUBAGENT-MODEL>anything</RIALTO-SUBAGENT-MODEL>
 Please help me analyze this code...
 ```
 
-**It selects nothing.** There are no lanes any more: a subagent's request is routed by
-the tier its own `body.model` asks for, like any other (`docs/architecture/routing.md`).
-`stripSubagentTag` (`src/llms/router/request-signals.ts`) returns whether the
-tag was there and strips it in place; `routeRequest` calls it **first, in every mode** —
-routed or passthrough — so the internal marker never reaches upstream, and records the
-answer as `RequestLog.isSubagent` so Activity can tell the two kinds of traffic apart.
-**Only the tag's presence is read. Its value is ignored** — it never resolved
-`provider,model` out of the tag body, so a tag naming a now-deleted pair is harmless.
+**Only the tag's presence is read. Its value is ignored.** `stripSubagentTag`
+(`src/llms/router/request-signals.ts`) returns whether the tag was there and strips it in
+place; `routeRequest` calls it **first, in every mode** — routed or passthrough — so the internal
+marker never reaches upstream, and records the answer as `RequestLog.isSubagent`. In routed mode
+`classify` turns it into the lane, and the selector walks the chosen scenario's `subagent` list
+instead of its `agent` one. The model comes from that list, not from the tag body, which is what
+makes the lane editable in Routing instead of scattered across prompt files; a tag whose body
+names a now-deleted `provider,model` pair still routes correctly — by lane. A subagent Think or
+Long context list with nothing usable falls back to the subagent Default list, and an empty
+subagent Default passes the caller's own model through: the lane never borrows the agent lane's
+routes. (In v2.89.0 the tag selected nothing — the requested-tier map had no lanes. The lane is
+back with the scenarios.)
 
 `<CCR-SUBAGENT-MODEL>` is the pre-rename spelling and is still accepted (same file,
 `SUBAGENT_TAGS`). It lives in prompts users have already written, and dropping it
-would send that marker upstream in the caller's system prompt and record the traffic
-as main-agent calls, so it must not be removed.
+would send that marker upstream in the caller's system prompt and silently route that traffic on
+the agent lane, so it must not be removed.
 
 Only a well-formed (closed) tag is stripped; a malformed one still counts as present
-but is left in the prompt.
+but is left in the prompt. The tag is read from the second block of an Anthropic-shape `system`
+array, so requests on the OpenAI and Gemini surfaces — which carry their system prompt in
+`messages[0]`, `instructions` or `systemInstruction` — always walk the agent lane.
 
 ## Presets
 
@@ -452,8 +503,8 @@ all three are gone — do not build on any of them:
    table, `src/services/routing-preset.ts`, `/api/routing-presets`, the built-in tier
    presets (`shared/data/routing-presets.ts`, `lib/routing-map/`) and the Routing
    screen's Presets menu were removed with the slot selector (migration
-   `20260910095324_drop_router_slot_and_routing_preset`). The tier map is edited in
-   place on the Routing screen; there is nothing to snapshot it into.
+   `20260910095324_drop_router_slot_and_routing_preset`). The routes are edited in
+   place on the Routing screen; there is nothing to snapshot them into.
 2. **`src/lib/presets/`** — the dynamic-input form (`form-logic.ts`, `types.ts`)
    behind a Settings → Presets screen. Both went with that screen; there is no
    `/settings/presets` route in `src/app/routes.tsx`.

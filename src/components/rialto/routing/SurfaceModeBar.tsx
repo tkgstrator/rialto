@@ -132,9 +132,9 @@ export function SurfaceScopeBar({
   onMode: (mode: RoutingMode) => void
   onProfile: (key: string) => void
   /**
-   * True while the map below is being edited. Either control would load
-   * another profile or hide the map, and the unsaved edit would go with
-   * it, so both wait for Save or Revert.
+   * True while the routes below are being edited. Either control would
+   * load another profile or hide the routes, and the unsaved edit would go
+   * with them, so both wait for Save or Revert.
    */
   locked: boolean
 }) {
@@ -156,8 +156,8 @@ export function SurfaceScopeBar({
       {/* No help marker beside the switch. It explained two words that
           explain themselves, through a `title` that touch never shows and
           the keyboard barely reaches — and the screen demonstrates the
-          difference anyway: flipping to Passthrough replaces the map
-          with the set of targets a caller may name, under a note saying
+          difference anyway: flipping to Passthrough replaces the
+          routes with the set of targets a caller may name, under a note saying
           what switching back would buy. */}
       {/* A passthrough surface draws from no profile, so the picker is
           absent rather than disabled — and the divider goes with it. */}

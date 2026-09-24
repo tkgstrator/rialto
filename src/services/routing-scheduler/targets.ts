@@ -4,8 +4,11 @@
  * them.
  */
 
-import { earliestReset, modelBudget } from './quota-math'
+import { earliestReset, modelBudget, projectedUsage } from './quota-math'
 import type { ModelCandidateState, TargetQuotaState } from './types'
+
+const projectedPctOf = (projection: number | null): number | null =>
+  projection === null ? null : Math.round(projection * 1000) / 10
 
 export function targetQuotaOf(candidate: ModelCandidateState, now: number, ttlMs: number): TargetQuotaState {
   const budget = modelBudget(candidate, now, ttlMs)
@@ -17,6 +20,7 @@ export function targetQuotaOf(candidate: ModelCandidateState, now: number, ttlMs
     target: candidate.target,
     exhausted: everyAccountRead && budget.value !== null && budget.value <= 0,
     remainingBudgetPct: budget.value === null ? null : Math.round(budget.value * 1000) / 10,
+    projectedPct: projectedPctOf(projectedUsage(candidate, now, ttlMs)),
     resetAt: earliestReset(candidate)
   }
 }

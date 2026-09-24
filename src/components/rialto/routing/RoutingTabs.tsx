@@ -31,7 +31,7 @@ export function SurfaceBar({
   active: SurfaceId | null
   onSelect: (id: SurfaceId) => void
   /**
-   * Locked while the chain is being edited: another surface can mean
+   * Locked while the routes are being edited: another surface can mean
    * another profile, and loading it would throw the unsaved edit away.
    */
   disabled?: boolean

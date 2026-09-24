@@ -1,11 +1,11 @@
 /**
- * Routing scheduler tick loop: the quota snapshot the tier router reads.
+ * Routing scheduler tick loop: the quota snapshot the router reads.
  *
  * Each tick collects fresh quota, holds spent accounts, and publishes one
  * reading per target — every enabled model of every enabled subscription
- * provider: is it out, how much is left, when does it come back. It no
- * longer computes weights: the request path only ever asked whether a
- * weight was zero, and the tier map says what order to try routes in.
+ * provider: is it out, how much is left, where its pace lands it at the
+ * reset, when does it come back. On timer ticks it then tunes each
+ * profile's Long context threshold (`threshold-tuner.ts`).
  *
  * In-process `setTimeout` chain — not BullMQ — because:
  *   1. the snapshot lives in process memory; there's no reason to run
@@ -35,6 +35,7 @@ import { holdSpentAccount } from './account-limit'
 import { refreshQuotaSnapshots } from './collector'
 import { publishSnapshot, __resetSchedulerStateForTest as resetStateForTest } from './state'
 import { soonestResetOf, targetQuotaOf } from './targets'
+import { tuneLongContextThresholds } from './threshold-tuner'
 import type {
   AccountQuotaState,
   AccountQuotaView,
@@ -246,6 +247,9 @@ async function tickBody(collect: boolean, prismaOverride?: PrismaClient): Promis
       soonestResetAt: soonestResetOf(targets.values())
     }
     publishSnapshot(snapshot)
+    // Timer ticks only: a republish after a Refresh is about fresh quota,
+    // and the tuner acts at most once a day anyway.
+    if (collect) await tuneLongContextThresholds(prisma, snapshot, now)
     counters.consecutiveFailures = 0
     return snapshot
   } catch (err) {

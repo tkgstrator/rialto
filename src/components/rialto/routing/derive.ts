@@ -1,22 +1,15 @@
 /**
  * Pure derivations for the Routing screen.
  *
- * Everything here answers a question a row or a cell asks of the loaded
- * profile, the draft and the scheduler snapshot — what a route resolves
- * to, what state it is in, whether the draft differs from what is saved —
- * without touching React, so each answer can be tested on its own.
+ * Every edit the scenario table makes — add, change, remove, move, switch
+ * — is a function from one draft to the next here, without React, so each
+ * can be pinned on its own. So is what the add dialog offers, and how the
+ * Long context threshold reads.
  */
-import type {
-  RoutingConstraintsWire,
-  RoutingSchedulerStateResponse,
-  RoutingSchedulerTargetState,
-  TierAliasWire,
-  TierProfileViewWire,
-  TierRouteResolutionWire
-} from '@/lib/api'
-import { ROUTE_TIER_ORDER } from '@/lib/api-types'
+import type { TierAliasWire, TierProfileViewWire } from '@/lib/api'
+import { MODEL_TIER_ORDER, ROUTING_LANE_ORDER, ROUTING_SCENARIO_ORDER } from '@/lib/api-types'
 import type { Provider } from '@/schemas/domain/provider'
-import type { DraftRoute, EnabledTarget, ModelTier, RouteResolution, RouteState, RouteTier, TierDraft } from './types'
+import type { CellAddress, Combination, EnabledTarget, ModelTier, ScenarioDraft } from './types'
 
 /**
  * Every "provider,model" the operator has left routable: providers switched
@@ -37,234 +30,202 @@ export function enabledTargets(providers: readonly Provider[]): EnabledTarget[] 
 }
 
 /**
- * The providers a new route may name.
+ * The providers a new combination may name.
  *
- * A switched-off provider is left out rather than offered: a route to it
- * would be kept but never taken, and the Add route dialog is where that
- * mistake is cheapest to prevent.
+ * A switched-off provider is left out rather than offered: a line naming it
+ * would be kept but never taken, and the add dialog is where that mistake
+ * is cheapest to prevent.
  */
 export function enabledProviderNames(providers: readonly Provider[]): string[] {
   return providers.filter((provider) => provider.enabled !== false).map((provider) => provider.name)
 }
 
-/** The scheduler's per-target readings keyed by "provider,model", so a row can look up its own. */
-export function targetIndex(state: RoutingSchedulerStateResponse | null): Map<string, RoutingSchedulerTargetState> {
-  const out = new Map<string, RoutingSchedulerTargetState>()
-  // A server from before the scheduler published per-target readings
-  // answers without `targets`; every row reading "ok" is better than the
-  // screen failing to render.
-  if (state === null || !Array.isArray(state.targets)) return out
-  for (const entry of state.targets) out.set(entry.target, entry)
-  return out
-}
-
 /**
- * One key per provider · tier.
+ * One key per provider · tier, unique within a cell because a cell never
+ * holds the same combination twice.
  *
  * Tier first: a tier name never contains a colon, so the key cannot be
  * ambiguous whatever the provider happens to be called.
  */
-export const routeKey = (provider: string, tier: ModelTier): string => `${tier}:${provider}`
+export const combinationKey = (provider: string, tier: ModelTier): string => `${tier}:${provider}`
 
-/** Constraints as the server defaults them — what a profile with no row reads as. */
-export const DEFAULT_CONSTRAINTS: RoutingConstraintsWire = {
-  exhaustedBehavior: '429',
-  quotaSkipPct: 100,
-  errorRateSkipPct: 0.5,
-  minHealthSamples: 5
-}
-
-export function emptyDraft(): TierDraft {
+export function emptyDraft(): ScenarioDraft {
   return {
-    routes: { fable: [], opus: [], sonnet: [], haiku: [], other: [] },
-    constraints: { ...DEFAULT_CONSTRAINTS }
+    default: { agent: [], subagent: [] },
+    think: { agent: [], subagent: [] },
+    longContext: { agent: [], subagent: [] }
   }
 }
 
 /**
- * The write-shaped copy of a loaded profile.
+ * The write-shaped copy of a loaded profile's routes.
  *
  * Built field by field in a fixed order rather than spread from the view,
  * so the draft and its baseline serialise identically and `draftDiffers`
- * can compare them as strings.
+ * can compare them as strings — and so the resolution the view carries
+ * beside each route never reaches the PUT.
  */
-export function draftOf(view: TierProfileViewWire): TierDraft {
-  const routes = emptyDraft().routes
-  for (const tier of ROUTE_TIER_ORDER) {
-    routes[tier] = view.routes[tier].map((route) => ({
-      provider: route.provider,
-      targetTier: route.targetTier,
-      enabled: route.enabled
-    }))
-  }
-  const c = view.constraints
-  return {
-    routes,
-    constraints: {
-      exhaustedBehavior: c.exhaustedBehavior,
-      quotaSkipPct: c.quotaSkipPct,
-      errorRateSkipPct: c.errorRateSkipPct,
-      minHealthSamples: c.minHealthSamples
+export function draftOf(view: TierProfileViewWire): ScenarioDraft {
+  const draft = emptyDraft()
+  for (const scenario of ROUTING_SCENARIO_ORDER) {
+    for (const lane of ROUTING_LANE_ORDER) {
+      draft[scenario][lane] = view.routes[scenario][lane].map((route) => ({
+        provider: route.provider,
+        targetTier: route.targetTier,
+        enabled: route.enabled
+      }))
     }
   }
+  return draft
 }
 
 /** Whether an edit has changed anything one PUT would write. */
-export function draftDiffers(a: TierDraft, b: TierDraft): boolean {
+export function draftDiffers(a: ScenarioDraft, b: ScenarioDraft): boolean {
   return JSON.stringify(a) !== JSON.stringify(b)
 }
 
-/**
- * Every resolution the loaded profile carries, keyed by provider · tier.
- *
- * The same provider · tier resolves identically in every group — the
- * alias belongs to the provider, not to the route — so a route moved or
- * re-added during an edit can borrow a resolution from any group.
- */
-export function resolutionIndex(view: TierProfileViewWire | null): Map<string, TierRouteResolutionWire | null> {
-  const out = new Map<string, TierRouteResolutionWire | null>()
-  if (view === null) return out
-  for (const tier of ROUTE_TIER_ORDER) {
-    for (const route of view.routes[tier]) out.set(routeKey(route.provider, route.targetTier), route.resolved)
-  }
-  return out
+export const cellOf = (draft: ScenarioDraft, at: CellAddress): Combination[] => draft[at.scenario][at.lane]
+
+/** The draft with one cell replaced; every other cell is the same object as before. */
+function withCell(draft: ScenarioDraft, at: CellAddress, fn: (prev: Combination[]) => Combination[]): ScenarioDraft {
+  return { ...draft, [at.scenario]: { ...draft[at.scenario], [at.lane]: fn(cellOf(draft, at)) } }
 }
 
-/** The model each provider · tier alias names today, or null where none is set. */
-export function aliasIndex(aliases: readonly TierAliasWire[] | null): Map<string, string | null> {
-  const out = new Map<string, string | null>()
-  if (aliases === null) return out
-  for (const alias of aliases) out.set(routeKey(alias.provider, alias.tier), alias.model)
-  return out
-}
+const inRange = (routes: readonly Combination[], index: number): boolean => index >= 0 && index < routes.length
 
 /**
- * What a row resolves to: the server's answer where the loaded profile
- * has one, else the alias list's, else nothing until Save.
+ * Whether the cell already holds this provider · tier on a line other than
+ * `except` — the duplicate the dialog refuses. `except` is the line being
+ * changed, which may of course keep what it already is.
  */
-export function resolveRoute(
-  route: DraftRoute,
-  resolutions: ReadonlyMap<string, TierRouteResolutionWire | null>,
-  aliases: ReadonlyMap<string, string | null>
-): RouteResolution {
-  const key = routeKey(route.provider, route.targetTier)
-  const resolved = resolutions.get(key)
-  if (resolved === null) return { kind: 'unset' }
-  if (resolved !== undefined) return { kind: 'resolved', resolution: resolved }
-  const alias = aliases.get(key)
-  if (alias === null) return { kind: 'unset' }
-  return { kind: 'pending', model: alias === undefined ? null : alias }
-}
-
-/**
- * A route's state, from the scheduler's reading of the target it resolves to.
- *
- * `exhausted` is the scheduler's own verdict — the same one the tier
- * router skips a route on — so a row reads "exhausted" exactly when a
- * request would pass it by for quota. A target the scheduler has no
- * budget for (an api_key provider, a cold start) is not held back on
- * quota by the router, so it is not here either: `ok`.
- *
- * The route's own switch is not a state. A switched-off row is already
- * dimmed with its toggle off; its State still reports what the target
- * would do if switched back on, which is the thing worth knowing before
- * flipping it.
- */
-export function routeState(
-  resolution: RouteResolution,
+export function hasCombination(
+  routes: readonly Combination[],
   provider: string,
-  targets: ReadonlyMap<string, RoutingSchedulerTargetState>
-): RouteState {
-  if (resolution.kind === 'unset') return { kind: 'unset' }
-  if (resolution.kind === 'pending') return { kind: 'pending' }
-  if (!resolution.resolution.targetEnabled) return { kind: 'off' }
-  const reading = targets.get(`${provider},${resolution.resolution.model}`)
-  if (reading === undefined) return { kind: 'ok' }
-  if (reading.exhausted) return { kind: 'exhausted', until: reading.resetAt }
-  const remaining = reading.remainingBudgetPct
-  return remaining !== null && remaining < 100 ? { kind: 'used', pct: Math.round(100 - remaining) } : { kind: 'ok' }
+  tier: ModelTier,
+  except: number | null = null
+): boolean {
+  return routes.some((route, i) => i !== except && route.provider === provider && route.targetTier === tier)
 }
 
 /**
- * Whether a route answers its group with another tier on purpose.
+ * Append a combination to a cell, switched on.
  *
- * "Other" is the group of names with no Claude family, so there is no
- * tier to substitute for — any tier a route names there is simply the
- * tier it names.
+ * A duplicate leaves the draft as it was. The dialog already refuses one;
+ * checked again here because the draft is what gets written, and the
+ * server would drop the second copy with a warning the operator never
+ * asked for.
  */
-export function substitutes(group: RouteTier, target: ModelTier): boolean {
-  return group !== 'other' && group !== target
+export function addCombination(
+  draft: ScenarioDraft,
+  at: CellAddress,
+  provider: string,
+  tier: ModelTier
+): ScenarioDraft {
+  if (hasCombination(cellOf(draft, at), provider, tier)) return draft
+  return withCell(draft, at, (prev) => [...prev, { provider, targetTier: tier, enabled: true }])
 }
-
-/** Move one route within its group; an out-of-range target leaves the list as it was. */
-export function moveRoute(routes: readonly DraftRoute[], from: number, to: number): DraftRoute[] {
-  if (from === to || from < 0 || to < 0 || from >= routes.length || to >= routes.length) return [...routes]
-  const next = [...routes]
-  const [pulled] = next.splice(from, 1)
-  next.splice(to, 0, pulled)
-  return next
-}
-
-/** Whether a group already holds this provider · tier — the duplicate the server would drop. */
-export function hasRoute(routes: readonly DraftRoute[], provider: string, tier: ModelTier): boolean {
-  return routes.some((route) => route.provider === provider && route.targetTier === tier)
-}
-
-export interface MapCounts {
-  total: number
-  off: number
-  unresolved: number
-}
-
-/** The footer's totals across every group of the draft. */
-export function mapCounts(draft: TierDraft, resolve: (route: DraftRoute) => RouteResolution): MapCounts {
-  const all = ROUTE_TIER_ORDER.flatMap((tier) => draft.routes[tier])
-  return {
-    total: all.length,
-    off: all.filter((route) => !route.enabled).length,
-    unresolved: all.filter((route) => resolve(route).kind === 'unset').length
-  }
-}
-
-export type ConstraintEdit =
-  | { kind: 'exhaustedBehavior'; value: RoutingConstraintsWire['exhaustedBehavior'] }
-  | { kind: 'quotaSkipPct'; value: number }
-  | { kind: 'errorRateSkipPct'; value: number }
-  | { kind: 'minHealthSamples'; value: number }
 
 /**
- * One edit, merged over the constraints that are there.
+ * Point one line at another provider · tier. It keeps its place and its
+ * switch: changing what a line names is not a reason to turn it back on.
+ */
+export function changeCombination(
+  draft: ScenarioDraft,
+  at: CellAddress,
+  index: number,
+  provider: string,
+  tier: ModelTier
+): ScenarioDraft {
+  const routes = cellOf(draft, at)
+  if (!inRange(routes, index) || hasCombination(routes, provider, tier, index)) return draft
+  return withCell(draft, at, (prev) =>
+    prev.map((route, i) => (i === index ? { ...route, provider, targetTier: tier } : route))
+  )
+}
+
+export function removeCombination(draft: ScenarioDraft, at: CellAddress, index: number): ScenarioDraft {
+  if (!inRange(cellOf(draft, at), index)) return draft
+  return withCell(draft, at, (prev) => prev.filter((_, i) => i !== index))
+}
+
+export function toggleCombination(
+  draft: ScenarioDraft,
+  at: CellAddress,
+  index: number,
+  enabled: boolean
+): ScenarioDraft {
+  if (!inRange(cellOf(draft, at), index)) return draft
+  return withCell(draft, at, (prev) => prev.map((route, i) => (i === index ? { ...route, enabled } : route)))
+}
+
+/**
+ * Move one line within its cell. A cell is the only scope a move has:
+ * carrying a line to another scenario or lane changes what it means, not
+ * its order, so there is no such move. An out-of-range end leaves the
+ * draft as it was.
+ */
+export function moveCombination(draft: ScenarioDraft, at: CellAddress, from: number, to: number): ScenarioDraft {
+  const routes = cellOf(draft, at)
+  if (from === to || !inRange(routes, from) || !inRange(routes, to)) return draft
+  return withCell(draft, at, (prev) => {
+    const next = [...prev]
+    const [pulled] = next.splice(from, 1)
+    next.splice(to, 0, pulled)
+    return next
+  })
+}
+
+/**
+ * Why a tier can or cannot be picked in the dialog's second step.
  *
- * The error-rate cell is edited as a percentage because that is how it
- * reads; the profile stores it as a fraction, which is what the router
- * compares against, so the conversion happens exactly once, here.
+ * `unset`: the provider has no model for it (no alias row, or one naming
+ * no model), so a line through it would reach nothing. `taken`: the cell
+ * already holds it.
  */
-export function applyConstraintEdit(constraints: RoutingConstraintsWire, edit: ConstraintEdit): RoutingConstraintsWire {
-  if (edit.kind === 'exhaustedBehavior') return { ...constraints, exhaustedBehavior: edit.value }
-  if (edit.kind === 'quotaSkipPct') return { ...constraints, quotaSkipPct: edit.value }
-  if (edit.kind === 'errorRateSkipPct') return { ...constraints, errorRateSkipPct: edit.value / 100 }
-  return { ...constraints, minHealthSamples: edit.value }
-}
+export type TierAvailability = 'available' | 'unset' | 'taken'
 
-/** The stored error-rate fraction as the whole percentage its cell shows. */
-export const errorRatePctOf = (constraints: RoutingConstraintsWire): number =>
-  Math.round(constraints.errorRateSkipPct * 100)
+export interface TierOption {
+  tier: ModelTier
+  availability: TierAvailability
+}
 
 /**
- * A percentage entry as a whole number, 0–100, or null when the text is
- * not one. Whole only: the cells read as `100%`, and a fraction there
- * would be a precision the readings it is compared with do not have.
+ * The four tiers of one provider as the dialog offers them for one cell.
+ *
+ * A null alias list is one that failed to load. Nothing is marked unset
+ * then: claiming an alias is missing on no evidence would block a valid
+ * choice, whereas letting an unset one through only costs the warning the
+ * server answers Save with.
  */
-export function parseWholePercent(text: string): number | null {
-  const trimmed = text.trim()
-  if (!/^\d{1,3}$/.test(trimmed)) return null
-  const value = Number(trimmed)
-  return value <= 100 ? value : null
+export function tierOptions(
+  provider: string,
+  aliases: readonly TierAliasWire[] | null,
+  routes: readonly Combination[],
+  except: number | null
+): TierOption[] {
+  return MODEL_TIER_ORDER.map((tier): TierOption => {
+    if (hasCombination(routes, provider, tier, except)) return { tier, availability: 'taken' }
+    const set =
+      aliases === null ||
+      aliases.some((alias) => alias.provider === provider && alias.tier === tier && alias.model !== null)
+    return { tier, availability: set ? 'available' : 'unset' }
+  })
 }
 
-/** A sample count: a non-negative whole number of sensible size, or null. */
-export function parseSampleCount(text: string): number | null {
-  const trimmed = text.trim()
-  if (!/^\d{1,6}$/.test(trimmed)) return null
-  return Number(trimmed)
+/** At most `digits` decimals, trailing zeros dropped: 1.20 → "1.2", 1.00 → "1". */
+const trimmed = (value: number, digits: number): string => String(Number(value.toFixed(digits)))
+
+/**
+ * A token count as the Long context row states it: `700k`, `128k`,
+ * `35.8k`, `1M`, `1.2M`.
+ *
+ * Whole thousands from 100k up. The threshold is a round number when it
+ * is automatic, and the tuner moves it in 20% steps, so a decimal there
+ * would be precision nobody set.
+ */
+export function formatThreshold(tokens: number): string {
+  if (tokens >= 999_500) return `${trimmed(tokens / 1_000_000, 2)}M`
+  if (tokens >= 100_000) return `${Math.round(tokens / 1_000)}k`
+  if (tokens >= 1_000) return `${trimmed(tokens / 1_000, 1)}k`
+  return String(tokens)
 }

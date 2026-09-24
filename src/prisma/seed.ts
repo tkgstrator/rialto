@@ -11,7 +11,7 @@
  * user enables a vendor. The default preference profile ships
  * pre-created so every surface has a chain row to point at, empty
  * until the operator fills it in. Each profile's old chain is converted
- * into the tier map once (routing-migration/backfill-tier-routes.ts).
+ * into scenario routes once (routing-migration/backfill-tier-routes.ts).
  */
 
 import { logger } from '../logger'

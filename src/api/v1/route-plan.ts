@@ -48,8 +48,9 @@ export interface RoutePlan {
   headers: Record<string, string>
   transformersByName: Map<string, Transformer>
   defaultTransformer: Transformer
-  // The requested tier a route served, or 'passthrough'. Recorded on the
-  // RequestLog row (its `scenario` column, which predates the tier map).
+  // The scenario whose list served the request (default / think /
+  // longContext), or 'passthrough'. Recorded on the RequestLog row's
+  // `scenario` column.
   route: string
   primaryModel: string
   // The client's original body.model (pre-routing), carried through to the
@@ -183,7 +184,7 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   await routeRequest(routeReq, { config: ctx.config, tokenizers: ctx.tokenizers })
   const route = routeReq.route !== undefined ? routeReq.route : PASSTHROUGH_ROUTE
 
-  // Every route of the requested tier is out of quota and the profile's
+  // Every route of the scenario's list is out of quota and the profile's
   // `exhaustedBehavior` is '429'. Answered here so no upstream dispatch
   // happens; `Retry-After` carries the seconds until the first of those
   // routes can serve again.
@@ -194,7 +195,7 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
         buildErrorEnvelope({
           shape,
           status: 429,
-          from: 'Every route for this model tier is out of quota; retry after the window resets.'
+          from: 'Every route for this request is out of quota; retry after the window resets.'
         })
       ),
       {

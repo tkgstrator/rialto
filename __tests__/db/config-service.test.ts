@@ -1,8 +1,8 @@
 /**
  * Round-trip tests for the DB-backed config service. Cover the diff
  * behaviour we'd otherwise only learn about in production: provider /
- * model deletion cascades to the chain entries naming them (and says
- * so), partial saves preserve what they did not send, the active persona
+ * model deletion cascades to the tier aliases and routes naming them
+ * (and says so), partial saves preserve what they did not send, the active persona
  * round-trips as a top-level key, and the keys a retired feature used to
  * accept are dropped rather than stored.
  */
@@ -13,6 +13,7 @@ import { applyUiConfig, composeUiConfig, ensurePreferenceProfile } from '../../s
 import { readRawConfigFile, writeConfigFile } from '../../src/services/config/envelope'
 import { setTierAlias } from '../../src/services/tier-alias-service'
 import { loadTierProfile, saveTierProfile } from '../../src/services/tier-route-service'
+import { profileWith } from '../llms/tier-fixture'
 import { HAS_DB, resetDbTables, teardownPrisma } from './helpers'
 
 // HOME and DATABASE_URL are redirected by __tests__/setup.ts (preload),
@@ -26,23 +27,12 @@ const openai = (models: string[]) => ({
   models
 })
 
-const CONSTRAINTS = { exhaustedBehavior: '429' as const, quotaSkipPct: 100, errorRateSkipPct: 0.5, minHealthSamples: 5 }
+// Store the live map from a sparse description of its lists.
+const saveLive = (routes: Parameters<typeof profileWith>[0]) => saveTierProfile('live', profileWith(routes))
 
-type Tier = 'fable' | 'opus' | 'sonnet' | 'haiku'
-type Routes = Partial<Record<Tier | 'other', Array<{ provider: string; targetTier: Tier }>>>
-
-// Store the live map from a sparse description: every route switched on.
-const saveLive = (routes: Routes) =>
-  saveTierProfile('live', {
-    routes: {
-      fable: (routes.fable === undefined ? [] : routes.fable).map((r) => ({ ...r, enabled: true })),
-      opus: (routes.opus === undefined ? [] : routes.opus).map((r) => ({ ...r, enabled: true })),
-      sonnet: (routes.sonnet === undefined ? [] : routes.sonnet).map((r) => ({ ...r, enabled: true })),
-      haiku: (routes.haiku === undefined ? [] : routes.haiku).map((r) => ({ ...r, enabled: true })),
-      other: (routes.other === undefined ? [] : routes.other).map((r) => ({ ...r, enabled: true }))
-    },
-    constraints: CONSTRAINTS
-  })
+// Every route switched on.
+const on = (...routes: Array<{ provider: string; targetTier: 'fable' | 'opus' | 'sonnet' | 'haiku' }>) =>
+  routes.map((r) => ({ ...r, enabled: true }))
 
 const anthropic = (models: string[]) => ({
   name: 'anthropic',
@@ -79,8 +69,8 @@ describe.skipIf(!HAS_DB)('configService', () => {
     await setTierAlias('openai', 'haiku', 'gpt-5-nano')
     await setTierAlias('openai', 'sonnet', 'gpt-5')
     await saveLive({
-      haiku: [{ provider: 'openai', targetTier: 'haiku' }],
-      sonnet: [{ provider: 'openai', targetTier: 'sonnet' }]
+      default: { agent: on({ provider: 'openai', targetTier: 'sonnet' }) },
+      think: { subagent: on({ provider: 'openai', targetTier: 'haiku' }) }
     })
 
     const result = await applyUiConfig({ Providers: [openai(['gpt-5'])] })
@@ -93,18 +83,17 @@ describe.skipIf(!HAS_DB)('configService', () => {
     // it is skipped until an alias is set again, and the operator's order
     // is still there when one is.
     const after = await loadTierProfile('live')
-    expect(after.routes.haiku.map((r) => `${r.provider} · ${r.targetTier}`)).toEqual(['openai · haiku'])
+    expect(after.routes.think.subagent.map((r) => `${r.provider} · ${r.targetTier}`)).toEqual(['openai · haiku'])
   })
 
-  test('deleting a provider cascades models and routes and warns per profile and tier', async () => {
+  test('deleting a provider cascades models and routes and warns per profile, scenario and lane', async () => {
     await applyUiConfig({ Providers: [openai(['gpt-5']), anthropic(['claude-sonnet-4-6'])] })
     await saveLive({
-      sonnet: [
-        { provider: 'openai', targetTier: 'sonnet' },
-        { provider: 'anthropic', targetTier: 'sonnet' }
-      ],
-      haiku: [{ provider: 'anthropic', targetTier: 'sonnet' }],
-      other: [{ provider: 'anthropic', targetTier: 'sonnet' }]
+      default: {
+        agent: on({ provider: 'openai', targetTier: 'sonnet' }, { provider: 'anthropic', targetTier: 'sonnet' }),
+        subagent: on({ provider: 'anthropic', targetTier: 'sonnet' })
+      },
+      longContext: { agent: on({ provider: 'anthropic', targetTier: 'sonnet' }) }
     })
 
     // anthropic removed
@@ -112,13 +101,16 @@ describe.skipIf(!HAS_DB)('configService', () => {
     expect(result.warnings).toHaveLength(1)
     expect(result.warnings[0]).toContain('Removed 3 tier routes')
     expect(result.warnings[0]).toContain('deleted provider "anthropic"')
-    expect(result.warnings[0]).toContain('live/other')
+    expect(result.warnings[0]).toContain('live/default/agent')
+    expect(result.warnings[0]).toContain('live/default/subagent')
+    expect(result.warnings[0]).toContain('live/longContext/agent')
 
     const ui = await composeUiConfig()
     expect(ui.Providers.map((p) => p.name)).toEqual(['openai'])
     const after = await loadTierProfile('live')
-    expect(after.routes.sonnet.map((r) => r.provider)).toEqual(['openai'])
-    expect(after.routes.haiku).toEqual([])
+    expect(after.routes.default.agent.map((r) => r.provider)).toEqual(['openai'])
+    expect(after.routes.default.subagent).toEqual([])
+    expect(after.routes.longContext.agent).toEqual([])
 
     const prisma = getPrismaClient()
     const allModels = await prisma.model.findMany({ include: { provider: true } })
@@ -384,12 +376,12 @@ describe.skipIf(!HAS_DB)('configService', () => {
     expect(ui.Providers.map((p) => p.name)).toEqual(['openai'])
   })
 
-  test('a Providers-only save leaves the tier map alone', async () => {
+  test('a Providers-only save leaves the routes alone', async () => {
     await applyUiConfig({ Providers: [openai(['gpt-5'])] })
-    await saveLive({ sonnet: [{ provider: 'openai', targetTier: 'sonnet' }] })
+    await saveLive({ default: { agent: on({ provider: 'openai', targetTier: 'sonnet' }) } })
     await applyUiConfig({ Providers: [openai(['gpt-5', 'gpt-5-nano'])] })
     const after = await loadTierProfile('live')
-    expect(after.routes.sonnet.map((r) => r.provider)).toEqual(['openai'])
+    expect(after.routes.default.agent.map((r) => r.provider)).toEqual(['openai'])
     const ui = await composeUiConfig()
     expect(ui.Providers[0].models.sort()).toEqual(['gpt-5', 'gpt-5-nano'])
   })

@@ -38,9 +38,9 @@ export type RouterRequest = {
   // over the inbound surface's own profile; absent means use the
   // surface's.
   profileKeyOverride?: string
-  // Set by routeRequest: the requested tier a route served ('sonnet',
-  // 'other', …), or 'passthrough' when the request went upstream as sent.
-  // Recorded on the RequestLog row.
+  // Set by routeRequest: the scenario whose list served the request
+  // ('default', 'think', 'longContext'), or 'passthrough' when it went
+  // upstream as sent. Recorded on the RequestLog row.
   route?: string
   tokenCount?: number
   // Normalised routing signals for this request, in whatever wire format
@@ -48,10 +48,11 @@ export type RouterRequest = {
   // RouterRequest by hand does not have to know about surfaces.
   signals?: RouterSignals
   // True when the request carried a <RIALTO-SUBAGENT-MODEL> tag (stripped
-  // before it can reach upstream). Recorded; it no longer picks a lane.
+  // before it can reach upstream). It picks the subagent lane, and is
+  // recorded.
   isSubagent?: boolean
-  // Set by routeRequest: the rest of the tier's routes after the primary,
-  // in map order. The reactive failover path (buildFailoverChain) walks
+  // Set by routeRequest: the rest of the list's usable routes after the
+  // primary, in pace order. The reactive failover path (buildFailoverChain) walks
   // this list.
   resolvedFallbacks?: string[]
   // Set when every route of the tier was held back by quota or health

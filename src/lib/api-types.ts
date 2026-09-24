@@ -12,9 +12,9 @@ export interface RequestLogItem {
   sessionId: string
   provider: string
   model: string
-  // What the client asked for pre-routing, and the route it took: the
-  // requested tier whose routes served it, or "passthrough". Older rows
-  // carry the scenario the retired classifier chose. Null on rows written
+  // What the client asked for pre-routing, and the scenario whose list
+  // served it, or "passthrough". Rows v2.89.0 wrote carry a requested tier
+  // instead. Null on rows written
   // before routing capture landed.
   requestedModel: string | null
   scenario: string | null
@@ -285,6 +285,7 @@ export interface RoutingSchedulerTargetState {
   target: string // "provider,model"
   exhausted: boolean // out of use on quota right now
   remainingBudgetPct: number | null // 0..100, null = unknown (api_key targets, cold start)
+  projectedPct: number | null // use at the reset if the pace holds; over 100 steps down
   resetAt: string | null // ISO; when the binding window resets
 }
 
@@ -308,14 +309,19 @@ export interface RoutingSchedulerStateResponse {
   soonestResetAt: string | null
 }
 
-// ─── Tier map and provider tier aliases ────────────────────────────────
-// Mirrors schemas/api/routing.ts. The stored shape (a route names a
-// provider and a tier) plus, on read, what the tier resolves to today.
+// ─── Scenario routes and provider tier aliases ─────────────────────────
+// Mirrors schemas/api/routing.ts. The stored shape (per scenario and lane,
+// routes that name a provider and a tier) plus, on read, what each tier
+// resolves to today and the Long context threshold in effect.
 
 export type ModelTier = 'fable' | 'opus' | 'sonnet' | 'haiku'
-/** A requested tier: one of the four, or 'other' for a model name with no Claude family. */
-export type RouteTier = ModelTier | 'other'
-export const ROUTE_TIER_ORDER: readonly RouteTier[] = ['fable', 'opus', 'sonnet', 'haiku', 'other']
+export const MODEL_TIER_ORDER: readonly ModelTier[] = ['fable', 'opus', 'sonnet', 'haiku']
+/** Long input, thinking on, or neither. */
+export type RoutingScenario = 'default' | 'think' | 'longContext'
+export const ROUTING_SCENARIO_ORDER: readonly RoutingScenario[] = ['default', 'think', 'longContext']
+/** Whether the request carried the subagent tag. */
+export type RoutingLane = 'agent' | 'subagent'
+export const ROUTING_LANE_ORDER: readonly RoutingLane[] = ['agent', 'subagent']
 
 export interface TierRouteWire {
   provider: string
@@ -341,16 +347,25 @@ export interface RoutingConstraintsWire {
   quotaSkipPct: number
   errorRateSkipPct: number
   minHealthSamples: number
+  /** The tuner's state; not edited on the screen. Null = the automatic base. */
+  longContextThreshold: number | null
+  previousLongContextThreshold: number | null
+  longContextTunedAt: string | null
+  autoTuneLongContext: boolean
 }
+
+export type ScenarioRoutesWire<R> = Record<RoutingScenario, Record<RoutingLane, R[]>>
 
 export interface TierProfileViewWire {
   key: string
-  routes: Record<RouteTier, TierRouteViewWire[]>
+  routes: ScenarioRoutesWire<TierRouteViewWire>
   constraints: RoutingConstraintsWire
+  /** Input tokens over which a request is Long context right now. */
+  longContextThreshold: number
 }
 
 export interface TierProfileWriteWire {
-  routes: Record<RouteTier, TierRouteWire[]>
+  routes: ScenarioRoutesWire<TierRouteWire>
   constraints: RoutingConstraintsWire
 }
 

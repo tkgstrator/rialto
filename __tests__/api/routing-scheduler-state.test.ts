@@ -25,6 +25,7 @@ const BodySchema = z.object({
       target: z.string(),
       exhausted: z.boolean(),
       remainingBudgetPct: z.number().nullable(),
+      projectedPct: z.number().nullable(),
       resetAt: z.string().nullable()
     })
   ),
@@ -58,11 +59,23 @@ test('published snapshot serialises each target with ISO timestamps', async () =
     targets: new Map([
       [
         'claude-code,claude-fable-5',
-        { target: 'claude-code,claude-fable-5', exhausted: true, remainingBudgetPct: 0, resetAt: reset }
+        {
+          target: 'claude-code,claude-fable-5',
+          exhausted: true,
+          remainingBudgetPct: 0,
+          projectedPct: 134.5,
+          resetAt: reset
+        }
       ],
       [
         'claude-code,claude-sonnet-5',
-        { target: 'claude-code,claude-sonnet-5', exhausted: false, remainingBudgetPct: 55, resetAt: null }
+        {
+          target: 'claude-code,claude-sonnet-5',
+          exhausted: false,
+          remainingBudgetPct: 55,
+          projectedPct: null,
+          resetAt: null
+        }
       ]
     ]),
     accounts: [
@@ -83,14 +96,23 @@ test('published snapshot serialises each target with ISO timestamps', async () =
   expect(body.tickCount).toBe(3)
   expect(body.tickAt).toBe(dayjs(tickAt).toISOString())
   expect(body.soonestResetAt).toBe(dayjs(reset).toISOString())
+  // The pace is served as the scheduler computed it — over 100 is a
+  // target on course to run out — and null while it cannot be judged.
   expect(body.targets).toEqual([
     {
       target: 'claude-code,claude-fable-5',
       exhausted: true,
       remainingBudgetPct: 0,
+      projectedPct: 134.5,
       resetAt: dayjs(reset).toISOString()
     },
-    { target: 'claude-code,claude-sonnet-5', exhausted: false, remainingBudgetPct: 55, resetAt: null }
+    {
+      target: 'claude-code,claude-sonnet-5',
+      exhausted: false,
+      remainingBudgetPct: 55,
+      projectedPct: null,
+      resetAt: null
+    }
   ])
   expect(body.accounts[0].fiveHour?.resetAt).toBe(dayjs(reset).toISOString())
 })
