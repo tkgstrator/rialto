@@ -30,7 +30,6 @@ export interface CleanCounts {
   message: number
   requestLog: number
   session: number
-  routingWeightChange: number
   accessToken: number
   usageSnapshot: number
   subAccount: number
@@ -47,8 +46,6 @@ export async function cleanDemoRows(prisma: PrismaClient): Promise<CleanCounts> 
   const message = await prisma.message.deleteMany({ where: { id: startsWithDemo } })
   const requestLog = await prisma.requestLog.deleteMany({ where: { id: startsWithDemo } })
   const session = await prisma.session.deleteMany({ where: { id: startsWithDemo } })
-  // Weight-change rows an older seed wrote; the scheduler writes none now.
-  const routingWeightChange = await prisma.routingWeightChange.deleteMany({ where: { id: startsWithDemo } })
   const accessToken = await prisma.accessToken.deleteMany({ where: { id: startsWithDemo } })
   const usageSnapshot = await prisma.usageSnapshot.deleteMany({ where: { id: startsWithDemo } })
   // Usage / quota children cascade from the account.
@@ -61,7 +58,6 @@ export async function cleanDemoRows(prisma: PrismaClient): Promise<CleanCounts> 
     message: message.count,
     requestLog: requestLog.count,
     session: session.count,
-    routingWeightChange: routingWeightChange.count,
     accessToken: accessToken.count,
     usageSnapshot: usageSnapshot.count,
     subAccount: subAccount.count,

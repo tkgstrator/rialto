@@ -6,8 +6,6 @@
 //   - RouterPreferenceProfile: a named routing profile; `live` is the default every surface uses
 //   - ProviderTierAlias:       which of a provider's models each tier (fable/opus/sonnet/haiku) is
 //   - TierRoute:               a profile's tier map — per requested tier, the ordered provider·tiers
-//   - RouterPreferenceEntry, RoutingWeightChange, ScenarioKey, Model.manualTier: retired,
-//     read only by the one-shot tier-map backfill; dropped by the contract migration
 // Everything else here is the archive behind Activity and Overview, the
 // subscription accounts and their observed quota, and issued credentials.
 //
@@ -21,29 +19,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-}
-
-// Retired with the per-scenario chains; kept only until the contract
-// migration drops RouterPreferenceEntry. The scenarios a request was
-// classified into, each owning its own chain lanes. `default` is the catch-all; the rest are reached only when the
-// chain has an entry for them. The former `background` scenario was
-// folded into `default` (migration `20260728_router_rules_drop_background`).
-enum ScenarioKey {
-  default
-  think
-  longContext
-  webSearch
-  image
-}
-
-// Which caller lane a RouterPreferenceEntry participates in. Main-agent
-// traffic (no <RIALTO-SUBAGENT-MODEL> tag) reads the `agent` chain;
-// requests carrying the tag read the `subagent` chain. Kept as an enum
-// so a future third lane (e.g. "batch") is one migration away instead
-// of a boolean flag flip.
-enum RouterPreferenceKind {
-  agent
-  subagent
 }
 
 // Outcome of the last real-inference connectivity test for a Model.
@@ -266,53 +241,23 @@ model SubAccountQuota {
   updatedAt        DateTime  @updatedAt
 }
 
-// Retired: the scheduler publishes quota, not weights, and writes no rows
-// here any more; dropped by the contract migration. Was the audit log of
-// scheduler weight adjustments, one row per (tick, target) whose
-// published weight changed. Pruned after 14 days from the tick
-// path, mirroring UsageSnapshot's retention pattern.
-model RoutingWeightChange {
-  id         String   @id @default(cuid())
-  target     String // "providerName,modelName"
-  fromWeight Float
-  toWeight   Float
-  // Machine slug, i18n-able on the UI side: quota_drop /
-  // quota_recovered / error_rate / reset_soon / probe_floor /
-  // hold_guard / stale_quota / unknown_budget / no_quota_kind.
-  reason     String
-  tickAt     DateTime
-  createdAt  DateTime @default(now())
-
-  @@index([createdAt])
-  @@index([target, createdAt])
-}
-
 model Model {
-  id                String                  @id @default(cuid())
-  providerId        String
-  provider          Provider                @relation(fields: [providerId], references: [id], onDelete: Cascade)
-  name              String
+  id               String              @id @default(cuid())
+  providerId       String
+  provider         Provider            @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  name             String
   // Whether this model is offered for routing / tested. Authoritative
   // (replaces the old provider.transformer._disabledModels list).
   // Defaults false: a model being registered/seeded does NOT make it
   // routable. Subscription presets seed their curated default set as
   // enabled; everything else stays off until the user enables it.
-  enabled           Boolean                 @default(false)
+  enabled          Boolean             @default(false)
   // Per-model request-shape override. A single api_key provider (e.g.
   // openai) hosts both chat models and Responses-only models (codex
   // family), so the provider-level apiStyle isn't granular enough.
   // Null means "use the provider's apiStyle"; set explicitly (seeded)
   // for the models that need a different endpoint.
-  apiStyle          ApiStyle?
-  // Retired: nothing writes it any more (the tier alias replaced it), and
-  // it is dropped by the contract migration. Until then the tier-map
-  // backfill and the alias candidate list still read it.
-  // Manual tier override used by the quota-aware preference selector.
-  // Null = fall back to name-substring inference (tierOf) which only
-  // recognises the four Claude families; setting this lets operators
-  // classify third-party models (gpt-5.6-*, gemini-*, ...) as one of
-  // fable / opus / sonnet / haiku so tier-respect constraints match.
-  manualTier        String?
+  apiStyle         ApiStyle?
   // Manual reasoning-effort override for OpenAI / OpenAI-Responses /
   // Codex models. Null = pass the request through untouched (vendor
   // default = 'medium'). Non-null values mirror the OpenAI OpenAPI
@@ -321,43 +266,42 @@ model Model {
   // request's `reasoning_effort` (Chat Completions) or
   // `reasoning.effort` (Responses) at build time. Not every reasoning
   // model accepts every value; upstream 400s surface as request errors.
-  reasoningEffort   String?
+  reasoningEffort  String?
   // True when the vendor has marked this model as deprecated upstream.
   // The flag is seeded from src/shared/data/deprecations.ts at
   // boot and on the UI refresh-models action; we never delete the row
   // because the user may still be routing to it.
-  deprecated        Boolean                 @default(false)
+  deprecated       Boolean             @default(false)
   // True when the model sits under the vendor's "legacy" / older-gen
   // pricing surface (scraped `legacy` flag). Distinct from `deprecated`:
   // a model can be legacy-priced but not formally deprecated.
-  legacy            Boolean                 @default(false)
+  legacy           Boolean             @default(false)
   // Official per-1M-token USD prices scraped from the vendor pricing
   // page (src/shared/data/providers/<vendor>/prices.json).
   // Null for subscription-auth models and any api_key model the scrape
   // didn't cover.
-  inputPer1M        Float?
-  outputPer1M       Float?
+  inputPer1M       Float?
+  outputPer1M      Float?
   // USD per 1M cached-input (cache-read) tokens, scraped alongside
   // input/output. Null when the vendor doesn't publish a cache rate.
-  cachedInputPer1M  Float?
+  cachedInputPer1M Float?
   // Max context window in tokens, scraped from the vendor's model
   // pages alongside pricing. Null when the vendor doesn't publish it
   // (older Anthropic ids absent from the comparison table, Gemini
   // pending, subscription-only models).
-  contextWindow     Int?
+  contextWindow    Int?
   // Last real-inference connectivity test outcome + timestamps.
   // testCheckedAt is set on every attempt; testPassedAt only on the
   // most recent success (kept even after a later failure so the UI can
   // show "last passed on ..."). testError holds the latest failure
   // reason for display.
-  testStatus        ModelTestStatus         @default(unknown)
-  testCheckedAt     DateTime?
-  testPassedAt      DateTime?
-  testError         String?
-  preferenceEntries RouterPreferenceEntry[]
-  tierAliases       ProviderTierAlias[]
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
+  testStatus       ModelTestStatus     @default(unknown)
+  testCheckedAt    DateTime?
+  testPassedAt     DateTime?
+  testError        String?
+  tierAliases      ProviderTierAlias[]
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
 
   @@unique([providerId, name])
   @@index([providerId])
@@ -365,28 +309,20 @@ model Model {
 
 // A named routing profile. One row per profile holds the constraint knobs
 // (exhaustedBehavior, quotaSkipPct, errorRateSkipPct, minHealthSamples);
-// its tier map is TierRoute. The retired RouterPreferenceEntry chain hangs
-// off it too, until the contract migration drops it.
+// its tier map is TierRoute.
 //
 // `live` is the default profile every surface routes through until it
 // is pointed at another one (InboundSurfaceConfig.profileKey), and a
 // token may pin its client to a profile of its own (AccessToken.profileKey).
 model RouterPreferenceProfile {
-  id                String                  @id @default(cuid())
-  key               String                  @unique @default("live")
-  // Constraint knobs as JSONB (allowEscalation / exhaustedBehavior /
-  // longContextThreshold / ...). JSONB so adding a knob is not a
-  // migration; the schema layer supplies every default.
-  constraints       Json?
-  updatedAt         DateTime                @updatedAt
-  entries           RouterPreferenceEntry[]
-  tierRoutes        TierRoute[]
-  // When the one-shot backfill turned this profile's old chain into tier
-  // routes (routing-migration/backfill-tier-routes.ts). Null until then;
-  // it is what makes the backfill run once per profile however many
-  // times the container starts, and what the contract migration checks
-  // before it drops the old chain. Goes with RouterPreferenceEntry.
-  chainBackfilledAt DateTime?
+  id          String      @id @default(cuid())
+  key         String      @unique @default("live")
+  // Constraint knobs as JSONB (RoutingConstraintsSchema). JSONB so adding
+  // a knob is not a migration; the schema layer supplies every default,
+  // and keys an older build wrote are ignored rather than rejected.
+  constraints Json?
+  updatedAt   DateTime    @updatedAt
+  tierRoutes  TierRoute[]
 }
 
 // "Which model is <tier> on this provider." Routing names a provider and a
@@ -419,8 +355,7 @@ model ProviderTierAlias {
 
 // One route of a profile's tier map: a request for `requestedTier` may be
 // served by `provider`'s `targetTier` model, in `priority` order (1 =
-// first). Replaces RouterPreferenceEntry's per-scenario, per-lane,
-// per-model chain. A requested tier with no enabled routes is passed
+// first). Replaced the per-scenario, per-lane, per-model chain. A requested tier with no enabled routes is passed
 // through as the caller sent it, the "no opinion" an empty lane meant.
 model TierRoute {
   id            String                  @id @default(cuid())
@@ -443,42 +378,6 @@ model TierRoute {
   @@unique([profileId, requestedTier, providerId, targetTier])
   @@index([profileId])
   @@index([providerId])
-}
-
-// Retired: the per-scenario, per-lane chain the tier map replaced. Read
-// only by the one-shot backfill into TierRoute; dropped by the contract
-// migration once every profile carries chainBackfilledAt.
-model RouterPreferenceEntry {
-  id        String                  @id @default(cuid())
-  profileId String
-  profile   RouterPreferenceProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  // Scenario the entry participates in. Legacy rows created before
-  // the per-scenario split default to `default` via the migration
-  // backfill; new rows must pass the value explicitly. Each scenario
-  // owns an independent chain (default / think / longContext /
-  // webSearch / image).
-  scenario  ScenarioKey             @default(default)
-  // Which caller lane this entry participates in — `agent` for main-
-  // agent traffic, `subagent` for requests carrying a
-  // <RIALTO-SUBAGENT-MODEL> tag. Split from the pre-A design (a single
-  // chain plus per-entry `subagentTiers` filter) so operators can
-  // reorder subagent independently of agent. Existing rows are
-  // backfilled to `agent` by the migration.
-  kind      RouterPreferenceKind    @default(agent)
-  // 1 = most preferred. Unique per (profile, scenario, kind) so each
-  // (scenario, kind) chain has a total ordering independent of the
-  // others.
-  priority  Int
-  modelId   String
-  model     Model                   @relation(fields: [modelId], references: [id], onDelete: Cascade)
-  // Soft toggle: keep the row (and its priority slot) while excluding
-  // the model from selection — "temporarily drop Fable" without
-  // reordering the chain.
-  enabled   Boolean                 @default(true)
-
-  @@unique([profileId, scenario, kind, priority])
-  @@index([profileId])
-  @@index([profileId, scenario, kind])
 }
 
 // One row per client session. The id is the raw session token from
@@ -602,11 +501,11 @@ model InboundSurfaceConfig {
 }
 
 model RequestLog {
-  id               String   @id @default(cuid())
-  sessionId        String
-  session          Session  @relation(fields: [sessionId], references: [id])
-  provider         String
-  model            String
+  id                 String   @id @default(cuid())
+  sessionId          String
+  session            Session  @relation(fields: [sessionId], references: [id])
+  provider           String
+  model              String
   // What the client (Claude Code) asked for in body.model BEFORE routing
   // rewrote it, and the route it took: the requested tier whose tier-map
   // routes served it (fable / opus / sonnet / haiku / other), or
@@ -615,54 +514,54 @@ model RequestLog {
   // for rows written before this landed (backfill is not possible — the
   // original request is gone), so readers treat null as "untracked".
   // `model`/`provider` above stay the actual upstream target.
-  requestedModel   String?
-  scenario         String?
+  requestedModel     String?
+  scenario           String?
   // Whether the request carried a <RIALTO-SUBAGENT-MODEL> tag. It selects
   // nothing any more — the tier map has no subagent lane — but is still
   // recorded so Activity can tell the two apart. Null for rows written
   // before this column landed (untracked); true / false thereafter. Kept nullable so a reader
   // can distinguish "no data" from "data says agent".
-  isSubagent       Boolean?
+  isSubagent         Boolean?
   // Which wire format the client came in on: 'anthropic' for
   // /v1/messages (Claude Code), 'openai' for /v1/chat/completions and
   // /v1/responses, 'gemini' for /v1beta/models/*. Null for rows written
   // before this landed (untracked). Persisted so the History view can
   // filter by inbound type without re-parsing anything from the payload.
   // Nullable TEXT rather than an enum, for the reason on Session above.
-  inboundType      String?
+  inboundType        String?
   // Which inbound surface the request arrived on, as an
   // `InboundSurface.id` slug (see src/llms/inbound/surfaces.ts). Finer
   // than `inboundType`: /v1/chat/completions and /v1/responses are both
   // 'openai' but are separate surfaces with independent routing modes,
   // and Overview / Activity break traffic down per surface. Null on rows
   // written before this landed (untracked, not backfillable).
-  surface          String?
+  surface            String?
   // Which AccessToken served the request, when one did. Null for rows
   // written before tokens existed, and for traffic on the since-removed
   // envelope bootstrap token. Not a foreign key: a token may be
   // deleted outright, and losing the attribution is worse than keeping
   // a dangling id that still tells you the requests came from one
   // client.
-  accessTokenId    String?
+  accessTokenId      String?
   // Which subscription account served the request: the one the OAuth
   // transformer resolved for the attempt that succeeded. Null for
   // api_key providers and for rows written before this landed. Not a
   // foreign key, for the same reason as accessTokenId: an account can be
   // removed, and its history is still worth attributing to one account.
-  subAccountId     String?
-  inputTokens      Int      @default(0)
-  outputTokens     Int      @default(0)
-  cacheReadTokens  Int      @default(0)
-  cacheWriteTokens Int      @default(0)
+  subAccountId       String?
+  inputTokens        Int      @default(0)
+  outputTokens       Int      @default(0)
+  cacheReadTokens    Int      @default(0)
+  cacheWriteTokens   Int      @default(0)
   // The part of cacheWriteTokens written with a 1-hour TTL — included in
   // it, not added. Priced at 2x input against 1.25x for the 5-minute
   // TTL; zero for vendors that do not split cache writes by TTL.
-  cacheWrite1hTokens Int    @default(0)
-  totalInputTokens Int      @default(0)
-  cacheHitPct      Int      @default(0)
-  durationMs       Int      @default(0)
-  status           Int      @default(200)
-  createdAt        DateTime @default(now())
+  cacheWrite1hTokens Int      @default(0)
+  totalInputTokens   Int      @default(0)
+  cacheHitPct        Int      @default(0)
+  durationMs         Int      @default(0)
+  status             Int      @default(200)
+  createdAt          DateTime @default(now())
 
   @@index([createdAt])
   @@index([sessionId])
