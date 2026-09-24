@@ -66,11 +66,13 @@ export type ScenarioRoutes = z.infer<typeof ScenarioRoutesSchema>
  * a blob that still carries retired keys parses; they are ignored, not
  * rejected.
  *
- * The first four gate a route. The Long context threshold is not an
+ * The route gates apply before pace ordering. The Long context threshold is not an
  * operator setting any more: the routing scheduler tunes it (see
  * `routing-scheduler/threshold-tuner.ts`), and these fields are its state.
  */
 export const RoutingConstraintsSchema = z.object({
+  // Only upward moves into these tiers are forbidden; demotions stay eligible.
+  blockedEscalationTiers: z.array(ModelTierSchema).default([]),
   // Every route of the list gated by quota or health: answer 429 with
   // Retry-After, or send the request upstream on the caller's own model.
   exhaustedBehavior: z.enum(['429', 'passthrough']).default('429'),
@@ -105,6 +107,8 @@ export type TierProfile = z.infer<typeof TierProfileSchema>
 // that omitted autoTuneLongContext would switch the tuner back on. The
 // tuner's own state is not writable at all; unknown keys are dropped.
 export const RoutingConstraintsWriteSchema = z.object({
+  // Null means preserve the stored selection; [] explicitly clears it.
+  blockedEscalationTiers: z.array(ModelTierSchema).nullable().default(null),
   exhaustedBehavior: z.enum(['429', 'passthrough']).nullable().default(null),
   quotaSkipPct: z.number().min(0).max(100).nullable().default(null),
   errorRateSkipPct: z.number().min(0).max(1).nullable().default(null),
@@ -115,6 +119,7 @@ export const RoutingConstraintsWriteSchema = z.object({
 export const TierProfileWriteSchema = z.object({
   routes: ScenarioRoutesSchema,
   constraints: RoutingConstraintsWriteSchema.default({
+    blockedEscalationTiers: null,
     exhaustedBehavior: null,
     quotaSkipPct: null,
     errorRateSkipPct: null,

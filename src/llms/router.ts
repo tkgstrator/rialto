@@ -118,6 +118,7 @@ async function routeThroughScenarios(req: RouterRequest, ctx: RouterContext, isS
   const requestedModel = typeof req.body.model === 'string' ? req.body.model : undefined
   const routing = await routeByScenario({
     profileKey,
+    requestedModel,
     requestTokenCount: tokenCount,
     thinking: signals.thinking,
     isSubagent,

@@ -6,8 +6,8 @@
  * hands in predicates for the live state (exhaustion, error rate). Never
  * touches the network or the database.
  *
- * There is no tier gate here. Which tiers may serve a request is written
- * in the list; this only asks, of each route in order, whether it can take
+ * The profile can forbid escalation into selected tiers. Same-tier routes
+ * and demotions remain eligible. Each route is checked for whether it can take
  * this particular request right now:
  *
  *   1. the route and its target are switched on;
@@ -34,11 +34,13 @@
  * What an empty result means depends on why — see `TierOutcome`.
  */
 
-import type { RoutingConstraints } from '@/schemas/domain/tier-route'
+import { REQUESTED_MODEL_TIERS } from '@/schemas/domain/router'
+import type { ModelTier, RoutingConstraints } from '@/schemas/domain/tier-route'
 
 export interface TierCandidate {
   // "provider · tier", for logs and skip reasons.
   route: string
+  targetTier: ModelTier
   // Resolved "provider,model", or null when the provider has no alias for
   // the tier the route names.
   target: string | null
@@ -65,6 +67,7 @@ const paceBandOf = (projectedPct: number | null): PaceBand => {
 const BAND_ORDER: readonly PaceBand[] = ['surplus', 'even', 'over']
 
 export interface TierSelectInput {
+  requestedTier: ModelTier | undefined
   candidates: readonly TierCandidate[]
   constraints: RoutingConstraints
   needsWebSearch: boolean
@@ -75,6 +78,7 @@ export interface TierSelectInput {
 }
 
 export type TierSkipReason =
+  | 'escalation_blocked'
   | 'disabled'
   | 'alias_unset'
   | 'no_web_search'
@@ -109,6 +113,13 @@ export interface TierSelection {
 const gateOf = (c: TierCandidate, input: TierSelectInput): TierSkipReason | null => {
   if (!c.enabled || !c.targetEnabled) return 'disabled'
   if (c.target === null) return 'alias_unset'
+  if (
+    input.requestedTier !== undefined &&
+    input.constraints.blockedEscalationTiers.includes(c.targetTier) &&
+    REQUESTED_MODEL_TIERS.indexOf(c.targetTier) < REQUESTED_MODEL_TIERS.indexOf(input.requestedTier)
+  ) {
+    return 'escalation_blocked'
+  }
   if (input.needsWebSearch && !c.hostsWebSearch) return 'no_web_search'
   if (input.requestTokenCount !== undefined && c.contextWindow !== null && c.contextWindow < input.requestTokenCount) {
     return 'context_too_small'
@@ -122,6 +133,7 @@ const gateOf = (c: TierCandidate, input: TierSelectInput): TierSkipReason | null
 }
 
 const REFUSAL_TEXT: Partial<Record<TierSkipReason, string>> = {
+  escalation_blocked: 'the profile forbids escalation from the requested tier into the available route tiers',
   alias_unset: 'a route names a provider tier that has no model aliased to it',
   no_web_search: 'the request carries the web_search tool, which no route here can run',
   context_too_small: 'the prompt does not fit the context window of any route'

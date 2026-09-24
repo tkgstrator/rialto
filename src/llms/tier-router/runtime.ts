@@ -10,8 +10,8 @@
  *
  * The scenario comes from the request itself — input over the Long
  * context threshold, thinking on, or neither — and the lane from the
- * subagent tag. The model name the caller sent plays no part: the list
- * says which provider tiers serve the scenario.
+ * subagent tag. The caller's model tier only limits escalation into tiers
+ * the profile forbids; it does not choose the scenario or block demotion.
  */
 
 import type { RoutingConstraints, RoutingLane, RoutingScenario } from '@/schemas/domain/tier-route'
@@ -25,6 +25,7 @@ import {
   type TierProfileView,
   type TierRouteView
 } from '../../services/tier-route-service'
+import { tierOf } from '../router/request-signals'
 import { selectTierRoute, type TierCandidate, type TierSelection } from './select'
 import { effectiveLongContextThreshold, longContextBase } from './threshold'
 
@@ -46,6 +47,7 @@ const emptyView = (key: string): TierProfileView => ({
     longContext: { agent: [], subagent: [] }
   },
   constraints: {
+    blockedEscalationTiers: [],
     exhaustedBehavior: '429',
     quotaSkipPct: 100,
     errorRateSkipPct: 0.5,
@@ -152,6 +154,7 @@ export interface TierRouting {
 }
 
 export interface TierRoutingInput {
+  requestedModel: string | undefined
   profileKey: string
   requestTokenCount: number | undefined
   thinking: boolean
@@ -173,6 +176,7 @@ export async function routeByScenario(input: TierRoutingInput): Promise<TierRout
   const routes = view.routes[classification.scenario][classification.lane]
   const candidates: TierCandidate[] = routes.map((route) => ({
     route: `${route.provider} · ${route.targetTier}`,
+    targetTier: route.targetTier,
     target: route.resolved === null ? null : `${route.provider},${route.resolved.model}`,
     enabled: route.enabled,
     targetEnabled: route.resolved === null ? true : route.resolved.targetEnabled,
@@ -180,7 +184,10 @@ export async function routeByScenario(input: TierRoutingInput): Promise<TierRout
     contextWindow: route.resolved === null ? null : route.resolved.contextWindow,
     projectedPct: projectedPctOf(route.resolved === null ? null : `${route.provider},${route.resolved.model}`)
   }))
+  const model = input.requestedModel
+  const requestedTier = model === undefined ? undefined : tierOf(model.slice(model.indexOf(',') + 1))
   const selection = selectTierRoute({
+    requestedTier,
     candidates,
     constraints: view.constraints,
     needsWebSearch: input.needsWebSearch,

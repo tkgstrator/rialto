@@ -32,6 +32,7 @@ const line = (provider: string, targetTier: Combination['targetTier'], enabled =
 })
 
 const constraints: RoutingConstraintsWire = {
+  blockedEscalationTiers: [],
   exhaustedBehavior: '429',
   quotaSkipPct: 100,
   errorRateSkipPct: 0.5,

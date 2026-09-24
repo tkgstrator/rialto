@@ -149,6 +149,7 @@ export interface TierMapReport {
 }
 
 const DEFAULT_CONSTRAINTS = {
+  blockedEscalationTiers: null,
   exhaustedBehavior: '429',
   quotaSkipPct: 100,
   errorRateSkipPct: 0.5,

@@ -181,6 +181,8 @@
       "passthroughNote": "把该入口切换为 <mono>Routed</mono>，即可让 {{client}} 获得与 Claude Code 相同的配额感知故障转移。调用方仍然照常发送自己的模型名，只是它会作为分类器读取的 <mono>requestedModel</mono>，而不再直接当作最终 target。"
     },
     "scenarios": {
+      "blockedEscalationTiers": "禁止升级到的层级",
+      "blockedEscalationHint": "仅禁止升级到所选层级。同层级路由和降级仍然允许。",
       "crumb": "场景",
       "title": "场景",
       "hint": "每个场景的 provider · 档位组合，分别用于主智能体和子智能体，自上而下依次尝试",
