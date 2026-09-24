@@ -10,9 +10,9 @@
 
 import { z } from '@hono/zod-openapi'
 import {
+  TierProfileWriteSchema as DomainWriteSchema,
   ModelTierSchema,
-  RoutingConstraintsSchema,
-  TierProfileWriteSchema as DomainWriteSchema
+  RoutingConstraintsSchema
 } from '../domain/tier-route'
 
 export const TierRouteResolutionSchema = z
