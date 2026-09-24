@@ -25,13 +25,13 @@
  * `tuneLongContextThresholds` reads the profiles and writes the result.
  */
 
-import type { PrismaClient } from '../../generated/prisma/client'
+import type { Prisma, PrismaClient } from '../../generated/prisma/client'
 import dayjs from '../../lib/dayjs'
-import { LONG_CONTEXT_FLOOR, longContextBase } from '../../llms/tier-router/threshold'
 import { PACE_OVER_PCT, PACE_SURPLUS_PCT } from '../../llms/tier-router/select'
+import { LONG_CONTEXT_FLOOR, longContextBase } from '../../llms/tier-router/threshold'
 import { logger } from '../../logger'
 import { JsonObjectSchema } from '../../schemas/domain/preset'
-import { defaultAgentWindowOf, loadTierProfileView } from '../tier-route-service'
+import { defaultAgentWindowOf, isUsableRoute, loadTierProfileView } from '../tier-route-service'
 import type { RoutingSnapshot } from './types'
 
 export const TUNE_INTERVAL_MS = 24 * 60 * 60 * 1000
@@ -78,10 +78,55 @@ export function tuneThreshold(input: TuneInput): TuneDecision | null {
   return null
 }
 
+type ProfileRow = { id: string; key: string; constraints: Prisma.JsonValue }
+
+// One profile: decide, and write the decision when there is one.
+async function tuneProfile(prisma: PrismaClient, profile: ProfileRow, snapshot: RoutingSnapshot, now: number) {
+  const view = await loadTierProfileView(profile.key, prisma)
+  if (!view.constraints.autoTuneLongContext) return
+  const first = view.routes.longContext.agent.find(isUsableRoute)
+  if (first === undefined || first.resolved === null) return
+  const target = snapshot.targets.get(`${first.provider},${first.resolved.model}`)
+  const tunedAt = view.constraints.longContextTunedAt
+  const decision = tuneThreshold({
+    current: view.longContextThreshold,
+    // Recomputed, not stored: it follows the Default route's alias.
+    base: longContextBase(defaultAgentWindowOf(view.routes)),
+    stored: view.constraints.longContextThreshold,
+    previous: view.constraints.previousLongContextThreshold,
+    tunedAt: tunedAt === null ? null : dayjs(tunedAt).valueOf(),
+    now,
+    target: target === undefined ? undefined : { projectedPct: target.projectedPct, exhausted: target.exhausted }
+  })
+  if (decision === null) return
+  const blob = JsonObjectSchema.safeParse(profile.constraints === null ? {} : profile.constraints)
+  await prisma.routerPreferenceProfile.update({
+    where: { id: profile.id },
+    data: {
+      constraints: {
+        ...(blob.success ? blob.data : {}),
+        longContextThreshold: decision.threshold,
+        previousLongContextThreshold: decision.previous,
+        longContextTunedAt: dayjs(now).toISOString()
+      }
+    }
+  })
+  logger.info(
+    {
+      profile: profile.key,
+      from: view.longContextThreshold,
+      to: decision.threshold,
+      reason: decision.reason,
+      projectedPct: target === undefined ? null : target.projectedPct
+    },
+    '[routing-scheduler] Long context threshold tuned'
+  )
+}
+
 /**
- * One pass over every profile with routes. Never throws: a failure is
- * logged and the tick that called it carries on — the threshold simply
- * stays where it was until the next pass.
+ * One pass over every profile with a Long context list. Never throws: a
+ * failure is logged and the tick that called it carries on — the
+ * threshold simply stays where it was until the next pass.
  */
 export async function tuneLongContextThresholds(
   prisma: PrismaClient,
@@ -93,49 +138,7 @@ export async function tuneLongContextThresholds(
       where: { tierRoutes: { some: { scenario: 'longContext' } } },
       select: { id: true, key: true, constraints: true }
     })
-    for (const profile of profiles) {
-      const view = await loadTierProfileView(profile.key, prisma)
-      if (!view.constraints.autoTuneLongContext) continue
-      const first = view.routes.longContext.agent.find(
-        (r) => r.enabled && r.resolved !== null && r.resolved.targetEnabled
-      )
-      if (first === undefined || first.resolved === null) continue
-      const target = snapshot.targets.get(`${first.provider},${first.resolved.model}`)
-      const tunedAt = view.constraints.longContextTunedAt
-      const decision = tuneThreshold({
-        current: view.longContextThreshold,
-        // Recomputed, not stored: it follows the Default route's alias.
-        base: longContextBase(defaultAgentWindowOf(view.routes)),
-        stored: view.constraints.longContextThreshold,
-        previous: view.constraints.previousLongContextThreshold,
-        tunedAt: tunedAt === null ? null : dayjs(tunedAt).valueOf(),
-        now,
-        target: target === undefined ? undefined : { projectedPct: target.projectedPct, exhausted: target.exhausted }
-      })
-      if (decision === null) continue
-      const blob = JsonObjectSchema.safeParse(profile.constraints === null ? {} : profile.constraints)
-      await prisma.routerPreferenceProfile.update({
-        where: { id: profile.id },
-        data: {
-          constraints: {
-            ...(blob.success ? blob.data : {}),
-            longContextThreshold: decision.threshold,
-            previousLongContextThreshold: decision.previous,
-            longContextTunedAt: dayjs(now).toISOString()
-          }
-        }
-      })
-      logger.info(
-        {
-          profile: profile.key,
-          from: view.longContextThreshold,
-          to: decision.threshold,
-          reason: decision.reason,
-          projectedPct: target === undefined ? null : target.projectedPct
-        },
-        '[routing-scheduler] Long context threshold tuned'
-      )
-    }
+    for (const profile of profiles) await tuneProfile(prisma, profile, snapshot, now)
   } catch (err) {
     logger.warn({ err }, '[routing-scheduler] Long context tuning failed — thresholds left as they were')
   }

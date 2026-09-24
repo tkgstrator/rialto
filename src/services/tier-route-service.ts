@@ -12,6 +12,7 @@
 
 import { getPrismaClient } from '../db/client'
 import type { Prisma, PrismaClient } from '../generated/prisma/client'
+import { effectiveLongContextThreshold, longContextBase } from '../llms/tier-router/threshold'
 import { logger } from '../logger'
 import { JsonObjectSchema } from '../schemas/domain/preset'
 import {
@@ -26,7 +27,6 @@ import {
   type TierProfile,
   type TierRoute
 } from '../schemas/domain/tier-route'
-import { effectiveLongContextThreshold, longContextBase } from '../llms/tier-router/threshold'
 import { hostsWebSearch } from '../shared/transformer-chain'
 import { aliasKey, resolveTierAliases } from './tier-alias-service'
 
@@ -260,13 +260,14 @@ export interface TierProfileView {
   longContextThreshold: number
 }
 
+/** A route that can take traffic: switched on, and resolving to a model that is on. */
+export const isUsableRoute = (r: TierRouteView): boolean => r.enabled && r.resolved?.targetEnabled === true
+
 // The context window of the model the first usable default · agent route
 // reaches — what the Long context base is 70% of. Null when none resolves
 // to a model with a known window.
 export const defaultAgentWindowOf = (routes: ScenarioRouteViews): number | null => {
-  const first = routes.default.agent.find(
-    (r) => r.enabled && r.resolved !== null && r.resolved.targetEnabled && r.resolved.contextWindow !== null
-  )
+  const first = routes.default.agent.find((r) => isUsableRoute(r) && r.resolved?.contextWindow !== null)
   return first === undefined || first.resolved === null ? null : first.resolved.contextWindow
 }
 

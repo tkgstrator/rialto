@@ -18,7 +18,9 @@ export const DEFAULT_LONG_CONTEXT_THRESHOLD = 128_000
 export const LONG_CONTEXT_FLOOR = 30_000
 
 export function longContextBase(defaultAgentWindow: number | null): number {
-  return defaultAgentWindow === null ? DEFAULT_LONG_CONTEXT_THRESHOLD : Math.floor(defaultAgentWindow * LONG_CONTEXT_AUTO_RATIO)
+  return defaultAgentWindow === null
+    ? DEFAULT_LONG_CONTEXT_THRESHOLD
+    : Math.floor(defaultAgentWindow * LONG_CONTEXT_AUTO_RATIO)
 }
 
 /** The stored (tuned) value clamped to [floor, base], or the base when nothing is stored. */

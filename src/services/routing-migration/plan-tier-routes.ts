@@ -30,7 +30,12 @@
  */
 
 import { tierOf } from '../../llms/router/request-signals'
-import { type ModelTier, ModelTierSchema, type RoutingLane, type RoutingScenario } from '../../schemas/domain/tier-route'
+import {
+  type ModelTier,
+  ModelTierSchema,
+  type RoutingLane,
+  type RoutingScenario
+} from '../../schemas/domain/tier-route'
 
 export interface ChainEntryInput {
   priority: number
@@ -177,7 +182,9 @@ function routesFor(lane: ConvertedLane, aliases: ReadonlyMap<string, ExistingAli
     const k = key(entry.provider.id, slot)
     const resolved = aliases.get(k)
     if (resolved !== undefined && resolved.modelId !== entry.model.id) {
-      notes.push(`${where}: ${label(entry)} is reached through ${entry.provider.name}'s ${slot} alias, which is ${resolved.modelName}`)
+      notes.push(
+        `${where}: ${label(entry)} is reached through ${entry.provider.name}'s ${slot} alias, which is ${resolved.modelName}`
+      )
     }
     const existing = hops.findIndex((h) => h.k === k)
     if (existing >= 0) {

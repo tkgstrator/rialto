@@ -20,6 +20,7 @@ import { getRoutingSnapshot } from '../../services/routing-scheduler'
 import { errorRateOf, sampleCountOf } from '../../services/routing-scheduler/model-health'
 import {
   defaultAgentWindowOf,
+  isUsableRoute,
   loadTierProfileView,
   type TierProfileView,
   type TierRouteView
@@ -67,8 +68,7 @@ async function loadView(profileKey: string): Promise<TierProfileView> {
 // A list has something to offer when at least one route is on and
 // resolves to a model that is on. Otherwise the scenario is skipped for
 // Default in the same lane — "no opinion", not "everything is exhausted".
-const hasUsableRoute = (routes: readonly TierRouteView[]): boolean =>
-  routes.some((r) => r.enabled && r.resolved !== null && r.resolved.targetEnabled)
+const hasUsableRoute = (routes: readonly TierRouteView[]): boolean => routes.some(isUsableRoute)
 
 export interface Classification {
   scenario: RoutingScenario

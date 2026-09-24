@@ -149,8 +149,7 @@ export const projectedUsage = (candidate: ModelCandidateState, now: number, ttlM
   const useScopedFable = isFableTarget(candidate)
   const perAccount = candidate.accounts.flatMap((acct) => {
     if (!accountKnown(acct) || accountStale(acct, now, ttlMs)) return []
-    const windows =
-      useScopedFable && acct.scopedFable !== undefined ? [acct.scopedFable] : [acct.fiveHour, acct.weekly]
+    const windows = useScopedFable && acct.scopedFable !== undefined ? [acct.scopedFable] : [acct.fiveHour, acct.weekly]
     const projections = windows.flatMap((w) => {
       const p = w === undefined ? null : windowProjection(w, now)
       return p === null ? [] : [p]
