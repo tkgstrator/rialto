@@ -12,6 +12,7 @@
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import { getPrismaClient } from '../../src/db/client'
+import dayjs from '../../src/lib/dayjs'
 import { invalidateSurfaceCache } from '../../src/services/inbound-surface-service'
 import { getOverview } from '../../src/services/overview-service'
 import { HAS_DB, resetDbTables, teardownPrisma } from './helpers'
@@ -198,5 +199,58 @@ describe.skipIf(!HAS_DB)('getOverview', () => {
     // tile is null — including the delta, which must not read as 0%.
     expect(out.spend.every((s) => s.deltaRatio === null)).toBe(true)
     expect(out.spend.find((s) => s.label === 'savedBySubscription')?.usd).toBeNull()
+  })
+})
+
+describe.skipIf(!HAS_DB)('getOverview — what each account carried', () => {
+  beforeEach(async () => {
+    await resetDbTables()
+    invalidateSurfaceCache()
+  })
+
+  afterAll(teardownPrisma)
+
+  test("a quota row carries the account's usage at API prices beside its windows", async () => {
+    const prisma = getPrismaClient()
+    const sub = await prisma.provider.create({
+      data: { name: 'claude-code', apiBaseUrl: 'https://api.anthropic.com', authMode: 'subscription' }
+    })
+    const priced = await prisma.provider.create({
+      data: { name: 'anthropic', apiBaseUrl: 'https://api.anthropic.com', authMode: 'api_key' }
+    })
+    await prisma.model.create({
+      data: { providerId: priced.id, name: 'claude-sonnet-5', inputPer1M: 3, outputPer1M: 15 }
+    })
+    const acct = await prisma.subAccount.create({
+      data: { providerId: sub.id, sourcePath: 'oauth:test:anna', label: 'anna', monthlyPriceUsd: 100 }
+    })
+    await prisma.subAccountQuota.create({
+      data: {
+        subAccountId: acct.id,
+        weeklyUsed: 40,
+        weeklyLimit: 100,
+        weeklyResetAt: dayjs().add(3, 'day').toDate()
+      }
+    })
+    await prisma.session.create({ data: { id: 'sess-q' } })
+    await prisma.requestLog.create({
+      data: {
+        sessionId: 'sess-q',
+        provider: 'claude-code',
+        model: 'claude-sonnet-5',
+        subAccountId: acct.id,
+        inputTokens: 1_000_000,
+        outputTokens: 1_000_000,
+        totalInputTokens: 1_000_000
+      }
+    })
+
+    const out = await getOverview(24)
+    const row = out.quota.find((q) => q.subAccountId === acct.id)
+    expect(row?.windows.length).toBeGreaterThan(0)
+    expect(row?.usage?.window.totalTokens).toBe(2_000_000)
+    // 1M in at $3 + 1M out at $15, priced through the api_key provider.
+    expect(row?.usage?.last30d.costUsd).toBeCloseTo(18, 6)
+    expect(row?.usage?.valueRatio).toBeCloseTo(0.18, 6)
   })
 })

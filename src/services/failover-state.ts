@@ -36,8 +36,18 @@ const createExhaustionMap = (): {
   mark: (key: string, until?: number) => void
   is: (key: string) => boolean
   clear: (key: string) => void
+  liveKeys: () => string[]
 } => {
   const map = new Map<string, number>()
+  const is = (key: string): boolean => {
+    const until = map.get(key)
+    if (until === undefined) return false
+    if (until <= Date.now()) {
+      map.delete(key)
+      return false
+    }
+    return true
+  }
   return {
     mark: (key, until) => {
       const now = Date.now()
@@ -45,18 +55,13 @@ const createExhaustionMap = (): {
       const current = map.get(key)
       if (current === undefined || resolved > current) map.set(key, resolved)
     },
-    is: (key) => {
-      const until = map.get(key)
-      if (until === undefined) return false
-      if (until <= Date.now()) {
-        map.delete(key)
-        return false
-      }
-      return true
-    },
+    is,
     clear: (key) => {
       map.delete(key)
-    }
+    },
+    // Every key still inside its window, evicting the expired ones on the
+    // way — the same answer `is` would give for each.
+    liveKeys: () => [...map.keys()].filter(is)
   }
 }
 
@@ -121,6 +126,19 @@ export const isModelExhausted = (providerName: string, modelName: string): boole
 // clearProviderExhaustion.
 export const clearModelExhaustion = (providerName: string, modelName: string): void =>
   modelMap.clear(modelKey(providerName, modelName))
+
+// The models on this provider that currently carry their own mark. A
+// fresh usage reading clears these one model at a time, against the
+// windows that bind for that model: a provider-wide sweep would release
+// Fable while its own weekly window is still spent, and the next Fable
+// request would walk straight back into the 429.
+export const modelMarksFor = (providerName: string): string[] => {
+  const prefix = modelKey(providerName, '')
+  return modelMap
+    .liveKeys()
+    .filter((key) => key.startsWith(prefix))
+    .map((key) => key.slice(prefix.length))
+}
 
 // ─── Long-context (context-1m) entitlement ─────────────────────────────
 

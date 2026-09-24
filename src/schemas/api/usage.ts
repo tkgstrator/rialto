@@ -54,12 +54,22 @@ export const ClaudeUsageSchema = z.object({
   capturedAt: z.string().nonempty()
 })
 
+// Banked rate-limit resets the account holds. `applicable` is how many
+// the vendor would accept right now — none while no window is spent.
+export const CodexResetCreditsSchema = z.object({
+  available: z.number().int().nonnegative(),
+  applicable: z.number().int().nonnegative().nullable()
+})
+export type CodexResetCredits = z.infer<typeof CodexResetCreditsSchema>
+
 export const CodexUsageSchema = z.object({
   subAccountId: z.string().nonempty(),
   accountLabel: z.string(),
   planType: z.string().nonempty().nullable(),
   primary: CodexUsageWindowSchema,
   secondary: CodexUsageWindowSchema,
+  // Defaulted so a value cached before this field existed still parses.
+  resetCredits: CodexResetCreditsSchema.nullable().default(null),
   capturedAt: z.string().nonempty()
 })
 

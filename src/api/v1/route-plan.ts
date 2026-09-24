@@ -204,6 +204,13 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
     )
   }
 
+  // The chain refused the request by configuration — a tier the profile
+  // will not substitute, or a prompt no target can hold. Answered 400 and
+  // never dispatched: unlike exhaustion, waiting would not change it.
+  if (routeReq.routingRefusal !== undefined) {
+    return c.json(buildErrorEnvelope({ shape, status: 400, from: routeReq.routingRefusal }), 400)
+  }
+
   // A passthrough surface can refuse a target. The check lives here and
   // not in `routeScenario` because that function never throws — it
   // catches everything and falls back, so a rejection raised inside it

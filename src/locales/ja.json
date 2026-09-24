@@ -293,7 +293,22 @@
       "resetsIn": "リセットまで",
       "windowFiveHour": "5時間",
       "windowSevenDay": "7日",
-      "windowScoped": "7日 · {{model}}"
+      "windowScoped": "7日 · {{model}}",
+      "usageHeader": "API換算",
+      "usageTokens": "トークン",
+      "usageCost": "費用",
+      "usageFee": "月額",
+      "usageThisWeek": "今週",
+      "usage30d": "30日",
+      "resetCredits": "貯めたリセット",
+      "resetNone": "使えるものなし",
+      "resetUse": "リセットを使う",
+      "resetNotApplicable": "リセットはウィンドウが上限に達している間だけ使えます",
+      "resetNoneLeft": "このアカウントに使えるリセットは残っていません",
+      "resetConfirmTitle": "{{account}} のリセットを使いますか？",
+      "resetConfirmDescription": "OpenAI がこのアカウントの 5 時間と週次のウィンドウを 0% に戻します。リセットはすぐに消費され、元に戻せません。\n\n貯めたリセット: {{available}} → {{remaining}}。次に失効するのは {{expires}} です。\n\nリセットが反映されると、routing はすぐにこのアカウントを使い始めます。",
+      "resetDone": "リセットを使いました（残り {{remaining}}）。routing はこのアカウントを再び使います。",
+      "resetDoneUnread": "リセットを使いました（残り {{remaining}}）。使用量を取得できなかったため、表示は次の取得で更新されます。"
     },
     "shape": {
       "title": "リクエスト形式",
@@ -854,7 +869,11 @@
     "quotaLimitCount_one": "制限 {{count}} 件",
     "quotaLimitCount_other": "制限 {{count}} 件",
     "resetsDueShort": "更新待ち",
-    "quotaLimitCount": "制限 {{count}} 件"
+    "quotaLimitCount": "制限 {{count}} 件",
+    "usageWeek": "今週 · API換算",
+    "usage30d": "30日 · API換算",
+    "usageTokens": "{{tokens}} トークン",
+    "usageFee": "月額 {{fee}} に対して"
   },
   "system": {
     "notFound": {

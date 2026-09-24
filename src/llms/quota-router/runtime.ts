@@ -8,18 +8,17 @@
  *   model-health tracker (errorRateOf)
  *
  * into the predicates `selectByPreference` needs (`isExhausted`,
- * `errorRate`, `contextWindowOf`), and turns an all-gated chain into the
- * Retry-After hint the /v1 handler answers with. `chainRoutingOf()`
- * projects the same loaded profile into what the classifier has to know
- * before the selector runs.
+ * `errorRate`, `contextWindowOf`), and turns an all-gated chain into what
+ * the /v1 handler answers: a 429 with Retry-After when the targets are
+ * exhausted, a 400 when the chain refuses the request by configuration,
+ * or the caller's own model. `chainRoutingOf()` projects the same loaded
+ * profile into what the classifier has to know before the selector runs.
  */
 
 import {
-  type PreferenceConstraints,
   type QuotaAwareConstraints,
   QuotaAwareConstraintsSchema,
   type RequestedModelTier,
-  type RouterPreferenceEntry,
   type RouterPreferenceProfile,
   type ScenarioKey
 } from '@/schemas/domain'
@@ -64,53 +63,6 @@ const buildContextWindowOf = (): ((target: string) => number | null) => {
     const window = snapshot.weights.get(target)?.contextWindow
     return window === undefined ? null : window
   }
-}
-
-// Tier navigation: fable > opus > sonnet > haiku (expensive → cheap).
-// `tierBelow` returns the next-cheaper tier (used for downshift when
-// the requested tier is over-paced); `tierAbove` returns the
-// next-pricier tier (used for upshift when the requested tier has
-// slack budget it won't burn on its own).
-const TIER_ORDER: readonly RequestedModelTier[] = ['fable', 'opus', 'sonnet', 'haiku']
-const tierBelow = (t: RequestedModelTier): RequestedModelTier | undefined => {
-  const idx = TIER_ORDER.indexOf(t)
-  return idx < 0 || idx === TIER_ORDER.length - 1 ? undefined : TIER_ORDER[idx + 1]
-}
-const tierAbove = (t: RequestedModelTier): RequestedModelTier | undefined => {
-  const idx = TIER_ORDER.indexOf(t)
-  return idx <= 0 ? undefined : TIER_ORDER[idx - 1]
-}
-
-// Pace-aware tier widening. Given the requested tier and the chain, look
-// up the paceRatio of the top enabled candidate matching that tier in
-// the snapshot and decide whether to admit an adjacent tier for this
-// request. Returns undefined when there is no snapshot data, the
-// window has barely started (early-window noise), or the pace sits
-// inside the neutral band. In every "undefined" case the caller
-// preserves the strict-tier behaviour.
-const resolveAllowedTiers = (
-  requestedTier: RequestedModelTier | undefined,
-  entries: readonly RouterPreferenceEntry[],
-  constraints: PreferenceConstraints
-): ReadonlySet<RequestedModelTier> | undefined => {
-  if (requestedTier === undefined) return undefined
-  const snapshot = getRoutingSnapshot()
-  if (snapshot === null) return undefined
-  const canonical = entries.find((e) => e.enabled && e.resolvedTier === requestedTier)
-  if (canonical === undefined) return undefined
-  const entry = snapshot.weights.get(canonical.target)
-  if (entry === undefined) return undefined
-  if (entry.paceRatio === null || entry.windowElapsedRatio === null) return undefined
-  if (entry.windowElapsedRatio * 100 < constraints.pacePolicyMinElapsedPct) return undefined
-  if (entry.paceRatio > constraints.paceOverThreshold) {
-    const below = tierBelow(requestedTier)
-    return below === undefined ? undefined : new Set<RequestedModelTier>([requestedTier, below])
-  }
-  if (entry.paceRatio < constraints.paceUnderThreshold) {
-    const above = tierAbove(requestedTier)
-    return above === undefined ? undefined : new Set<RequestedModelTier>([requestedTier, above])
-  }
-  return undefined
 }
 
 // Model.contextWindow behind a "provider,model" target, read off the flat
@@ -180,6 +132,41 @@ export interface QuotaAwareSelectionInput {
 export interface QuotaAwareSelection {
   selection: PreferenceSelection
   retryAfterSec: number | null
+  // Set when the chain has no primary for a reason that is the
+  // operator's configuration rather than a quota — the caller answers
+  // 400 with this text instead of a 429 the client would retry.
+  refusal: string | null
+}
+
+// Why a chain with entries produced no primary, and what the client
+// should hear. Only exhaustion earns a 429: a Retry-After is a promise
+// that waiting helps, and for a tier the chain refuses or a prompt no
+// target can hold it never does. A chain whose entries are all switched
+// off is the empty lane by another name, so it passes through the same
+// way. `exhaustedBehavior: 'passthrough'` keeps meaning what it always
+// did — every dead end goes upstream on the caller's own model.
+const noPrimaryOutcome = (
+  selection: PreferenceSelection,
+  constraints: QuotaAwareConstraints,
+  requestedTier: RequestedModelTier | undefined,
+  requestTokenCount: number | undefined
+): { retryAfterSec: number | null; refusal: string | null } => {
+  if (constraints.exhaustedBehavior === 'passthrough') return { retryAfterSec: null, refusal: null }
+  const reasons = new Set(selection.skipped.map((s) => s.reason))
+  if (reasons.has('exhausted') || reasons.has('error_rate')) {
+    return { retryAfterSec: retryAfterFrom(getRoutingSnapshot()?.soonestResetAt), refusal: null }
+  }
+  if ([...reasons].every((reason) => reason === 'disabled')) return { retryAfterSec: null, refusal: null }
+  const parts: string[] = []
+  if (reasons.has('tier_mismatch')) {
+    const tier = requestedTier === undefined ? 'this' : `a ${requestedTier}`
+    parts.push(`no enabled target may serve ${tier} request under the profile's tier substitution`)
+  }
+  if (reasons.has('context_too_small')) {
+    const size = requestTokenCount === undefined ? 'the request' : `the request (about ${requestTokenCount} tokens)`
+    parts.push(`${size} does not fit the context window of any enabled target`)
+  }
+  return { retryAfterSec: null, refusal: `Routing chain refused the request: ${parts.join('; ')}.` }
 }
 
 export async function resolveQuotaAwareSelection(input: QuotaAwareSelectionInput): Promise<QuotaAwareSelection> {
@@ -202,33 +189,31 @@ export async function resolveQuotaAwareSelection(input: QuotaAwareSelectionInput
   // gated. Without this a fresh install with a '429' profile and no
   // entries would refuse every request.
   if (entries.length === 0) {
-    return { selection: { primary: null, fallbacks: [], matched: false, skipped: [] }, retryAfterSec: null }
+    return {
+      selection: { primary: null, fallbacks: [], matched: false, skipped: [], substituted: false },
+      retryAfterSec: null,
+      refusal: null
+    }
   }
-  const l4Constraints: PreferenceConstraints = constraints
   const requestedTier = input.requestedModel ? tierOf(input.requestedModel) : undefined
-  // Pace-based widening only applies to agent calls — the subagent lane
-  // is ordered by hand for exactly that traffic, and blurring it
-  // silently would surprise the operator who pinned it.
-  const allowedTiersOverride = input.isSubagent ? undefined : resolveAllowedTiers(requestedTier, entries, l4Constraints)
+  // No pace-aware tier widening (`allowedTiersOverride`): it overrode the
+  // escalation / demotion gates the operator set on the Routing screen,
+  // under thresholds the screen does not show, and with both gates open
+  // — the default — it narrowed the chain instead of widening it,
+  // dropping every target of unknown tier. The selector's nearest-tier
+  // retry covers the case it was reaching for.
   const selection = selectByPreference({
     entries,
-    constraints: l4Constraints,
+    constraints,
     requestedTier,
     isSubagent: input.isSubagent,
     isExhausted: buildIsExhausted(constraints.quotaSkipPct),
     errorRate: buildErrorRate(),
     contextWindowOf: buildContextWindowOf(),
-    requestTokenCount: input.requestTokenCount,
-    allowedTiersOverride
+    requestTokenCount: input.requestTokenCount
   })
-  // Retry-After hint is populated ONLY when (a) the selector produced
-  // no primary AND (b) constraints.exhaustedBehavior is '429'. The
-  // caller uses null-vs-number to decide between "return 429" and
-  // "keep the caller's own model".
-  const snapshot = getRoutingSnapshot()
-  const shouldEmit429 = selection.primary === null && constraints.exhaustedBehavior === '429'
-  const retryAfterSec = shouldEmit429 ? retryAfterFrom(snapshot?.soonestResetAt) : null
-  return { selection, retryAfterSec }
+  if (selection.primary !== null) return { selection, retryAfterSec: null, refusal: null }
+  return { selection, ...noPrimaryOutcome(selection, constraints, requestedTier, input.requestTokenCount) }
 }
 
 // Seconds until the earliest binding-window reset, or the L4 default

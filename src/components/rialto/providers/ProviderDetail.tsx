@@ -19,6 +19,7 @@ import { Pill, RButton, Toggle } from '@/components/rialto/primitives'
 import { AccountsPanel } from './AccountsPanel'
 import { CredentialsPanel } from './CredentialsPanel'
 import {
+  type AccountExtrasIndex,
   buildModelRows,
   enabledCountOf,
   hasCredential,
@@ -33,7 +34,15 @@ import {
 import { ModelsTable } from './ModelsTable'
 import { ApiKeyRequestShape, SubscriptionRequestShape } from './RequestShape'
 import { SwitchReading } from './SwitchReading'
-import type { CatalogEntry, Provider, ReasoningEffort, SubscriptionWire, Tier, TransformerWire } from './types'
+import type {
+  CatalogEntry,
+  Provider,
+  ReasoningEffort,
+  SubAccountWire,
+  SubscriptionWire,
+  Tier,
+  TransformerWire
+} from './types'
 
 const SHOW_LABEL_KEYS: Record<ShowMode, string> = {
   priced: 'providers.models.showPriced',
@@ -295,6 +304,7 @@ export interface ProviderDetailProps {
   catalogEntry: CatalogEntry | undefined
   transformers: TransformerWire[]
   quota: QuotaIndex
+  accounts: AccountExtrasIndex
   now: number
   busy: boolean
   editing: boolean
@@ -312,6 +322,8 @@ export interface ProviderDetailProps {
   /** Per-model reasoning effort; null clears it back to the vendor default. */
   onModelEffort: (model: string, next: ReasoningEffort | null) => void
   onReplaceKey: (key: string) => void
+  /** Spend one of the account's banked resets; the screen confirms first. */
+  onUseReset: (account: SubAccountWire) => void
 }
 
 export function ProviderDetail(props: ProviderDetailProps) {
@@ -337,7 +349,14 @@ export function ProviderDetail(props: ProviderDetailProps) {
       />
       <div className='grid grid-cols-2 border-b border-border'>
         {subscriptionMode ? (
-          <AccountsPanel subscription={subscription} quota={quota} now={now} />
+          <AccountsPanel
+            subscription={subscription}
+            quota={quota}
+            accounts={props.accounts}
+            now={now}
+            locked={props.busy || props.editing}
+            onUseReset={props.onUseReset}
+          />
         ) : (
           <CredentialsPanel
             key={provider.name}

@@ -8,6 +8,7 @@
  * provider's models and reports them as warnings).
  */
 import { api } from '@/lib/api'
+import type { ResetCreditsResponse, UseResetResponse } from '@/lib/api-types'
 import { setModelDisabled } from '@/lib/providers/provider-edits'
 import type { SubscriptionRefreshResponse } from '@/schemas/api/subscriptions'
 import type { SavePlan } from './provider-draft'
@@ -146,4 +147,17 @@ export async function refreshCatalog(): Promise<void> {
  */
 export async function refreshSubscriptions(provider?: string): Promise<SubscriptionRefreshResponse> {
   return api.post<SubscriptionRefreshResponse>('/subscriptions/refresh', provider === undefined ? {} : { provider })
+}
+
+/**
+ * The account's spendable banked resets, read from OpenAI now — a credit
+ * may have been spent from the Codex app since the last usage poll.
+ */
+export async function getResetCredits(subAccountId: string): Promise<ResetCreditsResponse> {
+  return api.getResetCredits(subAccountId)
+}
+
+/** Spend the banked reset closest to lapsing. Irreversible; ask first. */
+export async function spendResetCredit(subAccountId: string): Promise<UseResetResponse> {
+  return api.spendResetCredit(subAccountId)
 }
