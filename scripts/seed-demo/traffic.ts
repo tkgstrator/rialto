@@ -3,25 +3,26 @@
  *
  * This is what Activity, Overview's spend and recent-session blocks, and
  * the per-token cost column all read. Rows are generated against the same
- * chains the routing seed wrote, so what Activity says was used and what
- * Routing says is configured tell the same story — a demo where the two
- * disagree is worse than no demo at all.
+ * tier maps the routing seed wrote, so what Activity says was used and
+ * what Routing says is configured tell the same story — a demo where the
+ * two disagree is worse than no demo at all.
  */
 
 import type { PrismaClient } from '../../src/generated/prisma/client'
+import type { RouteTier } from '../../src/schemas/domain/tier-route'
 import { CURATED_CONVERSATIONS, FILLER_TURNS } from './conversations'
-import { demoId, demoSessionId } from './demo-rows'
+import { DEMO_PROFILE_KEY, demoId, demoSessionId } from './demo-rows'
 import type { Random } from './random'
-import type { ChainsByScenario } from './routing'
-import type { DemoTarget } from './targets'
-
-type ScenarioKey = 'default' | 'think' | 'longContext' | 'webSearch' | 'image'
+import type { ResolvedRoutes } from './routing'
+import { type DemoTarget, inferTier } from './targets'
 
 interface SurfaceSpec {
   id: string
   inboundType: 'anthropic' | 'openai' | 'gemini'
   /** What the client puts in body.model before routing rewrites it. */
   requestedModels: string[]
+  /** The profile the surface routes through; null = passthrough. Mirrors seedSurfaceModes. */
+  profile: string | null
   weight: number
 }
 
@@ -32,21 +33,29 @@ const SURFACES: SurfaceSpec[] = [
   {
     id: 'anthropic-messages',
     inboundType: 'anthropic',
-    requestedModels: ['claude-sonnet-5', 'claude-opus-5', 'claude-haiku-4-5'],
+    requestedModels: ['claude-sonnet-5', 'claude-sonnet-5', 'claude-opus-5', 'claude-haiku-4-5'],
+    profile: 'live',
     weight: 55
   },
-  { id: 'openai-chat', inboundType: 'openai', requestedModels: ['gpt-5.6-terra', 'gpt-5.6-luna'], weight: 20 },
-  { id: 'openai-responses', inboundType: 'openai', requestedModels: ['gpt-5.6-sol', 'gpt-5.6-terra'], weight: 15 },
-  { id: 'gemini-generate', inboundType: 'gemini', requestedModels: ['gemini-3.7-flash'], weight: 10 }
+  {
+    id: 'openai-chat',
+    inboundType: 'openai',
+    requestedModels: ['claude-sonnet-5', 'gpt-5.6-terra', 'gpt-5.6-luna'],
+    profile: DEMO_PROFILE_KEY,
+    weight: 20
+  },
+  {
+    id: 'openai-responses',
+    inboundType: 'openai',
+    requestedModels: ['gpt-5.6-sol', 'gpt-5.6-terra'],
+    profile: null,
+    weight: 15
+  },
+  { id: 'gemini-generate', inboundType: 'gemini', requestedModels: ['gemini-3.7-flash'], profile: null, weight: 10 }
 ]
 
-const SCENARIO_WEIGHTS: ReadonlyArray<readonly [ScenarioKey, number]> = [
-  ['default', 66],
-  ['think', 12],
-  ['longContext', 8],
-  ['webSearch', 8],
-  ['image', 6]
-]
+// The route a passthrough request is recorded under, as the router does.
+const PASSTHROUGH_ROUTE = 'passthrough'
 
 // Mostly 200s. The failures are here because every screen that shows an
 // error rate or a 429 badge is otherwise untestable against demo data.
@@ -91,7 +100,7 @@ const uuidish = (random: Random): string =>
   `${hex(random, 8)}-${hex(random, 4)}-4${hex(random, 3)}-a${hex(random, 3)}-${hex(random, 12)}`
 
 interface TurnPlan {
-  scenario: ScenarioKey
+  route: RouteTier | typeof PASSTHROUGH_ROUTE
   isSubagent: boolean
   target: DemoTarget
   requestedModel: string
@@ -104,34 +113,56 @@ interface TurnPlan {
   at: Date
 }
 
-// Walk the chain the way the router does: the primary answers most
-// requests, and the tail only sees traffic when something upstream is
+// Walk the routes the way the router does: the first answers most
+// requests, and the rest only see traffic when something upstream is
 // unavailable — which is exactly what makes a fallback row interesting
 // when it does show up in Activity.
-const pickFromChain = (chain: DemoTarget[], random: Random): DemoTarget => {
-  if (chain.length === 1) return chain[0]
-  if (random.chance(0.78)) return chain[0]
-  return random.pick(chain.slice(1))
+const pickFromRoutes = (routes: DemoTarget[], random: Random): DemoTarget => {
+  if (routes.length === 1) return routes[0]
+  if (random.chance(0.78)) return routes[0]
+  return random.pick(routes.slice(1))
+}
+
+// Where a request goes: through its surface's map when the tier has a
+// route, else upstream as sent — to the model it named when the demo
+// catalog has it.
+function destinationOf(
+  surface: SurfaceSpec,
+  requestedModel: string,
+  resolved: Record<string, ResolvedRoutes>,
+  targets: DemoTarget[],
+  random: Random
+): { route: TurnPlan['route']; target: DemoTarget } | null {
+  const tier = inferTier(requestedModel)
+  const requested: RouteTier = tier === null ? 'other' : tier
+  const map = surface.profile === null ? undefined : resolved[surface.profile]
+  const routes = map === undefined ? [] : map[requested]
+  if (routes.length > 0) return { route: requested, target: pickFromRoutes(routes, random) }
+  const named = targets.find((t) => t.modelName === requestedModel)
+  if (named !== undefined) return { route: PASSTHROUGH_ROUTE, target: named }
+  return targets.length === 0 ? null : { route: PASSTHROUGH_ROUTE, target: random.pick(targets) }
 }
 
 function planTurn(
-  chains: ChainsByScenario,
   surface: SurfaceSpec,
+  resolved: Record<string, ResolvedRoutes>,
+  targets: DemoTarget[],
   random: Random,
   at: Date,
   turnIndex: number
 ): TurnPlan | null {
-  const scenario = random.weighted(SCENARIO_WEIGHTS)
+  const requestedModel = random.pick(surface.requestedModels)
+  const destination = destinationOf(surface, requestedModel, resolved, targets, random)
+  if (destination === null) return null
+  const { route, target } = destination
   const isSubagent = random.chance(0.15)
-  const chain = isSubagent ? chains[scenario].subagent : chains[scenario].agent
-  const usable = chain.length > 0 ? chain : chains.default.agent
-  if (usable.length === 0) return null
-  const target = pickFromChain(usable, random)
   const status = random.weighted(STATUS_WEIGHTS)
+  // The larger tiers answer longer and slower.
+  const heavy = route === 'opus' || route === 'fable'
 
-  // Context grows with the turn index; longContext requests start where
-  // the others end up, which is what puts them over the threshold.
-  const base = scenario === 'longContext' ? random.int(120_000, 420_000) : random.int(1_800, 26_000)
+  // Context grows with the turn index; a few requests start where the
+  // others end up, the way a long agent session does.
+  const base = random.chance(0.08) ? random.int(120_000, 420_000) : random.int(1_800, 26_000)
   const growth = Math.round(base * (1 + turnIndex * 0.12))
   // A resumed conversation reads most of its context from cache. The
   // first turn writes it instead — that asymmetry is the whole reason
@@ -142,16 +173,16 @@ function planTurn(
   const failed = status !== 200
 
   return {
-    scenario,
+    route,
     isSubagent,
     target,
-    requestedModel: random.pick(surface.requestedModels),
+    requestedModel,
     inputTokens,
     cacheReadTokens,
     cacheWriteTokens,
-    outputTokens: failed ? 0 : random.int(60, scenario === 'think' ? 5_200 : 2_400),
-    // A rejected request comes back fast; a thinking one does not.
-    durationMs: failed ? random.int(120, 900) : random.int(600, scenario === 'think' ? 24_000 : 9_000),
+    outputTokens: failed ? 0 : random.int(60, heavy ? 5_200 : 2_400),
+    // A rejected request comes back fast; a heavy one does not.
+    durationMs: failed ? random.int(120, 900) : random.int(600, heavy ? 24_000 : 9_000),
     status,
     at
   }
@@ -166,6 +197,8 @@ type LogRow = {
   provider: string
   model: string
   requestedModel: string
+  // The route the request took (its requested tier, or "passthrough").
+  // The column keeps its pre-tier-map name.
   scenario: string
   isSubagent: boolean
   inboundType: string
@@ -209,7 +242,8 @@ export interface TrafficReport {
 
 export async function seedTraffic(
   prisma: PrismaClient,
-  chains: ChainsByScenario,
+  resolved: Record<string, ResolvedRoutes>,
+  targets: DemoTarget[],
   random: Random,
   now: number,
   options: TrafficOptions
@@ -267,7 +301,7 @@ export async function seedTraffic(
     }>(
       (state, turnIndex) => {
         const at = new Date(state.at)
-        const plan = planTurn(chains, surface, random, at, turnIndex)
+        const plan = planTurn(surface, resolved, targets, random, at, turnIndex)
         if (plan === null) return state
         const curatedTurn = curated === null ? null : curated.turns[turnIndex]
         const merged =
@@ -275,7 +309,6 @@ export async function seedTraffic(
             ? plan
             : {
                 ...plan,
-                scenario: 'default' as ScenarioKey,
                 isSubagent: false,
                 requestedModel: curated === null ? plan.requestedModel : curated.requestedModel,
                 inputTokens: curatedTurn.inputTokens,
@@ -333,7 +366,7 @@ export async function seedTraffic(
         provider: plan.target.providerName,
         model: plan.target.modelName,
         requestedModel: plan.requestedModel,
-        scenario: plan.scenario,
+        scenario: plan.route,
         isSubagent: plan.isSubagent,
         inboundType: surface.inboundType,
         surface: surface.id,

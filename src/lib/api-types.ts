@@ -247,16 +247,14 @@ export interface OverviewQuotaRow {
 /** Fields, not prose — the sentence is composed and translated by the
  *  Overview screen. See FailoverRow in services/overview-service.ts. */
 export interface OverviewFailoverRow {
-  kind: 'rate_limit' | 'weight'
+  kind: 'rate_limit' | 'auth'
   tone: 'bad' | 'warn' | 'mute'
   at: string
-  account: string | null
+  account: string
   status: number | null
   retryAfterSec: number | null
-  target: string | null
-  fromWeight: number | null
-  toWeight: number | null
-  reason: string | null
+  /** auth rows: the probe's failure reason as the upstream gave it. */
+  error: string | null
 }
 
 export interface OverviewRecentSession {
@@ -315,13 +313,11 @@ export interface RouterPreferencesApplyResponse {
   warnings: string[]
 }
 
-export interface RoutingSchedulerWeightEntry {
-  target: string
-  weight: number
-  healthiness: number
-  remainingBudgetPct: number | null
-  earliestResetAt: string | null
-  reasons: string[]
+export interface RoutingSchedulerTargetState {
+  target: string // "provider,model"
+  exhausted: boolean // out of use on quota right now
+  remainingBudgetPct: number | null // 0..100, null = unknown (api_key targets, cold start)
+  resetAt: string | null // ISO; when the binding window resets
 }
 
 export interface RoutingSchedulerAccountView {
@@ -339,10 +335,9 @@ export interface RoutingSchedulerStateResponse {
   tickCount: number
   consecutiveFailures: number
   degraded: boolean
-  weights: RoutingSchedulerWeightEntry[]
+  targets: RoutingSchedulerTargetState[]
   accounts: RoutingSchedulerAccountView[]
   soonestResetAt: string | null
-  recentChanges: Array<{ target: string; from: number; to: number; reason: string; tickAt: string }>
 }
 
 export interface RouterUtilizationPerScenarioRow {

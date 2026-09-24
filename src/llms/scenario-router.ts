@@ -135,7 +135,10 @@ async function routeThroughTierMap(req: RouterRequest, ctx: RouterContext, isSub
   }
   if (selection.outcome === 'refused' && selection.refusal !== null) {
     req.routingRefusal = selection.refusal
-    req.log.warn({ requestedModel, tier: routing.requestedTier, skipped: selection.skipped }, '[routing] refused — will 400')
+    req.log.warn(
+      { requestedModel, tier: routing.requestedTier, skipped: selection.skipped },
+      '[routing] refused — will 400'
+    )
     stamp(req, { route: routing.requestedTier, isSubagent, fallbacks: [] })
     return
   }

@@ -78,7 +78,8 @@ export async function deleteProviderByName(name: string): Promise<{ warnings: st
     if (cascade !== null) warnings.push(cascade)
     await tx.provider.delete({ where: { id: p.id } })
   })
-  if (warnings.length > 0) logger.warn({ provider: name, warnings }, '[config] provider delete cascaded to the tier map')
+  if (warnings.length > 0)
+    logger.warn({ provider: name, warnings }, '[config] provider delete cascaded to the tier map')
   await syncToConfigFile()
   resetLlmsContext()
   return { warnings }

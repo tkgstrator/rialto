@@ -9,10 +9,10 @@ import { AuthMode, type Model as DbModel, type Provider as DbProvider } from '..
 import { ensurePresetAliases } from '../../tier-alias-service'
 import { apiStyleForVendor } from '../api-style'
 import type { Tx } from '../apply'
-import { routeCascadeWarning } from './tier-route-cascade'
 import { apiKeyForStorage } from './fields'
 import { applyModelEnabledFlips, reconcileModelRows } from './model-rows'
 import { applySubscriptionAccountToggles } from './subscription-toggles'
+import { routeCascadeWarning } from './tier-route-cascade'
 
 // Delete providers the UI no longer lists. Their models cascade, and so
 // do the tier aliases and routes naming them — counted first so the

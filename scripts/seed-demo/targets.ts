@@ -25,9 +25,9 @@ export interface DemoTarget {
   inputPer1M: number | null
 }
 
-// Same substring rule the router uses (scenario-router/model-selection.ts's
+// Same substring rule the router uses (scenario-router/request-signals.ts's
 // tierOf), duplicated here so the seed does not import the request path.
-const inferTier = (modelName: string): Tier | null => {
+export const inferTier = (modelName: string): Tier | null => {
   const lower = modelName.toLowerCase()
   if (lower.includes('fable')) return 'fable'
   if (lower.includes('opus')) return 'opus'
@@ -146,7 +146,7 @@ async function loadTargets(prisma: PrismaClient): Promise<DemoTarget[]> {
     modelName: row.name,
     ref: `${row.provider.name},${row.name}`,
     subscription: row.provider.authMode === AuthMode.subscription,
-    tier: row.manualTier === 'fable' || row.manualTier === 'opus' || row.manualTier === 'sonnet' || row.manualTier === 'haiku' ? row.manualTier : inferTier(row.name),
+    tier: inferTier(row.name),
     contextWindow: row.contextWindow,
     inputPer1M: row.inputPer1M
   }))
@@ -163,21 +163,4 @@ export async function resolveTargets(prisma: PrismaClient): Promise<TargetsResul
   if (existing.length > 0) return { targets: existing, registeredVendors: false }
   await registerFallbackVendors(prisma)
   return { targets: await loadTargets(prisma), registeredVendors: true }
-}
-
-/**
- * Pick targets by name preference, then pad with whatever is left.
- *
- * The chains below are written against the models this repo ships with,
- * but the seed has to survive a database holding a completely different
- * set — so a preference that matches nothing is skipped rather than
- * fatal, and the chain is topped up in catalog order.
- */
-export function pickChain(targets: DemoTarget[], preferences: string[], length: number): DemoTarget[] {
-  const matched = preferences
-    .map((pref) => targets.find((t) => t.modelName.toLowerCase().includes(pref.toLowerCase())))
-    .filter((t): t is DemoTarget => t !== undefined)
-  const deduped = matched.filter((t, idx) => matched.findIndex((o) => o.ref === t.ref) === idx)
-  const padding = targets.filter((t) => !deduped.some((d) => d.ref === t.ref))
-  return [...deduped, ...padding].slice(0, Math.min(length, targets.length))
 }

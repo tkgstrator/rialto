@@ -6,8 +6,8 @@
  * delete exactly what it wrote and nothing else. Prisma's `@default(cuid())`
  * only applies when the id is omitted, so supplying one is free.
  *
- * Configuration rows that are singletons per key — the `live` preference
- * profile, InboundSurfaceConfig — cannot carry a marker. Those are
+ * Configuration rows that are singletons per key — tier aliases, the
+ * `live` profile, InboundSurfaceConfig — cannot carry a marker. Those are
  * written only when they are still unset, and are left alone by
  * `--clean`; see seed-demo/routing.ts.
  */
@@ -47,13 +47,14 @@ export async function cleanDemoRows(prisma: PrismaClient): Promise<CleanCounts> 
   const message = await prisma.message.deleteMany({ where: { id: startsWithDemo } })
   const requestLog = await prisma.requestLog.deleteMany({ where: { id: startsWithDemo } })
   const session = await prisma.session.deleteMany({ where: { id: startsWithDemo } })
+  // Weight-change rows an older seed wrote; the scheduler writes none now.
   const routingWeightChange = await prisma.routingWeightChange.deleteMany({ where: { id: startsWithDemo } })
   const accessToken = await prisma.accessToken.deleteMany({ where: { id: startsWithDemo } })
   const usageSnapshot = await prisma.usageSnapshot.deleteMany({ where: { id: startsWithDemo } })
   // Usage / quota children cascade from the account.
   const subAccount = await prisma.subAccount.deleteMany({ where: { id: startsWithDemo } })
   // The demo profile is keyed, not id-prefixed: its key is reserved for
-  // the seed, and its entries cascade.
+  // the seed, and its routes cascade.
   const preferenceProfile = await prisma.routerPreferenceProfile.deleteMany({ where: { key: DEMO_PROFILE_KEY } })
 
   return {

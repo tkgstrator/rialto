@@ -54,37 +54,43 @@ const splitTarget = (target: string): { provider: string; model: string } | null
 }
 
 // Out of use right now: a mark from a 429 on this model or its provider, or
-// the quota snapshot's reading — a zero weight, or a budget used at or past
-// the profile's quotaSkipPct. A target the snapshot has never seen (api_key
-// providers, a cold start) is not held on quota.
+// the quota snapshot's reading — spent, or used at or past the profile's
+// quotaSkipPct. A target the snapshot has never seen (api_key providers, a
+// cold start) is not held on quota.
 const buildIsExhausted = (quotaSkipPct: number): ((target: string) => boolean) => {
   const snapshot = getRoutingSnapshot()
   return (target) => {
     const parts = splitTarget(target)
     if (parts !== null && isModelExhausted(parts.provider, parts.model)) return true
-    const entry = snapshot === null ? undefined : snapshot.weights.get(target)
-    if (entry === undefined) return false
-    if (entry.weight <= 0) return true
-    return entry.remainingBudgetPct !== null && 100 - entry.remainingBudgetPct >= quotaSkipPct
+    const quota = snapshot === null ? undefined : snapshot.targets.get(target)
+    if (quota === undefined) return false
+    if (quota.exhausted) return true
+    return quota.remainingBudgetPct !== null && 100 - quota.remainingBudgetPct >= quotaSkipPct
   }
 }
 
-// Seconds until the first held-back route of the tier can serve again: the
-// earliest of their marks' deadlines, else the snapshot's soonest reset,
-// else Anthropic's usual 30 s for a soft 429.
+// When one held-back target can serve again: its mark's deadline when a
+// 429 set one, else the snapshot's reset for it.
+const backAt = (target: string): number | null => {
+  const parts = splitTarget(target)
+  const until = parts === null ? null : exhaustedUntil(parts.provider, parts.model)
+  if (until !== null) return until
+  const snapshot = getRoutingSnapshot()
+  const quota = snapshot === null ? undefined : snapshot.targets.get(target)
+  return quota === undefined ? null : quota.resetAt
+}
+
+// Seconds until the first held-back route of the tier can serve again, or
+// Anthropic's usual 30 s for a soft 429 when none of them says.
 const retryAfterFor = (selection: TierSelection, candidates: readonly TierCandidate[], now: number): number => {
   const held = new Set(selection.skipped.filter((s) => s.reason === 'exhausted').map((s) => s.route))
   const deadlines = candidates.flatMap((c) => {
     if (!held.has(c.route) || c.target === null) return []
-    const parts = splitTarget(c.target)
-    const until = parts === null ? null : exhaustedUntil(parts.provider, parts.model)
-    return until === null ? [] : [until]
+    const at = backAt(c.target)
+    return at === null || at <= now ? [] : [at]
   })
-  const snapshot = getRoutingSnapshot()
-  const soonest =
-    deadlines.length > 0 ? Math.min(...deadlines) : snapshot === null ? null : snapshot.soonestResetAt
-  if (soonest === null) return 30
-  return Math.max(1, Math.ceil((soonest - now) / 1000))
+  if (deadlines.length === 0) return 30
+  return Math.max(1, Math.ceil((Math.min(...deadlines) - now) / 1000))
 }
 
 export interface TierRouting {
