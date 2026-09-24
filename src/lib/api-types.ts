@@ -215,10 +215,30 @@ export interface OverviewQuotaWindow {
 }
 
 /** One subscription account and every limit it is under, shortest first. */
+/** One span of an account's traffic at API prices. Mirrors OverviewUsageFigures. */
+export interface OverviewUsageFigures {
+  requests: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  totalTokens: number
+  /** Null: traffic exists but none of it priced. 0: no traffic. */
+  costUsd: number | null
+}
+
+export interface OverviewAccountUsage {
+  windowStart: string
+  window: OverviewUsageFigures
+  last30d: OverviewUsageFigures
+  valueRatio: number | null
+}
+
 export interface OverviewQuotaRow {
   subAccountId: string
   account: string
   windows: OverviewQuotaWindow[]
+  usage: OverviewAccountUsage | null
 }
 
 /** Fields, not prose — the sentence is composed and translated by the
