@@ -152,8 +152,11 @@ const HARD_LIMIT_PCT = 99
 // request at or above that mark with resetAt still in the future. The
 // "future resetAt" guard is what makes a stale DB row self-heal: once
 // the reset passes, the cache no longer blocks the account even before
-// the next poller cycle rewrites it.
-const accountHasHardLimitHit = (
+// the next poller cycle rewrites it. The manual refresh asks the same
+// question of a fresh reading to decide which in-process exhaustion
+// marks that reading contradicts, so the two cannot disagree on what
+// "spent" means.
+export const accountHasHardLimitHit = (
   usage: AccountUsageMap,
   kind: 'claude' | 'codex',
   requestedModel: string | undefined,

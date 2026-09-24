@@ -151,6 +151,7 @@ function sumCost(
     outputTokens: number
     cacheReadTokens: number
     cacheWriteTokens: number
+    cacheWrite1hTokens: number
   }>,
   priceMap: Map<string, PriceEntry>
 ): number | null {
@@ -180,6 +181,7 @@ type WindowLog = {
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
+  cacheWrite1hTokens: number
   totalInputTokens: number
   createdAt: Date
 }
@@ -211,6 +213,7 @@ type SpendBucket = {
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
+  cacheWrite1hTokens: number
 }
 
 // Raw rows are unknown until parsed; the sums come back as double
@@ -222,7 +225,8 @@ const SpendBucketSchema = z.object({
   inputTokens: z.number(),
   outputTokens: z.number(),
   cacheReadTokens: z.number(),
-  cacheWriteTokens: z.number()
+  cacheWriteTokens: z.number(),
+  cacheWrite1hTokens: z.number()
 })
 
 type QuotaRecord = Awaited<ReturnType<typeof loadQuotas>>[number]
@@ -499,7 +503,8 @@ async function loadSpendBuckets(
            SUM(r."inputTokens")::double precision AS "inputTokens",
            SUM(r."outputTokens")::double precision AS "outputTokens",
            SUM(r."cacheReadTokens")::double precision AS "cacheReadTokens",
-           SUM(r."cacheWriteTokens")::double precision AS "cacheWriteTokens"
+           SUM(r."cacheWriteTokens")::double precision AS "cacheWriteTokens",
+           SUM(r."cacheWrite1hTokens")::double precision AS "cacheWrite1hTokens"
     FROM "RequestLog" r
     JOIN (VALUES
             (${windows[0].label}, ${windows[0].from}::timestamptz, ${windows[0].to}::timestamptz),
@@ -546,6 +551,7 @@ export async function getOverview(windowHours: number): Promise<OverviewResponse
           outputTokens: true,
           cacheReadTokens: true,
           cacheWriteTokens: true,
+          cacheWrite1hTokens: true,
           totalInputTokens: true,
           createdAt: true
         },

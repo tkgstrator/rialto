@@ -18,12 +18,13 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { HTTPException } from 'hono/http-exception'
+import dayjs from '../../../src/lib/dayjs'
 import {
   type OAuthRefreshResult,
   OAuthTransformer,
   type OauthCredentials
 } from '../../../src/llms/transformers/oauth-base'
-import type { RuntimeProvider } from '../../../src/schemas/domain/pipeline'
+import type { RuntimeProvider, TransformerContext } from '../../../src/schemas/domain/pipeline'
 
 // Spy that records every call so tests can assert the refresh writeback
 // fired (or didn't).
@@ -54,8 +55,14 @@ class TestTransformer extends OAuthTransformer {
     return this.refreshResult
   }
 
-  resolveAuth(provider: unknown): Promise<OauthCredentials> {
-    return this.resolveSubscriptionAuth(provider as RuntimeProvider | null | undefined)
+  resolveAuth(provider: unknown, context?: TransformerContext): Promise<OauthCredentials> {
+    return this.resolveSubscriptionAuth(
+      provider as RuntimeProvider | null | undefined,
+      undefined,
+      undefined,
+      undefined,
+      context
+    )
   }
 }
 
@@ -240,5 +247,36 @@ describe('OAuthTransformer.resolveSubscriptionAuth — refresh path', () => {
     expect(r2.token).toBe('shared-fresh')
     expect(t.refreshCalls).toHaveLength(1) // dedup'd
     expect(updateMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * The attempt learns which account it runs on. `context.req` is the
+ * request the usage capture reads after the upstream call and the 429
+ * path reads to know which account to rotate away from, so the account
+ * is stamped there on every way of resolving one.
+ */
+describe('OAuthTransformer.resolveSubscriptionAuth — stamps the serving account', () => {
+  const farFuture = () => dayjs().add(1, 'hour').toISOString()
+
+  test('the resolved account lands on context.req', async () => {
+    const t = new TestTransformer()
+    const context: TransformerContext = { req: { headers: {}, body: {}, url: '/v1/messages', isSubagent: false } }
+    await t.resolveAuth(makeProvider({ subAccountId: 'sa-9', accessToken: 'token-9', expiresAt: farFuture() }), context)
+    expect(context.req?.subAccountId).toBe('sa-9')
+  })
+
+  test('a probe context without a request is left as it is', async () => {
+    const t = new TestTransformer()
+    const context: TransformerContext = {}
+    await t.resolveAuth(makeProvider({ subAccountId: 'sa-9', accessToken: 'token-9', expiresAt: farFuture() }), context)
+    expect(context).toEqual({})
+  })
+
+  test('nothing is stamped when no account resolves', async () => {
+    const t = new TestTransformer()
+    const context: TransformerContext = { req: { headers: {}, body: {}, url: '/v1/messages', isSubagent: false } }
+    await expect(t.resolveAuth(makeProvider(undefined), context)).rejects.toBeInstanceOf(HTTPException)
+    expect(context.req?.subAccountId).toBeUndefined()
   })
 })
