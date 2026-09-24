@@ -16,7 +16,7 @@ WORKDIR /app
 # Order matters: prisma.config.ts + src/prisma/schema.prisma must be in
 # place before `bun install` (package.json postinstall runs
 # `prisma generate`).
-COPY package.json bun.lock ./
+COPY package.json bun.lock bunfig.toml ./
 COPY tsconfig.json tsconfig.base.json tsconfig.runtime.json biome.json ./
 COPY index.html vite.config.mts prisma.config.ts ./
 COPY scripts ./scripts
@@ -24,7 +24,15 @@ COPY src ./src
 
 # Retry once: bun's tarball extraction (large @electric-sql/pglite, pulled
 # via prisma → @prisma/dev) is intermittently flaky under QEMU arm64.
-RUN bun install --frozen-lockfile || bun install --frozen-lockfile
+#
+# The devDependencies include @qtmleap packages from GitHub Packages, which
+# wants a token even to read (bunfig.toml). It comes in as a build secret,
+# so no layer of the image holds it:
+#   docker build --secret id=gh_packages_token,env=GH_PACKAGES_TOKEN .
+# The runtime stage installs production dependencies only and needs none.
+RUN --mount=type=secret,id=gh_packages_token \
+    export GH_PACKAGES_TOKEN="$(cat /run/secrets/gh_packages_token 2>/dev/null)"; \
+    bun install --frozen-lockfile || bun install --frozen-lockfile
 RUN bunx prisma generate
 RUN bun run build
 

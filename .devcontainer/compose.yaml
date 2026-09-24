@@ -49,10 +49,46 @@ services:
       retries: 5
       start_period: 10s
 
+  # The Mock Diff Viewer (github.com/qtmleap/mock-diff-viewer): the mocks
+  # against their implementations. Opened at http://localhost:16175/mock-diff/
+  # — the dev server relays that path to it (@qtmleap/vite-plugin-mock-diff in
+  # vite.config.mts), so there is no second port to forward.
+  #
+  # It shares the app container's network. That makes localhost the same place
+  # for the viewer, the dev server and the forwarded browser, which is what
+  # mocks/mock-diff.yaml is written against, and it means the viewer's captures
+  # of the running app come from a loopback address: /api/* on the dev server
+  # only answers requests made on the machine itself (src/api/local-access.ts).
+  #
+  # The workspace is only what the mocks load: mocks/ (writable, the viewer
+  # records the chosen design in mocks/mock-diff.adopted.yaml) and node_modules/
+  # for their fonts and icons. Not the repo root: the viewer serves its
+  # workspace over HTTP, and the repo root holds local secrets.
+  #
+  # The image is private: `docker login ghcr.io` on the host before the
+  # devcontainer is built, with a token that has read:packages.
+  mock-diff:
+    image: ghcr.io/qtmleap/mock-diff-viewer:0.3.2
+    network_mode: service:app
+    depends_on:
+      - app
+    init: true
+    environment:
+      # The plugin's default target, and the mock-diff MCP server's default URL.
+      PORT: "12355"
+      MOCK_DIFF_CONFIG: /workspace/mocks/mock-diff.yaml
+      MOCK_DIFF_ADOPTED: /workspace/mocks/mock-diff.adopted.yaml
+    volumes:
+      - ../mocks:/workspace/mocks
+      - node_modules:/workspace/node_modules:ro
+      - mock_diff_data:/data
+
 volumes:
   node_modules:
     driver: local
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  mock_diff_data:
     driver: local

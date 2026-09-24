@@ -61,6 +61,11 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # For the builder's `bun install`: @qtmleap packages come from
+          # GitHub Packages (bunfig.toml). A secret mount, not a build arg,
+          # so the token stays out of the image.
+          secrets: |
+            gh_packages_token=${{ secrets.GH_PACKAGES_TOKEN }}
 
       - name: Image digest
         run: echo ${{ steps.meta.outputs.digest }}

@@ -1,4 +1,15 @@
 version: 2
+
+# @qtmleap packages (the Mock Diff Viewer's Vite plugin) live on GitHub
+# Packages, which needs a token even to read. GH_PACKAGES_TOKEN here is the
+# Dependabot secret, which is separate from the Actions secret of the same
+# name.
+registries:
+  github-packages:
+    type: npm-registry
+    url: https://npm.pkg.github.com
+    token: ${{ secrets.GH_PACKAGES_TOKEN }}
+
 updates:
   # GitHub Actions used in .github/workflows
   - package-ecosystem: github-actions
@@ -14,6 +25,8 @@ updates:
   - package-ecosystem: npm
     directory: /
     target-branch: develop
+    registries:
+      - github-packages
     schedule:
       interval: weekly
     groups:

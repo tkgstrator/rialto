@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
 import devServer from '@hono/vite-dev-server'
+import mockDiff from '@qtmleap/vite-plugin-mock-diff'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
@@ -22,6 +23,15 @@ export default defineConfig({
     dedupe: ['react', 'react-dom']
   },
   plugins: [
+    // The Mock Diff Viewer (the `mock-diff` sidecar in
+    // .devcontainer/compose.yaml) at /mock-diff/ on this dev server, so the
+    // mocks and their implementations are compared on the port already
+    // forwarded. Serve-only; a build never sees it. First, before the Hono
+    // dev server, as the plugin asks: a plugin that answers every request
+    // itself would otherwise shadow the relay. The sidecar shares the app
+    // container's network, so the plugin's default target, localhost:12355,
+    // is the sidecar.
+    mockDiff(),
     react(),
     tailwindcss(),
     viteSingleFile(),

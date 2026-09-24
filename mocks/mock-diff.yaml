@@ -1,0 +1,746 @@
+# Generated from mocks/mocks.json by `bun run mocks:config`. Edit that, then regenerate.
+screens:
+  - id: overview
+    category: Top level
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/overview.html
+        actual:
+          type: url
+          url: http://localhost:16175/overview
+  - id: routing
+    category: Routing
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/routing.html
+        actual:
+          type: url
+          url: http://localhost:16175/routing
+  - id: routing-passthrough
+    category: Routing
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/routing-passthrough.html
+        actual:
+          type: url
+          url: http://localhost:16175/routing?surface=openai-responses
+  - id: routing-edit
+    category: Routing
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/routing.html?edit
+  - id: routing-add-provider
+    category: Routing
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/routing.html?edit&add
+  - id: routing-add-tier
+    category: Routing
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/routing.html?edit&add=tier
+  - id: providers
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/providers.html
+        actual:
+          type: url
+          url: http://localhost:16175/providers/subscriptions
+  - id: providers-keys
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/providers-keys.html
+        actual:
+          type: url
+          url: http://localhost:16175/providers/api-keys
+  - id: provider-subscription
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/provider-subscription.html
+        actual:
+          type: url
+          url: http://localhost:16175/providers/claude-code
+  - id: provider-subscription-codex
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/provider-subscription.html?codex
+  - id: provider-subscription-codex-reset
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/provider-subscription.html?codex&reset
+  - id: provider-subscription-edit
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/provider-subscription.html?edit
+  - id: provider-apikey-edit
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/provider-apikey.html?edit
+  - id: provider-apikey-remove
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/provider-apikey.html?remove
+  - id: provider-apikey
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/provider-apikey.html
+        actual:
+          type: url
+          url: http://localhost:16175/providers/openai
+  - id: providers-connect
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/providers-connect.html
+        actual:
+          type: url
+          url: http://localhost:16175/providers/connect
+  - id: providers-connect-device
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/providers-connect.html?device
+  - id: providers-connect-codex-failed
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/providers-connect.html?codex-failed
+  - id: providers-connect-models
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/providers-connect-models.html
+  - id: access-tokens
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/access-tokens.html
+        actual:
+          type: url
+          url: http://localhost:16175/access-tokens
+  - id: access-token
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/access-token.html
+        actual:
+          type: url
+          url: http://localhost:16175/access-tokens/demo-token-00002
+  - id: access-token-issue
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/access-token-issue.html
+  - id: access-token-issued
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/access-token-issued.html
+  - id: activity
+    category: Activity
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/activity.html
+        actual:
+          type: url
+          url: http://localhost:16175/activity
+  - id: activity-requests
+    category: Activity
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/activity-requests.html
+        actual:
+          type: url
+          url: http://localhost:16175/activity/requests
+  - id: activity-usage
+    category: Activity
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/activity-usage.html
+        actual:
+          type: url
+          url: http://localhost:16175/activity/usage
+  - id: activity-session
+    category: Activity
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/activity-session.html
+  - id: activity-session-conversation
+    category: Activity
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/activity-session.html?tab=conversation
+  - id: activity-logs
+    category: Activity
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/activity-logs.html
+        actual:
+          type: url
+          url: http://localhost:16175/activity/logs
+  - id: settings
+    category: Settings
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/settings.html
+        actual:
+          type: url
+          url: http://localhost:16175/settings
+  - id: settings-access
+    category: Settings
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/settings-access.html
+        actual:
+          type: url
+          url: http://localhost:16175/settings/access
+  - id: settings-access-edit
+    category: Settings
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/settings-access.html?edit
+  - id: settings-access-turnoff
+    category: Settings
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/settings-access.html?turnoff
+  - id: settings-logging
+    category: Settings
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/settings-logging.html
+        actual:
+          type: url
+          url: http://localhost:16175/settings/logging
+  - id: settings-personas
+    category: Settings
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/settings-personas.html
+        actual:
+          type: url
+          url: http://localhost:16175/settings/personas
+  - id: settings-statusline
+    category: Settings
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/settings-statusline.html
+        actual:
+          type: url
+          url: http://localhost:16175/settings/statusline
+  - id: settings-advanced
+    category: Settings
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/settings-advanced.html
+        actual:
+          type: url
+          url: http://localhost:16175/settings/advanced
+  - id: settings-advanced-health
+    category: Settings
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/settings-advanced-health.html
+        actual:
+          type: url
+          url: http://localhost:16175/settings/advanced?tab=health
+  - id: nav-accordion
+    category: Navigation
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/nav-accordion.html
+  - id: nav-drilldown
+    category: Navigation
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/nav-drilldown.html
+  - id: nav-tree
+    category: Navigation
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/nav-tree.html
+  - id: nav-cloudflare
+    category: Navigation
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/nav-cloudflare.html
+  - id: nav-collapsed
+    category: Navigation
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/nav-collapsed.html
+  - id: setup
+    category: System
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/setup.html
+        actual:
+          type: url
+          url: http://localhost:16175/setup
+  - id: system-states
+    category: System
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/system-states.html
+        actual:
+          type: url
+          url: http://localhost:16175/access-denied

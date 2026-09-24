@@ -5,6 +5,12 @@ on:
   push:
     branches: [main, develop, master]
 
+# Every `bun install` reads @qtmleap packages from GitHub Packages, which
+# needs a token even to read (bunfig.toml). Dependabot's PRs get it from the
+# Dependabot secret of the same name, not this one.
+env:
+  GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+
 jobs:
   commitlint:
     name: Commit Lint
