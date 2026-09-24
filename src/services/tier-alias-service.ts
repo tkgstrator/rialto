@@ -38,10 +38,13 @@ export interface TierAliasRow {
   candidates: AliasCandidate[]
 }
 
-// A model's tier as its name says it. Null for a name that says no
-// family — such a model is never offered as a candidate, but can still be
-// aliased by hand, which is how a Codex or OpenAI provider gets one.
-const modelTierOf = (model: { name: string }): ModelTier | null => {
+// A model's tier: the manual one when an operator set it, else what the
+// name says. Null for a name that says no family.
+const modelTierOf = (model: { name: string; manualTier: string | null }): ModelTier | null => {
+  if (model.manualTier !== null) {
+    const manual = ModelTierSchema.safeParse(model.manualTier)
+    if (manual.success) return manual.data
+  }
   const inferred = tierOf(model.name)
   return inferred === undefined ? null : inferred
 }
@@ -52,7 +55,7 @@ export async function listTierAliases(prisma: PrismaClient = getPrismaClient()):
     orderBy: { name: 'asc' },
     select: {
       name: true,
-      models: { select: { id: true, name: true, enabled: true, createdAt: true } },
+      models: { select: { id: true, name: true, manualTier: true, enabled: true, createdAt: true } },
       tierAliases: { select: { tier: true, modelId: true, updatedAt: true } }
     }
   })
