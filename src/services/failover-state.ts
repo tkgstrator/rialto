@@ -37,6 +37,7 @@ const createExhaustionMap = (): {
   is: (key: string) => boolean
   until: (key: string) => number | null
   clear: (key: string) => void
+  liveKeys: () => string[]
 } => {
   const map = new Map<string, number>()
   const is = (key: string): boolean => {
@@ -64,7 +65,10 @@ const createExhaustionMap = (): {
     },
     clear: (key) => {
       map.delete(key)
-    }
+    },
+    // Every key still inside its window, evicting the expired ones on the
+    // way — the same answer `is` would give for each.
+    liveKeys: () => [...map.keys()].filter(is)
   }
 }
 
@@ -138,6 +142,19 @@ export const exhaustedUntil = (providerName: string, modelName: string): number 
     (d): d is number => d !== null
   )
   return deadlines.length === 0 ? null : Math.max(...deadlines)
+}
+
+// The models on this provider that currently carry their own mark. A
+// fresh usage reading clears these one model at a time, against the
+// windows that bind for that model: a provider-wide sweep would release
+// Fable while its own weekly window is still spent, and the next Fable
+// request would walk straight back into the 429.
+export const modelMarksFor = (providerName: string): string[] => {
+  const prefix = modelKey(providerName, '')
+  return modelMap
+    .liveKeys()
+    .filter((key) => key.startsWith(prefix))
+    .map((key) => key.slice(prefix.length))
 }
 
 // ─── Long-context (context-1m) entitlement ─────────────────────────────
