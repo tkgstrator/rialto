@@ -2,7 +2,7 @@
  * Aggregations for the Overview screen.
  *
  * One query pass over a bounded window of `RequestLog`, plus the current
- * quota snapshot and the recent scheduler weight changes. Everything the
+ * quota snapshot and the recent failover events. Everything the
  * screen shows comes from here so the page makes a single request instead
  * of fanning out to five endpoints and stitching them client-side.
  */
@@ -70,47 +70,25 @@ export interface QuotaRow {
  * One entry in the failover feed, carried as fields rather than as a
  * finished sentence.
  *
- * The server used to compose the prose here (`"<account> rate limited"`,
- * `` `reason: ${reason}` ``), which put untranslated English on the
- * landing page of a JA install and printed the scheduler's own slug at
- * the operator. `RoutingWeightChange.reason` is documented in the schema
- * as "machine slug, i18n-able on the UI side" — this is the shape that
- * lets the UI honour that.
+ * The server used to compose the prose here (`"<account> rate limited"`),
+ * which put untranslated English on the landing page of a JA install.
+ *
+ * Two kinds, both something an operator acts on: an account refused with
+ * a 429, and an account whose credential no longer authenticates. The
+ * scheduler-weight moves this feed used to lead with went with the
+ * weights: routing reads a route's quota directly, so there is no number
+ * drifting between 1.00 and 0.60 to report.
  */
 export interface FailoverRow {
-  kind: 'rate_limit' | 'weight'
+  kind: 'rate_limit' | 'auth'
   tone: 'bad' | 'warn' | 'mute'
   at: string
+  account: string
   // rate_limit
-  account: string | null
   status: number | null
   retryAfterSec: number | null
-  // weight
-  target: string | null
-  fromWeight: number | null
-  toWeight: number | null
-  reason: string | null
-}
-
-/**
- * How much of a concern a weight move is.
- *
- * `ok` never reaches the feed: the scheduler emits it on every routine
- * recompute, so six of them buried the 429s that the panel exists to
- * surface. The rest are graded rather than all amber, because "the
- * window resets soon" is information and "the error rate rose" is not
- * the same news.
- */
-const WEIGHT_TONE: Record<string, 'warn' | 'mute'> = {
-  quota_drop: 'warn',
-  error_rate: 'warn',
-  stale_quota: 'warn',
-  unknown_budget: 'warn',
-  no_quota_kind: 'warn',
-  hold_guard: 'mute',
-  probe_floor: 'mute',
-  reset_soon: 'mute',
-  quota_recovered: 'mute'
+  // auth: the probe's own failure reason, shown as the upstream said it
+  error: string | null
 }
 
 export interface RecentSessionRow {
@@ -234,7 +212,12 @@ const SpendBucketSchema = z.object({
 })
 
 type QuotaRecord = Awaited<ReturnType<typeof loadQuotas>>[number]
-type WeightChange = { target: string; fromWeight: number; toWeight: number; reason: string; createdAt: Date }
+type RejectedAccount = {
+  label: string
+  authCheckedAt: Date | null
+  authError: string | null
+  provider: { name: string }
+}
 
 // Group by an arbitrary key while preserving first-seen order, which the
 // callers rely on: `windowLogs` arrives newest-first, so the first entry
@@ -425,7 +408,7 @@ function buildQuota(quotas: QuotaRecord[], usage: Map<string, AccountUsage>): Qu
   return out
 }
 
-function buildFailover(quotas: QuotaRecord[], weightChanges: WeightChange[]): FailoverRow[] {
+function buildFailover(quotas: QuotaRecord[], rejected: RejectedAccount[]): FailoverRow[] {
   const rateLimited = quotas
     .filter((q) => q.lastRateLimitedAt !== null)
     .map(
@@ -436,31 +419,23 @@ function buildFailover(quotas: QuotaRecord[], weightChanges: WeightChange[]): Fa
         account: accountLabel(q),
         status: q.lastRateLimitStatus,
         retryAfterSec: q.lastRetryAfterSec,
-        target: null,
-        fromWeight: null,
-        toWeight: null,
-        reason: null
+        error: null
       })
     )
 
-  const weights = weightChanges
-    .filter((w) => w.reason !== 'ok')
-    .map(
-      (w): FailoverRow => ({
-        kind: 'weight',
-        tone: WEIGHT_TONE[w.reason] === undefined ? 'warn' : WEIGHT_TONE[w.reason],
-        at: w.createdAt.toISOString(),
-        account: null,
-        status: null,
-        retryAfterSec: null,
-        target: w.target,
-        fromWeight: w.fromWeight,
-        toWeight: w.toWeight,
-        reason: w.reason
-      })
-    )
+  const unauthenticated = rejected.map(
+    (a): FailoverRow => ({
+      kind: 'auth',
+      tone: 'bad',
+      at: a.authCheckedAt === null ? '' : a.authCheckedAt.toISOString(),
+      account: a.label !== '' ? a.label : a.provider.name,
+      status: null,
+      retryAfterSec: null,
+      error: a.authError
+    })
+  )
 
-  return [...rateLimited, ...weights].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 6)
+  return [...rateLimited, ...unauthenticated].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 6)
 }
 
 function buildRecentSessions(windowLogs: WindowLog[], priceMap: Map<string, PriceEntry>): RecentSessionRow[] {
@@ -551,7 +526,7 @@ export async function getOverview(windowHours: number): Promise<OverviewResponse
   // period before it, and the month tile's predecessor reaches back 60.
   const windows = spendWindows(dayjs())
 
-  const [surfaceConfigs, providerCount, enabledModelCount, windowLogs, spendBuckets, quotas, weightChanges] =
+  const [surfaceConfigs, providerCount, enabledModelCount, windowLogs, spendBuckets, quotas, rejected] =
     await Promise.all([
       listSurfaces(),
       prisma.provider.count(),
@@ -577,7 +552,14 @@ export async function getOverview(windowHours: number): Promise<OverviewResponse
       }),
       loadSpendBuckets(windows),
       loadQuotas(),
-      prisma.routingWeightChange.findMany({ orderBy: { createdAt: 'desc' }, take: 6 })
+      // Switched-off providers are left out: a credential nobody routes
+      // through is not a failover event.
+      prisma.subAccount.findMany({
+        where: { authStatus: 'invalid', provider: { enabled: true } },
+        orderBy: { authCheckedAt: 'desc' },
+        take: 6,
+        select: { label: true, authCheckedAt: true, authError: true, provider: { select: { name: true } } }
+      })
     ])
 
   const priceMap = await buildPriceMap(prisma, [...new Set(spendBuckets.map((b) => priceKey(b.provider, b.model)))])
@@ -604,7 +586,7 @@ export async function getOverview(windowHours: number): Promise<OverviewResponse
     surfaces: buildSurfaces(surfaceConfigs, windowLogs),
     spend: buildSpend(spendBuckets, priceMap),
     quota: buildQuota(quotas, usage),
-    failover: buildFailover(quotas, weightChanges),
+    failover: buildFailover(quotas, rejected),
     recentSessions: buildRecentSessions(windowLogs, priceMap)
   }
 }

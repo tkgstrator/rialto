@@ -4,17 +4,20 @@ import type {
   IdentityResponse,
   InboundSurfaceWire,
   InboundType,
+  ModelTier,
   OverviewResponse,
   RequestLogItem,
   ResetCreditsResponse,
-  RouterPreferenceProfileWire,
-  RouterPreferencesApplyResponse,
-  RouterUtilizationResponse,
   RoutingMode,
   RoutingSchedulerStateResponse,
   SessionMessageItem,
   SessionSummary,
   SurfaceId,
+  TierAliasWire,
+  TierProfileSaveOutcome,
+  TierProfileSummaryWire,
+  TierProfileViewWire,
+  TierProfileWriteWire,
   UpdateCheckResponse,
   UseResetResponse
 } from '@/lib/api-types'
@@ -172,15 +175,36 @@ class ApiClient {
     return this.post<{ archived: number }>('/request-logs/sessions/archive', {})
   }
 
-  // Router preferences (Phase 6). The singleton preference chain that
-  // the quota-aware router walks. GET is empty on a fresh DB, PUT
-  // replaces the whole chain atomically.
-  async getRouterPreferences(): Promise<RouterPreferenceProfileWire> {
-    return this.get<RouterPreferenceProfileWire>('/router-preferences')
+  // ─── Tier map ────────────────────────────────────────────────────────
+  // A profile's routes per requested tier, each resolved through its
+  // provider's alias on read. PUT replaces the whole profile.
+  async getTierProfiles(): Promise<TierProfileSummaryWire[]> {
+    return this.get<TierProfileSummaryWire[]>('/routing/profiles')
   }
 
-  async putRouterPreferences(profile: RouterPreferenceProfileWire): Promise<RouterPreferencesApplyResponse> {
-    return this.put<RouterPreferencesApplyResponse>('/router-preferences', profile)
+  async getTierProfile(key: string): Promise<TierProfileViewWire> {
+    return this.get<TierProfileViewWire>(`/routing/profiles/${encodeURIComponent(key)}`)
+  }
+
+  async putTierProfile(key: string, profile: TierProfileWriteWire): Promise<TierProfileSaveOutcome> {
+    return this.put<TierProfileSaveOutcome>(`/routing/profiles/${encodeURIComponent(key)}`, profile)
+  }
+
+  // ─── Provider tier aliases ───────────────────────────────────────────
+  async getTierAliases(): Promise<TierAliasWire[]> {
+    return this.get<TierAliasWire[]>('/tier-aliases')
+  }
+
+  // Point the provider's tier at a model — "promote". Switches the model
+  // on as well.
+  async setTierAlias(provider: string, tier: ModelTier, model: string): Promise<{ enabledModel: boolean }> {
+    return this.put<{ enabledModel: boolean }>(`/providers/${encodeURIComponent(provider)}/tier-aliases/${tier}`, {
+      model
+    })
+  }
+
+  async clearTierAlias(provider: string, tier: ModelTier): Promise<void> {
+    await this.apiFetch<void>(`/providers/${encodeURIComponent(provider)}/tier-aliases/${tier}`, { method: 'DELETE' })
   }
 
   // Router scheduler snapshot (Phase 5). Read-only. Cold-boot returns
@@ -202,22 +226,9 @@ class ApiClient {
     return this.get<RoutingSchedulerStateResponse>('/routing-scheduler-state')
   }
 
-  // Set a per-model manual tier override (Tier Editor). Send null to
-  // clear and fall back to name inference. Reuses PATCH
-  // /api/providers/{name}/models/{model}.
-  async setModelTier(
-    providerName: string,
-    modelName: string,
-    manualTier: 'fable' | 'opus' | 'sonnet' | 'haiku' | null
-  ): Promise<{ success: boolean }> {
-    return this.apiFetch<{ success: boolean }>(
-      `/providers/${encodeURIComponent(providerName)}/models/${encodeURIComponent(modelName)}`,
-      { method: 'PATCH', body: JSON.stringify({ manualTier }) }
-    )
-  }
-
   // Set a per-model reasoning-effort override. Send null to clear and
-  // fall back to the vendor default. Reuses the same PATCH endpoint.
+  // fall back to the vendor default. Reuses PATCH
+  // /api/providers/{name}/models/{model}.
   async setModelReasoningEffort(
     providerName: string,
     modelName: string,
@@ -227,15 +238,6 @@ class ApiClient {
       `/providers/${encodeURIComponent(providerName)}/models/${encodeURIComponent(modelName)}`,
       { method: 'PATCH', body: JSON.stringify({ reasoningEffort }) }
     )
-  }
-
-  // Router utilization dashboard (Phase 7). Aggregations over the
-  // requested window in hours (default 24).
-  async getRouterUtilization(params?: { windowHours?: number }): Promise<RouterUtilizationResponse> {
-    const q = new URLSearchParams()
-    if (params?.windowHours != null) q.set('windowHours', String(params.windowHours))
-    const qs = q.toString()
-    return this.get<RouterUtilizationResponse>(`/router-utilization${qs ? `?${qs}` : ''}`)
   }
 
   // Overview screen. One call for the whole summary so its blocks all

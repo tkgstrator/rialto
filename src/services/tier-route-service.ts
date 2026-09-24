@@ -5,10 +5,9 @@
  * Profiles are the same `RouterPreferenceProfile` rows the chain used —
  * a surface's `profileKey` and an access token's `profileKey` keep
  * pointing at them — and the constraints live in the same JSONB column.
- * Until the request path switches over, the old chain reads that column
- * too, so a save here merges its four knobs into the blob rather than
- * replacing it: replacing would reset every knob this map does not carry
- * to its default under the router that is still running.
+ * A save merges its four knobs into that blob rather than replacing it,
+ * so a rollback to the build before the tier map still finds the chain's
+ * own knobs where it left them.
  */
 
 import { getPrismaClient } from '../db/client'
@@ -25,8 +24,24 @@ import {
   TierRoutesSchema
 } from '../schemas/domain/tier-route'
 import { hostsWebSearch } from '../shared/transformer-chain'
-import { DEFAULT_PROFILE_KEY, PASSTHROUGH_PROFILE_KEY } from './router-preference-service'
 import { aliasKey, resolveTierAliases } from './tier-alias-service'
+
+/**
+ * The profile every surface uses until it is pointed somewhere else.
+ * `RouterPreferenceProfile.key` keys several profiles; this one always
+ * exists (the seed creates it) and is what an unconfigured surface reads.
+ */
+export const DEFAULT_PROFILE_KEY = 'live'
+
+/**
+ * Reserved key meaning "do not route this traffic at all".
+ *
+ * Routing mode is otherwise a property of the inbound surface, which makes
+ * it all-or-nothing for everyone on that endpoint. A client that names its
+ * own targets — a script, a CI runner — is opted out by pointing its access
+ * token at this key. It is never a stored map; saving one is refused.
+ */
+export const PASSTHROUGH_PROFILE_KEY = 'passthrough'
 
 const emptyRoutes = (): Record<RouteTier, TierRoute[]> => ({ fable: [], opus: [], sonnet: [], haiku: [], other: [] })
 
@@ -186,11 +201,13 @@ export async function listTierProfiles(prisma: PrismaClient = getPrismaClient())
       updatedAt: r.updatedAt.toISOString(),
       kind: 'map' as const
     }))
-  const withDefault = listed.some((p) => p.key === DEFAULT_PROFILE_KEY)
-    ? listed
-    : [{ key: DEFAULT_PROFILE_KEY, routeCount: 0, updatedAt: null, kind: 'map' as const }, ...listed]
+  // The default leads whether or not it has a row yet; the rest follow by
+  // key. Sorting it in with the others put `cost-first` above `live`.
+  const stored = listed.find((p) => p.key === DEFAULT_PROFILE_KEY)
+  const others = listed.filter((p) => p.key !== DEFAULT_PROFILE_KEY)
   return [
-    ...withDefault,
+    stored === undefined ? { key: DEFAULT_PROFILE_KEY, routeCount: 0, updatedAt: null, kind: 'map' as const } : stored,
+    ...others,
     { key: PASSTHROUGH_PROFILE_KEY, routeCount: 0, updatedAt: null, kind: 'passthrough' as const }
   ]
 }

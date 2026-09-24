@@ -43,8 +43,8 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `configEnvelopeSchema.test.ts` | `ConfigEnvelopeSchema` の受理／拒否（特に `API_TIMEOUT_MS` の coercion） |
 | `config-salvage.test.ts` | 壊れた `config.json` から `Personas` を救い出す経路（`APIKEY` はもう救わない）と、資格情報を決して生成しないこと |
 | `cloudflare-access.test.ts` | Access assertion の検証（署名 + audience） |
-| `chain-target-state.test.ts` | Routing 画面のチェーン行で、スケジューラが測れなかった target（api_key など）の重みをどう見せるか |
-| `routing-constraints.test.ts` | Routing 画面の制約セル。未保存の blob がスキーマのデフォルトとして読めること、編集が画面に出ていないキー（`longContextThreshold` など）を残してマージされること、デフォルトと同じ値の書き込みを変更扱いしないこと、Quota skip が 0〜100 の整数だけ通ること |
+| `routing-constraints.test.ts` | Routing 画面の制約セル。各セルの編集が自分のノブだけを書き換えること、Error-rate skip はパーセントで編集し 0〜1 の比率で保存すること、パーセントは 0〜100 の整数・Min samples は非負整数だけ通ること |
+| `tier-map.test.ts` | Routing 画面のティアマップ。ドラフトが PUT の形だけを持ち手で戻した編集を変更扱いしないこと、ルートの解決先（読み込んだプロファイル → エイリアス一覧 → 保存待ち）、スケジューラの `targets` から State（ok / N% used / exhausted / alias unset / off）を出すこと、ティア代替の判定と並べ替え・重複・フッターの件数 |
 | `long-context-beta.test.ts` | `context-1m-*` beta ヘッダの取り回し |
 | `message-content.test.ts` | メッセージ本文の正規化 |
 | `models-build-rows.test.ts` | Providers 画面のモデル行の組み立て |
@@ -106,8 +106,8 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `route-scenario-chain.test.ts` | `routeScenario` の通し契約。chain に primary があれば `body.model` と fallbacks が置き換わる／空レーン・全ゲート落ち（`exhaustedBehavior` の両値）・chain 読込失敗・例外では呼び出し側の `body.model` が触られない／`exhaustedBehavior='429'` は Retry-After を stamp して書き換えない／無効な target は primary にも fallback にもならない／token の `passthrough` profile と passthrough 面は chain を飛ばす |
 | `chain-fixture.ts` | 上記と parity テストが DB 無しで chain を seed するための fixture（`__setPreferencesForTests` に渡す profile を組む） |
 | `chain-scenario-gate.test.ts` | 分類がレーンの entry 有無で gate されること、`chainRoutingOf` の射影（全 OFF のレーンは未設定扱い、先頭 entry の window、constraint の threshold）、`effectiveLongContextThreshold` の解決順（constraint → window × 0.7 → 128k） |
-| `scenario-router.test.ts` | `candidateUsable` / `applyProactiveFailover`（枯渇マーク・capability ゲート）/ `isHeavyRequest` / `classifyRequest` の effort・tier・thinking 分岐 |
-| `openai-surface-signals.test.ts` | OpenAI 形のリクエストから routing signal（thinking / tools / トークン数）を読むこと |
+| `scenario-router.test.ts` | `requestedTierOf`（モデル名 → tier、どの Claude 系でもなければ `other`）/ `subscriptionKindOf` / subagent タグが記録・除去されるだけでレーンを選ばないこと |
+| `openai-surface-signals.test.ts` | OpenAI 形のリクエストから routing signal（トークン数 / web search）を読むこと |
 | `subagent-tag.test.ts` | タグの**有無**でレーンが決まること、タグが in-place で除去されること、旧綴りも受理されること |
 | `tokenizers/tool-result-image.test.ts` | `tool_result` に入れ子になった image が base64 長ではなくテキスト分として数えられること（tiktoken / huggingface 両方） |
 | `provider-registry-chain.test.ts` | `apiStyle` + `authMode` からの chain 導出と、chain 無しプロバイダの登録拒否 |

@@ -169,7 +169,7 @@ export function resolveInvocationForModel(
     url: plan.path + plan.search,
     provider: providerName,
     model,
-    scenarioType: plan.scenarioType,
+    route: plan.route,
     requestedModel: plan.requestedModel,
     isSubagent: plan.isSubagent,
     inboundType: inboundTypeForPath(plan.path),

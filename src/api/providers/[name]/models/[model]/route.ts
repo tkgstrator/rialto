@@ -4,7 +4,7 @@ import {
   UpdateModelErrorResponseSchema,
   UpdateModelSuccessResponseSchema
 } from '../../../../../schemas/api/models'
-import { setModelEnabled, setModelManualTier, setModelReasoningEffort } from '../../../../../services/config'
+import { setModelEnabled, setModelReasoningEffort } from '../../../../../services/config'
 import { ValidationErrorResponseSchema, validationErrorHook } from '../../../../zod-response'
 
 export const providerModelRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
@@ -49,9 +49,6 @@ providerModelRoute.openapi(updateModelRoute, async (c) => {
   try {
     if (body.enabled !== undefined) {
       await setModelEnabled(name, model, body.enabled)
-    }
-    if (body.manualTier !== undefined) {
-      await setModelManualTier(name, model, body.manualTier)
     }
     if (body.reasoningEffort !== undefined) {
       await setModelReasoningEffort(name, model, body.reasoningEffort)

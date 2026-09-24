@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 /**
  * Dev-only: fill an install with demo data so all five screens have
- * something to render — providers and models, routing chains, scheduler
- * weight history, subscription quota, access tokens, and a month of
- * traffic behind Activity and Overview.
+ * something to render — providers and models, tier aliases and tier maps,
+ * subscription quota, access tokens, and a month of traffic behind
+ * Activity and Overview.
  *
  * NOT wired into `prisma db seed`: running that in production must stay
  * side-effect free. Invoke explicitly:
@@ -16,8 +16,8 @@
  *
  *   - Rows in tables that also hold real data carry a `demo-` id, so a
  *     re-run replaces exactly its own output and `--clean` removes it.
- *   - Live configuration that cannot carry a marker (the `live`
- *     preference chain, surface routing modes, an account's quota) is
+ *   - Live configuration that cannot carry a marker (tier aliases, the
+ *     `live` tier map, surface routing modes, an account's quota) is
  *     written ONLY while still unset. Running this against a configured
  *     install adds traffic without re-pointing anything.
  */
@@ -27,7 +27,7 @@ import { getPrismaClient } from '../src/db/client'
 import { seedAccounts } from './seed-demo/accounts'
 import { cleanDemoRows } from './seed-demo/demo-rows'
 import { createRandom } from './seed-demo/random'
-import { buildChains, seedPreferences, seedSurfaceModes, seedWeightChanges } from './seed-demo/routing'
+import { seedSurfaceModes, seedTierMap } from './seed-demo/routing'
 import { resolveTargets } from './seed-demo/targets'
 import { seedAccessTokens } from './seed-demo/tokens'
 import { seedTraffic } from './seed-demo/traffic'
@@ -73,7 +73,7 @@ async function main(): Promise<void> {
     for (const [table, count] of Object.entries(removed)) {
       if (count > 0) line(table, count)
     }
-    console.error('\nThe `live` preference chain and surface modes are left as they are —')
+    console.error('\nTier aliases, the `live` tier map and surface modes are left as they are —')
     console.error('the seed only ever writes those while unset, so it has nothing of its own to take back.')
     await prisma.$disconnect()
     return
@@ -87,13 +87,11 @@ async function main(): Promise<void> {
     return
   }
 
-  const chains = buildChains(targets)
-  const preferences = await seedPreferences(prisma, targets)
-  const weights = await seedWeightChanges(prisma, targets, random, now)
+  const tierMap = await seedTierMap(prisma, targets)
   const surfaces = await seedSurfaceModes(prisma)
   const accounts = await seedAccounts(prisma, random, now)
   const accessTokenIds = await seedAccessTokens(prisma, random, now)
-  const traffic = await seedTraffic(prisma, chains, random, now, {
+  const traffic = await seedTraffic(prisma, tierMap.resolved, targets, random, now, {
     days: options.days,
     sessions: options.sessions,
     accessTokenIds
@@ -101,8 +99,8 @@ async function main(): Promise<void> {
 
   console.error(`demo data seeded (replaced ${removedTotal} rows from a previous run)\n`)
   line('routable targets', `${targets.length}${registeredVendors ? ' (fallback catalog registered)' : ''}`)
-  line('preference chains', `live: ${preferences.live}, ${preferences.demoProfile}: written`)
-  line('weight changes', weights)
+  line('tier aliases', `${tierMap.aliasesWritten} set`)
+  line('tier maps', `live: ${tierMap.live}, ${tierMap.demoProfile}: written`)
   line('surface modes', `${surfaces.updated.length} set, ${surfaces.skipped.length} left as configured`)
   line('subscription accounts', `${accounts.createdAccounts} created`)
   line('quota rows', `${accounts.createdQuotas} quota, ${accounts.createdUsageRows} per-metric`)
@@ -112,7 +110,7 @@ async function main(): Promise<void> {
   line('request logs', traffic.requestLogs)
   line('chat messages', traffic.messages)
 
-  for (const warning of preferences.warnings) console.error(`  warning: ${warning}`)
+  for (const warning of tierMap.warnings) console.error(`  warning: ${warning}`)
   console.error('\nOpen http://localhost:16175/ — Overview, Routing, Providers, Activity and Settings are populated.')
 
   await prisma.$disconnect()

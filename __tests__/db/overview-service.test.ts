@@ -253,4 +253,52 @@ describe.skipIf(!HAS_DB)('getOverview — what each account carried', () => {
     expect(row?.usage?.last30d.costUsd).toBeCloseTo(18, 6)
     expect(row?.usage?.valueRatio).toBeCloseTo(0.18, 6)
   })
+  test('the failover feed lists 429s and rejected credentials, newest first, and nothing about weights', async () => {
+    const prisma = getPrismaClient()
+    const on = await prisma.provider.create({
+      data: { name: 'claude-code', apiBaseUrl: 'https://api.anthropic.com', authMode: 'subscription' }
+    })
+    const off = await prisma.provider.create({
+      data: { name: 'codex', apiBaseUrl: 'https://chatgpt.com/backend-api', authMode: 'subscription', enabled: false }
+    })
+    const limited = await prisma.subAccount.create({
+      data: { providerId: on.id, sourcePath: 'oauth:test:limited', label: 'limited' }
+    })
+    await prisma.subAccountQuota.create({
+      data: {
+        subAccountId: limited.id,
+        lastRateLimitedAt: dayjs().subtract(2, 'hour').toDate(),
+        lastRateLimitStatus: 429,
+        lastRetryAfterSec: 660
+      }
+    })
+    await prisma.subAccount.create({
+      data: {
+        providerId: on.id,
+        sourcePath: 'oauth:test:revoked',
+        label: 'revoked',
+        authStatus: 'invalid',
+        authCheckedAt: dayjs().subtract(1, 'hour').toDate(),
+        authError: 'refresh token rejected'
+      }
+    })
+    // A credential nobody routes through is not a failover event.
+    await prisma.subAccount.create({
+      data: {
+        providerId: off.id,
+        sourcePath: 'oauth:test:parked',
+        label: 'parked',
+        authStatus: 'invalid',
+        authCheckedAt: dayjs().toDate()
+      }
+    })
+
+    const out = await getOverview(24)
+    expect(out.failover.map((f) => [f.kind, f.account])).toEqual([
+      ['auth', 'revoked'],
+      ['rate_limit', 'limited']
+    ])
+    expect(out.failover[0].error).toBe('refresh token rejected')
+    expect(out.failover[1].retryAfterSec).toBe(660)
+  })
 })

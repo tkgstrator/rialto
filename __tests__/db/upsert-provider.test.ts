@@ -19,8 +19,8 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import { getPrismaClient } from '../../src/db/client'
 import { applyUiConfig, deleteProviderByName, ensurePreferenceProfile, upsertProvider } from '../../src/services/config'
-import { applyRouterPreferences, loadRouterPreferences } from '../../src/services/router-preference-service'
-import { profileWith } from '../llms/chain-fixture'
+import { setTierAlias } from '../../src/services/tier-alias-service'
+import { loadTierProfile, saveTierProfile } from '../../src/services/tier-route-service'
 import { HAS_DB, resetDbTables, teardownPrisma } from './helpers'
 
 describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', () => {
@@ -152,7 +152,7 @@ describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', (
     expect(after?.subscriptionAccounts[0].sourcePath).toBe('oauth:claude:test-user')
   })
 
-  const seedTwoProvidersWithChain = async () => {
+  const seedTwoProvidersWithRoutes = async () => {
     await applyUiConfig({
       Providers: [
         {
@@ -171,20 +171,32 @@ describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', (
         }
       ]
     })
-    const outcome = await applyRouterPreferences(
-      profileWith({
-        'default.agent': ['anthropic,claude-sonnet-5', 'openai,gpt-5-nano'],
-        'think.subagent': ['anthropic,claude-sonnet-5']
-      })
-    )
+    await setTierAlias('anthropic', 'sonnet', 'claude-sonnet-5')
+    await setTierAlias('openai', 'haiku', 'gpt-5-nano')
+    const outcome = await saveTierProfile('live', {
+      routes: {
+        fable: [],
+        opus: [{ provider: 'anthropic', targetTier: 'sonnet', enabled: true }],
+        sonnet: [
+          { provider: 'anthropic', targetTier: 'sonnet', enabled: true },
+          { provider: 'openai', targetTier: 'haiku', enabled: true }
+        ],
+        haiku: [],
+        other: []
+      },
+      constraints: { exhaustedBehavior: '429', quotaSkipPct: 100, errorRateSkipPct: 0.5, minHealthSamples: 5 }
+    })
     expect(outcome.warnings).toEqual([])
   }
 
-  test("editing a provider does not remove chain entries naming another provider's models", async () => {
-    await seedTwoProvidersWithChain()
+  const sonnetRoutes = async (): Promise<string[]> =>
+    (await loadTierProfile('live')).routes.sonnet.map((r) => `${r.provider} · ${r.targetTier}`)
 
-    // Edit openai — the chain's default primary is anthropic and must
-    // survive because the CRUD path never touches sibling providers.
+  test('editing a provider does not remove routes naming another provider', async () => {
+    await seedTwoProvidersWithRoutes()
+
+    // Edit openai — the sonnet primary is anthropic and must survive
+    // because the CRUD path never touches sibling providers.
     const { warnings } = await upsertProvider({
       name: 'openai',
       api_base_url: 'https://api.openai.com/v1/chat/completions',
@@ -194,15 +206,11 @@ describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', (
     })
     expect(warnings).toEqual([])
 
-    const after = await loadRouterPreferences()
-    expect(after.entriesByScenario.default.agent.map((e) => e.target)).toEqual([
-      'anthropic,claude-sonnet-5',
-      'openai,gpt-5-nano'
-    ])
+    expect(await sonnetRoutes()).toEqual(['anthropic · sonnet', 'openai · haiku'])
   })
 
-  test('removing a model through the CRUD path reports the chain entries that cascade away', async () => {
-    await seedTwoProvidersWithChain()
+  test('removing a model through the CRUD path reports the tier alias it unsets', async () => {
+    await seedTwoProvidersWithRoutes()
     const { warnings } = await upsertProvider({
       name: 'openai',
       api_base_url: 'https://api.openai.com/v1/chat/completions',
@@ -211,28 +219,35 @@ describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', (
       models: []
     })
     expect(warnings).toHaveLength(1)
-    expect(warnings[0]).toContain('Removed 1 chain entry')
-    expect(warnings[0]).toContain('live/default/agent')
-    const after = await loadRouterPreferences()
-    expect(after.entriesByScenario.default.agent.map((e) => e.target)).toEqual(['anthropic,claude-sonnet-5'])
+    expect(warnings[0]).toContain('Unset 1 tier alias')
+    expect(warnings[0]).toContain('openai · haiku')
+    // The route stays, skipped until the alias is set again.
+    expect(await sonnetRoutes()).toEqual(['anthropic · sonnet', 'openai · haiku'])
   })
 
-  test('deleting a provider reports every chain entry that went with it, by profile, scenario and lane', async () => {
-    await seedTwoProvidersWithChain()
+  test('deleting a provider reports every route that went with it, by profile and tier', async () => {
+    await seedTwoProvidersWithRoutes()
     const { warnings } = await deleteProviderByName('anthropic')
     expect(warnings).toHaveLength(1)
-    expect(warnings[0]).toContain('Removed 2 chain entries')
-    expect(warnings[0]).toContain('live/default/agent')
-    expect(warnings[0]).toContain('live/think/subagent')
-
-    const after = await loadRouterPreferences()
-    expect(after.entriesByScenario.default.agent.map((e) => e.target)).toEqual(['openai,gpt-5-nano'])
-    expect(after.entriesByScenario.think.subagent).toEqual([])
+    expect(warnings[0]).toContain('Removed 2 tier routes')
+    expect(warnings[0]).toContain('live/opus')
+    expect(warnings[0]).toContain('live/sonnet')
+    expect(await sonnetRoutes()).toEqual(['openai · haiku'])
+    expect((await loadTierProfile('live')).routes.opus).toEqual([])
   })
 
-  test('deleting a provider no chain names reports nothing', async () => {
-    await seedTwoProvidersWithChain()
-    await applyRouterPreferences(profileWith({ 'default.agent': ['anthropic,claude-sonnet-5'] }))
+  test('deleting a provider no route names reports nothing', async () => {
+    await seedTwoProvidersWithRoutes()
+    await saveTierProfile('live', {
+      routes: {
+        fable: [],
+        opus: [],
+        sonnet: [{ provider: 'anthropic', targetTier: 'sonnet', enabled: true }],
+        haiku: [],
+        other: []
+      },
+      constraints: { exhaustedBehavior: '429', quotaSkipPct: 100, errorRateSkipPct: 0.5, minHealthSamples: 5 }
+    })
     const { warnings } = await deleteProviderByName('openai')
     expect(warnings).toEqual([])
   })

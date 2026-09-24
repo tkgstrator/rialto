@@ -167,7 +167,7 @@ export async function attemptChainEntry(chain: ChainCtx, model: string): Promise
     if (isInsufficientQuota(err)) {
       markProviderExhausted(inv.provider.name)
       ctx.log.warn(
-        { provider: inv.provider.name, model: inv.request.model, scenario: plan.scenarioType },
+        { provider: inv.provider.name, model: inv.request.model, route: plan.route },
         'insufficient_quota; marking provider exhausted and failing over'
       )
       return { kind: 'next', forwarded: lastForwarded }
@@ -196,7 +196,7 @@ export async function attemptChainEntry(chain: ChainCtx, model: string): Promise
       }
     }
     ctx.log.warn(
-      { provider: inv.provider.name, model: inv.request.model, scenario: plan.scenarioType },
+      { provider: inv.provider.name, model: inv.request.model, route: plan.route },
       'rate limited; failing over to next fallback model'
     )
     return { kind: 'next', forwarded: lastForwarded }
@@ -290,7 +290,7 @@ async function tryRotateAccount(
     {
       provider: inv.provider.name,
       model: inv.request.model,
-      scenario: plan.scenarioType,
+      route: plan.route,
       subAccountId: failedAcct,
       rotation: triedAccounts.size,
       exhaustedUntil: until ?? null

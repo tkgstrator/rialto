@@ -35,14 +35,15 @@ const DEFAULT_COOLDOWN_MS = 5 * 60_000
 const createExhaustionMap = (): {
   mark: (key: string, until?: number) => void
   is: (key: string) => boolean
+  until: (key: string) => number | null
   clear: (key: string) => void
   liveKeys: () => string[]
 } => {
   const map = new Map<string, number>()
   const is = (key: string): boolean => {
-    const until = map.get(key)
-    if (until === undefined) return false
-    if (until <= Date.now()) {
+    const deadline = map.get(key)
+    if (deadline === undefined) return false
+    if (deadline <= Date.now()) {
       map.delete(key)
       return false
     }
@@ -56,6 +57,12 @@ const createExhaustionMap = (): {
       if (current === undefined || resolved > current) map.set(key, resolved)
     },
     is,
+    // When the mark lapses, or null when there is none (or it already has).
+    until: (key) => {
+      if (!is(key)) return null
+      const deadline = map.get(key)
+      return deadline === undefined ? null : deadline
+    },
     clear: (key) => {
       map.delete(key)
     },
@@ -126,6 +133,16 @@ export const isModelExhausted = (providerName: string, modelName: string): boole
 // clearProviderExhaustion.
 export const clearModelExhaustion = (providerName: string, modelName: string): void =>
   modelMap.clear(modelKey(providerName, modelName))
+
+// When a (provider, model) comes back: the later of its own mark and its
+// provider's, since either keeps it out. Null when neither is set. What
+// the tier router's Retry-After reads when every route of a tier is out.
+export const exhaustedUntil = (providerName: string, modelName: string): number | null => {
+  const deadlines = [modelMap.until(modelKey(providerName, modelName)), providerMap.until(providerName)].filter(
+    (d): d is number => d !== null
+  )
+  return deadlines.length === 0 ? null : Math.max(...deadlines)
+}
 
 // The models on this provider that currently carry their own mark. A
 // fresh usage reading clears these one model at a time, against the

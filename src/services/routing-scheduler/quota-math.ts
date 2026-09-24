@@ -1,13 +1,11 @@
 /**
  * Account-quota arithmetic for the routing scheduler.
  *
- * Split from `compute.ts` because everything here reads only the quota
- * windows hanging off `AccountQuotaState` — used/limit counters, reset
- * timestamps, staleness — and knows nothing about preference rank,
- * normalisation or the guards. That boundary is what makes the Fable
- * special case containable: `isFableTarget` and the scoped-window
- * fallback appear in three functions below and nowhere else in the
- * scheduler.
+ * Everything here reads only the quota windows hanging off
+ * `AccountQuotaState` — used/limit counters, reset timestamps,
+ * staleness. That boundary is what makes the Fable special case
+ * containable: `isFableTarget` and the scoped-window fallback appear in
+ * the functions below and nowhere else in the scheduler.
  */
 
 import type { AccountQuotaState, ModelCandidateState } from './types'
@@ -67,9 +65,9 @@ const accountKnown = (acct: AccountQuotaState): boolean => acct.fiveHour !== und
 // max-headroom, so a Fable-scoped 100% account cannot mask a same-plan
 // 0% peer — the pool's true remaining is the average, and weighting by
 // plan capacity (Pro=1 / Max=5 / Max20=20) keeps a large exhausted
-// account from being washed out by a tiny full one. Returns { value,
-// unknownAccounts, staleAccounts } so `computeWeights` can attach
-// reasons.
+// account from being washed out by a tiny full one. Unknown and stale
+// accounts are counted rather than averaged, so the caller can tell "no
+// budget left" from "no reading to go on".
 export interface BudgetView {
   value: number | null
   unknownAccounts: number
@@ -104,8 +102,10 @@ export const modelBudget = (candidate: ModelCandidateState, now: number, ttlMs: 
   return { value, unknownAccounts, staleAccounts }
 }
 
-// Earliest resetAt across the candidate's accounts (used for the
-// resetSoon downweight). Null when no reset is known.
+// Earliest resetAt across the candidate's accounts. For an exhausted
+// target this is when it can serve again: `holdSpentAccount` has already
+// moved every window of a refused account to the reset that frees it.
+// Null when no reset is known.
 export const earliestReset = (candidate: ModelCandidateState): number | null => {
   const useScopedFable = isFableTarget(candidate)
   let earliest: number | null = null
@@ -120,60 +120,4 @@ export const earliestReset = (candidate: ModelCandidateState): number | null => 
     }
   }
   return earliest
-}
-// paceRatio for a single window: consumed% / elapsed%. Returns null when
-// any input is missing or the elapsed fraction is too small to be
-// meaningful (< 1% — one request out of the gate would otherwise look
-// like a 100x pace). The tightest of a candidate's windows dominates
-// so `windowPace` is called per window and the caller takes the max.
-interface WindowPace {
-  paceRatio: number
-  elapsedRatio: number
-}
-const windowPace = (
-  window: { used: number; limit: number; resetAt: number | null; windowLengthMs: number | null },
-  now: number
-): WindowPace | null => {
-  if (window.limit <= 0) return null
-  if (window.resetAt === null || window.windowLengthMs === null) return null
-  if (window.windowLengthMs <= 0) return null
-  const startedAt = window.resetAt - window.windowLengthMs
-  const elapsedMs = now - startedAt
-  if (elapsedMs <= 0) return null
-  const elapsedRatio = Math.min(1, elapsedMs / window.windowLengthMs)
-  if (elapsedRatio < 0.01) return null
-  const consumedRatio = window.used / window.limit
-  return { paceRatio: consumedRatio / elapsedRatio, elapsedRatio }
-}
-
-// Candidate-level pace: aggregate min-elapsed max-pace across the
-// candidate's usable accounts and their windows. Min-elapsed captures
-// the earliest active window so the caller's "we're only 5% into the
-// window" guard fires when needed. Max-paceRatio captures the tightest
-// binding window so an underused weekly doesn't mask a burning 5h.
-export interface CandidatePace {
-  paceRatio: number | null
-  windowElapsedRatio: number | null
-}
-export const candidatePace = (candidate: ModelCandidateState, now: number, ttlMs: number): CandidatePace => {
-  const useScopedFable = isFableTarget(candidate)
-  let worstPace: number | null = null
-  let earliestElapsed: number | null = null
-  for (const acct of candidate.accounts) {
-    if (!accountKnown(acct)) continue
-    if (accountStale(acct, now, ttlMs)) continue
-    const paces: (WindowPace | null)[] =
-      useScopedFable && acct.scopedFable !== undefined
-        ? [windowPace(acct.scopedFable, now)]
-        : [
-            acct.fiveHour === undefined ? null : windowPace(acct.fiveHour, now),
-            acct.weekly === undefined ? null : windowPace(acct.weekly, now)
-          ]
-    for (const wp of paces) {
-      if (wp === null) continue
-      if (worstPace === null || wp.paceRatio > worstPace) worstPace = wp.paceRatio
-      if (earliestElapsed === null || wp.elapsedRatio < earliestElapsed) earliestElapsed = wp.elapsedRatio
-    }
-  }
-  return { paceRatio: worstPace, windowElapsedRatio: earliestElapsed }
 }

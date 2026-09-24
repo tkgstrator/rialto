@@ -23,7 +23,7 @@ import type { PrismaClient } from '../../generated/prisma/client'
 import dayjs from '../../lib/dayjs'
 import { logger } from '../../logger'
 import { JsonObjectSchema } from '../../schemas/domain/preset'
-import { DEFAULT_PROFILE_KEY } from '../router-preference-service'
+import { DEFAULT_PROFILE_KEY } from '../tier-route-service'
 import { type ExistingAlias, planTierRoutes } from './plan-tier-routes'
 
 export interface BackfillReport {

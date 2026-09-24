@@ -12,8 +12,10 @@ export interface RequestLogItem {
   sessionId: string
   provider: string
   model: string
-  // What the client asked for pre-routing, and the routing lane it hit.
-  // Null on rows written before routing capture landed.
+  // What the client asked for pre-routing, and the route it took: the
+  // requested tier whose routes served it, or "passthrough". Older rows
+  // carry the scenario the retired classifier chose. Null on rows written
+  // before routing capture landed.
   requestedModel: string | null
   scenario: string | null
   // Which inbound surface served the request (an `InboundSurface.id`
@@ -247,16 +249,14 @@ export interface OverviewQuotaRow {
 /** Fields, not prose — the sentence is composed and translated by the
  *  Overview screen. See FailoverRow in services/overview-service.ts. */
 export interface OverviewFailoverRow {
-  kind: 'rate_limit' | 'weight'
+  kind: 'rate_limit' | 'auth'
   tone: 'bad' | 'warn' | 'mute'
   at: string
-  account: string | null
+  account: string
   status: number | null
   retryAfterSec: number | null
-  target: string | null
-  fromWeight: number | null
-  toWeight: number | null
-  reason: string | null
+  /** auth rows: the probe's failure reason as the upstream gave it. */
+  error: string | null
 }
 
 export interface OverviewRecentSession {
@@ -281,47 +281,11 @@ export interface OverviewResponse {
   recentSessions: OverviewRecentSession[]
 }
 
-export interface RouterPreferenceEntryWire {
-  priority: number
-  target: string
-  enabled: boolean
-  // Optional per-entry override of the global escalation / demotion
-  // gates. Undefined = inherit the global constraint.
-  allowEscalation?: boolean
-  allowDemotion?: boolean
-}
-
-export type PreferenceScenarioKey = 'default' | 'think' | 'longContext' | 'webSearch' | 'image'
-export type PreferenceKind = 'agent' | 'subagent'
-
-// Each scenario carries two independent ordered chains: `agent` for
-// main-agent traffic, `subagent` for requests carrying a
-// <RIALTO-SUBAGENT-MODEL> tag. Both are always present so the UI can
-// render an empty tab without a "missing" branch.
-export interface PreferenceEntriesByKindWire {
-  agent: RouterPreferenceEntryWire[]
-  subagent: RouterPreferenceEntryWire[]
-}
-
-export type PreferenceEntriesByScenarioWire = Record<PreferenceScenarioKey, PreferenceEntriesByKindWire>
-
-export interface RouterPreferenceProfileWire {
-  entriesByScenario: PreferenceEntriesByScenarioWire
-  constraints: Record<string, unknown> | null
-}
-
-export interface RouterPreferencesApplyResponse {
-  success: boolean
-  warnings: string[]
-}
-
-export interface RoutingSchedulerWeightEntry {
-  target: string
-  weight: number
-  healthiness: number
-  remainingBudgetPct: number | null
-  earliestResetAt: string | null
-  reasons: string[]
+export interface RoutingSchedulerTargetState {
+  target: string // "provider,model"
+  exhausted: boolean // out of use on quota right now
+  remainingBudgetPct: number | null // 0..100, null = unknown (api_key targets, cold start)
+  resetAt: string | null // ISO; when the binding window resets
 }
 
 export interface RoutingSchedulerAccountView {
@@ -339,50 +303,76 @@ export interface RoutingSchedulerStateResponse {
   tickCount: number
   consecutiveFailures: number
   degraded: boolean
-  weights: RoutingSchedulerWeightEntry[]
+  targets: RoutingSchedulerTargetState[]
   accounts: RoutingSchedulerAccountView[]
   soonestResetAt: string | null
-  recentChanges: Array<{ target: string; from: number; to: number; reason: string; tickAt: string }>
 }
 
-export interface RouterUtilizationPerScenarioRow {
-  scenario: string
-  total: number
-  ok: number
-  err429: number
-  errOther: number
+// ─── Tier map and provider tier aliases ────────────────────────────────
+// Mirrors schemas/api/routing.ts. The stored shape (a route names a
+// provider and a tier) plus, on read, what the tier resolves to today.
+
+export type ModelTier = 'fable' | 'opus' | 'sonnet' | 'haiku'
+/** A requested tier: one of the four, or 'other' for a model name with no Claude family. */
+export type RouteTier = ModelTier | 'other'
+export const ROUTE_TIER_ORDER: readonly RouteTier[] = ['fable', 'opus', 'sonnet', 'haiku', 'other']
+
+export interface TierRouteWire {
+  provider: string
+  targetTier: ModelTier
+  enabled: boolean
 }
 
-export interface RouterUtilizationPerTargetRow {
-  requestedModel: string | null
-  sentTo: string
-  count: number
+export interface TierRouteResolutionWire {
+  model: string
+  /** The model and its provider are both switched on. */
+  targetEnabled: boolean
+  hostsWebSearch: boolean
+  contextWindow: number | null
 }
 
-export interface RouterUtilizationPerAccountRow {
-  subAccountId: string
-  providerName: string
-  kind: 'claude' | 'codex'
-  currentBudgetPct: number | null
-  fiveHourResetAt: string | null
-  weeklyResetAt: string | null
-  stale: boolean
+export interface TierRouteViewWire extends TierRouteWire {
+  /** Null when the provider has no alias for `targetTier`. */
+  resolved: TierRouteResolutionWire | null
 }
 
-export interface RouterUtilizationSuggestion {
-  kind: 'primary_never_reached' | 'fallback_over_used' | 'exhausted_no_secondary'
-  target: string
-  detail: string
-  proposedDiff: Record<string, unknown>
+export interface RoutingConstraintsWire {
+  exhaustedBehavior: '429' | 'passthrough'
+  quotaSkipPct: number
+  errorRateSkipPct: number
+  minHealthSamples: number
 }
 
-export interface RouterUtilizationResponse {
-  windowHours: number
-  generatedAt: string
-  perScenario: RouterUtilizationPerScenarioRow[]
-  perTarget: RouterUtilizationPerTargetRow[]
-  perAccount: RouterUtilizationPerAccountRow[]
-  suggestions: RouterUtilizationSuggestion[]
+export interface TierProfileViewWire {
+  key: string
+  routes: Record<RouteTier, TierRouteViewWire[]>
+  constraints: RoutingConstraintsWire
+}
+
+export interface TierProfileWriteWire {
+  routes: Record<RouteTier, TierRouteWire[]>
+  constraints: RoutingConstraintsWire
+}
+
+export interface TierProfileSummaryWire {
+  key: string
+  routeCount: number
+  updatedAt: string | null
+  kind: 'map' | 'passthrough'
+}
+
+export interface TierProfileSaveOutcome {
+  success: boolean
+  warnings: string[]
+}
+
+export interface TierAliasWire {
+  provider: string
+  tier: ModelTier
+  model: string | null
+  updatedAt: string | null
+  /** Models of this tier on the provider; `isNew` appeared after the alias was set. */
+  candidates: Array<{ model: string; enabled: boolean; isNew: boolean }>
 }
 
 /** GET /api/subscriptions/accounts/{id}/reset-credits. Mirrors ResetCreditsResponse. */

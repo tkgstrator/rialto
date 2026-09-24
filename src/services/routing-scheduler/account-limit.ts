@@ -8,10 +8,11 @@
  * reporting the other windows on their own terms: with the 7d spent the 5h
  * window sits near 0% because nothing can be sent to fill it, and with the
  * 5h spent the 7d and a per-model weekly window (Fable) show only what had
- * been used before the account ran dry. The Fable budget, pace and reset in
+ * been used before the account ran dry. The Fable budget and reset in
  * `quota-math.ts` read only the scoped window, so taken as reported an
  * account that cannot serve a single request kept a Fable budget in the
- * chain, and the chain's Retry-After pointed at a reset that frees nothing.
+ * snapshot, and the router's Retry-After pointed at a reset that frees
+ * nothing.
  *
  * A spent per-model window is not a source: it refuses its own model only,
  * and the account keeps serving the rest.

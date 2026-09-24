@@ -12,7 +12,7 @@ import { ProviderDetailScreen } from '@/components/rialto/providers/ProviderDeta
 import { ProvidersScreen } from '@/components/rialto/providers/ProvidersScreen'
 import { RialtoShell } from '@/components/rialto/RialtoShell'
 import { RouteError } from '@/components/rialto/RouteError'
-import { RoutingChain } from '@/components/rialto/routing/RoutingChain'
+import { RoutingTierMap } from '@/components/rialto/routing/RoutingTierMap'
 import { TokenDetail } from '@/components/rialto/settings/access/TokenDetail'
 import { SettingsAccess } from '@/components/rialto/settings/SettingsAccess'
 import { SettingsAdvanced } from '@/components/rialto/settings/SettingsAdvanced'
@@ -69,11 +69,10 @@ export const router = createBrowserRouter([
           { path: '/providers/api-keys', element: <ProvidersScreen kind='api_key' /> },
           { path: '/providers/connect', element: <AddProviderScreen /> },
           { path: '/providers/:name', element: <ProviderDetailScreen /> },
-          // The chain is the whole of Routing. The map and the rule
-          // editor described the scenario router, which no longer decides
-          // anything, and a screen that edits a selector nothing runs is
-          // worse than no screen.
-          { path: '/routing', element: <RoutingChain /> },
+          // The tier map is the whole of Routing: one table per surface's
+          // profile, keyed by the tier the caller asked for. The per-
+          // scenario, per-lane chain it replaced had its own editor here.
+          { path: '/routing', element: <RoutingTierMap /> },
           // Top level, beside Providers: outbound and inbound at the same
           // depth. These were /settings/access and
           // /settings/access/tokens/:id.

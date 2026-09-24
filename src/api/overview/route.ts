@@ -93,18 +93,15 @@ const QuotaSchema = z
 
 const FailoverSchema = z
   .object({
-    kind: z.enum(['rate_limit', 'weight']),
+    kind: z.enum(['rate_limit', 'auth']),
     tone: z.enum(['bad', 'warn', 'mute']),
     at: z.string().min(0),
     // Fields, not prose: the sentence is composed and translated on the
     // UI side. See FailoverRow in services/overview-service.ts.
-    account: z.string().nonempty().nullable(),
+    account: z.string().nonempty(),
     status: z.number().int().nullable(),
     retryAfterSec: z.number().int().nullable(),
-    target: z.string().nonempty().nullable(),
-    fromWeight: z.number().nullable(),
-    toWeight: z.number().nullable(),
-    reason: z.string().nonempty().nullable()
+    error: z.string().nullable()
   })
   .openapi('OverviewFailover')
 

@@ -24,13 +24,10 @@ import { providersRoute } from './api/providers/route'
 import { providersTestRoute } from './api/providers/test/route'
 import { refreshModelsRoute } from './api/refresh-models/route'
 import { requestLogsRoute } from './api/request-logs/route'
-import { routerPreferencesRoute } from './api/router-preferences/route'
-import { routerUtilizationRoute } from './api/router-utilization/route'
 import { routingProfileRoute } from './api/routing/profiles/[key]/route'
 import { routingProfilesRoute } from './api/routing/profiles/route'
 import { routingSchedulerStateRoute } from './api/routing-scheduler-state/route'
 import { scrapePricesRoute } from './api/scrape-prices/[vendor]/route'
-import { solverInputRoute } from './api/solver-input/route'
 import { storageRoute } from './api/storage/route'
 import { subscriptionsRoute } from './api/subscriptions/route'
 import { tierAliasesRoute } from './api/tier-aliases/route'
@@ -110,10 +107,9 @@ void startUsageCapture()
 // persist its authStatus so the UI can flag accounts that need
 // re-authentication.
 void startAuthHealthCheck()
-// Routing scheduler. It computes the weights the chain routes on — the
-// operator picks the models and their order, this decides how much of
-// the traffic each one takes. The chain is the only selector, so the
-// scheduler always has a consumer and always runs.
+// Routing scheduler. It publishes the quota snapshot the tier router
+// reads — per subscription model, whether it is out and when it comes
+// back. Every routed request consults it, so it always runs.
 startRoutingScheduler()
 
 const app = new OpenAPIHono()
@@ -190,13 +186,10 @@ app.route('/', modelTestRoute)
 app.route('/', modelTestAllRoute)
 app.route('/', scrapePricesRoute)
 app.route('/', requestLogsRoute)
-app.route('/', routerPreferencesRoute)
-app.route('/', routerUtilizationRoute)
 app.route('/', routingSchedulerStateRoute)
 app.route('/', routingProfilesRoute)
 app.route('/', routingProfileRoute)
 app.route('/', tierAliasesRoute)
-app.route('/', solverInputRoute)
 app.route('/', overviewRoute)
 app.route('/', inboundSurfacesRoute)
 app.route('/', identityRoute)

@@ -7,13 +7,14 @@
  * the api_key one has a model list long enough to need filtering.
  *
  * The pane reads until Edit is pressed. Everything on it that changes the
- * provider — the switch Routing reads, the key, each model's tier, effort
- * and switch — used to write on touch, one stray click from changing what
- * Routing sends where. Those controls now only work while editing, and
- * the screen holds what they change until Save (see provider-draft).
+ * provider — the switch Routing reads, the key, the tier aliases, each
+ * model's effort and switch — used to write on touch, one stray click
+ * from changing what Routing sends where. Those controls now only work
+ * while editing, and the screen holds what they change until Save (see
+ * provider-draft).
  */
 import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
+import { Trans, useTranslation } from 'react-i18next'
 import { Pager } from '@/components/rialto/Pager'
 import { Pill, RButton, Toggle } from '@/components/rialto/primitives'
 import { AccountsPanel } from './AccountsPanel'
@@ -34,6 +35,8 @@ import {
 import { ModelsTable } from './ModelsTable'
 import { ApiKeyRequestShape, SubscriptionRequestShape } from './RequestShape'
 import { SwitchReading } from './SwitchReading'
+import { TierAliases } from './TierAliases'
+import { type AliasMap, freshModelsOf } from './tier-aliases'
 import type {
   CatalogEntry,
   Provider,
@@ -41,6 +44,7 @@ import type {
   SubAccountWire,
   SubscriptionWire,
   Tier,
+  TierAliasWire,
   TransformerWire
 } from './types'
 
@@ -186,19 +190,47 @@ function FilterBox({ value, onChange, wide }: { value: string; onChange: (v: str
   )
 }
 
+const NOTE_COMPONENTS = {
+  mono: <span className='font-mono' />,
+  strong: <span className='font-medium text-foreground' />
+}
+
+/**
+ * The note under the table: how a model is reached at all, since nothing
+ * in a row says it. The api_key side adds what its Effort column does —
+ * the subscription table has none.
+ */
+function ModelsNote({ isApiKey }: { isApiKey: boolean }) {
+  return (
+    <div className='px-6 py-4'>
+      <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
+        <i className='ri-information-line mr-1 align-[-1px]' />
+        {isApiKey ? (
+          <>
+            <Trans i18nKey='providers.models.noteApiKey' components={NOTE_COMPONENTS} />
+            <span className='mt-1.5 block'>
+              <Trans i18nKey='providers.models.noteEffort' components={NOTE_COMPONENTS} />
+            </span>
+          </>
+        ) : (
+          <Trans i18nKey='providers.models.noteSubscription' components={NOTE_COMPONENTS} />
+        )}
+      </div>
+    </div>
+  )
+}
+
 function ModelsSection({
   provider,
   rows,
   editing,
   onToggle,
-  onTier,
   onEffort
 }: {
   provider: Provider
   rows: ModelRow[]
   editing: boolean
   onToggle: (model: string, next: boolean) => void
-  onTier: (model: string, next: Tier | null) => void
   onEffort: (model: string, next: ReasoningEffort | null) => void
 }) {
   const { t } = useTranslation()
@@ -280,11 +312,12 @@ function ModelsSection({
         limit={isApiKey ? PAGE : undefined}
         offset={offset}
         withOverride={isApiKey}
+        withAlias
         editable={editing}
         onToggle={onToggle}
-        onTier={onTier}
         onEffort={onEffort}
       />
+      <ModelsNote isApiKey={isApiKey} />
       {isApiKey ? (
         <Pager page={current} pageSize={PAGE} loaded={shownCount} total={filtered.length} onPage={setPage} />
       ) : null}
@@ -306,6 +339,10 @@ export interface ProviderDetailProps {
   quota: QuotaIndex
   accounts: AccountExtrasIndex
   now: number
+  /** This provider's alias rows as loaded: the candidates each tier offers and how many are new. */
+  aliasRows: TierAliasWire[]
+  /** The aliases as Save would leave them, like `provider`. */
+  aliases: AliasMap
   busy: boolean
   editing: boolean
   /** Whether the staged edit differs from what is stored. */
@@ -317,8 +354,8 @@ export interface ProviderDetailProps {
   onTestAll: () => void
   onToggleProvider: (next: boolean) => void
   onToggleModel: (model: string, next: boolean) => void
-  /** Per-model tier override; null clears it back to name inference. */
-  onModelTier: (model: string, next: Tier | null) => void
+  /** Point a tier's alias at a model; null unsets it. */
+  onAlias: (tier: Tier, model: string | null) => void
   /** Per-model reasoning effort; null clears it back to the vendor default. */
   onModelEffort: (model: string, next: ReasoningEffort | null) => void
   onReplaceKey: (key: string) => void
@@ -329,7 +366,7 @@ export interface ProviderDetailProps {
 export function ProviderDetail(props: ProviderDetailProps) {
   const { provider, subscription, catalogEntry, transformers, quota, now } = props
   const subscriptionMode = provider.auth_mode === 'subscription'
-  const rows = buildModelRows(provider, catalogEntry)
+  const rows = buildModelRows(provider, catalogEntry, props.aliases, freshModelsOf(props.aliasRows))
   return (
     <div className='min-w-0 overflow-y-auto'>
       <DetailHeader
@@ -372,6 +409,13 @@ export function ProviderDetail(props: ProviderDetailProps) {
           <ApiKeyRequestShape provider={provider} />
         )}
       </div>
+      <TierAliases
+        rows={props.aliasRows}
+        aliases={props.aliases}
+        listed={listedModelsOf(provider)}
+        editing={props.editing}
+        onPick={props.onAlias}
+      />
       {/* Keyed on the provider: the filter, the Show mode and how far the
           list has been expanded are all about THIS provider's models. */}
       <ModelsSection
@@ -380,7 +424,6 @@ export function ProviderDetail(props: ProviderDetailProps) {
         rows={rows}
         editing={props.editing}
         onToggle={props.onToggleModel}
-        onTier={props.onModelTier}
         onEffort={props.onModelEffort}
       />
     </div>

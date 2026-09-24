@@ -63,11 +63,6 @@ export const toProvider = (p: ProviderWithModels): Provider => {
   const modelPrices = Object.fromEntries(
     withPrice.map((m) => [m.name, { inputPer1M: m.inputPer1M, outputPer1M: m.outputPer1M }])
   )
-  const withManualTier = p.models.filter(
-    (m): m is DbModel & { manualTier: 'fable' | 'opus' | 'sonnet' | 'haiku' } =>
-      m.manualTier === 'fable' || m.manualTier === 'opus' || m.manualTier === 'sonnet' || m.manualTier === 'haiku'
-  )
-  const modelManualTiers = Object.fromEntries(withManualTier.map((m) => [m.name, m.manualTier]))
   const withApiStyle = p.models.filter((m): m is DbModel & { apiStyle: ApiStyle } => m.apiStyle !== null)
   const modelApiStyles = Object.fromEntries(withApiStyle.map((m) => [m.name, m.apiStyle]))
   const withReasoningEffort = p.models.filter(
@@ -94,7 +89,6 @@ export const toProvider = (p: ProviderWithModels): Provider => {
     ...(tested.length > 0 ? { modelTestStatus } : {}),
     ...(withContext.length > 0 ? { modelContextWindows } : {}),
     ...(withPrice.length > 0 ? { modelPrices } : {}),
-    ...(withManualTier.length > 0 ? { modelManualTiers } : {}),
     ...(withApiStyle.length > 0 ? { modelApiStyles } : {}),
     ...(withReasoningEffort.length > 0 ? { modelReasoningEfforts } : {}),
     // Not a stored value: _disabledModels is derived from Model.enabled

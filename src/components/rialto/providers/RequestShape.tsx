@@ -70,9 +70,7 @@ export function SubscriptionRequestShape({
       />
       <ShapeRow label={t('providers.shape.pipeline')} value={v.pipeline} accent />
       <ShapeRow label={t('providers.shape.endpoint')} value={endpoint === null ? '—' : endpoint} accent />
-      <p className='mt-3 text-[12px] leading-relaxed text-muted-foreground'>
-        {t('providers.shape.derivedWithOverrides')}
-      </p>
+      <p className='mt-3 text-[12px] leading-relaxed text-muted-foreground'>{t('providers.shape.derived')}</p>
     </Frame>
   )
 }

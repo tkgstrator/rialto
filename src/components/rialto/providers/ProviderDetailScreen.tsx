@@ -1,6 +1,6 @@
 /**
- * One provider's own page — accounts or credentials, request shape, and
- * the model list.
+ * One provider's own page — accounts or credentials, request shape, the
+ * tier aliases, and the model list.
  *
  * Was the right-hand pane of a master-detail screen, 896px wide behind a
  * 256px sidebar and a 288px rail. The rail's two groups are sidebar
@@ -34,6 +34,7 @@ import { BusyOverlay } from './BusyOverlay'
 import { accountLabel, disabledModelsOf, enabledCountOf, fmtExpiry, listedModelsOf, providerState } from './derive'
 import { ProviderDetail } from './ProviderDetail'
 import { applyDraft, EMPTY_DRAFT, hasChanges, type ProviderDraft, savePlan } from './provider-draft'
+import { aliasMapOf, aliasRowsOf, applyAliasPicks } from './tier-aliases'
 import type { Provider, SubAccountWire } from './types'
 import { type ProvidersData, useProvidersData } from './useProvidersData'
 import { type RefreshScope, useRefresh } from './useRefresh'
@@ -41,7 +42,8 @@ import { vendorBrand, vendorLabel } from './vendor-labels'
 
 const SAVE_FAILURE_KEYS: Record<SaveFailure['write'], string> = {
   provider: 'providers.detail.saveFailedProvider',
-  tier: 'providers.detail.saveFailedTier',
+  alias: 'providers.detail.saveFailedAlias',
+  unalias: 'providers.detail.saveFailedUnalias',
   effort: 'providers.detail.saveFailedEffort'
 }
 
@@ -165,9 +167,13 @@ export function ProviderDetailScreen() {
   const subscription = data.subscriptions.get(provider.name)
   const draft = edit !== null && edit.provider === provider.name ? edit.draft : null
   const editing = draft !== null
-  // What the page renders: the provider as Save would leave it.
-  const shown = draft === null ? provider : applyDraft(provider, draft)
-  const plan = draft === null ? null : savePlan(provider, draft)
+  const aliasRows = aliasRowsOf(data.aliases, provider.name)
+  const storedAliases = aliasMapOf(aliasRows)
+  // What the page renders: the provider and its aliases as Save would
+  // leave them.
+  const shown = draft === null ? provider : applyDraft(provider, draft, storedAliases)
+  const shownAliases = draft === null ? storedAliases : applyAliasPicks(storedAliases, draft.aliases)
+  const plan = draft === null ? null : savePlan(provider, draft, storedAliases)
   const stage = (change: (current: ProviderDraft) => ProviderDraft) =>
     setEdit((prev) => (prev === null ? prev : { ...prev, draft: change(prev.draft) }))
   const locked = busy || pending !== null
@@ -188,7 +194,8 @@ export function ProviderDetailScreen() {
           return
         }
         const model = failure.model === null ? '' : failure.model
-        toast.error(t(SAVE_FAILURE_KEYS[failure.write], { model, message: failure.message }))
+        const tier = failure.tier === null ? '' : failure.tier
+        toast.error(t(SAVE_FAILURE_KEYS[failure.write], { model, tier, message: failure.message }))
       })
       .catch((err: unknown) => toast.error(messageOf(err)))
       .finally(() => setBusy(false))
@@ -276,6 +283,8 @@ export function ProviderDetailScreen() {
           quota={data.quota}
           accounts={data.accounts}
           now={data.now}
+          aliasRows={aliasRows}
+          aliases={shownAliases}
           busy={locked}
           editing={editing}
           canSave={plan !== null && hasChanges(plan)}
@@ -290,7 +299,7 @@ export function ProviderDetailScreen() {
           }}
           onToggleProvider={(next) => stage((d) => ({ ...d, enabled: next }))}
           onToggleModel={(model, next) => stage((d) => ({ ...d, models: { ...d.models, [model]: next } }))}
-          onModelTier={(model, next) => stage((d) => ({ ...d, tiers: { ...d.tiers, [model]: next } }))}
+          onAlias={(tier, model) => stage((d) => ({ ...d, aliases: { ...d.aliases, [tier]: model } }))}
           onModelEffort={(model, next) => stage((d) => ({ ...d, efforts: { ...d.efforts, [model]: next } }))}
           onReplaceKey={(key) => stage((d) => ({ ...d, apiKey: key }))}
           onUseReset={spendReset}

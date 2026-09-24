@@ -12,19 +12,8 @@ import type { ResetCreditsResponse, UseResetResponse } from '@/lib/api-types'
 import { setModelDisabled } from '@/lib/providers/provider-edits'
 import type { SubscriptionRefreshResponse } from '@/schemas/api/subscriptions'
 import type { SavePlan } from './provider-draft'
-import type { ModelTestResponse, Provider } from './types'
-
-/**
- * Set or clear the per-model tier override the quota-aware selector reads
- * as `manualTier ?? tierOf(name)`. Null falls back to name inference.
- */
-export async function setModelTier(
-  provider: Provider,
-  model: string,
-  tier: 'fable' | 'opus' | 'sonnet' | 'haiku' | null
-): Promise<void> {
-  await api.setModelTier(provider.name, model, tier)
-}
+import type { AliasChange } from './tier-aliases'
+import type { ModelTestResponse, Provider, Tier } from './types'
 
 /**
  * Set or clear the per-model reasoning effort. Null sends nothing and
@@ -59,18 +48,33 @@ export async function enableAllModels(provider: Provider): Promise<void> {
   await api.post('/providers', { ...provider, transformer })
 }
 
+/**
+ * Point a provider's tier at a model — promote it — or unset the tier.
+ * Pointing also switches the model on, server-side, in the same write.
+ */
+export async function setTierAlias(provider: Provider, { tier, model }: AliasChange): Promise<void> {
+  if (model === null) await api.clearTierAlias(provider.name, tier)
+  else await api.setTierAlias(provider.name, tier, model)
+}
+
 /** Which write of a staged edit failed, and what the server said about it. */
 export interface SaveFailure {
-  write: 'provider' | 'tier' | 'effort'
-  /** The model a tier or effort write was for; null for the provider's own. */
+  /** `unalias` is an alias write that unset its tier rather than pointing it. */
+  write: 'provider' | 'alias' | 'unalias' | 'effort'
+  /** The model an alias or effort write was for; null for the provider's own and for an unset. */
   model: string | null
+  /** The tier an alias write was for; null for every other write. */
+  tier: Tier | null
   message: string
 }
 
-const step = (write: SaveFailure['write'], model: string | null, run: () => Promise<unknown>) => ({
-  write,
-  model,
-  run
+type SaveStep = Omit<SaveFailure, 'message'> & { run: () => Promise<unknown> }
+
+const aliasStep = (provider: Provider, change: AliasChange): SaveStep => ({
+  write: change.model === null ? 'unalias' : 'alias',
+  model: change.model,
+  tier: change.tier,
+  run: () => setTierAlias(provider, change)
 })
 
 /**
@@ -79,8 +83,13 @@ const step = (write: SaveFailure['write'], model: string | null, run: () => Prom
  * The provider upsert goes first: the switch Routing reads (the flag
  * `enabledTargets` and `getEnabledModels` filter on), the model switches
  * and the key all travel in the one body `POST /api/providers` takes.
- * Tiers and efforts are not part of that body, so each one that changed
- * is its own PATCH after it.
+ * Aliases and efforts are not part of that body, so each one that changed
+ * is its own write after it.
+ *
+ * The aliases follow the upsert rather than precede it because an alias
+ * write switches its model on, and the upsert carries every model switch
+ * as loaded: run the other way round, the upsert would switch a just
+ * promoted model straight back off.
  *
  * Stops at the first write that fails and names it. The writes before it
  * have landed and the ones after it have not, which the screen shows by
@@ -88,16 +97,23 @@ const step = (write: SaveFailure['write'], model: string | null, run: () => Prom
  */
 export async function saveProviderEdits(provider: Provider, plan: SavePlan): Promise<SaveFailure | null> {
   const upsert = plan.upsert
-  const steps = [
-    ...(upsert === null ? [] : [step('provider', null, () => api.post('/providers', upsert))]),
-    ...plan.tiers.map(({ model, tier }) => step('tier', model, () => setModelTier(provider, model, tier))),
-    ...plan.efforts.map(({ model, effort }) => step('effort', model, () => setModelEffort(provider, model, effort)))
+  const steps: SaveStep[] = [
+    ...(upsert === null
+      ? []
+      : [{ write: 'provider' as const, model: null, tier: null, run: () => api.post('/providers', upsert) }]),
+    ...plan.aliases.map((change) => aliasStep(provider, change)),
+    ...plan.efforts.map(({ model, effort }) => ({
+      write: 'effort' as const,
+      model,
+      tier: null,
+      run: () => setModelEffort(provider, model, effort)
+    }))
   ]
-  for (const { write, model, run } of steps) {
+  for (const { run, ...which } of steps) {
     try {
       await run()
     } catch (err: unknown) {
-      return { write, model, message: err instanceof Error ? err.message : String(err) }
+      return { ...which, message: err instanceof Error ? err.message : String(err) }
     }
   }
   return null

@@ -1,25 +1,29 @@
 /**
- * The Chain screen's write-side actions: edit / revert / save, the two
+ * The Routing screen's write-side actions: edit / revert / save, the two
  * single-click surface writes (mode, profile), and the toast plumbing they
  * all share.
  *
- * Kept out of the screen component for the same reason `useChainEditing`
+ * Kept out of the screen component for the same reason `useTierMapEditing`
  * is: every one of these is a short "call the API, then toast" shape, and
- * inlining eight of them pushed `RoutingChain`'s cognitive complexity past
- * the Biome limit on its own conditionals.
+ * inlining them pushed the screen's cognitive complexity past the Biome
+ * limit on its own conditionals.
  */
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import type { InboundSurfaceWire, RoutingMode, SurfaceId } from '@/lib/api'
+import type { InboundSurfaceWire, RoutingMode, SurfaceId, TierProfileSaveOutcome } from '@/lib/api'
 import { applyConstraintEdit, type ConstraintEdit } from './derive'
-import type { PreferenceApplyResponse, PreferenceProfile } from './types'
+import type { TierDraft } from './types'
 
-export interface ChainActions {
+/** The constraint cells that take typed text, and so can hold a value that is not one yet. */
+export type TypedConstraint = 'quotaSkipPct' | 'errorRateSkipPct' | 'minHealthSamples'
+
+export interface TierMapWriteActions {
   editing: boolean
   saving: boolean
-  quotaSkipValid: boolean
-  onQuotaSkipValidity: (valid: boolean) => void
+  /** Every typed cell holds a value the profile can store. */
+  constraintsValid: boolean
+  onConstraintValidity: (field: TypedConstraint, valid: boolean) => void
   onEdit: () => void
   onRevert: () => void
   onSave: () => void
@@ -28,24 +32,26 @@ export interface ChainActions {
   onProfile: (key: string) => void
 }
 
-export function useChainActions(
+export function useTierMapActions(
   surface: InboundSurfaceWire | undefined,
   profileKey: string | null,
-  setProfile: React.Dispatch<React.SetStateAction<PreferenceProfile>>,
-  save: () => Promise<PreferenceApplyResponse>,
+  setDraft: React.Dispatch<React.SetStateAction<TierDraft>>,
+  save: () => Promise<TierProfileSaveOutcome>,
   reset: () => void,
+  onSaved: () => void,
   setMode: (surface: SurfaceId, routingMode: RoutingMode) => Promise<void>,
   setSurfaceProfile: (surface: SurfaceId, routingMode: RoutingMode, profileKey: string) => Promise<void>
-): ChainActions {
+): TierMapWriteActions {
   const { t } = useTranslation()
   const [saving, setSaving] = useState(false)
-  // Only the Quota skip box can hold text that is not a value yet.
-  const [quotaSkipValid, setQuotaSkipValid] = useState(true)
+  // The typed cells currently holding text that is not a value. A set
+  // rather than one flag: fixing one cell must not clear another's error.
+  const [invalid, setInvalid] = useState<ReadonlySet<TypedConstraint>>(new Set())
 
   // Edit mode belongs to the profile it was entered on, rather than being
   // a bare boolean: should the profile change underneath anyway, the
-  // freshly loaded rows come up read-only instead of inheriting an edit
-  // session that was never theirs.
+  // freshly loaded map comes up read-only instead of inheriting an edit
+  // session that was never its own.
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const editing = editingKey !== null && editingKey === profileKey
 
@@ -56,8 +62,18 @@ export function useChainActions(
 
   const fail = useCallback((err: unknown) => notify(err instanceof Error ? err.message : String(err), false), [notify])
 
+  const onConstraintValidity = useCallback((field: TypedConstraint, valid: boolean) => {
+    setInvalid((prev) => {
+      if (valid === !prev.has(field)) return prev
+      const next = new Set(prev)
+      if (valid) next.delete(field)
+      else next.add(field)
+      return next
+    })
+  }, [])
+
   const onEdit = useCallback(() => {
-    setQuotaSkipValid(true)
+    setInvalid(new Set())
     setEditingKey(profileKey)
   }, [profileKey])
 
@@ -70,20 +86,27 @@ export function useChainActions(
     setSaving(true)
     save()
       .then((outcome) => {
-        notify(outcome.success ? t('routing.chain.saved') : t('routing.chain.saveFailed'), outcome.success)
+        notify(outcome.success ? t('routing.tiers.saved') : t('routing.tiers.saveFailed'), outcome.success)
+        // Warnings name what the server dropped (an unknown provider, a
+        // duplicate) or kept but cannot use yet (an unset alias). They
+        // are not failures, so each gets its own toast rather than being
+        // folded into the success one.
         for (const warning of outcome.warnings) toast.warning(warning)
         // Back to reading only once the write took: a refused save keeps
         // the edit on screen, so it can be fixed rather than redone.
-        if (outcome.success) setEditingKey(null)
+        if (outcome.success) {
+          setEditingKey(null)
+          onSaved()
+        }
       })
       .catch(fail)
       .finally(() => setSaving(false))
-  }, [save, notify, fail, t])
+  }, [save, notify, fail, onSaved, t])
 
   const onConstraintEdit = useCallback(
     (edit: ConstraintEdit) =>
-      setProfile((prev) => ({ ...prev, constraints: applyConstraintEdit(prev.constraints, edit) })),
-    [setProfile]
+      setDraft((prev) => ({ ...prev, constraints: applyConstraintEdit(prev.constraints, edit) })),
+    [setDraft]
   )
 
   // The mode, the profile and the reset apply on click — there is no
@@ -123,8 +146,8 @@ export function useChainActions(
   return {
     editing,
     saving,
-    quotaSkipValid,
-    onQuotaSkipValidity: setQuotaSkipValid,
+    constraintsValid: invalid.size === 0,
+    onConstraintValidity,
     onEdit,
     onRevert,
     onSave,
