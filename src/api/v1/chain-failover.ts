@@ -42,7 +42,7 @@ import { forwardUpstreamError, isInsufficientQuota, isLongContextGate, isRateLim
 // (mark didn't take, accounts vanished mid-flight) — not a tuning knob.
 const MAX_ACCOUNT_ROTATIONS = 10
 
-// Provider view the kind sniffer needs; aliased from scenario-router's
+// Provider view the kind sniffer needs; aliased from router's
 // public ConfigProvider so the route layer builds the same minimal shape
 // it would have built inline.
 export type SubscriptionKindProvider = Parameters<typeof subscriptionKindOf>[1][number]
@@ -167,7 +167,7 @@ export async function attemptChainEntry(chain: ChainCtx, model: string): Promise
     if (isInsufficientQuota(err)) {
       markProviderExhausted(inv.provider.name)
       ctx.log.warn(
-        { provider: inv.provider.name, model: inv.request.model, scenario: plan.scenarioType },
+        { provider: inv.provider.name, model: inv.request.model, route: plan.route },
         'insufficient_quota; marking provider exhausted and failing over'
       )
       return { kind: 'next', forwarded: lastForwarded }
@@ -196,7 +196,7 @@ export async function attemptChainEntry(chain: ChainCtx, model: string): Promise
       }
     }
     ctx.log.warn(
-      { provider: inv.provider.name, model: inv.request.model, scenario: plan.scenarioType },
+      { provider: inv.provider.name, model: inv.request.model, route: plan.route },
       'rate limited; failing over to next fallback model'
     )
     return { kind: 'next', forwarded: lastForwarded }
@@ -290,7 +290,7 @@ async function tryRotateAccount(
     {
       provider: inv.provider.name,
       model: inv.request.model,
-      scenario: plan.scenarioType,
+      route: plan.route,
       subAccountId: failedAcct,
       rotation: triedAccounts.size,
       exhaustedUntil: until ?? null

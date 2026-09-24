@@ -6,8 +6,8 @@
  *
  * Behaviour: for each of openai / anthropic / google (api_key auth
  * only), the Model catalog is reconciled to exactly the scraped set —
- * models the scrape no longer lists are deleted (any chain entry naming
- * one cascades away, and is logged), and every scraped model is
+ * models the scrape no longer lists are deleted (any tier alias naming
+ * one is unset with it, and is logged), and every scraped model is
  * upserted with its USD/1M input+output price, `deprecated` (from the
  * deprecations registry) and `legacy` (from the scrape) flags.
  *
@@ -23,7 +23,7 @@ import { AuthMode, type Prisma, type PrismaClient } from '../generated/prisma/cl
 import { logger } from '../logger'
 import type { PriceSeedOutcomeSchema } from '../schemas/api/price'
 import { apiStyleForVendor, modelApiStyleOverride } from './config'
-import { chainEntryCascadeWarning } from './config/apply/chain-entries'
+import { aliasCascadeWarning } from './config/apply/tier-route-cascade'
 
 const OFFICIAL_VENDORS = ['openai', 'anthropic', 'google'] as const
 type OfficialVendor = (typeof OFFICIAL_VENDORS)[number]
@@ -62,12 +62,12 @@ const ensureProviderRow = async (tx: Tx, vendor: OfficialVendor): Promise<Provid
   })
 }
 
-// Delete model rows the scrape no longer lists. A chain entry naming one
-// cascades away with it; there is no request to attach a warning to
+// Delete model rows the scrape no longer lists. A tier alias naming one
+// is unset with it; there is no request to attach a warning to
 // here, so the count goes to the log instead.
 const deleteStaleModels = async (tx: Tx, providerId: string, stale: string[]): Promise<number> => {
   if (stale.length === 0) return 0
-  const cascade = await chainEntryCascadeWarning(
+  const cascade = await aliasCascadeWarning(
     tx,
     { providerId, name: { in: stale } },
     `model(s) the price scrape no longer lists (${stale.join(', ')})`

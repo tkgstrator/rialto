@@ -1,33 +1,32 @@
 /**
- * Read-only routing scheduler snapshot (Phase 5).
+ * Read-only routing scheduler snapshot.
  *
- * Returns whatever the last scheduler tick published — current weight
- * per preference target, per-account quota state, soonest reset time,
- * and the bounded ring of recent weight changes. Cold-boot returns an
- * empty snapshot rather than 404 so the UI can render "no data yet"
- * without a special code path.
+ * Returns whatever the last scheduler tick published — per target
+ * ("provider,model" on a subscription provider) whether it is out of
+ * quota, how much is left and when it resets, plus per-account quota
+ * state and the soonest reset. Cold-boot returns an empty snapshot
+ * rather than 404 so the UI can render "no data yet" without a special
+ * code path.
  */
 
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import dayjs from '../../lib/dayjs'
-import { getRecentWeightChanges, getRoutingSnapshot } from '../../services/routing-scheduler'
+import { getRoutingSnapshot } from '../../services/routing-scheduler'
 
-const WeightEntryDtoSchema = z
+const TargetStateDtoSchema = z
   .object({
     target: z.string().nonempty(),
-    weight: z.number().min(0).max(1),
-    healthiness: z.number().min(0),
-    remainingBudgetPct: z.number().nullable(),
-    earliestResetAt: z.string().nullable(),
-    reasons: z.array(z.string().nonempty())
+    exhausted: z.boolean(),
+    remainingBudgetPct: z.number().min(0).max(100).nullable(),
+    resetAt: z.string().nonempty().nullable()
   })
-  .openapi('RoutingWeightEntry')
+  .openapi('RoutingTargetState')
 
 const QuotaWindowDtoSchema = z
   .object({
     used: z.number(),
     limit: z.number(),
-    resetAt: z.string().nullable()
+    resetAt: z.string().nonempty().nullable()
   })
   .openapi('RoutingQuotaWindow')
 
@@ -38,35 +37,27 @@ const AccountQuotaViewDtoSchema = z
     kind: z.enum(['claude', 'codex']),
     fiveHour: QuotaWindowDtoSchema.nullable(),
     weekly: QuotaWindowDtoSchema.nullable(),
-    refreshedAt: z.string().nullable(),
+    refreshedAt: z.string().nonempty().nullable(),
     stale: z.boolean()
   })
   .openapi('RoutingAccountQuotaView')
 
-const WeightChangeDtoSchema = z
-  .object({
-    target: z.string().nonempty(),
-    from: z.number(),
-    to: z.number(),
-    reason: z.string().nonempty(),
-    tickAt: z.string().nonempty()
-  })
-  .openapi('RoutingWeightChange')
-
 const SchedulerStateResponseSchema = z
   .object({
-    tickAt: z.string().nullable(),
+    tickAt: z.string().nonempty().nullable(),
     tickCount: z.number().int().min(0),
     consecutiveFailures: z.number().int().min(0),
     degraded: z.boolean(),
-    weights: z.array(WeightEntryDtoSchema),
+    targets: z.array(TargetStateDtoSchema),
     accounts: z.array(AccountQuotaViewDtoSchema),
-    soonestResetAt: z.string().nullable(),
-    recentChanges: z.array(WeightChangeDtoSchema)
+    soonestResetAt: z.string().nonempty().nullable()
   })
   .openapi('RoutingSchedulerStateResponse')
 
 const isoOrNull = (ms: number | null): string | null => (ms === null ? null : dayjs(ms).toISOString())
+
+const windowDto = (w: { used: number; limit: number; resetAt: number | null } | null) =>
+  w === null ? null : { used: w.used, limit: w.limit, resetAt: isoOrNull(w.resetAt) }
 
 export const routingSchedulerStateRoute = new OpenAPIHono()
 
@@ -75,7 +66,7 @@ const getRoute = createRoute({
   path: '/api/routing-scheduler-state',
   responses: {
     200: {
-      description: 'Current routing snapshot plus the recent weight-change ring',
+      description: 'Current quota snapshot: per-target state and per-account windows',
       content: { 'application/json': { schema: SchedulerStateResponseSchema } }
     }
   }
@@ -90,10 +81,9 @@ routingSchedulerStateRoute.openapi(getRoute, async (c) => {
         tickCount: 0,
         consecutiveFailures: 0,
         degraded: false,
-        weights: [],
+        targets: [],
         accounts: [],
-        soonestResetAt: null,
-        recentChanges: []
+        soonestResetAt: null
       },
       200
     )
@@ -104,37 +94,22 @@ routingSchedulerStateRoute.openapi(getRoute, async (c) => {
       tickCount: snap.tickCount,
       consecutiveFailures: snap.consecutiveFailures,
       degraded: snap.degraded,
-      weights: [...snap.weights.values()].map((w) => ({
-        target: w.target,
-        weight: w.weight,
-        healthiness: w.healthiness,
-        remainingBudgetPct: w.remainingBudgetPct,
-        earliestResetAt: isoOrNull(w.earliestResetAt),
-        reasons: [...w.reasons]
+      targets: [...snap.targets.values()].map((t) => ({
+        target: t.target,
+        exhausted: t.exhausted,
+        remainingBudgetPct: t.remainingBudgetPct,
+        resetAt: isoOrNull(t.resetAt)
       })),
       accounts: snap.accounts.map((a) => ({
         subAccountId: a.subAccountId,
         providerName: a.providerName,
         kind: a.kind,
-        fiveHour:
-          a.fiveHour === null
-            ? null
-            : { used: a.fiveHour.used, limit: a.fiveHour.limit, resetAt: isoOrNull(a.fiveHour.resetAt) },
-        weekly:
-          a.weekly === null
-            ? null
-            : { used: a.weekly.used, limit: a.weekly.limit, resetAt: isoOrNull(a.weekly.resetAt) },
+        fiveHour: windowDto(a.fiveHour),
+        weekly: windowDto(a.weekly),
         refreshedAt: isoOrNull(a.refreshedAt),
         stale: a.stale
       })),
-      soonestResetAt: isoOrNull(snap.soonestResetAt),
-      recentChanges: getRecentWeightChanges().map((ch) => ({
-        target: ch.target,
-        from: ch.from,
-        to: ch.to,
-        reason: ch.reason,
-        tickAt: dayjs(ch.tickAt).toISOString()
-      }))
+      soonestResetAt: isoOrNull(snap.soonestResetAt)
     },
     200
   )

@@ -20,7 +20,7 @@ import {
   surfaceById,
   surfaceForPath
 } from '../llms/inbound/surfaces'
-import { DEFAULT_PROFILE_KEY, PASSTHROUGH_PROFILE_KEY } from './router-preference-service'
+import { DEFAULT_PROFILE_KEY, PASSTHROUGH_PROFILE_KEY } from './tier-route-service'
 
 export interface ResolvedSurface extends InboundSurface {
   routingMode: RoutingMode

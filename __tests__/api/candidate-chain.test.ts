@@ -11,7 +11,7 @@ const plan = (over: Partial<RoutePlan>): RoutePlan =>
     headers: {},
     transformersByName: new Map(),
     defaultTransformer: {},
-    scenarioType: 'default',
+    route: 'passthrough',
     primaryModel: 'codex,gpt-5.6-luna',
     isSubagent: false,
     fallbacks: [],
@@ -31,9 +31,9 @@ test('buildFailoverChain: appends the pre-resolved fallback chain after the prim
 })
 
 test('buildFailoverChain: a subagent request walks whatever chain the selector resolved', () => {
-  // A subagent request gets its subagent-lane chain from the selector;
-  // the reactive path just uses whatever plan.fallbacks carries — it
-  // does not re-look-up by scenario/kind.
+  // A subagent request is routed by its tier like any other; the
+  // reactive path just uses whatever plan.fallbacks carries — it does
+  // not re-look-up by tier or by the subagent flag.
   const chain = buildFailoverChain(plan({ isSubagent: true, fallbacks: ['claude-code,claude-haiku'] }))
   expect(chain).toEqual(['codex,gpt-5.6-luna', 'claude-code,claude-haiku'])
 })

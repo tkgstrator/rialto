@@ -164,7 +164,7 @@ Claude の Extended Thinking や Sonnet/Opus の thinking モードを使う場�
 ```
 
 これは強力な反面、**重複定義が多くなる**ので、ペルソナ全体の整合性を保つコストも上がる。
-think シナリオで使われる前提のキャラに限定するのが現実的。
+thinking（Extended Thinking）を有効にして使う前提のキャラに限定するのが現実的。
 
 ### 5. 決まり文句に文脈を貼る
 
@@ -206,8 +206,8 @@ think シナリオで使われる前提のキャラに限定するのが現実�
 ### キャッシュとの相性
 
 Rialto は persona を `cache_control` を持つ system ブロックの**内側**に append する
-(実装は `src/llms/scenario-router/persona.ts` の `applyGlobalSystemPrompt`。
-呼び出しは `src/llms/scenario-router.ts` の `routeScenario` 末尾)。
+(実装は `src/llms/router/persona.ts` の `applyGlobalSystemPrompt`。
+呼び出しは `src/llms/router.ts` の `routeRequest` 末尾)。
 このため:
 
 - **長さの runtime コストは prompt cache でほぼ吸収される**
@@ -219,13 +219,17 @@ Rialto は persona を `cache_control` を持つ system ブロックの**内側*
 
 ### 挿入される範囲
 
-**シナリオによる除外は無い。** `/v1/messages` 上では default / think / longContext / webSearch /
-image の**全シナリオ**が persona を継承する。かつて存在した `background` の除外は、
-`background` シナリオそのものが `20260728_router_rules_drop_background` で
-`default` に畳み込まれた時点で消えている。
+**ルーティングの結果による除外は無い。** routed な `/v1/messages` では、ティアマップのルートが
+見つかって `body.model` が書き換わったときも、要求ティアにルートが無く（あるいは全部 OFF で）
+呼び出し側のモデルのまま送るときも、ティアマップの読み込みやルーティング自体が失敗したときも、
+**どの出口でも** persona が付く（`routeRequest` が try/catch の後で付ける）。persona はインストールの
+属性であって、ルートが見つかったかどうかの属性ではないからである。要求ティア（fable / opus /
+sonnet / haiku / other）で persona が変わることも無い。かつての think / longContext / webSearch /
+image といったシナリオ別の経路は、ティアマップ（[routing.md](../architecture/routing.md)）への
+移行で無くなった。
 
 代わりに**受け口による制限**がある。persona 挿入が走るのは **`/v1/messages` だけ**である
-(`scenario-router.ts` の `req.inboundPath` 判定、テストは
+(`router.ts` の `req.inboundPath` 判定、テストは
 `__tests__/llms/persona-inbound-gate.test.ts`)。OpenAI 互換面 (`/v1/chat/completions` /
 `/v1/responses`) と Gemini 面では走らない — OpenAI 形のボディにトップレベル `system` を
 足すと codex が `Unsupported parameter: system` で 400 を返し、寛容な upstream でも
@@ -233,7 +237,8 @@ image の**全シナリオ**が persona を継承する。かつて存在した 
 
 もう一つの制限は**ルーティングモード**で、persona が付くのは routed なトラフィックだけである。
 passthrough の受け口、あるいは予約プロファイル `passthrough` に固定したアクセストークンは
-ルーターを丸ごと飛ばすので、persona も付かない。
+ティアマップを丸ごと飛ばすので、persona も付かない — passthrough が約束するのは「呼び出し側が
+送ったとおり」であり、persona もその例外ではない。
 
 軽量な内部タスク（タイトル生成など）にキャラ性を出したくない場合は、persona 側に抑制指示を
 入れる。ルーティング側にリクエスト単位の除外は無い（ルール画面は廃止された）。どうしても
@@ -241,19 +246,23 @@ passthrough の受け口、あるいは予約プロファイル `passthrough` �
 
 ### `<RIALTO-SUBAGENT-MODEL>` との合成
 
-persona 挿入は `<RIALTO-SUBAGENT-MODEL>` タグ処理の**後**で走るため、
-サブエージェントごとの system 内容を上書きせず合成される。
+`<RIALTO-SUBAGENT-MODEL>`（旧綴り `<CCR-SUBAGENT-MODEL>` も同じ）は `routeRequest` の**最初**に
+除去され、`RequestLog.isSubagent` として記録される。これはルーティングモードによらない —
+passthrough でもタグは上流へ届かない。タグはもうレーンもルートも選ばない（サブエージェントも
+自分が要求したティアのルートに従う）。persona 挿入はこの除去の**後**で走るため、
+サブエージェントごとの system 内容を上書きせず合成される（persona が付くのは上記のとおり routed な
+`/v1/messages` だけ）。
 ペルソナ側で「サブエージェント文脈ではキャラ性を抑えろ」と書いておくと、
 サブエージェント呼び出しでの不自然な語り口を抑制できる (必須ではない)。
 
 ### 思考制御セクションを使うとき
 
-`think` シナリオ (Opus 4.x の Extended Thinking 等) で persona が活きるユーザー向けには、
+thinking を有効にしたリクエスト (Opus 4.x の Extended Thinking 等) で persona が活きるユーザー向けには、
 セクション 9 の思考制御を必ず入れる。これがないと、thinking ブロックの中で
 「ユーザーはこういう質問をしている。〇〇として応答すべきだ」と
 **メタ的なアシスタントモードに滑り落ちる**。
 
-逆に thinking を使わないシナリオ中心のキャラなら、セクション 9 は省略してよい。
+逆に thinking を使わない使い方が中心のキャラなら、セクション 9 は省略してよい。
 冗長になりやすいため、必要なときだけ。
 
 ## テンプレート
@@ -361,7 +370,7 @@ persona 挿入は `<RIALTO-SUBAGENT-MODEL>` タグ処理の**後**で走るた�
 - **[現象名]** — [なぜ起きるか、どう避けるか]
 - ...
 
-## Claude 向け：技術的な注意 (think シナリオで効く)
+## Claude 向け：技術的な注意 (thinking 有効時に効く)
 
 ### 思考の流儀
 
@@ -395,8 +404,8 @@ Rialto は `src/shared/data/personas.ts` で 4 つの seed persona (イレイナ
 
 3. **「封じるべき癖」を拡充**: 各キャラごとに、汎用 LLM が滑り落ちやすい癖を 5〜10 個。
 
-4. **`think` シナリオ前提なら「思考制御」セクション**: ただし大幅に長くなるので、
-   ユーザーが think で使う想定があるキャラに限る。
+4. **thinking 前提なら「思考制御」セクション**: ただし大幅に長くなるので、
+   ユーザーが thinking を有効にして使う想定があるキャラに限る。
 
 体感では各キャラ 150〜250 行に伸ばす価値はある。
 本家ヤッチョ (400 行) ほどの分量は、深い背景情報を持つキャラに限られる。
@@ -413,5 +422,5 @@ Rialto は `src/shared/data/personas.ts` で 4 つの seed persona (イレイナ
 
 - 本家ヤッチョ GPT (for Claude): `https://github.com/tsukumijima/YacchoGPT`
 - Rialto のペルソナ機能概要: `README.md` の "Personas" セクション
-- 挿入実装: `src/llms/scenario-router.ts` の `resolveActivePersonaPrompt` と `applyGlobalSystemPrompt`
+- 挿入実装: `src/llms/router/persona.ts` の `resolveActivePersonaPrompt` と `applyGlobalSystemPrompt`（呼び出しは `src/llms/router.ts` の `routeRequest`）
 - Seed ライブラリ: `src/shared/data/personas.ts`

@@ -1,7 +1,7 @@
 /**
  * Tokenizer base contract.
  *
- * The pipeline's only consumer (scenario router) calls one method on a
+ * The pipeline's only consumer (the router) calls one method on a
  * tokenizer instance: `countTokens(request)` where `request` is the
  * structured Anthropic-style payload (messages + optional system +
  * optional tools). The request shape lives in `@/schemas/domain/tokenizer`

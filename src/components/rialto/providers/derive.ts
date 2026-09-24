@@ -5,11 +5,14 @@
  * speak" logic — the part an operator reads when a request misbehaves —
  * can be reasoned about (and unit-tested) without React.
  */
+import type { OverviewAccountUsage } from '@/lib/api-types'
+import dayjs from '@/lib/dayjs'
 import type { CatalogEntry, CatalogModel } from '@/schemas/api/catalog'
 import { planCapacityWeight, type SeatKind } from '@/shared/plan-capacity'
 import { planLabel } from '@/shared/plan-label'
 import { hasAuthenticableAccount } from '@/shared/subscription-credential'
 import { transformerChain } from '@/shared/transformer-chain'
+import { type AliasMap, tiersServedBy } from './tier-aliases'
 import type { ApiStyle, Provider, ReasoningEffort, SubscriptionWire, TestStatus, Tier, TransformerWire } from './types'
 
 export type ProviderState = 'off' | 'live' | 'invalid' | 'unknown'
@@ -32,42 +35,10 @@ export function enabledCountOf(p: Provider): number {
   return listedModelsOf(p).filter((m) => !off.has(m)).length
 }
 
-/**
- * Bucket a model name into one of the four Claude Code families.
- *
- * A local copy of `tierOf` in `llms/scenario-router/model-selection.ts`
- * rather than an import: that module reaches the Prisma client through
- * its neighbours, and pulling the server tree into the browser bundle to
- * read five string tests is the wrong trade. Precedence matches the
- * router — an explicit manual tier wins, name inference is the fallback —
- * so the column shows the tier the router will actually use.
- */
-function inferTier(model: string): Tier | null {
-  const lower = model.toLowerCase()
-  if (lower.includes('fable')) return 'fable'
-  if (lower.includes('opus')) return 'opus'
-  if (lower.includes('sonnet')) return 'sonnet'
-  if (lower.includes('haiku')) return 'haiku'
-  return null
-}
-
-/** Manual override, name inference, or neither. */
-export function tierSourceOf(p: Provider, model: string): TierSource {
-  const manual = p.modelManualTiers === undefined ? undefined : p.modelManualTiers[model]
-  if (manual !== undefined) return 'manual'
-  return inferTier(model) === null ? 'unset' : 'auto'
-}
-
 /** Per-model reasoning effort, or null when the vendor default stands. */
 export function effortOf(p: Provider, model: string): ReasoningEffort | null {
   const set = p.modelReasoningEfforts === undefined ? undefined : p.modelReasoningEfforts[model]
   return set === undefined ? null : set
-}
-
-export function tierOf(p: Provider, model: string): Tier | null {
-  const manual = p.modelManualTiers === undefined ? undefined : p.modelManualTiers[model]
-  if (manual !== undefined) return manual
-  return inferTier(model)
 }
 
 export function testStatusOf(p: Provider, model: string): TestStatus {
@@ -263,18 +234,16 @@ export function fmtContext(n: number | undefined): string {
   return String(n)
 }
 
-export type TierSource = 'manual' | 'auto' | 'unset'
-
 export interface ModelRow {
   name: string
-  tier: Tier | null
   /**
-   * Where the tier came from. The pill could not say, and the difference
-   * decides whether Routing's tier floor can hold this target at all:
-   * inference only recognises the four Claude families, so a gpt-* or
-   * gemini-* model has no tier until an operator sets one.
+   * The tiers this model is the alias for on its provider, in strip
+   * order. Routing reaches a model only through an alias, so empty means
+   * nothing routed lands here however the model is switched.
    */
-  tierSource: TierSource
+  aliasTiers: Tier[]
+  /** Listed as a new candidate for some tier: found after that alias was last set. */
+  isNew: boolean
   /** Model.reasoningEffort. Null means "send nothing, let the vendor pick". */
   effort: ReasoningEffort | null
   contextWindow: number | undefined
@@ -297,8 +266,16 @@ const catalogModelIndex = (entry: CatalogEntry | undefined): Map<string, Catalog
  * one exception: the cached-input leg is not mirrored onto Provider, so it
  * is read from the vendor catalog entry. Absent on both sides means the
  * vendor publishes no price, which the table shows as a dash.
+ *
+ * `aliases` and `fresh` are the provider's tier aliases and its new
+ * candidates. The add-provider wizard reads neither and passes nothing.
  */
-export function buildModelRows(p: Provider, catalogEntry: CatalogEntry | undefined): ModelRow[] {
+export function buildModelRows(
+  p: Provider,
+  catalogEntry: CatalogEntry | undefined,
+  aliases: AliasMap = {},
+  fresh: ReadonlySet<string> = new Set()
+): ModelRow[] {
   const off = new Set(disabledModelsOf(p))
   const ctx = p.modelContextWindows === undefined ? {} : p.modelContextWindows
   const prices = p.modelPrices === undefined ? {} : p.modelPrices
@@ -308,8 +285,8 @@ export function buildModelRows(p: Provider, catalogEntry: CatalogEntry | undefin
     const fromCatalog = catalogModels.get(name)
     return {
       name,
-      tier: tierOf(p, name),
-      tierSource: tierSourceOf(p, name),
+      aliasTiers: tiersServedBy(aliases, name),
+      isNew: fresh.has(name),
       effort: effortOf(p, name),
       contextWindow: ctx[name],
       inputPer1M: price === undefined ? null : price.inputPer1M,
@@ -464,4 +441,37 @@ export function providerQuotaPct(index: QuotaIndex, kind: SeatKind, accounts: re
   // account the collector has not reached yet is unknown, not empty.
   const pcts = [...byWindow.values()].map((w) => Math.round(w.used / w.weight))
   return pcts.length === 0 ? null : Math.max(...pcts)
+}
+
+/**
+ * What an account carried and what it can still spend, beside its windows.
+ *
+ * Both come on the same Overview quota row as the windows but are not
+ * windows, so they get their own index rather than a place in QuotaIndex:
+ * the rail folds QuotaIndex into one percentage, and nothing here belongs
+ * in that number.
+ */
+export interface AccountExtras {
+  usage: OverviewAccountUsage | null
+  resetCredits: { available: number; applicable: number | null } | null
+}
+
+export type AccountExtrasIndex = Map<string, AccountExtras>
+
+export function indexAccountExtras(
+  rows: ReadonlyArray<{
+    subAccountId: string
+    usage: OverviewAccountUsage | null
+    resetCredits: { available: number; applicable: number | null } | null
+  }>
+): AccountExtrasIndex {
+  return new Map(rows.map((r) => [r.subAccountId, { usage: r.usage, resetCredits: r.resetCredits }]))
+}
+
+/** "Oct 4" in the reader's language, or a dash when the vendor sent no date. */
+export function fmtExpiry(iso: string | null, locale: string): string {
+  if (iso === null) return '—'
+  const at = dayjs(iso)
+  if (!at.isValid()) return '—'
+  return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' }).format(at.toDate())
 }

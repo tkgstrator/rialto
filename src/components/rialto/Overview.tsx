@@ -22,7 +22,7 @@ import {
   type OverviewResponse,
   type OverviewSpendRow
 } from '@/lib/api'
-import { fmtAgo, fmtCount, fmtLatency, fmtRate, fmtUntil, shortId } from '@/lib/rialto/format'
+import { fmtAgo, fmtCount, fmtLatency, fmtRate, fmtUntil, fmtValueRatio, shortId } from '@/lib/rialto/format'
 import { fmtCost, fmtTokens } from '@/lib/sessions/format'
 
 // Spend is going up or down, and neither direction is an alarm on its
@@ -57,7 +57,7 @@ const RANGES: readonly { hours: number; labelKey: string }[] = [
 ]
 
 /** Where a failover row's subject is explained in full. */
-const failoverHref = (f: OverviewFailoverRow): string => (f.kind === 'rate_limit' ? '/activity/requests' : '/routing')
+const failoverHref = (f: OverviewFailoverRow): string => (f.kind === 'rate_limit' ? '/activity/requests' : '/providers')
 
 /**
  * Every row on this page is a question whose answer lives on another
@@ -68,14 +68,6 @@ const failoverHref = (f: OverviewFailoverRow): string => (f.kind === 'rate_limit
  */
 const ROW_LINK = 'transition-colors hover:bg-muted/50 cursor-pointer'
 
-/**
- * One row of the failover feed.
- *
- * The two kinds share a layout but not a sentence, so each half picks its
- * own copy. Composing here rather than on the server is what lets a JA
- * install read this panel in Japanese, and what turns the scheduler's
- * `reason` slug into something an operator can act on.
- */
 /**
  * One subscription account and every limit it is under.
  *
@@ -94,6 +86,25 @@ const ROW_LINK = 'transition-colors hover:bg-muted/50 cursor-pointer'
  * line already shows its own, an unlabelled number in the corner is a
  * question rather than an answer.
  */
+/**
+ * What the account carried, at the models' API prices — "API equivalent",
+ * never a bill. The same four columns as the windows above it, one figure
+ * per cell: this week's tokens and cost, then 30 days' cost against the
+ * plan fee and the ratio of the two.
+ */
+function UsageLine({ label, middle, ratio, cost }: { label: string; middle: string; ratio: string; cost: string }) {
+  return (
+    <div className='flex items-baseline gap-3 pt-2'>
+      <span className='w-28 shrink-0 font-mono text-[12px] text-muted-foreground'>{label}</span>
+      <span className='w-64 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
+        {middle}
+      </span>
+      <span className='w-10 shrink-0 text-right font-mono text-[12px] tabular-nums'>{ratio}</span>
+      <span className='w-20 shrink-0 text-right font-mono text-[12px] tabular-nums'>{cost}</span>
+    </div>
+  )
+}
+
 function QuotaAccount({ row, now }: { row: OverviewQuotaRow; now: number }) {
   const { t } = useTranslation()
   return (
@@ -136,35 +147,56 @@ function QuotaAccount({ row, now }: { row: OverviewQuotaRow; now: number }) {
             </span>
           </div>
         ))}
+        {row.usage === null ? null : (
+          <>
+            <UsageLine
+              label={t('overview.usageWeek')}
+              middle={t('overview.usageTokens', { tokens: fmtTokens(row.usage.window.totalTokens) })}
+              ratio=''
+              cost={fmtCost(row.usage.window.costUsd)}
+            />
+            <UsageLine
+              label={t('overview.usage30d')}
+              middle={
+                row.usage.monthlyPriceUsd === null
+                  ? ''
+                  : t('overview.usageFee', { fee: fmtCost(row.usage.monthlyPriceUsd) })
+              }
+              ratio={fmtValueRatio(row.usage.valueRatio)}
+              cost={fmtCost(row.usage.last30d.costUsd)}
+            />
+          </>
+        )}
       </div>
     </Link>
   )
 }
 
+/**
+ * One row of the failover feed: an account refused with a 429, or one
+ * whose credential no longer authenticates.
+ *
+ * The two kinds share a layout but not a sentence, so each half picks its
+ * own copy. Composing here rather than on the server is what lets a JA
+ * install read this panel in Japanese. A 429 carries account, status and
+ * Retry-After and nothing else: nothing records which target picked the
+ * traffic up, so the row does not invent a destination.
+ */
 function FailoverEntry({ row, now }: { row: OverviewFailoverRow; now: number }) {
   const { t } = useTranslation()
   const rateLimited = row.kind === 'rate_limit'
 
-  const label = rateLimited ? (row.status === null ? '429' : String(row.status)) : t('overview.failoverWeightLabel')
+  const label = rateLimited ? (row.status === null ? '429' : String(row.status)) : t('overview.failoverAuthLabel')
 
-  // What moved. The target on its own line, the values in a fixed slot so
-  // a column of moves can be compared instead of read one at a time.
-  const subject = rateLimited ? row.account : row.target
-
-  // A 429 has no transition: the row carries account, status and
-  // Retry-After and nothing else. Nothing records which target picked the
-  // traffic up, so this says what it has rather than inventing a
-  // destination.
-  // Why, in words, on its own line. The mock drew the scheduler's slug in
-  // a narrow column; the schema calls `reason` a "machine slug, i18n-able
-  // on the UI side" and the translation is a sentence, so a 7rem column
-  // truncated it to "its quota is r…". The transition is what earns a
-  // column here — the reason is what earns a line.
+  // Why, in words, on its own line. An auth row says what the upstream
+  // said; it is its own sentence and is not ours to translate.
   const detail = rateLimited
     ? row.retryAfterSec === null
       ? t('overview.failoverNoRetryAfter')
       : t('overview.failoverRetryAfter', { secs: row.retryAfterSec })
-    : t(`overview.weightReason.${row.reason}`, { defaultValue: t('overview.weightReason.unknown') })
+    : row.error === null
+      ? t('overview.failoverAuthRejected')
+      : row.error
 
   return (
     <Link to={failoverHref(row)} className={cn('block border-t border-border/60 px-6 py-3', ROW_LINK)}>
@@ -172,16 +204,7 @@ function FailoverEntry({ row, now }: { row: OverviewFailoverRow; now: number }) 
         <span className='w-14 shrink-0'>
           <Pill tone={row.tone}>{label}</Pill>
         </span>
-        <span className='min-w-0 flex-1 truncate font-mono text-xs'>{subject}</span>
-        <span className='w-32 shrink-0 text-right'>
-          {row.fromWeight === null || row.toWeight === null ? null : (
-            <span className='inline-flex items-baseline gap-1.5 font-mono text-xs tabular-nums'>
-              <span className='text-muted-foreground/70'>{row.fromWeight.toFixed(2)}</span>
-              <i className='ri-arrow-right-line text-[11px] text-muted-foreground/50' />
-              <span className='font-medium text-foreground'>{row.toWeight.toFixed(2)}</span>
-            </span>
-          )}
-        </span>
+        <span className='min-w-0 flex-1 truncate font-mono text-xs'>{row.account}</span>
         {/* A duration is a number: mono and tabular like every other
             figure here. In the proportional face "1h ago" and "46m ago"
             are different widths, so a column of them does not line up. */}
@@ -189,7 +212,7 @@ function FailoverEntry({ row, now }: { row: OverviewFailoverRow; now: number }) 
           {row.at === '' ? '' : t('settings.access.lastUsedAgo', { ago: fmtAgo(row.at, now) })}
         </span>
       </div>
-      {detail === null ? null : <div className='mt-1 pl-[4.25rem] text-[12px] text-muted-foreground'>{detail}</div>}
+      <div className='mt-1 pl-[4.25rem] text-[12px] text-muted-foreground'>{detail}</div>
     </Link>
   )
 }
@@ -463,9 +486,7 @@ export function Overview() {
             {data.failover.length === 0 ? (
               <div className='px-6 pb-6 text-xs text-muted-foreground'>{t('overview.noFailover')}</div>
             ) : (
-              data.failover.map((f) => (
-                <FailoverEntry key={`${f.kind}-${f.at}-${f.target}-${f.account}`} row={f} now={now} />
-              ))
+              data.failover.map((f) => <FailoverEntry key={`${f.kind}-${f.at}-${f.account}`} row={f} now={now} />)
             )}
           </Section>
 

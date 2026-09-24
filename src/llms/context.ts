@@ -91,7 +91,7 @@ async function buildLlmsContext(): Promise<LlmsContext> {
   const providers = new ProviderRegistry(transformers, logger)
   providers.registerFromConfig(toProviderConfigShapes(providersWithAuth))
 
-  // 6. Tokenizer registry — used by the scenario router to count tokens.
+  // 6. Tokenizer registry — used by the router for the context-window gate.
   const tokenizers = new TokenizerRegistry(logger)
   await tokenizers.initialize()
 

@@ -27,6 +27,7 @@ import type { ModelsCredential, ScrapedPriceEntry } from '../vendors/base'
 import { getVendorProvider, isScrapedVendor } from '../vendors/registry'
 import { modelApiStyleOverride } from './config'
 import { getUsableSubAccountAuth } from './subscription-account-sync/read'
+import { ensurePresetAliases } from './tier-alias-service'
 
 export type RefreshOutcome = z.infer<typeof RefreshOutcomeSchema>
 
@@ -304,6 +305,10 @@ async function refreshOneProvider(p: ProviderRow, catalog: VendorCatalog): Promi
     )
     await prisma.model.createMany({ data: rows, skipDuplicates: true })
   }
+  // The preset's aliases for any tier still unset — on the refresh that
+  // first creates a subscription provider's models, that is all of them.
+  // A new model never replaces an alias here; it is listed as a candidate.
+  await ensurePresetAliases(prisma, p.id)
 
   await applyScrapedPrices(p, catalog, existing)
   await syncDeprecationFlags(p, [...existing, ...toAdd])

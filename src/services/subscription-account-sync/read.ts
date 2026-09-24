@@ -176,3 +176,25 @@ export async function getSubAccountTokensForProvider(
   const kind = usageKindOf(provider.apiBaseUrl)
   return { claude: kind === 'claude' ? accounts : [], codex: kind === 'codex' ? accounts : [] }
 }
+
+/**
+ * One account's tokens and the usage kind of its provider, for an action
+ * on that account alone — spending a banked Codex reset. Neither switch is
+ * asked: a reset acts on the vendor's side of the account, and an account
+ * an operator parked is still one whose limits they may want to clear
+ * before switching it back on. Null when the id is unknown or its token
+ * does not decrypt.
+ */
+export async function getSubAccountTokenById(
+  subAccountId: string,
+  prisma: PrismaClient = getPrismaClient()
+): Promise<{ kind: 'claude' | 'codex' | null; providerName: string; info: SubAccountTokenInfo } | null> {
+  const account = await prisma.subAccount.findUnique({
+    where: { id: subAccountId },
+    include: { provider: { select: { name: true, apiBaseUrl: true } } }
+  })
+  if (account === null) return null
+  const info = tokenInfoOf(account, encryptionKey())
+  if (info === null) return null
+  return { kind: usageKindOf(account.provider.apiBaseUrl), providerName: account.provider.name, info }
+}
