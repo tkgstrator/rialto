@@ -194,7 +194,7 @@ export class ClaudeCodeOauthTransformer extends OAuthTransformer {
     // test), which wants the provider's own active account and so stays
     // on the overlay path inside resolveSubscriptionAuth.
     const sessionId = context?.req?.accountSessionKey
-    const { token } = await this.resolveSubscriptionAuth(provider, sessionId, 'claude', request)
+    const { token } = await this.resolveSubscriptionAuth(provider, sessionId, 'claude', request, context)
     // biome-ignore plugin: the OAuth auth hook receives the inbound Anthropic body verbatim (unknown by design); narrowing to a Zod schema would re-encode the whole request, defeating the bypass-mode passthrough.
     const req = request as ClaudeCodeRequestShape
     hoistSystemMessages(req)

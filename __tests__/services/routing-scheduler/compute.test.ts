@@ -120,7 +120,7 @@ test('exhausted account demotes the candidate to zero-healthiness', () => {
 
 /**
  * The tick unions every scenario's chain into ONE vector (see
- * `runSchedulerTickForTest`), so under the old normalisation a target
+ * `runSchedulerTick`), so under the old normalisation a target
  * added to the `think` chain quietly shrank every row the `default`
  * chain was showing. A weight has to describe its own candidate.
  */

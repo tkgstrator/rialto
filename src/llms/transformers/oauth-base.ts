@@ -10,7 +10,7 @@
  */
 
 import { HTTPException } from 'hono/http-exception'
-import type { RuntimeProvider } from '@/schemas/domain/pipeline'
+import type { RuntimeProvider, TransformerContext } from '@/schemas/domain/pipeline'
 import { type OauthCredentials, OauthSubscriptionAuthBlockSchema } from '@/schemas/wire/oauth'
 import { logger } from '../../logger'
 import { withRefreshLock } from '../../services/oauth/refresh-lock'
@@ -64,14 +64,26 @@ export abstract class OAuthTransformer extends Transformer {
     return typeof model === 'string' && model.length > 0 ? model : undefined
   }
 
-  /** Freshen a resolved account's token and shape it for the caller. */
-  private async credentialsFor(auth: {
-    subAccountId: string
-    accessToken: string
-    refreshToken: string | null
-    accountId: string | null
-    expiresAt: Date | null
-  }): Promise<OauthCredentials> {
+  /**
+   * Freshen a resolved account's token and shape it for the caller.
+   *
+   * Every way of resolving an account ends here, so this is also where
+   * the attempt learns which account it runs on: `context.req` is the
+   * request the usage capture reads back after the upstream call (the
+   * RequestLog row's account) and the 429 path reads to know which
+   * account to rotate away from. Probe contexts carry no `req`.
+   */
+  private async credentialsFor(
+    auth: {
+      subAccountId: string
+      accessToken: string
+      refreshToken: string | null
+      accountId: string | null
+      expiresAt: Date | null
+    },
+    context: TransformerContext | undefined
+  ): Promise<OauthCredentials> {
+    if (context?.req !== undefined) context.req.subAccountId = auth.subAccountId
     const live = await this.ensureFreshToken({
       subAccountId: auth.subAccountId,
       accessToken: auth.accessToken,
@@ -85,7 +97,8 @@ export abstract class OAuthTransformer extends Transformer {
     provider: RuntimeProvider | null | undefined,
     sessionId?: string | null,
     kind?: 'claude' | 'codex',
-    request?: unknown
+    request?: unknown,
+    context?: TransformerContext
   ): Promise<OauthCredentials> {
     // Session-aware path: pick the account by session continuity, or by
     // which one has the most quota left to burn. This is the path all
@@ -93,13 +106,16 @@ export abstract class OAuthTransformer extends Transformer {
     if (sessionId && kind) {
       const account = await resolveAccountForSession(sessionId, kind, this.modelOf(request))
       if (account) {
-        return this.credentialsFor({
-          subAccountId: account.subAccountId,
-          accessToken: account.accessToken,
-          refreshToken: account.refreshToken,
-          accountId: account.accountId,
-          expiresAt: account.expiresAt
-        })
+        return this.credentialsFor(
+          {
+            subAccountId: account.subAccountId,
+            accessToken: account.accessToken,
+            refreshToken: account.refreshToken,
+            accountId: account.accountId,
+            expiresAt: account.expiresAt
+          },
+          context
+        )
       }
     }
 
@@ -112,13 +128,16 @@ export abstract class OAuthTransformer extends Transformer {
     )
     if (parsed.success) {
       const auth = parsed.data
-      return this.credentialsFor({
-        subAccountId: auth.subAccountId,
-        accessToken: auth.accessToken,
-        refreshToken: typeof auth.refreshToken === 'string' ? auth.refreshToken : null,
-        accountId: typeof auth.accountId === 'string' ? auth.accountId : null,
-        expiresAt: auth.expiresAt === undefined ? null : auth.expiresAt
-      })
+      return this.credentialsFor(
+        {
+          subAccountId: auth.subAccountId,
+          accessToken: auth.accessToken,
+          refreshToken: typeof auth.refreshToken === 'string' ? auth.refreshToken : null,
+          accountId: typeof auth.accountId === 'string' ? auth.accountId : null,
+          expiresAt: auth.expiresAt === undefined ? null : auth.expiresAt
+        },
+        context
+      )
     }
 
     // Last resort: any account on this provider that can authenticate.
@@ -129,13 +148,16 @@ export abstract class OAuthTransformer extends Transformer {
     const fallback =
       provider?.name === undefined ? null : await getUsableSubAccountAuth(provider.name).catch(() => null)
     if (fallback?.accessToken) {
-      return this.credentialsFor({
-        subAccountId: fallback.subAccountId,
-        accessToken: fallback.accessToken,
-        refreshToken: fallback.refreshToken,
-        accountId: fallback.accountId,
-        expiresAt: fallback.expiresAt
-      })
+      return this.credentialsFor(
+        {
+          subAccountId: fallback.subAccountId,
+          accessToken: fallback.accessToken,
+          refreshToken: fallback.refreshToken,
+          accountId: fallback.accountId,
+          expiresAt: fallback.expiresAt
+        },
+        context
+      )
     }
 
     throw new HTTPException(401, {

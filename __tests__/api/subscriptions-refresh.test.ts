@@ -29,6 +29,18 @@ import {
   type SubscriptionRefreshResponse,
   SubscriptionRefreshResponseSchema
 } from '../../src/schemas/api/subscriptions'
+import {
+  clearAccountExhaustion,
+  clearModelExhaustion,
+  clearProviderExhaustion,
+  isAccountExhausted,
+  isModelExhausted,
+  isProviderExhausted,
+  markAccountExhausted,
+  markModelExhausted,
+  markProviderExhausted
+} from '../../src/services/failover-state'
+import { __resetSchedulerStateForTest, getRoutingSnapshot } from '../../src/services/routing-scheduler/state'
 import { encryptionKey, encryptString } from '../../src/services/subscription-account-sync/crypto'
 import { refreshProviderSubscriptions, refreshSubscriptions } from '../../src/services/subscription-refresh-service'
 import {
@@ -92,7 +104,12 @@ const bearerOf = (init?: RequestInit): string => {
 // Anything but the three upstream endpoints is refused loudly, so a stray
 // request (a token refresh, say) fails the test instead of reaching the
 // network.
+// A test that needs another reading from one endpoint sets it here.
+const bodyOverrides = new Map<string, unknown>()
+
 const answer = (url: string): Response => {
+  const override = bodyOverrides.get(url)
+  if (override !== undefined) return json(override)
   if (url === CLAUDE_USAGE_URL) return json(claudeUsageBody)
   if (url === CLAUDE_PROFILE_URL) return json(claudeProfileBody)
   if (url === CODEX_USAGE_URL) return json(codexUsageBody)
@@ -190,6 +207,7 @@ describe.skipIf(!HAS_DB)('POST /api/subscriptions/refresh', () => {
     await resetDbTables()
     __clearUsageCachesForTest()
     calls.length = 0
+    bodyOverrides.clear()
     stubUpstream()
   })
 
@@ -360,5 +378,99 @@ describe.skipIf(!HAS_DB)('POST /api/subscriptions/refresh', () => {
     // Exactly these three keys, and all three accounts synced — carol's
     // provider being off is a routing fact, not an auth-health one.
     expect(await res.json()).toEqual({ updated: 3, failed: 0, subscriptions: expect.any(Array) })
+  })
+})
+
+/**
+ * A 429 marks its account out until the window it hit resets, which on a
+ * weekly window can be days; a banked reset spent in the vendor's own app
+ * never reaches Rialto. The refresh is where a fresh reading lifts the
+ * marks it contradicts — each against the windows that bind for it — and
+ * republishes the routing snapshot so the change is in effect when the
+ * response arrives.
+ */
+describe.skipIf(!HAS_DB)('a refresh reconsiders the exhaustion marks', () => {
+  const FAR = dayjs('2099-01-01T00:00:00.000Z').valueOf()
+  const spentFable = {
+    ...claudeUsageBody,
+    limits: [
+      {
+        kind: 'weekly_scoped',
+        percent: 100,
+        resets_at: '2099-01-07T00:00:00.000Z',
+        scope: { model: { display_name: 'Fable' } }
+      }
+    ]
+  }
+
+  beforeEach(async () => {
+    process.env.RIALTO_ACCOUNT_ENCRYPTION_KEY = TEST_KEY_HEX
+    await resetDbTables()
+    __clearUsageCachesForTest()
+    __resetSchedulerStateForTest()
+    calls.length = 0
+    bodyOverrides.clear()
+    stubUpstream()
+  })
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    clearProviderExhaustion('claude-code')
+    clearModelExhaustion('claude-code', 'claude-fable-5')
+    clearModelExhaustion('claude-code', 'claude-sonnet-5')
+  })
+
+  test('an account the vendor reports under its limits is let back in', async () => {
+    const { anna } = await seedInstall()
+    markAccountExhausted(anna.id, FAR)
+    await refreshSubscriptions()
+    expect(isAccountExhausted(anna.id)).toBe(false)
+  })
+
+  test('an account still at its limit stays out', async () => {
+    const { anna } = await seedInstall()
+    bodyOverrides.set(CLAUDE_USAGE_URL, {
+      ...claudeUsageBody,
+      seven_day: { utilization: 100, resets_at: '2099-01-07T00:00:00.000Z' }
+    })
+    markAccountExhausted(anna.id, FAR)
+    await refreshSubscriptions()
+    expect(isAccountExhausted(anna.id)).toBe(true)
+    clearAccountExhaustion(anna.id)
+  })
+
+  test("a model mark goes only when the model's own windows allow it", async () => {
+    await seedInstall()
+    bodyOverrides.set(CLAUDE_USAGE_URL, spentFable)
+    markModelExhausted('claude-code', 'claude-fable-5', FAR)
+    markModelExhausted('claude-code', 'claude-sonnet-5', FAR)
+    await refreshSubscriptions()
+    // Fable's weekly window is still spent; Sonnet is bound only by the
+    // account-wide windows, which are not.
+    expect(isModelExhausted('claude-code', 'claude-fable-5')).toBe(true)
+    expect(isModelExhausted('claude-code', 'claude-sonnet-5')).toBe(false)
+  })
+
+  test('a provider mark is left to its own cooldown', async () => {
+    await seedInstall()
+    markProviderExhausted('claude-code')
+    await refreshSubscriptions()
+    expect(isProviderExhausted('claude-code')).toBe(true)
+  })
+
+  test('an account whose upstream call failed keeps its mark', async () => {
+    const { anna } = await seedInstall()
+    stubUpstream({ url: CLAUDE_USAGE_URL, token: 'tok-anna' })
+    markAccountExhausted(anna.id, FAR)
+    await refreshSubscriptions()
+    expect(isAccountExhausted(anna.id)).toBe(true)
+    clearAccountExhaustion(anna.id)
+  })
+
+  test('the routing snapshot is republished before the refresh answers', async () => {
+    await seedInstall()
+    expect(getRoutingSnapshot()).toBeNull()
+    await refreshSubscriptions()
+    expect(getRoutingSnapshot()).not.toBeNull()
   })
 })

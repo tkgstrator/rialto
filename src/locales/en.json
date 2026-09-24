@@ -293,7 +293,22 @@
       "resetsIn": "resets in",
       "windowFiveHour": "5-hour",
       "windowSevenDay": "7-day",
-      "windowScoped": "7-day · {{model}}"
+      "windowScoped": "7-day · {{model}}",
+      "usageHeader": "API equiv",
+      "usageTokens": "tokens",
+      "usageCost": "cost",
+      "usageFee": "fee",
+      "usageThisWeek": "this week",
+      "usage30d": "30 days",
+      "resetCredits": "Banked resets",
+      "resetNone": "none to spend",
+      "resetUse": "Use reset",
+      "resetNotApplicable": "A reset applies only while a window is spent",
+      "resetNoneLeft": "This account has no reset left to spend",
+      "resetConfirmTitle": "Use a banked reset on {{account}}?",
+      "resetConfirmDescription": "OpenAI resets this account's 5-hour and weekly windows to 0%. The reset is spent at once and cannot be returned.\n\nBanked resets: {{available}} → {{remaining}}. The next to expire lapses {{expires}}.\n\nRouting picks the account up as soon as the reset lands.",
+      "resetDone": "Reset spent — {{remaining}} left. Routing uses the account again.",
+      "resetDoneUnread": "Reset spent — {{remaining}} left. The usage poll did not answer, so the bars update on the next one."
     },
     "shape": {
       "title": "Request shape",
@@ -854,7 +869,11 @@
     "quotaLimitCount_one": "{{count}} limit",
     "quotaLimitCount_other": "{{count}} limits",
     "resetsDueShort": "due",
-    "quotaLimitCount": "{{count}} limits"
+    "quotaLimitCount": "{{count}} limits",
+    "usageWeek": "week · API eq.",
+    "usage30d": "30d · API eq.",
+    "usageTokens": "{{tokens}} tok",
+    "usageFee": "of {{fee}}/mo"
   },
   "system": {
     "notFound": {

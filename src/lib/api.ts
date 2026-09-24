@@ -6,6 +6,7 @@ import type {
   InboundType,
   OverviewResponse,
   RequestLogItem,
+  ResetCreditsResponse,
   RouterPreferenceProfileWire,
   RouterPreferencesApplyResponse,
   RouterUtilizationResponse,
@@ -14,7 +15,8 @@ import type {
   SessionMessageItem,
   SessionSummary,
   SurfaceId,
-  UpdateCheckResponse
+  UpdateCheckResponse,
+  UseResetResponse
 } from '@/lib/api-types'
 import type { Config } from '@/types'
 
@@ -184,6 +186,18 @@ class ApiClient {
   // Router scheduler snapshot (Phase 5). Read-only. Cold-boot returns
   // an empty snapshot with tickAt=null so the UI renders "no data yet"
   // without a special path.
+  // The account's spendable banked resets, read from OpenAI now, soonest
+  // to lapse first, and how many apply right now.
+  async getResetCredits(subAccountId: string): Promise<ResetCreditsResponse> {
+    return this.get<ResetCreditsResponse>(`/subscriptions/accounts/${encodeURIComponent(subAccountId)}/reset-credits`)
+  }
+
+  // Spend the credit closest to lapsing. Irreversible on OpenAI's side;
+  // the caller asks first.
+  async spendResetCredit(subAccountId: string): Promise<UseResetResponse> {
+    return this.post<UseResetResponse>(`/subscriptions/accounts/${encodeURIComponent(subAccountId)}/reset-usage`, {})
+  }
+
   async getRoutingSchedulerState(): Promise<RoutingSchedulerStateResponse> {
     return this.get<RoutingSchedulerStateResponse>('/routing-scheduler-state')
   }

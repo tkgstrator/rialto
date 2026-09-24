@@ -45,6 +45,15 @@ export const PreferenceConstraintsSchema = z
     // candidates ever match.
     allowEscalation: z.boolean().default(true),
     allowDemotion: z.boolean().default(true),
+    // What the two gates above mean when they leave nothing: 'nearest'
+    // retries the candidates they refused, nearest tier first and the
+    // cheaper side before the pricier one, so a Sonnet-only chain with
+    // escalation off still serves the Haiku calls Claude Code makes for
+    // its background work. 'refuse' keeps the gates hard; the request
+    // is then answered 400, because a tier mismatch is configuration,
+    // not an exhausted quota, and a 429 would send the client into a
+    // retry loop against a Retry-After that never frees anything.
+    tierFallback: z.enum(['nearest', 'refuse']).default('nearest'),
     // Skip a candidate whose budget is used at or past this percentage
     // (0-100), as the scheduler snapshot last saw it: `100 -
     // remainingBudgetPct`, checked in `buildIsExhausted`

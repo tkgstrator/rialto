@@ -1,4 +1,5 @@
 import { afterEach, expect, setSystemTime, test } from 'bun:test'
+import dayjs from '../../src/lib/dayjs'
 import {
   clearAccountExhaustion,
   clearModelExhaustion,
@@ -8,7 +9,8 @@ import {
   isProviderExhausted,
   markAccountExhausted,
   markModelExhausted,
-  markProviderExhausted
+  markProviderExhausted,
+  modelMarksFor
 } from '../../src/services/failover-state'
 
 // failover-state holds a process-global map; reset the clock and drop the
@@ -183,4 +185,23 @@ test('model mark auto-clears when its window elapses', () => {
 
   setSystemTime(new Date(t0 + 61_000))
   expect(isModelExhausted('anthropic', 'claude-fable')).toBe(false)
+})
+
+test('modelMarksFor lists the live model marks on one provider only', () => {
+  const now = dayjs('2026-09-24T00:00:00.000Z').valueOf()
+  setSystemTime(dayjs(now).toDate())
+  markModelExhausted('mm-claude', 'claude-fable-5', now + 60_000)
+  markModelExhausted('mm-claude', 'claude-sonnet-5', now + 3_600_000)
+  markModelExhausted('mm-claude-2', 'claude-opus-5', now + 3_600_000)
+  expect(modelMarksFor('mm-claude').sort()).toEqual(['claude-fable-5', 'claude-sonnet-5'])
+  // A provider whose name is a prefix of another's does not pick up its marks.
+  expect(modelMarksFor('mm-claude-2')).toEqual(['claude-opus-5'])
+
+  // Past its window a mark is gone from the list, as `is` would say.
+  setSystemTime(dayjs(now + 120_000).toDate())
+  expect(modelMarksFor('mm-claude')).toEqual(['claude-sonnet-5'])
+
+  clearModelExhaustion('mm-claude', 'claude-sonnet-5')
+  clearModelExhaustion('mm-claude-2', 'claude-opus-5')
+  expect(modelMarksFor('mm-claude')).toEqual([])
 })

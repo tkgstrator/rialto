@@ -52,6 +52,11 @@ export async function buildPriceMap(
   return map
 }
 
+// Cache-write price multipliers over the input price, per Anthropic's
+// published prompt-caching rates.
+const CACHE_WRITE_5M = 1.25
+const CACHE_WRITE_1H = 2
+
 export function computeCosts(
   log: {
     provider: string
@@ -60,6 +65,10 @@ export function computeCosts(
     outputTokens: number
     cacheReadTokens: number
     cacheWriteTokens: number
+    // The 1-hour-TTL share of cacheWriteTokens. Required, so a caller
+    // that sums the columns cannot forget this one and silently price
+    // every 1h write at the 5-minute rate.
+    cacheWrite1hTokens: number
   },
   priceMap: Map<string, PriceEntry>
 ) {
@@ -68,8 +77,15 @@ export function computeCosts(
   const outputCostUsd = price?.outputPer1M != null ? (log.outputTokens / 1_000_000) * price.outputPer1M : null
   const cacheReadCostUsd =
     price?.cachedInputPer1M != null ? (log.cacheReadTokens / 1_000_000) * price.cachedInputPer1M : null
+  // Anthropic prices a cache write by its TTL: 1.25x input for 5 minutes,
+  // 2x for an hour. Vendors that report no split leave write1h at 0, so
+  // every write keeps the 5-minute rate as before.
+  const write1h = Math.min(log.cacheWrite1hTokens, log.cacheWriteTokens)
+  const write5m = log.cacheWriteTokens - write1h
   const cacheWriteCostUsd =
-    price?.inputPer1M != null ? (log.cacheWriteTokens / 1_000_000) * price.inputPer1M * 1.25 : null
+    price?.inputPer1M != null
+      ? ((write5m * CACHE_WRITE_5M + write1h * CACHE_WRITE_1H) / 1_000_000) * price.inputPer1M
+      : null
   const totalCostUsd =
     inputCostUsd != null && outputCostUsd != null
       ? inputCostUsd + outputCostUsd + (cacheReadCostUsd ?? 0) + (cacheWriteCostUsd ?? 0)

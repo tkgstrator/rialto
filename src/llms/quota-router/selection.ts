@@ -25,12 +25,13 @@
  *      `minHealthSamples` recent samples (handled by the caller — this
  *      function trusts the callback).
  *
- * All-candidates-fail branches:
- *   - `constraints.exhaustedBehavior === '429'` → `primary: null`, caller
- *     is expected to return `rate_limit_error` with `Retry-After`.
- *   - `constraints.exhaustedBehavior === 'passthrough'` → `primary: null`
- *     and `fallbacks: []`, letting the caller keep the client's original
- *     model (L4 behaviour).
+ * When the tier gate alone leaves nothing and `constraints.tierFallback`
+ * is 'nearest', the candidates it refused get a second pass, nearest
+ * tier first (see `nearestTierRetry`).
+ *
+ * All-candidates-fail: `primary: null`, and `skipped` says why. What the
+ * caller answers — 429, 400, or the client's own model — depends on
+ * those reasons and is decided in runtime.ts, not here.
  */
 
 import type { PreferenceConstraints, RequestedModelTier, RouterPreferenceEntry } from '@/schemas/domain'
@@ -87,6 +88,9 @@ export interface PreferenceSelection {
   // order. Used by the shadow-mode divergence logger (Phase 2e) and
   // the utilization dashboard (later).
   skipped: { target: string; reason: SkipReason }[]
+  // True when the primary came from the nearest-tier retry, i.e. the
+  // request is being served by a tier the gates would have refused.
+  substituted: boolean
 }
 
 export type SkipReason = 'disabled' | 'tier_mismatch' | 'exhausted' | 'error_rate' | 'context_too_small'
@@ -145,24 +149,95 @@ const modelNameOf = (target: string): string | undefined => {
   return parts[1]
 }
 
+// Manual tier override (Model.manualTier) wins when present so
+// operators can classify third-party models that don't follow the
+// fable/opus/sonnet/haiku naming convention. Name inference is the
+// fallback for legacy targets that pre-date the override.
+const candidateTierOf = (entry: RouterPreferenceEntry): RequestedModelTier | undefined => {
+  if (entry.resolvedTier !== null && entry.resolvedTier !== undefined) return entry.resolvedTier
+  const modelName = modelNameOf(entry.target)
+  return modelName === undefined ? undefined : tierOf(modelName)
+}
+
+// The gates that describe a target's state right now, as opposed to
+// whether it is the right tier. Shared by the first pass and the
+// nearest-tier retry, so a substituted target is held to the same bar.
+const runtimeGateOf = (target: string, input: PreferenceSelectorInput): SkipReason | null => {
+  // Physical context window gate. A candidate whose max input is
+  // smaller than the current request's token count would 400 or
+  // silently truncate — skip it before the exhausted/error checks
+  // so the reason is precise for the utilisation dashboard. Unknown
+  // contextWindow (scraper miss / cold-start row) is treated as
+  // "allow, we'll trust the vendor" rather than blocking the row.
+  if (input.requestTokenCount !== undefined && input.contextWindowOf !== undefined) {
+    const window = input.contextWindowOf(target)
+    if (window !== null && window < input.requestTokenCount) return 'context_too_small'
+  }
+  if (input.isExhausted(target)) return 'exhausted'
+  if (input.errorRate(target) >= input.constraints.errorRateSkipPct) return 'error_rate'
+  return null
+}
+
+interface Refused {
+  target: string
+  tier: RequestedModelTier | undefined
+  // Where the tier_mismatch sits in `skipped`, so the retry can replace
+  // it with what actually happened to the candidate.
+  skippedIndex: number
+}
+
+// Distance from the requested tier, cheaper side first on a tie: a
+// Sonnet request with only Opus and Haiku in the chain takes Haiku
+// before Opus. A candidate of unknown tier (only reachable through the
+// pace override, which refuses those) sorts last.
+const retryRank = (tier: RequestedModelTier | undefined, requested: RequestedModelTier): number => {
+  const idx = tier === undefined ? -1 : TIER_ORDER.indexOf(tier)
+  const requestedIdx = TIER_ORDER.indexOf(requested)
+  if (idx < 0 || requestedIdx < 0) return Number.MAX_SAFE_INTEGER
+  const distance = Math.abs(idx - requestedIdx)
+  return distance * 2 + (idx < requestedIdx ? 1 : 0)
+}
+
+// Second pass over the candidates the tier gate refused, taken only when
+// that gate is the reason nothing passed. The gates are a preference
+// about which tier serves a request; left hard, a Sonnet-only chain with
+// escalation off turned every Haiku call into a 429 that never went
+// upstream. `Array.prototype.sort` is stable, so equal ranks keep chain
+// order. A refused candidate that fails a runtime gate here reports that
+// reason instead, so an exhausted substitute still reads as exhaustion.
+function nearestTierRetry(
+  refused: readonly Refused[],
+  skipped: readonly { target: string; reason: SkipReason }[],
+  input: PreferenceSelectorInput,
+  requested: RequestedModelTier
+): PreferenceSelection {
+  const ordered = [...refused].sort((a, b) => retryRank(a.tier, requested) - retryRank(b.tier, requested))
+  const outcome = new Map<number, SkipReason | null>(
+    ordered.map((candidate) => [candidate.skippedIndex, runtimeGateOf(candidate.target, input)])
+  )
+  const passing = ordered.filter((candidate) => outcome.get(candidate.skippedIndex) === null).map((c) => c.target)
+  const nextSkipped = skipped.flatMap((item, idx) => {
+    const reason = outcome.get(idx)
+    if (reason === undefined) return [item]
+    return reason === null ? [] : [{ target: item.target, reason }]
+  })
+  if (passing.length === 0)
+    return { primary: null, fallbacks: [], matched: false, skipped: nextSkipped, substituted: false }
+  const [primary, ...fallbacks] = passing
+  return { primary, fallbacks, matched: true, skipped: nextSkipped, substituted: true }
+}
+
 export function selectByPreference(input: PreferenceSelectorInput): PreferenceSelection {
   const passing: string[] = []
   const skipped: { target: string; reason: SkipReason }[] = []
+  const refused: Refused[] = []
 
   for (const entry of input.entries) {
     if (!entry.enabled) {
       skipped.push({ target: entry.target, reason: 'disabled' })
       continue
     }
-    // Manual tier override (Model.manualTier) wins when present so
-    // operators can classify third-party models that don't follow the
-    // fable/opus/sonnet/haiku naming convention. Name inference is
-    // the fallback for legacy targets that pre-date the override.
-    const modelName = modelNameOf(entry.target)
-    const inferredTier = modelName === undefined ? undefined : tierOf(modelName)
-    const overrideTier =
-      entry.resolvedTier === null || entry.resolvedTier === undefined ? undefined : entry.resolvedTier
-    const candidateTier = overrideTier ?? inferredTier
+    const candidateTier = candidateTierOf(entry)
 
     if (
       !tierMatches(
@@ -174,40 +249,30 @@ export function selectByPreference(input: PreferenceSelectorInput): PreferenceSe
         entry.allowDemotion
       )
     ) {
+      refused.push({ target: entry.target, tier: candidateTier, skippedIndex: skipped.length })
       skipped.push({ target: entry.target, reason: 'tier_mismatch' })
       continue
     }
 
-    // Physical context window gate. A candidate whose max input is
-    // smaller than the current request's token count would 400 or
-    // silently truncate — skip it before the exhausted/error checks
-    // so the reason is precise for the utilisation dashboard. Unknown
-    // contextWindow (scraper miss / cold-start row) is treated as
-    // "allow, we'll trust the vendor" rather than blocking the row.
-    if (input.requestTokenCount !== undefined && input.contextWindowOf !== undefined) {
-      const window = input.contextWindowOf(entry.target)
-      if (window !== null && window < input.requestTokenCount) {
-        skipped.push({ target: entry.target, reason: 'context_too_small' })
-        continue
-      }
-    }
-
-    if (input.isExhausted(entry.target)) {
-      skipped.push({ target: entry.target, reason: 'exhausted' })
-      continue
-    }
-
-    if (input.errorRate(entry.target) >= input.constraints.errorRateSkipPct) {
-      skipped.push({ target: entry.target, reason: 'error_rate' })
+    const gated = runtimeGateOf(entry.target, input)
+    if (gated !== null) {
+      skipped.push({ target: entry.target, reason: gated })
       continue
     }
 
     passing.push(entry.target)
   }
 
-  if (passing.length === 0) {
-    return { primary: null, fallbacks: [], matched: false, skipped }
+  if (passing.length > 0) {
+    const [primary, ...fallbacks] = passing
+    return { primary, fallbacks, matched: true, skipped, substituted: false }
   }
-  const [primary, ...fallbacks] = passing
-  return { primary, fallbacks, matched: true, skipped }
+  // The schema always fills `tierFallback`; constraints built by hand
+  // (the selector tests) may leave it out, and absent reads as the
+  // schema default rather than as 'refuse'.
+  const nearest = input.constraints.tierFallback !== 'refuse'
+  if (nearest && refused.length > 0 && input.requestedTier !== undefined) {
+    return nearestTierRetry(refused, skipped, input, input.requestedTier)
+  }
+  return { primary: null, fallbacks: [], matched: false, skipped, substituted: false }
 }

@@ -22,7 +22,7 @@ import {
   type OverviewResponse,
   type OverviewSpendRow
 } from '@/lib/api'
-import { fmtAgo, fmtCount, fmtLatency, fmtRate, fmtUntil, shortId } from '@/lib/rialto/format'
+import { fmtAgo, fmtCount, fmtLatency, fmtRate, fmtUntil, fmtValueRatio, shortId } from '@/lib/rialto/format'
 import { fmtCost, fmtTokens } from '@/lib/sessions/format'
 
 // Spend is going up or down, and neither direction is an alarm on its
@@ -94,6 +94,25 @@ const ROW_LINK = 'transition-colors hover:bg-muted/50 cursor-pointer'
  * line already shows its own, an unlabelled number in the corner is a
  * question rather than an answer.
  */
+/**
+ * What the account carried, at the models' API prices — "API equivalent",
+ * never a bill. The same four columns as the windows above it, one figure
+ * per cell: this week's tokens and cost, then 30 days' cost against the
+ * plan fee and the ratio of the two.
+ */
+function UsageLine({ label, middle, ratio, cost }: { label: string; middle: string; ratio: string; cost: string }) {
+  return (
+    <div className='flex items-baseline gap-3 pt-2'>
+      <span className='w-28 shrink-0 font-mono text-[12px] text-muted-foreground'>{label}</span>
+      <span className='w-64 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
+        {middle}
+      </span>
+      <span className='w-10 shrink-0 text-right font-mono text-[12px] tabular-nums'>{ratio}</span>
+      <span className='w-20 shrink-0 text-right font-mono text-[12px] tabular-nums'>{cost}</span>
+    </div>
+  )
+}
+
 function QuotaAccount({ row, now }: { row: OverviewQuotaRow; now: number }) {
   const { t } = useTranslation()
   return (
@@ -136,6 +155,26 @@ function QuotaAccount({ row, now }: { row: OverviewQuotaRow; now: number }) {
             </span>
           </div>
         ))}
+        {row.usage === null ? null : (
+          <>
+            <UsageLine
+              label={t('overview.usageWeek')}
+              middle={t('overview.usageTokens', { tokens: fmtTokens(row.usage.window.totalTokens) })}
+              ratio=''
+              cost={fmtCost(row.usage.window.costUsd)}
+            />
+            <UsageLine
+              label={t('overview.usage30d')}
+              middle={
+                row.usage.monthlyPriceUsd === null
+                  ? ''
+                  : t('overview.usageFee', { fee: fmtCost(row.usage.monthlyPriceUsd) })
+              }
+              ratio={fmtValueRatio(row.usage.valueRatio)}
+              cost={fmtCost(row.usage.last30d.costUsd)}
+            />
+          </>
+        )}
       </div>
     </Link>
   )
