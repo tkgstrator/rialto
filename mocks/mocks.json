@@ -23,14 +23,14 @@
       "mock": "routing.html",
       "route": "/routing",
       "group": "Routing",
-      "note": "Where requests go, for one surface's profile. A summary first — per kind of request, the model used now and its backups, identical tiers folded together — then quota once per provider, then the map: per requested tier (fable / opus / sonnet / haiku / other), rows led by the model they reach, with a status that says the row's role (used now / backup / off). Replaces the per-scenario, per-lane model chain and the tier-substitution gates."
+      "note": "Routing for one surface's profile, by scenario. A summary first — for every scenario (Default / Think / Long context) and lane (Agent / Subagent), the model used now and its backups — then quota once per provider, then the list for the selected scenario and lane. Each row names a provider and a tier on it (claude-code · sonnet), resolved through that provider's tier alias, so a model release moves one alias instead of every list; the row leads with the model it reaches and a status naming its role (used now / backup / off). Image and Web search are no longer scenarios, and no tier gate filters rows by the model the caller asked for."
     },
     {
       "name": "routing-states",
       "mock": "routing.html?states",
       "route": null,
       "group": "Routing",
-      "note": "The same screen with a map that exercises every row status: out of quota until a time (the next row takes over as used now), nearly spent, no model set for the alias, no web search, and a row switched off. Mock-only: the states come from live quota."
+      "note": "The same screen with lists that exercise every row status: out of quota until a time (the next usable row takes over as used now), nearly spent, no model set for the alias, no web search, a row switched off, and empty lists that fall back to Default. Mock-only: the states come from live quota."
     },
     {
       "name": "routing-passthrough",
@@ -44,7 +44,7 @@
       "mock": "routing.html?edit",
       "route": null,
       "group": "Routing",
-      "note": "The tier map after Edit: drag handles, row toggles, the row menu, Add route per tier group and the four constraint controls only work in this state, and one Revert / Save in band 3 covers the routes and their constraints together. While editing, the surface tabs, the mode switch and the profile picker are disabled. Mock-only because the state sits behind a click."
+      "note": "The scenario lists after Edit: drag handles, row toggles, the row menu, Add route under the list and the five constraint controls only work in this state, and one Revert / Save in band 3 covers every list and the constraints together. While editing, the surface tabs, the mode switch and the profile picker are disabled; the scenario tabs and the lane switch stay free. Mock-only because the state sits behind a click."
     },
     {
       "name": "providers",

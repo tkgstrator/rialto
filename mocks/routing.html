@@ -75,84 +75,79 @@ const surfaceTab = (s) => {
     </button>`
 }
 
-// ─── Tier map ─────────────────────────────────────────────────────────
-// The map is keyed by the tier the caller asked for — read off the model
-// name, "other" when the name says no Claude family — and each route
-// names a provider and a tier on it; the provider's tier alias says which
-// model that is. That is how it is stored. It is not how an operator
-// reads it, and the first build of this screen drew it the stored way:
-// every row led with "claude-code · sonnet", a substituted row said
-// "sonnet ← for fable", every row repeated the same account-wide "45%
-// used" (a switched-off row included), and five groups that were mostly
-// identical sat one under the other. An operator looking at a two-model
-// setup could not say which model a Haiku request ends up on.
+// ─── Scenarios, each routed to provider tiers ─────────────────────────
+// Routing picks a scenario from the request itself — long input, thinking
+// on, or neither — and a lane from the subagent tag, and walks that
+// scenario's list for that lane. That is the shape it had before; what
+// changed is what a row names. A row used to hold a model by name, so a
+// vendor's new Sonnet meant replacing it in every list that held the old
+// one. A row now names a provider and a tier on it ("claude-code ·
+// sonnet"), and the provider's tier alias, set on its page, says which
+// model that is: a release moves one alias, not every list.
 //
-// So this screen answers in the operator's terms, in this order:
-//   1. a summary — for each kind of request, the model that takes it now
-//      and what it falls back to, with identical tiers folded together;
-//   2. quota once per provider, not once per row;
-//   3. the map itself, each row led by the model it reaches, with a
-//      status that says the row's role: used now, backup, off.
-const TIERS = [
-  { id: 'fable',  label: 'Fable',  hint: 'model name contains “fable”' },
-  { id: 'opus',   label: 'Opus',   hint: 'model name contains “opus”' },
-  { id: 'sonnet', label: 'Sonnet', hint: 'model name contains “sonnet”' },
-  { id: 'haiku',  label: 'Haiku',  hint: 'model name contains “haiku”' },
-  { id: 'other',  label: 'Other',  hint: 'any other model name — gpt-*, gemini-*, …' }
+// Two scenarios the old screen had are gone. Image: every model worth
+// routing to reads images. Web search: a row that cannot run the web
+// search tool a request carries is skipped for that request, so a list
+// of its own bought nothing.
+//
+// Nothing gates a row on the tier the caller asked for any more. That
+// gate is what answered a Haiku call with a 429 when the list held only
+// Sonnet with "down only" set; a row here is used because it is in the
+// list, whatever model name the request carried.
+const SCENARIOS = [
+  { id: 'default',     label: 'Default',      hint: 'everything the two below do not catch' },
+  { id: 'think',       label: 'Think',        hint: 'extended thinking is on' },
+  { id: 'longContext', label: 'Long context', hint: 'the input is over the threshold (200k tokens)' }
 ]
+const LANES = [
+  { id: 'agent',    label: 'Agent' },
+  { id: 'subagent', label: 'Subagent' }
+]
+const ACTIVE_SCENARIO = 'default'
+const ACTIVE_LANE = 'agent'
 
-// The default fixture is the map a real install ended up with after the
-// chain was converted: Sonnet 5 first and Haiku 4.5 behind it everywhere,
-// except that Haiku requests skip Sonnet ("down only" in the old chain
-// refused to send a Haiku call up to Sonnet, so that row came across
-// switched off). routing.html?states swaps in a map that exercises every
-// row status.
+// routing.html?states swaps in lists that exercise every row status.
 const STATES = new URLSearchParams(location.search).has('states')
 
-// quota: null = the provider's accounts are fine; exhausted rows carry
-// `until`; a nearly spent one carries `pct`. model: null = alias unset.
-const SONNET = { provider: 'claude-code', tier: 'sonnet', model: 'claude-sonnet-5' }
-const HAIKU = { provider: 'claude-code', tier: 'haiku', model: 'claude-haiku-4-5' }
+// exhausted: until when; pct: a nearly spent provider; model null: alias unset.
+const R = (provider, tier, model, extra = {}) => ({ provider, tier, model, on: true, ...extra })
+const SONNET = R('claude-code', 'sonnet', 'claude-sonnet-5')
+const HAIKU = R('claude-code', 'haiku', 'claude-haiku-4-5')
+const OPUS = R('claude-code', 'opus', 'claude-opus-5')
+const FABLE = R('claude-code', 'fable', 'claude-fable-5')
 const ROUTES = STATES
   ? {
-      fable: [
-        { provider: 'claude-code', tier: 'fable', model: 'claude-fable-5', on: true, exhausted: '14:05' },
-        { ...SONNET, on: true }
-      ],
-      opus: [
-        { provider: 'claude-code', tier: 'opus', model: 'claude-opus-5', on: true, pct: 92 },
-        { ...SONNET, on: true }
-      ],
-      sonnet: [
-        { ...SONNET, on: true },
-        { provider: 'gemini-cli', tier: 'sonnet', model: null, on: true },
-        { provider: 'deepseek', tier: 'sonnet', model: 'deepseek-v4', on: true, noSearch: true }
-      ],
-      haiku: [{ ...SONNET, on: false }, { ...HAIKU, on: true }],
-      other: []
+      default: {
+        agent: [
+          { ...SONNET, exhausted: '14:05' },
+          R('gemini-cli', 'sonnet', null),
+          R('deepseek', 'sonnet', 'deepseek-v4', { noSearch: true }),
+          { ...HAIKU, on: false }
+        ],
+        subagent: [HAIKU]
+      },
+      think: { agent: [{ ...OPUS, pct: 92 }, SONNET], subagent: [] },
+      longContext: { agent: [], subagent: [] }
     }
   : {
-      fable: [{ ...SONNET, on: true }, { ...HAIKU, on: true }],
-      opus: [{ ...SONNET, on: true }, { ...HAIKU, on: true }],
-      sonnet: [{ ...SONNET, on: true }, { ...HAIKU, on: true }],
-      haiku: [{ ...SONNET, on: false }, { ...HAIKU, on: true }],
-      other: [{ ...SONNET, on: true }, { ...HAIKU, on: true }]
+      default: { agent: [SONNET, HAIKU], subagent: [HAIKU, SONNET] },
+      think: { agent: [OPUS, SONNET], subagent: [SONNET] },
+      longContext: { agent: [FABLE, OPUS], subagent: [SONNET] }
     }
 
 // Quota is an account property: every model of a provider draws on the
-// same accounts, so one line per provider says it once. A row repeats it
-// only when it changes what the row does — spent, or nearly so.
+// same accounts, so one line per provider says it once.
 const QUOTA = [{ provider: 'claude-code', accounts: 2, pct: STATES ? 92 : 45, resets: 'Fri 09:00' }]
 
 const SUBSCRIPTION_PROVIDERS = ['claude-code', 'codex', 'gemini-cli']
 const providerHref = (p) => (SUBSCRIPTION_PROVIDERS.includes(p) ? 'provider-subscription.html' : 'provider-apikey.html')
 
 // The screen reads until Edit is pressed; routing.html?edit draws the
-// state after it. Declared before the templates because the map is
-// rendered the moment it is defined.
+// state after it. Declared before the templates because they render the
+// moment they are defined.
 const EDITING = new URLSearchParams(location.search).has('edit')
 
-// Controls that change the map exist only while editing. They go
+// Controls that change a list exist only while editing. They go
 // invisible rather than absent, so columns and row height do not move
 // when Edit is pressed; the toggle stays as a reading of the state.
 const editOnly = EDITING ? '' : 'invisible'
@@ -163,11 +158,11 @@ const editOnly = EDITING ? '' : 'invisible'
 const usable = (r) => r.on && r.model !== null && r.exhausted === undefined
 const roles = (routes) => {
   const first = routes.findIndex(usable)
-  return routes.map((r, i) => (!r.on ? 'off' : r.model === null ? 'unset' : r.exhausted !== undefined ? 'exhausted' : i === first ? 'now' : 'backup'))
+  return routes.map((r, i) =>
+    !r.on ? 'off' : r.model === null ? 'unset' : r.exhausted !== undefined ? 'exhausted' : i === first ? 'now' : 'backup'
+  )
 }
 
-// The row's status, in words. The role first — that is the question —
-// then anything that qualifies it.
 const statusCell = (r, role) => {
   const near = r.pct !== undefined ? ` <span class="font-mono text-[12px] tabular-nums text-amber-600 dark:text-amber-400">· ${r.pct}% used</span>` : ''
   if (role === 'now') return `<span class="text-[12px] font-medium text-emerald-600 dark:text-emerald-400">used now</span>${near}`
@@ -177,26 +172,20 @@ const statusCell = (r, role) => {
   return '<span class="text-[12px] text-amber-600 dark:text-amber-400">no model set</span>'
 }
 
-// The model leads: it is what a request reaches. Provider and tier follow
-// small, and a substitution is said in words — "Sonnet in place of Fable"
-// — instead of an arrow and a pill.
-const modelCell = (r, group) => {
-  const sub = group !== 'other' && r.tier !== group
-  const alias = `<span class="text-muted-foreground">${r.provider}</span> <span class="text-muted-foreground/60">·</span> <span class="text-muted-foreground">${r.tier} alias</span>`
-  const head =
-    r.model === null
-      ? `<span class="text-[12px] text-amber-600 dark:text-amber-400">no ${r.tier} model on ${r.provider} —</span> <a class="text-[12px] underline decoration-dotted underline-offset-2">set it on the provider page</a>`
-      : `<span class="font-mono text-xs ${r.on ? 'text-foreground' : 'text-muted-foreground'}">${r.model}</span>`
-  return `
-    <div class="flex items-center gap-2">
-      ${head}
-      ${sub ? pill(`${TIERS.find((t) => t.id === r.tier).label} in place of ${TIERS.find((t) => t.id === group).label}`, 'info') : ''}
-      ${r.noSearch ? pill('no web search', 'mute') : ''}
-    </div>
-    <div class="mt-0.5 font-mono text-[11px]">${alias}</div>`
-}
+// The model leads: it is what a request reaches. The provider and the
+// tier alias that picked it follow, small.
+const modelCell = (r) => `
+  <div class="flex items-center gap-2">
+    ${
+      r.model === null
+        ? `<span class="text-[12px] text-amber-600 dark:text-amber-400">no ${r.tier} model on ${r.provider} —</span> <a class="text-[12px] underline decoration-dotted underline-offset-2">set it on the provider page</a>`
+        : `<span class="font-mono text-xs ${r.on ? 'text-foreground' : 'text-muted-foreground'}">${r.model}</span>`
+    }
+    ${r.noSearch ? pill('no web search', 'mute') : ''}
+  </div>
+  <div class="mt-0.5 font-mono text-[11px] text-muted-foreground">${r.provider} <span class="text-muted-foreground/60">·</span> ${r.tier}</div>`
 
-const routeRow = (group, rs) => (r, i) => `
+const routeRow = (rs) => (r, i) => `
   <tr ${navTo(providerHref(r.provider))} class="border-t border-border/60 transition-colors hover:bg-muted/50 ${r.on ? '' : 'opacity-60'}">
     <td class="py-2.5 pl-6 pr-2 align-top">
       <div class="flex items-center gap-2 pt-0.5">
@@ -204,7 +193,7 @@ const routeRow = (group, rs) => (r, i) => `
         <span class="font-mono text-xs tabular-nums text-muted-foreground">${i + 1}</span>
       </div>
     </td>
-    <td class="px-2 py-2.5">${modelCell(r, group)}</td>
+    <td class="px-2 py-2.5">${modelCell(r)}</td>
     <td class="px-2 py-2.5 text-right align-top"><div class="pt-0.5">${statusCell(r, rs[i])}</div></td>
     <td class="py-2.5 pl-2 pr-6 align-top">
       <div class="flex items-center justify-end gap-1 pt-0.5">
@@ -216,28 +205,17 @@ const routeRow = (group, rs) => (r, i) => `
     </td>
   </tr>`
 
-// A group is a header row and its routes. The header says in words which
-// requests land in it; the pattern used to be the only hint ("*fable*").
-const group = (t) => {
-  const routes = ROUTES[t.id]
-  const header = `
-    <tr class="border-t border-border bg-muted/30">
-      <td colspan="4" class="px-6 py-2">
-        <div class="flex h-7 items-center gap-2">
-          <span class="text-xs font-semibold">${t.label} requests</span>
-          <span class="text-[12px] text-muted-foreground">${t.hint}</span>
-          <span class="ml-auto">${EDITING ? btn('Add route', 'ghost', 'ri-add-line') : ''}</span>
-        </div>
-      </td>
-    </tr>`
-  const body =
-    routes.length === 0
-      ? `<tr class="border-t border-border/60"><td colspan="4" class="px-6 py-3 text-[12px] text-muted-foreground">No routes — these requests go upstream with the model they asked for</td></tr>`
-      : routes.map(routeRow(t.id, roles(routes))).join('')
-  return header + body
-}
+// An empty list is not an error. Think and Long context fall back to
+// Default for the same lane — the request is routed as if it had not been
+// long or thinking — and an empty Default passes the request upstream
+// with the model it asked for.
+const emptyText = (scenario) =>
+  scenario === 'default'
+    ? 'No routes — these requests go upstream with the model they asked for'
+    : 'No routes — these requests use the Default list'
 
-const map = `
+const activeRoutes = ROUTES[ACTIVE_SCENARIO][ACTIVE_LANE]
+const list = `
   <table class="w-full table-fixed">
     <colgroup><col class="w-16"><col><col class="w-56"><col class="w-24"></colgroup>
     <thead>
@@ -248,49 +226,53 @@ const map = `
         <th class="pl-2 pr-6 text-right font-medium">On</th>
       </tr>
     </thead>
-    <tbody>${TIERS.map(group).join('')}</tbody>
-  </table>`
+    <tbody>${
+      activeRoutes.length === 0
+        ? `<tr class="border-t border-border/60"><td colspan="4" class="px-6 py-3 text-[12px] text-muted-foreground">${emptyText(ACTIVE_SCENARIO)}</td></tr>`
+        : activeRoutes.map(routeRow(roles(activeRoutes))).join('')
+    }</tbody>
+  </table>
+  ${EDITING ? `<div class="border-t border-border/60 px-6 py-2">${btn('Add route', 'ghost', 'ri-add-line')}</div>` : ''}`
 
 // ─── The summary ──────────────────────────────────────────────────────
-// One line per distinct outcome: the model used now, then the backups.
-// Tiers whose lines would read the same are folded into one, which is
-// what turns five near-identical groups into the two facts they encode.
-const outcomeOf = (routes) => {
+// Every scenario and lane at once, as the model each lands on now and
+// what it falls back to. It is the question the list below cannot
+// answer without clicking through six tabs.
+const outcome = (scenario, lane) => {
+  const routes = ROUTES[scenario][lane]
+  if (routes.length === 0) {
+    return scenario === 'default'
+      ? '<span class="text-muted-foreground">as requested</span>'
+      : '<span class="text-muted-foreground">as Default</span>'
+  }
   const rs = roles(routes)
   const now = routes.find((_, i) => rs[i] === 'now')
+  if (now === undefined) return '<span class="text-destructive">nothing can take them now</span>'
   const backups = routes.filter((_, i) => rs[i] === 'backup').map((r) => r.model)
-  if (routes.length === 0) return { key: 'pass', html: '<span class="text-muted-foreground">go upstream with the model they asked for</span>' }
-  if (now === undefined) return { key: 'none', html: '<span class="text-destructive">nothing can take them right now</span>' }
-  const tail = backups.length === 0 ? '' : ` <span class="text-muted-foreground">then</span> ${backups.map((m) => `<span class="font-mono">${m}</span>`).join(' <span class="text-muted-foreground">then</span> ')}`
-  // A row above the one used now that is only out of quota is the usual
-  // answer, sitting out until its reset; saying so keeps the summary from
-  // reading as if the operator had configured the fallback as first choice.
   const waiting = routes
-    .filter((r, i) => rs[i] === 'exhausted' && i < routes.indexOf(now))
-    .map((r) => ` <span class="text-[12px] text-destructive">— <span class="font-mono">${r.model}</span> is out of quota until <span class="font-mono tabular-nums">${r.exhausted}</span></span>`)
+    .filter((_, i) => rs[i] === 'exhausted' && i < routes.indexOf(now))
+    .map((r) => ` <span class="text-[12px] text-destructive">(<span class="font-mono">${r.model}</span> out until <span class="font-mono tabular-nums">${r.exhausted}</span>)</span>`)
     .join('')
-  return { key: [now.model, ...backups, waiting].join('>'), html: `<span class="font-mono font-medium">${now.model}</span>${tail}${waiting}` }
+  const tail = backups.length === 0 ? '' : ` <span class="text-muted-foreground">then</span> ${backups.map((m) => `<span class="font-mono">${m}</span>`).join(' <span class="text-muted-foreground">then</span> ')}`
+  return `<span class="font-mono font-medium">${now.model}</span>${tail}${waiting}`
 }
-const folded = TIERS.reduce((acc, t) => {
-  const o = outcomeOf(ROUTES[t.id])
-  const hit = acc.find((a) => a.key === o.key)
-  if (hit === undefined) acc.push({ ...o, tiers: [t.label] })
-  else hit.tiers.push(t.label)
-  return acc
-}, [])
 const summary = `
-  <div class="grid gap-1.5 border-b border-border px-6 py-4">
-    ${folded
-      .map(
-        (f) => `
-      <div class="flex items-baseline gap-3 text-xs">
-        <span class="w-80 shrink-0 text-muted-foreground">${f.tiers.join(', ')} requests</span>
-        <i class="ri-arrow-right-line text-[11px] text-muted-foreground/60"></i>
-        <span>${f.html}</span>
-      </div>`
-      )
-      .join('')}
-  </div>`
+  <table class="w-full table-fixed border-b border-border">
+    <colgroup><col class="w-72"><col><col></colgroup>
+    <thead>
+      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:align-bottom [&>th]:pb-2">
+        <th class="pl-6 pr-2 text-left font-medium">Scenario</th>
+        ${LANES.map((l) => `<th class="px-2 text-left font-medium">${l.label}</th>`).join('')}
+      </tr>
+    </thead>
+    <tbody>${SCENARIOS.map(
+      (sc) => `
+      <tr class="border-t border-border/60 text-xs">
+        <td class="py-2 pl-6 pr-2"><div class="font-medium">${sc.label}</div><div class="text-[12px] text-muted-foreground">${sc.hint}</div></td>
+        ${LANES.map((l) => `<td class="px-2 py-2">${outcome(sc.id, l.id)}</td>`).join('')}
+      </tr>`
+    ).join('')}</tbody>
+  </table>`
 
 const quotaStrip = `
   <div class="flex items-center gap-4 border-b border-border px-6 py-2.5">
@@ -305,6 +287,18 @@ const quotaStrip = `
     ).join('')}
     <span class="ml-auto text-[12px] text-muted-foreground">api-key providers have no quota to show</span>
   </div>`
+
+// Underline tabs, as before. The count is the list's length for the lane
+// on show, so a tab that reads 0 is a scenario that falls back to Default.
+const scenarioTab = (sc) => {
+  const on = sc.id === ACTIVE_SCENARIO
+  return `
+    <button class="flex h-full items-center justify-center gap-1.5 border-b-2 px-2.5 text-xs transition-colors ${
+      on ? 'border-b-foreground font-medium' : 'border-b-transparent text-muted-foreground hover:text-foreground'
+    }">
+      ${sc.label}<span class="font-mono text-[12px] tabular-nums ${on ? 'text-muted-foreground' : 'text-muted-foreground/70'}">${ROUTES[sc.id][ACTIVE_LANE].length}</span>
+    </button>`
+}
 
 // The header row is h-8 in every cell and in both states.
 const constraintCell = (label, valueHtml, hint) => `
@@ -358,33 +352,41 @@ document.getElementById('root').innerHTML = `
     </button>
   </div>
 
-  <!-- Band 3 — the map and what you can do to it. No scenario tabs and
-       no Agent / Subagent switch: the map is one table for the profile,
-       grouped by the tier the caller asked for. Edit, then Revert / Save,
-       covers the routes and the constraints under them, because both are
-       one profile and one write. While editing, the surface tabs, the mode
-       switch and the profile picker above are locked: each would load
-       another profile, and the unsaved edit would go with it. -->
+  <!-- The summary answers "where does each request go" before any tab is
+       picked: every scenario × lane, the model used now, its backups. -->
+  ${summary}
+  ${quotaStrip}
+
+  <!-- Band 3 — which list, and what you can do to it. Scenario tabs and
+       the Agent / Subagent switch, as before; the list names provider
+       tiers now, not models. Edit, then Revert / Save, covers every list
+       and the constraints under them, because they are one profile and
+       one write. While editing, the surface tabs, the mode switch and the
+       profile picker above are locked — each would load another profile,
+       and the unsaved edit would go with it. Scenario and lane stay free:
+       they move within the profile being edited. -->
   <div class="flex items-center gap-3 border-b border-border px-6 py-2.5">
-    <span class="text-xs font-medium">Where requests go</span>
-    <span class="text-[12px] text-muted-foreground">by the model name a request asks for</span>
+    <div class="-my-2.5 grid grid-flow-col auto-cols-fr gap-0.5 self-stretch">
+      ${SCENARIOS.map(scenarioTab).join('')}
+    </div>
+    <span class="h-4 w-px bg-border"></span>
+    <div class="flex rounded-md border border-border p-0.5">
+      ${LANES.map((l) => `<button class="rounded px-2.5 py-1 text-[12px] ${l.id === ACTIVE_LANE ? 'bg-foreground font-medium text-background' : 'text-muted-foreground hover:text-foreground'}">${l.label}</button>`).join('')}
+    </div>
+    <span class="text-[12px] text-muted-foreground">${SCENARIOS.find((sc) => sc.id === ACTIVE_SCENARIO).hint}</span>
     <div class="ml-auto flex items-center gap-2">
       ${EDITING ? `${btn('Revert', 'outline', 'ri-arrow-go-back-line')}${btn('Save', 'primary', 'ri-check-line')}` : btn('Edit', 'outline', 'ri-pencil-line')}
     </div>
   </div>
 
-  ${summary}
-  ${quotaStrip}
-  ${map}
+  ${list}
 
   <div class="flex items-center gap-3 border-t border-border/60 px-6 py-2.5">
-    <span class="text-[12px] text-muted-foreground">A request tries its group from the top and takes the first row that can serve it — rows that are off, out of quota, too small for the prompt, or unable to run its tools are skipped.</span>
+    <span class="text-[12px] text-muted-foreground">A request takes the first row that can serve it — rows that are off, out of quota, too small for the prompt, or unable to run its tools are skipped. Each row reaches the model its provider's tier alias names.</span>
   </div>
 
-  <!-- Constraints, four-up, under the map they constrain. Tier
-       substitution is gone: substituting a tier is a row in the map now,
-       written down where a reader can see it, not a gate that decides
-       which rows a request may use.
+  <!-- Constraints, under the lists they constrain. Tier substitution is
+       gone: nothing gates a row on the tier the caller asked for.
 
        When exhausted is the whole decision when every route of a tier is
        out of quota: answer 429 with Retry-After, or send the request on
@@ -395,8 +397,9 @@ document.getElementById('root').innerHTML = `
     <div class="px-6 pt-4 pb-2">
       <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Constraints</h2>
     </div>
-    <div class="grid grid-cols-4 gap-px bg-border/60">
-      ${constraint('When exhausted', '429', segmentedBox(['429', 'Passthrough'], '429'), 'every route of the tier is out of quota: answer 429, or pass the request through')}
+    <div class="grid grid-cols-5 gap-px bg-border/60">
+      ${constraint('Long context', '200k', numberBox('200000', ''), 'input tokens over which a request is Long context; blank = auto')}
+      ${constraint('When exhausted', '429', segmentedBox(['429', 'Passthrough'], '429'), 'every row of the list is out of quota: answer 429, or pass the request through')}
       ${constraint('Quota skip', '100%', numberBox('100', '%'), 'skip a route whose accounts are used at or past this')}
       ${constraint('Error-rate skip', '50%', numberBox('50', '%'), 'skip a route failing this often in the last 5 minutes')}
       ${constraint('Min samples', '5', numberBox('5', ''), 'requests before the error rate counts')}
@@ -409,7 +412,7 @@ document.getElementById('root').innerHTML = `
 renderShell({
   active: 'routing',
   navMode: 'cloudflare',
-  crumbs: ['Where requests go']
+  crumbs: ['Scenarios']
 })
 </script>
 </body>
