@@ -23,7 +23,7 @@
       "mock": "routing.html",
       "route": "/routing",
       "group": "Routing",
-      "note": "Routing for one surface's profile: one assignment per scenario — Default, Think (extended thinking on), Long context (input over the threshold) and Subagent (the subagent tag) — each a provider and a tier on it. The model is not picked here: the provider's tier alias says which model the tier is, shown muted beside it, so a model release moves one alias instead of this table."
+      "note": "Routing for one surface's profile: a table of scenarios (Default, Think — extended thinking on, Long context — input over the threshold) by caller (Agent, Subagent — the subagent tag), each cell one or more provider · tier combinations tried top first. An empty Think or Long context cell falls back to Default for the same caller; an empty Default passes the requested model through. The model is not picked here: the provider's tier alias says which model the tier is, shown muted beside it, so a model release moves one alias instead of this table."
     },
     {
       "name": "routing-passthrough",
@@ -37,7 +37,7 @@
       "mock": "routing.html?edit",
       "route": null,
       "group": "Routing",
-      "note": "The same table after Edit: provider and tier become select boxes, and one Revert / Save covers every scenario. While editing, the surface tabs, the mode switch and the profile picker are disabled. Mock-only because the state sits behind a click."
+      "note": "The same table after Edit: provider and tier become select boxes, each combination can be dragged or removed, Add appends one to a cell, and one Revert / Save covers the whole table. While editing, the surface tabs, the mode switch and the profile picker are disabled. Mock-only because the state sits behind a click."
     },
     {
       "name": "providers",

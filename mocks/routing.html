@@ -45,46 +45,86 @@ const surfaceTab = (s) => {
 }
 
 // ─── Scenarios ────────────────────────────────────────────────────────
-// Routing is one assignment per scenario: which provider, and which tier
-// on it. That is the whole screen. The model is not picked here — the
-// provider's tier alias, set on its page, says which model "sonnet" is —
-// so a vendor's new model moves one alias instead of this table.
+// Routing is an assignment per scenario and per caller — the agent, or a
+// subagent (a request carrying the subagent tag): one or more provider ·
+// tier combinations, tried top first. The second takes a request only
+// when the first cannot (out of quota, failing, or unable to hold it).
+// That is the whole screen. The model is not picked here: the provider's tier
+// alias, set on its page, says which model "sonnet" is, so a vendor's new
+// model moves one alias instead of this table.
 //
-// Earlier drafts stacked a summary, a quota strip, an ordered list per
-// scenario and lane with a status per row, and a block of constraints.
-// None of it was asked for: the question an operator brings here is
-// which provider and tier each scenario uses.
+// Earlier drafts stacked a summary, a quota strip, a status per row and a
+// block of constraints. None of it was asked for: the question an
+// operator brings here is which provider and tier each scenario uses.
+const R = (provider, tier, model) => ({ provider, tier, model })
 const SCENARIOS = [
-  { label: 'Default',      when: 'everything the rows below do not catch', provider: 'claude-code', tier: 'sonnet', model: 'claude-sonnet-5' },
-  { label: 'Think',        when: 'extended thinking is on',                provider: 'claude-code', tier: 'opus',   model: 'claude-opus-5' },
-  { label: 'Long context', when: 'input over 200k tokens',                 provider: 'claude-code', tier: 'fable',  model: 'claude-fable-5' },
-  { label: 'Subagent',     when: 'the request carries the subagent tag',   provider: 'claude-code', tier: 'haiku',  model: 'claude-haiku-4-5' }
+  {
+    label: 'Default',
+    when: 'everything the rows below do not catch',
+    agent: [R('claude-code', 'sonnet', 'claude-sonnet-5'), R('codex', 'sonnet', 'gpt-5.5')],
+    subagent: [R('claude-code', 'haiku', 'claude-haiku-4-5'), R('claude-code', 'sonnet', 'claude-sonnet-5')]
+  },
+  {
+    label: 'Think',
+    when: 'extended thinking is on',
+    agent: [R('claude-code', 'opus', 'claude-opus-5'), R('claude-code', 'sonnet', 'claude-sonnet-5')],
+    subagent: [R('claude-code', 'sonnet', 'claude-sonnet-5')]
+  },
+  {
+    label: 'Long context',
+    when: 'input over 200k tokens',
+    agent: [R('claude-code', 'fable', 'claude-fable-5'), R('claude-code', 'opus', 'claude-opus-5')],
+    subagent: []
+  }
 ]
 
 // The screen reads until Edit is pressed; routing.html?edit draws the
 // state after it.
 const EDITING = new URLSearchParams(location.search).has('edit')
 
-// Reading: the value as text. Editing: the same value in a select box.
+// Reading: the combination as text. Editing: provider and tier become
+// select boxes, each line can be dragged or removed, and Add appends one.
 // The model the tier resolves to rides along muted, so "sonnet" is never
 // a mystery and a changed alias shows up here without an edit.
 const selectBox = (value) =>
   `<button class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 font-mono text-xs hover:bg-muted/60">${value} <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i></button>`
-const valueCell = (value) => (EDITING ? selectBox(value) : `<span class="font-mono text-xs">${value}</span>`)
+
+const combination = (r, i) => `
+  <div class="flex min-h-8 items-center gap-2">
+    ${EDITING ? '<i class="ri-draggable text-base leading-none text-muted-foreground/50"></i>' : ''}
+    <span class="w-4 font-mono text-[12px] tabular-nums text-muted-foreground">${i + 1}</span>
+    ${
+      EDITING
+        ? `${selectBox(r.provider)}${selectBox(r.tier)}`
+        : `<span class="font-mono text-xs">${r.provider}</span><span class="text-muted-foreground/60">·</span><span class="font-mono text-xs">${r.tier}</span>`
+    }
+    <span class="ml-1 font-mono text-[12px] text-muted-foreground">${r.model}</span>
+    ${EDITING ? '<button class="ml-1 text-muted-foreground/60 hover:text-foreground"><i class="ri-close-line text-sm"></i></button>' : ''}
+  </div>`
+
+// An empty cell is not an error: Think and Long context fall back to
+// Default for the same caller, and an empty Default sends the request
+// upstream with the model it asked for.
+const cell = (routes, isDefault) => `
+  <td class="px-2 py-3">
+    <div class="grid gap-1.5">
+      ${
+        routes.length === 0
+          ? `<span class="flex min-h-8 items-center text-[12px] text-muted-foreground">${isDefault ? 'none — the requested model is used' : 'none — uses Default'}</span>`
+          : routes.map(combination).join('')
+      }
+      ${EDITING ? `<div>${btn('Add', 'ghost', 'ri-add-line')}</div>` : ''}
+    </div>
+  </td>`
 
 const row = (sc) => `
-  <tr class="border-t border-border/60">
+  <tr class="border-t border-border/60 align-top">
     <td class="py-3 pl-6 pr-2">
       <div class="text-xs font-medium">${sc.label}</div>
       <div class="text-[12px] text-muted-foreground">${sc.when}</div>
     </td>
-    <td class="px-2 py-3">${valueCell(sc.provider)}</td>
-    <td class="px-2 py-3">
-      <div class="flex items-center gap-3">
-        ${valueCell(sc.tier)}
-        <span class="font-mono text-[12px] text-muted-foreground">${sc.model}</span>
-      </div>
-    </td>
+    ${cell(sc.agent, sc.label === 'Default')}
+    ${cell(sc.subagent, sc.label === 'Default')}
   </tr>`
 
 document.getElementById('root').innerHTML = `
@@ -113,19 +153,19 @@ document.getElementById('root').innerHTML = `
   <!-- Band 3 — the assignments, and Edit / Save. -->
   <div class="flex items-center gap-3 border-b border-border px-6 py-2.5">
     <span class="text-xs font-medium">Scenarios</span>
-    <span class="text-[12px] text-muted-foreground">each scenario uses one provider and one tier on it</span>
+    <span class="text-[12px] text-muted-foreground">provider · tier combinations per scenario, for the agent and for subagents, tried top first</span>
     <div class="ml-auto flex items-center gap-2">
       ${EDITING ? `${btn('Revert', 'outline', 'ri-arrow-go-back-line')}${btn('Save', 'primary', 'ri-check-line')}` : btn('Edit', 'outline', 'ri-pencil-line')}
     </div>
   </div>
 
   <table class="w-full table-fixed">
-    <colgroup><col class="w-80"><col class="w-64"><col></colgroup>
+    <colgroup><col class="w-72"><col><col></colgroup>
     <thead>
       <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:align-bottom [&>th]:pb-2">
         <th class="pl-6 pr-2 text-left font-medium">Scenario</th>
-        <th class="px-2 text-left font-medium">Provider</th>
-        <th class="px-2 text-left font-medium">Tier</th>
+        <th class="px-2 text-left font-medium">Agent</th>
+        <th class="px-2 text-left font-medium">Subagent</th>
       </tr>
     </thead>
     <tbody>${SCENARIOS.map(row).join('')}</tbody>
