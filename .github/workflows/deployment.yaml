@@ -69,6 +69,10 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # For the builder's `bun install`: @qtmleap packages come from
+          # GitHub Packages (bunfig.toml) — see docker-publish.yml.
+          secrets: |
+            gh_token=${{ secrets.GH_TOKEN }}
 
       - name: Image digest
         run: echo ${{ steps.meta.outputs.digest }}
