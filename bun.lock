@@ -70,6 +70,7 @@
       "devDependencies": {
         "@biomejs/biome": "^2.5.14",
         "@openai/codex": "^0.156.1",
+        "@qtmleap/vite-plugin-mock-diff": "^0.1.0",
         "@tailwindcss/node": "^4.3.3",
         "@tailwindcss/oxide": "^4.3.3",
         "@types/bun": "^1.4.2",
@@ -85,6 +86,7 @@
         "typescript": "^7.0.2",
         "vite": "^8.3.1",
         "vite-plugin-singlefile": "^2.3.3",
+        "yaml": "^2.9.1",
       },
     },
   },
@@ -404,6 +406,8 @@
     "@protobufjs/pool": ["@protobufjs/pool@1.1.0", "", {}, "sha512-0kELaGSIDBKvcgS4zkjz1PeddatrjYcmMWOlAuAPwAeccUrPHdUqo/J6LiymHHEiJT5NrF1UVwxY14f+fy4WQw=="],
 
     "@protobufjs/utf8": ["@protobufjs/utf8@1.1.2", "", {}, "sha512-b1UQwcEZ4yCnMCD8DAL1VlbvBJE9/IX4FTIp7BG1xYpf29SLazLSrqUkj4w7Y5y7cCVP6E5tcqqcI0xemPkHug=="],
+
+    "@qtmleap/vite-plugin-mock-diff": ["@qtmleap/vite-plugin-mock-diff@0.1.0", "https://npm.pkg.github.com/download/@qtmleap/vite-plugin-mock-diff/0.1.0/13a6ca1252ec0bb3404c9ba77bff0c7baff008e6", { "peerDependencies": { "vite": ">=5" } }, "sha512-79gtUvEA9IP82K0uwq/+NeFLW1sufelrrtx3UynDKshvQVB0BtRALWENpbhgjBOyb6c5+kAE1hj/hU7tqZQY8A=="],
 
     "@radix-ui/number": ["@radix-ui/number@1.1.3", "", {}, "sha512-Road2bidD0uu/1BGDOWNdPI06g0lIRy6IF9GZcIrDK2KGItfor8IQwQa+yM2ERgHM1MmHxaxpTzk0/Jp42lNfA=="],
 

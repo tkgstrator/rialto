@@ -37,6 +37,9 @@ jobs:
       # would only hide a missing client until a later job failed on it.
       # Everything else still tracks `latest`.
       - name: Update dependencies
+        # @qtmleap packages come from GitHub Packages (bunfig.toml).
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           held='["prisma","@prisma/client","@prisma/adapter-pg"]'
           names=$(jq -r --argjson held "$held" '

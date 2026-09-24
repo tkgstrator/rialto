@@ -219,6 +219,22 @@ bun run mocks:diff      # ピクセル差分 + report.json
 
 詳細は `.claude/skills/ui-mock-diff/SKILL.md`。
 
+### Mock Diff Viewer
+
+同じ比較を画面で見るなら、devcontainer の `mock-diff` サイドカー
+（[qtmleap/mock-diff-viewer](https://github.com/qtmleap/mock-diff-viewer)）を
+**http://localhost:16175/mock-diff/** で開く。dev サーバーが `@qtmleap/vite-plugin-mock-diff`
+でそのパスをビューアに中継するので、別のポートを転送する必要はない。
+
+- 設定 `mock-diff.yaml` は `mocks.json` から生成する。`mocks.json` を編集したら
+  `bun run mocks:config` を実行し、両方をコミットする（ずれるとテストが落ちる）
+- 各画面で選んだデザインは `mock-diff.adopted.yaml` に記録される。ビューアが書き込む。
+  初期値はすべて `mock`
+- クエリ文字列で状態を選ぶモック（`routing.html?edit` など）は中継経由で読み込むため、
+  dev サーバーが動いているときだけ撮影できる。止まっていた間に失敗したものは、ビューアで撮り直す
+- イメージは private。devcontainer をビルドする前に、ホストで `docker login ghcr.io`
+  （`read:packages` のあるトークン）が必要
+
 ## 制約
 
 - データはすべてダミー。フォームと編集操作は動かない
