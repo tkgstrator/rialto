@@ -13,7 +13,7 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, btn, navTo, dialog } = window.Shell
+const { renderShell, btn, navTo, dialog, pill } = window.Shell
 
 // ─── Surfaces ─────────────────────────────────────────────────────────
 // The surface is the outermost selector: pick which wire format you are
@@ -74,7 +74,11 @@ const SCENARIOS = [
   },
   {
     label: 'Long context',
-    when: 'input over 200k tokens',
+    // The threshold is automatic: 70% of the context window of the first
+    // Default · Agent combination, leaving the reply room — 700k here,
+    // for a 1M-token Sonnet. It follows the alias, so it moves by itself
+    // when the Default model changes.
+    when: 'input over 700k tokens (auto)',
     agent: [R('claude-code', 'fable'), R('claude-code', 'opus')],
     subagent: []
   }
@@ -102,7 +106,8 @@ const PROVIDERS = [
 //
 // Every line is the same grid in both states, so the columns line up
 // down a cell and across the table: handle, order, the combination, on,
-// remove. A combination switched off keeps its place and is skipped.
+// remove. The provider is a name and the tier a badge: a tier is a class
+// of model, not a thing of the same kind as the provider beside it. A combination switched off keeps its place and is skipped.
 const LINE = 'grid grid-cols-[1rem_1rem_minmax(0,22rem)_1.75rem_1.5rem] items-center gap-2'
 
 const toggle = (on) => `
@@ -114,8 +119,8 @@ const combination = (r, i) => `
   <div class="${LINE} min-h-8">
     <i class="ri-draggable text-base leading-none text-muted-foreground/50 ${EDITING ? '' : 'invisible'}"></i>
     <span class="font-mono text-[12px] tabular-nums text-muted-foreground">${i + 1}</span>
-    <div class="flex h-8 items-center rounded-md px-2.5 ${EDITING ? 'cursor-pointer border border-border hover:bg-muted/60' : ''} ${r.on ? '' : 'opacity-50'}">
-      <span class="font-mono text-xs">${r.provider} · ${r.tier}</span>
+    <div class="flex h-8 items-center gap-2 rounded-md px-2.5 ${EDITING ? 'cursor-pointer border border-border hover:bg-muted/60' : ''} ${r.on ? '' : 'opacity-50'}">
+      <span class="font-mono text-xs">${r.provider}</span>${pill(r.tier, 'mute')}
     </div>
     ${toggle(r.on)}
     <button class="text-muted-foreground/60 hover:text-foreground ${EDITING ? '' : 'invisible'}"><i class="ri-close-line text-sm"></i></button>
@@ -126,10 +131,14 @@ const combination = (r, i) => `
 // has no model for is disabled.
 const ADD = new URLSearchParams(location.search).get('add')
 
-const option = (label, detail, { on = false, disabled = false, arrow = false } = {}) => `
-  <button class="flex h-10 w-full items-center gap-3 rounded-md px-3 text-left ${disabled ? 'cursor-not-allowed text-muted-foreground/50' : on ? 'bg-muted' : 'hover:bg-muted/60'}">
+// A provider reads as its name; a tier reads as the same badge it wears in
+// the table, so the two steps pick visibly different kinds of thing. The
+// chosen line is ringed rather than filled: a muted fill would swallow
+// the muted badge inside it.
+const option = (label, detail, { on = false, disabled = false, arrow = false, tier = false } = {}) => `
+  <button class="flex h-10 w-full items-center gap-3 rounded-md px-3 text-left ${disabled ? 'cursor-not-allowed text-muted-foreground/50' : on ? 'ring-1 ring-foreground/20' : 'hover:bg-muted/60'}">
     <span class="w-4">${on ? '<i class="ri-check-line text-sm"></i>' : ''}</span>
-    <span class="font-mono text-xs">${label}</span>
+    ${tier ? `<span class="${disabled ? 'opacity-50' : ''}">${pill(label, 'mute')}</span>` : `<span class="font-mono text-xs">${label}</span>`}
     <span class="ml-auto text-[12px] ${disabled ? '' : 'font-mono text-muted-foreground'}">${detail}</span>
     ${arrow ? '<i class="ri-arrow-right-s-line text-sm text-muted-foreground"></i>' : ''}
   </button>`
@@ -153,8 +162,8 @@ const tierStep = dialog(
     ${PROVIDERS[1].tiers
       .map(([tier, set]) =>
         !set
-          ? option(tier, '<span class="font-sans">not set</span>', { disabled: true })
-          : option(tier, '', { on: tier === 'sonnet' })
+          ? option(tier, '<span class="font-sans">not set</span>', { disabled: true, tier: true })
+          : option(tier, '', { on: tier === 'sonnet', tier: true })
       )
       .join('')}
   </div>`,
