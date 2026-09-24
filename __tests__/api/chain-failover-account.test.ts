@@ -57,7 +57,7 @@ const planWith = (transformer: AnthropicTransformer): RoutePlan => ({
   headers: {},
   transformersByName: new Map([['anthropic', transformer]]),
   defaultTransformer: transformer,
-  scenarioType: 'default',
+  route: 'passthrough',
   primaryModel: 'anthropic,claude-sonnet-5',
   isSubagent: false,
   fallbacks: [],

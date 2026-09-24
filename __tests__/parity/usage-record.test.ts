@@ -96,7 +96,7 @@ const planFor = (path: string): RoutePlan => ({
   headers: {},
   transformersByName: new Map(),
   defaultTransformer: new OpenAITransformer(),
-  scenarioType: 'default',
+  route: 'passthrough',
   primaryModel: 'p,m',
   isSubagent: false,
   fallbacks: [],
