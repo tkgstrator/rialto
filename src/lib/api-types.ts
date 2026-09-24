@@ -292,13 +292,11 @@ export interface RouterPreferencesApplyResponse {
   warnings: string[]
 }
 
-export interface RoutingSchedulerWeightEntry {
-  target: string
-  weight: number
-  healthiness: number
-  remainingBudgetPct: number | null
-  earliestResetAt: string | null
-  reasons: string[]
+export interface RoutingSchedulerTargetState {
+  target: string // "provider,model"
+  exhausted: boolean // out of use on quota right now
+  remainingBudgetPct: number | null // 0..100, null = unknown (api_key targets, cold start)
+  resetAt: string | null // ISO; when the binding window resets
 }
 
 export interface RoutingSchedulerAccountView {
@@ -316,10 +314,9 @@ export interface RoutingSchedulerStateResponse {
   tickCount: number
   consecutiveFailures: number
   degraded: boolean
-  weights: RoutingSchedulerWeightEntry[]
+  targets: RoutingSchedulerTargetState[]
   accounts: RoutingSchedulerAccountView[]
   soonestResetAt: string | null
-  recentChanges: Array<{ target: string; from: number; to: number; reason: string; tickAt: string }>
 }
 
 export interface RouterUtilizationPerScenarioRow {

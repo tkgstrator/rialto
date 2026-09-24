@@ -1,80 +1,74 @@
 /**
- * The Routing screen's constraint cells: how a stored blob reads, how an
- * edit lands on it, and when the pair counts as changed.
+ * The Routing screen's constraint cells: how an edit lands on the
+ * profile's constraints, and which typed text counts as a value.
  */
 
 import { describe, expect, test } from 'bun:test'
 import {
   applyConstraintEdit,
-  constraintsDiffer,
-  exhaustedBehaviorOf,
-  parseQuotaSkipPct,
-  quotaSkipPctOf,
-  type TierSubstitution,
-  tierSubstitutionOf
+  DEFAULT_CONSTRAINTS,
+  errorRatePctOf,
+  parseSampleCount,
+  parseWholePercent
 } from '../../src/components/rialto/routing/derive'
 
-describe('reading a blob', () => {
-  test('a profile that never stored constraints reads as the schema defaults', () => {
-    expect(tierSubstitutionOf(null)).toBe('upDown')
-    expect(exhaustedBehaviorOf(null)).toBe('429')
-    expect(quotaSkipPctOf(null)).toBe(100)
-  })
-
-  test('each pair of tier gates reads as one of the four answers', () => {
-    expect(tierSubstitutionOf({ allowEscalation: true, allowDemotion: false })).toBe('up')
-    expect(tierSubstitutionOf({ allowEscalation: false, allowDemotion: true })).toBe('down')
-    expect(tierSubstitutionOf({ allowEscalation: false, allowDemotion: false })).toBe('same')
-    // One gate stored, the other absent: the absent one is its default.
-    expect(tierSubstitutionOf({ allowEscalation: false })).toBe('down')
-  })
-})
-
 describe('applying an edit', () => {
-  test('every substitution writes the gates that read back as it', () => {
-    const all: TierSubstitution[] = ['upDown', 'up', 'down', 'same']
-    for (const value of all) {
-      expect(tierSubstitutionOf(applyConstraintEdit(null, { kind: 'tierSubstitution', value }))).toBe(value)
-    }
-  })
-
-  test('keys the screen does not show survive the edit', () => {
-    const edited = applyConstraintEdit(
-      { longContextThreshold: 90_000, allowEscalation: false },
-      { kind: 'quotaSkipPct', value: 80 }
-    )
-    expect(edited).toEqual({ longContextThreshold: 90_000, allowEscalation: false, quotaSkipPct: 80 })
-  })
-
-  test('a null blob becomes an object holding only the edited key', () => {
-    expect(applyConstraintEdit(null, { kind: 'exhaustedBehavior', value: 'passthrough' })).toEqual({
+  test('each cell writes its own knob and leaves the other three alone', () => {
+    expect(applyConstraintEdit(DEFAULT_CONSTRAINTS, { kind: 'exhaustedBehavior', value: 'passthrough' })).toEqual({
+      ...DEFAULT_CONSTRAINTS,
       exhaustedBehavior: 'passthrough'
     })
+    expect(applyConstraintEdit(DEFAULT_CONSTRAINTS, { kind: 'quotaSkipPct', value: 80 })).toEqual({
+      ...DEFAULT_CONSTRAINTS,
+      quotaSkipPct: 80
+    })
+    expect(applyConstraintEdit(DEFAULT_CONSTRAINTS, { kind: 'minHealthSamples', value: 12 })).toEqual({
+      ...DEFAULT_CONSTRAINTS,
+      minHealthSamples: 12
+    })
+  })
+
+  test('the error rate is edited as a percentage and stored as the fraction the router compares', () => {
+    const edited = applyConstraintEdit(DEFAULT_CONSTRAINTS, { kind: 'errorRateSkipPct', value: 25 })
+    expect(edited.errorRateSkipPct).toBe(0.25)
+    expect(errorRatePctOf(edited)).toBe(25)
+  })
+
+  test('the default fraction reads as the percentage the cell shows', () => {
+    expect(errorRatePctOf(DEFAULT_CONSTRAINTS)).toBe(50)
+  })
+
+  test('the edit does not mutate the constraints it was applied to', () => {
+    const before = { ...DEFAULT_CONSTRAINTS }
+    applyConstraintEdit(before, { kind: 'quotaSkipPct', value: 10 })
+    expect(before).toEqual(DEFAULT_CONSTRAINTS)
   })
 })
 
-describe('constraintsDiffer', () => {
-  test('writing the defaults a null blob already meant is not a change', () => {
-    expect(constraintsDiffer(null, { allowEscalation: true, allowDemotion: true, quotaSkipPct: 100 })).toBe(false)
-  })
-
-  test('any cell that reads differently is a change', () => {
-    expect(constraintsDiffer(null, { quotaSkipPct: 90 })).toBe(true)
-    expect(constraintsDiffer(null, { exhaustedBehavior: 'passthrough' })).toBe(true)
-    expect(constraintsDiffer({ allowDemotion: false }, null)).toBe(true)
-  })
-})
-
-describe('parseQuotaSkipPct', () => {
+describe('parseWholePercent', () => {
   test('accepts a whole percentage from 0 to 100', () => {
-    expect(parseQuotaSkipPct('0')).toBe(0)
-    expect(parseQuotaSkipPct('100')).toBe(100)
-    expect(parseQuotaSkipPct(' 42 ')).toBe(42)
+    expect(parseWholePercent('0')).toBe(0)
+    expect(parseWholePercent('100')).toBe(100)
+    expect(parseWholePercent(' 42 ')).toBe(42)
   })
 
   test('refuses anything else', () => {
     for (const text of ['', '101', '5.5', '-1', 'abc', '1000']) {
-      expect(parseQuotaSkipPct(text)).toBeNull()
+      expect(parseWholePercent(text)).toBeNull()
+    }
+  })
+})
+
+describe('parseSampleCount', () => {
+  test('accepts a non-negative whole number', () => {
+    expect(parseSampleCount('0')).toBe(0)
+    expect(parseSampleCount('5')).toBe(5)
+    expect(parseSampleCount(' 250 ')).toBe(250)
+  })
+
+  test('refuses fractions, negatives, words and absurd sizes', () => {
+    for (const text of ['', '2.5', '-1', 'five', '1234567']) {
+      expect(parseSampleCount(text)).toBeNull()
     }
   })
 })

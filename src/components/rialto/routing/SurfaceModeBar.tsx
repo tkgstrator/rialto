@@ -17,8 +17,7 @@ import { cn } from 'cn'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import type { InboundSurfaceWire, RoutingMode } from '@/lib/api'
-import type { ProfileSummary } from './types'
+import type { InboundSurfaceWire, RoutingMode, TierProfileSummaryWire } from '@/lib/api'
 
 export function Segmented<T extends string>({
   value,
@@ -60,7 +59,7 @@ function ProfilePicker({
   disabled
 }: {
   current: string
-  profiles: readonly ProfileSummary[]
+  profiles: readonly TierProfileSummaryWire[]
   onSelect: (key: string) => void
   disabled: boolean
 }) {
@@ -91,7 +90,7 @@ function ProfilePicker({
             screen. It stays available for access tokens, where it is the
             only way to express it. */}
         {profiles
-          .filter((profile) => profile.kind === 'chain')
+          .filter((profile) => profile.kind === 'map')
           .map((profile) => (
             <button
               key={profile.key}
@@ -105,13 +104,13 @@ function ProfilePicker({
               <span className='truncate'>{profile.key}</span>
               {/* An unconfigured profile is a real choice with a real
                   consequence, so it says so rather than showing a bare 0. */}
-              {profile.entryCount === 0 ? (
+              {profile.routeCount === 0 ? (
                 <span className='ml-auto shrink-0 text-[11px] text-muted-foreground'>
                   {t('routing.common.notConfigured')}
                 </span>
               ) : (
                 <span className='ml-auto shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground'>
-                  {profile.entryCount}
+                  {profile.routeCount}
                 </span>
               )}
             </button>
@@ -129,12 +128,12 @@ export function SurfaceScopeBar({
   locked
 }: {
   surface: InboundSurfaceWire
-  profiles: readonly ProfileSummary[]
+  profiles: readonly TierProfileSummaryWire[]
   onMode: (mode: RoutingMode) => void
   onProfile: (key: string) => void
   /**
-   * True while the chain below is being edited. Either control would load
-   * another profile or hide the chain, and the unsaved edit would go with
+   * True while the map below is being edited. Either control would load
+   * another profile or hide the map, and the unsaved edit would go with
    * it, so both wait for Save or Revert.
    */
   locked: boolean
@@ -157,7 +156,7 @@ export function SurfaceScopeBar({
       {/* No help marker beside the switch. It explained two words that
           explain themselves, through a `title` that touch never shows and
           the keyboard barely reaches — and the screen demonstrates the
-          difference anyway: flipping to Passthrough replaces the chain
+          difference anyway: flipping to Passthrough replaces the map
           with the set of targets a caller may name, under a note saying
           what switching back would buy. */}
       {/* A passthrough surface draws from no profile, so the picker is
