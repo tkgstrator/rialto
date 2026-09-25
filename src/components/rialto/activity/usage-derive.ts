@@ -11,6 +11,7 @@
 import type { SubscriptionWire } from '@/components/rialto/providers/types'
 import { vendorLabel } from '@/components/rialto/providers/vendor-labels'
 import type { AccessTokenWire } from '@/lib/api'
+import type { OverviewAccountUsage } from '@/lib/api-types'
 import type { SeatKind } from '@/shared/plan-capacity'
 import { planLabel } from '@/shared/plan-label'
 
@@ -282,6 +283,26 @@ export function providerWindows(
     ]
   })
   return [...grouped, ...unclaimed]
+}
+
+// ---- API-equivalent usage -------------------------------------------
+
+/** Each account's API-equivalent figures, by SubAccount id. */
+export type AccountUsageIndex = ReadonlyMap<string, OverviewAccountUsage>
+
+/**
+ * Overview's quota rows reduced to the figures drawn under an account.
+ *
+ * A row whose aggregate could not be read is left out rather than kept as
+ * null, so a lookup that misses means one thing — nothing to draw — whether
+ * the account has no quota row or its figures failed.
+ */
+export function indexAccountUsage(
+  rows: ReadonlyArray<{ subAccountId: string; usage: OverviewAccountUsage | null }>
+): AccountUsageIndex {
+  return new Map(
+    rows.flatMap((row): [string, OverviewAccountUsage][] => (row.usage === null ? [] : [[row.subAccountId, row.usage]]))
+  )
 }
 
 // ---- Utilization over time ------------------------------------------

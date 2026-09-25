@@ -579,24 +579,6 @@ screens:
         actual:
           type: url
           url: http://localhost:16175/settings/personas
-  - id: settings-statusline
-    category: Settings
-    devices:
-      - id: desktop
-        viewport:
-          width: 1440
-          height: 900
-          deviceScaleFactor: 2
-        colorSchemes:
-          - light
-          - dark
-        versions:
-          mock:
-            type: html
-            path: mocks/settings-statusline.html
-        actual:
-          type: url
-          url: http://localhost:16175/settings/statusline
   - id: settings-advanced
     category: Settings
     devices:

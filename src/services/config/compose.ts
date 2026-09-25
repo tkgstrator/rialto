@@ -117,17 +117,19 @@ export const optionalScalarOrNull = (raw: unknown): string | null =>
 
 // Envelope keys a retired feature used to write: the RouterSlot mirror,
 // the custom-router hook that nothing ever read, the routing display
-// name, the cross-provider peer toggle, and the `APIKEY` bootstrap token
-// /api/* no longer accepts. They are read by nothing. Stripped on every
-// read so a stale copy on disk cannot reach the wire — for APIKEY that
-// copy is a plaintext secret — and dropped from every save so the next
-// write leaves them off disk.
+// name, the cross-provider peer toggle, the `APIKEY` bootstrap token
+// /api/* no longer accepts, and the status-line layout, whose renderer
+// left with the CLI and whose editor was removed after it. They are read
+// by nothing. Stripped on every read so a stale copy on disk cannot reach
+// the wire — for APIKEY that copy is a plaintext secret — and dropped
+// from every save so the next write leaves them off disk.
 export const RETIRED_ENVELOPE_KEYS = [
   'Router',
   'CUSTOM_ROUTER_PATH',
   'LiveRoutingName',
   'CROSS_PROVIDER_FALLBACK',
-  'APIKEY'
+  'APIKEY',
+  'StatusLine'
 ] as const
 
 // Strip the DB-resident and retired keys out of an on-disk envelope read

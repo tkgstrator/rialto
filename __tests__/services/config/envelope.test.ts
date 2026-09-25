@@ -326,8 +326,10 @@ describe('applyEnvelopeToEnv', () => {
   })
 
   test('skips object and array values', () => {
-    const before = process.env.StatusLine
-    applyEnvelopeToEnv({ StatusLine: { enabled: true } } as Record<string, unknown>)
-    expect(process.env.StatusLine).toBe(before)
+    // A whitelisted key, so the loop reaches the value-type check rather
+    // than skipping the key for not being mirrored at all.
+    const before = process.env.HOST
+    applyEnvelopeToEnv({ HOST: { nested: true } })
+    expect(process.env.HOST).toBe(before)
   })
 })

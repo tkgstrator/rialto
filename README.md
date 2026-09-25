@@ -35,7 +35,7 @@ The web UI (served on port **3456** by default) gives you full control over ever
 | **Providers** | `/providers` | Two lists — `/providers/subscriptions` and `/providers/api-keys` — plus `/providers/connect` to add one and `/providers/<name>` for tier aliases, models, prices, context windows, connectivity tests and the read-only derived request shape |
 | **Access tokens** | `/access-tokens` | Issue, scope, rotate and revoke the tokens clients use on `/v1/*` |
 | **Activity** | `/activity` | Sessions, per-request logs (`/activity/requests`), subscription usage (`/activity/usage`), and server logs (`/activity/logs`) |
-| **Settings** | `/settings` | Server, Access (admin access: Cloudflare Access, and how to get back in if it breaks), Logging, Personas, Status line, Advanced (config document, health) |
+| **Settings** | `/settings` | Server, Access (admin access: Cloudflare Access, and how to get back in if it breaks), Logging, Personas, Advanced (config document, health) |
 
 First run lands on `/setup`.
 
@@ -180,9 +180,8 @@ Boot-time scalars and disk-resident objects live here. Environment-variable inte
 | `ROUTING_SCHEDULER_INTERVAL_MS` | Scheduler tick, 60 000–3 600 000 (default `300000`) |
 | `Personas` | The persona library (array) |
 | `ActivePersona` | The active persona's uuid id; `null` / absent / empty means none. Also a top-level key on the `/api/config` wire |
-| `StatusLine` | The status-line layout edited under Settings → Status line. Preview only: nothing in this build renders it |
 
-The scalar keys above (everything but `Personas`, `ActivePersona` and `StatusLine`) can also be supplied as process environment variables — a Docker `environment:` entry, for instance — and a set environment value wins over the file.
+The scalar keys above (everything but `Personas` and `ActivePersona`) can also be supplied as process environment variables — a Docker `environment:` entry, for instance — and a set environment value wins over the file.
 
 Keys an older build wrote for mechanisms that no longer exist are ignored. `Router`, `CUSTOM_ROUTER_PATH`, `LiveRoutingName`, `CROSS_PROVIDER_FALLBACK` and the retired admin key `APIKEY` are stripped on every read; `POST /api/config` drops them with a warning, and the next save removes them from the file. An `APIKEY` environment variable is not read either. `ROUTER_MODE` merely survives as an unknown key and is read by nothing.
 

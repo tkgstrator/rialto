@@ -19,7 +19,6 @@ import { SettingsAdvanced } from '@/components/rialto/settings/SettingsAdvanced'
 import { SettingsLogging } from '@/components/rialto/settings/SettingsLogging'
 import { SettingsPersonas } from '@/components/rialto/settings/SettingsPersonas'
 import { SettingsServer } from '@/components/rialto/settings/SettingsServer'
-import { SettingsStatusline } from '@/components/rialto/settings/SettingsStatusline'
 import { AccessRejectedScreen } from '@/components/rialto/system/AccessRejected'
 import { NotFoundScreen } from '@/components/rialto/system/NotFound'
 import { OauthResultScreen } from '@/components/rialto/system/OauthResult'
@@ -87,7 +86,6 @@ export const router = createBrowserRouter([
           { path: '/settings/access', element: <SettingsAccess /> },
           { path: '/settings/logging', element: <SettingsLogging /> },
           { path: '/settings/personas', element: <SettingsPersonas /> },
-          { path: '/settings/statusline', element: <SettingsStatusline /> },
           { path: '/settings/advanced', element: <SettingsAdvanced /> }
         ]
       },

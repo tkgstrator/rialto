@@ -221,9 +221,17 @@ describe.skipIf(!HAS_DB)('configService', () => {
       Router: { default: { agent: { primary: 'openai,gpt-5' } }, persona: 'pirate' },
       CUSTOM_ROUTER_PATH: '/tmp/router.js',
       LiveRoutingName: 'Work',
-      CROSS_PROVIDER_FALLBACK: true
+      CROSS_PROVIDER_FALLBACK: true,
+      StatusLine: { enabled: true, currentStyle: 'default', default: { modules: [] }, powerline: { modules: [] } }
     })
-    const retired = ['APIKEY', 'Router', 'CUSTOM_ROUTER_PATH', 'LiveRoutingName', 'CROSS_PROVIDER_FALLBACK']
+    const retired = [
+      'APIKEY',
+      'Router',
+      'CUSTOM_ROUTER_PATH',
+      'LiveRoutingName',
+      'CROSS_PROVIDER_FALLBACK',
+      'StatusLine'
+    ]
     expect(result.warnings).toHaveLength(1)
     for (const key of retired) {
       expect(result.warnings[0]).toContain(key)
@@ -251,11 +259,13 @@ describe.skipIf(!HAS_DB)('configService', () => {
       Providers: [],
       Router: { default: { agent: { primary: 'openai,gpt-5', fallbacks: [], rules: [] } } },
       CROSS_PROVIDER_FALLBACK: true,
-      LiveRoutingName: 'Work'
+      LiveRoutingName: 'Work',
+      StatusLine: { enabled: true, currentStyle: 'default', default: { modules: [] }, powerline: { modules: [] } }
     })
     const before = await composeUiConfig()
     expect('Router' in before).toBe(false)
     expect('CROSS_PROVIDER_FALLBACK' in before).toBe(false)
+    expect('StatusLine' in before).toBe(false)
     // For APIKEY the stale copy is a plaintext secret, which must not
     // reach GET /api/config.
     expect('APIKEY' in before).toBe(false)
@@ -268,6 +278,7 @@ describe.skipIf(!HAS_DB)('configService', () => {
     expect('Router' in raw).toBe(false)
     expect('CROSS_PROVIDER_FALLBACK' in raw).toBe(false)
     expect('LiveRoutingName' in raw).toBe(false)
+    expect('StatusLine' in raw).toBe(false)
   })
 
   // Toggling an account used to have a second effect: it moved the
