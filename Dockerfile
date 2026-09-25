@@ -19,6 +19,10 @@ WORKDIR /app
 COPY package.json bun.lock bunfig.toml ./
 COPY tsconfig.json tsconfig.base.json tsconfig.runtime.json biome.json ./
 COPY index.html vite.config.mts prisma.config.ts ./
+# Vite copies public/ into dist/ verbatim. Without it the build still
+# succeeds, and the SPA fallback then answers /sw.js, /manifest.json and
+# every icon with index.html — a text/html worker the browser refuses.
+COPY public ./public
 COPY scripts ./scripts
 COPY src ./src
 

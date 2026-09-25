@@ -19,8 +19,11 @@
     <title>Rialto</title>
 
     <!-- PWA. The manifest drives install + display mode; the meta tags
-         below are what iOS reads instead of it. -->
-    <link rel="manifest" href="/manifest.json" />
+         below are what iOS reads instead of it.
+         use-credentials: a manifest is fetched without cookies by default,
+         so behind Cloudflare Access it arrives without CF_Authorization and
+         is redirected to the cross-origin login page, which CORS blocks. -->
+    <link rel="manifest" href="/manifest.json" crossorigin="use-credentials" />
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0a0a" />
     <meta name="mobile-web-app-capable" content="yes" />
