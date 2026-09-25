@@ -6,8 +6,8 @@ export const configRoute = new OpenAPIHono()
 
 // Neither /api/config route is registered through createRoute: the
 // LegacyConfig the server returns (and the ApplyConfigPayload it
-// accepts) carry a recursive JsonValue subtree (StatusLine, plus the
-// payload's catchall). Feeding that to @hono/zod-openapi blows the
+// accepts) carry a recursive JsonValue subtree (the envelope's
+// catchall). Feeding that to @hono/zod-openapi blows the
 // stack during OpenAPI doc generation (zod-to-openapi recurses the
 // self-referential schema). We still validate the POST body with the
 // same zod schema by hand. The schemas stay exported for typing/docs.

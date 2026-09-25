@@ -370,7 +370,7 @@ longer read**. Anything still using one has to be updated.
 
 Configuration is split across two stores:
 
-- **Disk envelope**: `~/.rialto/config.json`. The whitelist is `ConfigEnvelopeSchema` in `src/schemas/domain/config.ts` — read that, not a list here, because it is what boot actually parses. It carries the boot-time scalars (`HOST` / `PORT` / `LOG` / `LOG_LEVEL` / `LOG_MAX_MB` / `PROXY_URL` / `API_TIMEOUT_MS` / `CLAUDE_PATH` / `NON_INTERACTIVE_MODE`), the archive switches (`CAPTURE_REQUESTS` / `CAPTURE_MESSAGES` / `REDACT_TOOL_ARGUMENTS`), the Cloudflare Access pair (`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD`), the scheduler tick (`ROUTING_SCHEDULER_INTERVAL_MS`), the active persona's id (`ActivePersona` — also a top-level key on the `/api/config` wire and on the `ConfigStore`), and the disk-resident objects (`Personas`, `StatusLine`). Keys the schema does not declare are preserved by its `.catchall`, not dropped — except the retired keys, the routing ones (`Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK`) and the removed admin key `APIKEY`, which `RETIRED_ENVELOPE_KEYS` strips on every read and prunes on the next save.
+- **Disk envelope**: `~/.rialto/config.json`. The whitelist is `ConfigEnvelopeSchema` in `src/schemas/domain/config.ts` — read that, not a list here, because it is what boot actually parses. It carries the boot-time scalars (`HOST` / `PORT` / `LOG` / `LOG_LEVEL` / `LOG_MAX_MB` / `PROXY_URL` / `API_TIMEOUT_MS` / `CLAUDE_PATH` / `NON_INTERACTIVE_MODE`), the archive switches (`CAPTURE_REQUESTS` / `CAPTURE_MESSAGES` / `REDACT_TOOL_ARGUMENTS`), the Cloudflare Access pair (`ACCESS_TEAM_DOMAIN` / `ACCESS_AUD`), the scheduler tick (`ROUTING_SCHEDULER_INTERVAL_MS`), the active persona's id (`ActivePersona` — also a top-level key on the `/api/config` wire and on the `ConfigStore`), and the disk-resident object `Personas`. Keys the schema does not declare are preserved by its `.catchall`, not dropped — except the retired keys, the routing ones (`Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK`), the removed admin key `APIKEY` and the removed Settings → Status line's `StatusLine`, which `RETIRED_ENVELOPE_KEYS` strips on every read and prunes on the next save.
 - **PostgreSQL** (via Prisma, `src/prisma/schema.prisma`): everything else. `DATABASE_URL` is loaded from `.env` (`.devcontainer/compose.yaml` provides `postgres` and `redis`).
 
 The schema is well past the three tables the first PR shipped; the column comments in
@@ -425,7 +425,7 @@ DDL is not created at boot either: `entrypoint.sh` runs `prisma migrate deploy` 
 Config API (`src/api/config/route.ts`, service in `src/services/config/`):
 
 - `GET /api/config` returns `composeUiConfig()` (envelope on disk + DB-resident config).
-- `POST /api/config` calls `applyUiConfig(body)`: diffs the incoming UI payload inside a single Prisma transaction and returns `{ success, warnings[] }`. A removed model unsets the tier aliases naming it and a removed provider takes its tier routes with it (both cascade), so the apply layer counts them **before** the delete and warns with which provider tiers or which profile / scenario / lane routes went; the retired keys (`Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK` / `APIKEY`) are dropped with a warning and never stored. `ActivePersona` is an ordinary top-level key: `''` / `null` clears it, absent leaves it alone. Envelope keys land on disk via `writeConfigFile` after the DB transaction commits, and `applyEnvelopeToEnv` re-mirrors them onto `process.env` — so envelope changes are hot, without a restart.
+- `POST /api/config` calls `applyUiConfig(body)`: diffs the incoming UI payload inside a single Prisma transaction and returns `{ success, warnings[] }`. A removed model unsets the tier aliases naming it and a removed provider takes its tier routes with it (both cascade), so the apply layer counts them **before** the delete and warns with which provider tiers or which profile / scenario / lane routes went; the retired keys (`Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK` / `APIKEY` / `StatusLine`) are dropped with a warning and never stored. `ActivePersona` is an ordinary top-level key: `''` / `null` clears it, absent leaves it alone. Envelope keys land on disk via `writeConfigFile` after the DB transaction commits, and `applyEnvelopeToEnv` re-mirrors them onto `process.env` — so envelope changes are hot, without a restart.
 
 Key features (disk envelope):
 - Environment variable interpolation (`$VAR_NAME` or `${VAR_NAME}`)
@@ -527,8 +527,8 @@ all three are gone — do not build on any of them:
 
 What survives at that path is only the recursive JSON value schema —
 `JsonPrimitiveSchema` / `JsonValueSchema` / `JsonObjectSchema` — which backs the
-`.catchall` on `schemas/api/config.ts` and `schemas/domain/config.ts` and types the
-envelope's `StatusLine`. The file name is historical. `__tests__/preset/schema.test.ts`
+`.catchall` on `schemas/api/config.ts` and `schemas/domain/config.ts`. The file name is
+historical. `__tests__/preset/schema.test.ts`
 stays at its path so `bun run test`'s glob (`__tests__/preset`) is still correct, and
 is scoped to those schemas.
 

@@ -21,7 +21,6 @@ const SECTION_LABEL_KEYS: Readonly<Record<string, string>> = {
   access: 'settings.rail.access',
   logging: 'settings.rail.logging',
   personas: 'settings.rail.personas',
-  statusline: 'settings.rail.statusline',
   advanced: 'settings.rail.advanced'
 }
 

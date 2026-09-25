@@ -192,7 +192,7 @@
       "mock": "activity-usage.html",
       "route": "/activity/usage",
       "group": "Activity",
-      "note": "Usage tab. Subscription windows grouped by provider, each account's plan with its multiplier (Max 5x / Max 20x, Codex Pro 5x / Pro 20x), including the per-model weekly windows Overview drops; utilization over time; per-token spend. No export. Reads /api/usage, /api/usage/history and /api/subscriptions (provider grouping and rate_limit_tier). KNOWN DIFF: the mock draws two providers and five accounts; an install with fewer renders fewer rows, and the missing rows shift every section below them. Data, not design — the section order, heads and column layout line up."
+      "note": "Usage tab. Subscription windows grouped by provider, each account's plan with its multiplier (Max 5x / Max 20x, Codex Pro 5x / Pro 20x), including the per-model weekly windows Overview drops, and under each account the same API-equivalent block (this week's tokens and cost, 30 days against the plan fee) a subscription provider's page draws; utilization over time; per-token spend. No export. Reads /api/usage, /api/usage/history, /api/subscriptions (provider grouping and rate_limit_tier) and /api/overview (the API-equivalent figures, which only its quota rows carry). KNOWN DIFF: the mock draws two providers and five accounts; an install with fewer renders fewer rows, and the missing rows shift every section below them. Data, not design — the section order, heads and column layout line up."
     },
     {
       "name": "activity-session",
@@ -256,13 +256,6 @@
       "route": "/settings/personas",
       "group": "Settings",
       "note": "Absorbs Personas + PersonaView + PersonaEdit — three routes for one object."
-    },
-    {
-      "name": "settings-statusline",
-      "mock": "settings-statusline.html",
-      "route": "/settings/statusline",
-      "group": "Settings",
-      "note": "Absorbs StatusLineConfigDialog + its six sub-components. Modal becomes a three-pane editor."
     },
     {
       "name": "settings-advanced",

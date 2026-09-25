@@ -358,6 +358,7 @@ products" である。Rialto はゲートウェイなので**通るのは自分�
 | `RoutingPreset`（Routing 設定のスナップショット） | テーブル・`/api/routing-presets`・Routing 画面の Presets メニュー・組み込みプリセットがすべて消える。保存済みスナップショットは失われる |
 | `longContext` の手動しきい値 | 旧 `longContext` スロットの `params.threshold` が**数値なら**、`live` プロファイルの `constraints.longContextThreshold` へ写された。v2.89.0 ではこの値は読まれなかったが、`longContext` シナリオが戻ったいまは、しきい値の調整の**出発点**として読まれる（30k〜基準値に収めて使う）。しきい値は自動になり、以後は scheduler が 1 日 1 回まで動かす。手で決める方法は無い（§9-1 / §9-4） |
 | `config.json` の `Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK` | 読まれない。`POST /api/config` はこれらを警告付きで捨て、次の保存でディスクからも剥がす。`ROUTER_MODE` 系も同様 |
+| `config.json` の `StatusLine`（Settings → Status line のレイアウト） | 画面ごと削除された。描画していた `ccr statusline` は CLI と一緒に消えていて、レイアウトは保存されるだけで誰も読んでいなかった。`Router` などと同じく、`POST /api/config` は警告付きで捨て、次の保存でディスクからも剥がす |
 | `~/.rialto/<project>/` のプロジェクト単位・セッション単位の Router 上書きファイル | 読まれない。`rialto.json` も `claude-code-router.json` も無視される。プロジェクトごとに違うモデルを当てたいなら、アクセストークンを分けてそれぞれ別のプロファイルに固定する |
 | アクティブなペルソナ | `Router.persona` ではなく、トップレベルの `ActivePersona` キー（ディスクと `/api/config` の両方）。ディスク上の値はもともと `ActivePersona` だったので、設定の書き換えは要らない |
 | 認証モードをまたぐフォールバック | **auth_mode ゲートが無くなった。** あるリストで subscription の後ろに api_key を書いてあれば、そのとおりに落ちる。以前はゲートが黙って落としていた並びが、いまは実際に走る — 従量課金へこぼしたくないなら、そのルートを外すこと |

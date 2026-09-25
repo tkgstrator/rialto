@@ -43,8 +43,38 @@ const surfaceRow = (s) => `
     <td class="py-2.5 pl-3 pr-6 text-right font-mono text-xs tabular-nums text-muted-foreground">${s.err}</td>
   </tr>`
 
+// The same four surfaces as tiles, for a pane wide enough to hold them in
+// one row: there the table's path column was mostly air, with each row's
+// figures a screen away from the path they belong to. The tile is Spend's
+// flat tile, so the two rows read as one grid. With no header row over
+// them, every figure carries its own label.
+const surfaceStat = (label, value, mute) => `
+  <div>
+    <div class="text-[12px] uppercase tracking-wider text-muted-foreground/70">${label}</div>
+    <div class="mt-0.5 font-mono text-sm tabular-nums ${mute ? 'text-muted-foreground' : ''}">${value}</div>
+  </div>`
+
+const surfaceTile = (s) => `
+  <div ${navTo(s.mode === 'routed' ? 'routing.html' : 'routing-passthrough.html')} class="min-w-0 border-l-2 border-l-border px-4 py-3 transition-colors hover:bg-muted/50 hover:border-l-foreground/30">
+    <div class="flex items-baseline gap-2">
+      <span class="min-w-0 truncate font-mono text-xs">${s.path}</span>
+      <span class="ml-auto shrink-0">${s.mode === 'routed' ? pill('routed', 'ok') : pill('passthrough', 'mute')}</span>
+    </div>
+    <div class="text-[12px] text-muted-foreground">${s.client}</div>
+    <div class="mt-3 grid grid-cols-3 gap-3">
+      ${surfaceStat('Requests', s.reqs, false)}
+      ${surfaceStat('p50', s.p50, true)}
+      ${surfaceStat('Errors', s.err, true)}
+    </div>
+  </div>`
+
+// Which of the two is drawn is decided by the section's own width, not the
+// viewport's: the sidebar folds at any width, so a viewport breakpoint
+// would keep the table across width the section actually has. 72rem is
+// where a tile still fits "/v1/chat/completions" beside "passthrough".
 const surfaces = `
-  <table class="w-full table-fixed">
+  <div class="@container">
+  <table class="w-full table-fixed @min-[72rem]:hidden">
     <colgroup><col><col class="w-32"><col class="w-28"><col class="w-20"><col class="w-24"></colgroup>
     <thead>
       <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
@@ -56,7 +86,9 @@ const surfaces = `
       </tr>
     </thead>
     <tbody>${SURFACES.map(surfaceRow).join('')}</tbody>
-  </table>`
+  </table>
+  <div class="hidden grid-cols-4 gap-px px-6 pb-6 @min-[72rem]:grid">${SURFACES.map(surfaceTile).join('')}</div>
+  </div>`
 
 // ─── Subscription quota ───────────────────────────────────────────────
 //
@@ -142,8 +174,12 @@ const usageLines = (u) =>
 // figure, which nothing on the row said — beside a list where every line
 // already shows its own percent, an unlabelled number in the corner is a
 // question, not an answer.
+//
+// No hairline between accounts. Once they flow into columns each rule
+// spans only its own column, so an odd count left one stopping partway
+// across the section; the account name already heads each block.
 const quotaRow = (q) => `
-  <div ${navTo('activity-usage.html')} class="border-t border-border/60 px-6 py-3 transition-colors hover:bg-muted/50">
+  <div ${navTo('activity-usage.html')} class="px-6 py-3 transition-colors hover:bg-muted/50">
     <div class="flex items-baseline gap-2">
       <span class="text-xs font-medium">${q.account}</span>
       <span class="text-[12px] text-muted-foreground/70">${q.windows.length} limit${q.windows.length === 1 ? '' : 's'}</span>
@@ -265,8 +301,13 @@ document.getElementById('root').innerHTML = `
        window it has, so the left column wrapped while the right one sat
        half empty. Both are lists that grow downwards — putting them in
        one column lets each use the full width and keeps the page a single
-       reading order. -->
-  ${section('Subscription quota', QUOTA.map(quotaRow).join(''), 'every window · worst shown per account')}
+       reading order.
+       Inside the section the accounts do flow into columns, as many as fit
+       at 36rem each, up to three: an account block is fixed columns
+       (label, capped meter, percent, reset) 36rem wide with its padding,
+       so one column on a wide pane left two thirds of it empty. Measured
+       on the section, as the surface tiles are. -->
+  ${section('Subscription quota', `<div class="@container"><div class="grid grid-cols-1 gap-x-px @min-[72rem]:grid-cols-2 @min-[108rem]:grid-cols-3">${QUOTA.map(quotaRow).join('')}</div></div>`, 'every window · worst shown per account')}
   ${section('Failover activity', FAILOVER.map(failoverRow).join(''), 'what stopped serving, and when')}
   ${section('Recent sessions', sessions)}
   <div class="h-10"></div>`

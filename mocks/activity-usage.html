@@ -82,7 +82,8 @@ const PROVIDERS = [
           { label: '5-hour',        scope: '',      pct: 0,   resets: '—' },
           { label: '7-day',         scope: '',      pct: 100, resets: '1d 23h' },
           { label: '7-day · model', scope: 'Fable', pct: 9,   resets: '1d 23h' }
-        ]
+        ],
+        usage: { weekTokens: '61.4M', weekCost: '$684', monthCost: '$2.20k', fee: '$200', ratio: '×11' }
       },
       {
         name: 'ops@example.com', plan: 'Max 5x',
@@ -90,14 +91,16 @@ const PROVIDERS = [
           { label: '5-hour',        scope: '',      pct: 34, resets: '2h 41m' },
           { label: '7-day',         scope: '',      pct: 62, resets: '4d 02h' },
           { label: '7-day · model', scope: 'Fable', pct: 18, resets: '4d 02h' }
-        ]
+        ],
+        usage: { weekTokens: '18.9M', weekCost: '$204', monthCost: '$612', fee: '$100', ratio: '×6.1' }
       },
       {
         name: 'nightly@example.com', plan: 'Pro',
         windows: [
           { label: '5-hour', scope: '', pct: 7,  resets: '3h 18m' },
           { label: '7-day',  scope: '', pct: 12, resets: '5d 21h' }
-        ]
+        ],
+        usage: { weekTokens: '2.04M', weekCost: '$18.7', monthCost: '$61.0', fee: '$20', ratio: '×3.1' }
       }
     ]
   },
@@ -109,14 +112,16 @@ const PROVIDERS = [
         windows: [
           { label: '5-hour', scope: '', pct: 92, resets: '46m' },
           { label: '7-day',  scope: '', pct: 65, resets: '1d 20h' }
-        ]
+        ],
+        usage: { weekTokens: '38.2M', weekCost: '$412', monthCost: '$1.31k', fee: '$200', ratio: '×6.6' }
       },
       {
         name: 'ci@example.com', plan: 'Pro 5x',
         windows: [
           { label: '5-hour', scope: '', pct: 22, resets: '3h 05m' },
           { label: '7-day',  scope: '', pct: 41, resets: '6d 02h' }
-        ]
+        ],
+        usage: { weekTokens: '9.60M', weekCost: '$98.4', monthCost: '$287', fee: '$100', ratio: '×2.9' }
       }
     ]
   }
@@ -131,6 +136,40 @@ const windowRow = (w) => `
     <span class="w-20 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${w.resets}</span>
   </div>`
 
+// What the account carried, at the models' API prices — "API equiv",
+// never a bill — the same block a subscription provider's page draws under
+// each account: this week's tokens and cost, then 30 days' cost against the
+// plan fee and the ratio of the two. Rows in the windows' own rhythm, so
+// the two read as one small table. One figure per cell.
+const usageRow = (label, cells) => `
+  <div class="flex items-center gap-3 border-t border-border/60 px-6 py-2.5 transition-colors hover:bg-muted/50">
+    <span class="w-24 shrink-0 truncate text-xs">${label}</span>
+    <span class="min-w-0 flex-1"></span>
+    ${cells.map((c) => `<span class="${c.w} shrink-0 text-right font-mono text-[12px] tabular-nums ${c.mute ? 'text-muted-foreground' : ''}">${c.v}</span>`).join('')}
+  </div>`
+
+const usageBlock = (u) => `
+  <div class="flex items-center gap-3 border-t border-border/60 px-6 pt-2.5 pb-1.5 text-[12px] uppercase tracking-wider text-muted-foreground/60">
+    <span class="w-24 shrink-0">API equiv</span>
+    <span class="min-w-0 flex-1"></span>
+    <span class="w-16 shrink-0 text-right">tokens</span>
+    <span class="w-14 shrink-0 text-right">cost</span>
+    <span class="w-12 shrink-0 text-right">fee</span>
+    <span class="w-10 shrink-0 text-right">×</span>
+  </div>
+  ${usageRow('this week', [
+    { v: u.weekTokens, w: 'w-16' },
+    { v: u.weekCost, w: 'w-14' },
+    { v: '', w: 'w-12' },
+    { v: '', w: 'w-10' }
+  ])}
+  ${usageRow('30 days', [
+    { v: '', w: 'w-16' },
+    { v: u.monthCost, w: 'w-14' },
+    { v: u.fee, w: 'w-12', mute: true },
+    { v: u.ratio, w: 'w-10' }
+  ])}`
+
 const accountBlock = (a) => `
   <div class="min-w-0">
     <div class="flex items-baseline gap-2 px-6 pb-1">
@@ -139,6 +178,7 @@ const accountBlock = (a) => `
       <span class="ml-auto text-[12px] text-muted-foreground/70">resets in</span>
     </div>
     ${a.windows.map(windowRow).join('')}
+    ${usageBlock(a.usage)}
   </div>`
 
 // The heading names the provider by the label the Providers list leads

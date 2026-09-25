@@ -53,30 +53,6 @@ function normalizeConfig(data: Config): Config {
     API_TIMEOUT_MS: typeof data.API_TIMEOUT_MS === 'number' ? data.API_TIMEOUT_MS : 600000,
     PROXY_URL: typeof data.PROXY_URL === 'string' ? data.PROXY_URL : '',
     Providers: Array.isArray(data.Providers) ? data.Providers : [],
-    StatusLine:
-      data.StatusLine && typeof data.StatusLine === 'object'
-        ? {
-            enabled: typeof data.StatusLine.enabled === 'boolean' ? data.StatusLine.enabled : false,
-            currentStyle: typeof data.StatusLine.currentStyle === 'string' ? data.StatusLine.currentStyle : 'default',
-            default:
-              data.StatusLine.default &&
-              typeof data.StatusLine.default === 'object' &&
-              Array.isArray(data.StatusLine.default.modules)
-                ? data.StatusLine.default
-                : { modules: [] },
-            powerline:
-              data.StatusLine.powerline &&
-              typeof data.StatusLine.powerline === 'object' &&
-              Array.isArray(data.StatusLine.powerline.modules)
-                ? data.StatusLine.powerline
-                : { modules: [] }
-          }
-        : {
-            enabled: false,
-            currentStyle: 'default',
-            default: { modules: [] },
-            powerline: { modules: [] }
-          },
     // The active persona's id. Null is the wire's "none"; an empty string
     // collapses to the same so the Personas screen's Active switch never
     // has to tell the two apart.
@@ -104,7 +80,6 @@ const emptyConfig = (): Config => ({
   API_TIMEOUT_MS: 600000,
   PROXY_URL: '',
   Providers: [],
-  StatusLine: undefined,
   ActivePersona: null,
   Personas: []
 })

@@ -229,7 +229,6 @@ DBマイグレーションは不要（`InboundSurfaceConfig` は行が無けれ�
 | Settings — Access | `/settings/access` | 12.3% / 12.6% ※2 |
 | Settings — Logging | `/settings/logging` | 2.28% / 2.29% |
 | Settings — Personas | `/settings/personas` | 4.73% / 5.63% |
-| Settings — Status line | `/settings/statusline` | 2.24% / 3.03% |
 | Settings — Advanced | `/settings/advanced` | 4.23% / 4.36% |
 | First run | `/setup` | 2.85% / 3.01% |
 | System states | `/access-denied` ほか | 3.22% / 9.53% |

@@ -33,17 +33,7 @@ const CONFIG = `{
   LOG_LEVEL: "info",
   API_TIMEOUT_MS: 600000,
   PROXY_URL: null,
-  NON_INTERACTIVE_MODE: false,
-
-  StatusLine: {
-    modules: [
-      { type: "cwd" },
-      { type: "gitBranch" },
-      { type: "model", color: "#38bdf8", stripProvider: true },
-      { type: "quota", color: "#34d399" },
-      { type: "cost",  color: "#fbbf24" }
-    ]
-  }
+  NON_INTERACTIVE_MODE: false
 }`
 
 const line = (n, text) => `

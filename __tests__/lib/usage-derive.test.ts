@@ -14,6 +14,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   bucketSamples,
+  indexAccountUsage,
   metricLabel,
   providerWindows,
   seriesOf,
@@ -364,5 +365,39 @@ describe('tokenUsageRows', () => {
   test('no priced traffic at all leaves every share null rather than NaN', () => {
     const rows = tokenUsageRows([token({ id: 'a' }), token({ id: 'b' })])
     expect(rows.every((r) => r.sharePct === null)).toBe(true)
+  })
+})
+
+describe('indexAccountUsage', () => {
+  const figures = (totalTokens: number, costUsd: number | null) => ({
+    requests: 1,
+    inputTokens: totalTokens,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    totalTokens,
+    costUsd
+  })
+  const usage = {
+    windowStart: '2026-09-01T00:00:00Z',
+    window: figures(1000, 12),
+    last30d: figures(4000, 48),
+    monthlyPriceUsd: 200,
+    valueRatio: 0.24
+  }
+
+  test('keys each account by its SubAccount id', () => {
+    const index = indexAccountUsage([{ subAccountId: 'sa1', usage }])
+    expect(index.get('sa1')).toEqual(usage)
+  })
+
+  test('an account whose aggregate failed is absent, not null', () => {
+    // The screen draws the lines on a hit and nothing on a miss; a stored
+    // null would be a third state it has to remember to check.
+    const index = indexAccountUsage([
+      { subAccountId: 'sa1', usage },
+      { subAccountId: 'sa2', usage: null }
+    ])
+    expect([...index.keys()]).toEqual(['sa1'])
   })
 })

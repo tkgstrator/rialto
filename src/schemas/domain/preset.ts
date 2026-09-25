@@ -3,8 +3,7 @@
  *
  * Free-form JSON values use `JsonValueSchema` instead of `z.any()` /
  * `z.unknown()` so every value still has a real, validatable type. It
- * backs the catchall on the disk envelope and the /api/config payload,
- * and types the envelope's `StatusLine`.
+ * backs the catchall on the disk envelope and the /api/config payload.
  *
  * The preset manifest schemas that used to share this file went with the
  * preset installer they described; nothing parsed a manifest.

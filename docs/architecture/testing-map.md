@@ -59,7 +59,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `rialto/account-extras.test.ts` | アカウント行の付帯情報（API 換算の使用量と Codex のバンク済みリセット）をアカウント id で引けること、欠けた読み取りを null のまま残すこと、割安度と失効日のフォーマッタ |
 | `rialto/redact-tool-arguments.test.ts` | `REDACT_TOOL_ARGUMENTS` の除去処理 |
 | `rialto/settings/access-config.test.ts`<br/>`rialto/settings/access-tokens.test.ts`<br/>`rialto/settings/envelope.test.ts` | Settings 画面の各フォームのロジック |
-| `rialto/settings-content/persona.test.ts`<br/>`rialto/settings-content/statusline.test.ts` | Settings のサブ画面のロジック |
+| `rialto/settings-content/persona.test.ts` | Settings のサブ画面のロジック |
 
 ### `__tests__/db` — DB を張った統合テスト
 
@@ -206,7 +206,7 @@ context ゲートが効くことも見る — seed しなければ「プロフ�
 | `schema.test.ts` | `src/schemas/domain/preset.ts` の `JsonValueSchema` / `JsonObjectSchema` |
 
 `JsonValueSchema` は `schemas/api/config.ts` と `schemas/domain/config.ts` の `.catchall`
-（および `StatusLine` の型）を支えているので、これは**本番経路のテスト**である。
+を支えているので、これは**本番経路のテスト**である。
 `JsonObjectSchema` の方はこのテスト以外に読み手がいない。
 
 かつてここにあった manifest スキーマ（`PresetFileSchema` / `PresetMetadataSchema` /

@@ -35,7 +35,7 @@ Web 界面（默认在端口 **3456** 提供服务）让你全面掌控网关的
 | **Providers** | `/providers` | 两个列表——`/providers/subscriptions` 与 `/providers/api-keys`——外加用于添加的 `/providers/connect`，以及查看层级别名、模型、价格、上下文窗口、连接测试和只读推导请求形状的 `/providers/<name>` |
 | **Access tokens** | `/access-tokens` | 签发、限定范围、轮换和吊销客户端在 `/v1/*` 上使用的令牌 |
 | **Activity** | `/activity` | 会话、逐请求日志（`/activity/requests`）、订阅用量（`/activity/usage`）与服务器日志（`/activity/logs`）|
-| **Settings** | `/settings` | Server、Access（管理访问：Cloudflare Access，以及它出故障时如何重新进入）、Logging、Personas、Status line、Advanced（配置文档、健康状态）|
+| **Settings** | `/settings` | Server、Access（管理访问：Cloudflare Access，以及它出故障时如何重新进入）、Logging、Personas、Advanced（配置文档、健康状态）|
 
 首次启动会落到 `/setup`。
 
@@ -180,9 +180,8 @@ Rialto 不只是 Claude Code 的代理。入口处接收四种线路格式，每
 | `ROUTING_SCHEDULER_INTERVAL_MS` | 调度器 tick 间隔，60 000–3 600 000（默认 `300000`）|
 | `Personas` | 人格库（数组）|
 | `ActivePersona` | 当前人格的 uuid id；`null` / 缺失 / 空字符串表示无。在 `/api/config` 的线路上同样是顶层键 |
-| `StatusLine` | 在 Settings → Status line 编辑的状态栏布局。仅供预览：本版本中没有任何代码渲染它 |
 
-上表中的标量键（除 `Personas`、`ActivePersona`、`StatusLine` 之外）也可以作为进程环境变量提供——例如 Docker 的 `environment:` 条目——已设置的环境变量优先于文件。
+上表中的标量键（除 `Personas`、`ActivePersona` 之外）也可以作为进程环境变量提供——例如 Docker 的 `environment:` 条目——已设置的环境变量优先于文件。
 
 旧版本为已不存在的机制写下的键一律忽略。`Router`、`CUSTOM_ROUTER_PATH`、`LiveRoutingName`、`CROSS_PROVIDER_FALLBACK` 以及已废弃的管理密钥 `APIKEY` 会在每次读取时被剔除；`POST /api/config` 会带着警告丢弃它们，下一次保存时把它们从文件中清掉。`APIKEY` 环境变量同样不会被读取。`ROUTER_MODE` 只是作为未知键留在文件里，没有任何代码读取它。
 
