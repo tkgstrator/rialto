@@ -100,6 +100,27 @@ manifest silently fails to parse and the app is not installable from any
 deep link. The same applied to the remixicon sprite, whose icons were
 already broken on a deep-link reload.
 
+## Behind Cloudflare Access
+
+Two things must hold for the app to install through Access, and both are
+pinned by `__tests__/lib/pwa-deploy.test.ts`:
+
+- **The image carries `public/`.** The Dockerfile's builder stage copies
+  `public/` before `bun run build`. Without it the build still succeeds,
+  `dist/` has no `sw.js` or `manifest.json`, and the SPA fallback answers
+  both with `index.html` — the console then reports a worker "with an
+  unsupported MIME type ('text/html')".
+- **The manifest link has `crossorigin="use-credentials"`.** Browsers fetch
+  a manifest without cookies by default, so the `CF_Authorization` cookie is
+  not sent, Access redirects the request to
+  `<team>.cloudflareaccess.com/cdn-cgi/access/login/…`, and CORS blocks the
+  cross-origin redirect.
+
+The worker itself needs no Access exception: its script is fetched with
+same-origin credentials, and a navigation that Access redirects to its login
+page (an expired session) comes back as a non-`ok` response, which the
+worker returns as-is rather than caching or replacing with the shell.
+
 ## Not included
 
 - **Update notifications.** Version detection and the update banner belong
