@@ -35,7 +35,7 @@ Web UI（デフォルトでポート **3456** で提供）でゲートウェイ�
 | **Providers** | `/providers` | 2 つの一覧 — `/providers/subscriptions` と `/providers/api-keys` — に加え、追加用の `/providers/connect` と、ティアエイリアス・モデル・価格・コンテキストウィンドウ・接続テスト・導出された Request shape（読み取り専用）を見る `/providers/<name>` |
 | **Access tokens** | `/access-tokens` | クライアントが `/v1/*` で使うトークンの発行・スコープ設定・ローテート・失効 |
 | **Activity** | `/activity` | セッション、リクエスト単位のログ（`/activity/requests`）、サブスクリプション使用量（`/activity/usage`）、サーバーログ（`/activity/logs`）|
-| **Settings** | `/settings` | Server、Access（管理アクセス：Cloudflare Access と、それが壊れたときの入り直し方）、Logging、Personas、Status line、Advanced（設定ドキュメント、ヘルス）|
+| **Settings** | `/settings` | Server、Access（管理アクセス：Cloudflare Access と、それが壊れたときの入り直し方）、Logging、Personas、Advanced（設定ドキュメント、ヘルス）|
 
 初回起動は `/setup` に着地します。
 
@@ -180,9 +180,8 @@ Rialto は Claude Code 専用プロキシではありません。受け口で 4 
 | `ROUTING_SCHEDULER_INTERVAL_MS` | スケジューラの tick 間隔、60 000〜3 600 000（デフォルト `300000`）|
 | `Personas` | ペルソナライブラリ（配列）|
 | `ActivePersona` | アクティブなペルソナの uuid id。`null` / 欠落 / 空文字は「無し」。`/api/config` のワイヤ上でもトップレベルキーです |
-| `StatusLine` | Settings → Status line で編集するステータスラインのレイアウト。プレビュー専用で、このビルドにはこれを描画するものがありません |
 
-上記のスカラーキー（`Personas`・`ActivePersona`・`StatusLine` 以外）はプロセスの環境変数 — たとえば Docker の `environment:` — としても渡せ、環境変数が設定されていればファイルより優先されます。
+上記のスカラーキー（`Personas`・`ActivePersona` 以外）はプロセスの環境変数 — たとえば Docker の `environment:` — としても渡せ、環境変数が設定されていればファイルより優先されます。
 
 旧ビルドが、もう存在しない機構のために書いたキーは無視されます。`Router`、`CUSTOM_ROUTER_PATH`、`LiveRoutingName`、`CROSS_PROVIDER_FALLBACK`、そして廃止された管理キー `APIKEY` は読み込みのたびに取り除かれ、`POST /api/config` は警告を出してこれらを捨て、次の保存でファイルからも消えます。環境変数の `APIKEY` も読まれません。`ROUTER_MODE` は未知のキーとして残るだけで、何も読みません。
 

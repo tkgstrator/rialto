@@ -92,7 +92,6 @@ const SHARED_VOCABULARY = new Set([
   'settings.logging.levelHint',
   'settings.personas.markdown',
   'settings.server.redis',
-  'settings.statusline.stylePowerline',
   'shell.identityAccess'
 ])
 

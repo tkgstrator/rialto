@@ -10,13 +10,7 @@ export {
   ProviderAuthModeSchema,
   ProviderSchema,
   type ProviderTransformer,
-  ProviderTransformerSchema,
-  type StatusLineConfig,
-  StatusLineConfigSchema,
-  type StatusLineModuleConfig,
-  StatusLineModuleConfigSchema,
-  type StatusLineThemeConfig,
-  StatusLineThemeConfigSchema
+  ProviderTransformerSchema
 } from '@/schemas/domain'
 export { type AccessLevel, AccessLevelSchema } from '@/schemas/primitives/common'
 // Schemas that were value-exported from this file before the move.

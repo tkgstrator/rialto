@@ -15,6 +15,7 @@
  * (`/api/usage`, `/api/usage/history`), and the per-model weekly windows
  * — the limit that actually stops a Fable request — were visible nowhere.
  */
+import { cn } from 'cn'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
@@ -28,9 +29,11 @@ import {
 } from '@/components/rialto/activity/data'
 import { FilterSelect, ScreenMessage } from '@/components/rialto/activity/shared'
 import {
+  type AccountUsageIndex,
   type AccountWindows,
   bucketSamples,
   type ChartPoint,
+  indexAccountUsage,
   type ProviderWindows,
   providerWindows,
   seriesOf,
@@ -46,9 +49,10 @@ import { Meter, Pill, RButton, SurfaceScope } from '@/components/rialto/primitiv
 import type { SubscriptionsResponse, SubscriptionWire } from '@/components/rialto/providers/types'
 import { Screen } from '@/components/rialto/Screen'
 import { type AccessTokenWire, api, type InboundSurfaceWire } from '@/lib/api'
+import type { OverviewAccountUsage } from '@/lib/api-types'
 import dayjs from '@/lib/dayjs'
-import { fmtAgo, fmtCount, fmtUntil } from '@/lib/rialto/format'
-import { fmtCost } from '@/lib/sessions/format'
+import { fmtAgo, fmtCount, fmtUntil, fmtValueRatio } from '@/lib/rialto/format'
+import { fmtCost, fmtTokens } from '@/lib/sessions/format'
 
 // Ranges the history endpoint accepts (it caps `days` at 30). Offered as a
 // real control rather than an ornament: a week answers "did I spike", a
@@ -157,15 +161,85 @@ function WindowLine({ row, now }: { row: WindowRow; now: number }) {
   )
 }
 
+function UsageRow({ label, cells }: { label: string; cells: { text: string; width: string; mute?: boolean }[] }) {
+  return (
+    <div className='flex items-center gap-3 border-t border-border/60 px-6 py-2.5 transition-colors hover:bg-muted/50'>
+      <span className='w-24 shrink-0 truncate text-xs'>{label}</span>
+      <span className='min-w-0 flex-1' />
+      {cells.map((cell) => (
+        <span
+          key={cell.width}
+          className={cn(
+            cell.width,
+            'shrink-0 text-right font-mono text-[12px] tabular-nums',
+            cell.mute ? 'text-muted-foreground' : ''
+          )}
+        >
+          {cell.text}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 /**
- * An account's name, its plan, and its windows.
+ * What the account carried, at the models' API prices — "API equivalent",
+ * never a bill. The block a subscription provider's page draws under each
+ * account, set in this panel's row rhythm so it reads as more rows of the
+ * windows above it: this week's tokens and cost, then 30 days' cost against
+ * the plan fee and the ratio of the two.
+ */
+function UsageLines({ usage }: { usage: OverviewAccountUsage }) {
+  const { t } = useTranslation()
+  return (
+    <>
+      <div className='flex items-center gap-3 border-t border-border/60 px-6 pt-2.5 pb-1.5 text-[12px] uppercase tracking-wider text-muted-foreground/60'>
+        <span className='w-24 shrink-0'>{t('providers.accounts.usageHeader')}</span>
+        <span className='min-w-0 flex-1' />
+        <span className='w-16 shrink-0 text-right'>{t('providers.accounts.usageTokens')}</span>
+        <span className='w-14 shrink-0 text-right'>{t('providers.accounts.usageCost')}</span>
+        <span className='w-12 shrink-0 text-right'>{t('providers.accounts.usageFee')}</span>
+        <span className='w-10 shrink-0 text-right'>×</span>
+      </div>
+      <UsageRow
+        label={t('providers.accounts.usageThisWeek')}
+        cells={[
+          { text: fmtTokens(usage.window.totalTokens), width: 'w-16' },
+          { text: fmtCost(usage.window.costUsd), width: 'w-14' },
+          { text: '', width: 'w-12' },
+          { text: '', width: 'w-10' }
+        ]}
+      />
+      <UsageRow
+        label={t('providers.accounts.usage30d')}
+        cells={[
+          { text: '', width: 'w-16' },
+          { text: fmtCost(usage.last30d.costUsd), width: 'w-14' },
+          { text: usage.monthlyPriceUsd === null ? '–' : fmtCost(usage.monthlyPriceUsd), width: 'w-12', mute: true },
+          { text: fmtValueRatio(usage.valueRatio), width: 'w-10' }
+        ]}
+      />
+    </>
+  )
+}
+
+/**
+ * An account's name, its plan, its windows, and what it carried.
  *
  * The plan pill carries the multiplier because the multiplier is the plan:
  * "Max" and "Pro" are each two plans, and a 20x at 60% has four times the
  * headroom of a 5x at 60%, so a pill that cannot tell them apart makes
  * every meter under it unreadable.
  */
-function AccountBlock({ account, now }: { account: AccountWindows; now: number }) {
+function AccountBlock({
+  account,
+  usage,
+  now
+}: {
+  account: AccountWindows
+  usage: OverviewAccountUsage | undefined
+  now: number
+}) {
   const { t } = useTranslation()
   return (
     <div className='min-w-0'>
@@ -177,6 +251,7 @@ function AccountBlock({ account, now }: { account: AccountWindows; now: number }
       {account.windows.map((row) => (
         <WindowLine key={`${row.label}-${row.scope}`} row={row} now={now} />
       ))}
+      {usage === undefined ? null : <UsageLines usage={usage} />}
     </div>
   )
 }
@@ -191,7 +266,15 @@ function AccountBlock({ account, now }: { account: AccountWindows; now: number }
  * nothing stops two subscription providers on one vendor, and "Claude
  * Code" alone would not tell them apart.
  */
-function ProviderGroup({ group, now }: { group: ProviderWindows; now: number }) {
+function ProviderGroup({
+  group,
+  accountUsage,
+  now
+}: {
+  group: ProviderWindows
+  accountUsage: AccountUsageIndex
+  now: number
+}) {
   const { t } = useTranslation()
   return (
     <div className='@container border-t border-border/60 pt-3 first:border-t-0 first:pt-0'>
@@ -215,7 +298,12 @@ function ProviderGroup({ group, now }: { group: ProviderWindows; now: number }) 
           to fill the row — and never lent to the next provider. */}
       <div className='grid grid-cols-1 gap-x-px pb-3 @min-[56rem]:grid-cols-2 @min-[84rem]:grid-cols-3'>
         {group.accounts.map((account) => (
-          <AccountBlock key={account.subAccountId} account={account} now={now} />
+          <AccountBlock
+            key={account.subAccountId}
+            account={account}
+            usage={accountUsage.get(account.subAccountId)}
+            now={now}
+          />
         ))}
       </div>
     </div>
@@ -368,6 +456,7 @@ function TokenRow({
 /** All three panels' fetches. Kept out of the screen so it stays a layout. */
 function useUsageData(days: number) {
   const [usage, setUsage] = useState<UsageWire | null>(null)
+  const [accountUsage, setAccountUsage] = useState<AccountUsageIndex>(new Map())
   const [subscriptions, setSubscriptions] = useState<SubscriptionWire[]>([])
   const [samples, setSamples] = useState<UsageHistorySample[]>([])
   const [tokens, setTokens] = useState<AccessTokenWire[]>([])
@@ -385,10 +474,16 @@ function useUsageData(days: number) {
       api.getInboundSurfaces(),
       // Grouping and plan names only. A failed read leaves each account
       // under its vendor rather than taking the whole screen down with it.
-      fetchSubscriptions().catch(() => EMPTY_SUBSCRIPTIONS)
+      fetchSubscriptions().catch(() => EMPTY_SUBSCRIPTIONS),
+      // The API-equivalent figures, which only Overview's quota rows carry
+      // — the same read a subscription provider's page makes. Optional
+      // like the subscriptions: without it the accounts lose those lines,
+      // not their windows.
+      api.getOverview({ windowHours: 24 }).catch(() => null)
     ])
-      .then(([usageRes, historyRes, tokenRes, surfaceRes, subscriptionRes]) => {
+      .then(([usageRes, historyRes, tokenRes, surfaceRes, subscriptionRes, overviewRes]) => {
         setUsage(usageRes)
+        setAccountUsage(indexAccountUsage(overviewRes === null ? [] : overviewRes.quota))
         setSubscriptions(subscriptionRes.subscriptions)
         setSamples(historyRes.samples)
         setTokens(tokenRes.tokens)
@@ -401,7 +496,7 @@ function useUsageData(days: number) {
 
   useEffect(load, [load])
 
-  return { usage, subscriptions, samples, tokens, surfaces, error, loading, reload: load }
+  return { usage, accountUsage, subscriptions, samples, tokens, surfaces, error, loading, reload: load }
 }
 
 export function ActivityUsage() {
@@ -409,7 +504,7 @@ export function ActivityUsage() {
   const navigate = useNavigate()
   const _counts = useActivityCounts()
   const [days, setDays] = useState<number>(DEFAULT_RANGE_DAYS)
-  const { usage, subscriptions, samples, tokens, surfaces, error, loading, reload } = useUsageData(days)
+  const { usage, accountUsage, subscriptions, samples, tokens, surfaces, error, loading, reload } = useUsageData(days)
   // One clock for the whole render, so two rows cannot disagree about how
   // long until the same reset.
   const [now, setNow] = useState(() => Date.now())
@@ -461,7 +556,7 @@ export function ActivityUsage() {
       ) : (
         <div className='pb-2'>
           {groups.map((group) => (
-            <ProviderGroup key={group.key} group={group} now={now} />
+            <ProviderGroup key={group.key} group={group} accountUsage={accountUsage} now={now} />
           ))}
         </div>
       )}

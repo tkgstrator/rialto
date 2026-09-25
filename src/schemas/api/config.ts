@@ -11,7 +11,6 @@ import { z } from '@hono/zod-openapi'
 import { ConfigEnvelopeSchema, PersonaSchema } from '@/schemas/domain/config'
 import { JsonValueSchema } from '@/schemas/domain/preset'
 import { ProviderSchema } from '@/schemas/domain/provider'
-import { StatusLineConfigSchema } from '@/schemas/domain/status-line'
 import { EmptyStringToNullSchema } from '@/schemas/primitives/common'
 
 // API wire shape returned by /api/config and emitted by composeUiConfig
@@ -36,7 +35,6 @@ export type AppConfig = z.infer<typeof AppConfigSchema>
 // frontend types this directly off the JSON it receives.
 export const ConfigSchema = z.object({
   Providers: z.array(ProviderSchema),
-  StatusLine: StatusLineConfigSchema.optional(),
   LOG: z.boolean(),
   LOG_LEVEL: z.string().nonempty(),
   // Absent when the operator never set it; the logger then uses 10.

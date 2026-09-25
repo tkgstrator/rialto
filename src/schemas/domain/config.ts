@@ -70,11 +70,10 @@ export const ConfigEnvelopeSchema = z
     // scalars.
     ActivePersona: z.string().optional(),
 
-    // Object-shaped envelope members: they stay on disk rather than
-    // moving to the DB, and are never mirrored onto process.env.
-    // Personas is the named persona library.
+    // Object-shaped envelope member: it stays on disk rather than moving
+    // to the DB, and is never mirrored onto process.env. Personas is the
+    // named persona library.
     Personas: z.array(PersonaSchema).default([]),
-    StatusLine: JsonValueSchema.optional(),
 
     // Scheduler tick interval. Default 5 min matches the usage-cache
     // TTL; faster ticks just spin the weight recompute since upstream
