@@ -378,6 +378,8 @@ One logger (pino) writes everything — HTTP requests, routing decisions, upstre
 
 The files are readable from **Activity → Logs** in the UI. There is no separate application log.
 
+For Claude Code auto-mode troubleshooting, set `LOG=true` and `LOG_LEVEL=info`, then search the file or Activity → Logs for `classifier_diagnostic`. On `/v1/messages`, Rialto logs the presence of inbound `safeguards`, whether they survive the upstream transformation, a **suspected** legacy permission-gate prompt signature, the routed provider/model and scenario, and upstream HTTP status. Upstream JSON `safeguard_results` metadata is sampled only for small responses with a declared content length; streaming responses are not inspected. These events omit prompt text, tool arguments, safeguard decisions and credentials. `suspectedClassifier` is heuristic, not a guaranteed classifier marker. A Claude Code refusal made locally before any request reaches Rialto cannot be logged here, and an upstream status is not Claude Code's final auto-mode decision. Compare events with the same `reqId` for one upstream attempt; failovers get different IDs. Regular upstream error logs may already include raw error bodies, so handle log files as sensitive data.
+
 ## 🌐 Public deployment
 
 Exposing Rialto through a tunnel needs `/api/*` and `/v1/*` treated differently — the first behind Cloudflare Access, the second bypassed at the edge and guarded by issued tokens alone. The full setup, and the failure modes that make CLI clients hang on a login page, are in [docs/guides/public-deployment.md](docs/guides/public-deployment.md) (Japanese).
