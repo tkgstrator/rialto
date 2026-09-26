@@ -19,6 +19,7 @@ import type { PipelineRequest } from '@/schemas/domain/pipeline'
 import { RecordSchema } from '@/schemas/primitives/record'
 import { type LlmsContext, PASSTHROUGH_ROUTE, type RouterRequest, routeRequest, type Transformer } from '../../llms'
 import { surfaceForPath } from '../../llms/inbound/surfaces'
+import { type ClassifierSignals, classifierSignals } from '../../llms/pipeline/classifier-diagnostics'
 import { sessionIdFromRequest } from '../../llms/pipeline/session-id'
 import { passthroughDenial } from '../../services/inbound-surface-service'
 import { buildErrorEnvelope, errorShapeForPath } from './error-shape'
@@ -58,6 +59,7 @@ export interface RoutePlan {
   // for" next to "what was actually sent". Absent when the body had no
   // usable model string.
   requestedModel?: string
+  classifierSignals?: ClassifierSignals
   // Whether the request carried a <RIALTO-SUBAGENT-MODEL> tag. Recorded on
   // the request log so Activity can tell subagent traffic apart.
   isSubagent: boolean
@@ -163,6 +165,14 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   // Capture what the client asked for BEFORE routeRequest rewrites
   // body.model in place — this is the only point the original is visible.
   const requestedModel = typeof body.model === 'string' && body.model.length > 0 ? body.model : undefined
+  const signals = path === '/v1/messages' ? classifierSignals(body) : undefined
+  const diagnosticLog = (status: number, reason: string): void => {
+    if (!signals || (!signals.safeguardsPresent && !signals.suspectedClassifier)) return
+    ctx.log.info(
+      { event: 'classifier_diagnostic', phase: 'routing_refusal', ...signals, status, reason, requestedModel },
+      'classifier diagnostic: request stopped before upstream'
+    )
+  }
 
   // Tier routing: rewrite body.model to the resolved provider,model and
   // stamp req.route. We keep the request object so we can read the
@@ -190,6 +200,7 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   // routes can serve again.
   const retryAfter = routeReq.quotaExhaustedRetryAfterSec
   if (typeof retryAfter === 'number' && retryAfter > 0) {
+    diagnosticLog(429, 'quota_exhausted')
     return new Response(
       JSON.stringify(
         buildErrorEnvelope({
@@ -210,6 +221,7 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   // Answered 400 and never dispatched: unlike exhaustion, waiting would
   // not change it.
   if (routeReq.routingRefusal !== undefined) {
+    diagnosticLog(400, 'routing_refusal')
     return c.json(buildErrorEnvelope({ shape, status: 400, from: routeReq.routingRefusal }), 400)
   }
 
@@ -226,11 +238,13 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   // already replaced.
   const denial = await passthroughDenial(path, typeof body.model === 'string' ? body.model : undefined)
   if (denial !== undefined) {
+    diagnosticLog(400, 'passthrough_denial')
     return c.json(buildErrorEnvelope({ shape, status: 400, from: denial }), 400)
   }
 
   const primaryModel = typeof body.model === 'string' ? body.model : ''
   if (primaryModel.length === 0) {
+    diagnosticLog(400, 'missing_model')
     return c.json(buildErrorEnvelope({ shape, status: 400, from: 'Missing model in request body' }), 400)
   }
 
@@ -243,6 +257,7 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
     route,
     primaryModel,
     requestedModel,
+    classifierSignals: signals ?? { safeguardsPresent: false, suspectedClassifier: false },
     isSubagent: routeReq.isSubagent === true,
     // The rest of the routes the selector resolved for this request.
     // buildFailoverChain reads this directly so the reactive path walks

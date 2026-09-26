@@ -171,6 +171,7 @@ export function resolveInvocationForModel(
     model,
     route: plan.route,
     requestedModel: plan.requestedModel,
+    classifierSignals: plan.classifierSignals,
     isSubagent: plan.isSubagent,
     inboundType: inboundTypeForPath(plan.path),
     surface: surfaceForPath(plan.path)?.id,

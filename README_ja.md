@@ -378,6 +378,8 @@ for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.
 
 ファイルは UI の **Activity → Logs** から閲覧できます。別建てのアプリケーションログはありません。
 
+Claude Code の auto mode を調べるには `LOG=true` と `LOG_LEVEL=info` を設定し、ファイルか Activity → Logs で `classifier_diagnostic` を検索してください。`/v1/messages` について、受信時の `safeguards` の有無、上流へ変換した後も残るか、従来型の許可判定プロンプトの**推定**シグネチャ、ルーティング先と上流 HTTP ステータスを記録します。`safeguard_results` は小さい JSON 応答で長さが明示された場合にメタデータのみ確認し、ストリームは検査しません。プロンプト本文、ツール引数、判定文、認証情報はこの診断イベントに記録しません。`suspectedClassifier` は確定した識別子ではありません。Rialto に届く前の Claude Code 内部の拒否は観測できず、上流のステータスは Claude Code の最終判定ではありません。同一の上流試行のイベントは `reqId` で照合できます（フェイルオーバー時は別 ID）。既存の上流エラーログには生のエラー本文が含まれる場合があるため、ログファイルは機密情報として扱ってください。
+
 ## 🌐 外部公開
 
 トンネル越しに Rialto を公開する場合、`/api/*` と `/v1/*` は別扱いが必要です — 前者は Cloudflare Access の背後に、後者はエッジで Bypass して発行済みトークンだけを門にします。設定手順と、CLI クライアントがログイン画面で詰む失敗モードは [docs/guides/public-deployment.md](docs/guides/public-deployment.md) にまとめてあります。

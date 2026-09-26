@@ -18,6 +18,7 @@ import {
 import { fetchProvider } from '../provider-fetch'
 import type { ResolvedProvider } from '../registry/provider'
 import type { Transformer } from '../transformers/base'
+import { captureSafeguardResultMetadata, hasSafeguards } from './classifier-diagnostics'
 import { captureAssistantMessage, extractLastUserContent } from './message-capture'
 import { shouldStripInboundHeader } from './request-chain'
 import { resolveSessionId } from './session-id'
@@ -62,6 +63,25 @@ export async function sendToProvider(
   const headers = buildRequestHeaders(provider, outConfig)
 
   logRequest(reqLog, provider, body, url, bypass)
+  const signals = context.req?.classifierSignals
+  const diagnostic = signals?.safeguardsPresent || signals?.suspectedClassifier || hasSafeguards(body)
+  if (diagnostic) {
+    reqLog.info(
+      {
+        event: 'classifier_diagnostic',
+        phase: 'upstream_request',
+        safeguardsPresent: signals?.safeguardsPresent ?? false,
+        safeguardsForwarded: hasSafeguards(body),
+        suspectedClassifier: signals?.suspectedClassifier ?? false,
+        provider: provider.name,
+        model: context.req?.model,
+        requestedModel: context.req?.requestedModel,
+        route: context.req?.route,
+        bypass
+      },
+      'classifier diagnostic: upstream request signals'
+    )
+  }
 
   // Capture the user turn before we send. Anthropic's message array is
   // the same in bypass and unified paths, so pulling the last user block
@@ -78,6 +98,19 @@ export async function sendToProvider(
   const response = await fetchProvider(url, body, { headers, httpsProxy: deps.httpsProxy }, { reqId }, reqLog)
   const durationMs = Date.now() - startedAt
 
+  if (diagnostic) {
+    reqLog.info(
+      {
+        event: 'classifier_diagnostic',
+        phase: 'upstream_response',
+        provider: provider.name,
+        status: response.status,
+        durationMs
+      },
+      'classifier diagnostic: upstream response status'
+    )
+    if (response.ok) captureSafeguardResultMetadata(response, reqLog)
+  }
   if (!response.ok) {
     await handleProviderError(response, provider, transformer, body, durationMs, url, reqLog)
   }
