@@ -79,26 +79,26 @@ const PROVIDERS = [
       {
         name: 'Yuki Minakami', plan: 'Max 20x',
         windows: [
-          { label: '5-hour',        scope: '',      pct: 0,   resets: '—' },
-          { label: '7-day',         scope: '',      pct: 100, resets: '1d 23h' },
-          { label: '7-day · model', scope: 'Fable', pct: 9,   resets: '1d 23h' }
+          { label: '5-hour',        scope: '',      pct: 0,   resets: '—', pace: null },
+          { label: '7-day',         scope: '',      pct: 100, resets: '1d 23h', pace: 139 },
+          { label: '7-day · model', scope: 'Fable', pct: 9,   resets: '1d 23h', pace: 13 }
         ],
         usage: { weekTokens: '61.4M', weekCost: '$684', monthCost: '$2.20k', fee: '$200', ratio: '×11' }
       },
       {
         name: 'ops@example.com', plan: 'Max 5x',
         windows: [
-          { label: '5-hour',        scope: '',      pct: 34, resets: '2h 41m' },
-          { label: '7-day',         scope: '',      pct: 62, resets: '4d 02h' },
-          { label: '7-day · model', scope: 'Fable', pct: 18, resets: '4d 02h' }
+          { label: '5-hour',        scope: '',      pct: 34, resets: '2h 41m', pace: 73 },
+          { label: '7-day',         scope: '',      pct: 62, resets: '4d 02h', pace: 148 },
+          { label: '7-day · model', scope: 'Fable', pct: 18, resets: '4d 02h', pace: 43 }
         ],
         usage: { weekTokens: '18.9M', weekCost: '$204', monthCost: '$612', fee: '$100', ratio: '×6.1' }
       },
       {
         name: 'nightly@example.com', plan: 'Pro',
         windows: [
-          { label: '5-hour', scope: '', pct: 7,  resets: '3h 18m' },
-          { label: '7-day',  scope: '', pct: 12, resets: '5d 21h' }
+          { label: '5-hour', scope: '', pct: 7,  resets: '3h 18m', pace: 21 },
+          { label: '7-day',  scope: '', pct: 12, resets: '5d 21h', pace: 85 }
         ],
         usage: { weekTokens: '2.04M', weekCost: '$18.7', monthCost: '$61.0', fee: '$20', ratio: '×3.1' }
       }
@@ -110,16 +110,16 @@ const PROVIDERS = [
       {
         name: 'Demo Operator', plan: 'Pro 20x',
         windows: [
-          { label: '5-hour', scope: '', pct: 92, resets: '46m' },
-          { label: '7-day',  scope: '', pct: 65, resets: '1d 20h' }
+          { label: '5-hour', scope: '', pct: 92, resets: '46m', pace: 109 },
+          { label: '7-day',  scope: '', pct: 65, resets: '1d 20h', pace: 88 }
         ],
         usage: { weekTokens: '38.2M', weekCost: '$412', monthCost: '$1.31k', fee: '$200', ratio: '×6.6' }
       },
       {
         name: 'ci@example.com', plan: 'Pro 5x',
         windows: [
-          { label: '5-hour', scope: '', pct: 22, resets: '3h 05m' },
-          { label: '7-day',  scope: '', pct: 41, resets: '6d 02h' }
+          { label: '5-hour', scope: '', pct: 22, resets: '3h 05m', pace: 58 },
+          { label: '7-day',  scope: '', pct: 41, resets: '6d 02h', pace: 286 }
         ],
         usage: { weekTokens: '9.60M', weekCost: '$98.4', monthCost: '$287', fee: '$100', ratio: '×2.9' }
       }
@@ -128,12 +128,15 @@ const PROVIDERS = [
 ]
 
 const windowRow = (w) => `
-  <div ${navTo('provider-subscription.html')} class="flex items-center gap-3 border-t border-border/60 px-6 py-2.5 transition-colors hover:bg-muted/50">
-    <span class="w-24 shrink-0 truncate text-xs">${w.label}</span>
-    <span class="w-12 shrink-0">${w.scope ? mono(w.scope) : ''}</span>
-    <div class="min-w-0 flex-1">${meter(w.pct)}</div>
-    <span class="w-10 shrink-0 text-right font-mono text-xs tabular-nums">${w.pct}%</span>
-    <span class="w-20 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${w.resets}</span>
+  <div class="border-t border-border/60 px-6 py-2.5 transition-colors hover:bg-muted/50">
+    <div class="flex items-center gap-2">
+      <span class="w-20 shrink-0 truncate text-xs">${w.label}</span>
+      <span class="w-10 shrink-0 truncate font-mono text-[12px] text-muted-foreground">${w.scope}</span>
+      <div class="min-w-0 flex-1">${meter(w.pct)}</div>
+      <span class="w-10 shrink-0 text-right font-mono text-xs tabular-nums">${w.pct}%</span>
+      <span class="w-16 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${w.resets}</span>
+    </div>
+    <div class="mt-1 text-right text-[12px] tabular-nums ${w.pace !== null && w.pace >= 100 ? 'text-destructive' : 'text-muted-foreground'}">${w.pace === null ? 'Pace unknown' : `Projected ${w.pace}% · ${w.pace >= 100 ? 'limit likely' : 'on track'}`}</div>
   </div>`
 
 // What the account carried, at the models' API prices — "API equiv",
@@ -199,8 +202,8 @@ const providerGroup = (p) => `
     </div>
   </div>`
 
-// ─── Utilization over time ────────────────────────────────────────────
-// One measure (percent of a window) on one axis, three series — the only
+// ─── Projected quota pace over time ───────────────────────────────────
+// One measure (projected use at reset) on one axis, three series — the only
 // shape a second y-axis would ever be argued for, and the argument is
 // wrong. Series colours are validated against both surfaces:
 //   light #2563eb / #d97706 / #7c3aed   on #ffffff
@@ -212,17 +215,17 @@ const SERIES = [
   {
     id: '5h', label: '5-hour', stroke: 'text-blue-600 dark:text-blue-500',
     dot: 'bg-blue-600 dark:bg-blue-500',
-    points: [1, 6, 0, 20, 5, 27, 28, 5, 5, 17, 19, 0, 1, 19, 61, 29, 29, 0, 0, 2, 44, 81, 0, 0, 0, 0, 0, 0]
+    points: [8, 12, 5, 28, 13, 40, 32, 9, 10, 24, 29, 5, 7, 30, 76, 42, 38, 6, 4, 9, 63, 112, 14, 8, 5, 4, 3, 2]
   },
   {
     id: '7d', label: '7-day', stroke: 'text-amber-600 dark:text-amber-600',
     dot: 'bg-amber-600',
-    points: [39, 40, 40, 44, 52, 56, 17, 24, 24, 28, 29, 29, 29, 47, 57, 64, 70, 74, 74, 74, 92, 100, 100, 100, 100, 100, 100, 100]
+    points: [55, 57, 56, 62, 74, 78, 28, 38, 41, 44, 48, 50, 51, 69, 78, 86, 95, 101, 103, 106, 123, 140, 138, 135, 132, 130, 127, 125]
   },
   {
     id: 'fable', label: '7-day · Fable', stroke: 'text-violet-600 dark:text-violet-500',
     dot: 'bg-violet-600 dark:bg-violet-500',
-    points: [11, 11, 11, 17, 29, 36, 0, 0, 0, 0, 0, 0, 0, 6, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9]
+    points: [16, 17, 17, 20, 35, 42, 0, 0, 0, 0, 0, 0, 0, 8, 10, 11, 12, 12, 13, 13, 14, 14, 14, 14, 14, 14, 14, 13]
   }
 ]
 
@@ -235,7 +238,7 @@ const DAYS = ['Thu', 'Fri', 'Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'now']
 // runs off without it.
 const W = 1080, H = 200, PAD_L = 34, PAD_R = 28, PAD_T = 12, PAD_B = 24
 const px = (i, n) => PAD_L + (i / (n - 1)) * (W - PAD_L - PAD_R)
-const py = (v) => PAD_T + (1 - v / 100) * (H - PAD_T - PAD_B)
+const py = (v) => PAD_T + (1 - v / 150) * (H - PAD_T - PAD_B)
 
 // Axis labels sit in viewBox units and scale with the SVG, so the size
 // here is not the size on screen: the plot is 1080 wide and renders at
@@ -306,7 +309,9 @@ const chart = `
   ${legend}
   <div class="relative px-6 pb-5">
     <svg viewBox="0 0 ${W} ${H}" class="w-full" style="height:200px">
-      ${[0, 25, 50, 75, 100].map(gridline).join('')}
+      ${[0, 25, 50, 75, 100, 125, 150].map(gridline).join('')}
+      <line x1="${PAD_L}" y1="${py(100)}" x2="${W - PAD_R}" y2="${py(100)}"
+            class="stroke-destructive" stroke-width="1" stroke-dasharray="4 4" vector-effect="non-scaling-stroke"/>
       ${DAYS.map(dayLabel).join('')}
       ${crosshair}
       ${SERIES.map(line).join('')}
@@ -398,7 +403,8 @@ document.getElementById('root').innerHTML = `
 
   <!-- No Export CSV: the chart is read here, and the screens hand out no
        files. -->
-  ${sectionHead('Utilization', 'last 7 days')}
+  ${sectionHead('Projected quota pace', 'last 7 days')}
+  <p class="px-6 pb-3 text-xs text-muted-foreground">Projected use at each window's reset if its pace continues. At or above 100% means it may reach the limit by reset; actual rate limits can differ. Early or missing readings are unknown.</p>
   ${chart}
 
   ${sectionHead('By access token', 'last 30 days', btn('Manage tokens', 'ghost', 'ri-key-2-line', 'settings-access.html'))}

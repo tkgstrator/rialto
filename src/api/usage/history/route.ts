@@ -12,7 +12,7 @@ const getUsageHistoryRoute = createRoute({
   },
   responses: {
     200: {
-      description: 'Captured subscription utilization over the requested window (default 7 days).',
+      description: 'Projected quota use at reset across the requested history window (default 7 days).',
       content: { 'application/json': { schema: UsageHistoryResponseSchema } }
     }
   }

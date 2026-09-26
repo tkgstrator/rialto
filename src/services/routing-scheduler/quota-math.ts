@@ -8,7 +8,10 @@
  * the functions below and nowhere else in the scheduler.
  */
 
+import { PACE_MIN_ELAPSED, windowProjectedPct } from '@/shared/quota-pace'
 import type { AccountQuotaState, ModelCandidateState, QuotaWindowState } from './types'
+
+export { PACE_MIN_ELAPSED }
 
 const STALE_MULTIPLIER = 3 // "stale" when refreshedAt older than 3 * ttlMs
 
@@ -123,18 +126,12 @@ export const earliestReset = (candidate: ModelCandidateState): number | null => 
 }
 
 // ─── Pace ─────────────────────────────────────────────────────────────
-// Early in a window a few requests look like a runaway pace, so a window
-// is not judged until this much of it has passed.
-export const PACE_MIN_ELAPSED = 0.1
-
-// Where one window lands at its reset if use keeps its current pace:
-// used% ÷ elapsed share, 1 = exactly spent at the reset. Null when the
-// window's length or reset is unknown or too little of it has passed.
+// The shared helper returns percent; the scheduler uses a ratio so its
+// existing band and snapshot arithmetic stays unchanged.
 const windowProjection = (w: QuotaWindowState, now: number): number | null => {
-  if (w.limit <= 0 || w.resetAt === null || w.windowLengthMs === null || w.windowLengthMs <= 0) return null
-  const elapsed = (now - (w.resetAt - w.windowLengthMs)) / w.windowLengthMs
-  if (elapsed < PACE_MIN_ELAPSED || elapsed > 1) return null
-  return w.used / w.limit / elapsed
+  if (w.limit <= 0) return null
+  const projectedPct = windowProjectedPct((w.used / w.limit) * 100, w.resetAt, w.windowLengthMs, now)
+  return projectedPct === null ? null : projectedPct / 100
 }
 
 /**

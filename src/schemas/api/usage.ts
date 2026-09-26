@@ -86,9 +86,8 @@ export const UsageHistoryResponseSchema = z
     samples: z.array(
       z.object({
         metric: z.string().nonempty(),
-        percent: z.number(),
-        t: z.string().nonempty(),
-        resetAt: z.string().nonempty().nullable()
+        projectedPct: z.number().nullable(),
+        t: z.string().nonempty()
       })
     )
   })

@@ -14,6 +14,7 @@ import type { AccessTokenWire } from '@/lib/api'
 import type { OverviewAccountUsage } from '@/lib/api-types'
 import type { SeatKind } from '@/shared/plan-capacity'
 import { planLabel } from '@/shared/plan-label'
+import { windowProjectedPct } from '@/shared/quota-pace'
 
 // ---- Subscription windows -------------------------------------------
 
@@ -24,6 +25,7 @@ export interface WindowRow {
   /** Model this window is scoped to, when it is. Rendered as a mono tag. */
   scope: string | null
   pct: number
+  projectedPct: number | null
   resetsAt: string | null
 }
 
@@ -96,6 +98,24 @@ export const WINDOW_LABEL_KEYS = {
 
 type Translate = (key: string) => string
 
+const FIVE_HOURS_S = 5 * 60 * 60
+const SEVEN_DAYS_S = 7 * 24 * 60 * 60
+const STALE_USAGE_MS = 15 * 60 * 1000
+
+const paceOf = (pct: number, reset: string | null, seconds: number | null, observed: string): number | null => {
+  const observedAt = Date.parse(observed)
+  // A cached reading cannot describe the current pace after polling stops.
+  if (!Number.isFinite(observedAt) || Math.abs(Date.now() - observedAt) > STALE_USAGE_MS) return null
+  const resetAt = reset === null ? null : Date.parse(reset)
+  const value = windowProjectedPct(
+    pct,
+    resetAt === null || Number.isNaN(resetAt) ? null : resetAt,
+    seconds === null ? null : seconds * 1000,
+    observedAt
+  )
+  return value === null ? null : Math.round(value * 10) / 10
+}
+
 /**
  * One Claude account's windows, account-wide first then per-model.
  *
@@ -112,12 +132,19 @@ type Translate = (key: string) => string
  */
 const claudeWindows = (account: ClaudeUsageWire, t: Translate): WindowRow[] => {
   const windows: WindowRow[] = []
-  const flat: [UsageWindowValue | null, string][] = [
-    [account.fiveHour, t(WINDOW_LABEL_KEYS.fiveHour)],
-    [account.sevenDay, t(WINDOW_LABEL_KEYS.sevenDay)]
+  const flat: [UsageWindowValue | null, string, number][] = [
+    [account.fiveHour, t(WINDOW_LABEL_KEYS.fiveHour), FIVE_HOURS_S],
+    [account.sevenDay, t(WINDOW_LABEL_KEYS.sevenDay), SEVEN_DAYS_S]
   ]
-  for (const [value, label] of flat) {
-    if (value !== null) windows.push({ label, scope: null, pct: value.utilization, resetsAt: value.resetsAt })
+  for (const [value, label, seconds] of flat) {
+    if (value !== null)
+      windows.push({
+        label,
+        scope: null,
+        pct: value.utilization,
+        projectedPct: paceOf(value.utilization, value.resetsAt, seconds, account.capturedAt),
+        resetsAt: value.resetsAt
+      })
   }
   const scopedLabel = t(WINDOW_LABEL_KEYS.sevenDayScoped)
   const legacyScoped: [UsageWindowValue | null, string][] = [
@@ -126,7 +153,13 @@ const claudeWindows = (account: ClaudeUsageWire, t: Translate): WindowRow[] => {
   ]
   for (const [value, scope] of legacyScoped) {
     if (value !== null) {
-      windows.push({ label: scopedLabel, scope, pct: value.utilization, resetsAt: value.resetsAt })
+      windows.push({
+        label: scopedLabel,
+        scope,
+        pct: value.utilization,
+        projectedPct: paceOf(value.utilization, value.resetsAt, SEVEN_DAYS_S, account.capturedAt),
+        resetsAt: value.resetsAt
+      })
     }
   }
   for (const scoped of account.weeklyScoped) {
@@ -134,14 +167,12 @@ const claudeWindows = (account: ClaudeUsageWire, t: Translate): WindowRow[] => {
       label: scopedLabel,
       scope: scoped.modelName,
       pct: scoped.utilization,
+      projectedPct: paceOf(scoped.utilization, scoped.resetsAt, SEVEN_DAYS_S, account.capturedAt),
       resetsAt: scoped.resetsAt
     })
   }
   return windows
 }
-
-const FIVE_HOURS_S = 5 * 60 * 60
-const SEVEN_DAYS_S = 7 * 24 * 60 * 60
 
 /**
  * A Codex window named by its length when the wire says it, by rank when
@@ -171,6 +202,7 @@ const codexWindows = (account: CodexUsageWire, t: Translate): WindowRow[] => {
         label: codexWindowLabel(value.windowSeconds, rank, t),
         scope: null,
         pct: value.usedPercent,
+        projectedPct: paceOf(value.usedPercent, value.resetAt, value.windowSeconds, account.capturedAt),
         resetsAt: value.resetAt
       })
     }
@@ -305,13 +337,12 @@ export function indexAccountUsage(
   )
 }
 
-// ---- Utilization over time ------------------------------------------
+// ---- Pace over time --------------------------------------------------
 
 export interface UsageHistorySample {
   metric: string
-  percent: number
+  projectedPct: number | null
   t: string
-  resetAt: string | null
 }
 
 /** One plotted point: a bucket timestamp plus a percent per metric. */
@@ -364,9 +395,7 @@ export function metricLabel(metric: string, t: Translate): string {
  * as a gap. That is the honest rendering of a collector outage — joining
  * across it would invent a straight line through hours nobody measured.
  */
-// Bucket index -> metric -> highest percent seen in that bucket. Split
-// out of `bucketSamples` so the collection and the assembly are each
-// small enough to read (and to stay under the complexity budget).
+// Bucket index -> metric -> highest forecast seen in that bucket.
 const collectPeaks = (
   samples: readonly UsageHistorySample[],
   span: { start: number; width: number; span: number; buckets: number }
@@ -376,13 +405,13 @@ const collectPeaks = (
     const at = Date.parse(sample.t)
     if (Number.isNaN(at)) continue
     const index = span.span <= 0 ? 0 : Math.min(span.buckets - 1, Math.floor((at - span.start) / span.width))
-    const bucket = peaks.get(index)
-    if (bucket === undefined) {
-      peaks.set(index, new Map([[sample.metric, sample.percent]]))
-      continue
+    const previous = peaks.get(index)
+    const bucket = previous === undefined ? new Map<string, number>() : previous
+    if (sample.projectedPct !== null) {
+      const current = bucket.get(sample.metric)
+      if (current === undefined || sample.projectedPct > current) bucket.set(sample.metric, sample.projectedPct)
     }
-    const current = bucket.get(sample.metric)
-    if (current === undefined || sample.percent > current) bucket.set(sample.metric, sample.percent)
+    peaks.set(index, bucket)
   }
   return peaks
 }
@@ -400,12 +429,15 @@ export function bucketSamples(samples: readonly UsageHistorySample[], buckets: n
   const width = span <= 0 ? 1 : span / buckets
   const peaks = collectPeaks(samples, { start, width, span, buckets })
   const points: ChartPoint[] = []
-  for (const index of [...peaks.keys()].sort((a, b) => a - b)) {
+  const occupied = [...peaks.keys()].sort((a, b) => a - b)
+  if (occupied.length === 0) return []
+  const first = occupied[0]
+  const count = occupied[occupied.length - 1] - first + 1
+  for (const index of Array.from({ length: count }, (_, i) => first + i)) {
     const bucket = peaks.get(index)
-    if (bucket === undefined) continue
     const point: ChartPoint = { t: Math.round(start + index * width) }
     for (const metric of metrics) {
-      const value = bucket.get(metric)
+      const value = bucket?.get(metric)
       point[metric] = value === undefined ? null : value
     }
     points.push(point)

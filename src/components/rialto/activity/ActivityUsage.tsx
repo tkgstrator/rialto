@@ -19,7 +19,7 @@ import { cn } from 'cn'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { toast } from 'sonner'
 import {
   fetchSubscriptions,
@@ -143,20 +143,32 @@ function SectionHead({ title, meta, action }: { title: string; meta?: string; ac
 function WindowLine({ row, now }: { row: WindowRow; now: number }) {
   const { t } = useTranslation()
   return (
-    <div className='flex items-center gap-3 border-t border-border/60 px-6 py-2.5 transition-colors hover:bg-muted/50'>
-      <span className='w-24 shrink-0 truncate text-xs'>{row.label}</span>
-      <span className='w-12 shrink-0 font-mono text-[12px] text-muted-foreground'>
-        {row.scope === null ? '' : row.scope}
-      </span>
-      <div className='min-w-0 flex-1'>
-        <Meter pct={row.pct} />
+    <div className='border-t border-border/60 px-6 py-2.5 transition-colors hover:bg-muted/50'>
+      <div className='flex items-center gap-2'>
+        <span className='w-20 shrink-0 truncate text-xs'>{row.label}</span>
+        <span className='w-10 shrink-0 truncate font-mono text-[12px] text-muted-foreground'>
+          {row.scope === null ? '' : row.scope}
+        </span>
+        <div className='min-w-0 flex-1'>
+          <Meter pct={row.pct} />
+        </div>
+        <span className='w-10 shrink-0 text-right font-mono text-xs tabular-nums'>{`${Math.round(row.pct)}%`}</span>
+        <span className='w-16 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
+          {fmtUntil(row.resetsAt, now) === null ? t('overview.resetsDue') : fmtUntil(row.resetsAt, now)}
+        </span>
       </div>
-      <span className='w-10 shrink-0 text-right font-mono text-xs tabular-nums'>{`${Math.round(row.pct)}%`}</span>
-      {/* A duration is a number: mono and tabular so the column lines
-          up. "4h 06m" and "4d 01h" are different widths otherwise. */}
-      <span className='w-20 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
-        {fmtUntil(row.resetsAt, now) === null ? t('overview.resetsDue') : fmtUntil(row.resetsAt, now)}
-      </span>
+      <div
+        className={cn(
+          'mt-1 text-right text-[12px] tabular-nums',
+          row.projectedPct !== null && row.projectedPct >= 100 ? 'text-destructive' : 'text-muted-foreground'
+        )}
+      >
+        {row.projectedPct === null
+          ? t('activity.usage.paceUnknown')
+          : t(row.projectedPct >= 100 ? 'activity.usage.paceOver' : 'activity.usage.paceSafe', {
+              pct: Math.round(row.projectedPct)
+            })}
+      </div>
     </div>
   )
 }
@@ -346,8 +358,18 @@ function ChartTooltip({
   )
 }
 
-function UtilizationChart({ points, series }: { points: ChartPoint[]; series: readonly UsageSeries[] }) {
+function PaceChart({ points, series }: { points: ChartPoint[]; series: readonly UsageSeries[] }) {
   const ticks = useMemo(() => dayTicks(points), [points])
+  const highest = Math.max(
+    100,
+    ...points.flatMap((point) =>
+      series.flatMap((s) => {
+        const value = point[s.metric]
+        return typeof value === 'number' ? [value] : []
+      })
+    )
+  )
+  const ceiling = Math.ceil(highest / 25) * 25
   return (
     <>
       {/* Identity never rests on colour alone: the legend names every
@@ -381,8 +403,8 @@ function UtilizationChart({ points, series }: { points: ChartPoint[]; series: re
               tick={{ fontSize: 12 }}
             />
             <YAxis
-              domain={[0, 100]}
-              ticks={[0, 25, 50, 75, 100]}
+              domain={[0, ceiling]}
+              ticks={Array.from({ length: ceiling / 25 + 1 }, (_, index) => index * 25)}
               tickFormatter={(value: number) => `${value}%`}
               tickLine={false}
               axisLine={false}
@@ -390,6 +412,7 @@ function UtilizationChart({ points, series }: { points: ChartPoint[]; series: re
               tick={{ fontSize: 12 }}
               width={40}
             />
+            <ReferenceLine y={100} className='stroke-destructive' strokeDasharray='4 4' />
             <Tooltip content={<ChartTooltip series={series} />} cursor={{ className: 'stroke-border' }} />
             {series.map((s, index) => (
               <Line
@@ -564,10 +587,11 @@ export function ActivityUsage() {
       {/* No Export CSV: the chart is read here, and the screens hand out
           no files. */}
       <SectionHead title={t('activity.usage.chartTitle')} meta={t('activity.usage.chartMeta', { days })} />
-      {points.length === 0 ? (
+      <p className='px-6 pb-3 text-xs text-muted-foreground'>{t('activity.usage.paceExplanation')}</p>
+      {points.length === 0 || points.every((point) => series.every((s) => point[s.metric] === null)) ? (
         <ScreenMessage>{loading ? t('common.loading') : t('activity.usage.noHistory')}</ScreenMessage>
       ) : (
-        <UtilizationChart points={points} series={series} />
+        <PaceChart points={points} series={series} />
       )}
 
       <SectionHead

@@ -294,6 +294,20 @@ so every profile's routes are gated and paced on quota:
   because the account picker spreads a target's traffic over all of them and a Max 20 account
   carries twenty times what a Pro one does.
 
+Activity → Usage answers a related but different question. Each account's 5h, 7d and scoped
+window retains the vendor's **current used percentage** as a meter and shows the projected
+percentage at reset alongside it. The chart shows historical projected percentages, grouped by
+window metric: each poll stores one `UsageSnapshot` per account and window with its own reset,
+observed-time projection and plan-capacity weight. The history endpoint averages only accounts
+whose forecast was known at that poll, using those stored weights; an unknown forecast is not
+zero usage. Older snapshots contain only a cross-account average used percentage and cannot be
+reconstructed into a pace forecast, so they appear as gaps. Missing reset times, missing Codex
+window lengths, readings in the first tenth of a window, and stale cached polls are likewise
+not presented as safe pace. The chart can exceed 100%: at or above 100% estimates that
+continuing at that pace would reach the limit by reset, **not** when a vendor will issue a 429. The routing
+snapshot still selects the tightest binding window per model, rather than the chart's separate
+window series.
+
 A spent account-wide window (5h or 7d; Codex primary / secondary) refuses every request on the
 account, so the scheduler holds the account's other windows as spent too, until the last spent
 account-wide window resets (`account-limit.ts`). Only in its own view: what is stored and shown is
