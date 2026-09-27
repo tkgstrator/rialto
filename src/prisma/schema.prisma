@@ -548,9 +548,9 @@ model Message {
 // that client's traffic through a named preference chain — a CI token on
 // cost-first while interactive traffic stays on the default.
 model AccessToken {
-  id           String    @id @default(cuid())
+  id           String                  @id @default(cuid())
   name         String
-  tokenHash    String    @unique
+  tokenHash    String                  @unique
   prefix       String
   // InboundSurface ids this token may call. Empty = every surface.
   //
@@ -563,7 +563,7 @@ model AccessToken {
   // Null = the surface's own profile.
   profileKey   String?
   lastUsedAt   DateTime?
-  requestCount Int       @default(0)
+  requestCount Int                     @default(0)
   // When the secret behind this row was last replaced. Null means it is
   // still the one issued at createdAt. Rotation keeps the row — the id,
   // the name, the scope and every RequestLog pointing at it — and swaps
@@ -574,9 +574,106 @@ model AccessToken {
   // Set rather than deleted, so a revoked token's RequestLog rows keep
   // pointing at something that says who they belonged to.
   revokedAt    DateTime?
-  createdAt    DateTime  @default(now())
+  createdAt    DateTime                @default(now())
+  // The plan this token spends under: which models it may use and how
+  // many completions a day. Null = unrestricted, as operator-issued tokens
+  // have always been. Referenced rather than copied, so editing a plan
+  // reaches every token on it at their next request. Restrict, because a
+  // plan deleted from under its tokens would silently lift their caps.
+  planId       String?
+  plan         Plan?                   @relation(fields: [planId], references: [id], onDelete: Restrict)
+  // Set when an app install minted this token for itself.
+  device       AppDevice?
+  dailyUsage   AccessTokenDailyUsage[]
 
   @@index([revokedAt])
+  @@index([planId])
+}
+
+// What a token on it may spend. `models` is the allow-list of
+// `provider,model` ids; a request naming one of them goes to it, any other
+// name (or none) goes to `defaultModel`. Either way the tier router is
+// skipped, so a routed chain cannot pick a costlier target than the plan
+// lists.
+model Plan {
+  id                String          @id @default(cuid())
+  name              String          @unique
+  models            String[]
+  // Always one of `models`; the service refuses a plan where it is not.
+  defaultModel      String
+  // Completions per UTC day, counted in AccessTokenDailyUsage. Null = no cap.
+  dailyRequestLimit Int?
+  tokens            AccessToken[]
+  apps              AuthorizedApp[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+}
+
+// An app whose installs may register themselves with Apple App Attest and
+// be handed a token each. The operator's whole decision about app traffic
+// lives on this row; nothing about it is read from the environment.
+model AuthorizedApp {
+  id               String      @id @default(cuid())
+  name             String
+  // `<Team ID>.<bundle id>`. The attestation's RP ID hash is the SHA-256 of
+  // this string, which is how a registration finds its app without the
+  // client naming one.
+  appleAppId       String      @unique
+  // Accept keys minted by development (Xcode) builds.
+  allowDevelopment Boolean     @default(false)
+  // Off stops new registrations and every token this app already issued.
+  // A switch rather than a delete, so the tokens and their RequestLog rows
+  // stay attributable and come back when it is turned on again.
+  enabled          Boolean     @default(true)
+  // The plan a new install's token is put on. Existing tokens keep theirs.
+  planId           String
+  plan             Plan        @relation(fields: [planId], references: [id], onDelete: Restrict)
+  devices          AppDevice[]
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+}
+
+// Per-token request count for one UTC day, the ledger behind
+// AccessToken.dailyRequestLimit. One row per (token, day) that saw
+// traffic; old rows are harmless and can be pruned freely.
+model AccessTokenDailyUsage {
+  accessTokenId String
+  accessToken   AccessToken @relation(fields: [accessTokenId], references: [id], onDelete: Cascade)
+  // YYYY-MM-DD in UTC. A string rather than a date so the key the
+  // counter upserts on is exactly the value it was computed from.
+  day           String
+  requests      Int         @default(0)
+
+  @@id([accessTokenId, day])
+}
+
+// An app install that proved itself with Apple App Attest and was handed
+// an access token. The attested public key is kept so a later request can
+// be verified with an App Attest assertion (key rotation, re-issue)
+// without attesting again — Apple rate-limits attestation, not assertion.
+model AppDevice {
+  id              String        @id @default(cuid())
+  // Base64 of the App Attest key identifier: the SHA-256 of the attested
+  // public key. Unique because one attested key must never mint two
+  // tokens.
+  keyId           String        @unique
+  // The attested P-256 public key, uncompressed point (65 bytes).
+  publicKey       Bytes
+  // App Attest sign counter, raised by every accepted assertion. 0 right
+  // after attestation.
+  signCount       Int           @default(0)
+  // 'production' or 'development', from the attestation's AAGUID. A
+  // development attestation comes from a debug build and is only
+  // accepted when the operator allows it.
+  environment     String
+  // The app this install proved itself as.
+  authorizedAppId String
+  authorizedApp   AuthorizedApp @relation(fields: [authorizedAppId], references: [id], onDelete: Restrict)
+  accessTokenId   String        @unique
+  accessToken     AccessToken   @relation(fields: [accessTokenId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+
+  @@index([authorizedAppId])
 }
 
 // Per-surface routing behaviour.
@@ -609,11 +706,11 @@ model InboundSurfaceConfig {
 }
 
 model RequestLog {
-  id               String   @id @default(cuid())
-  sessionId        String
-  session          Session  @relation(fields: [sessionId], references: [id])
-  provider         String
-  model            String
+  id                 String   @id @default(cuid())
+  sessionId          String
+  session            Session  @relation(fields: [sessionId], references: [id])
+  provider           String
+  model              String
   // What the client (Claude Code) asked for in body.model BEFORE routing
   // rewrote it, and the scenario whose list served it (default / think /
   // longContext), or "passthrough". Rows written by v2.89.0 carry the
@@ -622,53 +719,53 @@ model RequestLog {
   // for rows written before this landed (backfill is not possible — the
   // original request is gone), so readers treat null as "untracked".
   // `model`/`provider` above stay the actual upstream target.
-  requestedModel   String?
-  scenario         String?
+  requestedModel     String?
+  scenario           String?
   // Whether the request carried a <RIALTO-SUBAGENT-MODEL> tag, which picks
   // the subagent lane of the scenario's routes. Null for rows written
   // before this column landed (untracked); true / false thereafter. Kept nullable so a reader
   // can distinguish "no data" from "data says agent".
-  isSubagent       Boolean?
+  isSubagent         Boolean?
   // Which wire format the client came in on: 'anthropic' for
   // /v1/messages (Claude Code), 'openai' for /v1/chat/completions and
   // /v1/responses, 'gemini' for /v1beta/models/*. Null for rows written
   // before this landed (untracked). Persisted so the History view can
   // filter by inbound type without re-parsing anything from the payload.
   // Nullable TEXT rather than an enum, for the reason on Session above.
-  inboundType      String?
+  inboundType        String?
   // Which inbound surface the request arrived on, as an
   // `InboundSurface.id` slug (see src/llms/inbound/surfaces.ts). Finer
   // than `inboundType`: /v1/chat/completions and /v1/responses are both
   // 'openai' but are separate surfaces with independent routing modes,
   // and Overview / Activity break traffic down per surface. Null on rows
   // written before this landed (untracked, not backfillable).
-  surface          String?
+  surface            String?
   // Which AccessToken served the request, when one did. Null for rows
   // written before tokens existed, and for traffic on the since-removed
   // envelope bootstrap token. Not a foreign key: a token may be
   // deleted outright, and losing the attribution is worse than keeping
   // a dangling id that still tells you the requests came from one
   // client.
-  accessTokenId    String?
+  accessTokenId      String?
   // Which subscription account served the request: the one the OAuth
   // transformer resolved for the attempt that succeeded. Null for
   // api_key providers and for rows written before this landed. Not a
   // foreign key, for the same reason as accessTokenId: an account can be
   // removed, and its history is still worth attributing to one account.
-  subAccountId     String?
-  inputTokens      Int      @default(0)
-  outputTokens     Int      @default(0)
-  cacheReadTokens  Int      @default(0)
-  cacheWriteTokens Int      @default(0)
+  subAccountId       String?
+  inputTokens        Int      @default(0)
+  outputTokens       Int      @default(0)
+  cacheReadTokens    Int      @default(0)
+  cacheWriteTokens   Int      @default(0)
   // The part of cacheWriteTokens written with a 1-hour TTL — included in
   // it, not added. Priced at 2x input against 1.25x for the 5-minute
   // TTL; zero for vendors that do not split cache writes by TTL.
-  cacheWrite1hTokens Int    @default(0)
-  totalInputTokens Int      @default(0)
-  cacheHitPct      Int      @default(0)
-  durationMs       Int      @default(0)
-  status           Int      @default(200)
-  createdAt        DateTime @default(now())
+  cacheWrite1hTokens Int      @default(0)
+  totalInputTokens   Int      @default(0)
+  cacheHitPct        Int      @default(0)
+  durationMs         Int      @default(0)
+  status             Int      @default(200)
+  createdAt          DateTime @default(now())
 
   @@index([createdAt])
   @@index([sessionId])

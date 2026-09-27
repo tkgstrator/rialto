@@ -59,6 +59,10 @@ export interface AccessTokenRow {
   // binding and this is the age of the credential it presents.
   rotatedAt: string | null
   createdAt: string
+  /** The plan this token spends under. Null = unrestricted. */
+  plan: { id: string; name: string } | null
+  /** The authorized app whose install minted this token, if one did. */
+  app: { id: string; name: string } | null
 }
 
 export { SPEND_WINDOW_DAYS, sumSpendByToken, sumTokensByToken } from './access-token-spend'
@@ -90,7 +94,24 @@ export interface ResolvedToken {
   /** Empty means the token is not pinned to any surface in particular. */
   surfaces: string[]
   profileKey: string | null
+  /** What this token may spend, read from its plan. Null = unrestricted. */
+  plan: TokenPlan | null
 }
+
+export interface TokenPlan {
+  /** `provider,model` ids a request may name. */
+  models: string[]
+  /** Where a request naming anything else, or nothing, is sent. */
+  defaultModel: string
+  /** Completion requests allowed per UTC day. Null = no cap. */
+  dailyRequestLimit: number | null
+}
+
+// The relations every wire row carries: which plan, and which app minted it.
+const WIRE_INCLUDE = {
+  plan: { select: { id: true, name: true } },
+  device: { select: { authorizedApp: { select: { id: true, name: true } } } }
+} as const
 
 const toWire = (
   row: {
@@ -105,6 +126,8 @@ const toWire = (
     revokedAt: Date | null
     rotatedAt: Date | null
     createdAt: Date
+    plan?: { id: string; name: string } | null
+    device?: { authorizedApp: { id: string; name: string } } | null
   },
   totals: TokenWindowTotals | undefined = undefined
 ): AccessTokenRow => ({
@@ -121,12 +144,34 @@ const toWire = (
   expiresAt: row.expiresAt === null ? null : row.expiresAt.toISOString(),
   revokedAt: row.revokedAt === null ? null : row.revokedAt.toISOString(),
   rotatedAt: row.rotatedAt === null ? null : row.rotatedAt.toISOString(),
-  createdAt: row.createdAt.toISOString()
+  createdAt: row.createdAt.toISOString(),
+  plan: row.plan === undefined || row.plan === null ? null : { id: row.plan.id, name: row.plan.name },
+  app:
+    row.device === undefined || row.device === null
+      ? null
+      : { id: row.device.authorizedApp.id, name: row.device.authorizedApp.name }
 })
 
-export async function listAccessTokens(): Promise<AccessTokenRow[]> {
+/**
+ * Every token, or with `manualOnly` just the hand-issued ones.
+ *
+ * The Tokens tab asks for the hand-issued ones: tokens an app install
+ * minted for itself are listed per app instead (authorized-app-service) —
+ * there can be thousands, and mixed in they would bury the dozen an
+ * operator looks after. Activity still reads them all, because its spend
+ * shares have to add up to what the window actually cost.
+ */
+export async function listAccessTokens({
+  manualOnly = false
+}: {
+  manualOnly?: boolean
+} = {}): Promise<AccessTokenRow[]> {
   const [rows, spend] = await Promise.all([
-    getPrismaClient().accessToken.findMany({ orderBy: { createdAt: 'desc' } }),
+    getPrismaClient().accessToken.findMany({
+      ...(manualOnly ? { where: { device: { is: null } } } : {}),
+      orderBy: { createdAt: 'desc' },
+      include: WIRE_INCLUDE
+    }),
     spendByToken()
   ])
   return rows.map((row) => toWire(row, spend.get(row.id)))
@@ -135,7 +180,7 @@ export async function listAccessTokens(): Promise<AccessTokenRow[]> {
 /** One token by id, priced the same way the list prices it. */
 export async function getAccessToken(id: string): Promise<AccessTokenRow | null> {
   const row = await getPrismaClient()
-    .accessToken.findUnique({ where: { id } })
+    .accessToken.findUnique({ where: { id }, include: WIRE_INCLUDE })
     .catch(() => null)
   if (row === null) return null
   const spend = await spendByToken(id)
@@ -148,6 +193,8 @@ export interface IssueInput {
   surfaces?: string[]
   profileKey?: string | null
   expiresAt?: string | null
+  /** The plan the token spends under. Omitted or null = unrestricted. */
+  planId?: string | null
 }
 
 /**
@@ -177,8 +224,10 @@ export async function issueAccessToken(input: IssueInput): Promise<IssuedToken> 
       prefix,
       surfaces: input.surfaces === undefined ? [] : input.surfaces,
       profileKey: input.profileKey === undefined ? null : input.profileKey,
-      expiresAt: input.expiresAt === undefined || input.expiresAt === null ? null : new Date(input.expiresAt)
-    }
+      expiresAt: input.expiresAt === undefined || input.expiresAt === null ? null : new Date(input.expiresAt),
+      planId: input.planId === undefined ? null : input.planId
+    },
+    include: WIRE_INCLUDE
   })
   invalidateTokenCache()
   return { token: toWire(row), plaintext }
@@ -188,6 +237,8 @@ export interface UpdateInput {
   /** Replaces the scope wholesale. Empty means every surface. */
   surfaces?: string[]
   profileKey?: string | null
+  /** Moves the token onto a plan, or off every plan with null. */
+  planId?: string | null
 }
 
 /**
@@ -211,8 +262,10 @@ export async function updateAccessToken(id: string, input: UpdateInput): Promise
       where: { id },
       data: {
         ...(input.surfaces === undefined ? {} : { surfaces: input.surfaces }),
-        ...(input.profileKey === undefined ? {} : { profileKey: input.profileKey })
-      }
+        ...(input.profileKey === undefined ? {} : { profileKey: input.profileKey }),
+        ...(input.planId === undefined ? {} : { planId: input.planId })
+      },
+      include: WIRE_INCLUDE
     })
     .catch(() => null)
   invalidateTokenCache()
@@ -255,7 +308,8 @@ export async function rotateAccessToken(id: string): Promise<RotateResult> {
   const { plaintext, tokenHash, prefix } = mintSecret()
   const row = await getPrismaClient().accessToken.update({
     where: { id },
-    data: { tokenHash, prefix, rotatedAt: dayjs().toDate() }
+    data: { tokenHash, prefix, rotatedAt: dayjs().toDate() },
+    include: WIRE_INCLUDE
   })
   invalidateTokenCache()
   return { ok: true, issued: { token: toWire(row), plaintext } }
@@ -267,7 +321,7 @@ export async function rotateAccessToken(id: string): Promise<RotateResult> {
  */
 export async function revokeAccessToken(id: string): Promise<AccessTokenRow | null> {
   const row = await getPrismaClient()
-    .accessToken.update({ where: { id }, data: { revokedAt: new Date() } })
+    .accessToken.update({ where: { id }, data: { revokedAt: new Date() }, include: WIRE_INCLUDE })
     .catch(() => null)
   invalidateTokenCache()
   return row === null ? null : toWire(row)
@@ -295,12 +349,20 @@ export async function resolveAccessToken(presented: string): Promise<ResolvedTok
   if (cached !== undefined) return cached.row
 
   const row = await getPrismaClient()
-    .accessToken.findUnique({ where: { tokenHash: hash } })
+    .accessToken.findUnique({
+      where: { tokenHash: hash },
+      include: {
+        plan: { select: { models: true, defaultModel: true, dailyRequestLimit: true } },
+        device: { select: { authorizedApp: { select: { enabled: true } } } }
+      }
+    })
     .catch(() => null)
 
   const usable =
     row !== null &&
     row.revokedAt === null &&
+    // An app switched off takes every token its installs minted with it.
+    (row.device === null || row.device.authorizedApp.enabled) &&
     (row.expiresAt === null || row.expiresAt.getTime() > Date.now()) &&
     // Constant-time compare of the digests. findUnique already matched
     // on the hash, so this guards only against a storage-layer surprise
@@ -308,7 +370,20 @@ export async function resolveAccessToken(presented: string): Promise<ResolvedTok
     timingSafeEqual(Buffer.from(row.tokenHash, 'hex'), Buffer.from(hash, 'hex'))
 
   const resolved: ResolvedToken | null = usable
-    ? { id: row.id, name: row.name, surfaces: row.surfaces, profileKey: row.profileKey }
+    ? {
+        id: row.id,
+        name: row.name,
+        surfaces: row.surfaces,
+        profileKey: row.profileKey,
+        plan:
+          row.plan === null
+            ? null
+            : {
+                models: row.plan.models,
+                defaultModel: row.plan.defaultModel,
+                dailyRequestLimit: row.plan.dailyRequestLimit
+              }
+      }
     : null
   cache.set(hash, { row: resolved })
   return resolved
@@ -327,4 +402,40 @@ export function noteTokenUse(id: string): void {
     .catch(() => {
       // A dropped statistic is not a reason to disturb the request.
     })
+}
+
+export type DailyAllowance =
+  | { outcome: 'allowed' }
+  | { outcome: 'exhausted'; retryAfterSeconds: number }
+  | { outcome: 'unavailable' }
+
+/**
+ * Count one request against a token's daily cap and say whether it may
+ * proceed.
+ *
+ * Increment-then-compare in a single upsert, so two concurrent requests
+ * cannot both read "one left" and both go through. The request that
+ * crosses the cap is refused and still counted, which is harmless: the
+ * count only ever decides refusals for the rest of that day.
+ *
+ * A failed write refuses rather than admits ('unavailable'): the cap is
+ * the only thing bounding what a free token can spend, so an outage of
+ * the ledger must not turn into an outage of the cap.
+ */
+export async function consumeDailyRequest(tokenId: string, limit: number): Promise<DailyAllowance> {
+  // UTC, so every instance agrees on where a day ends whatever TZ it runs in.
+  const now = dayjs().toDate()
+  const day = now.toISOString().slice(0, 10)
+  const row = await getPrismaClient()
+    .accessTokenDailyUsage.upsert({
+      where: { accessTokenId_day: { accessTokenId: tokenId, day } },
+      create: { accessTokenId: tokenId, day, requests: 1 },
+      update: { requests: { increment: 1 } }
+    })
+    .catch(() => null)
+  if (row === null) return { outcome: 'unavailable' }
+  if (row.requests <= limit) return { outcome: 'allowed' }
+  const nextUtcMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)
+  const retryAfterSeconds = Math.max(1, Math.ceil((nextUtcMidnight - now.getTime()) / 1000))
+  return { outcome: 'exhausted', retryAfterSeconds }
 }

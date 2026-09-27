@@ -6,6 +6,7 @@ import { accessCheckRoute } from './api/access-check/route'
 import { accessLog } from './api/access-log'
 import { accessTokensRoute } from './api/access-tokens/route'
 import { adminAuth, inboundProxyAuth } from './api/api-key-auth'
+import { authorizedAppsRoute } from './api/authorized-apps/route'
 import { catalogRoute } from './api/catalog/route'
 import { configRoute } from './api/config/route'
 import { healthRoute } from './api/health/route'
@@ -17,6 +18,7 @@ import { modelTestRoute } from './api/models/test/route'
 import { modelTestAllRoute } from './api/models/test-all/route'
 import { oauthRoute } from './api/oauth/route'
 import { overviewRoute } from './api/overview/route'
+import { plansRoute } from './api/plans/route'
 import { providerModelRoute } from './api/providers/[name]/models/[model]/route'
 import { providerByNameRoute } from './api/providers/[name]/route'
 import { providerTierAliasRoute } from './api/providers/[name]/tier-aliases/[tier]/route'
@@ -38,6 +40,8 @@ import { usageCostHistoryRoute } from './api/usage/cost/history/route'
 import { usageCostRoute } from './api/usage/cost/route'
 import { usageHistoryRoute } from './api/usage/history/route'
 import { usageRoute } from './api/usage/route'
+import { appDevicesRoute } from './api/v1/app-devices'
+import { audioRoute } from './api/v1/audio'
 import { countTokensRoute } from './api/v1/count-tokens'
 import { v1ModelsRoute } from './api/v1/models-list'
 import { v1Route } from './api/v1/route'
@@ -132,6 +136,10 @@ const app = new OpenAPIHono()
 // carrying a credential. Registered here (not inside the /api/* tree) so
 // the outer accessLog / auth gates don't apply to it.
 app.route('/', healthRoute)
+// App installs have no access token yet — these two endpoints are how
+// they get one — so they mount ahead of the /v1 gate. The attestation
+// check inside is what guards them instead.
+app.route('/', appDevicesRoute)
 
 app.use('/api/*', accessLog)
 app.use('/api/*', adminAuth)
@@ -194,6 +202,8 @@ app.route('/', overviewRoute)
 app.route('/', inboundSurfacesRoute)
 app.route('/', identityRoute)
 app.route('/', accessTokensRoute)
+app.route('/', plansRoute)
+app.route('/', authorizedAppsRoute)
 app.route('/', accessCheckRoute)
 app.route('/', storageRoute)
 app.route('/', oauthRoute)
@@ -204,6 +214,9 @@ app.route('/', v1ModelsRoute)
 // Anthropic POST /v1/messages/count_tokens — same ordering requirement:
 // v1Route's `/v1/*` fail-closed lane would answer 404 for it otherwise.
 app.route('/', countTokensRoute)
+// /v1/audio/speech and /v1/audio/voices, relayed to the TTS server — same
+// ordering requirement again.
+app.route('/', audioRoute)
 // Native /v1/* LLM proxy — drives the llms pipeline without Fastify.
 app.route('/', v1Route)
 

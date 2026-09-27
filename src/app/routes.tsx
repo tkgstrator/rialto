@@ -1,5 +1,8 @@
 import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom'
 import ProtectedRoute from '@/components/ProtectedRoute'
+import { AccessAppDetail } from '@/components/rialto/AccessAppDetail'
+import { AccessApps } from '@/components/rialto/AccessApps'
+import { AccessPlans } from '@/components/rialto/AccessPlans'
 import { AccessTokens } from '@/components/rialto/AccessTokens'
 import { ActivityLogs } from '@/components/rialto/activity/ActivityLogs'
 import { ActivityRequests } from '@/components/rialto/activity/ActivityRequests'
@@ -76,6 +79,11 @@ export const router = createBrowserRouter([
           // depth. These were /settings/access and
           // /settings/access/tokens/:id.
           { path: '/access-tokens', element: <AccessTokens /> },
+          // Static before dynamic, as under Providers: a token id is never
+          // "apps" or "plans", and these two must not be read as one.
+          { path: '/access-tokens/apps', element: <AccessApps /> },
+          { path: '/access-tokens/apps/:id', element: <AccessAppDetail /> },
+          { path: '/access-tokens/plans', element: <AccessPlans /> },
           { path: '/access-tokens/:id', element: <TokenDetail /> },
           { path: '/activity', element: <ActivitySessions /> },
           { path: '/activity/requests', element: <ActivityRequests /> },
