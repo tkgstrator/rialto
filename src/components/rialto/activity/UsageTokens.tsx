@@ -1,0 +1,46 @@
+import { useTranslation } from 'react-i18next'
+import type { TokenUsageRow } from '@/components/rialto/activity/usage-derive'
+import { Meter, SurfaceScope } from '@/components/rialto/primitives'
+import type { InboundSurfaceWire } from '@/lib/api'
+import { fmtAgo, fmtCount } from '@/lib/rialto/format'
+import { fmtCost } from '@/lib/sessions/format'
+
+export function TokenRow({
+  row,
+  surfaces,
+  now
+}: {
+  row: TokenUsageRow
+  surfaces: readonly InboundSurfaceWire[]
+  now: number
+}) {
+  const { t } = useTranslation()
+  const paths = row.surfaces.flatMap((id) => {
+    const found = surfaces.find((s) => s.id === id)
+    return found === undefined ? [] : [found.path]
+  })
+  return (
+    <tr className='border-t border-border/60 transition-colors hover:bg-muted/50'>
+      <td className='py-2.5 pl-6 pr-3'>
+        <div className='truncate text-xs font-medium'>{row.name}</div>
+        <div className='font-mono text-[12px] text-muted-foreground'>{row.prefix}</div>
+      </td>
+      <td className='px-3'>
+        <SurfaceScope paths={paths} allLabel={t('settings.access.scopeAll')} />
+      </td>
+      <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCount(row.requestCount)}</td>
+      <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCost(row.costUsd)}</td>
+      <td className='px-3'>
+        <div className='flex items-center gap-2'>
+          <Meter pct={row.sharePct === null ? 0 : row.sharePct} tone='mute' />
+          <span className='w-8 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
+            {row.sharePct === null ? '–' : `${row.sharePct}%`}
+          </span>
+        </div>
+      </td>
+      <td className='py-2.5 pl-3 pr-6 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
+        {row.lastUsedAt === null ? t('settings.access.never') : fmtAgo(row.lastUsedAt, now)}
+      </td>
+    </tr>
+  )
+}
