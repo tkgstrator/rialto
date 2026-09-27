@@ -76,7 +76,7 @@ async function buildContext(): Promise<LlmsContext> {
 async function plan(
   path: string,
   body: Record<string, unknown>,
-  inbound: { headers?: Record<string, string>; tokenId?: string } = {}
+  inbound: { headers?: Record<string, string>; tokenId?: string; modelPin?: string } = {}
 ): Promise<RoutePlan | Response> {
   const ctx = await buildContext()
   const app = new Hono()
@@ -85,7 +85,14 @@ async function plan(
     // The /v1 auth middleware sets this when an issued token authenticated
     // the call; buildRoutePlan reads it back off the context.
     if (inbound.tokenId !== undefined)
-      c.set('accessToken', { id: inbound.tokenId, name: 'test', surfaces: [], profileKey: null })
+      c.set('accessToken', {
+        id: inbound.tokenId,
+        name: 'test',
+        surfaces: [],
+        profileKey: null,
+        modelPin: inbound.modelPin === undefined ? null : inbound.modelPin,
+        dailyRequestLimit: null
+      })
     captured.value = await buildRoutePlan(c, ctx)
     return c.text('ok')
   })
@@ -170,6 +177,19 @@ describe('a routed surface walks the scenario routes', () => {
     expect(result.route).toBe('default')
     expect(result.isSubagent).toBe(false)
     // What the client asked for is still recorded next to what was sent.
+    expect(result.requestedModel).toBe('claude-sonnet-4-5')
+  })
+
+  test('a token pinned to a model skips the routes and sends the pin', async () => {
+    // A plan-minted token pays for one model; a routed chain must not
+    // be able to swap in a costlier one.
+    __setTierProfilesForTests({ live: onDefault([opusRoute()]) })
+    const result = asPlan(await plan('/v1/chat/completions', body(), { tokenId: 'tok-free', modelPin: SONNET }))
+    expect(result.primaryModel).toBe(SONNET)
+    expect(result.routedBody.model).toBe(SONNET)
+    expect(result.fallbacks).toEqual([])
+    expect(result.route).toBe('passthrough')
+    // The log still records what the client asked for.
     expect(result.requestedModel).toBe('claude-sonnet-4-5')
   })
 

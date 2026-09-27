@@ -165,6 +165,11 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   // Capture what the client asked for BEFORE routeRequest rewrites
   // body.model in place — this is the only point the original is visible.
   const requestedModel = typeof body.model === 'string' && body.model.length > 0 ? body.model : undefined
+  // A plan-minted token names the one model its plan pays for. Replaced
+  // after `requestedModel` is captured, so the log still shows what the
+  // client asked for next to what the plan sent.
+  const pinnedModel = token?.modelPin === null ? undefined : token?.modelPin
+  if (pinnedModel !== undefined) body.model = pinnedModel
   const signals = path === '/v1/messages' ? classifierSignals(body) : undefined
   const diagnosticLog = (status: number, reason: string): void => {
     if (!signals || (!signals.safeguardsPresent && !signals.suspectedClassifier)) return
@@ -191,7 +196,9 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
     // traffic keeps the default.
     profileKeyOverride: token?.profileKey === null ? undefined : token?.profileKey
   }
-  await routeRequest(routeReq, { config: ctx.config, tokenizers: ctx.tokenizers })
+  // A pinned request skips the tier router: a routed surface's chain
+  // could otherwise swap the plan's model for a costlier target.
+  if (pinnedModel === undefined) await routeRequest(routeReq, { config: ctx.config, tokenizers: ctx.tokenizers })
   const route = routeReq.route !== undefined ? routeReq.route : PASSTHROUGH_ROUTE
 
   // Every route of the scenario's list is out of quota and the profile's

@@ -90,6 +90,10 @@ export interface ResolvedToken {
   /** Empty means the token is not pinned to any surface in particular. */
   surfaces: string[]
   profileKey: string | null
+  /** Model every request is sent to regardless of what the caller named. Null = not pinned. */
+  modelPin: string | null
+  /** Completion requests allowed per UTC day. Null = no cap. */
+  dailyRequestLimit: number | null
 }
 
 const toWire = (
@@ -148,6 +152,11 @@ export interface IssueInput {
   surfaces?: string[]
   profileKey?: string | null
   expiresAt?: string | null
+  // Set by plan-minted tokens (app installs); an operator-issued token
+  // leaves all three null. See the columns on AccessToken.
+  modelPin?: string | null
+  dailyRequestLimit?: number | null
+  plan?: string | null
 }
 
 /**
@@ -177,7 +186,10 @@ export async function issueAccessToken(input: IssueInput): Promise<IssuedToken> 
       prefix,
       surfaces: input.surfaces === undefined ? [] : input.surfaces,
       profileKey: input.profileKey === undefined ? null : input.profileKey,
-      expiresAt: input.expiresAt === undefined || input.expiresAt === null ? null : new Date(input.expiresAt)
+      expiresAt: input.expiresAt === undefined || input.expiresAt === null ? null : new Date(input.expiresAt),
+      modelPin: input.modelPin === undefined ? null : input.modelPin,
+      dailyRequestLimit: input.dailyRequestLimit === undefined ? null : input.dailyRequestLimit,
+      plan: input.plan === undefined ? null : input.plan
     }
   })
   invalidateTokenCache()
@@ -308,7 +320,14 @@ export async function resolveAccessToken(presented: string): Promise<ResolvedTok
     timingSafeEqual(Buffer.from(row.tokenHash, 'hex'), Buffer.from(hash, 'hex'))
 
   const resolved: ResolvedToken | null = usable
-    ? { id: row.id, name: row.name, surfaces: row.surfaces, profileKey: row.profileKey }
+    ? {
+        id: row.id,
+        name: row.name,
+        surfaces: row.surfaces,
+        profileKey: row.profileKey,
+        modelPin: row.modelPin,
+        dailyRequestLimit: row.dailyRequestLimit
+      }
     : null
   cache.set(hash, { row: resolved })
   return resolved
@@ -327,4 +346,40 @@ export function noteTokenUse(id: string): void {
     .catch(() => {
       // A dropped statistic is not a reason to disturb the request.
     })
+}
+
+export type DailyAllowance =
+  | { outcome: 'allowed' }
+  | { outcome: 'exhausted'; retryAfterSeconds: number }
+  | { outcome: 'unavailable' }
+
+/**
+ * Count one request against a token's daily cap and say whether it may
+ * proceed.
+ *
+ * Increment-then-compare in a single upsert, so two concurrent requests
+ * cannot both read "one left" and both go through. The request that
+ * crosses the cap is refused and still counted, which is harmless: the
+ * count only ever decides refusals for the rest of that day.
+ *
+ * A failed write refuses rather than admits ('unavailable'): the cap is
+ * the only thing bounding what a free token can spend, so an outage of
+ * the ledger must not turn into an outage of the cap.
+ */
+export async function consumeDailyRequest(tokenId: string, limit: number): Promise<DailyAllowance> {
+  // UTC, so every instance agrees on where a day ends whatever TZ it runs in.
+  const now = dayjs().toDate()
+  const day = now.toISOString().slice(0, 10)
+  const row = await getPrismaClient()
+    .accessTokenDailyUsage.upsert({
+      where: { accessTokenId_day: { accessTokenId: tokenId, day } },
+      create: { accessTokenId: tokenId, day, requests: 1 },
+      update: { requests: { increment: 1 } }
+    })
+    .catch(() => null)
+  if (row === null) return { outcome: 'unavailable' }
+  if (row.requests <= limit) return { outcome: 'allowed' }
+  const nextUtcMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)
+  const retryAfterSeconds = Math.max(1, Math.ceil((nextUtcMidnight - now.getTime()) / 1000))
+  return { outcome: 'exhausted', retryAfterSeconds }
 }
