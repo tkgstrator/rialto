@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rialto — Connect</title>
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/inter/index.css">
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/geist-mono/index.css">
+<link rel="stylesheet" href="../node_modules/remixicon/fonts/remixicon.css">
+<link rel="stylesheet" href="_shared/mock.build.css">
+<script src="_shared/shell.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const { renderShell, pill, btn, navTo, meter, sortTh, pager } = window.Shell
+
+// One authorized app: how its installs register, and the installs
+// themselves.
+//
+// The top half is configuration and saves as one form, like a token's
+// page. The bottom half is operations: a searchable list of devices, each
+// its own token. A device row opens that token's page — Revoke lives there,
+// for the same reason it left the token table: one mis-aimed click in a
+// list of live credentials takes a person's app offline.
+//
+// "Requests today" is against the plan's daily cap, so a row that is
+// about to be refused says so before the 429 does.
+
+const field = (label, hint, body) => `
+  <div class="grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4">
+    <div>
+      <div class="text-xs font-medium">${label}</div>
+      <div class="mt-0.5 text-[12px] leading-snug text-muted-foreground">${hint}</div>
+    </div>
+    <div>${body}</div>
+  </div>`
+
+const select = (value) => `
+  <div class="relative inline-flex w-full max-w-md">
+    <div class="flex h-8 w-full items-center rounded-md border border-border pl-3 pr-8 font-mono text-xs">${value}</div>
+    <i class="ri-arrow-down-s-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"></i>
+  </div>`
+
+const toggle = (on) => `
+  <span class="inline-flex h-5 w-9 items-center rounded-full ${on ? 'bg-primary' : 'bg-muted'} p-0.5">
+    <span class="size-4 rounded-full bg-background shadow transition-transform ${on ? 'translate-x-4' : ''}"></span>
+  </span>`
+
+const DEVICES = [
+  { key: 'q2V9f1…', env: 'production', plan: 'Free', used: 37, cap: 100, cost: '$0.41', last: '2m ago', since: '2026-09-28' },
+  { key: 'Hk0pZr…', env: 'production', plan: 'Free', used: 96, cap: 100, cost: '$1.12', last: '5m ago', since: '2026-09-28' },
+  { key: 'bA7nWe…', env: 'production', plan: 'Free', used: 100, cap: 100, cost: '$1.30', last: '11m ago', since: '2026-09-28' },
+  { key: '3sLmQx…', env: 'production', plan: 'Free', used: 4, cap: 100, cost: '$0.05', last: '1h ago', since: '2026-09-29' },
+  { key: 'Yd81cT…', env: 'production', plan: 'Free', used: 0, cap: 100, cost: '–', last: '6d ago', since: '2026-09-29' }
+]
+
+const deviceRow = (d) => {
+  const pct = Math.round((d.used / d.cap) * 100)
+  return `
+  <tr ${navTo('access-token.html')} class="cursor-pointer border-t border-border/60 transition-colors hover:bg-muted/50">
+    <td class="py-2.5 pl-6 pr-3 font-mono text-xs">${d.key}</td>
+    <td class="px-3">${pill(d.env, d.env === 'production' ? 'mute' : 'warn')}</td>
+    <td class="px-3">${pill(d.plan, 'info')}</td>
+    <td class="px-3">
+      <div class="flex items-center gap-2">
+        <div class="w-20">${meter(pct)}</div>
+        <span class="whitespace-nowrap font-mono text-[12px] tabular-nums ${pct >= 100 ? 'text-destructive' : 'text-muted-foreground'}">${d.used} / ${d.cap}</span>
+      </div>
+    </td>
+    <td class="px-3 text-right font-mono text-xs tabular-nums">${d.cost}</td>
+    <td class="px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${d.last}</td>
+    <td class="px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${d.since}</td>
+    <td class="py-2.5 pl-3 pr-6">
+      <div class="flex justify-end text-muted-foreground/50"><i class="ri-arrow-right-s-line text-base"></i></div>
+    </td>
+  </tr>`
+}
+
+document.getElementById('root').innerHTML = `
+  <div class="min-w-0">
+
+    <div class="flex items-center gap-3 px-6 pt-6 pb-3">
+      <span ${navTo('access-apps.html')} class="text-muted-foreground hover:text-foreground">
+        <i class="ri-arrow-left-line text-base"></i>
+      </span>
+      <div class="min-w-0">
+        <div class="truncate text-sm font-semibold">Connect</div>
+        <div class="font-mono text-[12px] text-muted-foreground">5Q94QJ7G98.jp.qleap.connect</div>
+      </div>
+      ${pill('on', 'ok')}
+      <div class="ml-auto flex items-center gap-2">
+        <!-- Off rather than Delete: turning an app off stops every token it
+             issued, and turning it back on restores them. Deleting would
+             orphan a thousand RequestLog rows. -->
+        ${btn('Turn off', 'danger', 'ri-forbid-line')}
+      </div>
+    </div>
+
+    ${field(
+      'App ID',
+      'Team ID and bundle ID. Attestations for any other app are refused.',
+      `<div class="font-mono text-xs">5Q94QJ7G98.jp.qleap.connect</div>`
+    )}
+
+    ${field(
+      'Plan for new installs',
+      'The plan an install’s token is put on when it registers. Existing installs keep theirs; move one on its own page.',
+      select('Free')
+    )}
+
+    ${field(
+      'Development builds',
+      'Accept installs run from Xcode. Anyone with the project can make one, so leave this off outside testing.',
+      `<div class="flex items-center gap-3">${toggle(false)}<span class="text-[12px] text-muted-foreground">App Store and TestFlight only</span></div>`
+    )}
+
+    <div class="flex items-center gap-2 border-t border-border/60 px-6 py-4">
+      <span class="text-[12px] text-muted-foreground">
+        Saves how <span class="font-medium text-foreground">Connect</span> installs register, from the next registration.
+      </span>
+      <div class="ml-auto flex gap-2">
+        ${btn('Discard', 'ghost', '')}
+        ${btn('Save', 'primary', 'ri-check-line')}
+      </div>
+    </div>
+
+    <section class="border-t border-border">
+      <div class="flex items-center gap-3 px-6 pt-6 pb-3">
+        <h2 class="text-sm font-semibold">Devices</h2>
+        <span class="text-[12px] text-muted-foreground">1,284 · 612 active in 7 days · 3 at today’s cap</span>
+        <div class="ml-auto flex items-center gap-2">
+          <div class="relative">
+            <i class="ri-search-line pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"></i>
+            <div class="flex h-8 w-56 items-center rounded-md border border-border pl-8 text-xs text-muted-foreground/60">Key ID</div>
+          </div>
+        </div>
+      </div>
+      <table class="w-full table-fixed">
+        <colgroup><col><col class="w-28"><col class="w-20"><col class="w-52"><col class="w-24"><col class="w-24"><col class="w-28"><col class="w-10"></colgroup>
+        <thead>
+          <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
+            ${sortTh('Device key', 'pl-6 pr-3')}
+            ${sortTh('Build', 'px-3')}
+            ${sortTh('Plan', 'px-3')}
+            ${sortTh('Requests today', 'px-3')}
+            ${sortTh('Cost 30d', 'px-3', 'right')}
+            ${sortTh('Last used', 'px-3', 'right', true, 'desc')}
+            ${sortTh('Registered', 'px-3', 'right')}
+            <th class="pl-3 pr-6"></th>
+          </tr>
+        </thead>
+        <tbody>${DEVICES.map(deviceRow).join('')}</tbody>
+      </table>
+      ${pager({ first: 1, last: 50, total: '1,284', hasPrev: false })}
+    </section>
+
+    <div class="h-8"></div>
+  </div>`
+
+renderShell({
+  active: 'access-tokens',
+  navMode: 'cloudflare',
+  crumbs: [{ label: 'Apps', href: 'access-apps.html' }, 'Connect'],
+  subtitle: 'How this app’s installs register, and the installs themselves'
+})
+</script>
+</body>
+</html>

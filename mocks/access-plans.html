@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rialto — Plans</title>
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/inter/index.css">
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/geist-mono/index.css">
+<link rel="stylesheet" href="../node_modules/remixicon/fonts/remixicon.css">
+<link rel="stylesheet" href="_shared/mock.build.css">
+<script src="_shared/shell.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const { renderShell, btn, accessTabs, PLANS, sortTh, mono, dialog } = window.Shell
+
+// Plans: what a token on them may spend.
+//
+// A plan is referenced, never copied onto its tokens. Raising Free's daily
+// cap from 100 to 150 is one edit that every install on Free sees at its
+// next request — the alternative, a limit stamped on each of a thousand
+// tokens at issue time, is a migration every time pricing moves.
+//
+// Two things a plan decides, and only two for now: the one model its
+// requests go to (whatever the client asks for, and without routing, so a
+// chain cannot pick a costlier target), and how many completions a token
+// may make per UTC day. Listing models is never counted.
+//
+// A plan is not only for apps: a hand-issued token can be put on one too,
+// which is how a friend's laptop gets the same cap as an install.
+//
+// `?edit` draws the edit dialog for Free (access-plan-edit in mocks.json).
+
+const planRow = (p) => `
+  <tr class="cursor-pointer border-t border-border/60 transition-colors hover:bg-muted/50">
+    <td class="py-2.5 pl-6 pr-3 text-xs font-medium">${p.name}</td>
+    <td class="px-3">${mono(p.model)}</td>
+    <td class="px-3 text-right font-mono text-xs tabular-nums">${p.limit}<span class="text-muted-foreground"> / day</span></td>
+    <td class="px-3 text-right font-mono text-xs tabular-nums">${p.tokens}</td>
+    <td class="px-3 text-[12px] text-muted-foreground">${p.apps}</td>
+    <td class="py-2.5 pl-3 pr-6">
+      <div class="flex justify-end text-muted-foreground/50"><i class="ri-pencil-line text-sm"></i></div>
+    </td>
+  </tr>`
+
+const editDialog = () => {
+  const label = (text) => `<div class="mb-1 text-[12px] text-muted-foreground">${text}</div>`
+  const box = (value, chevron = false) => `
+    <div class="relative flex h-8 w-full items-center rounded-md border border-border pl-3 pr-8 font-mono text-xs">
+      ${value}
+      ${chevron ? '<i class="ri-arrow-down-s-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"></i>' : ''}
+    </div>`
+  const hint = (text) => `<p class="mt-1 text-[12px] leading-snug text-muted-foreground">${text}</p>`
+  return dialog(
+    'Edit plan',
+    `<div class="grid gap-4">
+      <div>${label('Name')}${box('Free')}</div>
+      <div>
+        ${label('Model')}
+        ${box('openai,gpt-5-mini', true)}
+        ${hint('Every request on this plan goes to this model, whatever the client names, without routing.')}
+      </div>
+      <div>
+        ${label('Requests per day')}
+        ${box('100')}
+        ${hint('Completions per UTC day. Over it the client gets 429 until 00:00 UTC. Empty means no cap.')}
+      </div>
+      <div class="rounded-md border border-dashed border-border px-3 py-2 text-[12px] leading-snug text-muted-foreground">
+        Applies to all <span class="font-medium text-foreground">1,287 tokens</span> on Free from their next request.
+      </div>
+    </div>`,
+    `${btn('Cancel', 'ghost')}${btn('Save', 'primary', 'ri-check-line')}`
+  )
+}
+
+const editing = new URLSearchParams(location.search).has('edit')
+
+document.getElementById('root').innerHTML = `
+  <div class="min-w-0">
+      <div class="flex items-center gap-1 border-b border-border px-6">${accessTabs('plans')}</div>
+
+      <div class="flex items-center gap-3 px-6 pt-5 pb-3">
+        <span class="text-[12px] text-muted-foreground">2 plans · 1,287 tokens on a plan · 4 without</span>
+        <div class="ml-auto">${btn('New plan', 'primary', 'ri-add-line')}</div>
+      </div>
+
+      <div class="px-6 pb-4">
+        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
+          <i class="ri-information-line mr-1 align-[-1px]"></i>
+          A token on a plan sends every request to the plan’s model and is capped per UTC day.
+          <span class="font-medium text-foreground">Changing a plan reaches every token on it at once</span>
+          — nothing is copied onto the tokens. A token with no plan is unrestricted, as hand-issued ones are today.
+        </div>
+      </div>
+
+      <table class="w-full table-fixed">
+        <colgroup><col class="w-40"><col><col class="w-32"><col class="w-24"><col class="w-56"><col class="w-10"></colgroup>
+        <thead>
+          <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
+            ${sortTh('Plan', 'pl-6 pr-3')}
+            ${sortTh('Model', 'px-3')}
+            ${sortTh('Daily cap', 'px-3', 'right')}
+            ${sortTh('Tokens', 'px-3', 'right', true, 'desc')}
+            ${sortTh('New installs of', 'px-3')}
+            <th class="pl-3 pr-6"></th>
+          </tr>
+        </thead>
+        <tbody>${PLANS.map(planRow).join('')}</tbody>
+      </table>
+  </div>
+  ${editing ? editDialog() : ''}`
+
+renderShell({
+  active: 'access-tokens',
+  navMode: 'cloudflare',
+  crumbs: [],
+  subtitle: 'What a token on each plan may spend'
+})
+</script>
+</body>
+</html>

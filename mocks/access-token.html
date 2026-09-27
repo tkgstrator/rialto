@@ -89,6 +89,16 @@ document.getElementById('root').innerHTML = `
       select('live')
     )}
 
+    <!-- A plan caps what the token may spend: one model and a daily
+         request count, both read from the plan at request time, so the
+         Plans tab changes every token on it at once. None is the
+         unrestricted default a hand-issued token has always had. -->
+    ${field(
+      'Plan',
+      'Send every request to the plan’s model and cap it per UTC day. None leaves this token unrestricted.',
+      select('None')
+    )}
+
     ${field(
       'Usage',
       'Requests served, spend and tokens over the last 30 days, and when this token was last seen.',
