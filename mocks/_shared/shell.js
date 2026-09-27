@@ -491,10 +491,10 @@ const AUTHORIZED_APPS = [
  * and its first entry the default a request falls back to.
  */
 const PLANS = [
-  { name: 'Free', models: ['openai,gpt-5-mini', 'google,gemini-3-flash'], limit: '100', tokens: '1,287', apps: 'Connect · Connect (dev)' },
-  { name: 'Plus', models: ['anthropic,claude-haiku-4-5', 'openai,gpt-5-mini', 'google,gemini-3-flash'], limit: '1,000', tokens: '0', apps: '—' },
-  { name: 'Pro', models: ['anthropic,claude-sonnet-5', 'openai,gpt-5.5', 'google,gemini-3-pro', 'anthropic,claude-haiku-4-5', 'openai,gpt-5-mini'], limit: '3,000', tokens: '0', apps: '—' },
-  { name: 'Max', models: ['anthropic,claude-opus-5', 'anthropic,claude-sonnet-5', 'openai,gpt-5.5', 'google,gemini-3-pro', 'anthropic,claude-haiku-4-5', 'openai,gpt-5-mini'], limit: '', tokens: '0', apps: '—' }
+  { name: 'Free', models: ['codex,gpt-6-luna', 'google,gemini-3-flash'], limit: '100', tokens: '1,287', apps: 'Connect · Connect (dev)' },
+  { name: 'Plus', models: ['codex,gpt-6-terra', 'codex,gpt-6-luna', 'anthropic,claude-haiku-4-5'], limit: '1,000', tokens: '0', apps: '—' },
+  { name: 'Pro', models: ['codex,gpt-6-sol', 'codex,gpt-6-terra', 'codex,gpt-6-luna', 'anthropic,claude-sonnet-5', 'google,gemini-3-pro'], limit: '3,000', tokens: '0', apps: '—' },
+  { name: 'Max', models: ['codex,gpt-6-astra', 'codex,gpt-6-sol', 'codex,gpt-6-terra', 'codex,gpt-6-luna', 'anthropic,claude-opus-5', 'anthropic,claude-sonnet-5'], limit: '', tokens: '0', apps: '—' }
 ]
 
 /** One authorized app row. Leads to the app's page, like a token row does. */

@@ -103,20 +103,19 @@ const editDialog = () => {
       <div>
         ${label('Models')}
         <div class="mb-2 flex flex-wrap gap-1.5">
-          ${providerChip('OpenAI', 1, true)}
+          ${providerChip('Codex', 1, true)}
           ${providerChip('Google', 1, false)}
           ${providerChip('Anthropic', 0, false)}
-          ${providerChip('DeepSeek', 0, false)}
+          ${providerChip('OpenAI', 0, false)}
         </div>
         <div class="max-h-44 overflow-y-auto rounded-md border border-border">
-          ${modelOption('gpt-5-mini', true, true)}
-          ${modelOption('gpt-5.5', false, false)}
-          ${modelOption('gpt-5.5-pro', false, false)}
-          ${modelOption('gpt-4.1-mini', false, false)}
-          ${modelOption('o4-mini', false, false)}
+          ${modelOption('gpt-6-luna', true, true)}
+          ${modelOption('gpt-6-terra', false, false)}
+          ${modelOption('gpt-6-sol', false, false)}
+          ${modelOption('gpt-6-astra', false, false)}
         </div>
         <p class="mt-1 text-[12px] leading-snug text-muted-foreground">
-          2 allowed · default <span class="font-mono">openai,gpt-5-mini</span>.
+          2 allowed · default <span class="font-mono">codex,gpt-6-luna</span>.
           A request naming another model, or none, goes to the default — never refused, and never routed.
         </p>
       </div>
