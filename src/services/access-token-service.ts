@@ -153,14 +153,22 @@ const toWire = (
 })
 
 /**
- * The hand-issued tokens. Tokens an app install minted for itself are
- * listed per app instead (authorized-app-service): there can be thousands,
- * and mixed in here they would bury the dozen an operator looks after.
+ * Every token, or with `manualOnly` just the hand-issued ones.
+ *
+ * The Tokens tab asks for the hand-issued ones: tokens an app install
+ * minted for itself are listed per app instead (authorized-app-service) —
+ * there can be thousands, and mixed in they would bury the dozen an
+ * operator looks after. Activity still reads them all, because its spend
+ * shares have to add up to what the window actually cost.
  */
-export async function listAccessTokens(): Promise<AccessTokenRow[]> {
+export async function listAccessTokens({
+  manualOnly = false
+}: {
+  manualOnly?: boolean
+} = {}): Promise<AccessTokenRow[]> {
   const [rows, spend] = await Promise.all([
     getPrismaClient().accessToken.findMany({
-      where: { device: { is: null } },
+      ...(manualOnly ? { where: { device: { is: null } } } : {}),
       orderBy: { createdAt: 'desc' },
       include: WIRE_INCLUDE
     }),

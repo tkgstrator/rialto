@@ -85,11 +85,16 @@ accessTokensRoute.openapi(
   createRoute({
     method: 'get',
     path: '/api/access-tokens',
+    request: {
+      // `manual` leaves out the tokens app installs minted for themselves,
+      // which the Apps tab lists per app.
+      query: z.object({ issued: z.enum(['all', 'manual']).default('all') })
+    },
     responses: {
       200: { description: 'Issued tokens', content: { 'application/json': { schema: ListSchema } } }
     }
   }),
-  async (c) => c.json({ tokens: await listAccessTokens() }, 200)
+  async (c) => c.json({ tokens: await listAccessTokens({ manualOnly: c.req.valid('query').issued === 'manual' }) }, 200)
 )
 
 accessTokensRoute.openapi(

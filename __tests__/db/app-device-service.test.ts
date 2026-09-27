@@ -193,11 +193,13 @@ describe.skipIf(!HAS_DB)('registerDevice', () => {
     expect(await resolveAccessToken(apiKey)).not.toBeNull()
   })
 
-  test('app tokens stay off the Tokens list', async () => {
+  test('app tokens stay off the Tokens tab, not off Activity', async () => {
     await authorizeFixtureApp()
     await registered()
     await issueAccessToken({ name: 'operator' })
-    expect((await listAccessTokens()).map((token) => token.name)).toEqual(['operator'])
+    expect((await listAccessTokens({ manualOnly: true })).map((token) => token.name)).toEqual(['operator'])
+    // Activity still sees them all, so its spend shares add up.
+    expect(await listAccessTokens()).toHaveLength(2)
   })
 
   test('the app row and its device page count the install', async () => {
