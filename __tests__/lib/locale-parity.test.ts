@@ -61,6 +61,8 @@ const tags = (value: string): string[] =>
  * UI disagree with the thing it is describing.
  */
 const SHARED_VOCABULARY = new Set([
+  // Apple's distribution channels, which ship under these names everywhere.
+  'access.apps.buildsStore',
   'activity.requests.laneAgent',
   'activity.requests.laneSubagent',
   // Codex names its own quota windows `primary` / `secondary`. The

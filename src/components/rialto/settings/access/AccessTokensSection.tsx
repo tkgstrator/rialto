@@ -30,7 +30,7 @@ import { emptyDraft, type IssueDraft, IssueTokenDialog } from '@/components/rial
 import { ANY } from '@/components/rialto/settings/access/pickers'
 import { TokenTable } from '@/components/rialto/settings/access/TokenTable'
 import { SectionHead } from '@/components/rialto/settings/fields'
-import { type AccessTokenWire, api, type InboundSurfaceWire } from '@/lib/api'
+import { type AccessTokenWire, api, type InboundSurfaceWire, type PlanWire } from '@/lib/api'
 import { countTokens, expiryToIso, type TokenCounts, tokenState } from '@/lib/rialto/settings/access-tokens'
 
 interface Revealed {
@@ -83,6 +83,7 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
   const { t } = useTranslation()
   const [tokens, setTokens] = useState<AccessTokenWire[]>([])
   const [profiles, setProfiles] = useState<{ key: string }[]>([])
+  const [plans, setPlans] = useState<PlanWire[]>([])
   const [draft, setDraft] = useState<IssueDraft | null>(null)
   const [revealed, setRevealed] = useState<Revealed | null>(null)
   const [issuing, setIssuing] = useState(false)
@@ -93,7 +94,7 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
 
   const load = useCallback(() => {
     api
-      .getAccessTokens()
+      .getAccessTokens('manual')
       .then((res) => {
         setTokens(res.tokens)
         setNow(Date.now())
@@ -110,6 +111,12 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
         // The picker falls back to "follow the endpoint", which is the
         // server's own default when profileKey is null.
       })
+    api
+      .getPlans()
+      .then((res) => setPlans(res.plans))
+      .catch(() => {
+        // The plan picker then offers only "no plan", the old behaviour.
+      })
   }, [load])
 
   const issue = () => {
@@ -124,7 +131,8 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
         name: draft.name.trim(),
         surfaces: picked,
         profileKey: draft.profileKey === ANY ? null : draft.profileKey,
-        expiresAt: expiryToIso(draft.expiry, Date.now())
+        expiresAt: expiryToIso(draft.expiry, Date.now()),
+        planId: draft.planId === ANY ? null : draft.planId
       })
       .then((res) => {
         const paths = res.token.surfaces.flatMap((id) => {
@@ -192,6 +200,7 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
           draft={draft}
           surfaces={surfaces}
           profiles={profiles}
+          plans={plans}
           issuing={issuing}
           onChange={setDraft}
           onSubmit={issue}

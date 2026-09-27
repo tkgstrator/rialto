@@ -20,7 +20,7 @@ import { useTranslation } from 'react-i18next'
 import { RButton } from '@/components/rialto/primitives'
 import { ANY, Picker, SurfacePicker } from '@/components/rialto/settings/access/pickers'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import type { InboundSurfaceWire } from '@/lib/api'
+import type { InboundSurfaceWire, PlanWire } from '@/lib/api'
 import { EXPIRY_CHOICES } from '@/lib/rialto/settings/access-tokens'
 
 export interface IssueDraft {
@@ -29,9 +29,11 @@ export interface IssueDraft {
   surfaces: string[]
   profileKey: string
   expiry: string
+  /** ANY for no plan: unrestricted, as hand-issued tokens always were. */
+  planId: string
 }
 
-export const emptyDraft = (): IssueDraft => ({ name: '', surfaces: [], profileKey: ANY, expiry: 'never' })
+export const emptyDraft = (): IssueDraft => ({ name: '', surfaces: [], profileKey: ANY, expiry: 'never', planId: ANY })
 
 /**
  * A labelled field, stacked.
@@ -55,6 +57,7 @@ export function IssueTokenDialog({
   draft,
   surfaces,
   profiles,
+  plans,
   issuing,
   onChange,
   onSubmit,
@@ -63,6 +66,7 @@ export function IssueTokenDialog({
   draft: IssueDraft
   surfaces: InboundSurfaceWire[]
   profiles: { key: string }[]
+  plans: readonly PlanWire[]
   issuing: boolean
   onChange: (next: IssueDraft) => void
   onSubmit: () => void
@@ -117,6 +121,17 @@ export function IssueTokenDialog({
               {profiles.map((p) => (
                 <option key={p.key} value={p.key}>
                   {p.key}
+                </option>
+              ))}
+            </Picker>
+          </Field>
+
+          <Field label={t('access.token.plan')} hint={t('access.token.planHint')}>
+            <Picker label={t('access.token.plan')} value={draft.planId} onChange={(v) => set('planId', v)}>
+              <option value={ANY}>{t('access.token.noPlan')}</option>
+              {plans.map((plan) => (
+                <option key={plan.id} value={plan.id}>
+                  {plan.name}
                 </option>
               ))}
             </Picker>

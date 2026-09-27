@@ -181,6 +181,10 @@ export interface AccessTokenWire {
    */
   rotatedAt: string | null
   createdAt: string
+  /** The plan this token spends under. Null = unrestricted. */
+  plan: { id: string; name: string } | null
+  /** The authorized app whose install minted this token, if one did. */
+  app: { id: string; name: string } | null
 }
 
 export interface IdentityResponse {
@@ -316,4 +320,67 @@ export interface UseResetResponse {
   remaining: number
   /** The follow-up usage poll answered, so routing already sees the reset. */
   refreshed: boolean
+}
+
+/**
+ * A plan: the models a token on it may use and its daily cap. Tokens
+ * reference it, so an edit reaches every token on it at once.
+ */
+export interface PlanWire {
+  id: string
+  name: string
+  /** `provider,model` ids a request may name. */
+  models: string[]
+  /** Where any other model name, or none, is sent. Always one of `models`. */
+  defaultModel: string
+  /** Completions per UTC day. Null = no cap. */
+  dailyRequestLimit: number | null
+  tokenCount: number
+  /** Apps whose new installs start on this plan. */
+  apps: { id: string; name: string }[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PlanInputWire {
+  name: string
+  models: string[]
+  defaultModel: string
+  dailyRequestLimit: number | null
+}
+
+/** An app whose installs may register themselves with App Attest. */
+export interface AuthorizedAppWire {
+  id: string
+  name: string
+  /** `<Team ID>.<bundle id>`. */
+  appleAppId: string
+  allowDevelopment: boolean
+  enabled: boolean
+  /** The plan a new install's token is put on. */
+  plan: { id: string; name: string }
+  deviceCount: number
+  /** Installs whose token was used in the last 7 days. */
+  activeDevices: number
+  /** Completions counted against caps today (UTC). */
+  requestsToday: number
+  /** USD over the 30-day spend window; null when none of it priced. */
+  costUsd: number | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** One install of an authorized app, as its app's page lists it. */
+export interface AppDeviceWire {
+  /** The access token this install presents; its page is where it is revoked. */
+  tokenId: string
+  keyPrefix: string
+  environment: string
+  plan: { id: string; name: string } | null
+  requestsToday: number
+  dailyRequestLimit: number | null
+  costUsd: number | null
+  lastUsedAt: string | null
+  registeredAt: string
+  revokedAt: string | null
 }
