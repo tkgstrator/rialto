@@ -19,7 +19,7 @@ import type { Prisma, PrismaClient } from '../generated/prisma/client'
 import dayjs from '../lib/dayjs'
 import { tierOf } from '../llms/router/request-signals'
 import { type ModelTier, ModelTierSchema } from '../schemas/domain/tier-route'
-import { SUBSCRIPTION_PRESETS } from '../shared/data/subscriptions'
+import { isCodexImageModel, SUBSCRIPTION_PRESETS } from '../shared/data/subscriptions'
 
 export interface AliasCandidate {
   model: string
@@ -41,6 +41,7 @@ export interface TierAliasRow {
 // A model's tier: the manual one when an operator set it, else what the
 // name says. Null for a name that says no family.
 const modelTierOf = (model: { name: string; manualTier: string | null }): ModelTier | null => {
+  if (isCodexImageModel(model.name)) return null
   if (model.manualTier !== null) {
     const manual = ModelTierSchema.safeParse(model.manualTier)
     if (manual.success) return manual.data
@@ -109,7 +110,7 @@ export async function setTierAlias(
       where: { providerId_name: { providerId: provider.id, name: modelName } },
       select: { id: true, enabled: true }
     })
-    if (model === null) return { ok: false, reason: 'model-not-found' }
+    if (model === null || isCodexImageModel(modelName)) return { ok: false, reason: 'model-not-found' }
     await tx.providerTierAlias.upsert({
       where: { providerId_tier: { providerId: provider.id, tier } },
       create: { providerId: provider.id, tier, modelId: model.id },

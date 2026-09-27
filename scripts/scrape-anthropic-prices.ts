@@ -107,12 +107,14 @@ if (overview) {
 await page.goto(PRICING_URL, { waitUntil: 'networkidle' })
 
 const pricing = await page.evaluate(() => {
-  // First <table> on the pricing page is "Model pricing":
-  // [Model, Base Input, 5m Cache Writes, 1h Cache Writes,
-  //  Cache Hits & Refreshes, Output Tokens]
+  // The first table is the model-pricing table; its second header row
+  // carries the leaf columns beneath the grouped Base/Cache headings.
   const t = document.querySelectorAll('table')[0]
   if (!t) return null
-  const headers = Array.from(t.querySelectorAll('thead tr th')).map((c) => (c.textContent ?? '').trim())
+  const headerRows = Array.from(t.querySelectorAll('thead tr')).map((tr) =>
+    Array.from(tr.querySelectorAll('th')).map((c) => (c.textContent ?? '').trim())
+  )
+  const headers = headerRows.find((row) => row.some((h) => /^input$|base input/i.test(h)) && row.some((h) => /^output$|output tokens/i.test(h))) ?? []
   const rows = Array.from(t.querySelectorAll('tbody tr')).map((tr) =>
     Array.from(tr.querySelectorAll('th,td')).map((c) => (c.textContent ?? '').trim())
   )
@@ -168,11 +170,11 @@ const claude4PlusSlug = (display: string): string | null => {
 const headerIdx = (label: string): number =>
   pricing.headers.findIndex((h) => h.toLowerCase().includes(label.toLowerCase()))
 
-const inputIdx = headerIdx('base input')
-const outputIdx = headerIdx('output tokens')
+const inputIdx = pricing.headers.findIndex((h) => /^(base )?input(?: tokens)?$/i.test(h))
+const outputIdx = pricing.headers.findIndex((h) => /^output(?: tokens)?$/i.test(h))
 // "Cache Hits & Refreshes" is the cached-read rate. Optional: if the
 // column is gone we still emit input/output rather than aborting.
-const cacheReadIdx = headerIdx('cache hits')
+const cacheReadIdx = headerIdx('cache hits') >= 0 ? headerIdx('cache hits') : headerIdx('hits and refreshes')
 
 if (inputIdx < 0 || outputIdx < 0) {
   console.error(`Pricing table headers don't match expectation: ${pricing.headers.join(' | ')}`)
@@ -200,7 +202,8 @@ for (const row of pricing.rows) {
   const display = row[0]
   if (!display) continue
   const cleaned = stripStatus(display)
-  const apiId = displayToApiId[display] ?? displayToApiId[cleaned] ?? claude4PlusSlug(cleaned) ?? LEGACY_IDS[cleaned]
+  const name = cleaned.match(/^(Claude\s+(?:Opus|Sonnet|Haiku|Fable|Mythos)\s+\d+(?:\.\d+)?)/i)?.[1] ?? cleaned
+  const apiId = displayToApiId[display] ?? displayToApiId[name] ?? claude4PlusSlug(name) ?? LEGACY_IDS[name]
   if (!apiId) {
     skipped.push(display)
     continue
@@ -212,7 +215,7 @@ for (const row of pricing.rows) {
     continue
   }
   const legacy = isLegacyDisplay(display)
-  const context = displayToContext[display] ?? displayToContext[cleaned]
+  const context = displayToContext[display] ?? displayToContext[name]
   const cachedInput = cacheReadIdx >= 0 ? parsePrice(row[cacheReadIdx] ?? '') : null
   if (!prices[apiId]) {
     const entry: OutEntry = { input, output }

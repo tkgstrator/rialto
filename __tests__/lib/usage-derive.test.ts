@@ -24,6 +24,7 @@ import {
 } from '../../src/components/rialto/activity/usage-derive'
 import type { SubAccountWire, SubscriptionWire } from '../../src/components/rialto/providers/types'
 import type { AccessTokenWire } from '../../src/lib/api'
+import dayjs from '../../src/lib/dayjs'
 
 // The label lookup is i18n's job; the shaping is what these test. Echoing
 // the key keeps assertions about structure readable.
@@ -223,6 +224,64 @@ describe('providerWindows — windows', () => {
     expect(windows.map((w) => w.pct)).toEqual([88, 22])
   })
 
+  test('projects Claude windows from the capture time, without capping an over-limit pace', () => {
+    const windows = windowsOf({
+      claude: [
+        claudeAccount({
+          fiveHour: { utilization: 60, resetsAt: dayjs().add(2.5, 'hour').toISOString() },
+          capturedAt: dayjs().toISOString()
+        })
+      ],
+      codex: []
+    })
+    expect(windows[0].pct).toBe(60)
+    expect(windows[0].projectedPct).toBe(120)
+  })
+
+  test('Codex uses the reported window length and leaves unknown reset or duration unprojected', () => {
+    const windows = windowsOf({
+      claude: [],
+      codex: [
+        codexAccount({
+          primary: { usedPercent: 20, resetAt: dayjs().add(30, 'minute').toISOString(), windowSeconds: 3600 },
+          secondary: { usedPercent: 40, resetAt: null, windowSeconds: 604_800 },
+          capturedAt: dayjs().toISOString()
+        })
+      ]
+    })
+    expect(windows[0].projectedPct).toBe(40)
+    expect(windows[1].projectedPct).toBeNull()
+  })
+
+  test('a window before the 10% warm-up has unknown pace', () => {
+    const windows = windowsOf({
+      claude: [],
+      codex: [
+        codexAccount({
+          primary: { usedPercent: 20, resetAt: dayjs().add(57, 'minute').toISOString(), windowSeconds: 3600 },
+          secondary: null,
+          capturedAt: dayjs().toISOString()
+        })
+      ]
+    })
+    expect(windows[0].projectedPct).toBeNull()
+  })
+
+  test('a cached reading older than fifteen minutes keeps utilization but has no current pace', () => {
+    const now = Date.now()
+    const windows = windowsOf({
+      claude: [
+        claudeAccount({
+          fiveHour: { utilization: 60, resetsAt: dayjs(now + 2.5 * 3_600_000).toISOString() },
+          capturedAt: dayjs(now - 16 * 60_000).toISOString()
+        })
+      ],
+      codex: []
+    })
+    expect(windows[0].pct).toBe(60)
+    expect(windows[0].projectedPct).toBeNull()
+  })
+
   test('a Codex window of any other length keeps its rank', () => {
     const windows = windowsOf({
       claude: [],
@@ -250,12 +309,11 @@ describe('metricLabel', () => {
 })
 
 describe('bucketSamples', () => {
-  const at = (minutes: number): string => new Date(Date.UTC(2026, 8, 1, 0, minutes)).toISOString()
+  const at = (minutes: number): string => dayjs('2026-09-01T00:00:00Z').add(minutes, 'minute').toISOString()
   const sample = (minutes: number, percent: number, metric = 'claude.five_hour'): UsageHistorySample => ({
     metric,
-    percent,
-    t: at(minutes),
-    resetAt: null
+    projectedPct: percent,
+    t: at(minutes)
   })
 
   test('keeps the peak in a bucket, not the average', () => {
@@ -277,6 +335,13 @@ describe('bucketSamples', () => {
     const points = bucketSamples([sample(0, 10, 'a'), sample(600, 20, 'b')], 2)
     expect(points[0].b).toBeNull()
     expect(points[points.length - 1].a).toBeNull()
+  })
+
+  test('unknown forecasts stay gaps, not zero utilization', () => {
+    const points = bucketSamples([sample(0, 50), { ...sample(60, 0), projectedPct: null }], 2)
+    expect(points).toHaveLength(2)
+    expect(points[0]['claude.five_hour']).toBe(50)
+    expect(points[1]['claude.five_hour']).toBeNull()
   })
 
   test('every metric is present on every point, so the chart keys are stable', () => {
@@ -301,9 +366,9 @@ describe('bucketSamples', () => {
 describe('seriesOf', () => {
   test('deduplicates and orders so the legend does not reshuffle between polls', () => {
     const samples: UsageHistorySample[] = [
-      { metric: 'claude.seven_day', percent: 1, t: '2026-09-01T00:00:00Z', resetAt: null },
-      { metric: 'claude.five_hour', percent: 1, t: '2026-09-01T00:00:00Z', resetAt: null },
-      { metric: 'claude.seven_day', percent: 2, t: '2026-09-01T00:05:00Z', resetAt: null }
+      { metric: 'claude.seven_day', projectedPct: 1, t: '2026-09-01T00:00:00Z' },
+      { metric: 'claude.five_hour', projectedPct: 1, t: '2026-09-01T00:00:00Z' },
+      { metric: 'claude.seven_day', projectedPct: 2, t: '2026-09-01T00:05:00Z' }
     ]
     expect(seriesOf(samples, t).map((s) => s.metric)).toEqual(['claude.five_hour', 'claude.seven_day'])
   })

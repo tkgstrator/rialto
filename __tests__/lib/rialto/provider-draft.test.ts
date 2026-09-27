@@ -50,6 +50,12 @@ describe('applyDraft', () => {
     expect(shown.api_key).toBe('sk-new')
   })
 
+  test('keeps an Auto effort in the draft and sends it as its own write', () => {
+    const draft = { ...EMPTY_DRAFT, efforts: { 'gpt-5': 'auto' as const } }
+    expect(effortOf(applyDraft(provider(), draft, STORED), 'gpt-5')).toBe('auto')
+    expect(savePlan(provider(), draft, STORED).efforts).toEqual([{ model: 'gpt-5', effort: 'auto' }])
+  })
+
   test('an empty key clears the stored one', () => {
     expect(applyDraft(provider(), { ...EMPTY_DRAFT, apiKey: '' }, STORED).api_key).toBeNull()
   })

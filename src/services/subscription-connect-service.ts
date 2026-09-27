@@ -28,6 +28,7 @@ import type { ClaudeOAuthProfile } from '../schemas/wire/oauth'
 import { refreshClaudeToken } from './claude-oauth-service'
 import { fetchClaudeProfile } from './claude-profile-service'
 import { refreshCodexToken } from './codex-auth/oauth'
+import { syncConnectedCodexModels } from './model-sync-service'
 import { providersForKind } from './subscription-account-sync/persist'
 import {
   buildCodexDiscoveredAccount,
@@ -282,5 +283,22 @@ export async function connectCodexAccount(tokens: CodexConnectTokens, prisma?: P
       'Codex refreshed these credentials, but the new grant could not be keyed to an account.'
     )
   }
-  return storeVerified('codex', account, prisma)
+  const ids = await storeVerified('codex', account, prisma)
+  try {
+    const providers = await (prisma === undefined ? getPrismaClient() : prisma).subAccount.findMany({
+      where: { id: { in: ids } },
+      select: { provider: { select: { name: true } } }
+    })
+    await syncConnectedCodexModels(
+      providers.map((row) => row.provider.name),
+      result.tokens.accessToken,
+      account.accountId,
+      fetch,
+      ids
+    )
+  } catch (err) {
+    // A model-list outage cannot undo an account whose credentials passed.
+    logger.warn({ err }, '[subaccount] connected, but model discovery failed')
+  }
+  return ids
 }

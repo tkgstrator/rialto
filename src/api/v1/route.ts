@@ -23,6 +23,7 @@ import { requestLogEmitter } from '../request-logs/events'
 import { buildFailoverChain } from './candidate-chain'
 import { attemptChainEntry, type ChainCtx, type SubscriptionKindProvider } from './chain-failover'
 import { buildErrorEnvelope, errorShapeForPath } from './error-shape'
+import { handleImageGeneration } from './images'
 import type { ResolvedInvocation } from './invocation'
 import { redactToolArguments } from './redact'
 import { buildRoutePlan } from './route-plan'
@@ -139,7 +140,7 @@ function countingSseTransform(
 // aggregator they have always had.
 function pickSseAggregator(path: string): (response: Response) => Promise<Record<string, unknown>> {
   const surface = surfaceForPath(path)
-  return surface !== undefined ? surface.aggregateSse : aggregateAnthropicSseToJson
+  return surface?.aggregateSse !== undefined ? surface.aggregateSse : aggregateAnthropicSseToJson
 }
 
 // An upstream response the caller cannot use: an SSE body that folded to
@@ -355,7 +356,9 @@ const handleInbound = async (c: Context): Promise<Response> => {
 
 // Route mounts come from the registry, one per surface — including
 // `/v1beta/models/:modelAndAction`, which no `/v1/*` pattern can reach.
-for (const surface of INBOUND_SURFACES) v1Route.post(surface.endpoint, handleInbound)
+for (const surface of INBOUND_SURFACES) {
+  v1Route.post(surface.endpoint, surface.operation === 'image' ? handleImageGeneration : handleInbound)
+}
 
 // Not a surface: the fail-closed lane for an unknown /v1 path, which has
 // to answer 404 in the caller's own envelope rather than fall through to

@@ -121,7 +121,7 @@ export function fetchUsage(): Promise<UsageWire> {
   return api.get<UsageWire>('/usage')
 }
 
-/** Captured utilization over the requested window. Server caps `days` at 30. */
+/** Captured pace projections over the requested window. Server caps `days` at 30. */
 export function fetchUsageHistory(days: number): Promise<{ samples: UsageHistorySample[] }> {
   return api.get<{ samples: UsageHistorySample[] }>(`/usage/history?days=${days}`)
 }

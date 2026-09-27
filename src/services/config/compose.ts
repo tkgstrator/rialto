@@ -66,14 +66,17 @@ export const toProvider = (p: ProviderWithModels): Provider => {
   const withApiStyle = p.models.filter((m): m is DbModel & { apiStyle: ApiStyle } => m.apiStyle !== null)
   const modelApiStyles = Object.fromEntries(withApiStyle.map((m) => [m.name, m.apiStyle]))
   const withReasoningEffort = p.models.filter(
-    (m): m is DbModel & { reasoningEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' } =>
+    (
+      m
+    ): m is DbModel & { reasoningEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto' } =>
       m.reasoningEffort === 'none' ||
       m.reasoningEffort === 'minimal' ||
       m.reasoningEffort === 'low' ||
       m.reasoningEffort === 'medium' ||
       m.reasoningEffort === 'high' ||
       m.reasoningEffort === 'xhigh' ||
-      m.reasoningEffort === 'max'
+      m.reasoningEffort === 'max' ||
+      m.reasoningEffort === 'auto'
   )
   const modelReasoningEfforts = Object.fromEntries(withReasoningEffort.map((m) => [m.name, m.reasoningEffort]))
   return {

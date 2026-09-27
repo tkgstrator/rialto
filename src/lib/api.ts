@@ -232,7 +232,7 @@ class ApiClient {
   async setModelReasoningEffort(
     providerName: string,
     modelName: string,
-    reasoningEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null
+    reasoningEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto' | null
   ): Promise<{ success: boolean }> {
     return this.apiFetch<{ success: boolean }>(
       `/providers/${encodeURIComponent(providerName)}/models/${encodeURIComponent(modelName)}`,

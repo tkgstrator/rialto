@@ -1,0 +1,29 @@
+{
+  "source": "https://developers.openai.com/api/docs/models/",
+  "lastChecked": "2026-09-26",
+  "notes": "Public OpenAI API-equivalent USD per 1M modality tokens, not a Codex subscription charge.",
+  "models": {
+    "gpt-image-2.5-flare": {
+      "snapshot": "gpt-image-2.5-flare-2026-09-08",
+      "textInputPer1M": 5,
+      "cachedTextInputPer1M": 1.25,
+      "imageInputPer1M": 8,
+      "cachedImageInputPer1M": 2,
+      "imageOutputPer1M": 30,
+      "endpoints": ["v1/images/generations", "v1/images/edits"],
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["image"]
+    },
+    "gpt-image-2.5-sunburst": {
+      "snapshot": "gpt-image-2.5-sunburst-2026-09-08",
+      "textInputPer1M": 5,
+      "cachedTextInputPer1M": 1.25,
+      "imageInputPer1M": 8,
+      "cachedImageInputPer1M": 2,
+      "imageOutputPer1M": 30,
+      "endpoints": ["v1/images/generations", "v1/images/edits"],
+      "inputModalities": ["text", "image"],
+      "outputModalities": ["image"]
+    }
+  }
+}

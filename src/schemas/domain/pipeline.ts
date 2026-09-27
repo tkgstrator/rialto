@@ -42,11 +42,11 @@ export const RuntimeProviderSchema = z.object({
   api_key: z.string().nonempty(),
   models: z.array(z.string().nonempty()).default([]),
   transformer: ProviderTransformerConfigSchema.optional(),
-  // Per-model manual reasoning-effort override consumed by OpenAI /
-  // OpenAI-Responses / Codex transformers when building the outgoing
-  // request. Absent = pass-through (vendor default).
+  // Per-model manual override or local Auto policy. Auto is consumed
+  // before send and must never reach the upstream as a wire value.
+  // Absent = pass-through (caller or vendor default).
   modelReasoningEfforts: z
-    .record(z.string().nonempty(), z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']))
+    .record(z.string().nonempty(), z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto']))
     .optional()
 })
 export type RuntimeProvider = z.input<typeof RuntimeProviderSchema>
@@ -115,7 +115,9 @@ export const PipelineRequestSchema = z.object({
   // Which inbound surface the request arrived on, as an
   // `InboundSurface.id` slug. Finer than `inboundType`, which cannot
   // tell /v1/chat/completions from /v1/responses.
-  surface: z.enum(['anthropic-messages', 'openai-chat', 'openai-responses', 'gemini-generate']).optional(),
+  surface: z
+    .enum(['anthropic-messages', 'openai-chat', 'openai-responses', 'gemini-generate', 'openai-images'])
+    .optional(),
   // Which AccessToken authenticated the request, so Activity can answer
   // "which client burned this". /v1 admits issued tokens only, so this
   // is absent only on a request that never went through that gate.
@@ -135,6 +137,9 @@ export const PipelineRequestSchema = z.object({
   // it names the account that actually served (or 429'd) THIS call,
   // which the session-wide sticky map cannot once requests overlap.
   subAccountId: z.string().nonempty().optional(),
+  // Preserve explicit client intent before outbound transformers mutate the
+  // in-flight body or strip Anthropic-only effort fields.
+  clientEffortIntent: z.enum(['explicit', 'unspecified']).optional(),
   tokenCount: z.number().optional()
 })
 export type PipelineRequest = z.infer<typeof PipelineRequestSchema>

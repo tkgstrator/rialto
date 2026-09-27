@@ -17,6 +17,7 @@ import { arch } from 'node:os'
 import type { RuntimeProvider, TransformerContext, TransformerHookResult, UnifiedChatRequest } from '@/schemas/domain'
 import { type CodexRequestShape, PackageJsonSchema } from '@/schemas/wire'
 import { ensureFreshCodexAccessToken } from '../../../services/codex-auth/token'
+import { ensureCodexEfforts } from '../../../services/codex-model-catalog'
 import { sessionIdFromRequest } from '../../pipeline/session-id'
 import { cloneResponse } from '../../utils/response-clone'
 import { OAuthTransformer, type SubscriptionTokenState } from '../oauth-base'
@@ -27,7 +28,7 @@ import { OAuthTransformer, type SubscriptionTokenState } from '../oauth-base'
 // CLI path. Version source order: CODEX_CLI_VERSION env (lets prod pin
 // it if @openai/codex is ever pruned) -> the installed @openai/codex
 // package -> "0.0.0". Resolved once at boot; never throws.
-const CODEX_USER_AGENT: string = (() => {
+export const CODEX_USER_AGENT: string = (() => {
   const safe = (fn: () => string, fallback: string): string => {
     try {
       const v = fn().trim()
@@ -85,6 +86,14 @@ export class CodexOauthTransformer extends OAuthTransformer {
     // layer, absent only on probe contexts, which stay on the overlay.
     const sessionId = context?.req?.accountSessionKey
     const { token, accountId } = await this.resolveSubscriptionAuth(provider, sessionId, 'codex', request, context)
+    const model = request.model
+    if (
+      model !== undefined &&
+      provider.modelReasoningEfforts?.[model] === 'auto' &&
+      context.req?.subAccountId !== undefined
+    ) {
+      await ensureCodexEfforts(context.req.subAccountId, token, accountId === undefined ? null : accountId)
+    }
     // biome-ignore plugin: CodexRequestShape adds optional Responses-API-specific fields (store/instructions/input/prompt_cache_key) on top of UnifiedChatRequest; the unified schema cannot model these without leaking codex-specific shape into the shared type.
     const req = request as CodexRequestShape
 

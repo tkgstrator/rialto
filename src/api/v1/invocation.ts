@@ -18,42 +18,30 @@ import type { LlmsContext, ResolvedProvider, Transformer } from '../../llms'
 import { inboundTypeForPath, surfaceForPath } from '../../llms/inbound/surfaces'
 import { isLongContextDenied } from '../../services/failover-state'
 import { getActiveAccountForSession } from '../../services/session-account-router'
+import { claudeCodeEffortsFor } from '../../shared/model-reasoning-effort'
 import type { RoutePlan } from './route-plan'
 import { prepareSubscriptionBetas } from './subscription-betas'
 
-// ─── Reasoning-effort normalisation ────────────────────────────────────
+// ─── Claude Code effort normalisation ────────────────────────────────
 
-// Per-model max-supported effort. Claude Code sends body.output_config.effort
-// (e.g. 'xhigh'); models that don't support a level — or `effort` at all
-// — 400. Normalise BEFORE sending. Ordered low→high so the last entry is
-// the model's max supported level.
-const EFFORT_BY_MODEL: Record<string, readonly string[]> = {
-  'claude-fable-5': ['low', 'medium', 'high', 'xhigh', 'max'],
-  'claude-mythos-5': ['low', 'medium', 'high', 'xhigh', 'max'],
-  'claude-opus-4-7': ['low', 'medium', 'high', 'xhigh', 'max'],
-  'claude-opus-4-8': ['low', 'medium', 'high', 'xhigh', 'max'],
-  'claude-opus-4-6': ['low', 'medium', 'high', 'max'],
-  'claude-sonnet-4-6': ['low', 'medium', 'high', 'max'],
-  'claude-opus-4-5': ['low', 'medium', 'high']
-}
-
-function effortSetFor(model: string): readonly string[] | undefined {
-  for (const id of Object.keys(EFFORT_BY_MODEL)) {
-    if (model === id || model.startsWith(`${id}-`) || model.startsWith(`${id}@`)) return EFFORT_BY_MODEL[id]
+function normalizeClaudeCodeEffort(body: Record<string, unknown>, model: string): void {
+  const output = body.output_config
+  if (output === null || typeof output !== 'object' || Array.isArray(output)) return
+  const config = { ...output }
+  const requested = Reflect.get(config, 'effort')
+  if (typeof requested === 'string') {
+    const supported = claudeCodeEffortsFor(model)
+    if (supported !== null && !supported.some((level) => level === requested)) {
+      const ladder = ['low', 'medium', 'high', 'xhigh', 'max']
+      const rank = ladder.indexOf(requested)
+      if (rank >= 0) {
+        const atOrBelow = supported.filter((level) => ladder.indexOf(level) <= rank)
+        const replacement = atOrBelow.at(-1)
+        if (replacement !== undefined) Reflect.set(config, 'effort', replacement)
+      }
+    }
   }
-  return undefined
-}
-
-function normalizeEffort(body: Record<string, unknown>, model: string): void {
-  const oc = body.output_config as { effort?: unknown } | undefined
-  const requested = oc?.effort
-  if (typeof requested !== 'string') return
-  const allowed = effortSetFor(model)
-  if (!allowed) {
-    delete oc!.effort
-    return
-  }
-  if (!allowed.includes(requested)) oc!.effort = allowed[allowed.length - 1]
+  body.output_config = config
 }
 
 // ─── Anthropic subscription beta header reshape ────────────────────────
@@ -65,6 +53,18 @@ function normalizeEffort(body: Record<string, unknown>, model: string): void {
 // back to the coarser provider-level mark.
 function longContextDeniedFor(sessionId: string, providerName: string): boolean {
   return isLongContextDenied(providerName, getActiveAccountForSession(sessionId))
+}
+
+function hasClientEffort(body: Record<string, unknown>): boolean {
+  const reasoning = body.reasoning
+  const thinking = body.thinking
+  const output = body.output_config
+  return (
+    'reasoning_effort' in body ||
+    (reasoning !== null && typeof reasoning === 'object' && 'effort' in reasoning) ||
+    (thinking !== null && typeof thinking === 'object' && ('budget_tokens' in thinking || 'type' in thinking)) ||
+    (output !== null && typeof output === 'object' && 'effort' in output)
+  )
 }
 
 // ─── Resolved invocation shape ─────────────────────────────────────────
@@ -133,19 +133,19 @@ export function resolveInvocationForModel(
   // Fresh per-attempt body / headers so per-model shaping (effort clamp,
   // internal-field strip, subscription beta reshape) never leaks across
   // chain attempts.
+  const clientSpecifiedEffort = hasClientEffort(plan.routedBody)
   const body: Record<string, unknown> = { ...plan.routedBody }
   const headers: Record<string, string> = { ...plan.headers }
   body.model = model
 
-  // Clamp / strip output_config.effort to what the routed-to model
-  // supports — BEFORE the upstream call.
-  normalizeEffort(body, model)
+  // Only the Claude Code subscription path carries the native Messages
+  // output_config upstream. Other targets keep the existing strip policy.
+  const claudeCode = provider.transformer?.use?.some((step) => step.name === 'claude-code-oauth') === true
+  if (claudeCode) normalizeClaudeCodeEffort(body, model)
+  else delete body.output_config
 
-  // Consume and remove Rialto-internal extensions that Claude Code adds
-  // for Rialto-specific features (context management, diagnostics, effort
-  // tuning). These must not reach any upstream provider API.
+  // Consume Rialto-internal extensions before any upstream dispatch.
   delete body.context_management
-  delete body.output_config
   delete body.diagnostics
 
   // Bypass detection: if the provider has a single transformer that
@@ -176,7 +176,8 @@ export function resolveInvocationForModel(
     inboundType: inboundTypeForPath(plan.path),
     surface: surfaceForPath(plan.path)?.id,
     accessTokenId: plan.accessTokenId,
-    accountSessionKey: plan.accountSessionKey
+    accountSessionKey: plan.accountSessionKey,
+    clientEffortIntent: clientSpecifiedEffort ? 'explicit' : 'unspecified'
   }
 
   return { body, headers, request, provider, transformer }

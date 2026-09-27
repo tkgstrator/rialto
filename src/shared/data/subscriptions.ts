@@ -32,6 +32,10 @@ export interface SubscriptionPreset {
   credentialsPath: string
 }
 
+// These models use the Codex image JSON endpoint, not Responses/chat.
+export const CODEX_IMAGE_MODELS: readonly string[] = ['gpt-image-2.5-flare', 'gpt-image-2.5-sunburst']
+export const isCodexImageModel = (name: string): boolean => CODEX_IMAGE_MODELS.includes(name)
+
 export const SUBSCRIPTION_PRESETS: SubscriptionPreset[] = [
   {
     id: 'claude-code',
@@ -74,7 +78,7 @@ export const SUBSCRIPTION_PRESETS: SubscriptionPreset[] = [
     // OpenAI scraper already skips codex-family ids, so it wouldn't
     // reach the toggle list either way — kept in the seed list for the
     // Manage-providers catalog count.
-    availableModels: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.2'],
+    availableModels: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.2', ...CODEX_IMAGE_MODELS],
     defaultEnabledModels: ['gpt-5.5'],
     vendor: 'OpenAI',
     cli: 'Codex',

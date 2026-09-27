@@ -29,7 +29,7 @@ import {
   aggregateOpenAiResponsesSseToJson
 } from '../utils/sse-aggregate'
 
-export type SurfaceId = 'anthropic-messages' | 'openai-chat' | 'openai-responses' | 'gemini-generate'
+export type SurfaceId = 'anthropic-messages' | 'openai-chat' | 'openai-responses' | 'gemini-generate' | 'openai-images'
 
 export type RoutingMode = 'routed' | 'passthrough'
 
@@ -57,6 +57,8 @@ export type SseAggregator = (response: Response) => Promise<Record<string, unkno
 
 export interface InboundSurface {
   id: SurfaceId
+  /** Image generation has its own JSON-only handler, not the completion pipeline. */
+  operation: 'completion' | 'image'
   /**
    * Display path, and the pattern `surfaceForPath` matches against. For
    * gemini this is a glob, because the real route carries the model in
@@ -79,7 +81,7 @@ export interface InboundSurface {
   /** Error envelope the caller's SDK knows how to parse. */
   errorShape: SurfaceErrorShape
   /** SSE→JSON fold for a non-stream caller served by a streaming upstream. */
-  aggregateSse: SseAggregator
+  aggregateSse?: SseAggregator
   /**
    * The model, for a surface that carries it in the URL instead of
    * `body.model`. Everything downstream — the tier router, the
@@ -132,6 +134,7 @@ export const INITIAL_ROUTING_MODE: RoutingMode = 'passthrough'
 export const INBOUND_SURFACES: readonly InboundSurface[] = [
   {
     id: 'anthropic-messages',
+    operation: 'completion',
     path: '/v1/messages',
     endpoint: '/v1/messages',
     client: 'Claude Code',
@@ -142,6 +145,7 @@ export const INBOUND_SURFACES: readonly InboundSurface[] = [
   },
   {
     id: 'openai-chat',
+    operation: 'completion',
     path: '/v1/chat/completions',
     endpoint: '/v1/chat/completions',
     client: 'OpenAI SDK',
@@ -152,6 +156,7 @@ export const INBOUND_SURFACES: readonly InboundSurface[] = [
   },
   {
     id: 'openai-responses',
+    operation: 'completion',
     path: '/v1/responses',
     endpoint: '/v1/responses',
     client: 'Codex CLI',
@@ -162,6 +167,7 @@ export const INBOUND_SURFACES: readonly InboundSurface[] = [
   },
   {
     id: 'gemini-generate',
+    operation: 'completion',
     path: '/v1beta/models/*',
     endpoint: '/v1beta/models/:modelAndAction',
     client: 'Gemini CLI',
@@ -173,6 +179,16 @@ export const INBOUND_SURFACES: readonly InboundSurface[] = [
     // `:streamGenerateContent` is the only streaming action Google
     // publishes; `:generateContent` and anything else is blocking.
     extractStream: (path) => geminiPathParts(path)?.action === 'streamGenerateContent'
+  },
+  {
+    id: 'openai-images',
+    operation: 'image',
+    path: '/v1/images/generations',
+    endpoint: '/v1/images/generations',
+    client: 'OpenAI SDK',
+    inboundType: 'openai',
+    auth: 'bearer',
+    errorShape: 'openai'
   }
 ] as const
 

@@ -25,21 +25,21 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useSurfaces } from '@/components/rialto/activity/use-surfaces'
 import { useConfirm } from '@/components/rialto/ConfirmDialog'
-import { Pill, RButton } from '@/components/rialto/primitives'
+import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import { IssuedTokenDialog } from '@/components/rialto/settings/access/IssuedTokenDialog'
 import { ANY, Picker, SurfacePicker, sameScope } from '@/components/rialto/settings/access/pickers'
+import { TokenDetailHeader } from '@/components/rialto/settings/access/TokenDetailHeader'
+import { TokenReadings } from '@/components/rialto/settings/access/TokenReadings'
 import { SettingsField } from '@/components/rialto/settings/SettingsLayout'
 import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
 import { type AccessTokenWire, api } from '@/lib/api'
 import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
-import { fmtAgo, fmtCount } from '@/lib/rialto/format'
-import { fmtTokenCount, TOKEN_STATE_PILL, type TokenState, tokenState } from '@/lib/rialto/settings/access-tokens'
-import { fmtCost } from '@/lib/sessions/format'
+import { tokenState } from '@/lib/rialto/settings/access-tokens'
 
 const BACK = '/access-tokens'
 
@@ -64,74 +64,6 @@ interface Revealed {
   scope: string
   profile: string
   expiry: string
-}
-
-/**
- * Identity and the destructive actions.
- *
- * Extracted from TokenDetail because it holds three of that component's
- * branches and none of its state — the page was over the complexity
- * ceiling with them inline.
- */
-function DetailHeader({
-  token,
-  state,
-  busy,
-  onRotate,
-  onRevoke,
-  onDelete
-}: {
-  token: AccessTokenWire
-  state: TokenState
-  busy: boolean
-  onRotate: () => void
-  onRevoke: () => void
-  onDelete: () => void
-}) {
-  const { t } = useTranslation()
-  const pill = TOKEN_STATE_PILL[state]
-  return (
-    <div className='flex items-center gap-3 px-6 pt-6 pb-3'>
-      <Link
-        to={BACK}
-        className='text-muted-foreground hover:text-foreground'
-        aria-label={t('settings.access.backToTokens')}
-      >
-        <i className='ri-arrow-left-line text-base' />
-      </Link>
-      <div className='min-w-0'>
-        <div className='truncate text-sm font-semibold'>{token.name}</div>
-        <div className='font-mono text-[12px] text-muted-foreground'>{token.prefix}</div>
-      </div>
-      <Pill tone={pill.tone}>{t(pill.labelKey)}</Pill>
-      <div className='ml-auto flex items-center gap-2'>
-        {/* Rotate first and revoke second: rotating is the answer to
-            almost every reason for being on this page, and revoking is
-            the one that takes a client offline. Both are red all the same:
-            neither can be undone — a rotated secret is gone the moment the
-            new one is issued.
-            Absent rather than disabled on a dead token: a new secret on
-            a revoked or expired row would not authenticate, so the
-            server refuses the call outright — there is no state in which
-            this control could become live, and a permanently greyed-out
-            button is clutter rather than information. */}
-        {state === 'active' ? (
-          <RButton variant='danger' icon='ri-refresh-line' onClick={onRotate} disabled={busy}>
-            {t('settings.access.rotate')}
-          </RButton>
-        ) : null}
-        {state === 'revoked' ? (
-          <RButton variant='danger' icon='ri-delete-bin-line' onClick={onDelete} disabled={busy}>
-            {t('settings.access.delete')}
-          </RButton>
-        ) : (
-          <RButton variant='danger' icon='ri-forbid-line' onClick={onRevoke} disabled={busy}>
-            {t('settings.access.revoke')}
-          </RButton>
-        )}
-      </div>
-    </div>
-  )
 }
 
 export function TokenDetail() {
@@ -307,7 +239,14 @@ export function TokenDetail() {
   return (
     <Screen crumbs={[{ label: token.name }]} subtitle={t('settings.access.tokenSubtitle')}>
       <div className='min-w-0'>
-        <DetailHeader token={token} state={state} busy={busy} onRotate={rotate} onRevoke={revoke} onDelete={remove} />
+        <TokenDetailHeader
+          token={token}
+          state={state}
+          busy={busy}
+          onRotate={rotate}
+          onRevoke={revoke}
+          onDelete={remove}
+        />
 
         {/* Editable only while the token can actually be used: changing
             the scope of a revoked or expired row alters nothing about
@@ -338,51 +277,7 @@ export function TokenDetail() {
           </Picker>
         </SettingsField>
 
-        <SettingsField label={t('settings.access.detailUsage')} hint={t('settings.access.detailUsageHint')}>
-          <div className='flex items-center gap-4 font-mono text-xs tabular-nums'>
-            <span>{t('settings.access.detailRequests', { n: fmtCount(token.requestCount) })}</span>
-            <span className='text-muted-foreground'>·</span>
-            <span>{fmtCost(token.costUsd)}</span>
-            <span className='text-muted-foreground'>·</span>
-            {/* Same window and same absent-dash as the Cost beside it, so
-                the row reads as one span rather than three. */}
-            <span>
-              {t('settings.access.detailTokens', {
-                in: fmtTokenCount(token.inputTokens),
-                out: fmtTokenCount(token.outputTokens)
-              })}
-            </span>
-            <span className='text-muted-foreground'>·</span>
-            <span className='text-muted-foreground'>
-              {token.lastUsedAt === null
-                ? t('settings.access.never')
-                : t('settings.access.lastUsedAgo', { ago: fmtAgo(token.lastUsedAt, now) })}
-            </span>
-          </div>
-        </SettingsField>
-
-        <SettingsField label={t('settings.access.detailLifetime')} hint={t('settings.access.detailLifetimeHint')}>
-          <div className='space-y-1 font-mono text-xs'>
-            <div>{t('settings.access.detailCreated', { date: token.createdAt.slice(0, 10) })}</div>
-            <div>
-              {token.expiresAt === null
-                ? t('settings.access.detailNoExpiry')
-                : t('settings.access.detailExpires', { date: token.expiresAt.slice(0, 10) })}
-            </div>
-            {/* Absent until the secret has actually been replaced — a
-                "never rotated" line on a week-old token is noise, but on
-                a two-year-old one the absence is the point, so it is the
-                date that appears rather than a reassuring default. */}
-            {token.rotatedAt === null ? null : (
-              <div>{t('settings.access.detailRotated', { date: token.rotatedAt.slice(0, 10) })}</div>
-            )}
-            {token.revokedAt === null ? null : (
-              <div className='text-destructive'>
-                {t('settings.access.detailRevoked', { date: token.revokedAt.slice(0, 10) })}
-              </div>
-            )}
-          </div>
-        </SettingsField>
+        <TokenReadings token={token} now={now} />
 
         <div className='px-6 py-4'>
           <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
