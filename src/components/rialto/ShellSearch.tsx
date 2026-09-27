@@ -3,6 +3,7 @@ import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import {
+  Command,
   CommandDialog,
   CommandEmpty,
   CommandGroup,
@@ -32,30 +33,33 @@ export function NavSearch({ open, onOpenChange }: { open: boolean; onOpenChange:
   )
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} title={t('shell.search')}>
-      <CommandInput placeholder={t('shell.searchPlaceholder')} />
-      <CommandList>
-        <CommandEmpty>{t('shell.searchEmpty')}</CommandEmpty>
-        {NAV.map((section) => (
-          <CommandGroup key={section.id} heading={t(section.labelKey)}>
-            <CommandItem value={t(section.labelKey)} onSelect={() => go(section.href)}>
-              <i aria-hidden className={cn(section.icon, 'text-base leading-none opacity-80')} />
-              {t(section.labelKey)}
-            </CommandItem>
-            {section.children.map((child) => (
-              <CommandItem
-                key={child.id}
-                // The section name is in the value so "activity logs"
-                // finds the child the way the breadcrumb reads it.
-                value={`${t(section.labelKey)} ${t(child.labelKey)}`}
-                onSelect={() => go(child.href)}
-              >
-                <i aria-hidden className={cn(child.icon, 'text-base leading-none opacity-80')} />
-                {t(child.labelKey)}
+      {/* CommandDialog is a plain Dialog; cmdk's input and list need a Command root. */}
+      <Command>
+        <CommandInput placeholder={t('shell.searchPlaceholder')} />
+        <CommandList>
+          <CommandEmpty>{t('shell.searchEmpty')}</CommandEmpty>
+          {NAV.map((section) => (
+            <CommandGroup key={section.id} heading={t(section.labelKey)}>
+              <CommandItem value={t(section.labelKey)} onSelect={() => go(section.href)}>
+                <i aria-hidden className={cn(section.icon, 'text-base leading-none opacity-80')} />
+                {t(section.labelKey)}
               </CommandItem>
-            ))}
-          </CommandGroup>
-        ))}
-      </CommandList>
+              {section.children.map((child) => (
+                <CommandItem
+                  key={child.id}
+                  // The section name is in the value so "activity logs"
+                  // finds the child the way the breadcrumb reads it.
+                  value={`${t(section.labelKey)} ${t(child.labelKey)}`}
+                  onSelect={() => go(child.href)}
+                >
+                  <i aria-hidden className={cn(child.icon, 'text-base leading-none opacity-80')} />
+                  {t(child.labelKey)}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          ))}
+        </CommandList>
+      </Command>
     </CommandDialog>
   )
 }
