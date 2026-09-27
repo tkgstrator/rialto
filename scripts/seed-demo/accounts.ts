@@ -9,6 +9,8 @@
  */
 
 import { AuthStatus, type PrismaClient } from '../../src/generated/prisma/client'
+import { planCapacityWeight } from '../../src/shared/plan-capacity'
+import { windowProjectedPct } from '../../src/shared/quota-pace'
 import { DEMO_PREFIX, demoId } from './demo-rows'
 import type { Random } from './random'
 
@@ -178,48 +180,57 @@ const sawtooth = (elapsedMs: number, windowMs: number, peak: number, random: Ran
 }
 
 /**
- * A week of hourly utilization history per metric, for the Usage chart.
+ * A week of hourly account-level pace history for the Usage chart.
  *
- * Only metrics with no recent samples are generated: on an install whose
- * poller is running, the real series is the interesting one, and a demo
- * series interleaved with it would be a lie about what the account did.
+ * Only accounts and metrics without recent real samples are generated;
+ * mixing invented readings with a live account would distort its pace.
  */
 async function ensureUsageHistory(prisma: PrismaClient, random: Random, now: number): Promise<number> {
   const accounts = await prisma.subAccount.findMany({ include: { provider: { select: { apiBaseUrl: true } } } })
-  const kinds = new Set(accounts.map((a) => kindOf(a.provider.apiBaseUrl)))
-  const series = [
-    ...(kinds.has('claude')
-      ? [
-          { provider: 'claude', metric: 'claude.five_hour', windowMs: 5 * HOUR_MS, peak: 90 },
-          { provider: 'claude', metric: 'claude.seven_day', windowMs: 7 * DAY_MS, peak: 70 }
-        ]
-      : []),
-    ...(kinds.has('codex')
-      ? [
-          { provider: 'codex', metric: 'codex.primary', windowMs: 5 * HOUR_MS, peak: 85 },
-          { provider: 'codex', metric: 'codex.secondary', windowMs: 7 * DAY_MS, peak: 60 }
-        ]
-      : [])
-  ]
-
   const rows = []
-  for (const [seriesIdx, s] of series.entries()) {
-    const recent = await prisma.usageSnapshot.findFirst({
-      where: { metric: s.metric, capturedAt: { gte: new Date(now - 2 * DAY_MS) } }
-    })
-    if (recent !== null) continue
-    // 7 days at one sample an hour: enough for the chart's shape without
-    // writing the poller's full 5-minute cadence.
-    for (const hour of Array.from({ length: 7 * 24 }, (_, i) => i)) {
-      const capturedAt = new Date(now - hour * HOUR_MS)
-      rows.push({
-        id: `${DEMO_PREFIX}snap-${seriesIdx}-${String(hour).padStart(4, '0')}`,
-        provider: s.provider,
-        metric: s.metric,
-        percent: sawtooth(now - hour * HOUR_MS, s.windowMs, s.peak, random),
-        resetAt: new Date(now + s.windowMs - ((now - hour * HOUR_MS) % s.windowMs)),
-        capturedAt
+  for (const [accountIdx, account] of accounts.entries()) {
+    const kind = kindOf(account.provider.apiBaseUrl)
+    const series =
+      kind === 'claude'
+        ? [
+            { metric: 'claude.five_hour', windowMs: 5 * HOUR_MS, peak: 90 },
+            { metric: 'claude.seven_day', windowMs: 7 * DAY_MS, peak: 70 }
+          ]
+        : kind === 'codex'
+          ? [
+              { metric: 'codex.primary', windowMs: 5 * HOUR_MS, peak: 85 },
+              { metric: 'codex.secondary', windowMs: 7 * DAY_MS, peak: 60 }
+            ]
+          : []
+    for (const [seriesIdx, s] of series.entries()) {
+      const recent = await prisma.usageSnapshot.findFirst({
+        where: {
+          metric: s.metric,
+          subAccountId: account.id,
+          capturedAt: { gte: new Date(now - 2 * DAY_MS) },
+          id: { not: { startsWith: DEMO_PREFIX } }
+        }
       })
+      if (recent !== null) continue
+      // 7 days at one sample an hour: enough for the chart's shape without
+      // writing the poller's full 5-minute cadence.
+      for (const hour of Array.from({ length: 7 * 24 }, (_, i) => i)) {
+        const capturedAt = new Date(now - hour * HOUR_MS)
+        const phase = (now - hour * HOUR_MS) % s.windowMs
+        const resetAt = new Date(capturedAt.valueOf() + s.windowMs - phase)
+        const percent = sawtooth(now - hour * HOUR_MS, s.windowMs, s.peak, random)
+        rows.push({
+          id: `${DEMO_PREFIX}snap-${accountIdx}-${seriesIdx}-${String(hour).padStart(4, '0')}`,
+          provider: kind,
+          metric: s.metric,
+          subAccountId: account.id,
+          planWeight: planCapacityWeight(kind === 'other' ? null : kind, account.plan, account.rateLimitTier),
+          percent,
+          resetAt,
+          projectedPct: windowProjectedPct(percent, resetAt.valueOf(), s.windowMs, capturedAt.valueOf()),
+          capturedAt
+        })
+      }
     }
   }
   if (rows.length > 0) await prisma.usageSnapshot.createMany({ data: rows })

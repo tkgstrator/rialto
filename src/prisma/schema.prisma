@@ -676,17 +676,22 @@ model RequestLog {
   @@index([surface, createdAt])
 }
 
-// Time series of subscription utilization, captured on an interval so
-// the Usage view can chart the past week. `metric` is the window key
-// (e.g. claude.five_hour, claude.seven_day, codex.primary). `percent`
-// is 0-100. Old rows are pruned to keep this bounded.
+// Time series of per-account subscription windows. `metric` is the
+// window key (e.g. claude.five_hour, codex.primary); `percent` is the
+// vendor's unmodified use. `projectedPct` is the pace at capture time,
+// nullable when too early or missing a reset/length. Older aggregate
+// rows have no account, weight or forecast and cannot be reconstructed.
+// Keep account ids without an FK so deleting a credential retains history.
 model UsageSnapshot {
-  id         String    @id @default(cuid())
-  provider   String
-  metric     String
-  percent    Float
-  resetAt    DateTime?
-  capturedAt DateTime  @default(now())
+  id           String    @id @default(cuid())
+  provider     String
+  metric       String
+  percent      Float
+  resetAt      DateTime?
+  subAccountId String?
+  planWeight   Float?
+  projectedPct Float?
+  capturedAt   DateTime  @default(now())
 
   @@index([provider, metric, capturedAt])
   @@index([capturedAt])

@@ -1,19 +1,31 @@
+import { planCapacityWeight } from '@/shared/plan-capacity'
+import { windowProjectedPct } from '@/shared/quota-pace'
 import { getPrismaClient } from '../db/client'
 import dayjs from '../lib/dayjs'
 import { logger } from '../logger'
+import type { ClaudeUsage, CodexUsage } from '../schemas/api/usage'
 import { refreshQuotaSnapshots } from './routing-scheduler/collector'
 import { recordPerAccountUsage, scopedMetricKey } from './subaccount-usage-store'
-import { fetchUsageSnapshotWithAccountIds, type getUsage } from './usage-service'
+import { fetchUsageSnapshotWithAccountIds } from './usage-service'
 
-// Keep a bit more than the week the UI charts so the edges look full.
-const RETAIN_DAYS = 8
+// The chart offers 30 days; keep the edge beyond its longest range.
+const RETAIN_DAYS = 31
+const FIVE_HOURS_MS = 5 * 60 * 60 * 1000
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000
+const STALE_MS = 6 * 60 * 1000
 
 interface SnapshotRow {
   provider: string
   metric: string
   percent: number
   resetAt: Date | null
+  subAccountId: string
+  planWeight: number
+  projectedPct: number | null
+  capturedAt: Date
 }
+
+type AccountMeta = { kind: 'claude' | 'codex'; plan: string | null; rateLimitTier: string | null }
 
 const toDate = (iso: string | null): Date | null => {
   if (!iso) return null
@@ -21,85 +33,114 @@ const toDate = (iso: string | null): Date | null => {
   return d.isValid() ? d.toDate() : null
 }
 
-// Flatten the live usage snapshot into one row per window.
-// When multiple accounts share the same metric (e.g. two Claude Max
-// subscriptions), average their utilization so the chart reflects
-// combined capacity usage rather than just the most-constrained account.
-// resetAt is taken from the account whose quota resets soonest.
-const flatten = (u: Awaited<ReturnType<typeof getUsage>>): SnapshotRow[] => {
-  const acc = new Map<string, { provider: string; sumPercent: number; count: number; resetAt: Date | null }>()
-
-  const add = (provider: string, metric: string, percent: number, resetAt: Date | null) => {
-    const prev = acc.get(metric)
-    if (!prev) {
-      acc.set(metric, { provider, sumPercent: percent, count: 1, resetAt })
-    } else {
-      const earliest =
-        prev.resetAt === null
-          ? resetAt
-          : resetAt === null
-            ? prev.resetAt
-            : resetAt < prev.resetAt
-              ? resetAt
-              : prev.resetAt
-      acc.set(metric, { provider, sumPercent: prev.sumPercent + percent, count: prev.count + 1, resetAt: earliest })
+const accountRows = (
+  subAccountId: string,
+  provider: 'claude' | 'codex',
+  capturedAt: string,
+  windows: readonly { metric: string; percent: number; resetAt: string | null; durationMs: number | null }[],
+  meta: AccountMeta | undefined,
+  now: number
+): SnapshotRow[] => {
+  const captured = dayjs(capturedAt)
+  // A cached response from a failed poll must not become a new reading.
+  if (!captured.isValid() || Math.abs(now - captured.valueOf()) > STALE_MS) return []
+  const weight = meta === undefined ? 1 : planCapacityWeight(meta.kind, meta.plan, meta.rateLimitTier)
+  return windows.map((w) => {
+    const resetAt = toDate(w.resetAt)
+    return {
+      provider,
+      metric: w.metric,
+      percent: w.percent,
+      resetAt,
+      subAccountId,
+      planWeight: weight,
+      projectedPct: windowProjectedPct(
+        w.percent,
+        resetAt === null ? null : resetAt.valueOf(),
+        w.durationMs,
+        captured.valueOf()
+      ),
+      capturedAt: dayjs(now).floor('minute', 5).toDate()
     }
-  }
+  })
+}
 
-  for (const c of u.claude) {
-    if (c.fiveHour) add('claude', 'claude.five_hour', c.fiveHour.utilization, toDate(c.fiveHour.resetsAt))
-    if (c.sevenDay) add('claude', 'claude.seven_day', c.sevenDay.utilization, toDate(c.sevenDay.resetsAt))
-    if (c.sevenDaySonnet)
-      add('claude', 'claude.seven_day_sonnet', c.sevenDaySonnet.utilization, toDate(c.sevenDaySonnet.resetsAt))
-    if (c.sevenDayOpus)
-      add('claude', 'claude.seven_day_opus', c.sevenDayOpus.utilization, toDate(c.sevenDayOpus.resetsAt))
-    for (const scoped of c.weeklyScoped) {
-      add('claude', scopedMetricKey(scoped.modelName), scoped.utilization, toDate(scoped.resetsAt))
-    }
+export const claudeHistoryRows = (u: ClaudeUsage, meta: AccountMeta | undefined, now: number): SnapshotRow[] => {
+  const windows: { metric: string; percent: number; resetAt: string | null; durationMs: number }[] = []
+  const add = (metric: string, value: { utilization: number; resetsAt: string | null } | null, durationMs: number) => {
+    if (value !== null) windows.push({ metric, percent: value.utilization, resetAt: value.resetsAt, durationMs })
   }
-  for (const x of u.codex) {
-    if (x.primary) add('codex', 'codex.primary', x.primary.usedPercent, toDate(x.primary.resetAt))
-    if (x.secondary) add('codex', 'codex.secondary', x.secondary.usedPercent, toDate(x.secondary.resetAt))
+  add('claude.five_hour', u.fiveHour, FIVE_HOURS_MS)
+  add('claude.seven_day', u.sevenDay, WEEK_MS)
+  add('claude.seven_day_sonnet', u.sevenDaySonnet, WEEK_MS)
+  add('claude.seven_day_opus', u.sevenDayOpus, WEEK_MS)
+  for (const scoped of u.weeklyScoped) {
+    windows.push({
+      metric: scopedMetricKey(scoped.modelName),
+      percent: scoped.utilization,
+      resetAt: scoped.resetsAt,
+      durationMs: WEEK_MS
+    })
   }
+  return accountRows(u.subAccountId, 'claude', u.capturedAt, windows, meta, now)
+}
 
-  return [...acc.entries()].map(([metric, { provider, sumPercent, count, resetAt }]) => ({
-    provider,
-    metric,
-    percent: sumPercent / count,
-    resetAt
-  }))
+export const codexHistoryRows = (u: CodexUsage, meta: AccountMeta | undefined, now: number): SnapshotRow[] => {
+  const windows: { metric: string; percent: number; resetAt: string | null; durationMs: number | null }[] = []
+  if (u.primary !== null) {
+    windows.push({
+      metric: 'codex.primary',
+      percent: u.primary.usedPercent,
+      resetAt: u.primary.resetAt,
+      durationMs: u.primary.windowSeconds === null ? null : u.primary.windowSeconds * 1000
+    })
+  }
+  if (u.secondary !== null) {
+    windows.push({
+      metric: 'codex.secondary',
+      percent: u.secondary.usedPercent,
+      resetAt: u.secondary.resetAt,
+      durationMs: u.secondary.windowSeconds === null ? null : u.secondary.windowSeconds * 1000
+    })
+  }
+  return accountRows(u.subAccountId, 'codex', u.capturedAt, windows, meta, now)
 }
 
 export async function recordUsageSnapshots(): Promise<void> {
-  // Pull once with subAccountId pairing so we can feed both the
-  // aggregated history table and the per-account state table without
-  // a second network round-trip to the upstream usage APIs.
   const paired = await fetchUsageSnapshotWithAccountIds()
   const usage = { claude: paired.claude.map((p) => p.usage), codex: paired.codex.map((p) => p.usage) }
-  const rows = flatten(usage)
-  if (rows.length > 0) {
-    // Snap to the 5-min mark (BullMQ fires the job on the same grid via
-    // cron */5) so every capture lands on a clean :00/:05/:10 boundary
-    // and one capture's rows share an identical pivot timestamp.
-    const capturedAt = dayjs().floor('minute', 5).toDate()
-    await getPrismaClient().usageSnapshot.createMany({
-      data: rows.map((r) => ({ ...r, capturedAt }))
+  const now = dayjs().valueOf()
+  const ids = [...usage.claude, ...usage.codex].map((u) => u.subAccountId)
+  const accounts = await getPrismaClient().subAccount.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, plan: true, rateLimitTier: true }
+  })
+  const meta = new Map(accounts.map((a) => [a.id, a]))
+  const rows = [
+    ...usage.claude.flatMap((u) => {
+      const account = meta.get(u.subAccountId)
+      return claudeHistoryRows(
+        u,
+        account === undefined
+          ? undefined
+          : { kind: 'claude', plan: account.plan, rateLimitTier: account.rateLimitTier },
+        now
+      )
+    }),
+    ...usage.codex.flatMap((u) => {
+      const account = meta.get(u.subAccountId)
+      if (account === undefined) return codexHistoryRows(u, undefined, now)
+      return codexHistoryRows(
+        u,
+        { kind: 'codex', plan: u.planType === null ? account.plan : u.planType, rateLimitTier: account.rateLimitTier },
+        now
+      )
     })
-  }
-  // Per-account current state — the router reads this on every routing
-  // decision to skip accounts whose 7d / 5h window is at 100% with
-  // resetAt still in the future.
+  ]
+  if (rows.length > 0) await getPrismaClient().usageSnapshot.createMany({ data: rows })
   await recordPerAccountUsage(paired.claude, paired.codex)
-  // Phase 1 of the quota-aware preference router: mirror the same
-  // snapshot into the horizontal `SubAccountQuota` table so the future
-  // scheduler tick has a warm read source. Reuses the already-fetched
-  // arrays — no extra upstream traffic. Errors are logged and
-  // swallowed; the primary usage/history writes above are the
-  // authoritative path, this is best-effort auxiliary data.
   const outcome = await refreshQuotaSnapshots({ claude: paired.claude, codex: paired.codex })
-  if (outcome.failed > 0) {
-    logger.warn(outcome, '[routing-scheduler] SubAccountQuota refresh had per-account failures')
-  }
+  if (outcome.failed > 0) logger.warn(outcome, '[routing-scheduler] SubAccountQuota refresh had per-account failures')
 }
 
 export async function pruneOldSnapshots(): Promise<void> {
@@ -108,33 +149,59 @@ export async function pruneOldSnapshots(): Promise<void> {
   })
 }
 
-// One raw snapshot row. The backend stays a thin DB read — every
-// chart-shaping decision (deltas, reset clamping, moving average,
-// line vs bar) lives in the frontend.
 export interface UsageSample {
   metric: string
-  percent: number
+  projectedPct: number | null
   t: string
-  resetAt: string | null
 }
 
 export interface UsageHistory {
   samples: UsageSample[]
 }
 
-export async function getUsageHistory(days: number): Promise<UsageHistory> {
-  const since = dayjs().subtract(days, 'day').toDate()
-  const rows = await getPrismaClient().usageSnapshot.findMany({
-    where: { capturedAt: { gte: since }, metric: { not: { contains: ':' } } },
-    orderBy: { capturedAt: 'asc' },
-    select: { metric: true, percent: true, capturedAt: true, resetAt: true }
-  })
-  return {
-    samples: rows.map((r) => ({
-      metric: r.metric,
-      percent: r.percent,
-      t: dayjs(r.capturedAt).toISOString(),
-      resetAt: r.resetAt ? dayjs(r.resetAt).toISOString() : null
-    }))
+interface HistoryRow {
+  metric: string
+  capturedAt: Date
+  subAccountId: string | null
+  planWeight: number | null
+  projectedPct: number | null
+}
+
+// Do not merge old aggregate rows with account samples or count an
+// unknown forecast as idle. Each point names one window and poll time.
+export function aggregatePaceHistory(rows: readonly HistoryRow[]): UsageSample[] {
+  const grouped = new Map<string, { metric: string; t: string; sum: number; weight: number; accounts: Set<string> }>()
+  for (const row of rows) {
+    const t = dayjs(row.capturedAt).toISOString()
+    const key = `${t}:${row.metric}`
+    const previous = grouped.get(key)
+    const bucket =
+      previous === undefined ? { metric: row.metric, t, sum: 0, weight: 0, accounts: new Set<string>() } : previous
+    if (
+      row.subAccountId !== null &&
+      row.projectedPct !== null &&
+      Number.isFinite(row.projectedPct) &&
+      !bucket.accounts.has(row.subAccountId)
+    ) {
+      const weight = row.planWeight !== null && row.planWeight > 0 ? row.planWeight : 1
+      bucket.sum += row.projectedPct * weight
+      bucket.weight += weight
+      bucket.accounts.add(row.subAccountId)
+    }
+    grouped.set(key, bucket)
   }
+  return [...grouped.values()].map((b) => ({
+    metric: b.metric,
+    t: b.t,
+    projectedPct: b.weight === 0 ? null : Math.round((b.sum / b.weight) * 10) / 10
+  }))
+}
+
+export async function getUsageHistory(days: number): Promise<UsageHistory> {
+  const rows = await getPrismaClient().usageSnapshot.findMany({
+    where: { capturedAt: { gte: dayjs().subtract(days, 'day').toDate() }, metric: { not: { contains: ':' } } },
+    orderBy: { capturedAt: 'asc' },
+    select: { metric: true, capturedAt: true, subAccountId: true, planWeight: true, projectedPct: true }
+  })
+  return { samples: aggregatePaceHistory(rows) }
 }
