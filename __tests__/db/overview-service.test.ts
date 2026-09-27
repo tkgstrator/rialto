@@ -63,7 +63,8 @@ describe.skipIf(!HAS_DB)('getOverview', () => {
       'anthropic-messages',
       'openai-chat',
       'openai-responses',
-      'gemini-generate'
+      'gemini-generate',
+      'openai-images'
     ])
     expect(out.surfaces.every((s) => s.requests === 0)).toBe(true)
   })

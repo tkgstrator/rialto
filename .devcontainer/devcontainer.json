@@ -26,6 +26,7 @@
     // "ANTHROPIC_AUTH_TOKEN": "${localEnv:ANTHROPIC_AUTH_TOKEN}"
   },
   "containerEnv": {
+    "CLAUDE_CODE_AUTO_MODE_SERVER": "0",
     "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
   },
   "mounts": [

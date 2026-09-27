@@ -54,13 +54,11 @@ export const ModelTestAllResponseSchema = z
 // missing fields as "no change".
 export const UpdateModelBodySchema = z.object({
   enabled: z.boolean().optional(),
-  // Manual reasoning-effort override for OpenAI / OpenAI-Responses /
-  // Codex models. null clears the override (vendor default = medium);
-  // omit to leave the current value untouched. Enum mirrors the values
-  // the OpenAI OpenAPI spec accepts — not every reasoning model supports
-  // every value, but the transformer passes through and 400s surface as
-  // upstream errors, not schema violations.
-  reasoningEffort: z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']).nullable().optional()
+  // Reasoning-effort override for OpenAI / Responses / Codex models.
+  // null clears the override; omit to leave the current value untouched.
+  // `auto` is a local policy sentinel, never a wire value. Manual values
+  // retain their existing pass-through semantics; a model may reject one.
+  reasoningEffort: z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto']).nullable().optional()
 })
 
 export const ReasoningEffortSchema = z

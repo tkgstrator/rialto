@@ -20,7 +20,8 @@ import { getEnabledModels } from '../../services/config'
 export const v1ModelsRoute = new Hono()
 
 v1ModelsRoute.get('/v1/models', async (c) => {
-  const models = await getEnabledModels()
+  const [chatModels, imageModels] = await Promise.all([getEnabledModels(), getEnabledModels(undefined, 'image')])
+  const models = [...chatModels, ...imageModels]
   // OpenAI uses seconds-since-epoch for `created`; the value carries no
   // real meaning here (there is no per-model creation time in Rialto), so
   // stamp the response time uniformly. SDKs that render "last modified"

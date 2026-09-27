@@ -105,13 +105,13 @@ export async function setModelEnabled(providerName: string, modelName: string, e
   resetLlmsContext()
 }
 
-// Manual reasoning-effort override for OpenAI-style reasoning models.
+// Per-model effort override, including the local Auto policy sentinel.
 // `null` clears the override, restoring the vendor default. Consumed at
 // unified-request build time in src/llms/request-effort-override.ts.
 export async function setModelReasoningEffort(
   providerName: string,
   modelName: string,
-  reasoningEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null
+  reasoningEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto' | null
 ): Promise<void> {
   const prisma = getPrismaClient()
   const model = await prisma.model.findFirst({

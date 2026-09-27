@@ -13,18 +13,14 @@ import { setModelDisabled } from '@/lib/providers/provider-edits'
 import type { SubscriptionRefreshResponse } from '@/schemas/api/subscriptions'
 import type { SavePlan } from './provider-draft'
 import type { AliasChange } from './tier-aliases'
-import type { ModelTestResponse, Provider, Tier } from './types'
+import type { ModelTestResponse, Provider, ReasoningEffort, Tier } from './types'
 
 /**
  * Set or clear the per-model reasoning effort. Null sends nothing and
  * leaves the vendor default in place, which is not the same as writing
  * that default into every request.
  */
-export async function setModelEffort(
-  provider: Provider,
-  model: string,
-  effort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null
-): Promise<void> {
+export async function setModelEffort(provider: Provider, model: string, effort: ReasoningEffort | null): Promise<void> {
   await api.setModelReasoningEffort(provider.name, model, effort)
 }
 

@@ -15,6 +15,7 @@
 
 import { describe, expect, test } from 'bun:test'
 import { OpenAITransformer } from '../../src/llms/transformers/openai'
+import { OpenAIResponsesTransformer } from '../../src/llms/transformers/openai/endpoint-responses'
 import type { TransformerContext, UnifiedChatRequest } from '../../src/schemas/domain'
 
 const t = new OpenAITransformer()
@@ -110,6 +111,41 @@ describe('OpenAITransformer.transformRequestOut — reasoning_effort translation
       ctx
     )) as UnifiedChatRequest & { reasoning?: { effort?: string; max_tokens?: number } }
     expect(out.reasoning).toEqual({ max_tokens: 100, effort: 'medium' })
+  })
+})
+
+describe('OpenAITransformer.transformRequestIn — Chat effort wire shape', () => {
+  const provider = { name: 'openai', api_base_url: 'https://api.openai.com/v1/chat/completions', api_key: 'test' }
+
+  test('restores a client scalar after the unified outbound conversion', async () => {
+    const unified = await t.transformRequestOut({ model: 'gpt-5.4', messages: [], reasoning_effort: 'low' }, ctx)
+    const sent = await t.transformRequestIn(unified, provider, ctx)
+    expect(Reflect.get(sent, 'reasoning_effort')).toBe('low')
+    expect(Reflect.has(sent, 'reasoning')).toBe(false)
+  })
+
+  test('manual override wins over client scalar', async () => {
+    const unified = await t.transformRequestOut({ model: 'gpt-5.4', messages: [], reasoning_effort: 'low' }, ctx)
+    const sent = await t.transformRequestIn(unified, { ...provider, modelReasoningEfforts: { 'gpt-5.4': 'high' } }, ctx)
+    expect(Reflect.get(sent, 'reasoning_effort')).toBe('high')
+    expect(Reflect.has(sent, 'reasoning')).toBe(false)
+  })
+})
+
+describe('OpenAIResponsesTransformer.transformRequestIn — reasoning summary', () => {
+  test('preserves caller summary when effort is absent', async () => {
+    const responses = new OpenAIResponsesTransformer()
+    const request = await responses.transformRequestOut(
+      { model: 'gpt-5.4', input: 'hello', reasoning: { summary: 'auto' } },
+      ctx
+    )
+    const result = await responses.transformRequestIn(request, {
+      name: 'openai',
+      api_base_url: 'https://api.openai.com/v1/responses',
+      api_key: 'test'
+    })
+    const body = 'body' in result ? result.body : result
+    expect(Reflect.get(body, 'reasoning')).toEqual({ effort: undefined, summary: 'auto' })
   })
 })
 

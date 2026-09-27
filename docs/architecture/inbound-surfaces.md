@@ -52,7 +52,7 @@ Hono はマッチする middleware を**すべて**走らせるので、OpenAI �
 記述子ディスパッチ（`inboundProxyAuth`）は面ごとに1つだけ走るので、この二重計上は解消される。
 既存の `requestCount` の値はそのまま（遡及補正はしない）。
 
-## 4つの面
+## 5つの面
 
 | id | path | endpoint | 想定クライアント | inboundType | auth | errorShape |
 |---|---|---|---|---|---|---|
@@ -60,9 +60,10 @@ Hono はマッチする middleware を**すべて**走らせるので、OpenAI �
 | `openai-chat` | `/v1/chat/completions` | `/v1/chat/completions` | OpenAI SDK | `openai` | `bearer` | `openai` |
 | `openai-responses` | `/v1/responses` | `/v1/responses` | Codex CLI | `openai` | `bearer` | `openai` |
 | `gemini-generate` | `/v1beta/models/*` | `/v1beta/models/:modelAndAction` | Gemini CLI | `gemini` | `google` | `google` |
+| `openai-images` | `/v1/images/generations` | `/v1/images/generations` | OpenAI SDK（画像生成） | `openai` | `bearer` | `openai` |
 
 `path` は `surfaceForPath` がマッチさせる表示用パターン、`endpoint` は Hono のマウント先であり
-同時に所有 transformer が宣言する `endPoint` キー。`/v1` の3面では両者は同一で、gemini だけ
+同時に所有 transformer が宣言する `endPoint` キー（`openai-images` は transformer を持たない）。`/v1` の面では両者は同一で、gemini だけ
 食い違う（モデル名が入るパスセグメントを glob では名指しできないため）。
 
 `GET /v1/models` はカタログ読み出しであって完了リクエストの面ではないので、`INBOUND_SURFACES`
@@ -90,6 +91,66 @@ Hono はマッチする middleware を**すべて**走らせるので、OpenAI �
 そもそもクエリ経由の鍵を拒否しているのは、アクセスログ・履歴・Referer への漏洩を避けるため。
 Google のワイヤ規約に代替が無いのでこの面だけ受理する。`accessLog` は `c.req.path`（クエリ無し）
 を記録するので、少なくともログファイルには残らない。
+
+### 画像生成面（`openai-images`）
+
+記述子の `operation` は完了系が `'completion'`、この面だけ `'image'`。`'image'` の面には
+`aggregateSse` が無く、chat の transformer / pipeline を一切通らない専用ハンドラ
+（`src/api/v1/images.ts` の `handleImageGeneration`）がマウントされる。認証（発行済み
+アクセストークンの Bearer、面スコープ込み）・OpenAI エラー封筒・アクセスログは他の面と共通。
+
+- **宛先は Codex サブスクリプションだけ。** 受け付けるモデルは `CODEX_IMAGE_MODELS`
+  （`src/shared/data/subscriptions.ts`：`gpt-image-2.5-flare` / `gpt-image-2.5-sunburst`）で、
+  `authMode = subscription` かつ `apiBaseUrl = https://chatgpt.com/backend-api/codex` の
+  provider 上で provider・model とも有効なものに限る。`provider,model` か、有効な provider が
+  1つだけのときの素の名前。曖昧・無効・未対応は 400 で、上流へは何も送らない。
+- **既定は無効（オプトイン）。** 両モデルは Codex プリセットの `availableModels` に入るが
+  `defaultEnabledModels` には入らない。provider ページで有効化する。価格は公開されていないので
+  通常の価格3列は null のまま。Codexのサブスク枠に実際の従量課金単価があると誤認させないため、
+  API参考単価はモダリティ別に別表示する。chat のルート・tier alias 候補・モデルテスト・
+  scheduler の対象からは外してある。
+- **常に passthrough。** routingMode は `passthrough` 固定で、`routed` への変更は拒否する。
+  `deniedTargets` は効く（403）。
+- **リクエスト**：`application/json`、128 KiB 以下。`model`・`prompt`（1〜32,000 文字）必須、
+  任意で `size`（`auto` / `1024x1024` / `1024x1536` / `1536x1024`）、`quality`
+  （`auto` / `low` / `medium` / `high`）、`background`（`auto` / `opaque` / `transparent`）、
+  `n: 1`、`response_format: "b64_json"`。それ以外のフィールド（`stream` など）は 400。
+  画像編集（`/v1/images/edits`）、ストリーミング、`response_format: "url"`、`n > 1` は非対応。
+- **上流**：`<apiBaseUrl>/images/generations` に許可リストのフィールドだけを送る。
+  `Authorization` / `chatgpt-account-id` / `originator` はサーバ側で組み立て、呼び手のヘッダは
+  転送しない。アカウントは chat と同じ picker（`resolveAccountForSession`）で選び、429 では
+  そのアカウントに exhaustion mark を付けて次のアカウントへ回す（最大 10 回）。
+- **レスポンス**：上流の JSON（`created` / `data[0].b64_json` / `usage`）をそのまま返す。
+  `data` が画像1件でない 2xx は 502。上流のエラーは OpenAI 封筒に包み、`Retry-After` と
+  `x-rialto-upstream` を付ける。
+- **記録**：成功時に `RequestLog` を1行（`surface = openai-images`、`scenario = passthrough`、
+  上流が返したトークン数、`subAccountId`、`accessTokenId`）。`CAPTURE_REQUESTS=false` で止まる。
+  プロンプトも画像も `Message` には保存しない。
+
+**モデル情報と単価の更新：** Providers の「Refresh」で OpenAI の公開モデル個別ページ
+（`https://developers.openai.com/api/docs/models/gpt-image-2.5-flare` と
+`.../gpt-image-2.5-sunburst`）を読み、モデルごとにテキスト入力・キャッシュ入力、画像入力・
+キャッシュ入力・画像出力の5レートと公開スナップショットIDを更新する。ページが取れない／
+一部欠落した場合は、2026-09-26 時点のコミット済みスナップショットまたは前回の成功値を保持する。
+現在の両モデルはテキスト入力 $5 / キャッシュ $1.25、画像入力 $8 / キャッシュ $2、画像出力
+$30（いずれも100万トークンあたり）。これは**公開 API の参考価格**であり Codex サブスクの
+請求額ではない。価格表と3列の `Model` 単価は入力モダリティを区別できないため、画像モデルの
+通常の価格列・Activity の金額は未知のまま。上流の使用量がテキスト／画像別に確認できない状態で
+合算トークンを単一の入力単価に掛けることはしない。公開ページの対応エンドポイントに edits が
+載っていても、Rialto のこの面は generations のみ受け付ける。新しい画像モデル ID の自動発見は
+しない。
+
+Codex の会話モデル一覧は OpenAI の公開価格表から推定しない。接続時と Providers の Refresh 時に、
+接続済みアカウントの OAuth bearer と account ID を使って Codex CLI と同じ
+`GET https://chatgpt.com/backend-api/codex/models?client_version=...` の `models[].slug`
+を取得し、新しい ID を無効のモデル行として追加する。既存行のスイッチは変えず、取得に失敗しても
+既存行を消さない。これにより価格表にない `gpt-5.6-terra` なども、アカウントが一覧で返せば
+Providers に表示される。公開モデル詳細ページの存在だけではサブスク枠の利用権限は確定しない。
+画像モデルは実際に動作確認した2モデルを従来どおり別途扱う。
+
+**注意：この上流は ChatGPT の非公開エンドポイントである。** Codex CLI が使う内部 API で、
+OpenAI の公開 Images API の契約ではない。予告なく形が変わり得るので、この面は OpenAI 互換を
+保証しない。
 
 ## routingMode — 「messages専用に見える」問題の正体
 

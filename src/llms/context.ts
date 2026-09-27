@@ -14,6 +14,7 @@ import { logger } from '../logger'
 import { loadFullConfig } from '../services/config'
 import { disabledSet } from '../services/config/transformer'
 import { applySubscriptionAuth } from '../services/subscription-overlay'
+import { isCodexImageModel } from '../shared/data/subscriptions'
 import { ConfigStore } from './registry/config'
 import { ProviderRegistry } from './registry/provider'
 import { TokenizerRegistry } from './registry/tokenizer'
@@ -107,8 +108,7 @@ function servableProviders(providers: Provider[]): Provider[] {
     .filter((p) => p.enabled !== false)
     .map((p) => {
       const disabled = disabledSet(p.transformer)
-      if (disabled.size === 0) return p
-      return { ...p, models: p.models.filter((m) => !disabled.has(m)) }
+      return { ...p, models: p.models.filter((m) => !disabled.has(m) && !isCodexImageModel(m)) }
     })
 }
 

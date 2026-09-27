@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { Pill, Toggle } from '@/components/rialto/primitives'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
 import { fmtCost } from '@/lib/sessions/format'
+import { claudeCodeEffortsFor, openAiEffortsFor } from '@/shared/model-reasoning-effort'
 import { fmtContext, type ModelRow } from './derive'
 import { SwitchReading } from './SwitchReading'
 import { TIERS } from './tier-aliases'
@@ -47,12 +48,14 @@ const CELL_TONE: Record<CellTone, string> = {
  */
 function OverrideCell({
   value,
+  reading = value,
   tone,
   label,
   options,
   onChange
 }: {
   value: string
+  reading?: string
   tone: CellTone
   label: string
   options: readonly { value: string; label: string }[]
@@ -65,7 +68,7 @@ function OverrideCell({
         CELL_TONE[tone]
       )}
     >
-      {value}
+      {reading}
       <i className='ri-arrow-down-s-line text-xs opacity-60' />
       <select
         aria-label={label}
@@ -177,11 +180,10 @@ function Head({
 }
 
 const DASH = '—'
-const EFFORTS: readonly ReasoningEffort[] = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+const EFFORTS: readonly ReasoningEffort[] = ['auto', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 
 // Narrowing by lookup rather than by assertion: the select hands back a
-// string, and the only strings that mean anything are the ones in this
-// table. Anything else — including the dash — clears the override.
+// string, and only options in this table are accepted.
 const toEffort = (value: string): ReasoningEffort | null => {
   const found = EFFORTS.find((effort) => effort === value)
   return found === undefined ? null : found
@@ -207,27 +209,53 @@ function AliasCell({ row }: { row: ModelRow }) {
 function EffortCell({
   row,
   editable,
+  effortKind,
   onEffort
 }: {
   row: ModelRow
   editable: boolean
+  effortKind: 'openai' | 'claude-code'
   onEffort: (model: string, next: ReasoningEffort | null) => void
 }) {
   const { t } = useTranslation()
   const value = row.effort === null ? DASH : row.effort
+  const reading = row.effort === 'auto' ? t('providers.models.effortAuto') : value
   const tone = row.effort === null ? 'unset' : 'set'
-  if (!editable) return <ReadCell value={value} tone={tone} />
+  const known = effortKind === 'claude-code' ? claudeCodeEffortsFor(row.name) : openAiEffortsFor(row.name)
+  const manualOptions =
+    known === null
+      ? effortKind === 'claude-code'
+        ? EFFORTS.filter((option) => option === 'auto' || option === row.effort)
+        : EFFORTS
+      : EFFORTS.filter((option) => option === 'auto' || option === row.effort || known.includes(option))
+  if (!editable) return <ReadCell value={reading} tone={tone} />
   return (
     <OverrideCell
       value={value}
+      reading={reading}
       tone={tone}
       label={t('providers.models.setEffort', { model: row.name })}
       options={[
         { value: DASH, label: t('providers.models.effortDefault') },
-        ...EFFORTS.map((option) => ({ value: option, label: option }))
+        ...manualOptions.map((option) => ({
+          value: option,
+          label: option === 'auto' ? t('providers.models.effortAutoOption') : option
+        }))
       ]}
       onChange={(next) => onEffort(row.name, toEffort(next))}
     />
+  )
+}
+
+function ImagePriceBadge({ pricing }: { pricing: ModelRow['imagePricing'] }) {
+  if (pricing === null) return null
+  return (
+    <span
+      className='text-[11px] text-muted-foreground'
+      title={`API-equivalent USD per 1M tokens (not subscription billing). Text input $${pricing.textInputPer1M}, cached text input $${pricing.cachedTextInputPer1M}; image input $${pricing.imageInputPer1M}, cached image input $${pricing.cachedImageInputPer1M}, image output $${pricing.imageOutputPer1M}. Snapshot ${pricing.snapshot}. Source: ${pricing.source}. Supports ${pricing.endpoints.join(', ')}.`}
+    >
+      image · API equivalent
+    </span>
   )
 }
 
@@ -236,6 +264,7 @@ function Row({
   withOverride,
   withAlias,
   editable,
+  effortKind,
   hasCached,
   hasShape,
   onToggle,
@@ -245,14 +274,14 @@ function Row({
   withOverride: boolean
   withAlias: boolean
   editable: boolean
+  effortKind: 'openai' | 'claude-code'
   hasCached: boolean
   hasShape: boolean
   onToggle: (model: string, next: boolean) => void
   onEffort: (model: string, next: ReasoningEffort | null) => void
 }) {
   const { t } = useTranslation()
-  // Subscription models carry no per-token price, so their money columns
-  // read as absent rather than as a number worth comparing.
+  // Generic money columns do not describe image vs text modalities.
   const priceTone = withOverride ? '' : 'text-muted-foreground'
   const toggleLabel = t('providers.models.toggleModel', { model: row.name })
   return (
@@ -262,6 +291,7 @@ function Row({
       <td className='py-2.5 pl-6 pr-2'>
         <div className='flex items-center gap-2'>
           <span className='font-mono text-xs'>{row.name}</span>
+          <ImagePriceBadge pricing={row.imagePricing} />
           {/* A refresh found it after its tier's alias was set, and it
               serves nothing until someone promotes it. */}
           {row.isNew ? <Pill tone='info'>{t('providers.models.new')}</Pill> : null}
@@ -284,7 +314,7 @@ function Row({
       ) : null}
       {withOverride ? (
         <td className='px-2'>
-          <EffortCell row={row} editable={editable} onEffort={onEffort} />
+          <EffortCell row={row} editable={editable} effortKind={effortKind} onEffort={onEffort} />
         </td>
       ) : null}
       <td className='px-2 text-center text-sm leading-none'>
@@ -308,6 +338,7 @@ export function ModelsTable({
   withOverride,
   withAlias = false,
   editable = true,
+  effortKind = 'openai',
   onToggle,
   onEffort
 }: {
@@ -326,6 +357,7 @@ export function ModelsTable({
    *  their values and take no input until Edit is pressed. The
    *  add-provider wizard's table is always editable. */
   editable?: boolean
+  effortKind?: 'openai' | 'claude-code'
   onToggle: (model: string, next: boolean) => void
   onEffort: (model: string, next: ReasoningEffort | null) => void
 }) {
@@ -372,6 +404,7 @@ export function ModelsTable({
             withOverride={withOverride}
             withAlias={withAlias}
             editable={editable}
+            effortKind={effortKind}
             hasCached={hasCached}
             hasShape={hasShape}
             onToggle={onToggle}

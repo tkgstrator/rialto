@@ -65,10 +65,10 @@ export const ProviderSchema = z
         z.object({ inputPer1M: z.number().nullable(), outputPer1M: z.number().nullable() })
       )
       .optional(),
-    // Per-model manual reasoning-effort override consumed at request
-    // build time. Absent keys pass through untouched (vendor default).
+    // Per-model effort setting: a concrete manual override or the local
+    // Auto policy. Absent keys preserve the caller/vendor setting.
     modelReasoningEfforts: z
-      .record(z.string().nonempty(), z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']))
+      .record(z.string().nonempty(), z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto']))
       .optional(),
     // Per-model apiStyle override (Model.apiStyle in the DB). Only
     // populated for models whose column is non-null — a single api_key

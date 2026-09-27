@@ -28,7 +28,7 @@
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation } from 'react-router-dom'
-import { childOf, sectionOf } from '@/components/rialto/RialtoShell'
+import { childOf, sectionOf } from '@/components/rialto/shell-navigation'
 
 export interface Crumb {
   label: ReactNode

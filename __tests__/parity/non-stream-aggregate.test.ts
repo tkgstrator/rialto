@@ -91,7 +91,8 @@ const CASES: ReadonlyArray<{
 describe('every surface folds into its own envelope', () => {
   test('the descriptors cover every surface, so the case table misses none', () => {
     expect(CASES.map((c) => surfaceForPath(c.path)?.id).sort()).toEqual(
-      INBOUND_SURFACES.map((s) => s.id)
+      INBOUND_SURFACES.filter((s) => s.operation === 'completion')
+        .map((s) => s.id)
         .slice()
         .sort()
     )

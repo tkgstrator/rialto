@@ -12,6 +12,20 @@ export const CatalogModelSchema = z
     outputPer1M: z.number().nullable(),
     cachedInputPer1M: z.number().nullable(),
     contextWindow: z.number().int().nullable(),
+    imagePricing: z
+      .object({
+        textInputPer1M: z.number(),
+        cachedTextInputPer1M: z.number(),
+        imageInputPer1M: z.number(),
+        cachedImageInputPer1M: z.number(),
+        imageOutputPer1M: z.number(),
+        snapshot: z.string().nonempty(),
+        source: z.url(),
+        endpoints: z.array(z.string().nonempty()),
+        inputModalities: z.array(z.string().nonempty()),
+        outputModalities: z.array(z.string().nonempty())
+      })
+      .nullable(),
     legacy: z.boolean(),
     deprecated: z.boolean()
   })

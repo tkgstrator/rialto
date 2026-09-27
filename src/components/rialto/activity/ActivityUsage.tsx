@@ -15,11 +15,9 @@
  * (`/api/usage`, `/api/usage/history`), and the per-model weekly windows
  * — the limit that actually stops a Fable request — were visible nowhere.
  */
-import { cn } from 'cn'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { toast } from 'sonner'
 import {
   fetchSubscriptions,
@@ -28,102 +26,34 @@ import {
   type UsageCostResponse
 } from '@/components/rialto/activity/data'
 import { FilterSelect, ScreenMessage } from '@/components/rialto/activity/shared'
+import { UtilizationChart } from '@/components/rialto/activity/UsagePaceChart'
+import { TokenRow } from '@/components/rialto/activity/UsageTokens'
+import { ProviderGroup } from '@/components/rialto/activity/UsageWindows'
 import {
   type AccountUsageIndex,
-  type AccountWindows,
   bucketSamples,
-  type ChartPoint,
   indexAccountUsage,
-  type ProviderWindows,
   providerWindows,
   seriesOf,
-  type TokenUsageRow,
   tokenUsageRows,
   type UsageHistorySample,
-  type UsageSeries,
-  type UsageWire,
-  type WindowRow
+  type UsageWire
 } from '@/components/rialto/activity/usage-derive'
 import { useActivityCounts } from '@/components/rialto/activity/use-activity-counts'
-import { Meter, Pill, RButton, SurfaceScope } from '@/components/rialto/primitives'
+import { RButton } from '@/components/rialto/primitives'
 import type { SubscriptionsResponse, SubscriptionWire } from '@/components/rialto/providers/types'
 import { Screen } from '@/components/rialto/Screen'
 import { type AccessTokenWire, api, type InboundSurfaceWire } from '@/lib/api'
-import type { OverviewAccountUsage } from '@/lib/api-types'
-import dayjs from '@/lib/dayjs'
-import { fmtAgo, fmtCount, fmtUntil, fmtValueRatio } from '@/lib/rialto/format'
-import { fmtCost, fmtTokens } from '@/lib/sessions/format'
 
 // Ranges the history endpoint accepts (it caps `days` at 30). Offered as a
 // real control rather than an ornament: a week answers "did I spike", a
 // month answers "is this the normal shape".
 const RANGE_DAYS = [7, 14, 30] as const
 const DEFAULT_RANGE_DAYS = 7
-// One point per ~85 minutes over a week. The collector samples every five
-// minutes, so a raw week is ~2000 points — more than the plot has pixels
-// and more than recharts should be asked to lay out.
+// The collector samples every five minutes; plot no more points than pixels can distinguish.
 const CHART_BUCKETS = 120
 
 const EMPTY_SUBSCRIPTIONS: SubscriptionsResponse = { subscriptions: [] }
-
-/**
- * Series colours, validated rather than chosen by eye.
- *
- *   light  #2563eb / #d97706 / #7c3aed  on #ffffff
- *   dark   #3b82f6 / #d97706 / #8b5cf6  on #0a0a0a
- *
- * Every check passes in both modes (worst adjacent CVD ΔE 32.3 light,
- * 30.2 dark). They are Tailwind classes rather than hex so the dark step
- * is a deliberate second choice, not an automatic flip of the light one.
- *
- * Assigned in fixed order and never cycled: a fourth account's window
- * takes slot 4, and a filter that removes a series must not repaint the
- * ones that remain. Past the list, `seriesClass` returns the muted stroke
- * — an unnamed extra line is better than two series sharing a colour.
- */
-const SERIES_STROKE = [
-  'text-blue-600 dark:text-blue-500',
-  'text-amber-600 dark:text-amber-600',
-  'text-violet-600 dark:text-violet-500',
-  'text-teal-600 dark:text-teal-500'
-] as const
-const SERIES_DOT = [
-  'bg-blue-600 dark:bg-blue-500',
-  'bg-amber-600',
-  'bg-violet-600 dark:bg-violet-500',
-  'bg-teal-600 dark:bg-teal-500'
-] as const
-
-// The vendor mark beside a provider's name — the same glyphs the Add
-// provider rail draws. A hand-added provider has no vendor to draw.
-const KIND_ICON: Record<ProviderWindows['kind'], string> = {
-  claude: 'ri-sparkling-line',
-  codex: 'ri-terminal-line',
-  other: 'ri-plug-line'
-}
-
-/**
- * One tick per local midnight inside the plotted range.
- *
- * Recharts defaults to a tick per data point, which on 120 buckets prints
- * the same weekday twenty times in a row. Days are the unit the operator
- * reads a week in, so the axis is built from them rather than from the
- * sampling rate.
- */
-const dayTicks = (points: readonly ChartPoint[]): number[] => {
-  const first = points.at(0)
-  const last = points.at(-1)
-  if (first === undefined || last === undefined) return []
-  const start = dayjs(first.t).startOf('day')
-  const days = dayjs(last.t).diff(start, 'day') + 1
-  return Array.from({ length: Math.max(0, days) }, (_, i) => start.add(i, 'day').valueOf()).filter(
-    (tick) => tick >= first.t && tick <= last.t
-  )
-}
-
-const seriesClass = (index: number): string =>
-  index < SERIES_STROKE.length ? SERIES_STROKE[index] : 'text-muted-foreground'
-const dotClass = (index: number): string => (index < SERIES_DOT.length ? SERIES_DOT[index] : 'bg-muted-foreground')
 
 // The meta beside a title is the range the section covers, and only that.
 // Where the numbers came from is not something the reader acts on.
@@ -134,345 +64,6 @@ function SectionHead({ title, meta, action }: { title: string; meta?: string; ac
       {meta === undefined ? null : <span className='text-xs text-muted-foreground/70'>{meta}</span>}
       {action === undefined ? null : <div className='ml-auto'>{action}</div>}
     </div>
-  )
-}
-
-// One line per window rather than a stacked block: six windows across two
-// accounts is the common shape, and three lines each pushed the two
-// panels below it off the first screen.
-function WindowLine({ row, now }: { row: WindowRow; now: number }) {
-  const { t } = useTranslation()
-  return (
-    <div className='border-t border-border/60 px-6 py-2.5 transition-colors hover:bg-muted/50'>
-      <div className='flex items-center gap-2'>
-        <span className='w-20 shrink-0 truncate text-xs'>{row.label}</span>
-        <span className='w-10 shrink-0 truncate font-mono text-[12px] text-muted-foreground'>
-          {row.scope === null ? '' : row.scope}
-        </span>
-        <div className='min-w-0 flex-1'>
-          <Meter pct={row.pct} />
-        </div>
-        <span className='w-10 shrink-0 text-right font-mono text-xs tabular-nums'>{`${Math.round(row.pct)}%`}</span>
-        <span className='w-16 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
-          {fmtUntil(row.resetsAt, now) === null ? t('overview.resetsDue') : fmtUntil(row.resetsAt, now)}
-        </span>
-      </div>
-      <div
-        className={cn(
-          'mt-1 text-right text-[12px] tabular-nums',
-          row.projectedPct !== null && row.projectedPct >= 100 ? 'text-destructive' : 'text-muted-foreground'
-        )}
-      >
-        {row.projectedPct === null
-          ? t('activity.usage.paceUnknown')
-          : t(row.projectedPct >= 100 ? 'activity.usage.paceOver' : 'activity.usage.paceSafe', {
-              pct: Math.round(row.projectedPct)
-            })}
-      </div>
-    </div>
-  )
-}
-
-function UsageRow({ label, cells }: { label: string; cells: { text: string; width: string; mute?: boolean }[] }) {
-  return (
-    <div className='flex items-center gap-3 border-t border-border/60 px-6 py-2.5 transition-colors hover:bg-muted/50'>
-      <span className='w-24 shrink-0 truncate text-xs'>{label}</span>
-      <span className='min-w-0 flex-1' />
-      {cells.map((cell) => (
-        <span
-          key={cell.width}
-          className={cn(
-            cell.width,
-            'shrink-0 text-right font-mono text-[12px] tabular-nums',
-            cell.mute ? 'text-muted-foreground' : ''
-          )}
-        >
-          {cell.text}
-        </span>
-      ))}
-    </div>
-  )
-}
-
-/**
- * What the account carried, at the models' API prices — "API equivalent",
- * never a bill. The block a subscription provider's page draws under each
- * account, set in this panel's row rhythm so it reads as more rows of the
- * windows above it: this week's tokens and cost, then 30 days' cost against
- * the plan fee and the ratio of the two.
- */
-function UsageLines({ usage }: { usage: OverviewAccountUsage }) {
-  const { t } = useTranslation()
-  return (
-    <>
-      <div className='flex items-center gap-3 border-t border-border/60 px-6 pt-2.5 pb-1.5 text-[12px] uppercase tracking-wider text-muted-foreground/60'>
-        <span className='w-24 shrink-0'>{t('providers.accounts.usageHeader')}</span>
-        <span className='min-w-0 flex-1' />
-        <span className='w-16 shrink-0 text-right'>{t('providers.accounts.usageTokens')}</span>
-        <span className='w-14 shrink-0 text-right'>{t('providers.accounts.usageCost')}</span>
-        <span className='w-12 shrink-0 text-right'>{t('providers.accounts.usageFee')}</span>
-        <span className='w-10 shrink-0 text-right'>×</span>
-      </div>
-      <UsageRow
-        label={t('providers.accounts.usageThisWeek')}
-        cells={[
-          { text: fmtTokens(usage.window.totalTokens), width: 'w-16' },
-          { text: fmtCost(usage.window.costUsd), width: 'w-14' },
-          { text: '', width: 'w-12' },
-          { text: '', width: 'w-10' }
-        ]}
-      />
-      <UsageRow
-        label={t('providers.accounts.usage30d')}
-        cells={[
-          { text: '', width: 'w-16' },
-          { text: fmtCost(usage.last30d.costUsd), width: 'w-14' },
-          { text: usage.monthlyPriceUsd === null ? '–' : fmtCost(usage.monthlyPriceUsd), width: 'w-12', mute: true },
-          { text: fmtValueRatio(usage.valueRatio), width: 'w-10' }
-        ]}
-      />
-    </>
-  )
-}
-
-/**
- * An account's name, its plan, its windows, and what it carried.
- *
- * The plan pill carries the multiplier because the multiplier is the plan:
- * "Max" and "Pro" are each two plans, and a 20x at 60% has four times the
- * headroom of a 5x at 60%, so a pill that cannot tell them apart makes
- * every meter under it unreadable.
- */
-function AccountBlock({
-  account,
-  usage,
-  now
-}: {
-  account: AccountWindows
-  usage: OverviewAccountUsage | undefined
-  now: number
-}) {
-  const { t } = useTranslation()
-  return (
-    <div className='min-w-0'>
-      <div className='flex items-baseline gap-2 px-6 pb-1'>
-        <span className='truncate text-xs font-medium'>{account.account}</span>
-        {account.plan === null ? null : <Pill tone='info'>{account.plan}</Pill>}
-        <span className='ml-auto text-[12px] text-muted-foreground/70'>{t('activity.usage.resetsIn')}</span>
-      </div>
-      {account.windows.map((row) => (
-        <WindowLine key={`${row.label}-${row.scope}`} row={row} now={now} />
-      ))}
-      {usage === undefined ? null : <UsageLines usage={usage} />}
-    </div>
-  )
-}
-
-/**
- * One provider's accounts, under its name.
- *
- * Grouped rather than flowed through one grid: flattened, a Claude account
- * and a Codex account shared a row with nothing on either saying which
- * vendor it was, and "5-hour 88%" reads the same under both. The row name
- * sits beside the label only when it says something the label does not —
- * nothing stops two subscription providers on one vendor, and "Claude
- * Code" alone would not tell them apart.
- */
-function ProviderGroup({
-  group,
-  accountUsage,
-  now
-}: {
-  group: ProviderWindows
-  accountUsage: AccountUsageIndex
-  now: number
-}) {
-  const { t } = useTranslation()
-  return (
-    <div className='@container border-t border-border/60 pt-3 first:border-t-0 first:pt-0'>
-      <div className='flex items-center gap-2 px-6 pb-2'>
-        <i className={`${KIND_ICON[group.kind]} text-sm leading-none text-muted-foreground`} />
-        <span className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>{group.label}</span>
-        {group.name === null ? null : <span className='font-mono text-[12px] text-muted-foreground'>{group.name}</span>}
-        <span className='text-[12px] text-muted-foreground/70'>
-          {t('activity.usage.accountCount', { count: group.accounts.length })}
-        </span>
-      </div>
-      {/* As many accounts per row as get 28rem each, up to three: the fixed
-          columns of a window line take 360px, and 28rem leaves the meter a
-          track worth reading. Given the whole width each meter became 800px
-          of track carrying one figure, with "resets in" a screen away from
-          the percentage it qualifies.
-          Measured on the group, not the viewport: the sidebar folds with
-          ⌘B at any width, so a viewport breakpoint held one column across
-          200px of width the section actually had.
-          An empty column is left empty rather than stretching the accounts
-          to fill the row — and never lent to the next provider. */}
-      <div className='grid grid-cols-1 gap-x-px pb-3 @min-[56rem]:grid-cols-2 @min-[84rem]:grid-cols-3'>
-        {group.accounts.map((account) => (
-          <AccountBlock
-            key={account.subAccountId}
-            account={account}
-            usage={accountUsage.get(account.subAccountId)}
-            now={now}
-          />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function ChartTooltip({
-  active,
-  payload,
-  label,
-  series
-}: {
-  active?: boolean
-  payload?: { dataKey?: string | number; value?: number | string }[]
-  label?: number | string
-  series: readonly UsageSeries[]
-}) {
-  const { t } = useTranslation()
-  if (active !== true || payload === undefined || payload.length === 0) return null
-  return (
-    <div className='w-44 rounded-md border border-border bg-background px-3 py-2 shadow-sm'>
-      <div className='text-[12px] text-muted-foreground'>
-        {typeof label === 'number' ? dayjs(label).format('ddd HH:mm') : ''}
-      </div>
-      {series.map((s, index) => {
-        const entry = payload.find((p) => p.dataKey === s.metric)
-        if (entry === undefined || typeof entry.value !== 'number') return null
-        return (
-          <div key={s.metric} className='mt-1 flex items-center gap-2'>
-            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass(index)}`} />
-            <span className='text-[12px]'>{s.label}</span>
-            <span className='ml-auto font-mono text-[12px] tabular-nums'>{`${Math.round(entry.value)}%`}</span>
-          </div>
-        )
-      })}
-      {payload.length === 0 ? (
-        <div className='mt-1 text-[12px] text-muted-foreground'>{t('common.loading')}</div>
-      ) : null}
-    </div>
-  )
-}
-
-function PaceChart({ points, series }: { points: ChartPoint[]; series: readonly UsageSeries[] }) {
-  const ticks = useMemo(() => dayTicks(points), [points])
-  const highest = Math.max(
-    100,
-    ...points.flatMap((point) =>
-      series.flatMap((s) => {
-        const value = point[s.metric]
-        return typeof value === 'number' ? [value] : []
-      })
-    )
-  )
-  const ceiling = Math.ceil(highest / 25) * 25
-  return (
-    <>
-      {/* Identity never rests on colour alone: the legend names every
-          series, and four or fewer are the case this screen has. No note
-          on how the samples were taken beside it — the sampling rate is
-          the collector's business, not the reader's. */}
-      <div className='flex items-center gap-4 px-6 pb-3'>
-        {series.map((s, index) => (
-          <span key={s.metric} className='flex items-center gap-1.5 text-[12px] text-muted-foreground'>
-            <span className={`h-1.5 w-4 rounded-full ${dotClass(index)}`} />
-            {s.label}
-          </span>
-        ))}
-      </div>
-      <div className='px-6 pb-5' style={{ height: 200 }}>
-        <ResponsiveContainer width='100%' height='100%'>
-          <LineChart data={points} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
-            <CartesianGrid vertical={false} className='stroke-border' strokeWidth={1} />
-            {/* 12px, the floor everything else on these screens uses.
-                The axes were at 10 and were the only text under it. */}
-            <XAxis
-              dataKey='t'
-              type='number'
-              scale='time'
-              domain={['dataMin', 'dataMax']}
-              ticks={ticks}
-              tickFormatter={(value: number) => dayjs(value).format('ddd')}
-              tickLine={false}
-              axisLine={false}
-              className='fill-muted-foreground'
-              tick={{ fontSize: 12 }}
-            />
-            <YAxis
-              domain={[0, ceiling]}
-              ticks={Array.from({ length: ceiling / 25 + 1 }, (_, index) => index * 25)}
-              tickFormatter={(value: number) => `${value}%`}
-              tickLine={false}
-              axisLine={false}
-              className='fill-muted-foreground'
-              tick={{ fontSize: 12 }}
-              width={40}
-            />
-            <ReferenceLine y={100} className='stroke-destructive' strokeDasharray='4 4' />
-            <Tooltip content={<ChartTooltip series={series} />} cursor={{ className: 'stroke-border' }} />
-            {series.map((s, index) => (
-              <Line
-                key={s.metric}
-                type='monotone'
-                dataKey={s.metric}
-                stroke='currentColor'
-                className={seriesClass(index)}
-                strokeWidth={2}
-                dot={false}
-                // A gap is the honest rendering of a collector outage;
-                // joining across it invents a line through unmeasured hours.
-                connectNulls={false}
-                isAnimationActive={false}
-              />
-            ))}
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-    </>
-  )
-}
-
-function TokenRow({
-  row,
-  surfaces,
-  now
-}: {
-  row: TokenUsageRow
-  surfaces: readonly InboundSurfaceWire[]
-  now: number
-}) {
-  const { t } = useTranslation()
-  const paths = row.surfaces.flatMap((id) => {
-    const found = surfaces.find((s) => s.id === id)
-    return found === undefined ? [] : [found.path]
-  })
-  return (
-    <tr className='border-t border-border/60 transition-colors hover:bg-muted/50'>
-      <td className='py-2.5 pl-6 pr-3'>
-        <div className='truncate text-xs font-medium'>{row.name}</div>
-        <div className='font-mono text-[12px] text-muted-foreground'>{row.prefix}</div>
-      </td>
-      <td className='px-3'>
-        <SurfaceScope paths={paths} allLabel={t('settings.access.scopeAll')} />
-      </td>
-      <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCount(row.requestCount)}</td>
-      <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCost(row.costUsd)}</td>
-      <td className='px-3'>
-        <div className='flex items-center gap-2'>
-          <Meter pct={row.sharePct === null ? 0 : row.sharePct} tone='mute' />
-          <span className='w-8 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
-            {row.sharePct === null ? '–' : `${row.sharePct}%`}
-          </span>
-        </div>
-      </td>
-      <td className='py-2.5 pl-3 pr-6 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
-        {row.lastUsedAt === null ? t('settings.access.never') : fmtAgo(row.lastUsedAt, now)}
-      </td>
-    </tr>
   )
 }
 
@@ -587,11 +178,10 @@ export function ActivityUsage() {
       {/* No Export CSV: the chart is read here, and the screens hand out
           no files. */}
       <SectionHead title={t('activity.usage.chartTitle')} meta={t('activity.usage.chartMeta', { days })} />
-      <p className='px-6 pb-3 text-xs text-muted-foreground'>{t('activity.usage.paceExplanation')}</p>
-      {points.length === 0 || points.every((point) => series.every((s) => point[s.metric] === null)) ? (
+      {points.length === 0 ? (
         <ScreenMessage>{loading ? t('common.loading') : t('activity.usage.noHistory')}</ScreenMessage>
       ) : (
-        <PaceChart points={points} series={series} />
+        <UtilizationChart points={points} series={series} />
       )}
 
       <SectionHead

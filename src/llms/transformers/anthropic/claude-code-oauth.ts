@@ -13,6 +13,7 @@
 import { HTTPException } from 'hono/http-exception'
 import type { RuntimeProvider, TransformerContext, TransformerHookResult, UnifiedChatRequest } from '@/schemas/domain'
 import { OauthRefreshResponseSchema } from '@/schemas/wire/oauth'
+import { claudeCodeEffortsFor } from '../../../shared/model-reasoning-effort'
 import { cloneResponse } from '../../utils/response-clone'
 import type { TransformerAuthResult } from '../base'
 import { type OAuthRefreshResult, OAuthTransformer } from '../oauth-base'
@@ -155,6 +156,32 @@ export function keepSignedBlock(block: unknown): boolean {
   return !SYNTHETIC_SIGNATURE_PREFIXES.some((prefix) => signature.startsWith(prefix))
 }
 
+function shapeOpenAiRequestForClaude(req: ClaudeCodeRequestShape): void {
+  // OpenAI inbound converters leave their effort in unified `reasoning`;
+  // Claude Code's Messages endpoint accepts `output_config.effort` instead.
+  const reasoning = req.reasoning
+  if (reasoning !== null && typeof reasoning === 'object' && !Array.isArray(reasoning)) {
+    const effort = Reflect.get(reasoning, 'effort')
+    const output = req.output_config
+    const existing = output !== null && typeof output === 'object' && !Array.isArray(output) ? output : {}
+    if (
+      typeof effort === 'string' &&
+      claudeCodeEffortsFor(typeof req.model === 'string' ? req.model : '')?.some((level) => level === effort) &&
+      !('effort' in existing)
+    ) {
+      req.output_config = { ...existing, effort }
+    }
+    delete req.reasoning
+  }
+  delete req.reasoning_effort
+  const completionCap = req.max_completion_tokens
+  if (req.max_tokens === undefined && typeof completionCap === 'number') req.max_tokens = completionCap
+  delete req.max_completion_tokens
+  const outputCap = req.max_output_tokens
+  if (req.max_tokens === undefined && typeof outputCap === 'number') req.max_tokens = outputCap
+  delete req.max_output_tokens
+}
+
 export class ClaudeCodeOauthTransformer extends OAuthTransformer {
   readonly name = 'claude-code-oauth'
   readonly endPoint = '/v1/messages'
@@ -197,6 +224,9 @@ export class ClaudeCodeOauthTransformer extends OAuthTransformer {
     const { token } = await this.resolveSubscriptionAuth(provider, sessionId, 'claude', request, context)
     // biome-ignore plugin: the OAuth auth hook receives the inbound Anthropic body verbatim (unknown by design); narrowing to a Zod schema would re-encode the whole request, defeating the bypass-mode passthrough.
     const req = request as ClaudeCodeRequestShape
+    if (context.req?.surface === 'openai-chat' || context.req?.surface === 'openai-responses') {
+      shapeOpenAiRequestForClaude(req)
+    }
     hoistSystemMessages(req)
     req.system = withClaudeCodeIdentity(req.system)
 
