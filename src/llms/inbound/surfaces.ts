@@ -212,7 +212,14 @@ export const CATALOG_PATHS: readonly CatalogPath[] = [
   // Anthropic's pre-flight size check. Not a completion, so not a surface —
   // but it still has to answer in the Anthropic SDK's auth convention and
   // error envelope, which is what this list carries.
-  { path: '/v1/messages/count_tokens', auth: 'x-api-key', errorShape: 'anthropic' }
+  { path: '/v1/messages/count_tokens', auth: 'x-api-key', errorShape: 'anthropic' },
+  // Speech, relayed to the TTS server beside Rialto (src/api/v1/audio.ts).
+  // Not a surface either: nothing is routed and no provider is spent. The
+  // voice is how an app reads its replies aloud, so a token scoped to the
+  // completion surfaces may use it, and it is not counted against a plan's
+  // daily cap — a spoken reply would otherwise cost two of it.
+  { path: '/v1/audio/speech', auth: 'bearer', errorShape: 'openai' },
+  { path: '/v1/audio/voices', auth: 'bearer', errorShape: 'openai' }
 ] as const
 
 /**

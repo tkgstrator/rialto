@@ -41,6 +41,7 @@ import { usageCostRoute } from './api/usage/cost/route'
 import { usageHistoryRoute } from './api/usage/history/route'
 import { usageRoute } from './api/usage/route'
 import { appDevicesRoute } from './api/v1/app-devices'
+import { audioRoute } from './api/v1/audio'
 import { countTokensRoute } from './api/v1/count-tokens'
 import { v1ModelsRoute } from './api/v1/models-list'
 import { v1Route } from './api/v1/route'
@@ -213,6 +214,9 @@ app.route('/', v1ModelsRoute)
 // Anthropic POST /v1/messages/count_tokens — same ordering requirement:
 // v1Route's `/v1/*` fail-closed lane would answer 404 for it otherwise.
 app.route('/', countTokensRoute)
+// /v1/audio/speech and /v1/audio/voices, relayed to the TTS server — same
+// ordering requirement again.
+app.route('/', audioRoute)
 // Native /v1/* LLM proxy — drives the llms pipeline without Fastify.
 app.route('/', v1Route)
 

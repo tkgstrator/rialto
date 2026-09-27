@@ -269,6 +269,7 @@ describe.skipIf(!HAS_DB)('the daily cap at the /v1 gate', () => {
     for (const prefix of INBOUND_MOUNT_PREFIXES) app.use(prefix, inboundProxyAuth)
     app.post('/v1/responses', (c) => c.text('ok'))
     app.get('/v1/models', (c) => c.text('ok'))
+    app.post('/v1/audio/speech', (c) => c.text('ok'))
     return app
   }
 
@@ -307,6 +308,16 @@ describe.skipIf(!HAS_DB)('the daily cap at the /v1 gate', () => {
     const app = buildApp()
     const listings = await Promise.all(Array.from({ length: 3 }, () => call(app, apiKey, '/v1/models', 'GET')))
     expect(listings.map((res) => res.status)).toEqual([200, 200, 200])
+    expect((await call(app, apiKey)).status).toBe(200)
+  })
+
+  test('an install’s token may speak its replies, and speaking does not spend the allowance', async () => {
+    await authorizeFixtureApp()
+    // Scoped to the two completion surfaces, as every install's token is.
+    const apiKey = await registered()
+    const app = buildApp()
+    const spoken = await Promise.all(Array.from({ length: 3 }, () => call(app, apiKey, '/v1/audio/speech')))
+    expect(spoken.map((res) => res.status)).toEqual([200, 200, 200])
     expect((await call(app, apiKey)).status).toBe(200)
   })
 
