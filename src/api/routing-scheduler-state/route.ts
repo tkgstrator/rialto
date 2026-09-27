@@ -12,6 +12,7 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import dayjs from '../../lib/dayjs'
 import { getRoutingSnapshot } from '../../services/routing-scheduler'
+import { validationErrorHook } from '../zod-response'
 
 const TargetStateDtoSchema = z
   .object({
@@ -61,7 +62,7 @@ const isoOrNull = (ms: number | null): string | null => (ms === null ? null : da
 const windowDto = (w: { used: number; limit: number; resetAt: number | null } | null) =>
   w === null ? null : { used: w.used, limit: w.limit, resetAt: isoOrNull(w.resetAt) }
 
-export const routingSchedulerStateRoute = new OpenAPIHono()
+export const routingSchedulerStateRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 const getRoute = createRoute({
   method: 'get',

@@ -1,8 +1,9 @@
 import { createRoute, OpenAPIHono } from '@hono/zod-openapi'
 import { ModelTestAllRequestSchema, ModelTestAllResponseSchema } from '../../../schemas/api/models'
 import { testAllModels } from '../../../services/model-test-service'
+import { validationErrorHook } from '../../zod-response'
 
-export const modelTestAllRoute = new OpenAPIHono()
+export const modelTestAllRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 const route = createRoute({
   method: 'post',

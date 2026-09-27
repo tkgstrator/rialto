@@ -1,8 +1,9 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { TierAliasSchema } from '../../schemas/api/routing'
 import { listTierAliases } from '../../services/tier-alias-service'
+import { validationErrorHook } from '../zod-response'
 
-export const tierAliasesRoute = new OpenAPIHono()
+export const tierAliasesRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 tierAliasesRoute.openapi(
   createRoute({

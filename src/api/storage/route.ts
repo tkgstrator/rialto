@@ -7,6 +7,7 @@
 
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { getStorageStats, pruneStore } from '../../services/storage-service'
+import { validationErrorHook } from '../zod-response'
 
 const StoreIdSchema = z.enum(['requestLog', 'message', 'usageSnapshot', 'logFiles'])
 
@@ -37,7 +38,7 @@ const PruneResultSchema = z
   .object({ store: StoreIdSchema, deleted: z.number().int().nonnegative() })
   .openapi('StoragePruneResult')
 
-export const storageRoute = new OpenAPIHono()
+export const storageRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 storageRoute.openapi(
   createRoute({

@@ -1,7 +1,8 @@
 import { createRoute, OpenAPIHono } from '@hono/zod-openapi'
 import { getLlmsContext } from '../../llms'
 import { TransformersResponseSchema } from '../../schemas/api/transformers'
-export const transformersRoute = new OpenAPIHono()
+import { validationErrorHook } from '../zod-response'
+export const transformersRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 const getTransformersRoute = createRoute({
   method: 'get',

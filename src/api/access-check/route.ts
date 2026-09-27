@@ -18,6 +18,7 @@ import {
   resetAccessKeyCache,
   verifyAccessJwt
 } from '../../services/cloudflare-access'
+import { validationErrorHook } from '../zod-response'
 import '../context'
 
 const BodySchema = z
@@ -46,7 +47,7 @@ const ResponseSchema = z
   })
   .openapi('AccessCheckResponse')
 
-export const accessCheckRoute = new OpenAPIHono()
+export const accessCheckRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 const DetectSchema = z
   .object({

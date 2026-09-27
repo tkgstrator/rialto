@@ -1,8 +1,9 @@
 import { createRoute, OpenAPIHono } from '@hono/zod-openapi'
 import { UsageResponseSchema } from '../../schemas/api/usage'
 import { fetchUsageSnapshot } from '../../services/usage-service'
+import { validationErrorHook } from '../zod-response'
 
-export const usageRoute = new OpenAPIHono()
+export const usageRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 const getUsageRoute = createRoute({
   method: 'get',

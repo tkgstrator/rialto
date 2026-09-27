@@ -8,6 +8,7 @@
 
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { listSurfaces, updateSurface } from '../../services/inbound-surface-service'
+import { validationErrorHook } from '../zod-response'
 
 const SurfaceIdSchema = z.enum([
   'anthropic-messages',
@@ -45,7 +46,7 @@ const UpdateBodySchema = z
   })
   .openapi('InboundSurfaceUpdate')
 
-export const inboundSurfacesRoute = new OpenAPIHono()
+export const inboundSurfacesRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 inboundSurfacesRoute.openapi(
   createRoute({

@@ -6,5 +6,6 @@
  */
 
 import { OpenAPIHono } from '@hono/zod-openapi'
+import { validationErrorHook } from '../zod-response'
 
-export const requestLogsRoute = new OpenAPIHono()
+export const requestLogsRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
