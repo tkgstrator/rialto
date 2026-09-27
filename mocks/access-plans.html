@@ -13,7 +13,7 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, btn, accessTabs, PLANS, sortTh, mono, dialog } = window.Shell
+const { renderShell, btn, accessTabs, PLANS, sortTh, mono, dialog, pill } = window.Shell
 
 // Plans: what a token on them may spend.
 //
@@ -22,21 +22,40 @@ const { renderShell, btn, accessTabs, PLANS, sortTh, mono, dialog } = window.She
 // next request — the alternative, a limit stamped on each of a thousand
 // tokens at issue time, is a migration every time pricing moves.
 //
-// Two things a plan decides, and only two for now: the one model its
-// requests go to (whatever the client asks for, and without routing, so a
-// chain cannot pick a costlier target), and how many completions a token
-// may make per UTC day. Listing models is never counted.
+// Two things a plan decides, and only two for now: which models its
+// requests may use, and how many completions a token may make per UTC day.
+// A request naming a model on the list goes to that model; any other name,
+// or none, goes to the plan's default rather than being refused, so an app
+// with a stale model setting keeps talking. Either way there is no routing:
+// a chain cannot pick a costlier target than the plan lists. /v1/models
+// shows a plan's token only its own list. Listing models is never counted.
 //
 // A plan is not only for apps: a hand-issued token can be put on one too,
 // which is how a friend's laptop gets the same cap as an install.
 //
 // `?edit` draws the edit dialog for Free (access-plan-edit in mocks.json).
 
+// The default and a count, not the whole list: a plan can carry several
+// models and the column would wrap. The rest is a hover away, and the edit
+// dialog lists them all.
+const modelsCell = (models) => {
+  const rest = models.length - 1
+  return `<span class="inline-flex min-w-0 items-center gap-1.5" title="${models.join(' · ')}">
+    ${mono(models[0])}${pill('default', 'mute')}
+    ${rest > 0 ? `<span class="shrink-0 font-mono text-[12px] text-muted-foreground/70">+${rest}</span>` : ''}
+  </span>`
+}
+
+const capCell = (limit) =>
+  limit === ''
+    ? '<span class="text-[12px] text-muted-foreground/50">no cap</span>'
+    : `${limit}<span class="text-muted-foreground"> / day</span>`
+
 const planRow = (p) => `
   <tr class="cursor-pointer border-t border-border/60 transition-colors hover:bg-muted/50">
     <td class="py-2.5 pl-6 pr-3 text-xs font-medium">${p.name}</td>
-    <td class="px-3">${mono(p.model)}</td>
-    <td class="px-3 text-right font-mono text-xs tabular-nums">${p.limit}<span class="text-muted-foreground"> / day</span></td>
+    <td class="px-3">${modelsCell(p.models)}</td>
+    <td class="px-3 text-right font-mono text-xs tabular-nums">${capCell(p.limit)}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${p.tokens}</td>
     <td class="px-3 text-[12px] text-muted-foreground">${p.apps}</td>
     <td class="py-2.5 pl-3 pr-6">
@@ -52,14 +71,36 @@ const editDialog = () => {
       ${chevron ? '<i class="ri-arrow-down-s-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"></i>' : ''}
     </div>`
   const hint = (text) => `<p class="mt-1 text-[12px] leading-snug text-muted-foreground">${text}</p>`
+  // A tick for the allow-list and a radio for the default, on the same
+  // row, so the default can only ever be one of the allowed models.
+  const modelOption = (model, allowed, isDefault) => `
+    <div class="flex h-9 items-center gap-2 border-t border-border/60 px-3 first:border-t-0">
+      <span class="inline-flex size-4 shrink-0 items-center justify-center rounded border ${allowed ? 'border-primary bg-primary text-primary-foreground' : 'border-border'}">
+        ${allowed ? '<i class="ri-check-line text-[11px] leading-none"></i>' : ''}
+      </span>
+      <span class="min-w-0 flex-1 truncate font-mono text-xs ${allowed ? '' : 'text-muted-foreground'}">${model}</span>
+      ${
+        allowed
+          ? `<span class="inline-flex items-center gap-1 text-[12px] ${isDefault ? 'text-foreground' : 'text-muted-foreground/60'}">
+              <span class="inline-flex size-3.5 items-center justify-center rounded-full border ${isDefault ? 'border-primary' : 'border-border'}">
+                ${isDefault ? '<span class="size-1.5 rounded-full bg-primary"></span>' : ''}
+              </span>default</span>`
+          : ''
+      }
+    </div>`
   return dialog(
     'Edit plan',
     `<div class="grid gap-4">
       <div>${label('Name')}${box('Free')}</div>
       <div>
-        ${label('Model')}
-        ${box('openai,gpt-5-mini', true)}
-        ${hint('Every request on this plan goes to this model, whatever the client names, without routing.')}
+        ${label('Models')}
+        <div class="overflow-hidden rounded-md border border-border">
+          ${modelOption('openai,gpt-5-mini', true, true)}
+          ${modelOption('google,gemini-3-flash', true, false)}
+          ${modelOption('anthropic,claude-sonnet-5', false, false)}
+          ${modelOption('openai,gpt-5.5', false, false)}
+        </div>
+        ${hint('Requests may use any model ticked here. A request naming another model, or none, goes to the default — never refused, and never routed.')}
       </div>
       <div>
         ${label('Requests per day')}
@@ -81,25 +122,25 @@ document.getElementById('root').innerHTML = `
       <div class="flex items-center gap-1 border-b border-border px-6">${accessTabs('plans')}</div>
 
       <div class="flex items-center gap-3 px-6 pt-5 pb-3">
-        <span class="text-[12px] text-muted-foreground">2 plans · 1,287 tokens on a plan · 4 without</span>
+        <span class="text-[12px] text-muted-foreground">3 plans · 1,290 tokens on a plan · 1 without</span>
         <div class="ml-auto">${btn('New plan', 'primary', 'ri-add-line')}</div>
       </div>
 
       <div class="px-6 pb-4">
         <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
           <i class="ri-information-line mr-1 align-[-1px]"></i>
-          A token on a plan sends every request to the plan’s model and is capped per UTC day.
+          A token on a plan may use only the plan’s models — anything else goes to its default — and is capped per UTC day.
           <span class="font-medium text-foreground">Changing a plan reaches every token on it at once</span>
           — nothing is copied onto the tokens. A token with no plan is unrestricted, as hand-issued ones are today.
         </div>
       </div>
 
       <table class="w-full table-fixed">
-        <colgroup><col class="w-40"><col><col class="w-32"><col class="w-24"><col class="w-56"><col class="w-10"></colgroup>
+        <colgroup><col class="w-32"><col><col class="w-32"><col class="w-24"><col class="w-56"><col class="w-10"></colgroup>
         <thead>
           <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
             ${sortTh('Plan', 'pl-6 pr-3')}
-            ${sortTh('Model', 'px-3')}
+            ${sortTh('Models', 'px-3')}
             ${sortTh('Daily cap', 'px-3', 'right')}
             ${sortTh('Tokens', 'px-3', 'right', true, 'desc')}
             ${sortTh('New installs of', 'px-3')}

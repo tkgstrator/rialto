@@ -475,7 +475,7 @@ const accessTabs = (active) =>
     [
       { id: 'tokens', label: 'Tokens', count: '4', href: 'access-tokens.html' },
       { id: 'apps', label: 'Apps', count: '1', href: 'access-apps.html' },
-      { id: 'plans', label: 'Plans', count: '2', href: 'access-plans.html' }
+      { id: 'plans', label: 'Plans', count: '3', href: 'access-plans.html' }
     ],
     active
   )
@@ -486,10 +486,14 @@ const AUTHORIZED_APPS = [
   { name: 'Connect (dev)', appId: '5Q94QJ7G98.jp.qleap.connect.dev', builds: 'Development too', plan: 'Free', devices: '3', active: '1', reqs: '41', cost: '$0.12', enabled: false }
 ]
 
-/** Plans: what a token minted on them may spend. */
+/**
+ * Plans: what a token minted on them may spend. `models` is the allow-list
+ * and its first entry the default a request falls back to.
+ */
 const PLANS = [
-  { name: 'Free', model: 'openai,gpt-5-mini', limit: '100', tokens: '1,287', apps: 'Connect · Connect (dev)' },
-  { name: 'Plus', model: 'anthropic,claude-sonnet-5', limit: '2,000', tokens: '0', apps: '—' }
+  { name: 'Free', models: ['openai,gpt-5-mini', 'google,gemini-3-flash'], limit: '100', tokens: '1,287', apps: 'Connect · Connect (dev)' },
+  { name: 'Plus', models: ['anthropic,claude-sonnet-5', 'openai,gpt-5.5', 'openai,gpt-5-mini'], limit: '2,000', tokens: '0', apps: '—' },
+  { name: 'Staff', models: ['anthropic,claude-opus-5', 'anthropic,claude-sonnet-5'], limit: '', tokens: '3', apps: '—' }
 ]
 
 /** One authorized app row. Leads to the app's page, like a token row does. */

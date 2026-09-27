@@ -199,14 +199,14 @@
       "mock": "access-plans.html",
       "route": null,
       "group": "Access tokens",
-      "note": "Plans: the model every request on a plan goes to and its per-UTC-day cap. Referenced by tokens, never copied onto them, so one edit reaches every install on the plan. A hand-issued token may be put on a plan too."
+      "note": "Plans: the models a plan's tokens may use — one of them the default, which any other or missing model name falls back to — and its per-UTC-day cap. Referenced by tokens, never copied onto them, so one edit reaches every install on the plan. A hand-issued token may be put on a plan too."
     },
     {
       "name": "access-plan-edit",
       "mock": "access-plans.html?edit",
       "route": null,
       "group": "Access tokens",
-      "note": "Editing a plan, in a dialog that says how many tokens the change reaches before it is saved."
+      "note": "Editing a plan, in a dialog that says how many tokens the change reaches before it is saved. Models are ticked into the allow-list and one of the ticked ones is marked default, so the default can only be an allowed model."
     },
     {
       "name": "activity",
