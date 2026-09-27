@@ -21,12 +21,20 @@
 
 import type { z } from '@hono/zod-openapi'
 import type { OfficialPricingEntry } from '@/shared/data'
-import { isDeprecatedModel, OFFICIAL_VENDOR_PRICES, SUBSCRIPTION_PRESETS, VENDOR_DEFAULTS } from '@/shared/data'
+import {
+  CODEX_IMAGE_MODELS,
+  isDeprecatedModel,
+  OFFICIAL_VENDOR_PRICES,
+  SUBSCRIPTION_PRESETS,
+  VENDOR_DEFAULTS
+} from '@/shared/data'
 import { getPrismaClient } from '../db/client'
 import dayjs from '../lib/dayjs'
 import type { CatalogEntrySchema, CatalogModelSchema } from '../schemas/api/catalog'
 import type { ScrapedPriceEntry } from '../vendors/base'
+import { type ImageModelDetails, imageModelSnapshot, refreshImageModelDetails } from '../vendors/openai/image-models'
 import { getVendorProvider, scrapedVendors } from '../vendors/registry'
+import { claudeCodeModels, refreshClaudeCodeModels } from './claude-code-model-catalog'
 export type CatalogEntry = z.infer<typeof CatalogEntrySchema>
 export type CatalogModel = z.infer<typeof CatalogModelSchema>
 
@@ -39,6 +47,11 @@ interface Overlay {
   entries: Map<string, ScrapedPriceEntry>
 }
 const overlayByVendor = new Map<string, Overlay>()
+const imageOverlay = new Map<string, ImageModelDetails>()
+const imageDetails = (name: string): ImageModelDetails | null => {
+  const cached = imageOverlay.get(name)
+  return cached === undefined ? imageModelSnapshot(name) : cached
+}
 
 const modelFromStatic = (name: string, entry: OfficialPricingEntry): CatalogModel => ({
   name,
@@ -46,6 +59,7 @@ const modelFromStatic = (name: string, entry: OfficialPricingEntry): CatalogMode
   outputPer1M: entry.outputPer1M,
   cachedInputPer1M: entry.cachedInputPer1M === undefined ? null : entry.cachedInputPer1M,
   contextWindow: entry.contextWindow === undefined ? null : entry.contextWindow,
+  imagePricing: null,
   legacy: entry.legacy === true,
   deprecated: isDeprecatedModel(name)
 })
@@ -56,6 +70,7 @@ const modelFromScraped = (scraped: ScrapedPriceEntry): CatalogModel => ({
   outputPer1M: scraped.outputPer1M,
   cachedInputPer1M: scraped.cachedInputPer1M,
   contextWindow: scraped.contextWindow,
+  imagePricing: null,
   legacy: scraped.legacy,
   deprecated: isDeprecatedModel(scraped.apiId)
 })
@@ -143,16 +158,74 @@ const seeds = (): CatalogSeed[] => {
   return out
 }
 
-// Filter catalog models to those the subscription preset advertises.
-// Subscription plans expose a curated subset of the vendor's catalog
-// (e.g. claude-code Pro doesn't ship mythos), and hiding the rest keeps
-// the "Available" section from listing models the user's plan can't run.
+// Claude Code's published selector supplies candidates beyond the seed;
+// Codex uses its own account-scoped list once a provider is connected.
+// Neither list proves which Claude models a particular account can serve.
 const filterSubscriptionModels = (
   models: CatalogModel[],
   preset: (typeof SUBSCRIPTION_PRESETS)[number]
 ): CatalogModel[] => {
-  const available = new Set(preset.availableModels)
-  return models.filter((m) => available.has(m.name))
+  if (preset.id !== 'codex') {
+    const available = new Set([...preset.availableModels, ...claudeCodeModels()])
+    const byName = new Map(models.map((model) => [model.name, model]))
+    return [...available]
+      .map((name): CatalogModel => {
+        const priced = byName.get(name)
+        return priced === undefined
+          ? {
+              name,
+              inputPer1M: null,
+              outputPer1M: null,
+              cachedInputPer1M: null,
+              contextWindow: null,
+              imagePricing: null,
+              legacy: false,
+              deprecated: isDeprecatedModel(name)
+            }
+          : priced
+      })
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }
+  const byName = new Map(models.map((model) => [model.name, model]))
+  // A price sheet is not a model catalog. In particular, Codex's
+  // advertised chat models need to survive an empty or thin price scrape
+  // just as its image models do; otherwise connecting a new account
+  // creates a provider with image rows only.
+  const listed = preset.availableModels
+    .filter((name) => !CODEX_IMAGE_MODELS.includes(name))
+    .map((name): CatalogModel => {
+      const priced = byName.get(name)
+      return priced === undefined
+        ? {
+            name,
+            inputPer1M: null,
+            outputPer1M: null,
+            cachedInputPer1M: null,
+            contextWindow: null,
+            imagePricing: null,
+            legacy: false,
+            deprecated: isDeprecatedModel(name)
+          }
+        : priced
+    })
+  return [
+    ...listed,
+    ...CODEX_IMAGE_MODELS.map((name): CatalogModel => {
+      const details = imageDetails(name)
+      return {
+        name,
+        // The generic three rates cannot encode both text and image
+        // input; only the separately labeled detail block is authoritative.
+        inputPer1M: null,
+        outputPer1M: null,
+        cachedInputPer1M: null,
+        contextWindow: null,
+        imagePricing: details,
+        legacy: false,
+        deprecated: false
+      }
+    })
+  ].sort((a, b) => a.name.localeCompare(b.name))
 }
 
 const buildEntry = (seed: CatalogSeed, enabled: boolean): CatalogEntry => {
@@ -176,9 +249,40 @@ const buildEntry = (seed: CatalogSeed, enabled: boolean): CatalogEntry => {
 
 export async function getCatalog(): Promise<CatalogEntry[]> {
   const prisma = getPrismaClient()
-  const providers = await prisma.provider.findMany({ select: { name: true } })
+  const providers = await prisma.provider.findMany({
+    select: { name: true, models: { select: { name: true, deprecated: true, legacy: true } } }
+  })
   const enabledNames = new Set(providers.map((p) => p.name))
-  return seeds().map((seed) => buildEntry(seed, enabledNames.has(seed.name)))
+  return seeds().map((seed) => {
+    const entry = buildEntry(seed, enabledNames.has(seed.name))
+    if (seed.name !== 'codex' && seed.name !== 'claude-code') return entry
+    const providerModels = providers.find((provider) => provider.name === seed.name)?.models
+    if (providerModels === undefined) return entry
+    const priced = new Map(entry.models.map((model) => [model.name, model]))
+    const names =
+      seed.name === 'codex'
+        ? providerModels.map((model) => model.name)
+        : [...new Set([...priced.keys(), ...providerModels.map((model) => model.name)])]
+    return {
+      ...entry,
+      models: names.map((name): CatalogModel => {
+        const model = providerModels.find((row) => row.name === name)
+        const known = priced.get(name)
+        if (known !== undefined) return known
+        if (model === undefined) throw new Error('Catalog model row missing')
+        return {
+          name,
+          inputPer1M: null,
+          outputPer1M: null,
+          cachedInputPer1M: null,
+          contextWindow: null,
+          imagePricing: null,
+          legacy: model.legacy,
+          deprecated: model.deprecated
+        }
+      })
+    }
+  })
 }
 
 export interface CatalogRefreshResult {
@@ -213,6 +317,11 @@ export async function refreshCatalog(): Promise<CatalogRefreshResult> {
       scrapedList.push(vendor)
     })
   )
+  const [images, codeModelsFound] = await Promise.all([refreshImageModelDetails(), refreshClaudeCodeModels()])
+  if (!codeModelsFound) warnings.push('claude-code: model catalog unavailable; known models retained')
+  for (const [name, details] of images) imageOverlay.set(name, details)
+  if (images.size !== CODEX_IMAGE_MODELS.length)
+    warnings.push('openai images: some model pages could not be read; committed prices retained')
   const entries = await getCatalog()
   return { entries, scrapedVendors: scrapedList, warnings }
 }

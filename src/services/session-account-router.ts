@@ -54,7 +54,11 @@ import {
   type Metric,
   windowBinds
 } from './subaccount-usage-store'
-import { getSubAccountTokensForKind, type SubAccountTokenInfo } from './subscription-account-sync-service'
+import {
+  getSubAccountTokensForKind,
+  getSubAccountTokensForProvider,
+  type SubAccountTokenInfo
+} from './subscription-account-sync-service'
 
 // sessionId → (slot → subAccountId). See the header comment for why the
 // sticky is slotted rather than one pointer per session.
@@ -236,9 +240,16 @@ export async function resolveAccountForSession(
   sessionId: string,
   kind: 'claude' | 'codex',
   requestedModel: string | undefined,
-  now: number = dayjs().valueOf()
+  now: number = dayjs().valueOf(),
+  providerName?: string
 ): Promise<SubAccountTokenInfo | null> {
-  const all = await getSubAccountTokensForKind(kind)
+  const providerAccounts = providerName === undefined ? null : await getSubAccountTokensForProvider(providerName)
+  const all =
+    providerName === undefined
+      ? await getSubAccountTokensForKind(kind)
+      : providerAccounts === null
+        ? []
+        : providerAccounts[kind]
   if (all.length === 0) return null
 
   // Batch-read the per-account DB state up front so each account's

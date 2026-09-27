@@ -346,6 +346,8 @@
       "colEffort": "Effort",
       "setEffort": "Reasoning effort for {{model}}",
       "effortDefault": "vendor default",
+      "effortAuto": "auto · quota pace",
+      "effortAutoOption": "Auto · quota pace (known quota and model support required)",
       "colTest": "Test",
       "colOn": "On",
       "legacy": "legacy",
@@ -360,7 +362,8 @@
       "legacyHidden": "{{n}} legacy hidden",
       "noteSubscription": "Routing reaches a model only through a tier alias above. A model Refresh discovers is listed here switched off and marked <strong>new</strong>; it serves nothing until it is <strong>promoted</strong> — an alias above pointed at it under Edit — which also switches it on.",
       "noteApiKey": "Routing reaches these models only through the tier aliases above — a model with no alias serves nothing routed, however it is switched.",
-      "noteEffort": "<strong>Effort</strong> is a per-model override, for OpenAI / Responses / Codex models only. A dash sends nothing and lets the vendor pick; setting one injects <mono>reasoning_effort</mono> into every request. Not every model accepts every value — a rejected one comes back as a request error, not a validation message here."
+      "noteEffort": "<strong>Effort</strong> applies to OpenAI / Responses / Codex models. A dash keeps the caller or vendor setting; a manual level overrides it. Auto uses fresh subscription quota pace (under 60%: high, 60–100%: medium, over 100%: low) only when the target model supports the level and the caller has not chosen one. Without a quota reading or confirmed model support, Auto leaves the request unchanged. Unsupported manual values can still return an upstream error.",
+      "noteClaudeEffort": "<strong>Effort</strong> uses Claude Code’s output_config.effort for documented models. A dash keeps the caller or vendor setting; a supported manual level overrides it. Auto uses fresh subscription quota pace (under 60%: high, 60–100%: medium, over 100%: low) unless the caller explicitly sets effort or thinking. Unknown models or missing quota leave effort unchanged. Switching top-level effort between turns can invalidate prompt caching."
     },
     "connect": {
       "title": "Add provider",

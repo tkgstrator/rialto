@@ -64,28 +64,9 @@
  */
 
 import { Hono } from 'hono'
-import { getPrismaClient } from '../../db/client'
 import { logger } from '../../logger'
-import {
-  CodexDevicePollRequestSchema,
-  type CodexDevicePollResponse,
-  type CodexDeviceStartResponse
-} from '../../schemas/api/oauth'
-import { ClaudeCredentialsFileSchema, CodexCredentialsFileSchema } from '../../schemas/wire/oauth'
 import { buildClaudeAuthorizeUrl, CLAUDE_SCOPES, exchangeClaudeCode } from '../../services/claude-oauth-service'
 import { CODEX_CALLBACK_PORT, ensureCodexCallbackListener } from '../../services/codex-auth/callback-listener'
-import {
-  exchangeCodexDeviceCode,
-  pollCodexDeviceCode,
-  requestCodexDeviceCode
-} from '../../services/codex-auth/device-code'
-import {
-  createDeviceFlow,
-  deleteDeviceFlow,
-  getDeviceFlow,
-  markDeviceFlowPolled,
-  setDeviceFlowPhase
-} from '../../services/codex-auth/device-flow-store'
 import { buildCodexAuthorizeUrl, CODEX_CALLBACK_PATH, exchangeCodexCode } from '../../services/codex-auth/oauth'
 import {
   consumePendingFlow,
@@ -93,13 +74,10 @@ import {
   generateState,
   storePendingFlow
 } from '../../services/oauth-flow-service'
-import { providersForKind } from '../../services/subscription-account-sync/persist'
-import { getUsableSubAccountAuth } from '../../services/subscription-account-sync/read'
-import {
-  AccountConnectError,
-  connectClaudeAccount,
-  connectCodexAccount
-} from '../../services/subscription-connect-service'
+import { connectClaudeAccount, connectCodexAccount } from '../../services/subscription-connect-service'
+import { connectFailure } from './connect-failure'
+import { registerCredentialRoutes } from './credential-routes'
+import { registerDeviceRoutes } from './device-routes'
 
 export const oauthRoute = new Hono()
 
@@ -213,103 +191,6 @@ oauthRoute.get(CLAUDE_CALLBACK_PATH, async (c) => {
   }
 })
 
-// How a failed connection is answered. A refusal from connecting carries
-// its own status — bad credentials are the caller's to fix, an unreachable
-// vendor is not — and anything else stays the 500 it always was.
-const connectFailure = (
-  err: unknown,
-  fallback: string
-): { body: { success: false; error: string }; status: 400 | 500 | 502 } => {
-  if (err instanceof AccountConnectError) return { body: { success: false, error: err.message }, status: err.status }
-  return { body: { success: false, error: err instanceof Error ? err.message : fallback }, status: 500 }
-}
-
-// Start a Codex device-code sign-in: ask auth.openai.com for a one-time
-// code, hold the flow server-side, and hand the UI just enough to render
-// it and start polling. Codex only — no other vendor's CLI exposes this
-// device-auth endpoint set, and nothing here allows a `provider` param.
-oauthRoute.post('/api/oauth/device/start', async (c) => {
-  try {
-    const code = await requestCodexDeviceCode()
-    const { flowId, expiresAt } = createDeviceFlow(code)
-    return c.json({
-      flowId,
-      userCode: code.userCode,
-      verificationUri: code.verificationUri,
-      expiresAt,
-      intervalSeconds: code.intervalSeconds
-    } satisfies CodexDeviceStartResponse)
-  } catch (err) {
-    logger.error({ err }, '[oauth] codex device-code start failed')
-    const message = err instanceof Error ? err.message : 'Failed to start Codex device-code sign-in.'
-    return c.json({ success: false as const, error: message }, 502)
-  }
-})
-
-// One poll of an outstanding device-code flow. Client-driven: the UI times
-// this itself (see the countdown / interval it got from /start), and this
-// handler only forwards to auth.openai.com when the flow's own interval has
-// elapsed (device-flow-store.ts) — a tab polling too eagerly, or a second
-// tab on the same flow, answers from memory instead of doubling upstream
-// calls. `pending` / `connected` / `expired` are ordinary 200s; a hard
-// failure (bad flowId aside, which reads as `expired`) is the same 400/502
-// `{ success, error }` shape every other /api/oauth/* route answers with.
-oauthRoute.post('/api/oauth/device/poll', async (c) => {
-  const body = await c.req.json<unknown>().catch(() => ({}))
-  const parsed = CodexDevicePollRequestSchema.safeParse(body)
-  if (!parsed.success) return c.json({ success: false as const, error: 'Missing `flowId`.' }, 400)
-
-  const flow = getDeviceFlow(parsed.data.flowId)
-  const expired: CodexDevicePollResponse = { status: 'expired' }
-  const pending: CodexDevicePollResponse = { status: 'pending' }
-  const connected: CodexDevicePollResponse = { status: 'connected' }
-  if (flow === null) return c.json(expired)
-  // Both answered from memory, before the expiry check: a sign-in that is
-  // finishing or finished is not undone by the clock running out meanwhile.
-  if (flow.phase === 'connected') return c.json(connected)
-  if (flow.phase === 'completing') return c.json(pending)
-  if (Date.now() >= flow.expiresAt) {
-    deleteDeviceFlow(parsed.data.flowId)
-    return c.json(expired)
-  }
-  if (Date.now() < flow.nextPollAt) return c.json(pending)
-
-  // Claimed before the upstream call, not after: a poll that arrives while
-  // this one is still waiting on auth.openai.com must answer `pending` from
-  // memory. Otherwise both reach upstream, both can come back authorized,
-  // and the second exchange of the single-use code fails the sign-in.
-  markDeviceFlowPolled(parsed.data.flowId)
-  const result = await pollCodexDeviceCode({ deviceAuthId: flow.deviceAuthId, userCode: flow.userCode })
-  if (result.status === 'pending') return c.json(pending)
-  if (result.status === 'error') {
-    deleteDeviceFlow(parsed.data.flowId)
-    return c.json({ success: false as const, error: result.message }, 502)
-  }
-
-  // Authorized. The exchange, the credential check and the first usage poll
-  // take seconds, so the flow stays in the store as `completing` meanwhile
-  // (see DeviceFlowPhase) instead of being dropped up front, where a poll
-  // landing in those seconds found nothing and read `expired`.
-  setDeviceFlowPhase(parsed.data.flowId, 'completing')
-  try {
-    const tokens = await exchangeCodexDeviceCode({ code: result.code, codeVerifier: result.codeVerifier })
-    await connectCodexAccount({
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      idToken: tokens.id_token
-    })
-    setDeviceFlowPhase(parsed.data.flowId, 'connected')
-    return c.json(connected)
-  } catch (err) {
-    // The grant's code is single-use and spent, so there is nothing to retry
-    // on this flow: the error goes back once and later polls read `expired`.
-    deleteDeviceFlow(parsed.data.flowId)
-    logger.error({ err }, '[oauth] codex device-code exchange failed')
-    const failure = connectFailure(err, 'Failed to complete Codex device-code sign-in.')
-    return c.json(failure.body, failure.status)
-  }
-})
-
 // Remote-deployment relay: the browser cannot reach the loopback callback
 // when Rialto is hosted behind a reverse proxy, so the UI asks the user to
 // copy the redirect URL and POST it here. Extracts code+state and runs the
@@ -399,146 +280,5 @@ oauthRoute.post('/api/oauth/manual-callback', async (c) => {
   }
 })
 
-// Bypass the OAuth dance: accept a raw credential payload and connect the
-// account from it. Useful for remote deployments where the loopback
-// callback is unreachable and the user already has a credentials file.
-oauthRoute.post('/api/oauth/import-credentials', async (c) => {
-  const body = await c.req.json<{ provider: string; credentials: unknown }>()
-
-  // A payload the schema refuses is answered with the schema's own reasons.
-  // "Not a credentials file" alone sent an operator hunting for a format
-  // problem in a file that only lacked the field naming the account.
-  const notCredentials = (vendor: 'Claude' | 'Codex', file: string, issues: readonly { message: string }[]) => ({
-    success: false as const,
-    error: `Not a ${vendor} credentials file (${file}): ${issues.map((issue) => issue.message).join('; ')}`
-  })
-
-  if (body.provider === 'claude') {
-    const parsed = ClaudeCredentialsFileSchema.safeParse(body.credentials)
-    if (!parsed.success) {
-      return c.json(notCredentials('Claude', '~/.claude/.credentials.json', parsed.error.issues), 400)
-    }
-    const { accessToken, refreshToken, expiresAt, scopes } = parsed.data
-    try {
-      await connectClaudeAccount({
-        accessToken,
-        refreshToken,
-        expiresAt: typeof expiresAt === 'number' ? expiresAt : null,
-        scopes: scopes === undefined ? CLAUDE_SCOPES : scopes
-      })
-      return c.json({ success: true as const })
-    } catch (err) {
-      logger.error({ err }, '[oauth] import-credentials (claude) failed')
-      const failure = connectFailure(err, 'Failed to record account.')
-      return c.json(failure.body, failure.status)
-    }
-  }
-
-  if (body.provider === 'codex') {
-    const parsed = CodexCredentialsFileSchema.safeParse(body.credentials)
-    if (!parsed.success) {
-      return c.json(notCredentials('Codex', '~/.codex/auth.json', parsed.error.issues), 400)
-    }
-    try {
-      await connectCodexAccount(parsed.data)
-      return c.json({ success: true as const })
-    } catch (err) {
-      logger.error({ err }, '[oauth] import-credentials (codex) failed')
-      const failure = connectFailure(err, 'Failed to record account.')
-      return c.json(failure.body, failure.status)
-    }
-  }
-
-  return c.json({ success: false as const, error: `Unsupported provider "${body.provider}".` }, 400)
-})
-
-// Symmetric to import-credentials: decrypt the ACTIVE SubAccount's
-// tokens for the given kind and return them in the ~/.claude/.credentials.json
-// / ~/.codex/auth.json wire shape — the exact bytes import-credentials
-// accepts, so a backup taken from this endpoint round-trips into another
-// Rialto (or the on-disk CLI file) without hand-editing.
-//
-// Response carries Content-Disposition: attachment with a stable
-// filename so a browser download prompt fires; XHR / SDK callers keep
-// the JSON body untouched. Cache-control: no-store because the body is
-// secret material.
-//
-// Only the active account is exported — the same one the proxy hot path
-// would use for outbound OAuth calls right now.
-oauthRoute.post('/api/oauth/export-credentials', async (c) => {
-  const body = await c.req.json<{ provider: string }>().catch(() => ({ provider: '' }))
-  if (body.provider !== 'claude' && body.provider !== 'codex') {
-    return c.json({ success: false as const, error: `Unsupported provider "${body.provider}".` }, 400)
-  }
-  const kind: 'claude' | 'codex' = body.provider
-  const prisma = getPrismaClient()
-  const kindProviders = await providersForKind(prisma, kind)
-  if (kindProviders.length === 0) {
-    return c.json({ success: false as const, error: `No subscription provider registered for "${kind}".` }, 404)
-  }
-
-  // Walk every provider that matches this vendor kind (usually one:
-  // claude-code / codex) and take the first account that can
-  // authenticate. With several connected accounts this exports one of
-  // them, not "the" one: nothing designates an account any more, and the
-  // proxy spreads traffic across all of them per request.
-  for (const p of kindProviders) {
-    const auth = await getUsableSubAccountAuth(p.name, prisma)
-    if (!auth || !auth.accessToken) continue
-
-    if (kind === 'claude') {
-      const sub = await prisma.subAccount.findUnique({
-        where: { id: auth.subAccountId },
-        select: { scopes: true }
-      })
-      const rawScopes: unknown = sub?.scopes
-      const scopes: string[] = Array.isArray(rawScopes)
-        ? rawScopes.filter((s): s is string => typeof s === 'string')
-        : []
-      const file = {
-        claudeAiOauth: {
-          accessToken: auth.accessToken,
-          refreshToken: auth.refreshToken ?? '',
-          expiresAt: auth.expiresAt ? auth.expiresAt.valueOf() : null,
-          scopes
-        }
-      }
-      c.header('content-disposition', 'attachment; filename="claude-credentials.json"')
-      c.header('cache-control', 'no-store')
-      return c.json(file, 200)
-    }
-
-    // codex: an import needs SOMETHING to identify the account with —
-    // either the id_token (claims carry chatgpt_account_id) or the
-    // account_id itself. Emit both when we have them; refuse only when
-    // neither is stored, since that payload would 400 straight back on
-    // import and the operator has to re-OAuth to fix it.
-    if (!auth.idToken && !auth.accountId) {
-      logger.warn(
-        { provider: p.name, subAccountId: auth.subAccountId },
-        '[oauth] export-credentials: neither id_token nor account_id stored on codex account; re-authenticate to refresh'
-      )
-      return c.json(
-        {
-          success: false as const,
-          error:
-            'Stored codex account has no id_token or account_id to export (created before either was captured). Re-authenticate via Settings → Providers → Connect and retry.'
-        },
-        409
-      )
-    }
-    const file = {
-      tokens: {
-        access_token: auth.accessToken,
-        refresh_token: auth.refreshToken ?? '',
-        ...(auth.idToken ? { id_token: auth.idToken } : {}),
-        ...(auth.accountId ? { account_id: auth.accountId } : {})
-      }
-    }
-    c.header('content-disposition', 'attachment; filename="codex-auth.json"')
-    c.header('cache-control', 'no-store')
-    return c.json(file, 200)
-  }
-
-  return c.json({ success: false as const, error: `No active subscription account for "${kind}".` }, 404)
-})
+registerDeviceRoutes(oauthRoute)
+registerCredentialRoutes(oauthRoute)

@@ -9,7 +9,13 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { listSurfaces, updateSurface } from '../../services/inbound-surface-service'
 
-const SurfaceIdSchema = z.enum(['anthropic-messages', 'openai-chat', 'openai-responses', 'gemini-generate'])
+const SurfaceIdSchema = z.enum([
+  'anthropic-messages',
+  'openai-chat',
+  'openai-responses',
+  'gemini-generate',
+  'openai-images'
+])
 
 const SurfaceSchema = z
   .object({
@@ -17,6 +23,7 @@ const SurfaceSchema = z
     path: z.string().nonempty(),
     client: z.string().nonempty(),
     inboundType: z.enum(['anthropic', 'openai', 'gemini']),
+    operation: z.enum(['completion', 'image']),
     auth: z.enum(['x-api-key', 'bearer', 'google']),
     errorShape: z.enum(['anthropic', 'openai', 'google']),
     routingMode: z.enum(['routed', 'passthrough']),

@@ -19,7 +19,33 @@
 import { describe, expect, test } from 'bun:test'
 import { __testables } from '../../src/vendors/anthropic'
 
-const { claude4PlusSlug, headerModelName } = __testables
+const { claude4PlusSlug, headerModelName, parsePricingPage } = __testables
+
+describe('Anthropic grouped pricing table', () => {
+  test('joins the display name to the model ID and reads standard and cache prices', () => {
+    const pricing = `<table><thead>
+      <tr><th>Model</th><th colspan="2">Base tokens</th><th colspan="3">Prompt caching</th></tr>
+      <tr><th>Name</th><th>Input</th><th>Output</th><th>5m writes</th><th>1h writes</th><th>Hits and refreshes</th></tr>
+    </thead><tbody><tr>
+      <td>Claude Opus 5.5For long-running agentic coding and knowledge work</td>
+      <td>$4 / MTok</td><td>$20 / MTok</td><td>$5 / MTok</td><td>$8 / MTok</td><td>$0.20 / MTok</td>
+    </tr></tbody></table>`
+    expect(parsePricingPage(pricing, null)).toEqual([
+      {
+        apiId: 'claude-opus-5-5',
+        inputPer1M: 4,
+        outputPer1M: 20,
+        cachedInputPer1M: 0.2,
+        contextWindow: null,
+        legacy: false
+      }
+    ])
+  })
+
+  test('does not mistake an unrelated price table for the model table', () => {
+    expect(parsePricingPage('<table><tr><th>Input</th><th>Output</th></tr></table>', null)).toBeNull()
+  })
+})
 
 describe('claude4PlusSlug', () => {
   test('the 5 generation takes no suffix when there is no minor', () => {

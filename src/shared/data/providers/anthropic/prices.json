@@ -1,7 +1,7 @@
 {
   "vendor": "anthropic",
   "source": "https://platform.claude.com/docs/en/about-claude/pricing",
-  "lastChecked": "2026-09-01",
+  "lastChecked": "2026-09-26",
   "notes": [
     "USD per 1M tokens, Standard tier (cache / batch / fast-mode rows are dropped).",
     "Display → API id mapping is taken from the \"Latest models comparison\" table at https://platform.claude.com/docs/en/about-claude/models/overview; the remaining rows derive their id by slug rule (claude-{tier}-{major}-{minor}, default minor=0).",
@@ -33,6 +33,12 @@
       "cachedInput": 0.08
     },
     "claude-haiku-4-5": {
+      "input": 1,
+      "output": 5,
+      "context": 200000,
+      "cachedInput": 0.1
+    },
+    "claude-haiku-4-5-20251001": {
       "input": 1,
       "output": 5,
       "context": 200000,
@@ -91,6 +97,12 @@
       "output": 25,
       "context": 1000000,
       "cachedInput": 0.5
+    },
+    "claude-opus-5-5": {
+      "input": 4,
+      "output": 20,
+      "context": 1000000,
+      "cachedInput": 0.2
     },
     "claude-sonnet-4": {
       "input": 3,

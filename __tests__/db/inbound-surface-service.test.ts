@@ -30,7 +30,7 @@ describeDb('inbound-surface-service', () => {
   test('seeding gives every surface an explicit stored mode', async () => {
     await ensureInboundSurfaces()
     const rows = await getPrismaClient().inboundSurfaceConfig.findMany()
-    expect(rows).toHaveLength(4)
+    expect(rows).toHaveLength(5)
     // No surface is more default than another: they all start the same.
     expect(rows.every((r) => r.routingMode === 'passthrough')).toBe(true)
   })

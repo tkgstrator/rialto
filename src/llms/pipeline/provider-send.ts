@@ -18,6 +18,7 @@ import {
 import { fetchProvider } from '../provider-fetch'
 import type { ResolvedProvider } from '../registry/provider'
 import type { Transformer } from '../transformers/base'
+import { applyAdaptiveEffort, applyBypassManualEffort } from './adaptive-effort'
 import { captureSafeguardResultMetadata, hasSafeguards } from './classifier-diagnostics'
 import { captureAssistantMessage, extractLastUserContent } from './message-capture'
 import { shouldStripInboundHeader } from './request-chain'
@@ -35,6 +36,9 @@ export async function sendToProvider(
   deps: PipelineDeps
 ): Promise<Response> {
   const { body, outConfig } = await applyBypassAuth(requestBody, config, provider, transformer, bypass, context)
+  if (bypass) applyBypassManualEffort(body, provider, context)
+  const adaptive = applyAdaptiveEffort(body, provider, context)
+  const outboundBody = adaptive === null ? body : adaptive.body
   const url = outConfig.url !== undefined ? outConfig.url : new URL(provider.api_base_url)
 
   // One id per upstream send. LogViewer groups a request's lines by
@@ -62,16 +66,29 @@ export async function sendToProvider(
 
   const headers = buildRequestHeaders(provider, outConfig)
 
-  logRequest(reqLog, provider, body, url, bypass)
+  if (adaptive !== null) {
+    reqLog.info(
+      {
+        event: 'adaptive_reasoning_effort',
+        provider: provider.name,
+        model: context.req?.model,
+        subAccountId: context.req?.subAccountId,
+        projectedPct: adaptive.projectedPct,
+        effort: adaptive.effort
+      },
+      'adaptive reasoning effort selected from quota pace'
+    )
+  }
+  logRequest(reqLog, provider, outboundBody, url, bypass)
   const signals = context.req?.classifierSignals
-  const diagnostic = signals?.safeguardsPresent || signals?.suspectedClassifier || hasSafeguards(body)
+  const diagnostic = signals?.safeguardsPresent || signals?.suspectedClassifier || hasSafeguards(outboundBody)
   if (diagnostic) {
     reqLog.info(
       {
         event: 'classifier_diagnostic',
         phase: 'upstream_request',
         safeguardsPresent: signals?.safeguardsPresent ?? false,
-        safeguardsForwarded: hasSafeguards(body),
+        safeguardsForwarded: hasSafeguards(outboundBody),
         suspectedClassifier: signals?.suspectedClassifier ?? false,
         provider: provider.name,
         model: context.req?.model,
@@ -89,13 +106,13 @@ export async function sendToProvider(
   // the upstream call or fail it.
   if (deps.recordMessages) {
     const sessionId = resolveSessionId(context)
-    const userContent = extractLastUserContent(body)
+    const userContent = extractLastUserContent(outboundBody)
     if (userContent !== null) {
       void deps.recordMessages([{ sessionId, role: 'user', content: userContent }]).catch(() => {})
     }
   }
 
-  const response = await fetchProvider(url, body, { headers, httpsProxy: deps.httpsProxy }, { reqId }, reqLog)
+  const response = await fetchProvider(url, outboundBody, { headers, httpsProxy: deps.httpsProxy }, { reqId }, reqLog)
   const durationMs = Date.now() - startedAt
 
   if (diagnostic) {
@@ -112,16 +129,16 @@ export async function sendToProvider(
     if (response.ok) captureSafeguardResultMetadata(response, reqLog)
   }
   if (!response.ok) {
-    await handleProviderError(response, provider, transformer, body, durationMs, url, reqLog)
+    await handleProviderError(response, provider, transformer, outboundBody, durationMs, url, reqLog)
   }
 
-  logResponse(reqLog, provider, body, response.status, durationMs)
+  logResponse(reqLog, provider, outboundBody, response.status, durationMs)
 
   // Best-effort usage capture from a cloned stream so the completion
   // log carries token + cache stats. Never blocks the response.
   if (deps.recordUsage && typeof response.clone === 'function') {
     const clone = response.clone()
-    void captureUsage(clone, context, provider, body, response.status, durationMs, deps).catch(() => {})
+    void captureUsage(clone, context, provider, outboundBody, response.status, durationMs, deps).catch(() => {})
   }
 
   // Best-effort assistant-content capture from a second clone. Parses

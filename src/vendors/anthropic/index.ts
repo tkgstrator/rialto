@@ -149,18 +149,20 @@ const parseOverview = (html: string): OverviewMaps => {
   return maps
 }
 
-// The pricing page's first <table> is the base-rate model table. We
-// locate it by matching column headers rather than table index so a
-// future page reorder doesn't silently pick up (e.g.) the Batch table.
+// Locate the model-pricing table by its leaf headers rather than its
+// position: the current page groups Input/Output under Base tokens,
+// while the earlier table used one flat header row.
 const findPricingTable = (html: string): { headers: string[]; rows: string[][] } | null => {
   for (const table of findTables(html)) {
     const rows = splitRows(table).map(splitCells)
     if (rows.length === 0) continue
-    const header = rows[0]
-    const hasInput = header.some((c) => /base input/i.test(c))
-    const hasOutput = header.some((c) => /output tokens/i.test(c))
-    const hasModel = header.some((c) => /^model$/i.test(c))
-    if (hasInput && hasOutput && hasModel) return { headers: header, rows: rows.slice(1) }
+    const headers = rows.find(
+      (row) =>
+        row.some((c) => /^model$|^name$/i.test(c)) &&
+        row.some((c) => /^input$|base input/i.test(c)) &&
+        row.some((c) => /^output$|output tokens/i.test(c))
+    )
+    if (headers !== undefined) return { headers, rows: rows.slice(rows.indexOf(headers) + 1) }
   }
   return null
 }
@@ -175,10 +177,11 @@ interface ColumnIndices {
 
 const findColumns = (headers: string[]): ColumnIndices | null => {
   const idx = (label: string): number => headers.findIndex((h) => h.toLowerCase().includes(label.toLowerCase()))
-  const input = idx('base input')
-  const output = idx('output tokens')
+  const input = headers.findIndex((h) => /^(base )?input(?: tokens)?$/i.test(h))
+  const output = headers.findIndex((h) => /^output(?: tokens)?$/i.test(h))
   if (input < 0 || output < 0) return null
-  return { input, output, cacheRead: idx('cache hits') }
+  const cacheRead = idx('cache hits')
+  return { input, output, cacheRead: cacheRead < 0 ? idx('hits and refreshes') : cacheRead }
 }
 
 const contextFor = (display: string, cleaned: string, overview: OverviewMaps): number | null => {
@@ -198,7 +201,8 @@ const readPriceRow = (row: string[], cols: ColumnIndices, overview: OverviewMaps
   const display = row[0]
   if (display === undefined || display === '') return null
   const cleaned = stripStatus(display)
-  const apiId = resolveApiId(display, cleaned, overview)
+  const name = headerModelName(cleaned)
+  const apiId = resolveApiId(display, name === null ? cleaned : name, overview)
   if (apiId === undefined) return null
   const inputPer1M = parsePrice(orEmpty(row[cols.input]))
   const outputPer1M = parsePrice(orEmpty(row[cols.output]))
@@ -209,9 +213,26 @@ const readPriceRow = (row: string[], cols: ColumnIndices, overview: OverviewMaps
     inputPer1M,
     outputPer1M,
     cachedInputPer1M,
-    contextWindow: contextFor(display, cleaned, overview),
+    contextWindow: contextFor(display, name === null ? cleaned : name, overview),
     legacy: isLegacyDisplay(display)
   }
+}
+
+const parsePricingPage = (pricingHtml: string, overviewHtml: string | null): ScrapedPriceEntry[] | null => {
+  const table = findPricingTable(pricingHtml)
+  if (table === null) return null
+  const cols = findColumns(table.headers)
+  if (cols === null) return null
+  const overview = overviewHtml === null ? emptyOverview : parseOverview(overviewHtml)
+  const seen = new Set<string>()
+  const out: ScrapedPriceEntry[] = []
+  for (const row of table.rows) {
+    const entry = readPriceRow(row, cols, overview)
+    if (entry === null || seen.has(entry.apiId)) continue
+    seen.add(entry.apiId)
+    out.push(entry)
+  }
+  return out
 }
 
 export class AnthropicProvider extends VendorProvider {
@@ -222,30 +243,12 @@ export class AnthropicProvider extends VendorProvider {
   async scrape(): Promise<ScrapedPriceEntry[]> {
     const [pricingHtml, overviewHtml] = await Promise.all([fetchScrapePage(PRICING_URL), fetchScrapePage(OVERVIEW_URL)])
     if (pricingHtml === null) return []
-    const table = findPricingTable(pricingHtml)
-    if (table === null) {
+    const prices = parsePricingPage(pricingHtml, overviewHtml)
+    if (prices === null) {
       logger.warn('anthropic scrape: model-pricing table header signature not found')
       return []
     }
-    const cols = findColumns(table.headers)
-    if (cols === null) {
-      logger.warn({ headers: table.headers }, 'anthropic scrape: required columns missing')
-      return []
-    }
-    const overview = overviewHtml === null ? emptyOverview : parseOverview(overviewHtml)
-    // De-dup: first row per apiId wins so introductory pricing (e.g.
-    // Sonnet 5 through Aug 31, 2026) takes precedence over the
-    // "starting September 1" row that follows it.
-    const seen = new Set<string>()
-    const out: ScrapedPriceEntry[] = []
-    for (const row of table.rows) {
-      const entry = readPriceRow(row, cols, overview)
-      if (entry === null) continue
-      if (seen.has(entry.apiId)) continue
-      seen.add(entry.apiId)
-      out.push(entry)
-    }
-    return out
+    return prices
   }
 }
 
@@ -257,4 +260,4 @@ export const scrapeAnthropicPricing = (): Promise<ScrapedPriceEntry[]> => new An
 // know is skipped; an invented `.0` produces an id the vendor never
 // published), and both failures are invisible from the scrape's output
 // alone — the model simply is not there.
-export const __testables = { claude4PlusSlug, headerModelName }
+export const __testables = { claude4PlusSlug, headerModelName, parsePricingPage }

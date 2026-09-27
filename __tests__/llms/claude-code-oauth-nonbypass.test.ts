@@ -47,6 +47,39 @@ const ctx = { req: { headers: {} } } as unknown as TransformerContext
 describe('ClaudeCodeOauthTransformer.transformRequestIn — non-bypass provider-chain path', () => {
   const t = new ClaudeCodeOauthTransformer()
 
+  test('translates an OpenAI inbound effort to native output_config without leaking the reasoning field', async () => {
+    const provider = providerWithSubscriptionAuth('fixture-token', 'sub_1')
+    const inbound = {
+      model: 'claude-sonnet-5',
+      messages: [{ role: 'user', content: 'hi' }],
+      reasoning: { effort: 'medium' },
+      max_output_tokens: 1024
+    } as unknown as UnifiedChatRequest
+    const context = {
+      req: { headers: {}, model: 'claude-sonnet-5', surface: 'openai-responses' }
+    } as TransformerContext
+    const hook = await t.transformRequestIn(inbound, provider, context)
+    const body = hook.body as Record<string, unknown>
+    expect(body.output_config).toEqual({ effort: 'medium' })
+    expect(body).not.toHaveProperty('reasoning')
+    expect(body).not.toHaveProperty('max_output_tokens')
+    expect(body.max_tokens).toBe(1024)
+  })
+
+  test('does not emit unsupported OpenAI reasoning levels to Claude', async () => {
+    const provider = providerWithSubscriptionAuth('fixture-token', 'sub_1')
+    const inbound = {
+      model: 'claude-sonnet-5',
+      messages: [{ role: 'user', content: 'hi' }],
+      reasoning: { effort: 'none' }
+    } as unknown as UnifiedChatRequest
+    const context = { req: { headers: {}, model: 'claude-sonnet-5', surface: 'openai-chat' } } as TransformerContext
+    const hook = await t.transformRequestIn(inbound, provider, context)
+    const body = hook.body as Record<string, unknown>
+    expect(body.output_config).toBeUndefined()
+    expect(body.reasoning).toBeUndefined()
+  })
+
   test('attaches OAuth bearer + drops x-api-key so Anthropic upstream sees the real token', async () => {
     const provider = providerWithSubscriptionAuth('claude-oauth-token-abc', 'sub_1')
     const request: UnifiedChatRequest = {

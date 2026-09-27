@@ -135,7 +135,7 @@ export class OpenAIResponsesTransformer extends Transformer {
     // Manual per-model effort override wins over whatever the client
     // sent (typically inherited from Anthropic's `thinking` block).
     const effortOverride = provider?.modelReasoningEfforts?.[responsesReq.model ?? '']
-    if (effortOverride) {
+    if (effortOverride && effortOverride !== 'auto') {
       // biome-ignore plugin: seeding the unified reasoning block so rewriteReasoning below picks up the override; the narrower unified type does not admit direct assignment.
       ;(responsesReq as unknown as { reasoning: { effort: string } }).reasoning = { effort: effortOverride }
     }

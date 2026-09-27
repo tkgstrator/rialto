@@ -84,7 +84,7 @@ export async function listSurfaces(): Promise<ResolvedSurface[]> {
       // A surface added by a later version has no row until
       // `ensureInboundSurfaces` runs; the seed value stands in until it
       // does, so a read never has to invent a per-surface default.
-      routingMode: stored !== undefined ? stored : INITIAL_ROUTING_MODE,
+      routingMode: surface.operation === 'image' ? 'passthrough' : stored !== undefined ? stored : INITIAL_ROUTING_MODE,
       profileKey: row?.profileKey !== undefined && row.profileKey !== null ? row.profileKey : DEFAULT_PROFILE_KEY,
       deniedTargets: row?.deniedTargets ?? []
     }
@@ -161,6 +161,9 @@ export interface SurfaceUpdate {
 export async function updateSurface(input: SurfaceUpdate): Promise<ResolvedSurface[]> {
   const descriptor = surfaceById(input.surface)
   if (descriptor === undefined) throw new Error(`Unknown inbound surface: ${input.surface}`)
+  if (descriptor.operation === 'image' && input.routingMode !== 'passthrough') {
+    throw new Error('Image generation does not support scenario routing')
+  }
 
   const profileKey = input.profileKey === undefined ? null : input.profileKey
   // `deniedTargets` is optional so the mode/profile writers — which have

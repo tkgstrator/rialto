@@ -26,6 +26,7 @@
  */
 
 import { z } from 'zod'
+import { isCodexImageModel } from '@/shared/data/subscriptions'
 import { planCapacityWeight } from '@/shared/plan-capacity'
 import { getPrismaClient } from '../../db/client'
 import type { PrismaClient, SubAccount, SubAccountQuota } from '../../generated/prisma/client'
@@ -54,7 +55,7 @@ declare global {
 
 const counters = { consecutiveFailures: 0, tickCount: 0 }
 
-const readIntervalMs = (): number => {
+export const readRoutingSchedulerIntervalMs = (): number => {
   const raw = process.env.ROUTING_SCHEDULER_INTERVAL_MS
   const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN
   return Number.isFinite(parsed) && parsed >= 60_000 ? parsed : DEFAULT_TICK_MS
@@ -130,6 +131,7 @@ async function loadCandidateState(prisma: PrismaClient): Promise<LoadedState> {
     accountViews.push(...accounts.map(viewOf))
     if (!p.enabled) continue
     for (const m of p.models) {
+      if (isCodexImageModel(m.name)) continue
       const target = `${p.name},${m.name}`
       candidates.set(target, { target, providerName: p.name, modelName: m.name, accounts })
     }
@@ -269,7 +271,7 @@ export function startRoutingScheduler(): void {
   if (globalThis.__rialtoRoutingSchedulerStarted) return
   globalThis.__rialtoRoutingSchedulerStarted = true
 
-  const intervalMs = readIntervalMs()
+  const intervalMs = readRoutingSchedulerIntervalMs()
   logger.info({ intervalMs }, '[routing-scheduler] armed')
 
   const scheduleNext = (): void => {

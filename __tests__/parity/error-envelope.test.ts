@@ -38,12 +38,13 @@ describe('every surface has an envelope', () => {
     }
   })
 
-  test('four surfaces map onto three envelopes, the two openai ones sharing', () => {
+  test('completion and image surfaces map onto three envelopes', () => {
     expect(INBOUND_SURFACES.map((s) => `${s.id}:${s.errorShape}`)).toEqual([
       'anthropic-messages:anthropic',
       'openai-chat:openai',
       'openai-responses:openai',
-      'gemini-generate:google'
+      'gemini-generate:google',
+      'openai-images:openai'
     ])
   })
 })

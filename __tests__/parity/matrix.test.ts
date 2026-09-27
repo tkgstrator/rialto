@@ -23,6 +23,8 @@ import { describe, expect, test } from 'bun:test'
 import { existsSync } from 'node:fs'
 import { INBOUND_SURFACES } from '../../src/llms/inbound/surfaces'
 
+const COMPLETION_SURFACES = INBOUND_SURFACES.filter((surface) => surface.operation === 'completion')
+
 const DOC_PATH = new URL('../../docs/architecture/inbound-parity.md', import.meta.url).pathname
 const REPO_ROOT = new URL('../../', import.meta.url).pathname
 
@@ -78,7 +80,7 @@ describe('the shape of the matrix', () => {
     // The headings are abbreviated, so match on the tail of each
     // descriptor's path. Adding a surface without adding a column fails
     // here.
-    expect(header.length).toBe(INBOUND_SURFACES.length + 1)
+    expect(header.length).toBe(COMPLETION_SURFACES.length + 1)
     expect(header.slice(1)).toEqual(['messages', 'chat/completions', 'responses', 'gemini'])
   })
 
@@ -88,7 +90,7 @@ describe('the shape of the matrix', () => {
 
   test('all 40 cells carry a label, leaving no blank', () => {
     const cells = body.flatMap((row) => row.slice(1))
-    expect(cells.length).toBe(FEATURES.length * INBOUND_SURFACES.length)
+    expect(cells.length).toBe(FEATURES.length * COMPLETION_SURFACES.length)
     for (const cell of cells) {
       expect(cell.length).toBeGreaterThan(0)
       const label = cell.replace(/\s*\(\d+\)\s*$/, '')

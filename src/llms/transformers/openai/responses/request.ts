@@ -38,11 +38,11 @@ function deleteField(target: MutableMessage, key: string): void {
 export function rewriteReasoning(responsesReq: ResponsesUnifiedChatRequest): void {
   if (!responsesReq.reasoning) return
   const effort = responsesReq.reasoning.effort
-  // biome-ignore plugin: rewriting `reasoning` to the Responses-API `{effort, summary}` shape — the unified type narrows it as `{effort, max_tokens, enabled}` only.
-  ;(responsesReq as unknown as { reasoning: Record<string, unknown> }).reasoning = {
+  const summary = Reflect.get(responsesReq.reasoning, 'summary')
+  Reflect.set(responsesReq, 'reasoning', {
     effort,
-    summary: 'detailed'
-  }
+    summary: summary === undefined ? 'detailed' : summary
+  })
 }
 
 export function collectSystemMessages(responsesReq: ResponsesUnifiedChatRequest, input: unknown[]): void {

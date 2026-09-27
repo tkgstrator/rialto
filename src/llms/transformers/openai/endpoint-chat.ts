@@ -23,7 +23,7 @@ import { absorbTopLevelSystem } from '../../utils/system-blocks'
 import { liftToolResultImages } from '../../utils/tool-result-images'
 import { Transformer } from '../base'
 
-// gpt-5.x and o1/o3/o4 chat completions reject `max_tokens` in favour of
+// gpt-5.x, gpt-6.x and o-series chat completions reject `max_tokens` in favour of
 // `max_completion_tokens`. The check is intentionally narrow — gpt-4.x
 // still uses the legacy field, and codex/Responses-only models are
 // peeled off by the chain before we see them. The regex itself is
@@ -105,12 +105,15 @@ export class OpenAITransformer extends Transformer {
       delete (req as { max_tokens?: unknown }).max_tokens
     }
     const effort = provider.modelReasoningEfforts?.[req.model ?? '']
-    if (effort && modelNeedsMaxCompletionTokens(req.model)) {
-      // Chat Completions uses the top-level `reasoning_effort` field on
-      // gpt-5.x / o-series models; other families ignore it, so gate on
-      // the same predicate we use for max_completion_tokens.
-      req.reasoning_effort = effort
+    if (modelNeedsMaxCompletionTokens(req.model)) {
+      // Chat Completions takes a scalar, including when the inbound Chat
+      // surface was normalised into unified reasoning by the endpoint hook.
+      const clientEffort = req.reasoning?.effort
+      if (effort && effort !== 'auto') req.reasoning_effort = effort
+      else if (typeof clientEffort === 'string') req.reasoning_effort = clientEffort
     }
+    // Chat rejects the unified Responses reasoning object.
+    if ('reasoning' in req) delete req.reasoning
     // A tool message takes text only on this wire format.
     if (Array.isArray(req.messages)) req.messages = liftToolResultImages(req.messages)
     return req

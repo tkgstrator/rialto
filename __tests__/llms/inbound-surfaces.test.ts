@@ -170,7 +170,7 @@ describe('descriptor completeness', () => {
       expect(typeof surface.errorShape).toBe('string')
       expect(typeof surface.auth).toBe('string')
       expect(typeof surface.inboundType).toBe('string')
-      expect(typeof surface.aggregateSse).toBe('function')
+      expect(typeof surface.aggregateSse).toBe(surface.operation === 'completion' ? 'function' : 'undefined')
     }
   })
 

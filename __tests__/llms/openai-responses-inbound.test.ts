@@ -281,6 +281,15 @@ describe('convertResponsesRequestToUnified', () => {
     })
     expect((unified as Record<string, unknown>).reasoning).toEqual({ effort: 'high' })
   })
+
+  test('explicit none remains a client opt-out in the unified request', () => {
+    const unified = convertResponsesRequestToUnified({
+      model: 'gpt-5.4',
+      input: 'x',
+      reasoning: { effort: 'none', summary: 'auto' }
+    })
+    expect(Reflect.get(unified, 'reasoning')).toEqual({ effort: 'none', summary: 'auto' })
+  })
 })
 
 describe('convertChatCompletionToResponses', () => {
