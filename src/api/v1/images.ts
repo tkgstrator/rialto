@@ -90,8 +90,15 @@ async function readImageInput(c: Context): Promise<ImageInput | null> {
 }
 
 function imageUrl(base: string): string | null {
-  if (base !== 'https://chatgpt.com/backend-api/codex') return null
-  return `${base}/images/generations`
+  try {
+    const url = new URL(base)
+    if (url.protocol !== 'https:' || url.hostname !== 'chatgpt.com' || url.pathname !== '/backend-api/codex')
+      return null
+    if (url.search || url.hash || url.username || url.password || url.port) return null
+    return `${url.origin}${url.pathname}/images/generations`
+  } catch {
+    return null
+  }
 }
 
 function usageOf(payload: Record<string, unknown>): { input: number; output: number } {
