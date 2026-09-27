@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from 'hono'
 import './context'
 import { catalogPathFor, type SurfaceAuth, type SurfaceErrorShape, surfaceForPath } from '../llms/inbound/surfaces'
-import { noteTokenUse, resolveAccessToken } from '../services/access-token-service'
+import { consumeDailyRequest, noteTokenUse, resolveAccessToken } from '../services/access-token-service'
 import { readAccessConfig, verifyAccessJwt } from '../services/cloudflare-access'
 import { isLocalRequest } from './local-access'
 
@@ -49,6 +49,65 @@ function unauthorizedResponse(
     status: 401,
     body: { type: 'error', error: { type: 'authentication_error', message } }
   }
+}
+
+// A plan-minted token has a daily request cap. The refusal is a 429 in
+// the surface's own envelope so an SDK's retry logic reads it as a rate
+// limit, with Retry-After set to the next UTC midnight.
+function limitResponse(
+  shape: SurfaceErrorShape,
+  status: 429 | 503,
+  message: string
+): { status: 429 | 503; body: Record<string, unknown> } {
+  if (shape === 'openai') {
+    return {
+      status,
+      body: {
+        error: {
+          message,
+          type: status === 429 ? 'rate_limit_error' : 'server_error',
+          param: null,
+          code: status === 429 ? 'daily_limit_exceeded' : 'usage_ledger_unavailable'
+        }
+      }
+    }
+  }
+  if (shape === 'google') {
+    return {
+      status,
+      body: { error: { code: status, message, status: status === 429 ? 'RESOURCE_EXHAUSTED' : 'UNAVAILABLE' } }
+    }
+  }
+  return {
+    status,
+    body: { type: 'error', error: { type: status === 429 ? 'rate_limit_error' : 'overloaded_error', message } }
+  }
+}
+
+const DAILY_LIMIT_REACHED = "This access token has used today's requests. It resets at 00:00 UTC."
+
+const DAILY_LEDGER_UNAVAILABLE = 'The usage ledger is unavailable, so this capped token cannot be admitted right now.'
+
+/**
+ * Count the request against a capped token, and the response that refuses
+ * it when the day's allowance is spent (429) or the ledger is down (503).
+ * Null when the request may proceed.
+ */
+async function dailyLimitRefusal(
+  c: Parameters<MiddlewareHandler>[0],
+  tokenId: string,
+  limit: number,
+  errorShape: SurfaceErrorShape
+): Promise<Response | null> {
+  const allowance = await consumeDailyRequest(tokenId, limit)
+  if (allowance.outcome === 'allowed') return null
+  if (allowance.outcome === 'exhausted') {
+    c.header('retry-after', String(allowance.retryAfterSeconds))
+    const err = limitResponse(errorShape, 429, DAILY_LIMIT_REACHED)
+    return c.json(err.body, err.status)
+  }
+  const err = limitResponse(errorShape, 503, DAILY_LEDGER_UNAVAILABLE)
+  return c.json(err.body, err.status)
 }
 
 const PROXY_UNAUTHORIZED =
@@ -179,6 +238,15 @@ export function createProxyAuth(options: ApiKeyAuthOptions = {}): MiddlewareHand
     if (!catalogRead && token.surfaces.length > 0 && (reached === undefined || !token.surfaces.includes(reached.id))) {
       const err = unauthorizedResponse(errorShape, PROXY_WRONG_SURFACE)
       return c.json(err.body, err.status)
+    }
+
+    // The daily cap counts completions only: reading the model list
+    // spends nothing, and an SDK that lists models before every call
+    // would otherwise halve a small allowance.
+    const dailyLimit = token.plan === null ? null : token.plan.dailyRequestLimit
+    if (dailyLimit !== null && !catalogRead) {
+      const refusal = await dailyLimitRefusal(c, token.id, dailyLimit, errorShape)
+      if (refusal !== null) return refusal
     }
 
     c.set('accessToken', token)

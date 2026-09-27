@@ -37,7 +37,7 @@ import { TokenDetailHeader } from '@/components/rialto/settings/access/TokenDeta
 import { TokenReadings } from '@/components/rialto/settings/access/TokenReadings'
 import { SettingsField } from '@/components/rialto/settings/SettingsLayout'
 import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
-import { type AccessTokenWire, api } from '@/lib/api'
+import { type AccessTokenWire, api, type PlanWire } from '@/lib/api'
 import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
 import { tokenState } from '@/lib/rialto/settings/access-tokens'
 
@@ -53,10 +53,25 @@ const ROTATE_REFUSAL: Readonly<Record<string, string>> = {
   expired: 'settings.access.rotateRefusedExpired'
 }
 
-/** The two fields this page can change. */
+/** The fields this page can change. */
 interface ScopeDraft {
   surfaces: string[]
   profileKey: string
+  /** ANY for no plan, which the wire sends as null. */
+  planId: string
+}
+
+const draftOf = (token: AccessTokenWire): ScopeDraft => ({
+  surfaces: token.surfaces,
+  profileKey: token.profileKey === null ? ANY : token.profileKey,
+  planId: token.plan === null ? ANY : token.plan.id
+})
+
+const draftChanged = (draft: ScopeDraft, token: AccessTokenWire): boolean => {
+  const saved = draftOf(token)
+  return (
+    !sameScope(draft.surfaces, saved.surfaces) || draft.profileKey !== saved.profileKey || draft.planId !== saved.planId
+  )
 }
 
 interface Revealed {
@@ -78,6 +93,7 @@ export function TokenDetail() {
   const [revealed, setRevealed] = useState<Revealed | null>(null)
   const [draft, setDraft] = useState<ScopeDraft | null>(null)
   const [profiles, setProfiles] = useState<{ key: string }[]>([])
+  const [plans, setPlans] = useState<PlanWire[]>([])
   // Pinned per load so every relative label measures from one instant.
   const [now, setNow] = useState(Date.now())
 
@@ -88,7 +104,7 @@ export function TokenDetail() {
         setToken(res)
         // Reset the draft from the server's answer after every load, so a
         // rotation or a save cannot leave a stale edit on screen.
-        setDraft({ surfaces: res.surfaces, profileKey: res.profileKey === null ? ANY : res.profileKey })
+        setDraft(draftOf(res))
         setNow(Date.now())
       })
       .catch((e: Error) => setError(e.message))
@@ -103,6 +119,12 @@ export function TokenDetail() {
       .catch(() => {
         // The picker falls back to "follow the endpoint", which is the
         // server's own default when profileKey is null.
+      })
+    api
+      .getPlans()
+      .then((res) => setPlans(res.plans))
+      .catch(() => {
+        // The plan picker then offers only "no plan" and the token's own.
       })
   }, [])
 
@@ -186,11 +208,7 @@ export function TokenDetail() {
 
   // Computed above the early returns: useUnsavedGuard is a hook, and a
   // return between renders would change the hook order.
-  const dirty =
-    token !== null &&
-    draft !== null &&
-    (!sameScope(draft.surfaces, token.surfaces) ||
-      draft.profileKey !== (token.profileKey === null ? ANY : token.profileKey))
+  const dirty = token !== null && draft !== null && draftChanged(draft, token)
   const unsavedDialog = useUnsavedGuard(dirty)
 
   const save = () => {
@@ -201,7 +219,8 @@ export function TokenDetail() {
         // Resolved through the fetched registry rather than asserted, so
         // an id the server does not know cannot reach the wire.
         surfaces: surfaces.filter((s) => draft.surfaces.includes(s.id)).map((s) => s.id),
-        profileKey: draft.profileKey === ANY ? null : draft.profileKey
+        profileKey: draft.profileKey === ANY ? null : draft.profileKey,
+        planId: draft.planId === ANY ? null : draft.planId
       })
       .then(() => {
         toast.success(t('settings.access.scopeSaved', { name: token.name }))
@@ -213,7 +232,7 @@ export function TokenDetail() {
 
   const discard = () => {
     if (token === null) return
-    setDraft({ surfaces: token.surfaces, profileKey: token.profileKey === null ? ANY : token.profileKey })
+    setDraft(draftOf(token))
   }
 
   if (error !== null) {
@@ -235,9 +254,24 @@ export function TokenDetail() {
 
   const state = tokenState(token, now)
   const editable = state === 'active'
+  // The token's own plan stays selectable even if the plans list failed to load.
+  const own = token.plan
+  const planOptions = own === null || plans.some((plan) => plan.id === own.id) ? plans : [own, ...plans]
 
   return (
-    <Screen crumbs={[{ label: token.name }]} subtitle={t('settings.access.tokenSubtitle')}>
+    <Screen
+      crumbs={
+        // An install's token sits under its app, which is where it was reached from.
+        token.app === null
+          ? [{ label: token.name }]
+          : [
+              { label: t('access.tabs.apps'), href: '/access-tokens/apps' },
+              { label: token.app.name, href: `/access-tokens/apps/${token.app.id}` },
+              { label: token.name }
+            ]
+      }
+      subtitle={t('settings.access.tokenSubtitle')}
+    >
       <div className='min-w-0'>
         <TokenDetailHeader
           token={token}
@@ -272,6 +306,24 @@ export function TokenDetail() {
             {profiles.map((profile) => (
               <option key={profile.key} value={profile.key}>
                 {profile.key}
+              </option>
+            ))}
+          </Picker>
+        </SettingsField>
+
+        {/* A plan limits the models and the daily count; no plan leaves
+            the token unrestricted, as hand-issued ones always were. */}
+        <SettingsField label={t('access.token.plan')} hint={t('access.token.planHint')}>
+          <Picker
+            label={t('access.token.plan')}
+            value={draft.planId}
+            onChange={(next) => setDraft({ ...draft, planId: next })}
+            disabled={!editable || busy}
+          >
+            <option value={ANY}>{t('access.token.noPlan')}</option>
+            {planOptions.map((plan) => (
+              <option key={plan.id} value={plan.id}>
+                {plan.name}
               </option>
             ))}
           </Picker>

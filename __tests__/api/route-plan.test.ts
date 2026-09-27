@@ -22,7 +22,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import pino from 'pino'
-import { buildRoutePlan, type RoutePlan } from '../../src/api/v1/route-plan'
+import { buildRoutePlan, planModel, type RoutePlan } from '../../src/api/v1/route-plan'
 import dayjs from '../../src/lib/dayjs'
 import type { LlmsContext } from '../../src/llms'
 import { ConfigStore } from '../../src/llms/registry/config'
@@ -33,6 +33,7 @@ import { __setTierProfilesForTests } from '../../src/llms/tier-router/runtime'
 import { AnthropicTransformer } from '../../src/llms/transformers/anthropic'
 import { GeminiTransformer } from '../../src/llms/transformers/gemini'
 import { OpenAITransformer } from '../../src/llms/transformers/openai'
+import type { TokenPlan } from '../../src/services/access-token-service'
 import { clearModelExhaustion, markModelExhausted } from '../../src/services/failover-state'
 import { __setSurfacesForTests, invalidateSurfaceCache } from '../../src/services/inbound-surface-service'
 import { __resetModelHealthForTest, recordModelFailure } from '../../src/services/routing-scheduler/model-health'
@@ -76,7 +77,7 @@ async function buildContext(): Promise<LlmsContext> {
 async function plan(
   path: string,
   body: Record<string, unknown>,
-  inbound: { headers?: Record<string, string>; tokenId?: string } = {}
+  inbound: { headers?: Record<string, string>; tokenId?: string; plan?: TokenPlan } = {}
 ): Promise<RoutePlan | Response> {
   const ctx = await buildContext()
   const app = new Hono()
@@ -85,7 +86,13 @@ async function plan(
     // The /v1 auth middleware sets this when an issued token authenticated
     // the call; buildRoutePlan reads it back off the context.
     if (inbound.tokenId !== undefined)
-      c.set('accessToken', { id: inbound.tokenId, name: 'test', surfaces: [], profileKey: null })
+      c.set('accessToken', {
+        id: inbound.tokenId,
+        name: 'test',
+        surfaces: [],
+        profileKey: null,
+        plan: inbound.plan === undefined ? null : inbound.plan
+      })
     captured.value = await buildRoutePlan(c, ctx)
     return c.text('ok')
   })
@@ -99,6 +106,9 @@ async function plan(
   if (captured.value === null) throw new Error('buildRoutePlan never ran')
   return captured.value
 }
+
+const plan_ = (path: string, body: Record<string, unknown>, tokenPlan: TokenPlan) =>
+  plan(path, body, { tokenId: 'tok-plan', plan: tokenPlan })
 
 const asPlan = (result: RoutePlan | Response): RoutePlan => {
   if (result instanceof Response) throw new Error(`expected a plan, got ${result.status}`)
@@ -170,6 +180,31 @@ describe('a routed surface walks the scenario routes', () => {
     expect(result.route).toBe('default')
     expect(result.isSubagent).toBe(false)
     // What the client asked for is still recorded next to what was sent.
+    expect(result.requestedModel).toBe('claude-sonnet-4-5')
+  })
+
+  test('a token on a plan keeps an allowed model and skips the routes', async () => {
+    // A plan pays for its listed models; a routed chain must not be able
+    // to swap in a costlier one.
+    __setTierProfilesForTests({ live: onDefault([opusRoute()]) })
+    const plan: TokenPlan = {
+      models: [SONNET, 'openai,gpt-cheap'],
+      defaultModel: 'openai,gpt-cheap',
+      dailyRequestLimit: null
+    }
+    const result = asPlan(await plan_('/v1/chat/completions', { ...body(), model: SONNET }, plan))
+    expect(result.primaryModel).toBe(SONNET)
+    expect(result.fallbacks).toEqual([])
+    expect(result.route).toBe('passthrough')
+  })
+
+  test('a token on a plan sends any other model to the plan’s default', async () => {
+    __setTierProfilesForTests({ live: onDefault([opusRoute()]) })
+    const plan: TokenPlan = { models: [SONNET], defaultModel: SONNET, dailyRequestLimit: null }
+    const result = asPlan(await plan_('/v1/chat/completions', body(), plan))
+    expect(result.primaryModel).toBe(SONNET)
+    expect(result.routedBody.model).toBe(SONNET)
+    // The log still records what the client asked for.
     expect(result.requestedModel).toBe('claude-sonnet-4-5')
   })
 
@@ -485,5 +520,20 @@ describe('passthrough denial', () => {
     __setTierProfilesForTests({ live: onDefault([sonnetRoute()]) })
     const result = asPlan(await plan('/v1/messages', { model: 'claude-sonnet-4-5', messages: [] }))
     expect(result.primaryModel).toBe(SONNET)
+  })
+})
+
+describe('planModel', () => {
+  const plan: TokenPlan = { models: ['a,one', 'b,two'], defaultModel: 'a,one', dailyRequestLimit: 5 }
+
+  test('leaves a token with no plan to the caller and the router', () => {
+    expect(planModel(null, 'x,y')).toBeUndefined()
+    expect(planModel(undefined, undefined)).toBeUndefined()
+  })
+
+  test('keeps an allowed model and defaults everything else', () => {
+    expect(planModel(plan, 'b,two')).toBe('b,two')
+    expect(planModel(plan, 'c,three')).toBe('a,one')
+    expect(planModel(plan, undefined)).toBe('a,one')
   })
 })

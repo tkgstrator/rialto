@@ -51,7 +51,11 @@ const TokenSchema = z
     revokedAt: z.string().nonempty().nullable(),
     // Null while the row still carries the secret it was issued with.
     rotatedAt: z.string().nonempty().nullable(),
-    createdAt: z.string().nonempty()
+    createdAt: z.string().nonempty(),
+    // The plan this token spends under; null leaves it unrestricted.
+    plan: z.object({ id: z.string().nonempty(), name: z.string().nonempty() }).nullable(),
+    // The authorized app whose install minted it, if one did.
+    app: z.object({ id: z.string().nonempty(), name: z.string().nonempty() }).nullable()
   })
   .openapi('AccessToken')
 
@@ -62,7 +66,8 @@ const IssueBodySchema = z
     name: z.string().nonempty(),
     surfaces: z.array(SurfaceIdSchema).optional(),
     profileKey: z.string().nonempty().nullable().optional(),
-    expiresAt: z.iso.datetime().nullable().optional()
+    expiresAt: z.iso.datetime().nullable().optional(),
+    planId: z.string().nonempty().nullable().optional()
   })
   .openapi('AccessTokenIssueRequest')
 
@@ -80,11 +85,16 @@ accessTokensRoute.openapi(
   createRoute({
     method: 'get',
     path: '/api/access-tokens',
+    request: {
+      // `manual` leaves out the tokens app installs minted for themselves,
+      // which the Apps tab lists per app.
+      query: z.object({ issued: z.enum(['all', 'manual']).default('all') })
+    },
     responses: {
       200: { description: 'Issued tokens', content: { 'application/json': { schema: ListSchema } } }
     }
   }),
-  async (c) => c.json({ tokens: await listAccessTokens() }, 200)
+  async (c) => c.json({ tokens: await listAccessTokens({ manualOnly: c.req.valid('query').issued === 'manual' }) }, 200)
 )
 
 accessTokensRoute.openapi(
@@ -122,14 +132,15 @@ accessTokensRoute.openapi(
 /**
  * What a token is allowed to do, after the fact.
  *
- * Only scope and profile. Renaming is cosmetic, the secret has its own
+ * Scope, profile and plan. Renaming is cosmetic, the secret has its own
  * operation, and an expiry that could be pushed out indefinitely is not
  * an expiry — so none of them are here.
  */
 const UpdateBodySchema = z
   .object({
     surfaces: z.array(SurfaceIdSchema).optional(),
-    profileKey: z.string().nonempty().nullable().optional()
+    profileKey: z.string().nonempty().nullable().optional(),
+    planId: z.string().nonempty().nullable().optional()
   })
   .openapi('AccessTokenUpdateRequest')
 
