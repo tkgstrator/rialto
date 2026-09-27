@@ -1,17 +1,19 @@
 /**
  * The two app-registration endpoints, wired the way src/index.ts wires
  * them: mounted ahead of the /v1 token gate, since an install asking for
- * its first token has none to present.
+ * its first token has none to present. Whether they are open is decided by
+ * the authorized apps table.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { inboundProxyAuth } from '../../src/api/api-key-auth'
 import { appDevicesRoute } from '../../src/api/v1/app-devices'
+import { getPrismaClient } from '../../src/db/client'
 import { INBOUND_MOUNT_PREFIXES } from '../../src/llms/inbound/surfaces'
-
-const ENV_KEYS = ['RIALTO_APP_ATTEST_APP_ID', 'RIALTO_APP_FREE_MODEL'] as const
-const saved = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]))
+import { createApp } from '../../src/services/authorized-app-service'
+import { createPlan } from '../../src/services/plan-service'
+import { HAS_DB, teardownPrisma } from '../db/helpers'
 
 function buildApp(): Hono {
   const app = new Hono()
@@ -29,33 +31,40 @@ const post = (path: string, body: unknown = {}) =>
     })
   )
 
-const configure = (): void => {
-  process.env.RIALTO_APP_ATTEST_APP_ID = 'TEAMID1234.jp.example.app'
-  process.env.RIALTO_APP_FREE_MODEL = 'openai,gpt-cheap'
+async function authorize(): Promise<void> {
+  const plan = await createPlan({
+    name: 'Free',
+    models: ['codex,gpt-6-luna'],
+    defaultModel: 'codex,gpt-6-luna',
+    dailyRequestLimit: 100
+  })
+  if (!plan.ok) throw new Error(plan.message)
+  await createApp({
+    name: 'Connect',
+    appleAppId: 'TEAMID1234.jp.example.app',
+    planId: plan.plan.id,
+    allowDevelopment: false
+  })
 }
 
-beforeEach(() => {
-  ENV_KEYS.forEach((key) => {
-    delete process.env[key]
+describe.skipIf(!HAS_DB)('/v1/app/*', () => {
+  beforeEach(async () => {
+    const prisma = getPrismaClient()
+    await prisma.appDevice.deleteMany({})
+    await prisma.accessToken.deleteMany({})
+    await prisma.authorizedApp.deleteMany({})
+    await prisma.plan.deleteMany({})
   })
-})
 
-afterEach(() => {
-  ENV_KEYS.forEach((key) => {
-    const value = saved[key]
-    if (value === undefined) delete process.env[key]
-    else process.env[key] = value
-  })
-})
+  afterAll(teardownPrisma)
 
-describe('/v1/app/*', () => {
-  test('answers 503 until the operator configures registration', async () => {
+  test('answers 503 until an app is authorized', async () => {
     expect((await post('/v1/app/challenge')).status).toBe(503)
     expect((await post('/v1/app/devices')).status).toBe(503)
   })
 
   test('hands out a challenge without an access token', async () => {
-    configure()
+    await authorize()
     const res = await post('/v1/app/challenge')
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -64,14 +73,14 @@ describe('/v1/app/*', () => {
   })
 
   test('refuses a registration body that is not the three strings', async () => {
-    configure()
+    await authorize()
     const res = await post('/v1/app/devices', { key_id: 'k' })
     expect(res.status).toBe(400)
     expect(await res.json()).toMatchObject({ error: { code: 'invalid_body' } })
   })
 
   test('refuses an unverifiable attestation without saying which check failed', async () => {
-    configure()
+    await authorize()
     const res = await post('/v1/app/devices', { key_id: 'k', attestation: 'AAAA', challenge: 'never-issued' })
     expect(res.status).toBe(400)
     expect(await res.json()).toMatchObject({ error: { code: 'attestation_rejected' } })

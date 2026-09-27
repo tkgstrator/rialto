@@ -15,13 +15,20 @@
  */
 
 import { Hono } from 'hono'
+import '../context'
 import { getEnabledModels } from '../../services/config'
 
 export const v1ModelsRoute = new Hono()
 
 v1ModelsRoute.get('/v1/models', async (c) => {
   const [chatModels, imageModels] = await Promise.all([getEnabledModels(), getEnabledModels(undefined, 'image')])
-  const models = [...chatModels, ...imageModels]
+  // A token on a plan sees only the models its plan allows: listing one it
+  // cannot spend would invite a request the plan then quietly reroutes to
+  // its default.
+  const plan = c.get('accessToken')?.plan
+  const models = [...chatModels, ...imageModels].filter(
+    (m) => plan === null || plan === undefined || plan.models.includes(`${m.provider},${m.model}`)
+  )
   // OpenAI uses seconds-since-epoch for `created`; the value carries no
   // real meaning here (there is no per-model creation time in Rialto), so
   // stamp the response time uniformly. SDKs that render "last modified"

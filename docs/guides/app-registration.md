@@ -1,8 +1,16 @@
-# アプリ端末の登録（App Attest）
+# アプリ端末の登録（App Attest）とプラン
 
 iOS アプリが、利用者に API キーを入力させずに自分用のアクセストークンを受け取るための仕組み。
 アプリ本体に鍵を埋め込めば誰でも取り出せるので、代わりに Apple の App Attest で
 「正規のアプリが本物の Apple 端末で動いている」ことを証明させ、その端末専用のトークンを発行する。
+
+設定はすべて管理画面の **Access tokens** で行う。環境変数は使わない。
+
+| タブ | 内容 |
+| --- | --- |
+| Tokens | 手で発行したトークン。アプリの端末が発行したものはここに出ない |
+| Apps | 認可済みアプリ。App ID、新しい端末に付けるプラン、開発ビルドを受け付けるか、オン／オフ。アプリごとの端末一覧 |
+| Plans | プラン。使えるモデル（うち1つが既定）と 1 日の上限 |
 
 ## 流れ
 
@@ -11,39 +19,34 @@ iOS アプリが、利用者に API キーを入力させずに自分用のア�
    `attestKey(keyId, clientDataHash: SHA256(challenge の UTF-8))` で証明を得る。
 3. アプリが `POST /v1/app/devices` に `{ key_id, attestation, challenge }`（`key_id` と
    `attestation` は base64）を送る。
-4. Rialto が証明を検証し、通ればトークンを発行して `201` で返す:
-   `{ api_key, plan: "free", model, daily_request_limit }`。
+4. Rialto が証明を検証する。証明の中の RP ID ハッシュから、オンになっている認可済みアプリの
+   どれかを見分ける（クライアントはアプリを名乗らない）。通ればそのアプリの「新しい端末のプラン」で
+   トークンを発行し、`201 { api_key, plan, model, daily_request_limit }` を返す。
 
 どちらの口もアクセストークンなしで呼べる（`/v1` のトークン検査より前に登録している）。
-検証は Apple の手順（Validating apps that connect to your server）の 1〜9 をそのまま行う:
-証明書チェーンが同梱の Apple App Attestation Root CA に至ること、nonce がチャレンジと
-authenticator data に一致すること、鍵 ID が証明された公開鍵のハッシュであること、
-RP ID が `RIALTO_APP_ATTEST_APP_ID` であること、カウンタが 0 であること、環境（本番／開発）。
+オンの認可済みアプリが 1 つもないあいだは `503` を返す。
+検証は Apple の手順（Validating apps that connect to your server）の 1〜9 をそのまま行う。
 
-## 無料プランのトークン
+## プラン
 
-- `modelPin`: どのモデルを指定されても `RIALTO_APP_FREE_MODEL` に置き換えて送る。
-  ルーティングも通さない（ルートの連鎖がより高いモデルを選ぶのを防ぐため）。
-  リクエストログの `requestedModel` にはアプリが指定したモデルが残る。
-- `dailyRequestLimit`: UTC の 1 日あたりの完了リクエスト数。超えると `429`
-  （`Retry-After` は次の UTC 0 時まで、`code: daily_limit_exceeded`）。
-  `/v1/models` の一覧取得は数えない。
-- 使える口は `/v1/responses` と `/v1/chat/completions`。
-- 1 つの App Attest 鍵から発行できるトークンは 1 本だけ（`AppDevice.keyId` が一意）。
+- **モデル**：使えるモデル（`provider,model`）の一覧と、その中の既定。一覧にあるモデルを指定した
+  リクエストはそのモデルへ、それ以外（または指定なし）は既定へ送る。断らない。どちらもティア
+  ルーティングは通さない。リクエストログの `requestedModel` にはクライアントの指定が残る。
+- **1 日の上限**：UTC の 1 日あたりの完了リクエスト数。超えると `429`（`Retry-After` は次の UTC 0 時、
+  `code: daily_limit_exceeded`）。空なら上限なし。`/v1/models` の一覧取得は数えない。
+- `/v1/models` は、プランのあるトークンにはそのプランのモデルだけを返す。
+- トークンはプランを**参照**する。プランを編集すると、そのプランのトークンすべてに次のリクエストから効く。
+- 手で発行したトークンもプランに載せられる。プランなしは従来どおり無制限。
+- 使われているプラン（トークンかアプリが参照している）は削除できない。
 
-プランの値は発行時にトークンへ写すので、あとで環境変数を変えても、発行済みのトークンは
-変わらない。個別に止めるときは Access tokens 画面から失効させる。
+## 認可済みアプリ
 
-## 設定
-
-| 環境変数 | 内容 |
-| --- | --- |
-| `RIALTO_APP_ATTEST_APP_ID` | `<Team ID>.<Bundle ID>`（例: `5Q94QJ7G98.jp.qleap.connect`）。必須 |
-| `RIALTO_APP_FREE_MODEL` | 無料トークンを固定するモデル（`/v1/models` の id）。必須 |
-| `RIALTO_APP_FREE_DAILY_REQUESTS` | 1 日の上限。省略時 100 |
-| `RIALTO_APP_ATTEST_ALLOW_DEVELOPMENT` | `true` で Xcode の開発ビルドの鍵も受け付ける。本番では未設定にする |
-
-必須の 2 つが揃うまで、両方の口は `503` を返す。
+- **App ID**：`<Team ID>.<Bundle ID>`（例: `5Q94QJ7G98.jp.qleap.connect`）。あとから変えられない。
+- **新しい端末のプラン**：登録した端末のトークンに付けるプラン。変えても、登録済みの端末は元のプランのまま。
+- **開発ビルド**：Xcode から入れたビルドの鍵も受け付ける。本番ではオフにする。
+- **オフ**：新しい登録を止め、そのアプリが発行したトークンをすべて止める。削除はしないので、オンに戻せば元どおり。
+- 1 つの App Attest 鍵から発行できるトークンは 1 本だけ。端末は Apps → アプリ → Devices で
+  キー ID の先頭で検索でき、行を開くとそのトークンの画面（失効はそこ）へ進む。
 
 ## まだ無いもの
 

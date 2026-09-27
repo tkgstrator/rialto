@@ -548,54 +548,89 @@ model Message {
 // that client's traffic through a named preference chain — a CI token on
 // cost-first while interactive traffic stays on the default.
 model AccessToken {
-  id                String                  @id @default(cuid())
-  name              String
-  tokenHash         String                  @unique
-  prefix            String
+  id           String                  @id @default(cuid())
+  name         String
+  tokenHash    String                  @unique
+  prefix       String
   // InboundSurface ids this token may call. Empty = every surface.
   //
   // A list rather than a single id because one client legitimately speaks
   // more than one: Codex uses /v1/responses and /v1/chat/completions, so
   // pinning it to either meant the other 401'd and the only way out was
   // an unscoped token — which is the scoping turned off, not narrowed.
-  surfaces          String[]
+  surfaces     String[]
   // RouterPreferenceProfile.key this token's traffic routes through.
   // Null = the surface's own profile.
-  profileKey        String?
-  lastUsedAt        DateTime?
-  requestCount      Int                     @default(0)
+  profileKey   String?
+  lastUsedAt   DateTime?
+  requestCount Int                     @default(0)
   // When the secret behind this row was last replaced. Null means it is
   // still the one issued at createdAt. Rotation keeps the row — the id,
   // the name, the scope and every RequestLog pointing at it — and swaps
   // only tokenHash/prefix, so createdAt stops being the age of the
   // current credential and this becomes the field that answers it.
-  rotatedAt         DateTime?
-  expiresAt         DateTime?
+  rotatedAt    DateTime?
+  expiresAt    DateTime?
   // Set rather than deleted, so a revoked token's RequestLog rows keep
   // pointing at something that says who they belonged to.
-  revokedAt         DateTime?
-  createdAt         DateTime                @default(now())
-  // Model every request on this token is sent to, whatever the caller
-  // named. Null = the caller (or the surface's routing) decides. Set on
-  // tokens minted for app installs, where the plan — not the client —
-  // decides which model a request may spend; a pinned request skips the
-  // tier router, because a routed chain could otherwise pick a costlier
-  // target than the plan pays for.
-  modelPin          String?
-  // Completion requests this token may make per UTC day. Null = no cap.
-  // Counted in AccessTokenDailyUsage; a request over the cap is answered
-  // 429 before anything is dispatched upstream.
-  dailyRequestLimit Int?
-  // Which plan minted this token ('free', ...). Null for tokens issued
-  // by an operator on the Access tokens page. Informational: the limits
-  // that bind are the two columns above, copied from the plan at issue
-  // time so changing a plan's config does not silently re-price tokens
-  // already handed out.
-  plan              String?
-  device            AppDevice?
-  dailyUsage        AccessTokenDailyUsage[]
+  revokedAt    DateTime?
+  createdAt    DateTime                @default(now())
+  // The plan this token spends under: which models it may use and how
+  // many completions a day. Null = unrestricted, as operator-issued tokens
+  // have always been. Referenced rather than copied, so editing a plan
+  // reaches every token on it at their next request. Restrict, because a
+  // plan deleted from under its tokens would silently lift their caps.
+  planId       String?
+  plan         Plan?                   @relation(fields: [planId], references: [id], onDelete: Restrict)
+  // Set when an app install minted this token for itself.
+  device       AppDevice?
+  dailyUsage   AccessTokenDailyUsage[]
 
   @@index([revokedAt])
+  @@index([planId])
+}
+
+// What a token on it may spend. `models` is the allow-list of
+// `provider,model` ids; a request naming one of them goes to it, any other
+// name (or none) goes to `defaultModel`. Either way the tier router is
+// skipped, so a routed chain cannot pick a costlier target than the plan
+// lists.
+model Plan {
+  id                String          @id @default(cuid())
+  name              String          @unique
+  models            String[]
+  // Always one of `models`; the service refuses a plan where it is not.
+  defaultModel      String
+  // Completions per UTC day, counted in AccessTokenDailyUsage. Null = no cap.
+  dailyRequestLimit Int?
+  tokens            AccessToken[]
+  apps              AuthorizedApp[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+}
+
+// An app whose installs may register themselves with Apple App Attest and
+// be handed a token each. The operator's whole decision about app traffic
+// lives on this row; nothing about it is read from the environment.
+model AuthorizedApp {
+  id               String      @id @default(cuid())
+  name             String
+  // `<Team ID>.<bundle id>`. The attestation's RP ID hash is the SHA-256 of
+  // this string, which is how a registration finds its app without the
+  // client naming one.
+  appleAppId       String      @unique
+  // Accept keys minted by development (Xcode) builds.
+  allowDevelopment Boolean     @default(false)
+  // Off stops new registrations and every token this app already issued.
+  // A switch rather than a delete, so the tokens and their RequestLog rows
+  // stay attributable and come back when it is turned on again.
+  enabled          Boolean     @default(true)
+  // The plan a new install's token is put on. Existing tokens keep theirs.
+  planId           String
+  plan             Plan        @relation(fields: [planId], references: [id], onDelete: Restrict)
+  devices          AppDevice[]
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 }
 
 // Per-token request count for one UTC day, the ledger behind
@@ -617,23 +652,28 @@ model AccessTokenDailyUsage {
 // be verified with an App Attest assertion (key rotation, re-issue)
 // without attesting again — Apple rate-limits attestation, not assertion.
 model AppDevice {
-  id            String      @id @default(cuid())
+  id              String        @id @default(cuid())
   // Base64 of the App Attest key identifier: the SHA-256 of the attested
   // public key. Unique because one attested key must never mint two
   // tokens.
-  keyId         String      @unique
+  keyId           String        @unique
   // The attested P-256 public key, uncompressed point (65 bytes).
-  publicKey     Bytes
+  publicKey       Bytes
   // App Attest sign counter, raised by every accepted assertion. 0 right
   // after attestation.
-  signCount     Int         @default(0)
+  signCount       Int           @default(0)
   // 'production' or 'development', from the attestation's AAGUID. A
   // development attestation comes from a debug build and is only
   // accepted when the operator allows it.
-  environment   String
-  accessTokenId String      @unique
-  accessToken   AccessToken @relation(fields: [accessTokenId], references: [id], onDelete: Cascade)
-  createdAt     DateTime    @default(now())
+  environment     String
+  // The app this install proved itself as.
+  authorizedAppId String
+  authorizedApp   AuthorizedApp @relation(fields: [authorizedAppId], references: [id], onDelete: Restrict)
+  accessTokenId   String        @unique
+  accessToken     AccessToken   @relation(fields: [accessTokenId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+
+  @@index([authorizedAppId])
 }
 
 // Per-surface routing behaviour.

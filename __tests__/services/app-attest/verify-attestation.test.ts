@@ -36,9 +36,8 @@ if (!loaded.success) throw new Error(`app-attest fixture is malformed: ${loaded.
 const fixture = loaded.data
 const testRoot = new X509Certificate(fixture.rootPem)
 
-const policy = (over: Partial<AttestationPolicy> = {}): AttestationPolicy => ({
-  appId: fixture.appId,
-  allowDevelopment: false,
+const policy = (over: Partial<AttestationPolicy> = {}, allowDevelopment = false): AttestationPolicy => ({
+  apps: [{ appleAppId: fixture.appId, allowDevelopment }],
   root: testRoot,
   now: dayjs('2030-01-01T00:00:00Z').toDate(),
   ...over
@@ -56,6 +55,7 @@ describe('verifyAttestation', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.environment).toBe('production')
+    expect(result.appleAppId).toBe(fixture.appId)
     // The key identifier is the SHA-256 of the returned key — the same
     // property the verifier checked, read back from the other side.
     expect(createHash('sha256').update(result.publicKey).digest('base64')).toBe(fixture.production.keyId)
@@ -72,15 +72,31 @@ describe('verifyAttestation', () => {
     expect(result).toEqual({ ok: false, reason: 'nonce does not match the challenge' })
   })
 
-  test('refuses an attestation minted for another app', () => {
-    const result = verifyAttestation(input(fixture.production), policy({ appId: 'OTHERTEAM.jp.example.other' }))
-    expect(result).toEqual({ ok: false, reason: 'attestation is for another app' })
+  test('refuses an attestation minted for an app that is not authorized', () => {
+    const result = verifyAttestation(
+      input(fixture.production),
+      policy({ apps: [{ appleAppId: 'OTHERTEAM1.jp.example.other', allowDevelopment: true }] })
+    )
+    expect(result).toEqual({ ok: false, reason: 'attestation is for an app that is not authorized' })
+  })
+
+  test('finds the attested app among several authorized ones', () => {
+    const result = verifyAttestation(
+      input(fixture.production),
+      policy({
+        apps: [
+          { appleAppId: 'OTHERTEAM1.jp.example.other', allowDevelopment: false },
+          { appleAppId: fixture.appId, allowDevelopment: false }
+        ]
+      })
+    )
+    expect(result.ok && result.appleAppId).toBe(fixture.appId)
   })
 
   test('refuses a key identifier that is not the attested key', () => {
     const result = verifyAttestation(
       { ...input(fixture.production), keyId: fixture.development.keyId },
-      policy({ allowDevelopment: true })
+      policy({}, true)
     )
     expect(result).toEqual({ ok: false, reason: 'key identifier does not match the attested key' })
   })
@@ -90,7 +106,7 @@ describe('verifyAttestation', () => {
       ok: false,
       reason: 'development attestations are not accepted'
     })
-    const allowed = verifyAttestation(input(fixture.development), policy({ allowDevelopment: true }))
+    const allowed = verifyAttestation(input(fixture.development), policy({}, true))
     expect(allowed.ok && allowed.environment).toBe('development')
   })
 

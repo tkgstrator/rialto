@@ -6,6 +6,7 @@ import { accessCheckRoute } from './api/access-check/route'
 import { accessLog } from './api/access-log'
 import { accessTokensRoute } from './api/access-tokens/route'
 import { adminAuth, inboundProxyAuth } from './api/api-key-auth'
+import { authorizedAppsRoute } from './api/authorized-apps/route'
 import { catalogRoute } from './api/catalog/route'
 import { configRoute } from './api/config/route'
 import { healthRoute } from './api/health/route'
@@ -17,6 +18,7 @@ import { modelTestRoute } from './api/models/test/route'
 import { modelTestAllRoute } from './api/models/test-all/route'
 import { oauthRoute } from './api/oauth/route'
 import { overviewRoute } from './api/overview/route'
+import { plansRoute } from './api/plans/route'
 import { providerModelRoute } from './api/providers/[name]/models/[model]/route'
 import { providerByNameRoute } from './api/providers/[name]/route'
 import { providerTierAliasRoute } from './api/providers/[name]/tier-aliases/[tier]/route'
@@ -199,6 +201,8 @@ app.route('/', overviewRoute)
 app.route('/', inboundSurfacesRoute)
 app.route('/', identityRoute)
 app.route('/', accessTokensRoute)
+app.route('/', plansRoute)
+app.route('/', authorizedAppsRoute)
 app.route('/', accessCheckRoute)
 app.route('/', storageRoute)
 app.route('/', oauthRoute)

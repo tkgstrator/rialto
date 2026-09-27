@@ -12,6 +12,8 @@
  */
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
+import { Hono } from 'hono'
+import '../../src/api/context'
 import { v1ModelsRoute } from '../../src/api/v1/models-list'
 import { getPrismaClient } from '../../src/db/client'
 import { applyUiConfig, ensurePreferenceProfile } from '../../src/services/config'
@@ -68,6 +70,38 @@ describe.skipIf(!HAS_DB)('GET /v1/models', () => {
       expect(item.owned_by).toBe('openai')
       expect(typeof item.created).toBe('number')
     }
+  })
+
+  test('a token on a plan sees only the plan’s models', async () => {
+    await applyUiConfig({
+      Providers: [
+        {
+          name: 'openai',
+          api_base_url: 'https://api.openai.com/v1/chat/completions',
+          api_key: 'sk-test',
+          auth_mode: 'api_key',
+          models: ['gpt-5-mini', 'gpt-4.1']
+        }
+      ]
+    })
+    await getPrismaClient().model.updateMany({ data: { enabled: true } })
+
+    // Stand in for the /v1 gate, which sets the resolved token.
+    const app = new Hono()
+    app.use('*', async (c, next) => {
+      c.set('accessToken', {
+        id: 'tok',
+        name: 'app',
+        surfaces: [],
+        profileKey: null,
+        plan: { models: ['openai,gpt-5-mini'], defaultModel: 'openai,gpt-5-mini', dailyRequestLimit: 100 }
+      })
+      await next()
+    })
+    app.route('/', v1ModelsRoute)
+    const res = await app.fetch(new Request('http://local/v1/models'))
+    const body = (await res.json()) as { data: Array<{ id: string }> }
+    expect(body.data.map((m) => m.id)).toEqual(['openai,gpt-5-mini'])
   })
 
   test('hides models on providers with no api_key (unroutable)', async () => {

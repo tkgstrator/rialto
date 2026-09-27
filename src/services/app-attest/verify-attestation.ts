@@ -25,11 +25,21 @@ const AAGUID_PRODUCTION = Buffer.concat([Buffer.from('appattest', 'ascii'), Buff
 
 export type AttestEnvironment = 'production' | 'development'
 
-export interface AttestationPolicy {
-  /** `<Team ID>.<bundle id>` — what the authenticator data's RP ID hash must be the SHA-256 of. */
-  appId: string
-  /** Accept keys minted by development builds. Off in production. */
+/** An app whose installs may register, as the verifier needs to see it. */
+export interface AttestableApp {
+  /** `<Team ID>.<bundle id>` — the authenticator data's RP ID hash is the SHA-256 of this. */
+  appleAppId: string
+  /** Accept keys minted by development builds. */
   allowDevelopment: boolean
+}
+
+export interface AttestationPolicy {
+  /**
+   * The apps that may register. The attestation names its app only as a
+   * hash, so the verifier finds it here rather than trusting the client to
+   * say which app it is.
+   */
+  apps: readonly AttestableApp[]
   /** Trust anchor the x5c chain must end at. */
   root: X509Certificate
   now: Date
@@ -45,7 +55,7 @@ export interface AttestationInput {
 }
 
 export type AttestationResult =
-  | { ok: true; publicKey: Buffer; environment: AttestEnvironment; receipt: Buffer }
+  | { ok: true; publicKey: Buffer; environment: AttestEnvironment; receipt: Buffer; appleAppId: string }
   | { ok: false; reason: string }
 
 const sha256 = (...parts: Uint8Array[]): Buffer => {
@@ -184,26 +194,25 @@ function checkAuthenticatorData(
   authData: Buffer,
   keyId: Buffer,
   policy: AttestationPolicy
-): { ok: true; environment: AttestEnvironment } | Failure {
+): { ok: true; environment: AttestEnvironment; app: AttestableApp } | Failure {
   const parsed = parseAuthenticatorData(authData)
   if (parsed === null) return { ok: false, reason: 'authenticator data is truncated' }
-  // Step 6: minted for this app and no other.
-  if (!parsed.rpIdHash.equals(sha256(Buffer.from(policy.appId, 'utf8')))) {
-    return { ok: false, reason: 'attestation is for another app' }
-  }
+  // Step 6: minted for one of the authorized apps, and which one.
+  const app = policy.apps.find((candidate) => parsed.rpIdHash.equals(sha256(Buffer.from(candidate.appleAppId, 'utf8'))))
+  if (app === undefined) return { ok: false, reason: 'attestation is for an app that is not authorized' }
   // Step 7: a freshly attested key has never signed anything.
   if (parsed.signCount !== 0) return { ok: false, reason: 'sign counter is not zero' }
   // Step 8: which environment, and whether that one is accepted.
   const environment = environmentOf(parsed.aaguid)
   if (environment === null) return { ok: false, reason: 'unknown App Attest environment' }
-  if (environment === 'development' && !policy.allowDevelopment) {
+  if (environment === 'development' && !app.allowDevelopment) {
     return { ok: false, reason: 'development attestations are not accepted' }
   }
   // Step 9: the credential is the same key.
   if (!parsed.credentialId.equals(keyId)) {
     return { ok: false, reason: 'credential id does not match the key identifier' }
   }
-  return { ok: true, environment }
+  return { ok: true, environment, app }
 }
 
 export function verifyAttestation(input: AttestationInput, policy: AttestationPolicy): AttestationResult {
@@ -227,5 +236,11 @@ export function verifyAttestation(input: AttestationInput, policy: AttestationPo
 
   const checked = checkAuthenticatorData(statement.authData, keyId, policy)
   if (!checked.ok) return checked
-  return { ok: true, publicKey, environment: checked.environment, receipt: statement.receipt }
+  return {
+    ok: true,
+    publicKey,
+    environment: checked.environment,
+    receipt: statement.receipt,
+    appleAppId: checked.app.appleAppId
+  }
 }

@@ -21,6 +21,7 @@ import { type LlmsContext, PASSTHROUGH_ROUTE, type RouterRequest, routeRequest, 
 import { surfaceForPath } from '../../llms/inbound/surfaces'
 import { type ClassifierSignals, classifierSignals } from '../../llms/pipeline/classifier-diagnostics'
 import { sessionIdFromRequest } from '../../llms/pipeline/session-id'
+import type { TokenPlan } from '../../services/access-token-service'
 import { passthroughDenial } from '../../services/inbound-surface-service'
 import { buildErrorEnvelope, errorShapeForPath } from './error-shape'
 
@@ -127,6 +128,15 @@ function applyPathParams(body: Record<string, unknown>, path: string): void {
   if (stream !== undefined) body.stream = stream
 }
 
+/**
+ * The model a plan sends a request to, or undefined for a token with no
+ * plan (the caller and the router decide, as before).
+ */
+export function planModel(plan: TokenPlan | null | undefined, requested: string | undefined): string | undefined {
+  if (plan === null || plan === undefined) return undefined
+  return requested !== undefined && plan.models.includes(requested) ? requested : plan.defaultModel
+}
+
 export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Response | RoutePlan> {
   const url = new URL(c.req.url)
   const path = url.pathname
@@ -165,10 +175,12 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   // Capture what the client asked for BEFORE routeRequest rewrites
   // body.model in place — this is the only point the original is visible.
   const requestedModel = typeof body.model === 'string' && body.model.length > 0 ? body.model : undefined
-  // A plan-minted token names the one model its plan pays for. Replaced
-  // after `requestedModel` is captured, so the log still shows what the
-  // client asked for next to what the plan sent.
-  const pinnedModel = token?.modelPin === null ? undefined : token?.modelPin
+  // A token on a plan may only spend the plan's models: one it names is
+  // kept, anything else (or nothing) becomes the plan's default rather than
+  // a refusal, so a client with a stale model setting keeps working.
+  // Decided after `requestedModel` is captured, so the log still shows
+  // what the client asked for next to what the plan sent.
+  const pinnedModel = planModel(token?.plan, requestedModel)
   if (pinnedModel !== undefined) body.model = pinnedModel
   const signals = path === '/v1/messages' ? classifierSignals(body) : undefined
   const diagnosticLog = (status: number, reason: string): void => {

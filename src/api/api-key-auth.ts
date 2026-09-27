@@ -243,8 +243,9 @@ export function createProxyAuth(options: ApiKeyAuthOptions = {}): MiddlewareHand
     // The daily cap counts completions only: reading the model list
     // spends nothing, and an SDK that lists models before every call
     // would otherwise halve a small allowance.
-    if (token.dailyRequestLimit !== null && !catalogRead) {
-      const refusal = await dailyLimitRefusal(c, token.id, token.dailyRequestLimit, errorShape)
+    const dailyLimit = token.plan === null ? null : token.plan.dailyRequestLimit
+    if (dailyLimit !== null && !catalogRead) {
+      const refusal = await dailyLimitRefusal(c, token.id, dailyLimit, errorShape)
       if (refusal !== null) return refusal
     }
 

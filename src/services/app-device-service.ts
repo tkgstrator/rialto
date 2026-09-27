@@ -4,18 +4,10 @@
  *
  * The app cannot ship a credential — anything in the binary is everyone's
  * — so it proves instead that it is the genuine, unmodified app on a real
- * Apple device, and gets a token of its own in return. What that token
- * may spend is decided here, by the plan, not by the client: every
- * request on it is pinned to one model and capped per day.
- *
- * Configured from the environment. Until both the app id and the free
- * plan's model are set the endpoints answer 503, so an install that has
- * not decided what free traffic may cost hands out nothing.
- *
- *   RIALTO_APP_ATTEST_APP_ID              `<Team ID>.<bundle id>`
- *   RIALTO_APP_ATTEST_ALLOW_DEVELOPMENT   'true' to accept debug builds' keys
- *   RIALTO_APP_FREE_MODEL                 model id free tokens are pinned to
- *   RIALTO_APP_FREE_DAILY_REQUESTS        per-day completion cap (default 100)
+ * Apple device, and gets a token of its own in return. Which apps may do
+ * that, and which plan their installs start on, is the AuthorizedApp
+ * table: the operator's decision, made on the Apps tab, never read from
+ * the environment. What a token may spend is its plan's business.
  */
 
 import { createHash, randomBytes } from 'node:crypto'
@@ -26,37 +18,17 @@ import { deleteAccessToken, issueAccessToken } from './access-token-service'
 import { appleAppAttestRoot } from './app-attest/apple-root'
 import { type AttestationPolicy, verifyAttestation } from './app-attest/verify-attestation'
 
-const FREE_PLAN = 'free'
-
-const DEFAULT_FREE_DAILY_REQUESTS = 100
-
 // The surfaces an app token may call. The app speaks the Responses API;
 // Chat Completions is allowed alongside so a client-side switch does not
 // need every install re-registered.
 const APP_SURFACES = ['openai-responses', 'openai-chat']
 
-export interface AppDeviceConfig {
-  appId: string
-  allowDevelopment: boolean
-  freeModel: string
-  freeDailyRequests: number
-}
-
-const nonEmpty = (value: string | undefined): string | null =>
-  value === undefined || value.trim().length === 0 ? null : value.trim()
-
-export function readAppDeviceConfig(env: NodeJS.ProcessEnv = process.env): AppDeviceConfig | null {
-  const appId = nonEmpty(env.RIALTO_APP_ATTEST_APP_ID)
-  const freeModel = nonEmpty(env.RIALTO_APP_FREE_MODEL)
-  if (appId === null || freeModel === null) return null
-  const rawLimit = nonEmpty(env.RIALTO_APP_FREE_DAILY_REQUESTS)
-  const parsedLimit = rawLimit === null ? Number.NaN : Number(rawLimit)
-  return {
-    appId,
-    allowDevelopment: env.RIALTO_APP_ATTEST_ALLOW_DEVELOPMENT === 'true',
-    freeModel,
-    freeDailyRequests: Number.isSafeInteger(parsedLimit) && parsedLimit > 0 ? parsedLimit : DEFAULT_FREE_DAILY_REQUESTS
-  }
+/** Whether any app may register right now. Until one is on, the endpoints answer 503. */
+export async function registrationOpen(): Promise<boolean> {
+  const count = await getPrismaClient()
+    .authorizedApp.count({ where: { enabled: true } })
+    .catch(() => 0)
+  return count > 0
 }
 
 // Challenges are single-use and short-lived. In memory because Rialto
@@ -100,33 +72,36 @@ export type RegisterResult =
       apiKey: string
       plan: string
       model: string
-      dailyRequestLimit: number
+      dailyRequestLimit: number | null
       environment: string
     }
   | { ok: false; status: 400 | 409; reason: string }
 
 /**
- * Verify an attestation and, if it holds, mint the install's token.
+ * Verify an attestation and, if it holds, mint the install's token on its
+ * app's plan.
  *
- * The client data the app attests is the challenge string itself, so the
- * hash checked here is SHA-256 of its UTF-8 bytes — the app has to send
- * back exactly the string it was given.
+ * The client never says which app it is: the attestation carries the
+ * app's identity as a hash, and the verifier matches it against the apps
+ * that are switched on. The client data it attests is the challenge
+ * string itself, so the hash checked is SHA-256 of its UTF-8 bytes.
  *
  * `policyOverride` exists for the tests, which cannot produce an
  * attestation Apple's root signed.
  */
 export async function registerDevice(
   input: RegisterInput,
-  config: AppDeviceConfig,
-  policyOverride: Partial<AttestationPolicy> = {}
+  policyOverride: Partial<Pick<AttestationPolicy, 'root' | 'now'>> = {}
 ): Promise<RegisterResult> {
   if (!consumeChallenge(input.challenge)) {
     return { ok: false, status: 400, reason: 'unknown or expired challenge' }
   }
 
-  const existing = await getPrismaClient().appDevice.findUnique({ where: { keyId: input.keyId } })
+  const prisma = getPrismaClient()
+  const existing = await prisma.appDevice.findUnique({ where: { keyId: input.keyId } })
   if (existing !== null) return { ok: false, status: 409, reason: 'this key is already registered' }
 
+  const apps = await prisma.authorizedApp.findMany({ where: { enabled: true }, include: { plan: true } })
   const verdict = verifyAttestation(
     {
       keyId: input.keyId,
@@ -134,32 +109,32 @@ export async function registerDevice(
       clientDataHash: createHash('sha256').update(input.challenge, 'utf8').digest()
     },
     {
-      appId: config.appId,
-      allowDevelopment: config.allowDevelopment,
+      apps,
       root: appleAppAttestRoot,
       now: dayjs().toDate(),
       ...policyOverride
     }
   )
   if (!verdict.ok) return { ok: false, status: 400, reason: verdict.reason }
+  const app = apps.find((candidate) => candidate.appleAppId === verdict.appleAppId)
+  if (app === undefined) return { ok: false, status: 400, reason: 'attestation is for an app that is not authorized' }
 
   const issued = await issueAccessToken({
-    name: `app:${verdict.environment}:${input.keyId.slice(0, 12)}`,
+    name: `${app.name} · ${input.keyId.slice(0, 8)}`,
     surfaces: APP_SURFACES,
-    modelPin: config.freeModel,
-    dailyRequestLimit: config.freeDailyRequests,
-    plan: FREE_PLAN
+    planId: app.planId
   })
 
   // The unique keyId is the real guard against one attested key minting
   // two tokens: the findUnique above can race a concurrent registration
   // of the same key, and whichever insert loses takes its token with it.
-  const device = await getPrismaClient()
-    .appDevice.create({
+  const device = await prisma.appDevice
+    .create({
       data: {
         keyId: input.keyId,
         publicKey: new Uint8Array(verdict.publicKey),
         environment: verdict.environment,
+        authorizedAppId: app.id,
         accessTokenId: issued.token.id
       }
     })
@@ -172,9 +147,9 @@ export async function registerDevice(
   return {
     ok: true,
     apiKey: issued.plaintext,
-    plan: FREE_PLAN,
-    model: config.freeModel,
-    dailyRequestLimit: config.freeDailyRequests,
+    plan: app.plan.name,
+    model: app.plan.defaultModel,
+    dailyRequestLimit: app.plan.dailyRequestLimit,
     environment: verdict.environment
   }
 }

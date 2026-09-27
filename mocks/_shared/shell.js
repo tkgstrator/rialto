@@ -492,9 +492,9 @@ const AUTHORIZED_APPS = [
  */
 const PLANS = [
   { name: 'Free', models: ['codex,gpt-6-luna', 'google,gemini-3-flash'], limit: '100', tokens: '1,287', apps: 'Connect · Connect (dev)' },
-  { name: 'Plus', models: ['codex,gpt-6-terra', 'codex,gpt-6-luna', 'anthropic,claude-haiku-4-5'], limit: '1,000', tokens: '0', apps: '—' },
-  { name: 'Pro', models: ['codex,gpt-6-sol', 'codex,gpt-6-terra', 'codex,gpt-6-luna', 'anthropic,claude-sonnet-5', 'google,gemini-3-pro'], limit: '3,000', tokens: '0', apps: '—' },
-  { name: 'Max', models: ['codex,gpt-6-astra', 'codex,gpt-6-sol', 'codex,gpt-6-terra', 'codex,gpt-6-luna', 'anthropic,claude-opus-5', 'anthropic,claude-sonnet-5'], limit: '', tokens: '0', apps: '—' }
+  { name: 'Plus', models: ['codex,gpt-5.6-terra', 'codex,gpt-6-luna', 'anthropic,claude-haiku-4-5'], limit: '1,000', tokens: '0', apps: '—' },
+  { name: 'Pro', models: ['codex,gpt-6-sol', 'codex,gpt-5.6-terra', 'codex,gpt-6-luna', 'anthropic,claude-sonnet-5', 'google,gemini-3-pro'], limit: '3,000', tokens: '0', apps: '—' },
+  { name: 'Max', models: ['codex,gpt-6-astra', 'codex,gpt-6-sol', 'codex,gpt-5.6-terra', 'codex,gpt-6-luna', 'anthropic,claude-opus-5', 'anthropic,claude-sonnet-5'], limit: '', tokens: '0', apps: '—' }
 ]
 
 /** One authorized app row. Leads to the app's page, like a token row does. */

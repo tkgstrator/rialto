@@ -15,7 +15,7 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { logger } from '../../logger'
-import { issueChallenge, readAppDeviceConfig, registerDevice } from '../../services/app-device-service'
+import { issueChallenge, registerDevice, registrationOpen } from '../../services/app-device-service'
 import { accessLog } from '../access-log'
 
 const RegisterBodySchema = z.object({
@@ -28,31 +28,31 @@ const error = (message: string, code: string) => ({
   error: { message, type: 'invalid_request_error', param: null, code }
 })
 
-const NOT_CONFIGURED = error('App registration is not configured on this server.', 'app_registration_disabled')
+const NOT_CONFIGURED = error('No app is authorized to register on this server.', 'app_registration_disabled')
 
 export const appDevicesRoute = new Hono()
 
 appDevicesRoute.use('/v1/app/*', accessLog)
 
-appDevicesRoute.post('/v1/app/challenge', (c) => {
-  if (readAppDeviceConfig() === null) return c.json(NOT_CONFIGURED, 503)
+appDevicesRoute.post('/v1/app/challenge', async (c) => {
+  if (!(await registrationOpen())) return c.json(NOT_CONFIGURED, 503)
   const { challenge, expiresInSeconds } = issueChallenge()
   return c.json({ challenge, expires_in: expiresInSeconds })
 })
 
 appDevicesRoute.post('/v1/app/devices', async (c) => {
-  const config = readAppDeviceConfig()
-  if (config === null) return c.json(NOT_CONFIGURED, 503)
+  if (!(await registrationOpen())) return c.json(NOT_CONFIGURED, 503)
 
   const parsed = RegisterBodySchema.safeParse(await c.req.json().catch(() => null))
   if (!parsed.success) {
     return c.json(error('Send key_id, attestation and challenge as JSON strings.', 'invalid_body'), 400)
   }
 
-  const result = await registerDevice(
-    { keyId: parsed.data.key_id, attestation: parsed.data.attestation, challenge: parsed.data.challenge },
-    config
-  )
+  const result = await registerDevice({
+    keyId: parsed.data.key_id,
+    attestation: parsed.data.attestation,
+    challenge: parsed.data.challenge
+  })
   if (!result.ok) {
     // The reason goes to the log, not the client: telling a forger which
     // check failed only helps them build the next attempt.
