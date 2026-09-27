@@ -156,6 +156,24 @@ describe.skipIf(!HAS_DB)('POST /v1/images/generations', () => {
     expect(calls).toHaveLength(0)
   })
 
+  test('refuses image upstream URLs with credentials or other URL modifiers', async () => {
+    for (const base of [
+      'https://user:secret@chatgpt.com/backend-api/codex',
+      'https://chatgpt.com/backend-api/codex?redirect=1',
+      'https://chatgpt.com/backend-api/codex#fragment',
+      'https://chatgpt.com:444/backend-api/codex',
+      'http://chatgpt.com/backend-api/codex'
+    ]) {
+      await resetDbTables()
+      invalidateTokenCache()
+      const provider = await createProvider('codex', true, base)
+      await createAccount(provider.id, 'a')
+      const issued = await issueAccessToken({ name: 'image' })
+      expect((await send({ model: MODEL, prompt: 'x' }, issued.plaintext)).status).toBe(400)
+    }
+    expect(calls).toHaveLength(0)
+  })
+
   test('rejects unsupported fields and oversized bodies before dispatch', async () => {
     const provider = await createProvider()
     await createAccount(provider.id, 'a')
