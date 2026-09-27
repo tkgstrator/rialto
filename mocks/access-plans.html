@@ -71,6 +71,14 @@ const editDialog = () => {
       ${chevron ? '<i class="ri-arrow-down-s-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"></i>' : ''}
     </div>`
   const hint = (text) => `<p class="mt-1 text-[12px] leading-snug text-muted-foreground">${text}</p>`
+  // Providers first, then that provider's models: an install can have
+  // dozens of models across a handful of providers, and one flat list of
+  // them is a scroll hunt. Each provider chip counts what is ticked under
+  // it, so a choice made on another provider is never out of sight.
+  const providerChip = (name, picked, on) => `
+    <button class="inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors ${
+      on ? 'border-foreground/60 bg-muted font-medium' : 'border-border text-muted-foreground hover:bg-muted/60'
+    }">${name}${picked ? `<span class="font-mono text-[12px] tabular-nums text-muted-foreground">${picked}</span>` : ''}</button>`
   // A tick for the allow-list and a radio for the default, on the same
   // row, so the default can only ever be one of the allowed models.
   const modelOption = (model, allowed, isDefault) => `
@@ -94,13 +102,23 @@ const editDialog = () => {
       <div>${label('Name')}${box('Free')}</div>
       <div>
         ${label('Models')}
-        <div class="overflow-hidden rounded-md border border-border">
-          ${modelOption('openai,gpt-5-mini', true, true)}
-          ${modelOption('google,gemini-3-flash', true, false)}
-          ${modelOption('anthropic,claude-sonnet-5', false, false)}
-          ${modelOption('openai,gpt-5.5', false, false)}
+        <div class="mb-2 flex flex-wrap gap-1.5">
+          ${providerChip('OpenAI', 1, true)}
+          ${providerChip('Google', 1, false)}
+          ${providerChip('Anthropic', 0, false)}
+          ${providerChip('DeepSeek', 0, false)}
         </div>
-        ${hint('Requests may use any model ticked here. A request naming another model, or none, goes to the default — never refused, and never routed.')}
+        <div class="max-h-44 overflow-y-auto rounded-md border border-border">
+          ${modelOption('gpt-5-mini', true, true)}
+          ${modelOption('gpt-5.5', false, false)}
+          ${modelOption('gpt-5.5-pro', false, false)}
+          ${modelOption('gpt-4.1-mini', false, false)}
+          ${modelOption('o4-mini', false, false)}
+        </div>
+        <p class="mt-1 text-[12px] leading-snug text-muted-foreground">
+          2 allowed · default <span class="font-mono">openai,gpt-5-mini</span>.
+          A request naming another model, or none, goes to the default — never refused, and never routed.
+        </p>
       </div>
       <div>
         ${label('Requests per day')}
@@ -122,7 +140,7 @@ document.getElementById('root').innerHTML = `
       <div class="flex items-center gap-1 border-b border-border px-6">${accessTabs('plans')}</div>
 
       <div class="flex items-center gap-3 px-6 pt-5 pb-3">
-        <span class="text-[12px] text-muted-foreground">3 plans · 1,290 tokens on a plan · 1 without</span>
+        <span class="text-[12px] text-muted-foreground">4 plans · 1,287 tokens on a plan · 4 without</span>
         <div class="ml-auto">${btn('New plan', 'primary', 'ri-add-line')}</div>
       </div>
 

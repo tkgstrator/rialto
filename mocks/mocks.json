@@ -206,7 +206,7 @@
       "mock": "access-plans.html?edit",
       "route": null,
       "group": "Access tokens",
-      "note": "Editing a plan, in a dialog that says how many tokens the change reaches before it is saved. Models are ticked into the allow-list and one of the ticked ones is marked default, so the default can only be an allowed model."
+      "note": "Editing a plan, in a dialog that says how many tokens the change reaches before it is saved. Models are picked provider first, then among that provider's models, each provider chip counting what is ticked under it; one ticked model is marked default, so the default can only be an allowed model."
     },
     {
       "name": "activity",
