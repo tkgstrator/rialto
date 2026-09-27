@@ -2,7 +2,8 @@ import { OpenAPIHono } from '@hono/zod-openapi'
 import { resetLlmsContext } from '../../llms'
 import { ApplyConfigPayloadSchema } from '../../schemas/api/config'
 import { applyUiConfig, composeUiConfig } from '../../services/config'
-export const configRoute = new OpenAPIHono()
+import { validationErrorHook } from '../zod-response'
+export const configRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 // Neither /api/config route is registered through createRoute: the
 // LegacyConfig the server returns (and the ApplyConfigPayload it

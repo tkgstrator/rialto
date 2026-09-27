@@ -1,8 +1,9 @@
 import { createRoute, OpenAPIHono } from '@hono/zod-openapi'
 import { ModelTestRequestSchema, ModelTestResultSchema } from '../../../schemas/api/models'
 import { type ModelTestResult, testModel } from '../../../services/model-test-service'
+import { validationErrorHook } from '../../zod-response'
 
-export const modelTestRoute = new OpenAPIHono()
+export const modelTestRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 // Map a test-failure reason onto the HTTP status the endpoint returns.
 // `provider not found` / `model not found on provider` → 404 (the

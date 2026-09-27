@@ -1,8 +1,9 @@
 import { createRoute, OpenAPIHono } from '@hono/zod-openapi'
 import { UpdatePerformResponseSchema } from '../../../schemas/api/update'
 import { performUpdate } from '../../../services/update'
+import { validationErrorHook } from '../../zod-response'
 
-export const updatePerformRoute = new OpenAPIHono()
+export const updatePerformRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 const route = createRoute({
   method: 'post',

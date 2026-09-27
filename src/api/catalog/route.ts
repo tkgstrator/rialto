@@ -1,8 +1,9 @@
 import { createRoute, OpenAPIHono } from '@hono/zod-openapi'
 import { CatalogRefreshResponseSchema, CatalogResponseSchema } from '../../schemas/api/catalog'
 import { getCatalog, refreshCatalog } from '../../services/catalog-service'
+import { validationErrorHook } from '../zod-response'
 
-export const catalogRoute = new OpenAPIHono()
+export const catalogRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 const listRoute = createRoute({
   method: 'get',

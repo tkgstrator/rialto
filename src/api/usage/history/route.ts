@@ -1,8 +1,9 @@
 import { createRoute, OpenAPIHono } from '@hono/zod-openapi'
 import { UsageHistoryQuerySchema, UsageHistoryResponseSchema } from '../../../schemas/api/usage'
 import { getUsageHistory } from '../../../services/usage-history-service'
+import { validationErrorHook } from '../../zod-response'
 
-export const usageHistoryRoute = new OpenAPIHono()
+export const usageHistoryRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 const getUsageHistoryRoute = createRoute({
   method: 'get',

@@ -8,6 +8,7 @@
 
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { getOverview } from '../../services/overview-service'
+import { validationErrorHook } from '../zod-response'
 
 const SurfaceTrafficSchema = z
   .object({
@@ -131,7 +132,7 @@ const ResponseSchema = z
   })
   .openapi('OverviewResponse')
 
-export const overviewRoute = new OpenAPIHono()
+export const overviewRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 overviewRoute.openapi(
   createRoute({

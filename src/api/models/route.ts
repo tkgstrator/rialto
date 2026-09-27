@@ -1,8 +1,9 @@
 import { createRoute, OpenAPIHono } from '@hono/zod-openapi'
 import { EnabledModelsResponseSchema } from '../../schemas/api/subscriptions'
 import { getEnabledModels } from '../../services/config'
+import { validationErrorHook } from '../zod-response'
 
-export const modelsRoute = new OpenAPIHono()
+export const modelsRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 const getModelsRoute = createRoute({
   method: 'get',

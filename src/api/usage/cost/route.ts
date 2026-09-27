@@ -3,6 +3,7 @@ import { getPrismaClient } from '../../../db/client'
 import { AuthMode } from '../../../generated/prisma/client'
 import dayjs from '../../../lib/dayjs'
 import { buildPriceMap, computeCosts } from '../../../services/cost-service'
+import { validationErrorHook } from '../../zod-response'
 
 const ModelCostSchema = z.object({
   model: z.string(),
@@ -34,7 +35,7 @@ const UsageCostQuerySchema = z.object({
   days: z.coerce.number().int().min(0).default(30)
 })
 
-export const usageCostRoute = new OpenAPIHono()
+export const usageCostRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 usageCostRoute.openapi(
   createRoute({
