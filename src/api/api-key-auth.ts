@@ -228,7 +228,8 @@ export function createProxyAuth(options: ApiKeyAuthOptions = {}): MiddlewareHand
     // the OpenAI SDK". The scope says which surfaces may be *called*;
     // it says nothing about reading the menu. If a token ever gains a
     // model restriction, the answer here is to filter the listing, not
-    // to refuse it.
+    // to refuse it. Speech (`/v1/audio/*`) is in the same list: it reads
+    // a completion's reply aloud rather than being one.
     //
     // Anywhere else the registry cannot name stays a rejection for a
     // pinned token: "not one of the surfaces you were given" is the
@@ -242,7 +243,8 @@ export function createProxyAuth(options: ApiKeyAuthOptions = {}): MiddlewareHand
 
     // The daily cap counts completions only: reading the model list
     // spends nothing, and an SDK that lists models before every call
-    // would otherwise halve a small allowance.
+    // would otherwise halve a small allowance. Speaking a reply is not a
+    // second completion either.
     const dailyLimit = token.plan === null ? null : token.plan.dailyRequestLimit
     if (dailyLimit !== null && !catalogRead) {
       const refusal = await dailyLimitRefusal(c, token.id, dailyLimit, errorShape)

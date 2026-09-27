@@ -16,6 +16,10 @@ services:
       # unset; /v1/* takes the access tokens you issue on the Access tokens
       # page, never this key.
       # APIKEY: change-me
+      # Speech (/v1/audio/speech, /v1/audio/voices) is relayed to the TTS
+      # server named here, reached by its service name on this network.
+      # Unset, those paths answer 503. See docs/guides/tts-relay.md.
+      # RIALTO_TTS_URL: http://irodori-tts:8000
     ports:
       # The server listens on the envelope PORT (default 3456). Map it to
       # whatever host port you want.
