@@ -2,6 +2,7 @@ import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { getPrismaClient } from '../../../../db/client'
 import dayjs from '../../../../lib/dayjs'
 import { buildPriceMap, computeCosts } from '../../../../services/cost-service'
+import { validationErrorHook } from '../../../zod-response'
 
 const CostHistoryQuerySchema = z.object({
   days: z.coerce.number().int().min(0).default(30)
@@ -25,7 +26,7 @@ interface RawLogRow {
   cache_write_1h_tokens: bigint
 }
 
-export const usageCostHistoryRoute = new OpenAPIHono()
+export const usageCostHistoryRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 usageCostHistoryRoute.openapi(
   createRoute({

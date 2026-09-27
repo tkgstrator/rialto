@@ -115,7 +115,7 @@ export interface UpdateCheckResponse {
   message: string | null
 }
 
-export type SurfaceId = 'anthropic-messages' | 'openai-chat' | 'openai-responses' | 'gemini-generate'
+export type SurfaceId = 'anthropic-messages' | 'openai-chat' | 'openai-responses' | 'gemini-generate' | 'openai-images'
 export type RoutingMode = 'routed' | 'passthrough'
 
 export interface InboundSurfaceWire {

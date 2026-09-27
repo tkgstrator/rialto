@@ -2,8 +2,9 @@ import { createRoute, OpenAPIHono } from '@hono/zod-openapi'
 import { UpdateCheckQuerySchema, UpdateCheckResponseSchema } from '../../../schemas/api/update'
 import { checkForUpdates } from '../../../services/update'
 import { APP_VERSION } from '../../../version'
+import { validationErrorHook } from '../../zod-response'
 
-export const updateCheckRoute = new OpenAPIHono()
+export const updateCheckRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 const route = createRoute({
   method: 'get',

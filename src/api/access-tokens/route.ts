@@ -18,9 +18,16 @@ import {
   rotateAccessToken,
   updateAccessToken
 } from '../../services/access-token-service'
+import { validationErrorHook } from '../zod-response'
 
 /** The surface ids a token may be scoped to, shared by issue and update. */
-const SurfaceIdSchema = z.enum(['anthropic-messages', 'openai-chat', 'openai-responses', 'gemini-generate'])
+const SurfaceIdSchema = z.enum([
+  'anthropic-messages',
+  'openai-chat',
+  'openai-responses',
+  'gemini-generate',
+  'openai-images'
+])
 
 const TokenSchema = z
   .object({
@@ -67,7 +74,7 @@ const IssuedSchema = z
   })
   .openapi('AccessTokenIssued')
 
-export const accessTokensRoute = new OpenAPIHono()
+export const accessTokensRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 accessTokensRoute.openapi(
   createRoute({

@@ -1,8 +1,9 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { TierProfileSummarySchema } from '../../../schemas/api/routing'
 import { listTierProfiles } from '../../../services/tier-route-service'
+import { validationErrorHook } from '../../zod-response'
 
-export const routingProfilesRoute = new OpenAPIHono()
+export const routingProfilesRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 // Every profile a surface or an access token can point at: the default
 // even before it has a row, and the reserved passthrough key, flagged.

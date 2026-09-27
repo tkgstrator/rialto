@@ -16,6 +16,7 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import '../context'
 import { readAccessConfig } from '../../services/cloudflare-access'
+import { validationErrorHook } from '../zod-response'
 
 const ResponseSchema = z
   .object({
@@ -30,7 +31,7 @@ const ResponseSchema = z
   })
   .openapi('IdentityResponse')
 
-export const identityRoute = new OpenAPIHono()
+export const identityRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 identityRoute.openapi(
   createRoute({

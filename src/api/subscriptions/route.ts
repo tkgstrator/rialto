@@ -12,8 +12,9 @@ import { listResetCredits, ResetCreditError, spendResetCredit } from '../../serv
 import { syncSubAccountProfiles } from '../../services/subscription-account-sync-service'
 import { getSubscriptionsInfo } from '../../services/subscription-info-service'
 import { refreshProviderSubscriptions, refreshSubscriptions } from '../../services/subscription-refresh-service'
+import { validationErrorHook } from '../zod-response'
 
-export const subscriptionsRoute = new OpenAPIHono()
+export const subscriptionsRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
 const getSubscriptionsRoute = createRoute({
   method: 'get',

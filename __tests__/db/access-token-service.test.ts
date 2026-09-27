@@ -8,6 +8,7 @@
  * must not resolve as unscoped.
  */
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
+import { accessTokensRoute } from '../../src/api/access-tokens/route'
 import { getPrismaClient } from '../../src/db/client'
 import dayjs from '../../src/lib/dayjs'
 import {
@@ -383,6 +384,27 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
 
     expect(await resolveAccessToken(plaintext)).toBeNull()
     expect((await resolveAccessToken(result.issued.plaintext))?.id).toBe(token.id)
+  })
+
+  test('image-scoped tokens can be issued and updated through the API', async () => {
+    const send = (method: string, path: string, body: unknown) =>
+      accessTokensRoute.fetch(
+        new Request(`http://local${path}`, {
+          method,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body)
+        })
+      )
+    const issued = await send('POST', '/api/access-tokens', { name: 'image', surfaces: ['openai-images'] })
+    expect(issued.status).toBe(200)
+    const { token } = await issued.json()
+    expect(token.surfaces).toEqual(['openai-images'])
+
+    const updated = await send('PATCH', `/api/access-tokens/${token.id}`, {
+      surfaces: ['openai-chat', 'openai-images']
+    })
+    expect(updated.status).toBe(200)
+    expect((await updated.json()).surfaces).toEqual(['openai-chat', 'openai-images'])
   })
 
   test('scope and profile can be changed without touching the secret', async () => {

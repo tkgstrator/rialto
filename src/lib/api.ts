@@ -28,6 +28,40 @@ import type { Config } from '@/types'
 // shapes it returns.
 export type * from '@/lib/api-types'
 
+const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
+
+// `surfaces[1]` rather than Zod's `["surfaces", 1]`, so the path reads the
+// way the request body is written.
+function formatIssuePath(path: unknown[]): string {
+  return path.reduce<string>((text, part) => {
+    if (typeof part === 'number') return `${text}[${part}]`
+    if (typeof part === 'string') return `${text}${text ? '.' : ''}${part}`
+    return text
+  }, '')
+}
+
+// An error body is `{error: string}`, `{error: {message}}`, or the
+// `validation_error` envelope from api/zod-response.ts. The last one used
+// to reach the toast as `[object Object]`, or as Zod's raw JSON dump.
+function formatApiError(body: unknown): string | undefined {
+  if (!isObject(body)) return undefined
+  if (typeof body.message === 'string') return body.message
+  const { error } = body
+  if (typeof error === 'string') return error
+  if (!isObject(error)) return undefined
+
+  if (error.type === 'validation_error' && Array.isArray(error.issues)) {
+    const issues = error.issues.flatMap((issue) => {
+      if (!isObject(issue) || typeof issue.message !== 'string') return []
+      const location = Array.isArray(issue.path) ? formatIssuePath(issue.path) : ''
+      const message = issue.message
+      return [`${location ? `${location}: ` : ''}${message}`]
+    })
+    if (issues.length > 0) return issues.join('\n')
+  }
+  return typeof error.message === 'string' ? error.message : undefined
+}
+
 // Browser-side API client. Fetches under `${baseUrl}<endpoint>` and
 // attaches no credential: the admin gate admits a browser on the host
 // itself, or a request Cloudflare Access has already authenticated at the
@@ -65,10 +99,8 @@ class ApiClient {
     if (!response.ok) {
       let errorMessage = `API request failed: ${response.status} ${response.statusText}`
       try {
-        const errorData = await response.json()
-        if (errorData.error || errorData.message) {
-          errorMessage = errorData.message || errorData.error || errorMessage
-        }
+        const formatted = formatApiError(await response.json())
+        if (formatted !== undefined) errorMessage = formatted
       } catch {
         // body wasn't JSON; fall back to status line
       }
