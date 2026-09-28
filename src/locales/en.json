@@ -658,6 +658,7 @@
       "issueEndpoint": "Endpoint",
       "issueEndpointHint": "Pick the endpoints this token may call. Choose several when one client speaks more than one — Codex uses both /v1/responses and /v1/chat/completions. All endpoints leaves it unrestricted.",
       "allEndpoints": "all endpoints",
+      "codexMcpHint": "/codex (Codex MCP) is never part of “all endpoints” — select it explicitly.",
       "issueProfile": "Routing profile",
       "issueProfileHint": "Route this client's traffic through a named profile. Unset follows the endpoint's own routing.",
       "followEndpoint": "follow the endpoint",

@@ -11,6 +11,7 @@
 import { useMemo } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
+import { scopePaths } from '@/components/rialto/activity/use-surfaces'
 import { Pill, SurfaceScope } from '@/components/rialto/primitives'
 import { WarnNotice } from '@/components/rialto/settings/notice'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
@@ -34,7 +35,7 @@ import { fmtCost } from '@/lib/sessions/format'
 interface TokenRow {
   token: AccessTokenWire
   state: TokenState
-  /** Resolved display paths. Empty when the token may call every surface. */
+  /** Resolved display paths. Empty when the token may call every /v1 surface. */
   surfacePaths: string[]
 }
 
@@ -140,10 +141,7 @@ export function TokenTable({
       sortTokens(tokens, now).map((token) => ({
         token,
         state: tokenState(token, now),
-        surfacePaths: token.surfaces.flatMap((id) => {
-          const found = surfaces.find((s) => s.id === id)
-          return found === undefined ? [] : [found.path]
-        })
+        surfacePaths: scopePaths(surfaces, token.surfaces)
       })),
     [tokens, surfaces, now]
   )

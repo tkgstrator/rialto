@@ -9,6 +9,7 @@ Rialto をトンネル越しに公開するときの設定。**`/api/*` と `/v1
 |---|---|---|
 | `/` `/api/*` | ブラウザの人間 | Cloudflare Access（メール等） |
 | `/v1/*` | Claude Code / Codex CLI / Gemini CLI | Rialto の AccessToken **のみ** |
+| `/codex` `/codex/files/*` | MCP クライアント（Claude Code など） | Rialto の AccessToken（`/codex` スコープ）/ URL の鍵 |
 
 **`/v1/*` を Access で守ることはできない。** CLI クライアントは対話ログインができず、
 サービストークン（`CF-Access-Client-Id` / `CF-Access-Client-Secret`）ヘッダも送れない。
@@ -21,9 +22,14 @@ Rialto をトンネル越しに公開するときの設定。**`/api/*` と `/v1
 Access app A:  rialto.example.com/       Allow (email)      → UI + /api/*
 Access app B:  rialto.example.com/v1     Bypass (Everyone)  → Rialto の AccessToken
 Access app C:  rialto.example.com/health Bypass (Everyone)  → 外形監視（任意）
+Access app D:  rialto.example.com/codex  Bypass (Everyone)  → Codex MCP（使うなら）
 ```
 
 パスの深い方（`/v1`）が先に評価されるよう、アプリの順序に注意する。
+
+`/codex` は Codex MCP サーバー（[codex-mcp.md](codex-mcp.md)）。MCP クライアントも CLI と同じく
+対話ログインができないので、使うなら `/v1` と同じ理由で Bypass にする。`/codex` のパスは
+`/codex/files/*`（生成画像のダウンロード）も覆う。
 
 `/health` は管理ゲートの外にある監視用エンドポイントなので、外形監視を当てているなら
 同様に Bypass しておく。覆ったままだと監視が Access のログインHTMLを掴んで常時赤になる。

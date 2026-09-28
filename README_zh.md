@@ -369,6 +369,23 @@ for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.
 
 **这些入口面上哪些能力生效。** 故障切换、账户轮换以及 `provider,model` 寻址始终生效。按场景路由只有在把该入口面从 `passthrough` 切换为 `routed` 之后才生效——而且此时客户端发送的模型名（`codex,gpt-5.5`、`gemini-2.5-pro`）不决定任何事：要求推理的请求（`reasoning_effort`、`reasoning`、`thinkingConfig`）走 Think 列表，长请求走 Long context 列表，其余走 Default 列表，都在 Agent 通道上。多个入口面共用一个路由配置时也共用其列表，想让某个面走不同的路线，就给它指向专用的路由配置。人格注入**不**生效——它只作用于 `/v1/messages`（见上文「人格」）。
 
+## 🧩 Codex MCP 服务器
+
+`/codex` 把你的 Codex 订阅以 Streamable HTTP 的 MCP 服务器形式公开。无需在本地配置 `codex mcp-server`，Claude Code（CLI 与 Desktop）即可向 Codex 征求第二意见：
+
+| 工具 | 作用 |
+| --- | --- |
+| `ask` | 向 Codex 提问——代码评审、设计评议、调试。传回返回的 `thread_id` 即可继续同一对话。 |
+| `generate_image` | 用 Codex 的图像模型生成图片，返回图片本身和 15 分钟有效的下载链接。 |
+| `status` | 每个 Codex 账户的 5 小时与每周窗口用量，以及工具可用的模型。 |
+
+```shell
+claude mcp add --transport http --scope user codex https://rialto.example.com/codex \
+  --header "Authorization: Bearer <访问令牌>"
+```
+
+令牌必须**显式带有 `/codex` 范围**——未限定范围（“全部端点”）的令牌无法进入，因为 `status` 会返回你的 Codex 账户情况。调用固定走 Codex 订阅，不会切换到其他提供商；Codex 只能看到提示词里的内容。配置、边缘侧的部署和细节见 [docs/guides/codex-mcp.md](docs/guides/codex-mcp.md)（日文）。
+
 ## 📊 日志
 
 只有一个日志器（pino），它记录全部内容——HTTP 请求、路由决策、上游调用、服务器事件：

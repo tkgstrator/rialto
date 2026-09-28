@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import type { TokenUsageRow } from '@/components/rialto/activity/usage-derive'
+import { scopePaths } from '@/components/rialto/activity/use-surfaces'
 import { Meter, SurfaceScope } from '@/components/rialto/primitives'
 import type { InboundSurfaceWire } from '@/lib/api'
 import { fmtAgo, fmtCount } from '@/lib/rialto/format'
@@ -15,10 +16,7 @@ export function TokenRow({
   now: number
 }) {
   const { t } = useTranslation()
-  const paths = row.surfaces.flatMap((id) => {
-    const found = surfaces.find((s) => s.id === id)
-    return found === undefined ? [] : [found.path]
-  })
+  const paths = scopePaths(surfaces, row.surfaces)
   return (
     <tr className='border-t border-border/60 transition-colors hover:bg-muted/50'>
       <td className='py-2.5 pl-6 pr-3'>

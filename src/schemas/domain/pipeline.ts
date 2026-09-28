@@ -114,9 +114,12 @@ export const PipelineRequestSchema = z.object({
   inboundType: z.enum(['anthropic', 'openai', 'gemini']).optional(),
   // Which inbound surface the request arrived on, as an
   // `InboundSurface.id` slug. Finer than `inboundType`, which cannot
-  // tell /v1/chat/completions from /v1/responses.
+  // tell /v1/chat/completions from /v1/responses. 'codex-mcp' is a
+  // completion the Codex MCP server made on a caller's behalf
+  // (src/shared/codex-mcp.ts): it runs through /v1/responses in-process,
+  // but was not a client calling that surface.
   surface: z
-    .enum(['anthropic-messages', 'openai-chat', 'openai-responses', 'gemini-generate', 'openai-images'])
+    .enum(['anthropic-messages', 'openai-chat', 'openai-responses', 'gemini-generate', 'openai-images', 'codex-mcp'])
     .optional(),
   // Which AccessToken authenticated the request, so Activity can answer
   // "which client burned this". /v1 admits issued tokens only, so this

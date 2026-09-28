@@ -24,10 +24,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { scopePaths } from '@/components/rialto/activity/use-surfaces'
 import { RButton } from '@/components/rialto/primitives'
 import { IssuedTokenDialog } from '@/components/rialto/settings/access/IssuedTokenDialog'
 import { emptyDraft, type IssueDraft, IssueTokenDialog } from '@/components/rialto/settings/access/IssueTokenDialog'
-import { ANY } from '@/components/rialto/settings/access/pickers'
+import { ANY, scopeForWire } from '@/components/rialto/settings/access/pickers'
 import { TokenTable } from '@/components/rialto/settings/access/TokenTable'
 import { SectionHead } from '@/components/rialto/settings/fields'
 import { type AccessTokenWire, api, type InboundSurfaceWire, type PlanWire } from '@/lib/api'
@@ -122,23 +123,16 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
   const issue = () => {
     if (draft === null) return
     setIssuing(true)
-    // Resolve the picker's strings back through the fetched list rather
-    // than asserting them into SurfaceIds: every id is then one the
-    // server itself reported, so an unknown value cannot reach the wire.
-    const picked = surfaces.filter((s) => draft.surfaces.includes(s.id)).map((s) => s.id)
     api
       .issueAccessToken({
         name: draft.name.trim(),
-        surfaces: picked,
+        surfaces: scopeForWire(surfaces, draft.surfaces),
         profileKey: draft.profileKey === ANY ? null : draft.profileKey,
         expiresAt: expiryToIso(draft.expiry, Date.now()),
         planId: draft.planId === ANY ? null : draft.planId
       })
       .then((res) => {
-        const paths = res.token.surfaces.flatMap((id) => {
-          const found = surfaces.find((s) => s.id === id)
-          return found === undefined ? [] : [found.path]
-        })
+        const paths = scopePaths(surfaces, res.token.surfaces)
         setRevealed({
           plaintext: res.plaintext,
           name: res.token.name,
