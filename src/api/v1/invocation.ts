@@ -174,7 +174,7 @@ export function resolveInvocationForModel(
     classifierSignals: plan.classifierSignals,
     isSubagent: plan.isSubagent,
     inboundType: inboundTypeForPath(plan.path),
-    surface: surfaceForPath(plan.path)?.id,
+    surface: plan.surfaceOverride !== undefined ? plan.surfaceOverride : surfaceForPath(plan.path)?.id,
     accessTokenId: plan.accessTokenId,
     accountSessionKey: plan.accountSessionKey,
     clientEffortIntent: clientSpecifiedEffort ? 'explicit' : 'unspecified'

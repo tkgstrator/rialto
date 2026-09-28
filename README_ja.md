@@ -369,6 +369,23 @@ for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.
 
 **これらの受け口で何が効くか。** フェイルオーバー、アカウントローテーション、`provider,model` 形式のモデル指定は常に効きます。シナリオ別ルーティングは、その受け口を `passthrough` から `routed` に切り替えて初めて効きます — そしてそのとき、クライアントが送るモデル名（`codex,gpt-5.5`、`gemini-2.5-pro`）は何も選びません。推論を求めるリクエスト（`reasoning_effort`・`reasoning`・`thinkingConfig`）は Think のリスト、長いリクエストは Long context のリスト、それ以外は Default のリストで、いずれも Agent レーンで振り分けられます。プロファイルを受け口どうしで共有すればリストも共有されるので、振り分けを変えたい受け口には専用のプロファイルを向けてください。ペルソナ挿入は効き**ません** — `/v1/messages` 専用です（上記「ペルソナ」参照）。
 
+## 🧩 Codex MCP サーバー
+
+`/codex` は、Codex のサブスクリプションを Streamable HTTP の MCP サーバーとして公開します。ローカルに `codex mcp-server` を設定しなくても、Claude Code（CLI・Desktop）から Codex にセカンドオピニオンを求められます。
+
+| ツール | 内容 |
+| --- | --- |
+| `ask` | Codex に質問する（コードレビュー、設計の批評、デバッグ）。返ってきた `thread_id` を渡すと会話を続けられます。 |
+| `generate_image` | Codex の画像モデルで画像を作ります。画像そのものと 15 分有効のダウンロードリンクを返します。 |
+| `status` | Codex アカウントごとの 5 時間枠・週枠の使用率と、ツールが使えるモデルの一覧。 |
+
+```shell
+claude mcp add --transport http --scope user codex https://rialto.example.com/codex \
+  --header "Authorization: Bearer <アクセストークン>"
+```
+
+トークンには **`/codex` スコープを明示的に**付けてください。スコープなし（すべてのエンドポイント）のトークンでは入れません。`status` が Codex アカウントの状況を返すためです。呼び先は Codex のサブスクリプションに固定で、ほかのプロバイダーへは振り替えません。Codex が見られるのはプロンプトに入れた内容だけです。設定、エッジ側の構成、詳細は [docs/guides/codex-mcp.md](docs/guides/codex-mcp.md) を参照してください。
+
 ## 📊 ログ
 
 ロガーは 1 つ（pino）で、HTTP リクエスト・ルーティング判断・上流呼び出し・サーバーイベントのすべてを書きます：

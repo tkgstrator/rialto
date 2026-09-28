@@ -8,6 +8,7 @@
  */
 
 import type { ResolvedToken } from '../services/access-token-service'
+import type { CODEX_MCP_SCOPE } from '../shared/codex-mcp'
 
 /**
  * How an /api request got past the gate.
@@ -27,5 +28,12 @@ declare module 'hono' {
     accessEmail: string | null
     /** The issued token that authenticated a /v1 call, when one did. */
     accessToken: ResolvedToken
+    /**
+     * The surface a completion is recorded under when it is not the one
+     * its path names: the Codex MCP server drives /v1/responses
+     * in-process. A context variable and not a header, so no caller can
+     * relabel its own traffic.
+     */
+    surfaceOverride: typeof CODEX_MCP_SCOPE
   }
 }

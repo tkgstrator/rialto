@@ -72,6 +72,9 @@ export interface RoutePlan {
   // The AccessToken that authenticated this request, when one did.
   // Recorded on RequestLog so Activity can attribute spend to a client.
   accessTokenId?: string
+  // The surface to record in place of the one the path names. Set only
+  // by an in-process caller (the Codex MCP server) through the context.
+  surfaceOverride?: PipelineRequest['surface']
   // The key the subscription sub-account picker sticks on and the
   // reactive 429 path releases. Always a string — see
   // `resolveInboundSession` for why "no session" is not an option here.
@@ -284,6 +287,7 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
     fallbacks: Array.isArray(routeReq.resolvedFallbacks) ? routeReq.resolvedFallbacks : [],
     path,
     search: url.search,
-    accessTokenId: tokenId
+    accessTokenId: tokenId,
+    surfaceOverride: c.get('surfaceOverride')
   }
 }

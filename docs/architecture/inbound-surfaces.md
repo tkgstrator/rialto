@@ -241,6 +241,21 @@ InboundSurfaceConfig.profileKey → RouterPreferenceProfile.key → TierRoute
 推測で埋めない。UI は NULL を「untracked」として表示し、存在しないトラフィックを特定の面に
 帰属させない。
 
+### 面ではない `codex-mcp`
+
+Codex MCP サーバー（`/codex`、[guides/codex-mcp.md](../guides/codex-mcp.md)）は **面ではない**。
+MCP を話すのでワイヤ形式でもなく、呼び先は常に Codex に固定でルーティングの対象でもない。
+だから `INBOUND_SURFACES` には入れず、`InboundSurfaceConfig` の行も持たない。
+
+それでも id `codex-mcp`（`src/shared/codex-mcp.ts`）は面の id と同じ2か所に現れる:
+
+- **トークンのスコープ。** ただし面と違って **オプトイン**で、空のスコープ（全部の面）には含まれない。
+  ゲートは `inboundProxyAuth` ではなく `src/api/codex-mcp/auth.ts`。
+- **`RequestLog.surface`。** `ask` は `/v1/responses` をプロセス内で呼ぶが、パスが示す
+  `openai-responses` ではなく `codex-mcp` で記録する（コンテキスト変数 `surfaceOverride` →
+  `RoutePlan.surfaceOverride`）。ヘッダで渡さないのは、クライアントが自分のトラフィックの
+  ラベルを付け替えられないようにするため。画像は `generateImage` の `caller.surface` で同じく記録する。
+
 ## 面を1つ足す手順
 
 **`INBOUND_SURFACES` に記述子を1つ足す。** ルートのマウント・認証ゲート・アクセスログ・

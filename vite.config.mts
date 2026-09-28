@@ -52,7 +52,10 @@ export default defineConfig({
       // here, dev served the SPA's HTML for it and every health read
       // failed to parse — so the shell reported the server unreachable
       // while talking to it perfectly well.
-      exclude: [/^(?!\/api\/|\/v1\/|\/health(?:\?|$)|\/callback(?:\?|$)).*$/]
+      //
+      // /codex is the Codex MCP server and /codex/files/* its image
+      // downloads; the SPA has no route there.
+      exclude: [/^(?!\/api\/|\/v1\/|\/health(?:\?|$)|\/callback(?:\?|$)|\/codex(?:[/?]|$)).*$/]
     })
   ]
 })

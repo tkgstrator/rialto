@@ -27,12 +27,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
-import { useSurfaces } from '@/components/rialto/activity/use-surfaces'
+import { scopePaths, useSurfaces } from '@/components/rialto/activity/use-surfaces'
 import { useConfirm } from '@/components/rialto/ConfirmDialog'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import { IssuedTokenDialog } from '@/components/rialto/settings/access/IssuedTokenDialog'
-import { ANY, Picker, SurfacePicker, sameScope } from '@/components/rialto/settings/access/pickers'
+import { ANY, Picker, SurfacePicker, sameScope, scopeForWire } from '@/components/rialto/settings/access/pickers'
 import { TokenDetailHeader } from '@/components/rialto/settings/access/TokenDetailHeader'
 import { TokenReadings } from '@/components/rialto/settings/access/TokenReadings'
 import { SettingsField } from '@/components/rialto/settings/SettingsLayout'
@@ -85,7 +85,7 @@ export function TokenDetail() {
   const { t } = useTranslation()
   const { id = '' } = useParams()
   const navigate = useNavigate()
-  const { surfaces, pathOf } = useSurfaces()
+  const { surfaces } = useSurfaces()
   const { confirm, dialog: confirmDialog } = useConfirm()
   const [token, setToken] = useState<AccessTokenWire | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -148,10 +148,7 @@ export function TokenDetail() {
     api
       .rotateAccessToken(token.id)
       .then((res) => {
-        const paths = res.token.surfaces.flatMap((id) => {
-          const found = pathOf(id)
-          return found === null ? [] : [found]
-        })
+        const paths = scopePaths(surfaces, res.token.surfaces)
         setRevealed({
           plaintext: res.plaintext,
           scope: paths.length === 0 ? t('settings.access.allEndpoints') : paths.join(', '),
@@ -216,9 +213,7 @@ export function TokenDetail() {
     setBusy(true)
     api
       .updateAccessToken(token.id, {
-        // Resolved through the fetched registry rather than asserted, so
-        // an id the server does not know cannot reach the wire.
-        surfaces: surfaces.filter((s) => draft.surfaces.includes(s.id)).map((s) => s.id),
+        surfaces: scopeForWire(surfaces, draft.surfaces),
         profileKey: draft.profileKey === ANY ? null : draft.profileKey,
         planId: draft.planId === ANY ? null : draft.planId
       })
