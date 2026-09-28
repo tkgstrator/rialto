@@ -316,7 +316,7 @@ Any OpenAI SDK caller (Codex CLI, Cline, OpenWebUI, `openai` for Python / JS, `c
 
 | Method | Path | Notes |
 |---|---|---|
-| `GET`  | `/v1/models`             | Returns the enabled, routable models as `{object:'list', data:[…]}`. Each `id` is Rialto's canonical `provider,model` (round-trip it straight into the next call); `owned_by` is the provider name. |
+| `GET`  | `/v1/models`             | Returns the enabled, routable models as `{object:'list', data:[…]}`. Each `id` is Rialto's canonical `provider,model` (round-trip it straight into the next call); `owned_by` is the provider name. Each entry also carries `provider`, the bare `model` name, `context_window` and `pricing` (USD per million tokens: input, output, cached input and both cache-write rates; `null` unless input and output are both known), so an app that bills its own users can price a call from this list. |
 | `POST` | `/v1/chat/completions`   | Standard Chat Completions — stream + non-stream. Body's `model` field takes the `provider,model` id from `/v1/models`. |
 | `POST` | `/v1/responses`          | OpenAI Responses API — stream + non-stream. Same model addressing as above. |
 
@@ -368,6 +368,23 @@ for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.
 Any client that supports overriding `base_url` / `baseURL` works the same way.
 
 **What applies on these surfaces.** Failover, account rotation, and the `provider,model` addressing always apply. Scenario routing applies only once you switch the surface from `passthrough` to `routed` — and then the model name the client sends (`codex,gpt-5.5`, `gemini-2.5-pro`) picks nothing: a request that asks for reasoning (`reasoning_effort`, `reasoning`, `thinkingConfig`) walks the Think list, a long one the Long context list, the rest Default, on the Agent lane. A profile shared between surfaces shares its lists, so point a surface at its own profile when it should route differently. Persona injection does **not** apply — it is `/v1/messages` only (see Personas above).
+
+## 🧩 Codex MCP server
+
+`/codex` publishes your Codex subscription as an MCP server over Streamable HTTP, so Claude Code (CLI and Desktop) can ask Codex for a second opinion without a local `codex mcp-server`:
+
+| Tool | What it does |
+| --- | --- |
+| `ask` | Ask Codex — code review, design critique, debugging. Pass the returned `thread_id` to continue the conversation. |
+| `generate_image` | Generate an image with Codex's image models; returns the image and a 15-minute download link. |
+| `status` | Each Codex account's 5-hour and weekly usage, and the models the tools can use. |
+
+```shell
+claude mcp add --transport http --scope user codex https://rialto.example.com/codex \
+  --header "Authorization: Bearer <access token>"
+```
+
+The token must carry the **`/codex` scope explicitly** — an unscoped ("all endpoints") token does not reach it, because `status` reads out your Codex accounts. Calls are pinned to the Codex subscription and never fall back to another provider; Codex sees only what the prompt contains. Setup, the edge configuration and the details are in [docs/guides/codex-mcp.md](docs/guides/codex-mcp.md) (Japanese).
 
 ## 📊 Logging
 

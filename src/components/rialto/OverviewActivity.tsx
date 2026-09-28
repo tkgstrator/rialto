@@ -1,6 +1,7 @@
 import { cn } from 'cn'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
+import { surfaceLabel } from '@/components/rialto/activity/use-surfaces'
 import { Mono, Pill, SurfacePill } from '@/components/rialto/primitives'
 import type { OverviewFailoverRow, OverviewResponse } from '@/lib/api'
 import { fmtAgo, shortId } from '@/lib/rialto/format'
@@ -92,7 +93,10 @@ export function SessionTable({ data, now }: { data: OverviewResponse; now: numbe
       </thead>
       <tbody>
         {data.recentSessions.map((s) => {
-          const path = data.surfaces.find((x) => x.id === s.surface)?.path
+          // Through surfaceLabel rather than a bare find: `data.surfaces`
+          // is the registry's rows, which never include /codex, and a
+          // session Codex served over MCP would otherwise read untracked.
+          const label = surfaceLabel(data.surfaces, s.surface)
           return (
             <tr
               key={s.sessionId}
@@ -105,7 +109,11 @@ export function SessionTable({ data, now }: { data: OverviewResponse; now: numbe
                 </Link>
               </td>
               <td className='px-3'>
-                {path === undefined ? <Mono>{t('activity.requests.laneUntracked')}</Mono> : <SurfacePill path={path} />}
+                {label === undefined ? (
+                  <Mono>{t('activity.requests.laneUntracked')}</Mono>
+                ) : (
+                  <SurfacePill path={label.path} />
+                )}
               </td>
               <td className='px-3 font-mono text-xs text-muted-foreground'>{s.model}</td>
               <td className='px-3 text-right font-mono text-xs tabular-nums'>{s.turns}</td>
