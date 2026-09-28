@@ -317,9 +317,14 @@ export interface TierProfileSaveOutcome {
 export interface TierAliasWire {
   provider: string
   tier: ModelTier
+  /** derived: follows the newest switched-on model named `tier`. manual: the stored alias. */
+  mode: 'derived' | 'manual'
+  /** The model the tier reaches today, switched on or not; null only on an unset manual tier. */
   model: string | null
+  modelEnabled: boolean
+  /** When the manual alias was set; null on a derived tier. */
   updatedAt: string | null
-  /** Models of this tier on the provider; `isNew` appeared after the alias was set. */
+  /** A derived tier's other named models, newest first; `isNew` is newer and switched off. */
   candidates: Array<{ model: string; enabled: boolean; isNew: boolean }>
 }
 

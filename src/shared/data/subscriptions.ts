@@ -1,7 +1,13 @@
 // Subscription provider presets. Shared between the server (which
-// seeds these as Provider rows with authMode=subscription) and the UI
+// creates these as Provider rows with authMode=subscription) and the UI
 // (which uses the vendor / cli / credentialsPath fields for hints in
 // the Add Subscription dialog and to look up plan info).
+//
+// A preset names no models. Which models a subscription has comes from
+// the vendor (the Claude Code catalog, the Codex account's model list),
+// and every one lands switched off: nothing here may decide on the
+// operator's behalf which model serves, since nobody knows what the next
+// release will be.
 
 export interface SubscriptionPreset {
   /** Provider.name in the DB and the Router key. */
@@ -12,18 +18,6 @@ export interface SubscriptionPreset {
   description: string
   /** Provider.apiBaseUrl in the DB. */
   apiBaseUrl: string
-  /** Master list of models the subscription exposes. Used by seed + catalog view. */
-  availableModels: string[]
-  /** Subset that ships as enabled when a fresh provider is created. */
-  defaultEnabledModels: string[]
-  /**
-   * Models the vendor's subscription backend refuses to serve, even if
-   * the price scraper picks them up. The provider editor's toggle list
-   * is derived from `provider.models` (DB) so scraped ids surface
-   * automatically — this denylist hides the ones we know don't work.
-   * Empty array when nothing to hide.
-   */
-  excludedModels: string[]
   /** Vendor brand surfaced in the subscription hint (e.g. Anthropic, OpenAI). */
   vendor: string
   /** CLI name that mints the OAuth token (e.g. Claude, Codex). */
@@ -42,48 +36,18 @@ export const SUBSCRIPTION_PRESETS: SubscriptionPreset[] = [
     label: 'Claude Code',
     description: 'Claude Pro / Max subscription via Claude CLI OAuth',
     apiBaseUrl: 'https://api.anthropic.com/v1/messages',
-    availableModels: [
-      'claude-fable-5',
-      'claude-mythos-5',
-      'claude-opus-4-8',
-      'claude-opus-4-7',
-      'claude-sonnet-5',
-      'claude-sonnet-4-6',
-      'claude-haiku-4-5'
-    ],
-    // claude-mythos-5 is selectable (availableModels) but NOT enabled by
-    // default: it's invitation-only (Project Glasswing) and a normal
-    // Pro / Max subscription can't serve it, so enabling it out of the
-    // box would 4xx for most users. Opt in from the UI when entitled.
-    defaultEnabledModels: [
-      'claude-fable-5',
-      'claude-opus-4-8',
-      'claude-opus-4-7',
-      'claude-sonnet-5',
-      'claude-sonnet-4-6',
-      'claude-haiku-4-5'
-    ],
     vendor: 'Anthropic',
     cli: 'Claude',
-    credentialsPath: '~/.claude/.credentials.json',
-    excludedModels: []
+    credentialsPath: '~/.claude/.credentials.json'
   },
   {
     id: 'codex',
     label: 'Codex',
     description: 'ChatGPT subscription via Codex CLI OAuth',
     apiBaseUrl: 'https://chatgpt.com/backend-api/codex',
-    // gpt-5.3-codex is rejected by the ChatGPT-account Codex backend
-    // ("not supported when using Codex with a ChatGPT account"). The
-    // OpenAI scraper already skips codex-family ids, so it wouldn't
-    // reach the toggle list either way — kept in the seed list for the
-    // Manage-providers catalog count.
-    availableModels: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.2', ...CODEX_IMAGE_MODELS],
-    defaultEnabledModels: ['gpt-5.5'],
     vendor: 'OpenAI',
     cli: 'Codex',
-    credentialsPath: '~/.codex/auth.json',
-    excludedModels: []
+    credentialsPath: '~/.codex/auth.json'
   }
 ]
 

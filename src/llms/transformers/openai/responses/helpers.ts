@@ -25,10 +25,11 @@ export function firstDefined(candidates: Array<string | undefined>): string | un
 }
 
 /**
- * Returns the provided model name or the fallback placeholder used by
- * the original transformer when upstream omitted it. Keeps the wire
- * shape stable for downstream consumers that expect a non-empty model.
+ * Returns the provided model name, or a neutral placeholder when upstream
+ * omitted it. Keeps the wire shape stable for downstream consumers that
+ * expect a non-empty model, without naming a model the upstream never
+ * said (the Anthropic stream uses the same placeholder).
  */
-export function modelOr(model: string | undefined, fallback: string): string {
-  return typeof model === 'string' && model.length > 0 ? model : fallback
+export function modelOr(model: string | undefined): string {
+  return typeof model === 'string' && model.length > 0 ? model : 'unknown'
 }

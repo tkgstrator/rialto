@@ -29,7 +29,7 @@ import { ProviderModelsSection } from './ProviderModelsSection'
 import { ApiKeyRequestShape, SubscriptionRequestShape } from './RequestShape'
 import { SwitchReading } from './SwitchReading'
 import { TierAliases } from './TierAliases'
-import { type AliasMap, freshModelsOf } from './tier-aliases'
+import type { AliasMap, TierView } from './tier-aliases'
 import type {
   CatalogEntry,
   Provider,
@@ -37,7 +37,6 @@ import type {
   SubAccountWire,
   SubscriptionWire,
   Tier,
-  TierAliasWire,
   TransformerWire
 } from './types'
 
@@ -167,10 +166,10 @@ export interface ProviderDetailProps {
   quota: QuotaIndex
   accounts: AccountExtrasIndex
   now: number
-  /** This provider's alias rows as loaded: the candidates each tier offers and how many are new. */
-  aliasRows: TierAliasWire[]
-  /** The aliases as Save would leave them, like `provider`. */
-  aliases: AliasMap
+  /** The tiers as Save would leave them, like `provider` (`tierViewsOf`). */
+  tiers: TierView[]
+  /** The manual aliases as loaded, which a manual tier's picker offers as current. */
+  storedAliases: AliasMap
   busy: boolean
   editing: boolean
   /** Whether the staged edit differs from what is stored. */
@@ -182,7 +181,7 @@ export interface ProviderDetailProps {
   onTestAll: () => void
   onToggleProvider: (next: boolean) => void
   onToggleModel: (model: string, next: boolean) => void
-  /** Point a tier's alias at a model; null unsets it. */
+  /** Point a manual tier's alias at a model; null unsets it. */
   onAlias: (tier: Tier, model: string | null) => void
   /** Per-model reasoning effort; null clears it back to the vendor default. */
   onModelEffort: (model: string, next: ReasoningEffort | null) => void
@@ -194,7 +193,7 @@ export interface ProviderDetailProps {
 export function ProviderDetail(props: ProviderDetailProps) {
   const { provider, subscription, catalogEntry, transformers, quota, now } = props
   const subscriptionMode = provider.auth_mode === 'subscription'
-  const rows = buildModelRows(provider, catalogEntry, props.aliases, freshModelsOf(props.aliasRows))
+  const rows = buildModelRows(provider, catalogEntry, props.tiers)
   return (
     <div className='min-w-0 overflow-y-auto'>
       <DetailHeader
@@ -238,8 +237,8 @@ export function ProviderDetail(props: ProviderDetailProps) {
         )}
       </div>
       <TierAliases
-        rows={props.aliasRows}
-        aliases={props.aliases}
+        views={props.tiers}
+        stored={props.storedAliases}
         listed={listedModelsOf(provider)}
         editing={props.editing}
         onPick={props.onAlias}

@@ -1,22 +1,26 @@
 /**
- * Pure derivations behind a provider page's tier-alias strip.
+ * Pure derivations behind a provider page's tier strip.
  *
- * Routing names a provider and a tier, never a model: the alias is what
- * says which model "claude-code · sonnet" is today, and it is the one
- * pointer a new model release moves. It never moves by itself — a
- * refresh only lists a newer model as a candidate, and pointing the
- * alias at it (promoting it) is an edit this page stages until Save.
+ * Routing names a provider and a tier, never a model. A tier some of the
+ * provider's models name follows the newest of those that is switched on
+ * (`src/shared/tier-resolution.ts`, the rule the server routes by), so the
+ * model switches are the whole control there; a refresh lands a new model
+ * switched off, and switching it on is what moves the tier. Only a tier no
+ * model names — Codex's `gpt-*`, an OpenAI key — takes an alias, picked on
+ * this page and staged until Save.
  *
  * Kept out of the components for the same reason `derive.ts` is: what
- * Save would write, and what the strip offers, can be pinned without a
+ * Save would write, and what the strip shows, can be pinned without a
  * browser.
  */
-import type { Tier, TierAliasWire } from './types'
+import { newerOffOf, resolveTier } from '@/shared/tier-resolution'
+import { disabledModelsOf } from './derive'
+import type { Provider, Tier, TierAliasWire } from './types'
 
 /** Strip order, most capable first — the order Routing lists tiers in. */
 export const TIERS: readonly Tier[] = ['fable', 'opus', 'sonnet', 'haiku']
 
-/** Tier → the model its alias names. An unset tier is absent, not null. */
+/** Tier → the model its manual alias names. An unset tier is absent, not null. */
 export type AliasMap = Partial<Record<Tier, string>>
 
 /** Aliases picked while editing; null unsets one. */
@@ -32,10 +36,16 @@ export interface AliasChange {
 export const aliasRowsOf = (rows: readonly TierAliasWire[], provider: string): TierAliasWire[] =>
   rows.filter((row) => row.provider === provider)
 
-/** The stored aliases of one provider's rows. */
+/**
+ * The stored aliases of one provider's manual tiers. A derived tier's
+ * model is not an alias — nothing Save writes can move it — so it is left
+ * out, and a pick is only ever compared with a manual alias.
+ */
 export function aliasMapOf(rows: readonly TierAliasWire[]): AliasMap {
   return Object.fromEntries(
-    rows.flatMap((row): Array<[Tier, string]> => (row.model === null ? [] : [[row.tier, row.model]]))
+    rows.flatMap(
+      (row): Array<[Tier, string]> => (row.mode === 'manual' && row.model !== null ? [[row.tier, row.model]] : [])
+    )
   )
 }
 
@@ -69,46 +79,66 @@ export function applyAliasPicks(stored: AliasMap, picks: AliasPicks): AliasMap {
   return next
 }
 
-/** The tiers `model` is the alias for, in strip order. One model may serve several. */
-export const tiersServedBy = (aliases: AliasMap, model: string): Tier[] =>
-  TIERS.filter((tier) => aliases[tier] === model)
+/** One tier as the page shows it. */
+export interface TierView {
+  tier: Tier
+  /** derived: follows the newest switched-on model its name says. manual: the alias. */
+  mode: 'derived' | 'manual'
+  /** The model the tier reaches, switched on or not; null only on an unset manual tier. */
+  model: string | null
+  /** Whether that model is switched on. */
+  enabled: boolean
+  /** A derived tier's models, newest first; empty on a manual tier. */
+  named: string[]
+  /** Named models newer than `model` and switched off: switching one on moves the tier. */
+  newer: string[]
+}
 
-/** Models some tier lists as a new candidate — found after that alias was last set. */
-export const freshModelsOf = (rows: readonly TierAliasWire[]): Set<string> =>
-  new Set(rows.flatMap((row) => row.candidates.filter((c) => c.isNew).map((c) => c.model)))
-
-export const newCountOf = (row: TierAliasWire | undefined): number =>
-  row === undefined ? 0 : row.candidates.filter((c) => c.isNew).length
+/**
+ * Every tier of `provider`, resolved by the rule the server routes by.
+ *
+ * Run on the provider as Save would leave it (the draft applied), so while
+ * editing the strip already shows where a switch moves each tier. Every
+ * model row counts, as on the server — a deprecated one the table hides
+ * can still be the newest switched-on model.
+ */
+export function tierViewsOf(provider: Provider, manual: AliasMap): TierView[] {
+  const off = new Set(disabledModelsOf(provider))
+  const models = provider.models.map((name) => ({ name, enabled: !off.has(name) }))
+  return TIERS.map((tier) => {
+    const aliased = manual[tier]
+    const alias = aliased === undefined ? null : { name: aliased, enabled: !off.has(aliased) }
+    const resolution = resolveTier(models, tier, alias)
+    const model = resolution.model
+    return {
+      tier,
+      mode: resolution.mode,
+      model: model === null ? null : model.name,
+      enabled: model === null ? false : model.enabled,
+      named: resolution.mode === 'derived' ? resolution.named.map((m) => m.name) : [],
+      newer: newerOffOf(resolution).map((m) => m.name)
+    }
+  })
+}
 
 export interface AliasOptions {
   /** What the alias names as stored, whatever the edit has staged. */
   current: string | null
-  /** Models whose name says this tier, new ones first. */
-  candidates: Array<{ model: string; isNew: boolean }>
   /**
-   * Every other listed model on the provider. A candidate is only a model
-   * whose name says the tier, and Codex or an OpenAI key names no Claude
-   * family at all — offering candidates alone would leave those providers
-   * with nothing to pick, although the alias is exactly how an operator
-   * says what "sonnet" means there.
+   * Every other listed model on the provider. A manual tier is one no
+   * model names, so there is no candidate to put first — the alias is
+   * exactly how an operator says what "sonnet" means there.
    */
   others: string[]
 }
 
 /**
- * What a tier's picker offers.
+ * What a manual tier's picker offers.
  *
  * Built from what is stored rather than from the staged pick, so the list
  * holds still while the operator moves between entries in it — and the
  * stored model stays in it, which is how a pick is taken back.
  */
-export function aliasOptions(row: TierAliasWire | undefined, listed: readonly string[]): AliasOptions {
-  const current = row === undefined ? null : row.model
-  // Stable, so the server's newest-first order holds inside each half.
-  const candidates = (row === undefined ? [] : row.candidates)
-    .filter((c) => c.model !== current)
-    .map((c) => ({ model: c.model, isNew: c.isNew }))
-    .sort((a, b) => Number(b.isNew) - Number(a.isNew))
-  const taken = new Set([...(current === null ? [] : [current]), ...candidates.map((c) => c.model)])
-  return { current, candidates, others: listed.filter((model) => !taken.has(model)) }
+export function aliasOptions(current: string | null, listed: readonly string[]): AliasOptions {
+  return { current, others: listed.filter((model) => model !== current) }
 }

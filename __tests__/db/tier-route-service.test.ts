@@ -8,13 +8,14 @@
  * passthrough key cannot hold routes; the constraints merge into the blob
  * the old chain still reads rather than replacing it, and a save keeps the
  * Long context tuner's state from the database; and the view resolves
- * each route and serves the threshold in effect.
+ * each route — a tier some model names to the newest switched-on one, so
+ * a switch moves it with no alias written — and serves the threshold in
+ * effect.
  */
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import { getPrismaClient } from '../../src/db/client'
 import type { ModelTier } from '../../src/schemas/domain/tier-route'
-import { setTierAlias } from '../../src/services/tier-alias-service'
 import {
   listTierProfiles,
   loadTierProfile,
@@ -44,7 +45,6 @@ describe.skipIf(!HAS_DB)('tier-route-service', () => {
     await prisma.model.create({
       data: { providerId: claude.id, name: 'claude-sonnet-5', enabled: true, contextWindow: 1_000_000 }
     })
-    await setTierAlias('claude-code', 'sonnet', 'claude-sonnet-5')
   })
 
   afterAll(teardownPrisma)
@@ -197,13 +197,30 @@ describe.skipIf(!HAS_DB)('loadTierProfileView', () => {
     await prisma.model.create({
       data: { providerId: claude.id, name: 'claude-opus-4-8', enabled: true, contextWindow: 200_000 }
     })
-    await setTierAlias('claude-code', 'sonnet', 'claude-sonnet-5')
-    await setTierAlias('claude-code', 'opus', 'claude-opus-4-8')
   })
 
   afterAll(teardownPrisma)
 
-  test('each route is resolved through its alias, in every list', async () => {
+  test('a named tier follows the newest switched-on model, so switching one on moves the route', async () => {
+    const prisma = getPrismaClient()
+    const claude = await prisma.provider.findUniqueOrThrow({ where: { name: 'claude-code' } })
+    const newer = await prisma.model.create({
+      data: { providerId: claude.id, name: 'claude-sonnet-5-5', enabled: false, contextWindow: 2_000_000 }
+    })
+    await saveTierProfile('live', profileWith({ default: { agent: [on('claude-code', 'sonnet')] } }))
+    const before = await loadTierProfileView('live')
+    expect(before.routes.default.agent[0].resolved?.model).toBe('claude-sonnet-5')
+
+    await prisma.model.update({ where: { id: newer.id }, data: { enabled: true } })
+    const after = await loadTierProfileView('live')
+    expect(after.routes.default.agent[0].resolved).toMatchObject({ model: 'claude-sonnet-5-5', targetEnabled: true })
+
+    await prisma.model.updateMany({ where: { providerId: claude.id }, data: { enabled: false } })
+    const none = await loadTierProfileView('live')
+    expect(none.routes.default.agent[0].resolved).toMatchObject({ model: 'claude-sonnet-5-5', targetEnabled: false })
+  })
+
+  test('each route is resolved, in every list', async () => {
     await saveTierProfile(
       'live',
       profileWith({

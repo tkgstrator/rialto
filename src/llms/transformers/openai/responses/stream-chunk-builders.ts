@@ -36,7 +36,7 @@ export function buildToolCallAddedChunk(
     id: newChatcmplId(callId),
     object: 'chat.completion.chunk',
     created: nowSeconds(),
-    model: modelOr(data.response?.model, 'gpt-5-codex-'),
+    model: modelOr(data.response?.model),
     choices: [
       {
         index: getCurrentIndex(data.type),
@@ -120,7 +120,7 @@ export function buildAnnotationChunk(
     id: newChatcmplId(data.item_id),
     object: 'chat.completion.chunk',
     created: nowSeconds(),
-    model: modelOr(data.response?.model, 'gpt-5-codex'),
+    model: modelOr(data.response?.model),
     choices: [
       {
         index: getCurrentIndex(data.type),
@@ -155,7 +155,7 @@ export function buildToolCallPayloadDeltaChunk(
     id: newChatcmplId(data.item_id),
     object: 'chat.completion.chunk',
     created: nowSeconds(),
-    model: modelOr(data.response?.model, 'gpt-5-codex-'),
+    model: modelOr(data.response?.model),
     choices: [
       {
         index: getCurrentIndex(data.type),

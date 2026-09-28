@@ -84,43 +84,6 @@ export const VENDOR_DEFAULTS: Record<string, VendorDefaults> = {
   }
 }
 
-/**
- * One Provider per vendor with all its models, ready to feed into either
- * the UI template combobox or a DB seed. Vendors with no
- * VENDOR_DEFAULTS entry are skipped.
- */
-export interface SeedProvider {
-  name: string
-  apiBaseUrl: string
-  models: string[]
-}
-
-export function buildSeedProviders(prices: PriceEntry[] = LLM_PRICES_SEED.prices): SeedProvider[] {
-  // Set per vendor — upstream lists the same id once per pricing tier
-  // (e.g. xai's grok-4-fast appears for 32k and 128k context) and the
-  // DB's Model.(providerId, name) unique constraint rejects dups.
-  const byVendor = new Map<string, Set<string>>()
-  for (const p of prices) {
-    let set = byVendor.get(p.vendor)
-    if (!set) {
-      set = new Set<string>()
-    }
-    set.add(p.id)
-    byVendor.set(p.vendor, set)
-  }
-  const result: SeedProvider[] = []
-  for (const [vendor, modelSet] of byVendor) {
-    const defaults = VENDOR_DEFAULTS[vendor]
-    if (!defaults) continue
-    result.push({
-      name: vendor,
-      apiBaseUrl: defaults.baseUrl,
-      models: [...modelSet]
-    })
-  }
-  return result
-}
-
 // Model prices no longer live in a frontend-facing static map. The DB is
 // the single source of truth: the live scrape fills first-party vendor
 // prices and backfillStaticPrices (model-sync-service) seeds the rest from
