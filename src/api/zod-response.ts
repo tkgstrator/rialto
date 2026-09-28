@@ -25,7 +25,9 @@ export const ValidationErrorResponseSchema = z
 
 type HookResult = { success: true } | { success: false; error: ZodError }
 
-export const validationErrorHook = (result: HookResult, c: Context) => {
+// Annotated: inferred, the return type names hono's unexported
+// JSONRespondReturn, which a declaration cannot reference (TS2883).
+export const validationErrorHook = (result: HookResult, c: Context): Response | undefined => {
   if (!result.success)
     return c.json(
       { success: false as const, error: { type: 'validation_error' as const, issues: result.error.issues } },

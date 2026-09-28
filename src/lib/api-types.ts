@@ -116,6 +116,17 @@ export interface UpdateCheckResponse {
 }
 
 export type SurfaceId = 'anthropic-messages' | 'openai-chat' | 'openai-responses' | 'gemini-generate' | 'openai-images'
+
+/**
+ * What a token's scope list may hold: the inbound surfaces, plus the Codex
+ * MCP server at /codex (`CODEX_MCP_SCOPE` in @/shared/codex-mcp).
+ *
+ * Kept apart from SurfaceId on purpose. /codex is not an inbound surface —
+ * `/api/inbound-surfaces` never lists it and nothing routes it — so every
+ * picker that asks "which surface" (routing, personas) must keep taking
+ * SurfaceId and cannot be handed this one by mistake.
+ */
+export type TokenScopeId = SurfaceId | 'codex-mcp'
 export type RoutingMode = 'routed' | 'passthrough'
 
 export interface InboundSurfaceWire {
@@ -141,8 +152,13 @@ export interface AccessTokenWire {
    * one client can legitimately speak more than one (Codex uses both
    * /v1/responses and /v1/chat/completions), which a single id could
    * only express by turning the scoping off.
+   *
+   * 'codex-mcp' shares the list but not that rule: the empty list does
+   * not reach /codex, which is only ever granted by naming it. So
+   * ['codex-mcp'] alone is "the MCP server and no /v1 surface", not
+   * "every surface".
    */
-  surfaces: string[]
+  surfaces: TokenScopeId[]
   profileKey: string | null
   lastUsedAt: string | null
   requestCount: number

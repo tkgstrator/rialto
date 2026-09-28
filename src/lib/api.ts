@@ -22,6 +22,7 @@ import type {
   TierProfileSummaryWire,
   TierProfileViewWire,
   TierProfileWriteWire,
+  TokenScopeId,
   UpdateCheckResponse,
   UseResetResponse
 } from '@/lib/api-types'
@@ -314,8 +315,11 @@ class ApiClient {
 
   async issueAccessToken(body: {
     name: string
-    /** Omitted or empty issues a token that may call every surface. */
-    surfaces?: SurfaceId[]
+    /**
+     * Omitted or empty issues a token that may call every /v1 surface —
+     * but not /codex, which only a list naming 'codex-mcp' grants.
+     */
+    surfaces?: TokenScopeId[]
     profileKey?: string | null
     expiresAt?: string | null
     /** The plan the token spends under. Null or omitted = unrestricted. */
@@ -336,7 +340,7 @@ class ApiClient {
    */
   async updateAccessToken(
     id: string,
-    body: { surfaces?: SurfaceId[]; profileKey?: string | null; planId?: string | null }
+    body: { surfaces?: TokenScopeId[]; profileKey?: string | null; planId?: string | null }
   ): Promise<AccessTokenWire> {
     return this.patch<AccessTokenWire>(`/access-tokens/${encodeURIComponent(id)}`, body)
   }

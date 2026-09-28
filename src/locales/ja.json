@@ -658,6 +658,7 @@
       "issueEndpoint": "エンドポイント",
       "issueEndpointHint": "このトークンが呼び出せるエンドポイントを選びます。1 つのクライアントが複数を使う場合は複数選択してください（Codex は /v1/responses と /v1/chat/completions の両方を使います）。「すべて」なら制限しません。",
       "allEndpoints": "すべてのエンドポイント",
+      "codexMcpHint": "/codex（Codex MCP）は「すべてのエンドポイント」に含まれません。使う場合は明示的に選んでください。",
       "issueProfile": "ルーティングプロファイル",
       "issueProfileHint": "このクライアントのトラフィックを指定プロファイル経由にします。未指定ならエンドポイント自身のルーティングに従います。",
       "followEndpoint": "エンドポイントに従う",

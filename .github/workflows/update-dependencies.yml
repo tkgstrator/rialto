@@ -14,9 +14,15 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
+      # develop, not the default branch. A scheduled run checks out master,
+      # and the PR step bases its PR on whatever was checked out — so the
+      # update landed as a master PR, which pr-base-guard rejects and which
+      # would skip develop. Updates go feature → develop → master like
+      # everything else.
       - name: Checkout
         uses: actions/checkout@v7
         with:
+          ref: develop
           fetch-depth: 0
 
       - name: Setup Bun
@@ -73,6 +79,7 @@ jobs:
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.DEPS_PR_TOKEN || secrets.GITHUB_TOKEN }}
+          base: develop
           commit-message: "chore: update dependencies"
           title: "chore: weekly dependency update"
           body: |
