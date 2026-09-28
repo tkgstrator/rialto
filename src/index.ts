@@ -8,6 +8,7 @@ import { accessTokensRoute } from './api/access-tokens/route'
 import { adminAuth, inboundProxyAuth } from './api/api-key-auth'
 import { authorizedAppsRoute } from './api/authorized-apps/route'
 import { catalogRoute } from './api/catalog/route'
+import { codexMcpRoute } from './api/codex-mcp/route'
 import { configRoute } from './api/config/route'
 import { healthRoute } from './api/health/route'
 import { identityRoute } from './api/identity/route'
@@ -54,6 +55,7 @@ import { migrateHomeDir } from './services/config/migrate-home-dir'
 import { ensureInboundSurfaces } from './services/inbound-surface-service'
 import { startRoutingScheduler } from './services/routing-scheduler'
 import { startUsageCapture } from './services/usage-job'
+import { CODEX_MCP_PATH } from './shared/codex-mcp'
 import { HOME_DIR } from './shared/constants'
 import { APP_VERSION } from './version'
 
@@ -152,6 +154,11 @@ for (const prefix of INBOUND_MOUNT_PREFIXES) {
   app.use(prefix, accessLog)
   app.use(prefix, inboundProxyAuth)
 }
+// The Codex MCP server. Logged here like the proxy; its gate lives on its
+// own POST route (src/api/codex-mcp/auth.ts), because the image download
+// under it is authorized by its URL, not a token.
+app.use(CODEX_MCP_PATH, accessLog)
+app.use(`${CODEX_MCP_PATH}/*`, accessLog)
 
 app.onError((err, c) => {
   if (err instanceof ZodError) {
@@ -219,6 +226,8 @@ app.route('/', countTokensRoute)
 app.route('/', audioRoute)
 // Native /v1/* LLM proxy — drives the llms pipeline without Fastify.
 app.route('/', v1Route)
+// Codex MCP server (/codex) and its image downloads (/codex/files/:key).
+app.route('/', codexMcpRoute)
 
 // OpenAPI spec endpoint — useful for tooling and the generated docs.
 app.doc('/api/openapi.json', {

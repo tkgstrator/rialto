@@ -18,15 +18,21 @@ import {
   rotateAccessToken,
   updateAccessToken
 } from '../../services/access-token-service'
+import { CODEX_MCP_SCOPE } from '../../shared/codex-mcp'
 import { validationErrorHook } from '../zod-response'
 
-/** The surface ids a token may be scoped to, shared by issue and update. */
+/**
+ * The scope ids a token may carry, shared by issue and update: the
+ * inbound surfaces, plus the Codex MCP server, which is not a surface and
+ * is reached only by a token that names it (src/shared/codex-mcp.ts).
+ */
 const SurfaceIdSchema = z.enum([
   'anthropic-messages',
   'openai-chat',
   'openai-responses',
   'gemini-generate',
-  'openai-images'
+  'openai-images',
+  CODEX_MCP_SCOPE
 ])
 
 const TokenSchema = z
