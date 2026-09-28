@@ -54,8 +54,8 @@ export async function buildPriceMap(
 
 // Cache-write price multipliers over the input price, per Anthropic's
 // published prompt-caching rates.
-const CACHE_WRITE_5M = 1.25
-const CACHE_WRITE_1H = 2
+export const CACHE_WRITE_5M = 1.25
+export const CACHE_WRITE_1H = 2
 
 export function computeCosts(
   log: {

@@ -316,7 +316,7 @@ Any OpenAI SDK caller (Codex CLI, Cline, OpenWebUI, `openai` for Python / JS, `c
 
 | Method | Path | Notes |
 |---|---|---|
-| `GET`  | `/v1/models`             | Returns the enabled, routable models as `{object:'list', data:[…]}`. Each `id` is Rialto's canonical `provider,model` (round-trip it straight into the next call); `owned_by` is the provider name. |
+| `GET`  | `/v1/models`             | Returns the enabled, routable models as `{object:'list', data:[…]}`. Each `id` is Rialto's canonical `provider,model` (round-trip it straight into the next call); `owned_by` is the provider name. Each entry also carries `provider`, the bare `model` name, `context_window` and `pricing` (USD per million tokens: input, output, cached input and both cache-write rates; `null` unless input and output are both known), so an app that bills its own users can price a call from this list. |
 | `POST` | `/v1/chat/completions`   | Standard Chat Completions — stream + non-stream. Body's `model` field takes the `provider,model` id from `/v1/models`. |
 | `POST` | `/v1/responses`          | OpenAI Responses API — stream + non-stream. Same model addressing as above. |
 

@@ -97,7 +97,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `routing-profiles.test.ts` | `/api/routing/profiles{,/{key}}`、`/api/tier-aliases`、`PUT` / `DELETE /api/providers/{name}/tier-aliases/{tier}`。保存したルートが各ルートをエイリアスで解決して読み返せ（モデル・受け付け可否・Web 検索・context window）、未設定のエイリアスは画面を落とさず null で読めること、予約キー `passthrough` の拒否、シナリオ × レーンの形でない body の検証エラー、スイッチの切れたモデルの昇格で ON になりエイリアス一覧に出ること、未知の provider / model と未設定エイリアスの解除が 404、プロファイル一覧が既定を先頭に出すこと |
 | `chain-failover-cooldown.test.ts` | 429 後の枯渇マークと cooldown |
 | `chain-failover-account.test.ts` | 試行がどのサブスクアカウントで走ったか（`attemptAccountOf`）。OAuth transformer が試行のリクエストに刻んだ `subAccountId` が session の最後の解決より優先されること（同じ session の並行リクエストに上書きされないため）、成功した試行はそのアカウントの枯渇マークを外し、刻みが無ければ推測でマークに触らないこと |
-| `openai-models.test.ts` | `GET /v1/models` の envelope と `provider,model` id |
+| `openai-models.test.ts` | `GET /v1/models` の envelope と `provider,model` id、単価とコンテキスト長 |
 | `access-log-request-id.test.ts` | アクセスログの `reqId` |
 | `oauth-export-credentials.test.ts` | 認証情報エクスポート |
 | `oauth-import-credentials.test.ts` | 認証情報の取り込み。資格情報ファイルでない JSON と account id の無い Codex 資格情報を上流に問い合わせる前に 400 で断ること、上流が拒否した資格情報は（refresh token があれば 1 回 refresh を試したうえで）400 で断り何も書かないこと、refresh で通った場合は回転後の grant を保存すること、上流に届かなければ 502 で何も書かないこと、受理されたアカウントが `live` で保存され同じリクエスト内で `SubAccountUsage` / `SubAccountQuota` まで埋まること |
