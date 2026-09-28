@@ -2,6 +2,7 @@ import { createRoute, OpenAPIHono } from '@hono/zod-openapi'
 import { ProviderListResponseSchema, ProviderUpsertResponseSchema } from '../../schemas/api/providers'
 import { ProviderSchema } from '../../schemas/domain/provider'
 import { getProviders, upsertProvider } from '../../services/config'
+import { republishRoutingSnapshot } from '../../services/routing-scheduler'
 import { ValidationErrorResponseSchema, validationErrorHook } from '../zod-response'
 
 export const providersRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
@@ -43,6 +44,9 @@ const createProviderRoute = createRoute({
 providersRoute.openapi(createProviderRoute, async (c) => {
   const data = c.req.valid('json')
   const { provider, warnings } = await upsertProvider(data)
+  // A switch can move a tier route (it follows the newest switched-on
+  // model), so the quota snapshot is rebuilt now rather than at the next tick.
+  await republishRoutingSnapshot()
   return c.json(
     {
       success: true as const,

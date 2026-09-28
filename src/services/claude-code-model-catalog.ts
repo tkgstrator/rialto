@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import dayjs from '../lib/dayjs'
 import { logger } from '../logger'
 
 const CATALOG_URL = 'https://downloads.claude.ai/model-catalog/v1/catalog.json'
@@ -52,9 +53,45 @@ export async function fetchClaudeCodeModels(fetchModels: typeof fetch = fetch): 
 // A failed refresh must not remove candidates already found in this process.
 const discovered = new Set<string>()
 export const claudeCodeModels = (): readonly string[] => [...discovered]
+
+// How long a failed fetch keeps the lazy one below from trying again, so a
+// vendor outage does not hold every catalog read behind a 10 s timeout.
+const RETRY_AFTER_FAILURE_MS = 5 * 60 * 1000
+const fetchState: { pending: Promise<boolean> | null; failedAt: number | null } = { pending: null, failedAt: null }
+
 export async function refreshClaudeCodeModels(fetchModels: typeof fetch = fetch): Promise<boolean> {
   const models = await fetchClaudeCodeModels(fetchModels)
-  if (models === null) return false
+  if (models === null) {
+    fetchState.failedAt = dayjs().valueOf()
+    return false
+  }
+  fetchState.failedAt = null
   for (const model of models) discovered.add(model)
   return true
+}
+
+/**
+ * Fetch the catalog once if this process has none yet.
+ *
+ * No model list ships with Rialto, so a fresh process knows no Claude Code
+ * model until the catalog is read; the first catalog view reads it rather
+ * than showing an empty subscription. Concurrent callers share one fetch.
+ */
+export async function ensureClaudeCodeModels(fetchModels: typeof fetch = fetch): Promise<void> {
+  if (discovered.size > 0) return
+  if (fetchState.failedAt !== null && dayjs().valueOf() - fetchState.failedAt < RETRY_AFTER_FAILURE_MS) return
+  const pending =
+    fetchState.pending === null
+      ? refreshClaudeCodeModels(fetchModels).finally(() => {
+          fetchState.pending = null
+        })
+      : fetchState.pending
+  fetchState.pending = pending
+  await pending
+}
+
+export function __resetClaudeCodeModelsForTests(): void {
+  discovered.clear()
+  fetchState.pending = null
+  fetchState.failedAt = null
 }

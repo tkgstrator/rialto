@@ -104,8 +104,8 @@ Google のワイヤ規約に代替が無いのでこの面だけ受理する。`
   `authMode = subscription` かつ `apiBaseUrl = https://chatgpt.com/backend-api/codex` の
   provider 上で provider・model とも有効なものに限る。`provider,model` か、有効な provider が
   1つだけのときの素の名前。曖昧・無効・未対応は 400 で、上流へは何も送らない。
-- **既定は無効（オプトイン）。** 両モデルは Codex プリセットの `availableModels` に入るが
-  `defaultEnabledModels` には入らない。provider ページで有効化する。価格は公開されていないので
+- **既定は無効（オプトイン）。** 両モデルは接続前の Codex のカタログに出るが、他のモデルと同じく
+  オフで入る。provider ページで有効化する。価格は公開されていないので
   通常の価格3列は null のまま。Codexのサブスク枠に実際の従量課金単価があると誤認させないため、
   API参考単価はモダリティ別に別表示する。chat のルート・tier alias 候補・モデルテスト・
   scheduler の対象からは外してある。

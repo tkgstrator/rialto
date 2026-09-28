@@ -29,7 +29,7 @@ import {
   type TierRoute
 } from '../schemas/domain/tier-route'
 import { hostsWebSearch } from '../shared/transformer-chain'
-import { aliasKey, resolveTierAliases } from './tier-alias-service'
+import { aliasKey, loadResolvedTiers } from './tier-alias-service'
 
 /**
  * The profile every surface uses until it is pointed somewhere else.
@@ -142,7 +142,7 @@ export async function saveTierProfile(
   const warnings: string[] = []
   const providers = await prisma.provider.findMany({ select: { id: true, name: true } })
   const providerId = new Map(providers.map((p) => [p.name, p.id]))
-  const aliases = await resolveTierAliases(prisma)
+  const resolved = await loadResolvedTiers(prisma)
 
   const rows: Array<Omit<Prisma.TierRouteCreateManyInput, 'profileId'>> = []
   for (const [scenario, lane] of SCENARIO_LANES) {
@@ -160,7 +160,11 @@ export async function saveTierProfile(
         continue
       }
       seen.add(key)
-      if (!aliases.has(key)) {
+      // A tier some model names always resolves (to a switched-off model
+      // at worst, which the switch explains); only a tier nothing names and
+      // no alias points at reaches nothing.
+      const tier = resolved.get(key)
+      if (tier === undefined || tier.resolution.model === null) {
         warnings.push(
           `${where}: ${route.provider} has no ${route.targetTier} alias yet; the route is skipped until one is set`
         )
@@ -278,43 +282,51 @@ export const defaultAgentWindowOf = (routes: ScenarioRouteViews): number | null 
 }
 
 /**
- * One profile's map with each route resolved through its alias: the model
- * it reaches today, whether that model can take traffic, whether it can
- * run the web_search tool, and its context window. What the Routing
- * screen draws, read in one pass instead of one request per row.
+ * One profile's map with each route resolved: the model its tier reaches
+ * today (`tier-alias-service`), whether that model can take traffic,
+ * whether it can run the web_search tool, and its context window. What the
+ * Routing screen draws, read in one pass instead of one request per row.
  */
 export async function loadTierProfileView(
   profileKey: string = DEFAULT_PROFILE_KEY,
   prisma: PrismaClient = getPrismaClient()
 ): Promise<TierProfileView> {
-  const [profile, aliasRows] = await Promise.all([
+  const [profile, tiers] = await Promise.all([
     loadTierProfile(profileKey, prisma),
-    prisma.providerTierAlias.findMany({
-      select: {
-        tier: true,
-        provider: { select: { name: true, apiBaseUrl: true, authMode: true, apiStyle: true, enabled: true } },
-        model: { select: { name: true, enabled: true, apiStyle: true, contextWindow: true } }
-      }
-    })
+    // Read per request: only the providers this profile routes to.
+    loadResolvedTiers(prisma, { tierRoutes: { some: { profile: { key: profileKey } } } })
   ])
   const resolution = new Map<string, TierRouteResolution>(
-    aliasRows.map((a) => [
-      `${a.provider.name}|${a.tier}`,
-      {
-        model: a.model.name,
-        targetEnabled: a.model.enabled && a.provider.enabled,
-        hostsWebSearch: hostsWebSearch(
-          {
-            name: a.provider.name,
-            api_base_url: a.provider.apiBaseUrl,
-            auth_mode: a.provider.authMode,
-            api_style: a.provider.apiStyle
-          },
-          a.model.apiStyle === null ? undefined : a.model.apiStyle
-        ),
-        contextWindow: a.model.contextWindow
-      }
-    ])
+    [...tiers].flatMap(
+      ([
+        key,
+        {
+          provider,
+          resolution: { model }
+        }
+      ]): Array<[string, TierRouteResolution]> =>
+        model === null
+          ? []
+          : [
+              [
+                key,
+                {
+                  model: model.name,
+                  targetEnabled: model.enabled && provider.enabled,
+                  hostsWebSearch: hostsWebSearch(
+                    {
+                      name: provider.name,
+                      api_base_url: provider.apiBaseUrl,
+                      auth_mode: provider.authMode,
+                      api_style: provider.apiStyle
+                    },
+                    model.apiStyle === null ? undefined : model.apiStyle
+                  ),
+                  contextWindow: model.contextWindow
+                }
+              ]
+            ]
+    )
   )
   const view = (routes: TierRoute[]): TierRouteView[] =>
     routes.map((route) => {

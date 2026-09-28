@@ -1,101 +1,136 @@
 /**
- * Provider tier aliases: which model a route's "<provider> · <tier>" means.
+ * Provider tiers: which model a route's "<provider> · <tier>" means.
  *
- * The alias is the one pointer a new model release moves. It never moves
- * by itself. A catalog refresh can discover a model, and this service
- * lists it as a candidate for the tier its name says; pointing the alias
- * at it — "promote" — is an operator's call, because a new model's price,
- * entitlement and behaviour are exactly what someone should look at
- * before every Sonnet request lands on it.
+ * A tier some of the provider's models name (`claude-sonnet-5-5` says
+ * sonnet) is derived: it routes to the newest of those that is switched on
+ * (`src/shared/tier-resolution.ts`). Nothing picks that model but the
+ * operator's switch — a catalog refresh lands new models off, so a release
+ * is offered, never routed, until someone turns it on after looking at its
+ * price and entitlement.
  *
- * A model's tier here is what its name says (`tierOf`), or the manual tier
- * an operator set on it while that column exists. A model that names no
- * family can still be aliased by hand; it just is not offered as a
- * candidate for any tier.
+ * A tier no model names — Codex's `gpt-*`, OpenAI, Gemini — has nothing to
+ * derive from, so it keeps the operator's stored alias (`ProviderTierAlias`).
+ * A stored alias on a derived tier is left in place but ignored; it is what
+ * an older build routes by after a rollback.
  */
 
 import { getPrismaClient } from '../db/client'
 import type { Prisma, PrismaClient } from '../generated/prisma/client'
-import dayjs from '../lib/dayjs'
-import { tierOf } from '../llms/router/request-signals'
 import { type ModelTier, ModelTierSchema } from '../schemas/domain/tier-route'
-import { isCodexImageModel, SUBSCRIPTION_PRESETS } from '../shared/data/subscriptions'
+import { isCodexImageModel } from '../shared/data/subscriptions'
+import { namedModelsOf, newerOffOf, resolveTier, type TierResolution } from '../shared/tier-resolution'
+
+// Everything a tier's resolution and its routing view read, in one select
+// so the per-request view and the provider page load the same rows.
+export const PROVIDER_TIER_SELECT = {
+  name: true,
+  enabled: true,
+  apiBaseUrl: true,
+  authMode: true,
+  apiStyle: true,
+  models: { select: { id: true, name: true, enabled: true, apiStyle: true, contextWindow: true } },
+  tierAliases: { select: { tier: true, modelId: true, updatedAt: true } }
+} satisfies Prisma.ProviderSelect
+
+export type ProviderTierRow = Prisma.ProviderGetPayload<{ select: typeof PROVIDER_TIER_SELECT }>
+export type TierModelRow = ProviderTierRow['models'][number]
+
+export interface ResolvedTier {
+  provider: ProviderTierRow
+  tier: ModelTier
+  resolution: TierResolution<TierModelRow>
+  // When the stored alias was last set; null on a tier without one.
+  aliasUpdatedAt: Date | null
+}
+
+// `provider|tier` → its resolution. Read once per request by the tier
+// router and once per page by the editor.
+export const aliasKey = (provider: string, tier: ModelTier): string => `${provider}|${tier}`
+
+/** A provider's four tiers, resolved. Pure: the caller loads the row. */
+export function resolveProviderTiers(provider: ProviderTierRow): ResolvedTier[] {
+  return ModelTierSchema.options.map((tier) => {
+    const alias = provider.tierAliases.find((a) => a.tier === tier)
+    const aliased = alias === undefined ? undefined : provider.models.find((m) => m.id === alias.modelId)
+    return {
+      provider,
+      tier,
+      resolution: resolveTier(provider.models, tier, aliased === undefined ? null : aliased),
+      aliasUpdatedAt: alias === undefined ? null : alias.updatedAt
+    }
+  })
+}
+
+/** Every matching provider's tiers, keyed by `aliasKey`. */
+export async function loadResolvedTiers(
+  prisma: PrismaClient | Prisma.TransactionClient = getPrismaClient(),
+  where: Prisma.ProviderWhereInput = {}
+): Promise<Map<string, ResolvedTier>> {
+  const providers = await prisma.provider.findMany({ where, orderBy: { name: 'asc' }, select: PROVIDER_TIER_SELECT })
+  return new Map(providers.flatMap(resolveProviderTiers).map((r) => [aliasKey(r.provider.name, r.tier), r]))
+}
 
 export interface AliasCandidate {
   model: string
   enabled: boolean
-  // Appeared after the alias was last set: a model nobody has looked at
-  // yet in this role. With no alias set, nothing is "new" — every
-  // candidate is simply a choice.
+  // Newer than the routed model and switched off: turning it on moves the
+  // route. Only a derived tier has such models.
   isNew: boolean
 }
 
 export interface TierAliasRow {
   provider: string
   tier: ModelTier
+  // derived: follows the newest switched-on model its name says.
+  // manual: the stored alias, because no model names the tier.
+  mode: 'derived' | 'manual'
+  // The model the tier reaches today, switched on or not; null only on a
+  // manual tier with no alias.
   model: string | null
+  modelEnabled: boolean
   updatedAt: string | null
+  // A derived tier's other named models, newest first. Empty on a manual tier.
   candidates: AliasCandidate[]
 }
 
-// A model's tier: the manual one when an operator set it, else what the
-// name says. Null for a name that says no family.
-const modelTierOf = (model: { name: string; manualTier: string | null }): ModelTier | null => {
-  if (isCodexImageModel(model.name)) return null
-  if (model.manualTier !== null) {
-    const manual = ModelTierSchema.safeParse(model.manualTier)
-    if (manual.success) return manual.data
+const aliasRowOf = (r: ResolvedTier): TierAliasRow => {
+  const { resolution } = r
+  const model = resolution.model
+  const newer = new Set(newerOffOf(resolution).map((m) => m.id))
+  return {
+    provider: r.provider.name,
+    tier: r.tier,
+    mode: resolution.mode,
+    model: model === null ? null : model.name,
+    modelEnabled: model === null ? false : model.enabled,
+    updatedAt: resolution.mode === 'manual' && r.aliasUpdatedAt !== null ? r.aliasUpdatedAt.toISOString() : null,
+    candidates:
+      resolution.mode === 'manual'
+        ? []
+        : resolution.named
+            .filter((m) => m.id !== resolution.model.id)
+            .map((m) => ({ model: m.name, enabled: m.enabled, isNew: newer.has(m.id) }))
   }
-  const inferred = tierOf(model.name)
-  return inferred === undefined ? null : inferred
 }
 
-/** Every provider's four tier slots, set or not, with the candidates for each. */
+/** Every provider's four tiers, resolved, with the candidates for each. */
 export async function listTierAliases(prisma: PrismaClient = getPrismaClient()): Promise<TierAliasRow[]> {
-  const providers = await prisma.provider.findMany({
-    orderBy: { name: 'asc' },
-    select: {
-      name: true,
-      models: { select: { id: true, name: true, manualTier: true, enabled: true, createdAt: true } },
-      tierAliases: { select: { tier: true, modelId: true, updatedAt: true } }
-    }
-  })
-  return providers.flatMap((provider) =>
-    ModelTierSchema.options.map((tier): TierAliasRow => {
-      const alias = provider.tierAliases.find((a) => a.tier === tier)
-      const current = alias === undefined ? undefined : provider.models.find((m) => m.id === alias.modelId)
-      const candidates = provider.models
-        .filter((m) => modelTierOf(m) === tier && m.id !== current?.id)
-        // Newest first: the model a refresh just found is the one the
-        // operator came to look at.
-        .sort((a, b) => b.createdAt.valueOf() - a.createdAt.valueOf() || a.name.localeCompare(b.name))
-        .map((m) => ({
-          model: m.name,
-          enabled: m.enabled,
-          isNew: alias !== undefined && m.createdAt > alias.updatedAt
-        }))
-      return {
-        provider: provider.name,
-        tier,
-        model: current === undefined ? null : current.name,
-        updatedAt: alias === undefined ? null : dayjs(alias.updatedAt).toISOString(),
-        candidates
-      }
-    })
-  )
+  return [...(await loadResolvedTiers(prisma)).values()].map(aliasRowOf)
 }
 
 export type SetAliasOutcome =
   | { ok: true; enabledModel: boolean }
-  | { ok: false; reason: 'provider-not-found' | 'model-not-found' }
+  | { ok: false; reason: 'provider-not-found' | 'model-not-found' | 'tier-derived' }
 
 /**
- * Point `provider`'s `tier` at `modelName` — the "promote" action.
+ * Point `provider`'s manual `tier` at `modelName` — the "promote" action.
  *
- * The model is switched on in the same transaction: an alias to a model
- * that is off would resolve to nothing, and an operator promoting a model
- * means for it to serve. `enabledModel` says whether that switch flipped,
- * so the caller knows the provider registry has to be rebuilt.
+ * Refused on a derived tier: there the switches decide, and a stored
+ * alias would be ignored. The model is switched on in the same
+ * transaction: an alias to a model that is off would resolve to nothing,
+ * and an operator promoting a model means for it to serve. `enabledModel`
+ * says whether that switch flipped, so the caller knows the provider
+ * registry has to be rebuilt.
  */
 export async function setTierAlias(
   providerName: string,
@@ -104,8 +139,12 @@ export async function setTierAlias(
   prisma: PrismaClient = getPrismaClient()
 ): Promise<SetAliasOutcome> {
   return prisma.$transaction(async (tx) => {
-    const provider = await tx.provider.findUnique({ where: { name: providerName }, select: { id: true } })
+    const provider = await tx.provider.findUnique({
+      where: { name: providerName },
+      select: { id: true, models: { select: { name: true, enabled: true } } }
+    })
     if (provider === null) return { ok: false, reason: 'provider-not-found' }
+    if (namedModelsOf(provider.models, tier).length > 0) return { ok: false, reason: 'tier-derived' }
     const model = await tx.model.findUnique({
       where: { providerId_name: { providerId: provider.id, name: modelName } },
       select: { id: true, enabled: true }
@@ -121,7 +160,10 @@ export async function setTierAlias(
   })
 }
 
-/** Unset `provider`'s `tier`. False when the provider has no such alias. */
+/**
+ * Remove `provider`'s stored alias for `tier`. False when there is none.
+ * On a derived tier this only drops a dormant row; routing does not change.
+ */
 export async function clearTierAlias(
   providerName: string,
   tier: ModelTier,
@@ -134,80 +176,21 @@ export async function clearTierAlias(
 }
 
 /**
- * Give a subscription provider the aliases its preset implies, where it
- * has none yet.
+ * Each derived tier whose stored alias names another model, as a sentence.
  *
- * Called in the same transaction that creates the provider's models — on
- * the provider being added and on a catalog refresh — so a freshly
- * connected Claude subscription routes the moment it exists instead of
- * after someone finds the alias strip. The preset's own list decides
- * (`defaultEnabledModels`, most capable first), and only a model whose
- * name says its tier qualifies: Codex names no Claude family, so its
- * aliases stay the operator's to set. An alias that exists is never
- * touched.
+ * Before tiers were derived, the alias was what routed; after an upgrade
+ * the newest switched-on named model does. Logged once at boot so an
+ * operator can see which routes moved, and switch a model off if a move
+ * was not wanted.
  */
-export async function ensurePresetAliases(tx: Prisma.TransactionClient, providerId: string): Promise<number> {
-  const provider = await tx.provider.findUnique({
-    where: { id: providerId },
-    select: {
-      name: true,
-      apiBaseUrl: true,
-      models: { select: { id: true, name: true } },
-      tierAliases: { select: { tier: true } }
-    }
+export async function derivedTierDrift(prisma: PrismaClient = getPrismaClient()): Promise<string[]> {
+  const resolved = await loadResolvedTiers(prisma, { tierAliases: { some: {} } })
+  return [...resolved.values()].flatMap((r) => {
+    const alias = r.provider.tierAliases.find((a) => a.tier === r.tier)
+    if (r.resolution.mode !== 'derived' || alias === undefined || alias.modelId === r.resolution.model.id) return []
+    const stored = r.provider.models.find((m) => m.id === alias.modelId)
+    const was = stored === undefined ? 'a deleted model' : stored.name
+    const now = r.resolution.model.enabled ? r.resolution.model.name : `${r.resolution.model.name} (switched off)`
+    return [`${r.provider.name} · ${r.tier} follows ${now}; its stored alias named ${was}`]
   })
-  if (provider === null) return 0
-  const preset = SUBSCRIPTION_PRESETS.find((p) => p.id === provider.name || p.apiBaseUrl === provider.apiBaseUrl)
-  if (preset === undefined) return 0
-  const taken = new Set(provider.tierAliases.map((a) => a.tier))
-  const creates = ModelTierSchema.options.flatMap((tier) => {
-    if (taken.has(tier)) return []
-    const name = preset.defaultEnabledModels.find((m) => tierOf(m) === tier)
-    const model = name === undefined ? undefined : provider.models.find((m) => m.name === name)
-    return model === undefined ? [] : [{ providerId, tier, modelId: model.id }]
-  })
-  if (creates.length === 0) return 0
-  const { count } = await tx.providerTierAlias.createMany({ data: creates, skipDuplicates: true })
-  return count
-}
-
-export interface ResolvedAlias {
-  provider: string
-  tier: ModelTier
-  model: string
-  // Both switches, kept apart so an editor can say which one is off; a
-  // route is only usable when both are on.
-  modelEnabled: boolean
-  providerEnabled: boolean
-}
-
-// `provider|tier` → the alias it resolves to. Read once per request by
-// the tier router and once per page by the editor.
-export const aliasKey = (provider: string, tier: ModelTier): string => `${provider}|${tier}`
-
-export async function resolveTierAliases(
-  prisma: PrismaClient = getPrismaClient()
-): Promise<Map<string, ResolvedAlias>> {
-  const rows = await prisma.providerTierAlias.findMany({
-    select: {
-      tier: true,
-      provider: { select: { name: true, enabled: true } },
-      model: { select: { name: true, enabled: true } }
-    }
-  })
-  const out = new Map<string, ResolvedAlias>()
-  for (const row of rows) {
-    const tier = ModelTierSchema.safeParse(row.tier)
-    // A tier string this build does not know is skipped rather than
-    // guessed at: an older or newer build may have written it.
-    if (!tier.success) continue
-    out.set(aliasKey(row.provider.name, tier.data), {
-      provider: row.provider.name,
-      tier: tier.data,
-      model: row.model.name,
-      modelEnabled: row.model.enabled,
-      providerEnabled: row.provider.enabled
-    })
-  }
-  return out
 }

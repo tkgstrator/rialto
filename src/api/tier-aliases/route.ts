@@ -12,7 +12,7 @@ tierAliasesRoute.openapi(
     responses: {
       200: {
         description:
-          "Every provider's four tier slots — the model each names, or null — with the models that could take each; a model that appeared after the alias was set is marked new",
+          "Every provider's four tiers — the model each reaches today, or null. A derived tier follows the newest switched-on model its name says and lists its other named models; one newer and switched off is marked new. A manual tier is the stored alias",
         content: { 'application/json': { schema: z.array(TierAliasSchema) } }
       }
     }

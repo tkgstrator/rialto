@@ -4,7 +4,7 @@
 //   - Provider:                one row per LLM provider account (api_base_url + api_key)
 //   - Model:                   one row per model name, child of Provider
 //   - RouterPreferenceProfile: a named routing profile; `live` is the default every surface uses
-//   - ProviderTierAlias:       which of a provider's models each tier (fable/opus/sonnet/haiku) is
+//   - ProviderTierAlias:       which model a tier (fable/opus/sonnet/haiku) no model's name says is
 //   - TierRoute:               a profile's routes — per scenario and lane, the ordered provider·tiers
 //   - RouterPreferenceEntry, RoutingWeightChange, ScenarioKey, Model.manualTier: retired,
 //     read only by the one-shot conversion into TierRoute; dropped by the contract migration
@@ -295,9 +295,10 @@ model Model {
   name              String
   // Whether this model is offered for routing / tested. Authoritative
   // (replaces the old provider.transformer._disabledModels list).
-  // Defaults false: a model being registered/seeded does NOT make it
-  // routable. Subscription presets seed their curated default set as
-  // enabled; everything else stays off until the user enables it.
+  // Defaults false, and every row a refresh or a connect creates is
+  // written false: a tier routes to the newest switched-on model its name
+  // says, so this switch is what takes a release into routing, and only
+  // the operator flips it.
   enabled           Boolean                 @default(false)
   // Per-model request-shape override. A single api_key provider (e.g.
   // openai) hosts both chat models and Responses-only models (codex
@@ -305,9 +306,9 @@ model Model {
   // Null means "use the provider's apiStyle"; set explicitly (seeded)
   // for the models that need a different endpoint.
   apiStyle          ApiStyle?
-  // Retired: nothing writes it any more (the tier alias replaced it), and
-  // it is dropped by the contract migration. Until then the tier-map
-  // backfill and the alias candidate list still read it.
+  // Retired: nothing writes it any more, tier resolution does not read it
+  // (a tier is what the name says), and it is dropped by the contract
+  // migration. Until then only the one-shot tier-map backfill reads it.
   // Manual tier override used by the quota-aware preference selector.
   // Null = fall back to name-substring inference (tierOf) which only
   // recognises the four Claude families; setting this lets operators
@@ -391,12 +392,12 @@ model RouterPreferenceProfile {
   chainBackfilledAt DateTime?
 }
 
-// "Which model is <tier> on this provider." Routing names a provider and a
-// tier; this row says which model that is. When a vendor ships a new
-// Sonnet, this is the one pointer that moves — every route that names
-// the provider's sonnet follows it. It never moves by itself: a catalog
-// refresh can only discover a model, and promoting it is an operator's
-// decision (tier-alias-service.ts).
+// "Which model is <tier> on this provider", for a tier no model's name
+// says. Routing names a provider and a tier; on a tier some model names
+// (claude-sonnet-5 says sonnet) the newest switched-on one is the answer
+// and a row here is dormant — kept for a rollback, ignored by routing
+// (tier-alias-service.ts). Only a tier nothing names — Codex's gpt-*, an
+// OpenAI key — reads this row, set by the operator.
 //
 // Cascades both ways: deleting the model or the provider removes the
 // alias, and a route that named it reads as unresolved rather than
@@ -411,8 +412,7 @@ model ProviderTierAlias {
   tier       String
   modelId    String
   model      Model    @relation(fields: [modelId], references: [id], onDelete: Cascade)
-  // When the alias was last pointed somewhere. A model of the same tier
-  // created after this is a candidate an operator has not looked at yet.
+  // When the alias was last pointed somewhere.
   updatedAt  DateTime @updatedAt
 
   @@unique([providerId, tier])
@@ -422,8 +422,9 @@ model ProviderTierAlias {
 // One route of a profile: a request classified into `scenario` (default |
 // think | longContext) on `lane` (agent | subagent) may be served by
 // `provider`'s `targetTier` model, in `priority` order (1 = first). The
-// provider's tier alias says which model that is, so a model release moves
-// one alias instead of every list. Replaced the per-scenario, per-lane,
+// provider's tier says which model that is — the newest switched-on model
+// its name says, else the tier alias — so a model release moves every
+// list at once, when the operator switches it on. Replaced the per-scenario, per-lane,
 // per-model chain; a (scenario, lane) with no usable routes falls back to
 // the same lane's default list, and an empty default passes the request
 // through as the caller sent it.

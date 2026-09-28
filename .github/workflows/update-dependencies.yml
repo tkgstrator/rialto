@@ -70,15 +70,15 @@ jobs:
       # with none of them and sits at BLOCKED, unmergeable, until someone
       # reopens it by hand to make the events come from a person.
       #
-      # `DEPS_PR_TOKEN` fixes that: a PAT (or GitHub App token) with
-      # `repo` scope opens the PR as its owner, and the checks run. The
-      # fallback keeps the job working without one — the PR still gets
-      # created, it just needs a manual close/reopen before it can merge.
+      # So the PR is opened with `GH_TOKEN`, the owner's token (`gh auth
+      # token`) that the update step above already needs for GitHub
+      # Packages. It carries `repo`, so the PR comes from a person and the
+      # checks run.
       - name: Create Pull Request
         if: steps.changes.outputs.has_changes == 'true'
         uses: peter-evans/create-pull-request@v8
         with:
-          token: ${{ secrets.DEPS_PR_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_TOKEN }}
           base: develop
           commit-message: "chore: update dependencies"
           title: "chore: weekly dependency update"
@@ -94,8 +94,6 @@ jobs:
 
             ---
             *This PR was created automatically by the Update Dependencies workflow.*
-            *If no checks are present, it was opened with `GITHUB_TOKEN` —*
-            *close and reopen it to run them, or add a `DEPS_PR_TOKEN` secret.*
           branch: chore/update-dependencies
           delete-branch: true
           labels: |
