@@ -18,7 +18,7 @@
  */
 
 import type { z } from '@hono/zod-openapi'
-import { isDeprecatedModel, LLM_PRICES_SEED, SUBSCRIPTION_PRESETS } from '@/shared/data'
+import { isDeprecatedModel, LLM_PRICES_SEED } from '@/shared/data'
 import { getPrismaClient } from '../db/client'
 import { AuthMode, type Prisma } from '../generated/prisma/client'
 import { logger } from '../logger'
@@ -34,18 +34,8 @@ export { withCommittedPrices } from './model-sync-catalog'
 
 import { modelApiStyleOverride } from './config'
 import { getUsableSubAccountAuth } from './subscription-account-sync/read'
-import { ensurePresetAliases } from './tier-alias-service'
 
 export type RefreshOutcome = z.infer<typeof RefreshOutcomeSchema>
-
-// Per-vendor list of models that should ship as enabled on a fresh
-// subscription provider. Refresh only auto-enables when a newly
-// discovered id is on this list — otherwise the row lands disabled and
-// the user opts in.
-const subscriptionDefaultsById = (providerName: string): ReadonlySet<string> => {
-  const preset = SUBSCRIPTION_PRESETS.find((p) => p.id === providerName)
-  return new Set(preset === undefined ? [] : preset.defaultEnabledModels)
-}
 
 const modelDataFromScrape = (entry: ScrapedPriceEntry) => ({
   legacy: entry.legacy,
@@ -63,43 +53,30 @@ interface ProviderRow {
   models: { name: string }[]
 }
 
-// Compute the initial `enabled` for a fresh row. api_key providers
-// enable everything but legacy/deprecated (mirrors price-seed-service).
-// Subscription providers only auto-enable ids on the preset's curated
-// defaultEnabledModels list — a Pro/Max plan may not entitle the user
-// to the newest model.
-const initialEnabled = (
-  authMode: AuthMode,
-  name: string,
-  deprecated: boolean,
-  legacy: boolean,
-  defaults: ReadonlySet<string>
-): boolean => {
-  if (authMode === AuthMode.subscription) return defaults.has(name)
-  return !(deprecated || legacy)
-}
-
-const buildCreateRow = (
+/**
+ * A Model row for an id a refresh or a connect just found.
+ *
+ * Always switched off, on every provider. A tier routes to the newest
+ * switched-on model its name says, so a row that landed on would move a
+ * route the moment a vendor published a release — before anyone looked at
+ * its price or whether the plan serves it. The operator turns it on.
+ */
+export const buildCreateRow = (
   name: string,
   p: ProviderRow,
-  scr: ScrapedPriceEntry | undefined,
-  defaults: ReadonlySet<string>
-): Prisma.ModelCreateManyInput => {
-  const deprecated = isDeprecatedModel(name)
-  const legacy = scr === undefined ? false : scr.legacy
-  return {
-    providerId: p.id,
-    name,
-    deprecated,
-    legacy,
-    enabled: initialEnabled(p.authMode, name, deprecated, legacy, defaults),
-    inputPer1M: scr === undefined ? null : scr.inputPer1M,
-    outputPer1M: scr === undefined ? null : scr.outputPer1M,
-    cachedInputPer1M: scr === undefined ? null : scr.cachedInputPer1M,
-    contextWindow: scr === undefined ? null : scr.contextWindow,
-    apiStyle: modelApiStyleOverride(name)
-  }
-}
+  scr: ScrapedPriceEntry | undefined
+): Prisma.ModelCreateManyInput => ({
+  providerId: p.id,
+  name,
+  deprecated: isDeprecatedModel(name),
+  legacy: scr === undefined ? false : scr.legacy,
+  enabled: false,
+  inputPer1M: scr === undefined ? null : scr.inputPer1M,
+  outputPer1M: scr === undefined ? null : scr.outputPer1M,
+  cachedInputPer1M: scr === undefined ? null : scr.cachedInputPer1M,
+  contextWindow: scr === undefined ? null : scr.contextWindow,
+  apiStyle: modelApiStyleOverride(name)
+})
 
 interface LiveFetchResult {
   ids: string[]
@@ -230,18 +207,15 @@ async function refreshOneProvider(p: ProviderRow, catalog: VendorCatalog): Promi
   )
   const existing = new Set(p.models.map((m) => m.name))
   const toAdd = [...desired].filter((id) => !existing.has(id))
-  const defaults = subscriptionDefaultsById(p.name)
 
+  // New rows land switched off (buildCreateRow), so a refresh offers a
+  // release without moving any tier to it.
   if (toAdd.length > 0) {
     const rows: Prisma.ModelCreateManyInput[] = toAdd.map((name) =>
-      buildCreateRow(name, p, catalog.priceById.get(name), defaults)
+      buildCreateRow(name, p, catalog.priceById.get(name))
     )
     await prisma.model.createMany({ data: rows, skipDuplicates: true })
   }
-  // The preset's aliases for any tier still unset — on the refresh that
-  // first creates a subscription provider's models, that is all of them.
-  // A new model never replaces an alias here; it is listed as a candidate.
-  await ensurePresetAliases(prisma, p.id)
 
   await applyScrapedPrices(p, catalog, existing)
   await syncDeprecationFlags(p, [...existing, ...toAdd])
@@ -293,9 +267,7 @@ export async function syncConnectedCodexModels(
   })
   for (const provider of providers) {
     const existing = new Set(provider.models.map((model) => model.name))
-    const rows = ids
-      .filter((name) => !existing.has(name))
-      .map((name) => buildCreateRow(name, provider, undefined, subscriptionDefaultsById(provider.name)))
+    const rows = ids.filter((name) => !existing.has(name)).map((name) => buildCreateRow(name, provider, undefined))
     if (rows.length > 0) await prisma.model.createMany({ data: rows, skipDuplicates: true })
   }
 }

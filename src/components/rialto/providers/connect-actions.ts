@@ -34,27 +34,24 @@ export function oauthKindOf(entry: CatalogEntry): OAuthKind | null {
 /**
  * A fresh Provider row seeded from the catalog.
  *
- * Subscription vendors get the whole curated catalog with anything outside
- * the plan's defaults switched off, so the model table shows the full
- * advertised set as opt-in. api_key vendors get just the defaults — their
- * catalogs run to dozens of models nobody asked for. Lands disabled: the
- * vendor must not be called before the credential is in place.
+ * Subscription vendors get every model the vendor offers, all switched
+ * off: which of them the plan serves, and which one a tier should route
+ * to, is the operator's call, made in the next step — nothing here knows
+ * what the next release will be. api_key vendors get the offered models
+ * switched on for the operator to trim in that same step. Lands disabled:
+ * the vendor must not be called before the credential is in place.
  */
 export function providerFromCatalog(entry: CatalogEntry): Provider {
   const offered = entry.models.filter((m) => !m.deprecated && !m.legacy).map((m) => m.name)
-  const defaults = entry.defaultEnabledModels
   if (entry.authMode === 'subscription') {
-    const models = offered.length > 0 ? offered : defaults
-    const defaultSet = new Set(defaults)
-    const disabled = models.filter((n) => !defaultSet.has(n))
     return {
       name: entry.name,
       api_base_url: entry.apiBaseUrl,
       api_key: null,
       auth_mode: entry.authMode,
       enabled: false,
-      models,
-      ...(disabled.length > 0 ? { transformer: { _disabledModels: disabled } } : {})
+      models: offered,
+      ...(offered.length > 0 ? { transformer: { _disabledModels: offered } } : {})
     }
   }
   return {
@@ -63,7 +60,7 @@ export function providerFromCatalog(entry: CatalogEntry): Provider {
     api_key: null,
     auth_mode: entry.authMode,
     enabled: false,
-    models: defaults.length > 0 ? defaults : offered
+    models: offered
   }
 }
 

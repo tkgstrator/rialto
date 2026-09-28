@@ -45,7 +45,6 @@ export const CatalogEntrySchema = z
     // subscription-preset-specific fields; null for api_key vendors.
     cli: z.string().nonempty().nullable(),
     credentialsPath: z.string().nonempty().nullable(),
-    defaultEnabledModels: z.array(z.string().nonempty()),
     models: z.array(CatalogModelSchema),
     enabled: z.boolean(),
     // ISO 8601 timestamp of the last scrape overlay that touched this

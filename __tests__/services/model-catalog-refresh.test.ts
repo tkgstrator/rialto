@@ -17,7 +17,7 @@
  */
 
 import { afterEach, describe, expect, test } from 'bun:test'
-import { withCommittedPrices } from '../../src/services/model-sync-service'
+import { buildCreateRow, withCommittedPrices } from '../../src/services/model-sync-service'
 import { AnthropicProvider } from '../../src/vendors/anthropic'
 import type { ScrapedPriceEntry } from '../../src/vendors/base'
 
@@ -127,5 +127,21 @@ describe('fetchContextWindows credentials', () => {
       accessToken: 'oauth-token'
     })
     expect([...got.keys()]).toEqual(['claude-opus-4-1'])
+  })
+})
+
+describe('a model a refresh finds', () => {
+  // A tier follows the newest switched-on model its name says, so a row
+  // that landed on would move a route the moment a vendor published it.
+  test('lands switched off on every provider', () => {
+    const provider = (authMode: 'api_key' | 'subscription') => ({
+      id: 'p1',
+      name: authMode === 'api_key' ? 'anthropic' : 'claude-code',
+      apiKey: authMode === 'api_key' ? 'sk-ant' : null,
+      authMode,
+      models: []
+    })
+    expect(buildCreateRow('claude-sonnet-5-5', provider('api_key'), entry('claude-sonnet-5-5', 3)).enabled).toBe(false)
+    expect(buildCreateRow('claude-sonnet-5-5', provider('subscription'), undefined).enabled).toBe(false)
   })
 })

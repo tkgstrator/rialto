@@ -336,6 +336,17 @@ describe.skipIf(!HAS_DB)('Codex MCP server at /codex', () => {
     expect(upstream).toHaveLength(2)
   })
 
+  test('ask with no model uses the newest enabled one, not the first by name', async () => {
+    await seedCodex()
+    const db = getPrismaClient()
+    const provider = await db.provider.findUniqueOrThrow({ where: { name: 'codex' } })
+    await db.model.create({ data: { providerId: provider.id, name: 'gpt-5.2', enabled: true } })
+    const mcp = (await issue(['codex-mcp'])).plaintext
+    const result = await callTool(mcp, 'ask', { prompt: 'hi' })
+    expect(result.isError).toBeUndefined()
+    expect(textOf(result)).toContain('model: codex,gpt-5.5')
+  })
+
   test('ask refuses a model Codex does not have without calling upstream', async () => {
     await seedCodex()
     const mcp = (await issue(['codex-mcp'])).plaintext

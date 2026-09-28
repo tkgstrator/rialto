@@ -6,6 +6,7 @@ import {
 } from '../../../schemas/api/providers'
 import { ProviderSchema } from '../../../schemas/domain/provider'
 import { deleteProviderByName, upsertProvider } from '../../../services/config'
+import { republishRoutingSnapshot } from '../../../services/routing-scheduler'
 import { ValidationErrorResponseSchema, validationErrorHook } from '../../zod-response'
 
 export const providerByNameRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
@@ -43,6 +44,9 @@ providerByNameRoute.openapi(patchProviderRoute, async (c) => {
   const { name } = c.req.valid('param')
   const body = c.req.valid('json')
   const { provider, warnings } = await upsertProvider({ ...body, name })
+  // A switch can move a tier route (it follows the newest switched-on
+  // model), so the quota snapshot is rebuilt now rather than at the next tick.
+  await republishRoutingSnapshot()
   return c.json(
     {
       success: true as const,
@@ -73,6 +77,7 @@ providerByNameRoute.openapi(deleteProviderRoute, async (c) => {
   const { name } = c.req.valid('param')
   try {
     const { warnings } = await deleteProviderByName(name)
+    await republishRoutingSnapshot()
     return c.json({ success: true as const, ...(warnings.length > 0 ? { warnings } : {}) }, 200)
   } catch (err) {
     return c.json({ success: false as const, error: err instanceof Error ? err.message : String(err) }, 404)

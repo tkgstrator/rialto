@@ -172,7 +172,8 @@ describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', (
         }
       ]
     })
-    await setTierAlias('anthropic', 'sonnet', 'claude-sonnet-5')
+    // anthropic · sonnet follows claude-sonnet-5 by name; openai names no
+    // Claude family, so its tier takes an alias.
     await setTierAlias('openai', 'haiku', 'gpt-5-nano')
     const outcome = await saveTierProfile(
       'live',
@@ -224,6 +225,26 @@ describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', (
     expect(warnings[0]).toContain('openai · haiku')
     // The route stays, skipped until the alias is set again.
     expect(await defaultRoutes()).toEqual(['anthropic · sonnet', 'openai · haiku'])
+  })
+
+  test('removing the model a named tier follows reports where the tier moved', async () => {
+    await upsertProvider({
+      name: 'anthropic',
+      api_base_url: 'https://api.anthropic.com/v1/messages',
+      api_key: 'sk-ant',
+      auth_mode: 'api_key',
+      models: ['claude-sonnet-5', 'claude-sonnet-4-6']
+    })
+    const { warnings } = await upsertProvider({
+      name: 'anthropic',
+      api_base_url: 'https://api.anthropic.com/v1/messages',
+      api_key: 'sk-ant',
+      auth_mode: 'api_key',
+      models: ['claude-sonnet-4-6']
+    })
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('Moved 1 tier off')
+    expect(warnings[0]).toContain('anthropic · sonnet → claude-sonnet-4-6')
   })
 
   test('deleting a provider reports every route that went with it, by profile, scenario and lane', async () => {

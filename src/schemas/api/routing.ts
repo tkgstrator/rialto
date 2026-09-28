@@ -31,8 +31,8 @@ export const TierRouteViewSchema = z
     provider: z.string().nonempty(),
     targetTier: ModelTierSchema,
     enabled: z.boolean(),
-    // Null when the provider has no alias for `targetTier` — the route is
-    // kept but skipped until one is set.
+    // Null when no model on the provider names `targetTier` and no alias
+    // points at one — the route is kept but skipped until one is set.
     resolved: TierRouteResolutionSchema.nullable()
   })
   .openapi('TierRouteView')
@@ -82,17 +82,27 @@ export const TierAliasCandidateSchema = z
   .object({
     model: z.string().nonempty(),
     enabled: z.boolean(),
-    // Appeared after the alias was last set.
+    // Newer than the routed model and switched off: turning it on moves the route.
     isNew: z.boolean()
   })
   .openapi('TierAliasCandidate')
+
+// derived: some model names the tier, and it follows the newest switched-on
+// one. manual: nothing names it, and the stored alias decides.
+export const TierModeSchema = z.enum(['derived', 'manual'])
 
 export const TierAliasSchema = z
   .object({
     provider: z.string().nonempty(),
     tier: ModelTierSchema,
+    mode: TierModeSchema,
+    // The model the tier reaches today, switched on or not. Null only on a
+    // manual tier with no alias.
     model: z.string().nonempty().nullable(),
+    modelEnabled: z.boolean(),
+    // When the manual alias was set; null on a derived tier.
     updatedAt: z.string().nonempty().nullable(),
+    // A derived tier's other named models, newest first. Empty on a manual tier.
     candidates: z.array(TierAliasCandidateSchema)
   })
   .openapi('TierAlias')

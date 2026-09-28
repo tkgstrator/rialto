@@ -12,7 +12,7 @@ import { getPrismaClient } from '../../db/client'
 import { AuthMode } from '../../generated/prisma/client'
 import type { TokenPlan } from '../../services/access-token-service'
 import { getEnabledModels } from '../../services/config/enabled-models'
-import { SUBSCRIPTION_PRESETS } from '../../shared/data/subscriptions'
+import { newestFirst } from '../../shared/model-version'
 
 const CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex'
 
@@ -25,9 +25,6 @@ export interface CodexTarget {
 export type TargetResult = { ok: true; target: CodexTarget } | { ok: false; message: string }
 
 export const targetId = (t: CodexTarget): string => `${t.provider},${t.model}`
-
-// What an unnamed request is sent to when the preset's default is enabled.
-const PRESET_DEFAULT = SUBSCRIPTION_PRESETS.find((p) => p.id === 'codex')?.defaultEnabledModels[0]
 
 export async function codexProviderNames(): Promise<Set<string>> {
   const rows = await getPrismaClient().provider.findMany({
@@ -55,8 +52,8 @@ export async function codexModels(operation: 'completion' | 'image'): Promise<Co
  * - `provider,model` must be exactly one of the enabled pairs.
  * - A bare model must be hosted by exactly one Codex provider; two would
  *   leave the choice of which subscription pays to chance.
- * - Nothing named: the preset's default model when it is enabled, the
- *   first enabled one otherwise.
+ * - Nothing named: the newest enabled model. What is enabled is the
+ *   operator's choice; nothing here names a model to prefer.
  */
 export async function resolveCodexTarget(
   operation: 'completion' | 'image',
@@ -72,8 +69,8 @@ export async function resolveCodexTarget(
   }
   const available = `Available: ${models.map(targetId).join(', ')}.`
   if (requested === undefined) {
-    const preferred = models.find((m) => operation === 'completion' && m.model === PRESET_DEFAULT)
-    return { ok: true, target: preferred !== undefined ? preferred : models[0] }
+    const [newest] = [...models].sort((a, b) => newestFirst(a.model, b.model) || a.provider.localeCompare(b.provider))
+    return { ok: true, target: newest }
   }
   const matches = requested.includes(',')
     ? models.filter((m) => targetId(m) === requested)

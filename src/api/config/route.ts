@@ -2,6 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi'
 import { resetLlmsContext } from '../../llms'
 import { ApplyConfigPayloadSchema } from '../../schemas/api/config'
 import { applyUiConfig, composeUiConfig } from '../../services/config'
+import { republishRoutingSnapshot } from '../../services/routing-scheduler'
 import { validationErrorHook } from '../zod-response'
 export const configRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
 
@@ -24,6 +25,9 @@ configRoute.post('/api/config', async (c) => {
   // The /v1 proxy caches the llms services (providers, persona) built
   // from this config — drop it so edits take effect without a restart.
   resetLlmsContext()
+  // A switch can move a tier route (it follows the newest switched-on
+  // model), so the quota snapshot is rebuilt now rather than at the next tick.
+  await republishRoutingSnapshot()
   return c.json({
     success: true,
     message: 'Config saved successfully',

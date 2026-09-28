@@ -13,9 +13,18 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import { getPrismaClient } from '../../src/db/client'
 import { backfillTierRoutes } from '../../src/services/routing-migration/backfill-tier-routes'
-import { resolveTierAliases } from '../../src/services/tier-alias-service'
 import { loadTierProfile } from '../../src/services/tier-route-service'
 import { HAS_DB, resetDbTables, teardownPrisma } from './helpers'
+
+// The alias rows the backfill wrote, as `provider|tier` → model. Read as
+// stored: on a tier some model names, routing follows the switches instead,
+// but what the conversion claimed is what this pins.
+const storedAliases = async (): Promise<Map<string, { model: string }>> => {
+  const rows = await getPrismaClient().providerTierAlias.findMany({
+    select: { tier: true, provider: { select: { name: true } }, model: { select: { name: true } } }
+  })
+  return new Map(rows.map((r) => [`${r.provider.name}|${r.tier}`, { model: r.model.name }]))
+}
 
 // "provider·tier[:off]" per route, in order.
 const labels = (routes: { provider: string; targetTier: string; enabled: boolean }[]): string[] =>
@@ -84,7 +93,7 @@ describe.skipIf(!HAS_DB)('backfillTierRoutes', () => {
     expect(labels(map.routes.longContext.agent)).toEqual(['claude-code·sonnet'])
     expect(labels(map.routes.longContext.subagent)).toEqual(['codex·sonnet'])
 
-    const aliases = await resolveTierAliases()
+    const aliases = await storedAliases()
     expect(aliases.get('claude-code|sonnet')?.model).toBe('claude-sonnet-5')
     expect(aliases.get('claude-code|opus')?.model).toBe('claude-opus-4-8')
     expect(aliases.get('claude-code|haiku')?.model).toBe('claude-haiku-4-5')
@@ -118,8 +127,8 @@ describe.skipIf(!HAS_DB)('backfillTierRoutes', () => {
       'webSearch/agent: 2 entries not converted (web search and image are no longer scenarios)'
     ])
     // A model only those lists named claims no alias.
-    expect((await resolveTierAliases()).has('claude-code|opus')).toBe(false)
-    expect((await resolveTierAliases()).has('codex|sonnet')).toBe(false)
+    expect((await storedAliases()).has('claude-code|opus')).toBe(false)
+    expect((await storedAliases()).has('codex|sonnet')).toBe(false)
   })
 
   test('a profile that already has routes is only marked', async () => {
@@ -157,7 +166,7 @@ describe.skipIf(!HAS_DB)('backfillTierRoutes', () => {
     })
     const reports = await backfillTierRoutes()
     expect(reports.map((r) => r.profile)).toEqual(['live', 'ci'])
-    expect((await resolveTierAliases()).get('claude-code|sonnet')?.model).toBe('claude-sonnet-5')
+    expect((await storedAliases()).get('claude-code|sonnet')?.model).toBe('claude-sonnet-5')
     const ciReport = reports[1]
     expect(ciReport.aliases).toBe(0)
     expect(ciReport.notes).toEqual([

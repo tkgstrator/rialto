@@ -12,7 +12,11 @@ export const providerTierAliasRoute = new OpenAPIHono({ defaultHook: validationE
 const params = z.object({ name: z.string().nonempty(), tier: ModelTierSchema })
 
 /**
- * Point a provider's tier at a model — the "promote" action.
+ * Point a provider's manual tier at a model — the "promote" action.
+ *
+ * Only a tier no model names takes an alias; a derived tier follows the
+ * newest switched-on model its name says, so it is refused with 409 and
+ * the operator switches models instead.
  *
  * The model is switched on with it, and a model that was off changes what
  * the provider serves: the Providers mirror on disk is rewritten and the
@@ -35,12 +39,24 @@ providerTierAliasRoute.openapi(
       404: {
         description: 'No such provider, or no such model on it',
         content: { 'application/json': { schema: RoutingErrorSchema } }
+      },
+      409: {
+        description: 'Some model on the provider names this tier, so it follows the switches, not an alias',
+        content: { 'application/json': { schema: RoutingErrorSchema } }
       }
     }
   }),
   async (c) => {
     const { name, tier } = c.req.valid('param')
     const outcome = await setTierAlias(name, tier, c.req.valid('json').model)
+    if (!outcome.ok && outcome.reason === 'tier-derived') {
+      return c.json(
+        {
+          error: `"${name}" · ${tier} follows the newest switched-on model named ${tier}; switch models on or off instead`
+        },
+        409
+      )
+    }
     if (!outcome.ok) {
       const what = outcome.reason === 'provider-not-found' ? `provider "${name}"` : `model on "${name}"`
       return c.json({ error: `No such ${what}` }, 404)
@@ -64,7 +80,10 @@ providerTierAliasRoute.openapi(
     path: '/api/providers/{name}/tier-aliases/{tier}',
     request: { params },
     responses: {
-      204: { description: 'Unset. Routes naming this tier are skipped until one is set again' },
+      204: {
+        description:
+          'Unset. On a manual tier, routes naming it are skipped until one is set again; on a derived tier the row was dormant and routing does not change'
+      },
       404: {
         description: 'The provider has no alias for this tier',
         content: { 'application/json': { schema: RoutingErrorSchema } }

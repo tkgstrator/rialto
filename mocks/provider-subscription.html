@@ -45,65 +45,64 @@ const toggle = (on) => `
     <span class="size-3 rounded-full bg-background ${on ? 'translate-x-3' : ''}"></span>
   </span>`
 
-// ─── Tier aliases ─────────────────────────────────────────────────────
-// Routing no longer names models. A route says "claude-code · sonnet",
-// and the alias here says which model that is on this provider. When the
-// vendor ships a new Sonnet, this strip is the one place that changes —
-// the chains in Routing, which used to hold the model by name in every
-// scenario and lane, do not move.
+// ─── Tiers ────────────────────────────────────────────────────────────
+// Routing never names a model. A route says "claude-code · sonnet", and
+// this strip says which model that is on this provider today.
 //
-// An alias never moves by itself. Refresh can only discover a model; it
-// appears as a candidate ("1 new" — a model of the same tier that showed
-// up after the alias was last set), and Promote is what points the alias
-// at it and switches it on. A price list, a plan's entitlements and a
-// model's behaviour are all things an operator wants to have looked at
-// before every Sonnet request lands somewhere new.
+// A tier some model names follows the newest of those models that is
+// switched on. Nothing else decides it: Refresh lands a new model
+// switched off, so it is offered ("1 newer" — a model of the tier newer
+// than the one routed), never routed, until the operator switches it on
+// after looking at its price and the plan's entitlements. These cells are
+// readings, even while editing — the switches in the table are the control.
 //
-// Codex names no Claude family, so its aliases are whatever the operator
-// decided a "sonnet" request should run on there. One is left unset on
-// purpose: an unset alias is what Routing shows as "alias unset" on any
-// route that points at it.
+// Codex names no Claude family, so its tiers are whatever the operator
+// decided a "sonnet" request should run on there, set by hand. One is left
+// unset on purpose: an unset tier is what Routing shows as "alias unset"
+// on any route that points at it.
 const ALIASES = CODEX
   ? [
-      { tier: 'fable',  model: null,            candidates: 0 },
-      { tier: 'opus',   model: 'gpt-5.5',       candidates: 0 },
-      { tier: 'sonnet', model: 'gpt-5.5',       candidates: 0 },
-      { tier: 'haiku',  model: 'gpt-5.3-codex-spark', candidates: 0 }
+      { tier: 'fable',  mode: 'manual',  model: null,            newer: 0 },
+      { tier: 'opus',   mode: 'manual',  model: 'gpt-5.5',       newer: 0 },
+      { tier: 'sonnet', mode: 'manual',  model: 'gpt-5.5',       newer: 0 },
+      { tier: 'haiku',  mode: 'manual',  model: 'gpt-5.3-codex-spark', newer: 0 }
     ]
   : [
-      { tier: 'fable',  model: 'claude-fable-5',   candidates: 0 },
-      { tier: 'opus',   model: 'claude-opus-4-8',  candidates: 1 },
-      { tier: 'sonnet', model: 'claude-sonnet-5',  candidates: 0 },
-      { tier: 'haiku',  model: 'claude-haiku-4-5', candidates: 0 }
+      { tier: 'fable',  mode: 'derived', model: 'claude-fable-5',   newer: 0 },
+      { tier: 'opus',   mode: 'derived', model: 'claude-opus-4-8',  newer: 1 },
+      { tier: 'sonnet', mode: 'derived', model: 'claude-sonnet-5',  newer: 0 },
+      { tier: 'haiku',  mode: 'derived', model: 'claude-haiku-4-5', newer: 0 }
     ]
 
-// One cell per tier: the tier, the model it resolves to, and — when
-// Refresh found one — how many newer models of that tier are waiting.
-// While editing the model becomes the same select box the rest of the app
-// uses for "this opens a list"; the list holds the provider's models of
-// that tier, candidates first, each with Promote.
+// One cell per tier: the tier, the model it reaches, and — when Refresh
+// found one — how many newer models of the tier are waiting switched off.
+// A derived cell says why it is that model; a manual cell becomes the same
+// select box the rest of the app uses for "this opens a list" while editing.
 const aliasCell = (a) => `
   <div class="border-l-2 border-l-transparent bg-background px-4 py-3 transition-colors hover:border-l-border hover:bg-muted/50">
-    <!-- Fixed height, so a "new" badge does not push this cell's model
+    <!-- Fixed height, so a "newer" badge does not push this cell's model
          below its neighbours'. -->
     <div class="flex h-5 items-center gap-2">
       <span class="text-[12px] uppercase tracking-wider text-muted-foreground/70">${a.tier}</span>
-      ${a.candidates > 0 ? `<span class="ml-auto">${pill(`${a.candidates} new`, 'info')}</span>` : ''}
+      ${a.newer > 0 ? `<span class="ml-auto">${pill(`${a.newer} newer`, 'info')}</span>` : ''}
     </div>
-    <div class="mt-1.5 flex min-h-8 items-center">
+    <div class="mt-1.5 flex min-h-8 flex-col justify-center">
       ${
-        EDITING
-          ? `<button class="inline-flex h-8 w-full items-center justify-between gap-1.5 rounded-md border border-border px-2.5 font-mono text-xs hover:bg-muted/60">${a.model === null ? '<span class="text-muted-foreground/60">unset</span>' : a.model} <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i></button>`
-          : a.model === null
-            ? '<span class="text-[12px] text-muted-foreground/60">unset — routes to this tier are refused</span>'
-            : `<span class="font-mono text-xs">${a.model}</span>`
+        a.mode === 'derived'
+          ? `<span class="font-mono text-xs">${a.model}</span>
+             <span class="text-[12px] text-muted-foreground/60">newest switched on</span>`
+          : EDITING
+            ? `<button class="inline-flex h-8 w-full items-center justify-between gap-1.5 rounded-md border border-border px-2.5 font-mono text-xs hover:bg-muted/60">${a.model === null ? '<span class="text-muted-foreground/60">unset</span>' : a.model} <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i></button>`
+            : a.model === null
+              ? '<span class="text-[12px] text-muted-foreground/60">unset — routes to this tier are refused</span>'
+              : `<span class="font-mono text-xs">${a.model}</span>`
       }
     </div>
   </div>`
 
 const aliases = `
   <div class="flex items-center gap-3 px-6 pt-5 pb-3">
-    <h3 class="text-sm font-semibold">Tier aliases</h3>
+    <h3 class="text-sm font-semibold">Tiers</h3>
     <span class="text-[12px] text-muted-foreground">what Routing reaches when a route names this provider and a tier</span>
   </div>
   <div class="grid grid-cols-4 gap-px border-y border-border bg-border/60">${ALIASES.map(aliasCell).join('')}</div>`
@@ -112,40 +111,44 @@ const aliases = `
 // Prices stay in separate columns (in / cached / out) — one packed
 // "$3/$0.30/$15" cell is unreadable and unsortable.
 //
-// The Tier column became Alias. A model is reached through the alias that
-// names it, and only that way, so the column says which tier (if any)
-// this model currently serves on this provider. There is no per-model
-// tier to set any more: the manual tier existed so a chain could classify
-// a model it held by name, and chains no longer hold models by name.
-// `claude-opus-5` is the candidate the Opus cell above counts: listed,
-// switched off, serving nothing until it is promoted.
+// The Tier column: every tier the model's name says, filled where the
+// model is the one its tier routes to today and outlined where it is not.
+// `claude-opus-5` is the model the Opus cell above counts: newer, listed,
+// switched off, serving nothing until it is switched on — which moves the
+// Opus tier to it. On Codex, where no name says a tier, the column shows
+// the tiers set by hand.
 const MODELS = CODEX
   ? [
-      { name: 'gpt-5.5',             alias: 'opus · sonnet', ctx: '400k', test: 'ok',      on: true },
-      { name: 'gpt-5.3-codex-spark', alias: 'haiku',         ctx: '128k', test: 'ok',      on: true },
-      { name: 'gpt-5.3-codex',       alias: null,            ctx: '400k', test: 'unknown', on: false }
+      { name: 'gpt-5.5',             tiers: [['opus', true], ['sonnet', true]], ctx: '400k', test: 'ok',      on: true },
+      { name: 'gpt-5.3-codex-spark', tiers: [['haiku', true]],                  ctx: '128k', test: 'ok',      on: true },
+      { name: 'gpt-5.3-codex',       tiers: [],                                 ctx: '400k', test: 'unknown', on: false }
     ]
   : [
-      { name: 'claude-opus-5',     alias: null,     isNew: true, ctx: '500k', test: 'unknown', on: false },
-      { name: 'claude-fable-5',    alias: 'fable',  ctx: '500k', test: 'ok',      on: true },
-      { name: 'claude-opus-4-8',   alias: 'opus',   ctx: '200k', test: 'ok',      on: true },
-      { name: 'claude-opus-4-7',   alias: null,     ctx: '200k', test: 'ok',      on: true },
-      { name: 'claude-sonnet-5',   alias: 'sonnet', ctx: '1M',   test: 'ok',      on: true },
-      { name: 'claude-sonnet-4-6', alias: null,     ctx: '1M',   test: 'ok',      on: true },
-      { name: 'claude-haiku-4-5',  alias: 'haiku',  ctx: '200k', test: 'fail',    on: true }
+      { name: 'claude-opus-5',     tiers: [['opus', false]],   newer: true, ctx: '500k', test: 'unknown', on: false },
+      { name: 'claude-fable-5',    tiers: [['fable', true]],   ctx: '500k', test: 'ok',      on: true },
+      { name: 'claude-opus-4-8',   tiers: [['opus', true]],    ctx: '200k', test: 'ok',      on: true },
+      { name: 'claude-opus-4-7',   tiers: [['opus', false]],   ctx: '200k', test: 'ok',      on: true },
+      { name: 'claude-sonnet-5',   tiers: [['sonnet', true]],  ctx: '1M',   test: 'ok',      on: true },
+      { name: 'claude-sonnet-4-6', tiers: [['sonnet', false]], ctx: '1M',   test: 'ok',      on: true },
+      { name: 'claude-haiku-4-5',  tiers: [['haiku', true]],   ctx: '200k', test: 'fail',    on: true }
     ]
 
 const testIcon = { ok: '<i class="ri-check-line text-emerald-600 dark:text-emerald-400"></i>', fail: '<i class="ri-close-line text-destructive"></i>', unknown: '<i class="ri-subtract-line text-muted-foreground/50"></i>' }
 
-const aliasRead = (alias) =>
-  alias === null
+const tierPill = ([tier, routed]) =>
+  routed
+    ? `<span class="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[12px]">${tier}</span>`
+    : `<span class="inline-flex items-center rounded border border-border px-1.5 py-px text-[12px] text-muted-foreground/70">${tier}</span>`
+
+const tierRead = (tiers) =>
+  tiers.length === 0
     ? '<span class="text-[12px] text-muted-foreground/50">—</span>'
-    : `<span class="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[12px]">${alias}</span>`
+    : `<span class="inline-flex items-center gap-1">${tiers.map(tierPill).join('')}</span>`
 
 const modelRow = (m) => `
   <tr class="border-t border-border/60 transition-colors hover:bg-muted/50 ${m.on ? '' : 'opacity-45'}">
-    <td class="py-2.5 pl-6 pr-2 font-mono text-xs">${m.name}${m.isNew ? ` <span class="ml-1 align-[1px]">${pill('new', 'info')}</span>` : ''}</td>
-    <td class="px-2">${aliasRead(m.alias)}</td>
+    <td class="py-2.5 pl-6 pr-2 font-mono text-xs">${m.name}${m.newer ? ` <span class="ml-1 align-[1px]">${pill('newer', 'info')}</span>` : ''}</td>
+    <td class="px-2">${tierRead(m.tiers)}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${m.ctx}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">—</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">—</td>
@@ -160,7 +163,7 @@ const models = `
     <thead>
       <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         ${sortTh('Model', 'pl-6 pr-2')}
-        ${sortTh('Alias', 'px-2', 'left', true, 'desc')}
+        ${sortTh('Tier', 'px-2', 'left', true, 'desc')}
         ${sortTh('Context', 'px-2', 'right')}
         ${sortTh('In /1M', 'px-2', 'right')}
         ${sortTh('Cached', 'px-2', 'right')}
@@ -400,10 +403,14 @@ document.getElementById('root').innerHTML = `
       <div class="px-6 py-4">
         <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
           <i class="ri-information-line mr-1 align-[-1px]"></i>
-          Routing reaches a model only through a tier alias above. A model Refresh discovers is listed
-          here switched off and marked <span class="font-medium text-foreground">new</span>; it serves
-          nothing until an alias is pointed at it with <span class="font-medium text-foreground">Promote</span>,
-          which also switches it on.
+          ${
+            CODEX
+              ? `Routing reaches a model only through a tier above. No model here names a Claude family, so
+          each tier is set by hand; a model Refresh discovers is listed here switched off.`
+              : `Routing reaches a model only through a tier above, and a tier follows the newest switched-on
+          model its name says. A model Refresh discovers is listed here switched off and marked
+          <span class="font-medium text-foreground">newer</span>; switching it on is what moves the tier to it.`
+          }
         </div>
       </div>
       <div class="h-8"></div>
@@ -425,7 +432,7 @@ renderShell({
     withClass(btn('Add subscription', 'primary', 'ri-add-line', 'providers-connect.html'), lockedWhileEditing),
   ...(EDITING || CONFIRM_RESET
     ? {}
-    : { toast: toast('Refreshed usage, prices and models', 'ok', CODEX ? '' : '1 new model: claude-opus-5 — promote it from the Opus alias') })
+    : { toast: toast('Refreshed usage, prices and models', 'ok', CODEX ? '' : '1 new model: claude-opus-5 — switch it on to move the Opus tier') })
 })
 </script>
 </body>

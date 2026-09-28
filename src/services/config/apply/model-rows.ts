@@ -10,7 +10,7 @@ import { type Model as DbModel, type Provider as DbProvider, ModelTestStatus } f
 import { modelApiStyleOverride } from '../api-style'
 import type { Tx } from '../apply'
 import { disabledSet } from '../transformer'
-import { aliasCascadeWarning } from './tier-route-cascade'
+import { tierCascadeWarning } from './tier-route-cascade'
 
 export async function syncDeprecationFlags(tx: Tx, providerId: string, names: string[]): Promise<void> {
   if (names.length === 0) return
@@ -46,9 +46,10 @@ export async function reconcileModelRows(
   const toCreate = [...desired].filter((n) => !existingNames.has(n))
 
   if (toDelete.length > 0) {
-    const cascade = await aliasCascadeWarning(
+    const cascade = await tierCascadeWarning(
       tx,
-      { providerId: provider.id, name: { in: toDelete } },
+      provider.id,
+      toDelete,
       `"${provider.name}" model(s) removed in this save (${toDelete.join(', ')})`
     )
     if (cascade !== null) warnings.push(cascade)
