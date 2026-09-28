@@ -1,6 +1,6 @@
 import type { CatalogEntry, CatalogModel } from '@/schemas/api/catalog'
 import { apiStyleOverrideOf, disabledModelsOf, effortOf, listedModelsOf, testStatusOf } from './derive'
-import { type AliasMap, tiersServedBy } from './tier-aliases'
+import type { TierView } from './tier-aliases'
 import type { ApiStyle, Provider, ReasoningEffort, TestStatus, Tier } from './types'
 
 /**
@@ -23,13 +23,15 @@ export function fmtContext(n: number | undefined): string {
 export interface ModelRow {
   name: string
   /**
-   * The tiers this model is the alias for on its provider, in strip
-   * order. Routing reaches a model only through an alias, so empty means
-   * nothing routed lands here however the model is switched.
+   * The tiers this model belongs to on its provider, in strip order: the
+   * one its name says, and any manual tier aliased to it. `routed` is
+   * whether the tier reaches this model today. Routing reaches a model
+   * only through a tier, so no routed entry means nothing routed lands
+   * here however the model is switched.
    */
-  aliasTiers: Tier[]
-  /** Listed as a new candidate for some tier: found after that alias was last set. */
-  isNew: boolean
+  tiers: Array<{ tier: Tier; routed: boolean }>
+  /** Newer than the model its tier routes to, and switched off: switching it on moves the tier. */
+  newer: boolean
   /** Model.reasoningEffort. Null means "send nothing, let the vendor pick". */
   effort: ReasoningEffort | null
   contextWindow: number | undefined
@@ -54,14 +56,13 @@ const catalogModelIndex = (entry: CatalogEntry | undefined): Map<string, Catalog
  * is read from the vendor catalog entry. Absent on both sides means the
  * vendor publishes no price, which the table shows as a dash.
  *
- * `aliases` and `fresh` are the provider's tier aliases and its new
- * candidates. The add-provider wizard reads neither and passes nothing.
+ * `views` are the provider's tiers (`tierViewsOf`). The add-provider
+ * wizard shows no tier column and passes nothing.
  */
 export function buildModelRows(
   p: Provider,
   catalogEntry: CatalogEntry | undefined,
-  aliases: AliasMap = {},
-  fresh: ReadonlySet<string> = new Set()
+  views: readonly TierView[] = []
 ): ModelRow[] {
   const off = new Set(disabledModelsOf(p))
   const ctx = p.modelContextWindows === undefined ? {} : p.modelContextWindows
@@ -72,8 +73,16 @@ export function buildModelRows(
     const fromCatalog = catalogModels.get(name)
     return {
       name,
-      aliasTiers: tiersServedBy(aliases, name),
-      isNew: fresh.has(name),
+      tiers: views.flatMap((v) =>
+        v.mode === 'derived'
+          ? v.named.includes(name)
+            ? [{ tier: v.tier, routed: v.model === name }]
+            : []
+          : v.model === name
+            ? [{ tier: v.tier, routed: true }]
+            : []
+      ),
+      newer: views.some((v) => v.newer.includes(name)),
       effort: effortOf(p, name),
       contextWindow: ctx[name],
       inputPer1M: price === undefined ? null : price.inputPer1M,

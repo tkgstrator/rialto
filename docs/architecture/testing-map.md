@@ -55,7 +55,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `update-check.test.ts` | 更新チェック: バージョン比較（`v` 付きタグ・prerelease・読めないタグ）と、取得失敗を「最新です」に畳まないこと、成功だけをキャッシュすること |
 | `rialto/format.test.ts` | 表示フォーマッタ（金額の有効数字など） |
 | `rialto/provider-draft.test.ts` | プロバイダ詳細の Edit → Save が書くもの。手で元に戻した変更は何も書かないこと、プロバイダ・モデルのスイッチとキーは読み込んだ行を土台にした 1 回の upsert に載り、ティアエイリアスと effort は変わったものだけが個別の書き込みになること（upsert には載せない）。エイリアスを新しく向けたモデルは ON として描かれ（サーバ側の昇格がモデルを有効にするのと揃える）、スイッチの切れたモデルの昇格だけなら upsert を伴わないエイリアスの書き込み 1 回、解除はモデルを名指さない書き込みで、エイリアスの書き込みは帯の順に並ぶこと |
-| `rialto/provider-tier-aliases.test.ts` | プロバイダページのティアエイリアス帯。後から現れたモデルはエイリアスを動かさずに「new」として数えて印を付けること、ピッカーは現在のモデル → 新しい候補 → それ以外の全モデルの順に出すこと（Codex や OpenAI のようにモデル名から tier が読めないプロバイダでも選べるように、名前で合う候補だけに絞らない）、Alias 列がモデルごとに担っている tier を帯の順で出すこと |
+| `rialto/provider-tier-aliases.test.ts` | プロバイダページのティア帯。名前がティアを示すモデルのうちオンの最新にティアが向き、オフの新しい版は動かさずに「newer」として数えて印を付けること、編集中に切り替えたスイッチがプレビューのティアをすぐ動かすこと、名前がティアを示さないティア（Codex・OpenAI）だけが手動のエイリアスで、そのピッカーは現在のモデル → それ以外の全モデルの順に出すこと、Tier 列が名前の示すティアを全モデルに出し、ルーティング先だけを routed にすること |
 | `rialto/account-extras.test.ts` | アカウント行の付帯情報（API 換算の使用量と Codex のバンク済みリセット）をアカウント id で引けること、欠けた読み取りを null のまま残すこと、割安度と失効日のフォーマッタ |
 | `rialto/redact-tool-arguments.test.ts` | `REDACT_TOOL_ARGUMENTS` の除去処理 |
 | `rialto/settings/access-config.test.ts`<br/>`rialto/settings/access-tokens.test.ts`<br/>`rialto/settings/envelope.test.ts` | Settings 画面の各フォームのロジック |
@@ -70,8 +70,8 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `config-service.test.ts` | `applyUiConfig` / `composeUiConfig` の往復整合、モデル削除が外すティアエイリアスの警告（ルート自体は残り、エイリアスが再設定されるまで飛ばされる）とプロバイダ削除で cascade するルートの profile / シナリオ / レーン単位の警告、Providers だけの保存がルートに触らないこと、退役キー（`APIKEY` / `Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK`）を警告付きで捨て・ディスクから剥がし、`GET /api/config` にも出さないこと、トップレベル `ActivePersona` の往復、永続化 |
 | `upsert-provider.test.ts` | Provider の upsert（重複名・モデル差分）。1 プロバイダの編集が他のプロバイダの SubAccount やそれを名指すルートを消さないこと、CRUD 経路のモデル削除が外すティアエイリアスを報告し、プロバイダ削除が一緒に消えたルートを profile / シナリオ / レーン単位で報告すること（名指すルートが無ければ何も報告しない） |
 | `disabled-targets.test.ts` | 無効な Provider / Model がどの経路からも送られないこと — ルートの解決がルート自身のスイッチとターゲットのスイッチ（`targetEnabled`）を分けて返し、セレクタがターゲットの切れたルートを飛ばすこと、スイッチの切れたモデルをエイリアスで昇格すると ON になること、registry が有効なものだけを持つので passthrough の `provider,model` も `resolveInvocationForModel` が拒否すること、bare 名の解決、サブスクリプションのアカウントプール |
-| `tier-route-service.test.ts` | 保存されるシナリオ × レーンのルート。保存はプロファイル全体の置き換えで、順序どおり・全シナリオと全レーンが揃って読み返せること、存在しないプロバイダと同じリスト内の重複は警告付きで捨て（警告はリストを名指す）、エイリアス未設定のルートは警告付きで残すこと、同じ provider · tier は 1 つのリストに 1 本だが別のリストには置けること、予約キー `passthrough` はルートを持てないこと、制約はブロブへマージされ置き換えではないこと、**保存は Long context の tuner の状態を DB から引き継ぎ、編集画面が読み込んだ古い値で上書きしないこと**、プロファイル一覧が既定を先頭・予約キーを末尾に出すこと。読み出し側では、各ルートがどのリストでもエイリアスで解決され、しきい値の基準値が default / agent の先頭の使えるルートのモデルのコンテキスト長の 70 %（無ければ 128k）で、調整値は基準値以下に収めて返ること |
-| `tier-alias-service.test.ts` | プロバイダのティアエイリアス。後から現れた同 tier のモデルは置き換えではなく `isNew` の候補になること、全プロバイダの 4 tier が設定の有無によらず並ぶこと、昇格がスイッチの切れたモデルを ON にすること、未知のプロバイダ / モデルの拒否と解除の結果、Claude のサブスク preset が tier ごとに preset の先頭のモデルでエイリアスを作り既存のエイリアスは触らないこと、Claude のファミリ名を持たない Codex には作らないこと |
+| `tier-route-service.test.ts` | 保存されるシナリオ × レーンのルート。保存はプロファイル全体の置き換えで、順序どおり・全シナリオと全レーンが揃って読み返せること、存在しないプロバイダと同じリスト内の重複は警告付きで捨て（警告はリストを名指す）、エイリアス未設定のルートは警告付きで残すこと、同じ provider · tier は 1 つのリストに 1 本だが別のリストには置けること、予約キー `passthrough` はルートを持てないこと、制約はブロブへマージされ置き換えではないこと、**保存は Long context の tuner の状態を DB から引き継ぎ、編集画面が読み込んだ古い値で上書きしないこと**、プロファイル一覧が既定を先頭・予約キーを末尾に出すこと。読み出し側では、各ルートがどのリストでも解決され、名前がティアを示すモデルのうちオンの最新に向くので、スイッチを入れるだけでエイリアスを書かずにルートが移ること、しきい値の基準値が default / agent の先頭の使えるルートのモデルのコンテキスト長の 70 %（無ければ 128k）で、調整値は基準値以下に収めて返ること |
+| `tier-alias-service.test.ts` | プロバイダのティア。名前がティアを示すティア（derived）はオンの最新に向き、オフの新しい版は `isNew` の候補になること、スイッチを入れるとエイリアスを書かずにティアが移ること、全部オフなら最新をオフのまま返すこと、全プロバイダの 4 tier が並ぶこと、derived のティアへのエイリアスは拒否され保存済みのものは無視されて起動時のずれとして報告されること、Codex のティアは手動のエイリアスで、昇格がスイッチの切れたモデルを ON にすること、未知のプロバイダ / モデルの拒否と解除の結果 |
 | `backfill-tier-routes.test.ts` | seed 時に旧チェーンをシナリオ × レーンのルートへ変換する処理。default / think / longContext を両レーンとも変換して `chainBackfilledAt` を打ち 2 回目は何もしないこと、webSearch / image のリストは変換せず件数をメモに残すこと、すでにルートを持つプロファイルは印だけ付けること、既定プロファイルが先にエイリアスを取り他のプロファイルはそれを通して解決し、その旨をメモに残すこと、チェーンの無いプロファイルはルート無しで印が付く（空のリストと同じく素通しになる）こと |
 | `account-usage-service.test.ts` | アカウントごとの API 換算使用量。いまの週次窓の開始（リセット時刻から窓の長さを引く。Codex は上流の窓の長さを使い、リセットが過ぎていればそこから新しい窓、読めなければ直近 7 日）、サブスクのモデルを同名の有料モデルの価格で換算すること、「価格不明」（null）と「トラフィック無し」（0）を分けること、価格の無いモデルが価格の付いた分を消さないこと、割安度は額と月額の両方が要ること、各アカウントが自分の行しか見ないこと |
 | `access-token-service.test.ts` | トークンの発行・解決・失効。保存は sha256 のみ |
@@ -94,7 +94,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `upstream-error.test.ts` | `PROVIDER_ERR_RE` の逆パースと verbatim 転送 |
 | `route-plan.test.ts` | `buildRoutePlan`（body parse、面解決、transformer 引き当て、gemini はパスのモデルを `body.model` に畳み込むこと）。routed な面ではリストの primary / fallbacks が plan に載ること、quota・health で止まったリストは `exhaustedBehavior='429'` なら各面のエラー封筒で 429 + `Retry-After`（429 マークの期限があればそれ）を返して plan を作らず、`'passthrough'` なら呼び出し側の model で送ること、空のリストと全ルート OFF は `'429'` でも呼び出し側の model で送ること、エイリアス未設定・web_search を運べるルートが無い・プロンプトが入るルートが無いは 400（anthropic / chat / gemini それぞれの封筒）で `'passthrough'` でも緩まないこと、passthrough 面の `deniedTargets` と routed 面がそれを見ないこと |
 | `candidate-chain.test.ts` | `buildFailoverChain` — primary の後ろに selector が解決した fallbacks をその順で並べること（subscription primary が api_key fallback を保つ、同 provider も通る）、重複排除、exhausted 除外と全滅時の順序維持 |
-| `routing-profiles.test.ts` | `/api/routing/profiles{,/{key}}`、`/api/tier-aliases`、`PUT` / `DELETE /api/providers/{name}/tier-aliases/{tier}`。保存したルートが各ルートをエイリアスで解決して読み返せ（モデル・受け付け可否・Web 検索・context window）、未設定のエイリアスは画面を落とさず null で読めること、予約キー `passthrough` の拒否、シナリオ × レーンの形でない body の検証エラー、スイッチの切れたモデルの昇格で ON になりエイリアス一覧に出ること、未知の provider / model と未設定エイリアスの解除が 404、プロファイル一覧が既定を先頭に出すこと |
+| `routing-profiles.test.ts` | `/api/routing/profiles{,/{key}}`、`/api/tier-aliases`、`PUT` / `DELETE /api/providers/{name}/tier-aliases/{tier}`。保存したルートが各ルートを解決して読み返せ（モデル・受け付け可否・Web 検索・context window。オフのモデルしかないティアはオフのまま解決される）、どのモデルにも解決できないティアは画面を落とさず null で読めること、予約キー `passthrough` の拒否、シナリオ × レーンの形でない body の検証エラー、モデルのスイッチを入れるとティアが移り quota snapshot にすぐ載ること、derived のティアへのエイリアスが 409 になること、手動のティアでスイッチの切れたモデルの昇格で ON になりティア一覧に出ること、未知の provider / model と未設定エイリアスの解除が 404、プロファイル一覧が既定を先頭に出すこと |
 | `chain-failover-cooldown.test.ts` | 429 後の枯渇マークと cooldown |
 | `chain-failover-account.test.ts` | 試行がどのサブスクアカウントで走ったか（`attemptAccountOf`）。OAuth transformer が試行のリクエストに刻んだ `subAccountId` が session の最後の解決より優先されること（同じ session の並行リクエストに上書きされないため）、成功した試行はそのアカウントの枯渇マークを外し、刻みが無ければ推測でマークに触らないこと |
 | `openai-models.test.ts` | `GET /v1/models` の envelope と `provider,model` id、単価とコンテキスト長 |
@@ -163,6 +163,8 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 |---|---|
 | `transformer-chain.test.ts` | `apiStyle` × `authMode` → chain の写像。サーバとフロントが**同じ関数**を読むので、この 1 本が両方を守る |
 | `constants.test.ts` | `HOME_DIR` の解決（`RIALTO_HOME_DIR` の優先） |
+| `model-version.test.ts` | モデル id から読むリリースの新旧（`newestFirst`）。バージョンの数字が先に効き、8 桁の日付は同じバージョン同士でしか効かず、日付なしが先、最後は名前で全順序になること |
+| `tier-resolution.test.ts` | `resolveTier`。名前がティアを示すモデルのうちオンの最新に向く、全部オフなら最新をオフで返す、保存済みのエイリアスはそのティアを上書きしない、名前で示されないティアはエイリアスか未設定、画像モデルと `claude-mythos-5` はどのティアにも数えないこと。サーバとプロバイダ画面が同じ関数を読む |
 | `plan-capacity.test.ts` | `planCapacityWeight` の席の重み。Claude は `rate_limit_tier` から Max 5x / 20x を読み、Codex は `plan_type` の `prolite` を 5・`pro` を 20 と数える。Providers 画面の Quota 列とスケジューラのプール予算が同じ関数を読むので、この 1 本が両方を守る |
 | `plan-label.test.ts` | プランの表示名。Claude は `rate_limit_tier` から「Max 5x」/「Max 20x」、基本プランは「Pro」。Codex は `plan_type` の `prolite` を「Pro 5x」、`pro` を「Pro 20x」、基本プランは「Plus」。Activity → Usage がアカウントごとに出す名前 |
 
@@ -215,7 +217,7 @@ context ゲートが効くことも見る — seed しなければ「プロフ�
 変えていない**ので `bun run test` のグロブ（`__tests__/preset`）はそのままで正しい。
 
 「preset」と呼ばれる機能はもう無い（`RoutingPreset` も、Settings → Presets も、
-`src/lib/presets/` も）。経緯は `CLAUDE.md` の `## Presets` にある。
+`src/lib/presets/` も）。`CLAUDE.md` の「Things that are easy to get wrong」も参照。
 
 ## 未カバー領域
 

@@ -12,8 +12,9 @@ each decision, is [scenario-tier-routing.md](../plan/scenario-tier-routing.md) (
 **Routing is by scenario and lane; a route names a provider and a tier, never a model.** A
 request is classified into a scenario (`default` / `think` / `longContext`) and a lane (`agent` /
 `subagent`), and that list says which provider tiers may serve it, top first. The model a tier
-means is one alias per provider, so a new Sonnet moves one pointer and every route that says
-"that provider's sonnet" follows it.
+means is the newest switched-on model on that provider whose name says the tier, so switching a
+new Sonnet on moves every route that says "that provider's sonnet" at once. A tier no model names
+(Codex, an OpenAI key) keeps a hand-set alias instead.
 
 How it got here, because each step explains a piece of the current shape:
 
@@ -42,7 +43,7 @@ In both modes the subagent tag is stripped first and recorded as `RequestLog.isS
 |---|---|---|
 | `RouterPreferenceProfile` | `key` (`live` is the default) | A named profile. `constraints` (JSONB) holds the knobs and the Long context tuner's state below; `chainBackfilledAt` marks the one-shot conversion of its old chain |
 | `TierRoute` | `(profileId, scenario, lane, priority)` | "A request classified into `scenario` on `lane` may be served by `provider`'s `targetTier`", in `priority` order (1 first). `enabled` is a soft toggle that keeps the route's place. A provider's tier appears at most once per list (`@@unique([profileId, scenario, lane, providerId, targetTier])`): a second copy would resolve to the same model and could only ever be skipped |
-| `ProviderTierAlias` | `(providerId, tier)` | "`tier` on this provider is `model`." The one pointer a model release moves |
+| `ProviderTierAlias` | `(providerId, tier)` | "`tier` on this provider is `model`." Read only for a tier no model on the provider names (a manual tier); on a tier some model names, a stored row is dormant — kept for a rollback, ignored by routing |
 | `InboundSurfaceConfig.profileKey` / `AccessToken.profileKey` | — | Which profile a surface, or one client, routes through |
 
 - **Scenarios** are `default` / `think` / `longContext`; **lanes** are `agent` / `subagent`;
@@ -56,10 +57,11 @@ In both modes the subagent tag is stripped first and recorded as `RequestLog.isS
   a list of its own (gate 3 below).
 - **The model name does not choose the scenario.** Its tier only limits forbidden escalation destinations. The list says which provider tiers serve the
   scenario; `body.model` is only what goes out when nothing is routed.
-- **Cascades.** Deleting a model unsets the aliases that named it; deleting a provider removes its
-  aliases and every route that named it. The apply layer counts both before the delete and returns
-  a warning naming the provider tiers, or the `profile/scenario/lane` lists, that lost something
-  (`src/services/config/apply/tier-route-cascade.ts`).
+- **Cascades.** Deleting a model unsets a manual alias that named it and moves a derived tier it
+  served on to the next newest switched-on model its name says; deleting a provider removes its
+  aliases and every route that named it. The apply layer works both out before the delete and
+  returns a warning naming the provider tiers that were unset or moved (and where to), or the
+  `profile/scenario/lane` lists that lost something (`src/services/config/apply/tier-route-cascade.ts`).
 
 ## One request
 
@@ -75,7 +77,8 @@ In both modes the subagent tag is stripped first and recorded as `RequestLog.isS
    and whether the request carries a web-search tool. The token count comes from
    `src/llms/tokenizers/`.
 4. **Profile.** The token's `profileKey` wins, else the surface's, else `live`.
-5. **Load.** `loadTierProfileView` reads the profile's routes and every alias in one pass and
+5. **Load.** `loadTierProfileView` reads the profile's routes and the tiers of the providers they
+   name in one pass (`loadResolvedTiers`, [Tiers and model releases](#tiers-and-model-releases)) and
    resolves each route to its model, whether that model and its provider are both switched on,
    whether it can run web search, and its `Model.contextWindow`. It also computes the Long context
    threshold in effect.
@@ -83,7 +86,7 @@ In both modes the subagent tag is stripped first and recorded as `RequestLog.isS
    `longContext`; otherwise thinking on → `think`; otherwise `default`. Long input wins because a
    long prompt is Long context whether or not it asks to think.
 7. **Fall back to Default.** When the chosen `think` or `longContext` list has no usable route in
-   the lane — none that is switched on, has its alias set and reaches a model that is on — the
+   the lane — none that is switched on, resolves to a model and reaches one that is on — the
    request is classified `default` in the same lane instead. An unconfigured list is "no opinion",
    so the lane's everyday list serves it. The fallback reads configuration only: a Think list whose
    routes are all out of quota answers as exhausted (below); it does not borrow Default's routes.
@@ -115,7 +118,7 @@ surface. Absence is never an opt-in, even though some vendors reason by default.
 | # | Gate | Skip reason | Reads | Why it is here |
 |---|---|---|---|---|
 | 1 | The route and its target are switched on | `disabled` | `TierRoute.enabled`, `Model.enabled && Provider.enabled` | A switched-off target is never dispatched on any path; the registry the walker resolves against holds enabled models only |
-| 2 | The provider has an alias for the route's tier | `alias_unset` | `ProviderTierAlias` | A route to "that provider's opus" means nothing until someone says which model that is |
+| 2 | The route's tier resolves to a model | `alias_unset` | the provider's models, then `ProviderTierAlias` | A route to "that provider's opus" means nothing while no model on it is named opus and no alias says which model that is |
 | 3 | It can run the request's web-search tool | `no_web_search` | `hostsWebSearch` (`src/shared/transformer-chain.ts`) | Anthropic sends `web_search` as-is, Responses maps it to the hosted tool, Gemini to `googleSearch`; Chat Completions has no equivalent. Decided on the same apiStyle the transformer chain is built from, so the skip cannot drift from what runs. This is what replaced the `webSearch` scenario |
 | 4 | Its context window holds the prompt | `context_too_small` | `Model.contextWindow` vs the token count | A prompt too big for one route goes to the next that can hold it, instead of to an upstream that would refuse it. An unknown window is trusted |
 | 5 | It is not out of quota | `exhausted` | Exhaustion marks (`failover-state`) and the scheduler snapshot's `targets` | Held when a 429 marked the model or its provider, or the snapshot reads it spent, or used at or past `quotaSkipPct`. A target the snapshot has never seen (api_key providers, a cold start) is not held on quota. See [The quota snapshot](#the-quota-snapshot) |
@@ -228,7 +231,7 @@ automatic base, and the routing scheduler tunes it within a range below that bas
 context window of the model the first usable `default` / `agent` route reaches — the first one
 that is on, resolves to a model that is on, and has a known window — or 128 000
 (`DEFAULT_LONG_CONTEXT_THRESHOLD`) when none does. The 30 % left over is room for the reply. The
-base is recomputed on every read, so it follows the Default alias: point `sonnet` at a model with a
+base is recomputed on every read, so it follows the Default tier: switch on a newer Sonnet with a
 bigger window and the threshold moves with it.
 
 **The value in effect** is the tuned value clamped to `[30 000, base]` (`LONG_CONTEXT_FLOOR`), or
@@ -316,7 +319,7 @@ the vendor's reading.
 **When it is published.** A tick every `ROUTING_SCHEDULER_INTERVAL_MS` (default 5 minutes,
 minimum 60 s; the first one an interval after boot), plus `republishRoutingSnapshot()` whenever
 fresh quota has been written — the Providers screens' Refresh, a newly connected account, a spent
-Codex reset, an alias promotion that switched a model on. Two ticks never overlap: a republish
+Codex reset, a model switched on or off, an alias promotion that switched a model on. Two ticks never overlap: a republish
 queues behind a running tick, because the running one read `SubAccountQuota` before the write. A
 failed tick keeps the previous snapshot. Timer ticks also run the Long context tuner.
 `GET /api/routing-scheduler-state` serves the snapshot, `projectedPct` included.
@@ -340,32 +343,40 @@ them. The lifting on Refresh is `releaseRecoveredMarks` in
 `src/services/subscription-refresh-service.ts`: a reset spent in the vendor's own app used to leave
 the account behind its peers until the original reset time, days away on a weekly window.
 
-## Aliases and model releases
+## Tiers and model releases
 
-`ProviderTierAlias` is edited on the provider's page, where the model table and the Refresh that
-discovers new models already are; it is also a property of the provider across every profile.
+A route names a provider and a tier; `src/shared/tier-resolution.ts` says which model that is, and
+the server (`loadResolvedTiers` in `src/services/tier-alias-service.ts`) and the provider page run
+the same function, so the page previews a staged switch exactly as routing will read it after Save.
 
-- **Presets alias themselves.** When a Claude subscription provider's models are created — on adding
-  the provider (same transaction) and on a catalog refresh — `ensurePresetAliases` points each unset
-  tier at the first model of the preset's `defaultEnabledModels` whose name says that tier. Codex
-  names no Claude family, so its aliases are the operator's to set. An existing alias is never
-  touched.
-- **A release is never promoted automatically.** A catalog refresh adds the new model — switched off
-  on a subscription provider unless the preset lists it, on for api_key providers unless deprecated or
-  legacy — and `GET /api/tier-aliases` lists it as a candidate for the tier its name says, flagged
-  `isNew` when it appeared after the alias was last set. Pointing the alias at it is the operator's
-  call, because a new model's price, entitlement and behaviour are what someone should look at
-  before every Sonnet request lands on it.
-- **Promoting** is choosing the model in the alias picker and saving the page:
-  `PUT /api/providers/{name}/tier-aliases/{tier}` sets the alias and switches the model on in one
-  transaction; when that switch flipped, it also mirrors `Providers` to disk, drops the cached
-  LLM context and republishes the quota snapshot, so the next request already reaches the model
-  and is judged on its accounts. The picker offers every model of the provider, not only the
-  name-matched candidates — otherwise a Codex or OpenAI model could never be aliased.
-- **Unsetting** (`DELETE …/tier-aliases/{tier}`) leaves routes naming that tier skipped as
-  `alias_unset` until one is set again. A Think or Long context list left with nothing usable falls
-  back to Default; a Default list whose switched-on routes all lack an alias answers 400.
-- **The alias moves the Long context base too** when it is the one the first usable
+- **A tier some model names is derived.** The provider's models whose name says the tier (`tierOf`,
+  `src/shared/model-tier.ts`: `fable` / `opus` / `sonnet` / `haiku` by substring; Codex image models
+  never count) are ordered newest first by the version in the id (`src/shared/model-version.ts`:
+  `claude-sonnet-5-5` › `claude-sonnet-5` › `claude-sonnet-4-6`; an 8-digit snapshot date only
+  orders ids whose numbers tie, and an undated id comes first). The tier routes to the first of
+  those that is switched on. With none on, it resolves to the newest one, switched off, and gate 1
+  skips it.
+- **Nothing assigns a model but the switch.** No model list ships with Rialto: which models a
+  subscription has comes from the vendor (the Claude Code catalog, the Codex account's list), and
+  every model a refresh or a connect creates lands switched off, on every provider
+  (`buildCreateRow` in `src/services/model-sync-service.ts`). A release is offered — the provider
+  page counts it as "newer" on its tier and marks it in the model table — and routed only once an
+  operator switches it on after looking at its price and entitlement. Switching a model on or off
+  republishes the quota snapshot at once, like any other write that can move a route.
+- **A tier no model names is manual.** Codex's `gpt-*`, an OpenAI key or Gemini name no Claude
+  family, so the stored `ProviderTierAlias` decides, set in the strip's picker and saved with the
+  page: `PUT /api/providers/{name}/tier-aliases/{tier}` sets it and switches the model on in one
+  transaction, then mirrors `Providers` to disk, drops the cached LLM context and republishes the
+  quota snapshot. The picker offers every model of the provider.
+- **An alias on a derived tier is refused** with 409: the switches decide there. A row an older
+  build stored for such a tier is left in place and ignored, and the boot seed logs each one that
+  names a different model than the tier now follows (`derivedTierDrift`), so an upgrade that moved a
+  route is visible.
+- **Unsetting** (`DELETE …/tier-aliases/{tier}`) leaves routes naming a manual tier skipped as
+  `alias_unset` until one is set again; on a derived tier it only drops a dormant row. A Think or Long
+  context list left with nothing usable falls back to Default; a Default list whose switched-on routes
+  all resolve to nothing answers 400.
+- **The tier moves the Long context base too** when it is the one the first usable
   `default` / `agent` route resolves through: the base is 70 % of that model's window.
 
 ## Editing and reading
@@ -373,10 +384,10 @@ discovers new models already are; it is also a property of the provider across e
 | Endpoint | What it does |
 |---|---|
 | `GET /api/routing/profiles` | Every profile a surface or token can point at — `live` even before it has a row — plus the reserved `passthrough`, flagged as such |
-| `GET /api/routing/profiles/{key}` | The profile's routes per scenario and lane, each resolved through its alias (`model`, `targetEnabled`, `hostsWebSearch`, `contextWindow`, or `null` when unset), its constraints, and `longContextThreshold` — the value in effect |
-| `PUT /api/routing/profiles/{key}` | Whole-profile replacement in one transaction: routes per scenario and lane, and constraints. An unknown provider is dropped and a duplicate provider · tier in one list keeps its first place, both with a warning naming `scenario/lane`; an unset alias is kept and warned about. The tuner's three `longContext*` keys are kept from the database, whatever the body says. `passthrough` is refused (400) |
-| `GET /api/tier-aliases` | Every provider's four tier slots, set or not, with candidates |
-| `PUT` / `DELETE /api/providers/{name}/tier-aliases/{tier}` | Set (promote) / unset one alias |
+| `GET /api/routing/profiles/{key}` | The profile's routes per scenario and lane, each resolved to its model (`model`, `targetEnabled`, `hostsWebSearch`, `contextWindow`, or `null` when the tier resolves to nothing), its constraints, and `longContextThreshold` — the value in effect |
+| `PUT /api/routing/profiles/{key}` | Whole-profile replacement in one transaction: routes per scenario and lane, and constraints. An unknown provider is dropped and a duplicate provider · tier in one list keeps its first place, both with a warning naming `scenario/lane`; a route whose tier resolves to nothing is kept and warned about. The tuner's three `longContext*` keys are kept from the database, whatever the body says. `passthrough` is refused (400) |
+| `GET /api/tier-aliases` | Every provider's four tiers: `mode` (`derived` / `manual`), the model each reaches today and whether it is on, and a derived tier's other named models newest first (`isNew`: newer and switched off) |
+| `PUT` / `DELETE /api/providers/{name}/tier-aliases/{tier}` | Set / unset a manual tier's alias; `PUT` on a derived tier is 409 |
 | `GET /api/routing-scheduler-state` | The quota snapshot, pace included |
 
 The Routing screen ([mocks/routing.html](../../mocks/routing.html) is its spec) picks a surface,
@@ -422,8 +433,8 @@ is not a scenario, so those rows cannot be carried over — re-keys the table by
   for the model when the slot is free. Claims go in rank order — a model whose name says a tier
   before one that does not, an entry that is on with its model and provider on before one that is
   not, then list order (`default/agent` first), priority, a non-deprecated model, the name. **An
-  existing alias is never overwritten** — one another profile claimed, one `ensurePresetAliases` set,
-  or one the operator set in v2.89.0 — and a route that now resolves to a different model than its
+  existing alias is never overwritten** — one another profile claimed, or one the operator set in
+  v2.89.0 — and a route that now resolves to a different model than its
   entry named is noted.
 - **Tierless models** (a `gpt-*` on Codex) are reached through a slot their provider already points
   at them, else the first free one of `sonnet` / `opus` / `haiku` / `fable`, else `sonnet` —
@@ -446,7 +457,9 @@ is not a scenario, so those rows cannot be carried over — re-keys the table by
 A later contract migration drops `RouterPreferenceEntry`, `RoutingWeightChange`, the `ScenarioKey` /
 `RouterPreferenceKind` enums, `Model.manualTier` and `chainBackfilledAt`, together with the backfill
 and its re-run script — once this build has run in production and every profile carries its mark.
-Until then the backfill and the alias candidate list still read `Model.manualTier`.
+Until then the backfill still reads `Model.manualTier`; tier resolution does not (a derived tier is
+what the name says, nothing else). The aliases the backfill claims on a tier some model names are
+dormant: routing follows the switches there.
 
 ## Tests
 
@@ -460,6 +473,7 @@ Until then the backfill and the alias candidate list still read `Model.manualTie
 | `__tests__/services/routing-scheduler/threshold-tuner.test.ts` | `tuneThreshold`: ±20 % by pace, the floor and the base, no change on pace or without a reading, once a day, the rollback of a lowering and not of a raise |
 | `__tests__/services/routing-scheduler/{targets,tick-targets,tick-concurrency}.test.ts` | The per-target reading, which targets are published, and that ticks never overlap |
 | `__tests__/services/plan-tier-routes.test.ts` / `__tests__/db/backfill-tier-routes.test.ts` | The conversion planner, list by list, and its idempotence against the database |
-| `__tests__/db/tier-route-service.test.ts` / `__tests__/db/tier-alias-service.test.ts` / `__tests__/api/routing-profiles.test.ts` | Storage, candidates, promotion and the API |
+| `__tests__/shared/model-version.test.ts` / `__tests__/shared/tier-resolution.test.ts` | The release order read from an id, and derived vs manual resolution |
+| `__tests__/db/tier-route-service.test.ts` / `__tests__/db/tier-alias-service.test.ts` / `__tests__/api/routing-profiles.test.ts` | Storage, a switch moving a tier, the 409 on a derived tier, manual promotion and the API |
 
 The full list is in [testing-map.md](./testing-map.md).
