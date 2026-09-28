@@ -5,6 +5,7 @@ import {
   UpdateModelSuccessResponseSchema
 } from '../../../../../schemas/api/models'
 import { setModelEnabled, setModelReasoningEffort } from '../../../../../services/config'
+import { republishRoutingSnapshot } from '../../../../../services/routing-scheduler'
 import { ValidationErrorResponseSchema, validationErrorHook } from '../../../../zod-response'
 
 export const providerModelRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
@@ -49,6 +50,9 @@ providerModelRoute.openapi(updateModelRoute, async (c) => {
   try {
     if (body.enabled !== undefined) {
       await setModelEnabled(name, model, body.enabled)
+      // The switch can move a tier route (it follows the newest
+      // switched-on model): rebuild the quota snapshot now.
+      await republishRoutingSnapshot()
     }
     if (body.reasoningEffort !== undefined) {
       await setModelReasoningEffort(name, model, body.reasoningEffort)

@@ -34,7 +34,7 @@ import type { CatalogEntrySchema, CatalogModelSchema } from '../schemas/api/cata
 import type { ScrapedPriceEntry } from '../vendors/base'
 import { type ImageModelDetails, imageModelSnapshot, refreshImageModelDetails } from '../vendors/openai/image-models'
 import { getVendorProvider, scrapedVendors } from '../vendors/registry'
-import { claudeCodeModels, refreshClaudeCodeModels } from './claude-code-model-catalog'
+import { claudeCodeModels, ensureClaudeCodeModels, refreshClaudeCodeModels } from './claude-code-model-catalog'
 export type CatalogEntry = z.infer<typeof CatalogEntrySchema>
 export type CatalogModel = z.infer<typeof CatalogModelSchema>
 
@@ -109,7 +109,6 @@ interface CatalogSeed {
   vendor: string
   cli: string | null
   credentialsPath: string | null
-  defaultEnabledModels: string[]
   modelsVendor: string
 }
 
@@ -138,7 +137,6 @@ const seeds = (): CatalogSeed[] => {
       vendor: name,
       cli: null,
       credentialsPath: null,
-      defaultEnabledModels: [],
       modelsVendor: modelsVendorFor(name, 'api_key')
     })
   }
@@ -151,24 +149,24 @@ const seeds = (): CatalogSeed[] => {
       vendor: preset.vendor,
       cli: preset.cli,
       credentialsPath: preset.credentialsPath,
-      defaultEnabledModels: [...preset.defaultEnabledModels],
       modelsVendor: modelsVendorFor(preset.id, 'subscription')
     })
   }
   return out
 }
 
-// Claude Code's published selector supplies candidates beyond the seed;
-// Codex uses its own account-scoped list once a provider is connected.
-// Neither list proves which Claude models a particular account can serve.
+// Which models a subscription has comes from the vendor, never from a
+// list shipped here. Claude Code: its published selector (candidates, not
+// an account's entitlements). Codex: the account's own list, which only
+// exists once a provider is connected (getCatalog below), so before that
+// the entry offers just the image models the Codex image endpoint serves.
 const filterSubscriptionModels = (
   models: CatalogModel[],
   preset: (typeof SUBSCRIPTION_PRESETS)[number]
 ): CatalogModel[] => {
   if (preset.id !== 'codex') {
-    const available = new Set([...preset.availableModels, ...claudeCodeModels()])
     const byName = new Map(models.map((model) => [model.name, model]))
-    return [...available]
+    return claudeCodeModels()
       .map((name): CatalogModel => {
         const priced = byName.get(name)
         return priced === undefined
@@ -186,30 +184,7 @@ const filterSubscriptionModels = (
       })
       .sort((a, b) => a.name.localeCompare(b.name))
   }
-  const byName = new Map(models.map((model) => [model.name, model]))
-  // A price sheet is not a model catalog. In particular, Codex's
-  // advertised chat models need to survive an empty or thin price scrape
-  // just as its image models do; otherwise connecting a new account
-  // creates a provider with image rows only.
-  const listed = preset.availableModels
-    .filter((name) => !CODEX_IMAGE_MODELS.includes(name))
-    .map((name): CatalogModel => {
-      const priced = byName.get(name)
-      return priced === undefined
-        ? {
-            name,
-            inputPer1M: null,
-            outputPer1M: null,
-            cachedInputPer1M: null,
-            contextWindow: null,
-            imagePricing: null,
-            legacy: false,
-            deprecated: isDeprecatedModel(name)
-          }
-        : priced
-    })
   return [
-    ...listed,
     ...CODEX_IMAGE_MODELS.map((name): CatalogModel => {
       const details = imageDetails(name)
       return {
@@ -240,14 +215,14 @@ const buildEntry = (seed: CatalogSeed, enabled: boolean): CatalogEntry => {
     vendor: seed.vendor,
     cli: seed.cli,
     credentialsPath: seed.credentialsPath,
-    defaultEnabledModels: seed.defaultEnabledModels,
     models,
     enabled,
     lastRefreshedAt: lastRefreshedForVendor(seed.modelsVendor)
   }
 }
 
-export async function getCatalog(): Promise<CatalogEntry[]> {
+export async function getCatalog(fetchModels: typeof fetch = fetch): Promise<CatalogEntry[]> {
+  await ensureClaudeCodeModels(fetchModels)
   const prisma = getPrismaClient()
   const providers = await prisma.provider.findMany({
     select: { name: true, models: { select: { name: true, deprecated: true, legacy: true } } }

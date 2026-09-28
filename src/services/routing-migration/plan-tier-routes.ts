@@ -29,13 +29,13 @@
  * note too.
  */
 
-import { tierOf } from '../../llms/router/request-signals'
 import {
   type ModelTier,
   ModelTierSchema,
   type RoutingLane,
   type RoutingScenario
 } from '../../schemas/domain/tier-route'
+import { tierOf } from '../../shared/model-tier'
 
 export interface ChainEntryInput {
   priority: number

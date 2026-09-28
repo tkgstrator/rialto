@@ -15,8 +15,8 @@ import { hidesAsLegacy, type ModelRow, passesShow } from '../../../src/component
 
 const row = (overrides: Partial<ModelRow>): ModelRow => ({
   name: 'gpt-4.1',
-  aliasTiers: [],
-  isNew: false,
+  tiers: [],
+  newer: false,
   effort: null,
   contextWindow: undefined,
   inputPer1M: null,

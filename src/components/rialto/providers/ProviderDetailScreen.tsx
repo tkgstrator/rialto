@@ -34,7 +34,7 @@ import { BusyOverlay } from './BusyOverlay'
 import { accountLabel, disabledModelsOf, enabledCountOf, fmtExpiry, listedModelsOf, providerState } from './derive'
 import { ProviderDetail } from './ProviderDetail'
 import { applyDraft, EMPTY_DRAFT, hasChanges, type ProviderDraft, savePlan } from './provider-draft'
-import { aliasMapOf, aliasRowsOf, applyAliasPicks } from './tier-aliases'
+import { aliasMapOf, aliasRowsOf, applyAliasPicks, tierViewsOf } from './tier-aliases'
 import type { Provider, SubAccountWire } from './types'
 import { type ProvidersData, useProvidersData } from './useProvidersData'
 import { type RefreshScope, useRefresh } from './useRefresh'
@@ -167,12 +167,14 @@ export function ProviderDetailScreen() {
   const subscription = data.subscriptions.get(provider.name)
   const draft = edit !== null && edit.provider === provider.name ? edit.draft : null
   const editing = draft !== null
-  const aliasRows = aliasRowsOf(data.aliases, provider.name)
-  const storedAliases = aliasMapOf(aliasRows)
-  // What the page renders: the provider and its aliases as Save would
-  // leave them.
+  // The manual aliases as stored. A derived tier has none: it follows the
+  // model switches, resolved below the same way the server routes.
+  const storedAliases = aliasMapOf(aliasRowsOf(data.aliases, provider.name))
+  // What the page renders: the provider and its tiers as Save would
+  // leave them, so a switch staged in the table already moves its tier.
   const shown = draft === null ? provider : applyDraft(provider, draft, storedAliases)
   const shownAliases = draft === null ? storedAliases : applyAliasPicks(storedAliases, draft.aliases)
+  const tiers = tierViewsOf(shown, shownAliases)
   const plan = draft === null ? null : savePlan(provider, draft, storedAliases)
   const stage = (change: (current: ProviderDraft) => ProviderDraft) =>
     setEdit((prev) => (prev === null ? prev : { ...prev, draft: change(prev.draft) }))
@@ -283,8 +285,8 @@ export function ProviderDetailScreen() {
           quota={data.quota}
           accounts={data.accounts}
           now={data.now}
-          aliasRows={aliasRows}
-          aliases={shownAliases}
+          tiers={tiers}
+          storedAliases={storedAliases}
           busy={locked}
           editing={editing}
           canSave={plan !== null && hasChanges(plan)}

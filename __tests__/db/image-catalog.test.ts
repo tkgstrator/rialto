@@ -6,29 +6,27 @@ import { CatalogEntrySchema } from '../../src/schemas/api/catalog'
 import { getCatalog } from '../../src/services/catalog-service'
 import { apiStyleForVendor } from '../../src/services/config'
 import { syncConnectedCodexModels } from '../../src/services/model-sync-service'
-import { CODEX_IMAGE_MODELS, SUBSCRIPTION_PRESETS } from '../../src/shared/data/subscriptions'
+import { CODEX_IMAGE_MODELS } from '../../src/shared/data/subscriptions'
 import { HAS_DB, resetDbTables, teardownPrisma } from './helpers'
+
+// The Claude Code catalog is read lazily by getCatalog; these tests are
+// about Codex, so that read is answered offline.
+const offline: typeof fetch = async () => new Response(null, { status: 503 })
 
 describe.skipIf(!HAS_DB)('Codex image catalog', () => {
   afterAll(teardownPrisma)
   beforeEach(resetDbTables)
 
-  test('keeps preset chat models when the price catalog has no matching rows', async () => {
-    const entries = await getCatalog()
-    const codex = entries.find((entry) => entry.name === 'codex')
+  test('before an account connects, Codex offers only its image models, all landing off', async () => {
+    const codex = (await getCatalog(offline)).find((entry) => entry.name === 'codex')
     expect(codex).toBeDefined()
     if (codex === undefined) return
-    const preset = SUBSCRIPTION_PRESETS.find((entry) => entry.id === 'codex')
-    expect(preset).toBeDefined()
+    // Chat models come from the connected account's own list, never from
+    // a list shipped with Rialto.
+    expect(codex.models.map((model) => model.name)).toEqual([...CODEX_IMAGE_MODELS].sort())
     const connected = providerFromCatalog(codex)
-    for (const name of preset === undefined ? [] : preset.availableModels) {
-      const catalogModel = codex.models.find((model) => model.name === name)
-      expect(catalogModel).toBeDefined()
-      if (catalogModel !== undefined && !catalogModel.legacy && !catalogModel.deprecated) {
-        expect(connected.models).toContain(name)
-      }
-    }
-    for (const name of CODEX_IMAGE_MODELS) expect(connected.transformer?._disabledModels).toContain(name)
+    expect(connected.models).toEqual([...CODEX_IMAGE_MODELS].sort())
+    expect(connected.transformer?._disabledModels).toEqual([...CODEX_IMAGE_MODELS].sort())
   })
 
   test('connection discovery persists account models without replacing existing choices', async () => {
@@ -50,13 +48,13 @@ describe.skipIf(!HAS_DB)('Codex image catalog', () => {
     expect(rows).toHaveLength(2)
     expect(rows.find((row) => row.name === 'discovered-model')?.enabled).toBe(false)
     expect(rows.find((row) => row.name === 'existing-model')?.enabled).toBe(true)
-    const codex = (await getCatalog()).find((entry) => entry.name === 'codex')
+    const codex = (await getCatalog(offline)).find((entry) => entry.name === 'codex')
     expect(codex?.models.some((model) => model.name === 'discovered-model')).toBe(true)
     expect(codex?.models.find((model) => model.name === 'discovered-model')?.inputPer1M).toBeNull()
   })
 
   test('includes only curated image ids, with modality pricing instead of an undifferentiated rate', async () => {
-    const entries = await getCatalog()
+    const entries = await getCatalog(offline)
     const codex = entries.find((entry) => entry.name === 'codex')
     expect(codex).toBeDefined()
     expect(CatalogEntrySchema.safeParse(codex).success).toBe(true)
@@ -68,7 +66,6 @@ describe.skipIf(!HAS_DB)('Codex image catalog', () => {
       expect(row?.imagePricing?.imageOutputPer1M).toBe(30)
       expect(row?.inputPer1M).toBeNull()
       expect(row?.outputPer1M).toBeNull()
-      expect(codex?.defaultEnabledModels).not.toContain(name)
     }
     const openai = entries.find((entry) => entry.name === 'openai')
     expect(openai?.models.some((model) => CODEX_IMAGE_MODELS.includes(model.name))).toBe(false)

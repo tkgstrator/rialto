@@ -5,7 +5,7 @@
  * production. All operations below are idempotent so re-runs are no-ops.
  *
  * Empty-first Providers: this seed no longer creates placeholder
- * Provider rows. The Providers page reads the static catalog
+ * Provider rows. The Providers page reads the catalog
  * (VENDOR_DEFAULTS + SUBSCRIPTION_PRESETS + OFFICIAL_VENDOR_PRICES) via
  * /api/catalog and only writes to the Provider / Model tables when the
  * user enables a vendor. The default preference profile ships
@@ -17,6 +17,7 @@
 import { logger } from '../logger'
 import { ensurePreferenceProfile } from '../services/config/seed'
 import { backfillTierRoutes } from '../services/routing-migration/backfill-tier-routes'
+import { derivedTierDrift } from '../services/tier-alias-service'
 
 async function main(): Promise<void> {
   await ensurePreferenceProfile()
@@ -24,6 +25,10 @@ async function main(): Promise<void> {
   // Not caught: a profile that fails to convert must stop the container
   // rather than start it with that profile's routes silently empty.
   await backfillTierRoutes()
+  // A tier some model names routes to the newest switched-on one, not to
+  // its stored alias. Say where that differs, so an upgrade that moved a
+  // route is visible in the boot log.
+  for (const line of await derivedTierDrift()) logger.info(`[tiers] ${line}`)
   logger.info('prisma seed complete')
 }
 

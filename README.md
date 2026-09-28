@@ -11,7 +11,7 @@
 ## ✨ Features
 
 - **Four inbound surfaces** — Anthropic Messages (`/v1/messages`), OpenAI Chat Completions, OpenAI Responses, and Gemini `generateContent`. Everything a surface needs is one descriptor, so all four get the same auth, error envelopes, streaming and request history.
-- **Scenario routing** — each request is classified into a scenario (Default; Think when it asks for thinking; Long context over an automatic, self-tuning threshold) and a lane (the agent, or a subagent), and each profile holds an ordered list of routes per scenario and lane, each naming a provider and a tier on it. Which model that is comes from the provider's *tier alias*, so a new model release moves one alias instead of every route. The first route that can take the request serves it — with routes on track to leave quota unused pulled to the front, and ones on track to run out stepped down — and the rest are the failover list.
+- **Scenario routing** — each request is classified into a scenario (Default; Think when it asks for thinking; Long context over an automatic, self-tuning threshold) and a lane (the agent, or a subagent), and each profile holds an ordered list of routes per scenario and lane, each naming a provider and a tier on it. Which model that is comes from the provider's *tier* — the newest switched-on model whose name says it — so switching on a new release moves every route at once, and nothing moves until you do. The first route that can take the request serves it — with routes on track to leave quota unused pulled to the front, and ones on track to run out stepped down — and the rest are the failover list.
 - **Passthrough** — or let the caller pick: a surface (or a single access token) in passthrough mode sends the caller's own `body.model` upstream untouched.
 - **Failover with account rotation** — a 429 rotates to a peer subscription account first, then walks the rest of the list's routes. The list's order is honoured as written, a subscription route falling back to an api_key route included.
 - **Personas** — append a named system prompt to every routed `/v1/messages` request without touching Claude Code. Manage the library and pick the active one under Settings → Personas.
@@ -32,7 +32,7 @@ The web UI (served on port **3456** by default) gives you full control over ever
 |--------|-------|---------|
 | **Overview** | `/overview` | Spend, subscription quota windows, and requests / errors per inbound surface at a glance |
 | **Routing** | `/routing` | Each surface's routing mode and profile; per scenario (Default / Think / Long context) and lane (Agent / Subagent), the provider · tier routes tried in order, with the Long context threshold in effect; and the targets a passthrough surface may name |
-| **Providers** | `/providers` | Two lists — `/providers/subscriptions` and `/providers/api-keys` — plus `/providers/connect` to add one and `/providers/<name>` for tier aliases, models, prices, context windows, connectivity tests and the read-only derived request shape |
+| **Providers** | `/providers` | Two lists — `/providers/subscriptions` and `/providers/api-keys` — plus `/providers/connect` to add one and `/providers/<name>` for tiers, models, prices, context windows, connectivity tests and the read-only derived request shape |
 | **Access tokens** | `/access-tokens` | Issue, scope, rotate and revoke the tokens clients use on `/v1/*` |
 | **Activity** | `/activity` | Sessions, per-request logs (`/activity/requests`), subscription usage (`/activity/usage`), and server logs (`/activity/logs`) |
 | **Settings** | `/settings` | Server, Access (admin access: Cloudflare Access, and how to get back in if it breaks), Logging, Personas, Advanced (config document, health) |
@@ -187,7 +187,7 @@ Keys an older build wrote for mechanisms that no longer exist are ignored. `Rout
 
 ### Providers, models and routes (database)
 
-Providers, models, tier aliases, each profile's routes and each surface's routing mode live in PostgreSQL and are managed through the web UI (`POST /api/config`, `PUT /api/providers/{name}/tier-aliases/{tier}`, `PUT /api/routing/profiles/{key}`, `POST /api/inbound-surfaces`). The `Providers` key **inside** `config.json` is a one-way mirror written back from the database after each save — editing it by hand has no effect and is overwritten on the next write. Nothing about routing is mirrored to disk any more.
+Providers, models, tiers, each profile's routes and each surface's routing mode live in PostgreSQL and are managed through the web UI (`POST /api/config`, `PUT /api/providers/{name}/tier-aliases/{tier}`, `PUT /api/routing/profiles/{key}`, `POST /api/inbound-surfaces`). The `Providers` key **inside** `config.json` is a one-way mirror written back from the database after each save — editing it by hand has no effect and is overwritten on the next write. Nothing about routing is mirrored to disk any more.
 
 ### Scenario routing and passthrough
 
@@ -198,12 +198,12 @@ Those are the only two things Rialto does with `body.model`.
 - **Long context** when its input is over the [Long context threshold](#the-long-context-threshold); otherwise **Think** when it asks for thinking (Anthropic `thinking` of any type but `disabled`, OpenAI `reasoning_effort` / `reasoning` of anything but `none`, Gemini `thinkingConfig`); otherwise **Default**.
 - The **Subagent** lane when the request carries the [subagent tag](#subagent-tag), the **Agent** lane otherwise.
 
-The model name the caller sent picks nothing. For each scenario and lane the profile holds an ordered list of routes, and each route names a provider and a tier on it (`claude-code · sonnet`); the provider's [tier alias](#tier-aliases) says which model that is today. A Think or Long context list with nothing usable in the lane — no route that is switched on, has its alias set and reaches a model that is on — hands the request to the same lane's Default list.
+The model name the caller sent picks nothing. For each scenario and lane the profile holds an ordered list of routes, and each route names a provider and a tier on it (`claude-code · sonnet`); the provider's [tier](#tiers) says which model that is today. A Think or Long context list with nothing usable in the lane — no route that is switched on, resolves to a model and reaches one that is on — hands the request to the same lane's Default list.
 
 The routes are tried in order, and a route serves only if it passes every gate:
 
 1. the route, its model and its provider are all switched on;
-2. the provider has an alias for the tier the route names;
+2. the tier the route names resolves to a model on the provider;
 3. if the request carries a web-search tool, the model can run it — the Anthropic, OpenAI Responses and Gemini request shapes carry it across, Chat Completions cannot;
 4. the model's context window holds the prompt (an unknown window is allowed);
 5. it is not out of quota: no exhaustion mark from an earlier 429 on that model or its provider, and the routing scheduler's snapshot does not report it spent, or used at or past the profile's `quotaSkipPct` (only subscription targets have a reading);
@@ -229,17 +229,17 @@ The scenario a request was served under — or `passthrough` — is recorded on 
 
 ### The Long context threshold
 
-The input size over which a request is Long context is not something you set. It starts at 70 % of the context window of the model your first usable Default · Agent route reaches — the rest is room for the reply — or 128 000 when that is unknown, so it follows that route's alias. Then, at most once a day, the routing scheduler moves it by 20 % by the pace of your first Long context · Agent route: down when that route is on track to leave quota unused, so more requests reach it, and up when it is on track to run out. It never goes below 30 000, or above that starting value — a request any bigger would not fit the Default model it would be kept on. A lowering the route cannot carry — it runs out within the day — is rolled back. The Routing page shows the value in effect on the Long context row, and `autoTuneLongContext: false` in the profile's constraints stops the tuning; there is no manual value.
+The input size over which a request is Long context is not something you set. It starts at 70 % of the context window of the model your first usable Default · Agent route reaches — the rest is room for the reply — or 128 000 when that is unknown, so it follows that route's tier. Then, at most once a day, the routing scheduler moves it by 20 % by the pace of your first Long context · Agent route: down when that route is on track to leave quota unused, so more requests reach it, and up when it is on track to run out. It never goes below 30 000, or above that starting value — a request any bigger would not fit the Default model it would be kept on. A lowering the route cannot carry — it runs out within the day — is rolled back. The Routing page shows the value in effect on the Long context row, and `autoTuneLongContext: false` in the profile's constraints stops the tuning; there is no manual value.
 
-### Tier aliases
+### Tiers
 
-A route names a provider and a tier, never a model. Which model `claude-code · sonnet` means is that provider's *tier alias*, set in the **Tier aliases** strip on the provider's page — one slot each for `fable`, `opus`, `sonnet` and `haiku`. When a vendor ships a new Sonnet, you move that one alias and every route that names the provider's Sonnet follows it.
+A route names a provider and a tier, never a model. Which model `claude-code · sonnet` means is shown in the **Tiers** strip on the provider's page — one cell each for `fable`, `opus`, `sonnet` and `haiku`.
 
-**An alias never moves by itself.** A catalog Refresh can discover the new model, and the strip then counts it as a candidate ("1 new"), but a new model's price, entitlement and behaviour are for you to look at before every Sonnet request lands on it. Choosing it in the picker and saving the page points the alias at it and switches the model on. The picker offers every model the provider lists, not only the ones whose name says the tier, so a provider whose model names say no Claude family — Codex, OpenAI — can be aliased too.
+**A tier follows the newest switched-on model its name says.** On a Claude provider every model carries the tier its name says (`claude-sonnet-5-5` is a Sonnet), and the tier routes to the newest of those that is switched on. Rialto ships no list of models and never switches one on for you: a catalog Refresh lands a new release switched off, and the strip counts it as "1 newer" while the model table marks it. A new model's price, entitlement and behaviour are for you to look at; switching it on and saving the page is what moves every route that names the provider's Sonnet to it. A freshly connected subscription therefore starts with every model off — switch on the ones your plan serves.
 
-A Claude subscription provider gets its aliases from its preset's default models as soon as its models are created, so a freshly connected Claude subscription routes without a trip to the strip. Codex's model names say no Claude family, so its aliases are yours to set.
+**A tier no model names is set by hand.** Codex's, OpenAI's and Gemini's model names say no Claude family, so on those providers each cell is a picker under Edit, offering every model the provider lists; saving points the tier at the model and switches it on.
 
-A route whose alias is unset is kept (saving only warns) and skipped at request time; on the Routing page a tier with no model behind it cannot be picked. A Think or Long context list left with nothing usable hands its requests to Default; a Default list left like that, with no route held back on quota, refuses them with a 400, as above.
+A route whose tier resolves to nothing is kept (saving only warns) and skipped at request time; on the Routing page such a tier cannot be picked. A Think or Long context list left with nothing usable hands its requests to Default; a Default list left like that, with no route held back on quota, refuses them with a 400, as above.
 
 ### Failover and account rotation
 

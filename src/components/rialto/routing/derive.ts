@@ -178,9 +178,11 @@ export function moveCombination(draft: ScenarioDraft, at: CellAddress, from: num
 /**
  * Why a tier can or cannot be picked in the dialog's second step.
  *
- * `unset`: the provider has no model for it (no alias row, or one naming
- * no model), so a line through it would reach nothing. `taken`: the cell
- * already holds it.
+ * `unset`: the provider has no model for it — no model's name says the
+ * tier and no alias names one — so a line through it would reach nothing.
+ * A tier whose models are all switched off still resolves (to the newest,
+ * off), and stays available: switching one on is what makes it serve.
+ * `taken`: the cell already holds it.
  */
 export type TierAvailability = 'available' | 'unset' | 'taken'
 

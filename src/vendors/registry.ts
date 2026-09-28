@@ -33,9 +33,8 @@ explicitRegistry.set('google', google)
 // price list directly:
 //   - claude-code (Claude Pro / Max via CLI OAuth) → anthropic
 //   - codex      (ChatGPT Plus / Pro via Codex CLI OAuth) → openai
-// The subscription preset's `availableModels` filter still trims the
-// list at catalog render time so users only see models their plan
-// actually serves.
+// Which of those the subscription serves comes from the vendor, not the
+// price list: the Claude Code catalog, and the Codex account's models.
 explicitRegistry.set('claude-code', anthropic)
 explicitRegistry.set('codex', openai)
 

@@ -2,15 +2,19 @@
  * The scenario-route and tier-alias endpoints, against the test database.
  *
  * Pinned: a profile reads back by scenario and lane with each route
- * resolved through its alias (the model, whether it can take traffic, web
- * search, context window) and the Long context threshold in effect; an
- * unset alias reads as null rather than failing the page; a save keeps
- * the threshold tuner's state; the reserved passthrough key is refused;
- * promoting a model switches it on and puts it in the quota snapshot at
- * once; clearing an alias that is not there is a 404.
+ * resolved (the model, whether it can take traffic, web search, context
+ * window) and the Long context threshold in effect; a tier some model
+ * names resolves to the newest switched-on one, or a switched-off one when
+ * none is on; a tier nothing names and no alias sets reads as null rather
+ * than failing the page; a save keeps the threshold tuner's state; the
+ * reserved passthrough key is refused; switching a model on moves its tier
+ * and puts it in the quota snapshot at once; an alias on a named tier is a
+ * 409; promoting on a manual tier switches the model on; clearing an alias
+ * that is not there is a 404.
  */
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
+import { providerModelRoute } from '../../src/api/providers/[name]/models/[model]/route'
 import { providerTierAliasRoute } from '../../src/api/providers/[name]/tier-aliases/[tier]/route'
 import { routingProfileRoute } from '../../src/api/routing/profiles/[key]/route'
 import { routingProfilesRoute } from '../../src/api/routing/profiles/route'
@@ -85,25 +89,25 @@ describe.skipIf(!HAS_DB)('routing profile and tier alias endpoints', () => {
   })
 
   test('a saved map reads back with each route resolved, and an unset alias as null', async () => {
-    const alias = await providerTierAliasRoute.fetch(
-      request('PUT', '/api/providers/claude-code/tier-aliases/sonnet', { model: 'claude-sonnet-5' })
-    )
-    expect(alias.status).toBe(200)
-
     const put = await routingProfileRoute.fetch(
       request(
         'PUT',
         '/api/routing/profiles/live',
         map({
-          default: { agent: [{ provider: 'claude-code', targetTier: 'sonnet', enabled: true }] },
-          think: { subagent: [{ provider: 'claude-code', targetTier: 'opus', enabled: true }] }
+          default: {
+            agent: [{ provider: 'claude-code', targetTier: 'sonnet', enabled: true }],
+            subagent: [{ provider: 'claude-code', targetTier: 'opus', enabled: true }]
+          },
+          think: { subagent: [{ provider: 'claude-code', targetTier: 'haiku', enabled: true }] }
         })
       )
     )
     expect(put.status).toBe(200)
+    // Only haiku warns: no model names it and no alias points anywhere.
+    // Opus resolves — to a switched-off model, which the switch explains.
     expect(await put.json()).toEqual({
       success: true,
-      warnings: ['think/subagent: claude-code has no opus alias yet; the route is skipped until one is set']
+      warnings: ['think/subagent: claude-code has no haiku alias yet; the route is skipped until one is set']
     })
 
     const got = await routingProfileRoute.fetch(request('GET', '/api/routing/profiles/live'))
@@ -116,7 +120,12 @@ describe.skipIf(!HAS_DB)('routing profile and tier alias endpoints', () => {
         resolved: { model: 'claude-sonnet-5', targetEnabled: true, hostsWebSearch: true, contextWindow: 1_000_000 }
       }
     ])
-    expect(body.routes.default.subagent).toEqual([])
+    expect(body.routes.default.subagent[0].resolved).toEqual({
+      model: 'claude-opus-5',
+      targetEnabled: false,
+      hostsWebSearch: true,
+      contextWindow: null
+    })
     expect(body.routes.think.subagent[0].resolved).toBeNull()
     expect(body.routes.longContext).toEqual({ agent: [], subagent: [] })
     // 70% of the Default · agent model's million-token window.
@@ -219,19 +228,51 @@ describe.skipIf(!HAS_DB)('routing profile and tier alias endpoints', () => {
     expect(body.routes.default).toEqual({ agent: [], subagent: [] })
   })
 
-  test('promoting a model that is off switches it on; the alias list shows it', async () => {
-    const res = await providerTierAliasRoute.fetch(
-      request('PUT', '/api/providers/claude-code/tier-aliases/opus', { model: 'claude-opus-5' })
+  test('switching a model on moves its tier at once; the tier list shows it', async () => {
+    const before = await (await tierAliasesRoute.fetch(request('GET', '/api/tier-aliases'))).json()
+    expect(before.find((a: { tier: string }) => a.tier === 'opus')).toMatchObject({
+      mode: 'derived',
+      model: 'claude-opus-5',
+      modelEnabled: false
+    })
+    const res = await providerModelRoute.fetch(
+      request('PATCH', '/api/providers/claude-code/models/claude-opus-5', { enabled: true })
     )
-    expect(await res.json()).toEqual({ enabledModel: true })
-    const model = await getPrismaClient().model.findFirst({ where: { name: 'claude-opus-5' } })
-    expect(model?.enabled).toBe(true)
+    expect(res.status).toBe(200)
     const list = await (await tierAliasesRoute.fetch(request('GET', '/api/tier-aliases'))).json()
-    expect(list.find((a: { tier: string }) => a.tier === 'opus')).toMatchObject({ model: 'claude-opus-5' })
-    // The promoted model is a new quota target; the snapshot is republished
-    // rather than left for the next tick.
+    expect(list.find((a: { tier: string }) => a.tier === 'opus')).toMatchObject({
+      mode: 'derived',
+      model: 'claude-opus-5',
+      modelEnabled: true
+    })
+    // The model is a new quota target; the snapshot is republished rather
+    // than left for the next tick.
     const snapshot = getRoutingSnapshot()
     expect(snapshot === null ? [] : [...snapshot.targets.keys()]).toContain('claude-code,claude-opus-5')
+  })
+
+  test('an alias on a tier some model names is refused', async () => {
+    const res = await providerTierAliasRoute.fetch(
+      request('PUT', '/api/providers/claude-code/tier-aliases/sonnet', { model: 'claude-sonnet-5' })
+    )
+    expect(res.status).toBe(409)
+    expect(await getPrismaClient().providerTierAlias.count()).toBe(0)
+  })
+
+  test('promoting a model that is off on a manual tier switches it on', async () => {
+    const prisma = getPrismaClient()
+    const codex = await prisma.provider.create({
+      data: { name: 'codex', apiBaseUrl: 'https://chatgpt.com/backend-api/codex', authMode: 'subscription' }
+    })
+    await prisma.model.create({ data: { providerId: codex.id, name: 'gpt-5.5', enabled: false } })
+    const res = await providerTierAliasRoute.fetch(
+      request('PUT', '/api/providers/codex/tier-aliases/sonnet', { model: 'gpt-5.5' })
+    )
+    expect(await res.json()).toEqual({ enabledModel: true })
+    const list = await (await tierAliasesRoute.fetch(request('GET', '/api/tier-aliases'))).json()
+    expect(
+      list.find((a: { provider: string; tier: string }) => a.provider === 'codex' && a.tier === 'sonnet')
+    ).toMatchObject({ mode: 'manual', model: 'gpt-5.5', modelEnabled: true })
   })
 
   test('an unknown provider or model is a 404, and so is clearing an alias that is not set', async () => {
@@ -239,8 +280,10 @@ describe.skipIf(!HAS_DB)('routing profile and tier alias endpoints', () => {
       request('PUT', '/api/providers/ghost/tier-aliases/opus', { model: 'claude-opus-5' })
     )
     expect(provider.status).toBe(404)
+    // Nothing on claude-code names haiku, so the tier is manual and the
+    // model is looked up.
     const model = await providerTierAliasRoute.fetch(
-      request('PUT', '/api/providers/claude-code/tier-aliases/opus', { model: 'claude-opus-9' })
+      request('PUT', '/api/providers/claude-code/tier-aliases/haiku', { model: 'claude-haiku-9' })
     )
     expect(model.status).toBe(404)
     const cleared = await providerTierAliasRoute.fetch(

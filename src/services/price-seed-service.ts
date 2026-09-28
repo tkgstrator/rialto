@@ -23,7 +23,7 @@ import { AuthMode, type Prisma, type PrismaClient } from '../generated/prisma/cl
 import { logger } from '../logger'
 import type { PriceSeedOutcomeSchema } from '../schemas/api/price'
 import { apiStyleForVendor, modelApiStyleOverride } from './config'
-import { aliasCascadeWarning } from './config/apply/tier-route-cascade'
+import { tierCascadeWarning } from './config/apply/tier-route-cascade'
 
 const OFFICIAL_VENDORS = ['openai', 'anthropic', 'google'] as const
 type OfficialVendor = (typeof OFFICIAL_VENDORS)[number]
@@ -37,7 +37,7 @@ type ProviderWithModels = NonNullable<Awaited<ReturnType<Tx['provider']['findUni
 }
 
 // Find or recreate the Provider row for a first-party vendor. A missing
-// row means the user removed it or the DB pre-dates ensureSeedProviders;
+// row means the user removed it or the DB pre-dates provider seeding;
 // either way we reinstate it as api_key with no key set so the catalog
 // stays seeded.
 const ensureProviderRow = async (tx: Tx, vendor: OfficialVendor): Promise<ProviderWithModels> => {
@@ -62,14 +62,15 @@ const ensureProviderRow = async (tx: Tx, vendor: OfficialVendor): Promise<Provid
   })
 }
 
-// Delete model rows the scrape no longer lists. A tier alias naming one
-// is unset with it; there is no request to attach a warning to
-// here, so the count goes to the log instead.
+// Delete model rows the scrape no longer lists. A tier routed to one is
+// unset or moves on with it; there is no request to attach a warning to
+// here, so it goes to the log instead.
 const deleteStaleModels = async (tx: Tx, providerId: string, stale: string[]): Promise<number> => {
   if (stale.length === 0) return 0
-  const cascade = await aliasCascadeWarning(
+  const cascade = await tierCascadeWarning(
     tx,
-    { providerId, name: { in: stale } },
+    providerId,
+    stale,
     `model(s) the price scrape no longer lists (${stale.join(', ')})`
   )
   if (cascade !== null) logger.warn({ providerId, stale }, `[price-seed] ${cascade}`)
@@ -113,7 +114,9 @@ const upsertScrapedModels = async (
           providerId,
           name: id,
           ...data,
-          enabled: !(data.deprecated || data.legacy)
+          // Off, like every row a refresh creates: a new model must not
+          // move a tier route before the operator switches it on.
+          enabled: false
         }
       })
       counters.created += 1

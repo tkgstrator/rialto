@@ -11,7 +11,7 @@
 ## ✨ 功能
 
 - **四个入口面（inbound surface）** — Anthropic Messages（`/v1/messages`）、OpenAI Chat Completions、OpenAI Responses 以及 Gemini `generateContent`。一个入口面所需的全部知识都集中在一个描述符里，因此四个面共享同一套认证、错误信封、流式传输与请求历史。
-- **按场景路由** — 每个请求被归入一个场景（Default；要求思考时为 Think；输入超过自动调整的阈值时为 Long context）和一个通道（主代理或子代理），路由配置为每个场景和通道各持有一组有序的路线，每条路线点名一个提供商及其上的一个层级。它对应哪个模型由提供商的*层级别名*决定，因此新模型发布时只需挪动一个别名，而不必改动每条路线。第一条能接下请求的路线负责处理——预计会剩下配额的路线被提到前面，预计会用尽的路线被放到后面——其余构成兜底列表。
+- **按场景路由** — 每个请求被归入一个场景（Default；要求思考时为 Think；输入超过自动调整的阈值时为 Long context）和一个通道（主代理或子代理），路由配置为每个场景和通道各持有一组有序的路线，每条路线点名一个提供商及其上的一个层级。它对应哪个模型由提供商的*层级*决定（名称表明该层级的模型中已开启的最新一个），因此开启新模型时所有路线会一起移过去，在你开启之前什么都不会变。第一条能接下请求的路线负责处理——预计会剩下配额的路线被提到前面，预计会用尽的路线被放到后面——其余构成兜底列表。
 - **直通（passthrough）** — 或者让调用方自己选：处于 passthrough 模式的入口面（或单个访问令牌）会把调用方自己的 `body.model` 原样送往上游。
 - **带账户轮换的故障切换** — 收到 429 时先轮换到对等的订阅账户，账户耗尽后再继续遍历该列表其余的路线。列表的顺序按你写的执行，包括订阅型路线落到 api_key 路线。
 - **人格** — 在不修改 Claude Code 的前提下，为每个走路由的 `/v1/messages` 请求追加一段命名的系统提示。人格库的管理和当前人格的选择都在 Settings → Personas。
@@ -32,7 +32,7 @@ Web 界面（默认在端口 **3456** 提供服务）让你全面掌控网关的
 |------|------|------|
 | **Overview** | `/overview` | 一览支出、订阅配额窗口，以及每个入口面的请求数 / 错误数 |
 | **Routing** | `/routing` | 每个入口面的路由模式与路由配置；按场景（Default / Think / Long context）和通道（Agent / Subagent）依次尝试的提供商 · 层级路线，以及当前生效的 Long context 阈值；还有直通入口面允许点名的目标 |
-| **Providers** | `/providers` | 两个列表——`/providers/subscriptions` 与 `/providers/api-keys`——外加用于添加的 `/providers/connect`，以及查看层级别名、模型、价格、上下文窗口、连接测试和只读推导请求形状的 `/providers/<name>` |
+| **Providers** | `/providers` | 两个列表——`/providers/subscriptions` 与 `/providers/api-keys`——外加用于添加的 `/providers/connect`，以及查看层级、模型、价格、上下文窗口、连接测试和只读推导请求形状的 `/providers/<name>` |
 | **Access tokens** | `/access-tokens` | 签发、限定范围、轮换和吊销客户端在 `/v1/*` 上使用的令牌 |
 | **Activity** | `/activity` | 会话、逐请求日志（`/activity/requests`）、订阅用量（`/activity/usage`）与服务器日志（`/activity/logs`）|
 | **Settings** | `/settings` | Server、Access（管理访问：Cloudflare Access，以及它出故障时如何重新进入）、Logging、Personas、Advanced（配置文档、健康状态）|
@@ -187,7 +187,7 @@ Rialto 不只是 Claude Code 的代理。入口处接收四种线路格式，每
 
 ### 提供商、模型与路线（数据库）
 
-提供商、模型、层级别名、每个路由配置的路线以及每个入口面的路由模式存放在 PostgreSQL 中，通过 Web 界面（`POST /api/config`、`PUT /api/providers/{name}/tier-aliases/{tier}`、`PUT /api/routing/profiles/{key}`、`POST /api/inbound-surfaces`）管理。`config.json` **内部**的 `Providers` 键是每次保存后从数据库回写的单向镜像——手工修改不会产生任何效果，并会在下一次写入时被覆盖。路由相关的内容不再镜像到磁盘。
+提供商、模型、层级、每个路由配置的路线以及每个入口面的路由模式存放在 PostgreSQL 中，通过 Web 界面（`POST /api/config`、`PUT /api/providers/{name}/tier-aliases/{tier}`、`PUT /api/routing/profiles/{key}`、`POST /api/inbound-surfaces`）管理。`config.json` **内部**的 `Providers` 键是每次保存后从数据库回写的单向镜像——手工修改不会产生任何效果，并会在下一次写入时被覆盖。路由相关的内容不再镜像到磁盘。
 
 ### 按场景路由与直通
 
@@ -198,12 +198,12 @@ Rialto 不只是 Claude Code 的代理。入口处接收四种线路格式，每
 - 输入超过 [Long context 阈值](#long-context-阈值)时为 **Long context**；否则请求要求思考时为 **Think**（Anthropic 的 `thinking` 只要不是 `disabled`，OpenAI 的 `reasoning_effort` / `reasoning` 只要不是 `none`，Gemini 的 `thinkingConfig`）；两者都不是则为 **Default**。
 - 请求带有[子代理标签](#子代理标签)时走 **Subagent** 通道，否则走 **Agent** 通道。
 
-调用方发送的模型名不决定任何事。路由配置为每个场景和通道各持有一组有序的路线，每条路线点名一个提供商及其上的一个层级（`claude-code · sonnet`）；它此刻对应哪个模型，由该提供商的[层级别名](#层级别名)决定。Think 或 Long context 的列表在该通道上若没有任何可用路线——已启用、别名已设置、且到达的模型已启用——就交给同一通道的 Default 列表处理。
+调用方发送的模型名不决定任何事。路由配置为每个场景和通道各持有一组有序的路线，每条路线点名一个提供商及其上的一个层级（`claude-code · sonnet`）；它此刻对应哪个模型，由该提供商的[层级](#层级)决定。Think 或 Long context 的列表在该通道上若没有任何可用路线——已启用、能解析到模型、且到达的模型已启用——就交给同一通道的 Default 列表处理。
 
 路线按顺序尝试，只有通过全部门槛的路线才能处理请求：
 
 1. 路线本身、它的模型和提供商都已启用；
-2. 该提供商为路线所点名的层级设置了别名；
+2. 路线所点名的层级能在该提供商上解析到模型；
 3. 若请求携带网页搜索工具，模型必须能执行它——Anthropic、OpenAI Responses 与 Gemini 的请求形状能承载它，Chat Completions 不能；
 4. 模型的上下文窗口装得下这段提示（窗口未知则放行）；
 5. 配额未耗尽：没有此前 429 留在该模型或其提供商上的耗尽标记，且路由调度器的快照没有报告它已用尽、或已用量达到配置的 `quotaSkipPct`（只有订阅型目标才有读数）；
@@ -215,7 +215,7 @@ Rialto 不只是 Claude Code 的代理。入口处接收四种线路格式，每
 |---|---|
 | 该通道的 Default 列表没有路线，或所有路线或其目标都已关闭 | 调用方自己的 `body.model` 按原样送出。无论 `exhaustedBehavior` 是什么，**永远不会返回 429**——未配置的列表是「没有意见」 |
 | 至少有一条路线因配额或错误率被拦下 | 按 `exhaustedBehavior`：`429`（默认）不触碰任何上游，返回 `rate_limit_error` 和 `Retry-After` 头——距被拦下的路线中最早恢复者的秒数（取其 429 标记的截止时间，否则取快照中的重置时间；都未知时为 30）；`passthrough` 则改为发送调用方自己的 `body.model`，且没有兜底。因配额被拦下的 Think 或 Long context 列表不会借用 Default 的路线 |
-| 没有路线因配额被拦下，但没有一条路线能接下*这个*请求——别名未设置、不支持网页搜索、提示过大 | 以该入口面的错误信封返回 **400**（`invalid_request_error`，Gemini 面为 `INVALID_ARGUMENT`）。等待也改变不了什么，所以不伪装成 429 |
+| 没有路线因配额被拦下，但没有一条路线能接下*这个*请求——层级无法解析、不支持网页搜索、提示过大 | 以该入口面的错误信封返回 **400**（`invalid_request_error`，Gemini 面为 `INVALID_ARGUMENT`）。等待也改变不了什么，所以不伪装成 429 |
 
 路由配置无法加载、或路由因其他原因失败时，调用方自己的模型按原样送出。Rialto 从不凭空编造目标，它只会把 `body.model` 替换成某条路线的模型。
 
@@ -229,17 +229,17 @@ Rialto 不只是 Claude Code 的代理。入口处接收四种线路格式，每
 
 ### Long context 阈值
 
-把请求视为 Long context 的输入大小不由你设定。它的起点是 Default · Agent 中第一条可用路线所到达模型的上下文窗口的 70 %（剩下的留给回复），未知时为 128 000——因此它跟随那条路线的别名。此后路由调度器每天最多一次，按 Long context · Agent 第一条路线的节奏把它调整 20 %：那条路线预计会剩下配额时调低，让更多请求到达它；预计会用尽时调高。它不会低于 30 000，也不会高于起点——更大的请求装不进它原本会留在的 Default 模型。那条路线承受不住的调低——当天就用尽了——会被撤回。当前生效的值显示在 Routing 页面的 Long context 行上；在路由配置的约束里设 `autoTuneLongContext: false` 可以停止调整，但没有手工指定数值的办法。
+把请求视为 Long context 的输入大小不由你设定。它的起点是 Default · Agent 中第一条可用路线所到达模型的上下文窗口的 70 %（剩下的留给回复），未知时为 128 000——因此它跟随那条路线的层级。此后路由调度器每天最多一次，按 Long context · Agent 第一条路线的节奏把它调整 20 %：那条路线预计会剩下配额时调低，让更多请求到达它；预计会用尽时调高。它不会低于 30 000，也不会高于起点——更大的请求装不进它原本会留在的 Default 模型。那条路线承受不住的调低——当天就用尽了——会被撤回。当前生效的值显示在 Routing 页面的 Long context 行上；在路由配置的约束里设 `autoTuneLongContext: false` 可以停止调整，但没有手工指定数值的办法。
 
-### 层级别名
+### 层级
 
-路线点名的是提供商和层级，而不是模型。`claude-code · sonnet` 指哪个模型，由该提供商的*层级别名*决定，在提供商页面的 **Tier aliases** 栏里为 `fable`、`opus`、`sonnet`、`haiku` 各设一个。厂商发布新的 Sonnet 时，只需挪动这一个别名，所有指向该提供商 Sonnet 的路线都会随之改变。
+路线点名的是提供商和层级，而不是模型。`claude-code · sonnet` 指哪个模型，显示在提供商页面的 **Tiers** 栏里，`fable`、`opus`、`sonnet`、`haiku` 各占一格。
 
-**别名永远不会自己移动。** 目录的 Refresh 可以发现新模型，这一栏也会把它计为候选（「1 new」），但新模型的价格、使用资格和行为，应当在所有 Sonnet 请求落到它上面之前由人来确认。在选择器里选中它并保存页面，别名就会指向它，同时该模型被启用。选择器列出的是提供商的全部模型，而不只是名字表明该层级的那些，因此模型名不带 Claude 系列的提供商——Codex、OpenAI——同样可以设置别名。
+**层级指向名称表明该层级的模型中已开启的最新一个。** 在 Claude 提供商上，每个模型都带有其名称所表明的层级（`claude-sonnet-5-5` 是 Sonnet），层级会路由到其中已开启的最新模型。Rialto 不附带任何模型列表，也不会替你开启模型：目录的 Refresh 会以关闭状态添加新版本，这一栏把它计为「1 newer」，模型列表中也会加上标记。新模型的价格、使用资格和行为由你自己确认；开启它并保存页面后，所有指向该提供商 Sonnet 的路线都会移到它上面。因此刚连接的订阅会以所有模型关闭的状态开始——请开启你的套餐可用的模型。
 
-Claude 订阅型提供商在其模型创建时，会依照预设的默认模型自动获得别名，因此刚连接的 Claude 订阅即可直接路由。Codex 的模型名不带 Claude 系列，其别名需要你自己设置。
+**没有模型名称表明的层级由手动设置。** Codex、OpenAI、Gemini 的模型名不带 Claude 系列，因此在这些提供商上，每一格在编辑时都是选择器，列出提供商的全部模型；保存后层级指向该模型，并启用该模型。
 
-别名未设置的路线会被保留（保存时只会给出警告），但在请求时会被跳过；在 Routing 页面上，没有模型的层级无法选择。若因此 Think 或 Long context 的列表已没有可用路线，就交给 Default；若 Default 变成这样，且没有路线因配额被拦下，请求就会如上所述以 400 拒绝。
+层级无法解析到任何模型的路线会被保留（保存时只会给出警告），但在请求时会被跳过；在 Routing 页面上，这样的层级无法选择。若因此 Think 或 Long context 的列表已没有可用路线，就交给 Default；若 Default 变成这样，且没有路线因配额被拦下，请求就会如上所述以 400 拒绝。
 
 ### 故障切换与账户轮换
 

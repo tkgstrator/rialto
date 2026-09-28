@@ -236,7 +236,7 @@ score = (100 - 当該 weekly 窓の使用率%) / 窓のリセットまでの残�
 
 **前提**
 
-| Provider | auth_mode | hosts | ティアエイリアス | sub-accounts |
+| Provider | auth_mode | hosts（オン） | ティア（オンの最新） | sub-accounts |
 |----------|-----------|-------|------------------|--------------|
 | `claude-code` | subscription | claude-sonnet-4-6, claude-opus-4-8 | sonnet → claude-sonnet-4-6、opus → claude-opus-4-8 | A1, A2, A3 |
 | `gemini` | api_key | gemini-2.5-pro | sonnet → gemini-2.5-pro | – |
@@ -424,7 +424,7 @@ sequenceDiagram
 | 「Haiku を頼めば Haiku が来る」 | 来るとは限らない。routed な面ではモデル名は行き先を選ばず、行き先はシナリオ・レーンのリストに書いた provider · tier で決まる。サブエージェントに Haiku を使わせたいなら、subagent レーンのリストに `claude-code · haiku` を書く |
 | 「このペースだと尽きそうなルートは 429 になる」 | ならない。見込みが 100 % を超えたルートはリストの末尾へ下がるだけで、下に書いたルートが先に使われる。全ルートが超過ならリストの順のまま。止めるのは quota ゲート（使い切り、または `quotaSkipPct` 以上）だけ |
 | 「Long context のしきい値は画面か API で決める」 | 決められない。基準値は default / agent の先頭ルートのモデルのコンテキスト長の 70 % で、scheduler がペースを見て 1 日 1 回まで ±20 % 動かす。保存は tuner の値を DB から引き継ぐので、PUT の body に書いても無視される。止めるだけなら `constraints.autoTuneLongContext = false` |
-| 「新しいモデルが出たらルートを張り替える」 | 張り替えるのはプロバイダのティアエイリアス 1 行だけ。ルートはプロバイダとティアを指し、モデルを指さない。エイリアスは自動では動かない — Refresh は候補を示すだけ |
+| 「新しいモデルが出たらルートを張り替える」 | 張り替えない。ルートはプロバイダとティアを指し、モデルを指さない。名前がティアを示すモデルのうちオンの最新にティアが向くので、新モデルのスイッチを入れればルートが移る。Refresh は新モデルをオフで追加するだけで、勝手には動かない。名前でティアが分からないプロバイダ（Codex など）は手動のエイリアス |
 | 「設定が合わないと 429 が返る」 | 返らない。エイリアス未設定・web 検索非対応・context 不足で全ルートが受けられないときは 400（面のエラー封筒）。429 は quota と error rate だけ |
 
 ---

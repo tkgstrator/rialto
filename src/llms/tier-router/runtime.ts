@@ -25,7 +25,7 @@ import {
   type TierProfileView,
   type TierRouteView
 } from '../../services/tier-route-service'
-import { tierOf } from '../router/request-signals'
+import { tierOf } from '../../shared/model-tier'
 import { selectTierRoute, type TierCandidate, type TierSelection } from './select'
 import { effectiveLongContextThreshold, longContextBase } from './threshold'
 

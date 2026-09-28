@@ -70,7 +70,12 @@ function ModelsNote({
           </>
         ) : (
           <>
-            <Trans i18nKey='providers.models.noteSubscription' components={NOTE_COMPONENTS} />
+            {/* Claude Code names its tiers; Codex names none, so its
+                tiers are set by hand. */}
+            <Trans
+              i18nKey={claudeCode ? 'providers.models.noteSubscription' : 'providers.models.noteSubscriptionManual'}
+              components={NOTE_COMPONENTS}
+            />
             {hasEffort ? (
               <span className='mt-1.5 block'>
                 <Trans
@@ -181,7 +186,7 @@ export function ProviderModelsSection({
         offset={offset}
         withOverride={hasEffort}
         effortKind={claudeCode ? 'claude-code' : 'openai'}
-        withAlias
+        withTier
         editable={editing}
         onToggle={onToggle}
         onEffort={onEffort}

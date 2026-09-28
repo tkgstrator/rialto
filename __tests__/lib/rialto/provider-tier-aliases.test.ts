@@ -1,12 +1,11 @@
 /**
- * What a provider page's tier-alias strip shows and offers.
+ * What a provider page's tier strip shows and offers.
  *
- * The strip is the one place a new model release is taken up, so two
- * things are pinned here that a screen would only show going wrong on a
- * vendor that happens to have shipped something: a newer model is marked
- * without moving the alias, and a picker offers every model on the
- * provider — Codex and an OpenAI key name no Claude family, and offering
- * the tier's name-matched candidates alone would leave them nothing.
+ * Pinned without a browser: a tier some model names follows the newest
+ * switched-on one, so a switch staged in the table already moves it in the
+ * preview; a newer switched-off model is counted and marked without
+ * moving anything; only a manual tier (no model names it — Codex, an
+ * OpenAI key) takes an alias, and its picker offers every listed model.
  */
 import { describe, expect, test } from 'bun:test'
 import { buildModelRows } from '../../../src/components/rialto/providers/derive'
@@ -15,125 +14,141 @@ import {
   aliasOptions,
   aliasRowsOf,
   applyAliasPicks,
-  freshModelsOf,
-  newCountOf,
-  tiersServedBy
+  tierViewsOf
 } from '../../../src/components/rialto/providers/tier-aliases'
 import type { Provider, TierAliasWire } from '../../../src/components/rialto/providers/types'
 
 const alias = (overrides: Partial<TierAliasWire> & Pick<TierAliasWire, 'tier'>): TierAliasWire => ({
-  provider: 'claude-code',
+  provider: 'codex',
+  mode: 'manual',
   model: null,
+  modelEnabled: false,
   updatedAt: null,
   candidates: [],
   ...overrides
 })
 
-// Opus has a newer candidate than the one it names; sonnet serves the
-// same model as haiku; fable is unset.
-const ROWS: TierAliasWire[] = [
-  alias({ tier: 'fable' }),
-  alias({
-    tier: 'opus',
-    model: 'claude-opus-4-8',
-    updatedAt: '2026-09-01T00:00:00.000Z',
-    candidates: [
-      { model: 'claude-opus-4-7', enabled: true, isNew: false },
-      { model: 'claude-opus-5', enabled: false, isNew: true }
-    ]
-  }),
-  alias({ tier: 'sonnet', model: 'claude-sonnet-5', updatedAt: '2026-09-01T00:00:00.000Z' }),
-  alias({ tier: 'haiku', model: 'claude-sonnet-5', updatedAt: '2026-09-01T00:00:00.000Z' }),
-  alias({ provider: 'codex', tier: 'opus', model: 'gpt-5.5', updatedAt: '2026-09-01T00:00:00.000Z' })
-]
+const claudeCode = (models: string[], off: string[] = []): Provider => ({
+  name: 'claude-code',
+  enabled: true,
+  api_base_url: 'https://api.anthropic.com/v1/messages',
+  api_key: null,
+  auth_mode: 'subscription',
+  models,
+  ...(off.length > 0 ? { transformer: { _disabledModels: off } } : {})
+})
 
-const LISTED = ['claude-opus-5', 'claude-opus-4-8', 'claude-opus-4-7', 'claude-sonnet-5', 'claude-haiku-4-5']
+const codex = (models: string[]): Provider => ({
+  name: 'codex',
+  enabled: true,
+  api_base_url: 'https://chatgpt.com/backend-api/codex',
+  api_key: null,
+  auth_mode: 'subscription',
+  models
+})
+
+const CLAUDE = claudeCode(
+  ['claude-opus-5', 'claude-opus-4-8', 'claude-opus-4-7', 'claude-sonnet-5', 'claude-haiku-4-5'],
+  ['claude-opus-5', 'claude-haiku-4-5']
+)
 
 describe('aliasMapOf', () => {
-  test("reads one provider's set tiers, leaving unset ones out", () => {
-    expect(aliasMapOf(aliasRowsOf(ROWS, 'claude-code'))).toEqual({
-      opus: 'claude-opus-4-8',
-      sonnet: 'claude-sonnet-5',
-      haiku: 'claude-sonnet-5'
-    })
+  test("reads one provider's manual aliases, leaving unset and derived tiers out", () => {
+    const rows: TierAliasWire[] = [
+      alias({ tier: 'fable' }),
+      alias({ tier: 'opus', model: 'gpt-5.5', modelEnabled: true, updatedAt: '2026-09-01T00:00:00.000Z' }),
+      alias({ provider: 'claude-code', tier: 'sonnet', mode: 'derived', model: 'claude-sonnet-5', modelEnabled: true })
+    ]
+    expect(aliasMapOf(aliasRowsOf(rows, 'codex'))).toEqual({ opus: 'gpt-5.5' })
+    expect(aliasMapOf(aliasRowsOf(rows, 'claude-code'))).toEqual({})
   })
 })
 
 describe('applyAliasPicks', () => {
   test('lays picks over the stored aliases; null unsets', () => {
-    const stored = aliasMapOf(aliasRowsOf(ROWS, 'claude-code'))
-    expect(applyAliasPicks(stored, { opus: 'claude-opus-5', haiku: null, fable: 'claude-opus-4-7' })).toEqual({
-      fable: 'claude-opus-4-7',
-      opus: 'claude-opus-5',
-      sonnet: 'claude-sonnet-5'
-    })
+    expect(
+      applyAliasPicks({ opus: 'gpt-5.5', haiku: 'gpt-5.4-mini' }, { opus: 'gpt-5.4', haiku: null, fable: 'gpt-5.5' })
+    ).toEqual({ fable: 'gpt-5.5', opus: 'gpt-5.4' })
   })
 })
 
-describe('new candidates', () => {
-  test('are counted per tier and marked per model, without moving the alias', () => {
-    const rows = aliasRowsOf(ROWS, 'claude-code')
-    expect(newCountOf(rows.find((row) => row.tier === 'opus'))).toBe(1)
-    expect(newCountOf(rows.find((row) => row.tier === 'sonnet'))).toBe(0)
-    expect([...freshModelsOf(rows)]).toEqual(['claude-opus-5'])
-    expect(aliasMapOf(rows).opus).toBe('claude-opus-4-8')
+describe('tierViewsOf', () => {
+  test('a named tier follows the newest switched-on model and counts the newer ones that are off', () => {
+    const views = tierViewsOf(CLAUDE, {})
+    expect(views.find((v) => v.tier === 'opus')).toEqual({
+      tier: 'opus',
+      mode: 'derived',
+      model: 'claude-opus-4-8',
+      enabled: true,
+      named: ['claude-opus-5', 'claude-opus-4-8', 'claude-opus-4-7'],
+      newer: ['claude-opus-5']
+    })
+  })
+
+  test('a switch staged in the table moves the tier in the preview', () => {
+    const switched = claudeCode(CLAUDE.models, ['claude-haiku-4-5'])
+    expect(tierViewsOf(switched, {}).find((v) => v.tier === 'opus')).toMatchObject({
+      model: 'claude-opus-5',
+      newer: []
+    })
+  })
+
+  test('with every named model off, the tier reads as the newest one, switched off', () => {
+    expect(tierViewsOf(CLAUDE, {}).find((v) => v.tier === 'haiku')).toMatchObject({
+      mode: 'derived',
+      model: 'claude-haiku-4-5',
+      enabled: false
+    })
+  })
+
+  test('a tier no model names is manual: the alias, or unset', () => {
+    const views = tierViewsOf(codex(['gpt-5.5', 'gpt-5.4']), { sonnet: 'gpt-5.4' })
+    expect(views.find((v) => v.tier === 'sonnet')).toEqual({
+      tier: 'sonnet',
+      mode: 'manual',
+      model: 'gpt-5.4',
+      enabled: true,
+      named: [],
+      newer: []
+    })
+    expect(views.find((v) => v.tier === 'fable')).toMatchObject({ mode: 'manual', model: null })
   })
 })
 
 describe('aliasOptions', () => {
-  test('offers the stored model, then candidates new first, then every other listed model', () => {
-    const opus = ROWS.find((row) => row.provider === 'claude-code' && row.tier === 'opus')
-    expect(aliasOptions(opus, LISTED)).toEqual({
-      current: 'claude-opus-4-8',
-      candidates: [
-        { model: 'claude-opus-5', isNew: true },
-        { model: 'claude-opus-4-7', isNew: false }
-      ],
-      others: ['claude-sonnet-5', 'claude-haiku-4-5']
-    })
-  })
-
-  test('a provider whose names say no tier still offers every listed model', () => {
-    const codex = ROWS.find((row) => row.provider === 'codex')
-    expect(aliasOptions(codex, ['gpt-5.5', 'gpt-5.3-codex', 'gpt-5.3-codex-spark'])).toEqual({
+  test('offers the stored model, then every other listed model', () => {
+    expect(aliasOptions('gpt-5.5', ['gpt-5.5', 'gpt-5.3-codex', 'gpt-5.3-codex-spark'])).toEqual({
       current: 'gpt-5.5',
-      candidates: [],
       others: ['gpt-5.3-codex', 'gpt-5.3-codex-spark']
     })
   })
 
-  test('an unset tier with no rows loaded still offers the listed models', () => {
-    expect(aliasOptions(undefined, ['a', 'b'])).toEqual({ current: null, candidates: [], others: ['a', 'b'] })
+  test('an unset tier still offers the listed models', () => {
+    expect(aliasOptions(null, ['a', 'b'])).toEqual({ current: null, others: ['a', 'b'] })
   })
 })
 
-describe('the Alias column', () => {
-  const provider: Provider = {
-    name: 'claude-code',
-    enabled: true,
-    api_base_url: 'https://api.anthropic.com/v1/messages',
-    api_key: null,
-    auth_mode: 'subscription',
-    models: LISTED
-  }
-
-  test('names every tier a model serves, in strip order', () => {
-    const aliases = aliasMapOf(aliasRowsOf(ROWS, 'claude-code'))
-    expect(tiersServedBy(aliases, 'claude-sonnet-5')).toEqual(['sonnet', 'haiku'])
-    expect(tiersServedBy(aliases, 'claude-opus-4-7')).toEqual([])
+describe('the Tier column', () => {
+  test('every named model carries its tier, routed only where the tier reaches it', () => {
+    const byName = new Map(buildModelRows(CLAUDE, undefined, tierViewsOf(CLAUDE, {})).map((row) => [row.name, row]))
+    expect(byName.get('claude-opus-4-8')?.tiers).toEqual([{ tier: 'opus', routed: true }])
+    expect(byName.get('claude-opus-4-7')?.tiers).toEqual([{ tier: 'opus', routed: false }])
+    expect(byName.get('claude-opus-5')?.tiers).toEqual([{ tier: 'opus', routed: false }])
+    expect(byName.get('claude-opus-5')?.newer).toBe(true)
+    expect(byName.get('claude-opus-4-8')?.newer).toBe(false)
   })
 
-  test('rows carry the tiers served and the new mark', () => {
-    const rows = aliasRowsOf(ROWS, 'claude-code')
-    const byName = new Map(
-      buildModelRows(provider, undefined, aliasMapOf(rows), freshModelsOf(rows)).map((row) => [row.name, row])
-    )
-    expect(byName.get('claude-sonnet-5')?.aliasTiers).toEqual(['sonnet', 'haiku'])
-    expect(byName.get('claude-opus-5')?.isNew).toBe(true)
-    expect(byName.get('claude-opus-4-8')?.isNew).toBe(false)
+  test('a model a manual alias names serves every tier it is aliased as, in strip order', () => {
+    const p = codex(['gpt-5.5', 'gpt-5.3-codex'])
+    const rows = buildModelRows(p, undefined, tierViewsOf(p, { opus: 'gpt-5.5', sonnet: 'gpt-5.5' }))
+    expect(rows.find((row) => row.name === 'gpt-5.5')?.tiers).toEqual([
+      { tier: 'opus', routed: true },
+      { tier: 'sonnet', routed: true }
+    ])
+    expect(rows.find((row) => row.name === 'gpt-5.3-codex')?.tiers).toEqual([])
   })
 
-  test('the add-provider wizard, which loads no aliases, reads every row as serving nothing', () => {
-    expect(buildModelRows(provider, undefined).every((row) => row.aliasTiers.length === 0 && !row.isNew)).toBe(true)
+  test('the add-provider wizard, which resolves no tiers, reads every row as in none', () => {
+    expect(buildModelRows(CLAUDE, undefined).every((row) => row.tiers.length === 0 && !row.newer)).toBe(true)
   })
 })

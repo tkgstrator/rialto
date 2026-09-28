@@ -47,7 +47,7 @@ const AskInput = {
     .string()
     .nonempty()
     .optional()
-    .describe('Codex model, e.g. "gpt-5.5". Omit for the default. The `status` tool lists what is enabled.'),
+    .describe('Codex model, as the `status` tool lists it. Omit for the newest enabled one.'),
   reasoning_effort: z
     .enum(REASONING_EFFORTS)
     .optional()

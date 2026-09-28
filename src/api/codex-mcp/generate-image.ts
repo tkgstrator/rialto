@@ -26,7 +26,7 @@ const ImageArgs = {
     .string()
     .nonempty()
     .optional()
-    .describe('Codex image model, e.g. "gpt-image-2.5-flare". Omit for the first enabled one; `status` lists them.'),
+    .describe('Codex image model, as the `status` tool lists it. Omit for the newest enabled one.'),
   size: z.enum(['auto', '1024x1024', '1024x1536', '1536x1024']).optional(),
   quality: z.enum(['auto', 'low', 'medium', 'high']).optional(),
   background: z.enum(['auto', 'opaque', 'transparent']).optional(),

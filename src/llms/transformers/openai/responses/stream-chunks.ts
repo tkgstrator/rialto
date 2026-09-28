@@ -50,7 +50,7 @@ function buildCompletedChunk(data: ResponsesStreamEvent, finishReasonOverride?: 
     id: newChatcmplId(data.response?.id),
     object: 'chat.completion.chunk',
     created: nowSeconds(),
-    model: modelOr(data.response?.model, 'gpt-5-codex-'),
+    model: modelOr(data.response?.model),
     choices: [
       {
         index: 0,
