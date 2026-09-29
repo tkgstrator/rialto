@@ -20,7 +20,9 @@ Claude Code（CLI・Desktop とも）から使える。Codex の OAuth、アカ�
   別のモデルの答えであってはいけないため。アカウント間のローテーションは行う。
 - **Codex はファイルを見られない。** リポジトリを読んだりコマンドを実行したりはしない。
   レビューしてほしいコードや差分は、呼び出し側（Claude）がプロンプトに入れる。
-  Codex に手元のリポジトリを直接触らせたいなら、従来どおりローカルの `codex mcp-server` を使う。
+  手元のリポジトリを直接扱う作業は、このリモート MCP ではなく、開発マシン上で
+  `codex exec --sandbox workspace-write` を起動するローカル Codex エージェント統合を使う。
+  それは Rialto にファイルやローカル権限を渡さず、通常の Codex sandbox/approval を維持する別の経路である。
 - `/v1/responses` と `/v1/images/generations` のパススルーで拒否しているターゲットは、MCP からも使えない。
 
 ## トークンとスコープ

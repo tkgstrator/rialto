@@ -27,6 +27,7 @@ import { buildErrorEnvelope, errorShapeForPath } from './error-shape'
 import { handleImageGeneration } from './images'
 import type { ResolvedInvocation } from './invocation'
 import { redactToolArguments } from './redact'
+import { applyResponseModelIdentity } from './response-model-identity'
 import { buildRoutePlan } from './route-plan'
 import { bestSupportedLevel, deepReplaceValue, forwardUpstreamError } from './upstream-error'
 
@@ -315,7 +316,12 @@ const handleInbound = async (c: Context): Promise<Response> => {
       },
       { log: ctx.log, httpsProxy: ctx.config.getHttpsProxy(), recordUsage, recordMessages }
     )
-    return formatResponse(c, upstream, clientAskedStream, ctx.log, {
+    const identified = await applyResponseModelIdentity(upstream, {
+      provider: inv.provider.name,
+      model: inv.request.model,
+      path: plan.path
+    })
+    return formatResponse(c, identified, clientAskedStream, ctx.log, {
       provider: inv.provider.name,
       model: inv.request.model,
       path: plan.path
