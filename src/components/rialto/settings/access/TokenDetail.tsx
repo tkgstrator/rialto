@@ -96,8 +96,13 @@ export function TokenDetail() {
   const [draft, setDraft] = useState<ScopeDraft | null>(null)
   const [profiles, setProfiles] = useState<{ key: string }[]>([])
   const [plans, setPlans] = useState<PlanWire[]>([])
-  // Pinned per load so every relative label measures from one instant.
+  // Every relative label measures from the same instant.
   const [now, setNow] = useState(Date.now())
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(interval)
+  }, [])
 
   const load = useCallback(() => {
     api

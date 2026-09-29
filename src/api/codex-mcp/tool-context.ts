@@ -40,12 +40,13 @@ export const errorResult = (text: string): CallToolResult => ({
  * usage is recorded, as on /v1.
  */
 export async function chargeCall(token: ResolvedToken): Promise<string | null> {
+  if (token.plan !== null && hasAnyLimit(token.plan.limits)) {
+    const admission = await admitRequest(token.id, token.plan.limits)
+    if (admission.outcome === 'exhausted') return windowLimitMessage(admission)
+    if (admission.outcome === 'unavailable') return USAGE_LEDGER_UNAVAILABLE
+  }
   noteTokenUse(token.id)
-  if (token.plan === null || !hasAnyLimit(token.plan.limits)) return null
-  const admission = await admitRequest(token.id, token.plan.limits)
-  if (admission.outcome === 'allowed') return null
-  if (admission.outcome === 'exhausted') return windowLimitMessage(admission)
-  return USAGE_LEDGER_UNAVAILABLE
+  return null
 }
 
 const HEARTBEAT_MS = 15_000

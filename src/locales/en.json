@@ -961,7 +961,7 @@
       "default": "default",
       "limits": "Usage limits · per token",
       "limitsHint": "All four limits are optional. Empty means no limit for that measure.",
-      "limitsInvalid": "Requests: a whole number above zero. Spend: a USD amount above zero. Or empty for no limit.",
+      "limitsInvalid": "Requests: a whole number from 1 to 2147483647. Spend: a USD amount above zero. Or empty for no limit.",
       "noLimit": "No limit",
       "appliesTo": "Applies to <strong>{{n}} tokens</strong> on {{name}} from their next request.",
       "saved": "Plan “{{name}}” saved.",

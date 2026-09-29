@@ -48,15 +48,8 @@ const INCLUDE = {
   _count: { select: { tokens: true } }
 } as const
 
-type PlanRecord = {
+type PlanRecord = PlanInput & {
   id: string
-  name: string
-  models: string[]
-  defaultModel: string
-  fiveHourRequestLimit: number | null
-  fiveHourSpendLimitUsd: number | null
-  sevenDayRequestLimit: number | null
-  sevenDaySpendLimitUsd: number | null
   createdAt: Date
   updatedAt: Date
   _count: { tokens: number }
@@ -87,8 +80,8 @@ export function planProblem(input: PlanInput): string | null {
   if (new Set(input.models).size !== input.models.length) return 'A model is listed twice.'
   if (!input.models.includes(input.defaultModel)) return 'The default model has to be one of the allowed models.'
   for (const limit of [input.fiveHourRequestLimit, input.sevenDayRequestLimit]) {
-    if (limit !== null && (!Number.isSafeInteger(limit) || limit < 1)) {
-      return 'A request limit has to be a whole number above zero, or empty for no limit.'
+    if (limit !== null && (!Number.isInteger(limit) || limit < 1 || limit > 2_147_483_647)) {
+      return 'A request limit has to be a whole number from 1 to 2147483647, or empty for no limit.'
     }
   }
   for (const limit of [input.fiveHourSpendLimitUsd, input.sevenDaySpendLimitUsd]) {

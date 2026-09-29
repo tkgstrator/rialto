@@ -110,6 +110,12 @@ describe.skipIf(!HAS_DB)('usage windows at the /v1 gate', () => {
     expect((await refused.json()).error.message).toContain('5-hour spend limit')
   })
 
+  test('unknown routes and non-POST surface requests do not spend the allowance', async () => {
+    expect((await gate('/v1/unknown', issued.plaintext)).status).toBe(404)
+    expect((await gate('/v1/chat/completions', issued.plaintext, 'GET')).status).toBe(404)
+    expect(await windowCount()).toBe(0)
+  })
+
   test('a token with no plan, or a plan with no limits, is not counted', async () => {
     const free = await issueAccessToken({ name: 'no-plan' })
     const open = await issueOnPlan({})

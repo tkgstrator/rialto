@@ -13,7 +13,7 @@
  * is asked first: it hands the client its full allowance back, which is
  * the point, but not something to do by a stray click.
  */
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { useConfirm } from '@/components/rialto/ConfirmDialog'
@@ -54,17 +54,36 @@ export function useTokenUsageWindows(token: AccessTokenWire | null): {
   usage: TokenUsageWindowsWire | null
   setUsage: (next: TokenUsageWindowsWire) => void
 } {
-  const [usage, setUsage] = useState<TokenUsageWindowsWire | null>(null)
+  const [reading, setReading] = useState<{ token: AccessTokenWire; usage: TokenUsageWindowsWire } | null>(null)
+  const revision = useRef(0)
+  const setUsage = useCallback(
+    (usage: TokenUsageWindowsWire) => {
+      revision.current += 1
+      if (token !== null) setReading({ token, usage })
+    },
+    [token]
+  )
   useEffect(() => {
     if (token === null) return
-    api
-      .getTokenUsageWindows(token.id)
-      .then(setUsage)
-      .catch(() => {
-        // The field then reads as loading; the rest of the page still works.
-      })
+    const controller = new AbortController()
+    const refresh = () => {
+      revision.current += 1
+      const requestedRevision = revision.current
+      api
+        .getTokenUsageWindows(token.id)
+        .then((usage) => {
+          if (!controller.signal.aborted && revision.current === requestedRevision) setReading({ token, usage })
+        })
+        .catch(() => {})
+    }
+    refresh()
+    const interval = setInterval(refresh, 30_000)
+    return () => {
+      controller.abort()
+      clearInterval(interval)
+    }
   }, [token])
-  return { usage, setUsage }
+  return { usage: reading !== null && reading.token === token ? reading.usage : null, setUsage }
 }
 
 /** One measure: its name, its meter (or "No limit"), and the figures. */

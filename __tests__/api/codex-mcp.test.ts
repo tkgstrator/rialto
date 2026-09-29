@@ -427,6 +427,9 @@ describe.skipIf(!HAS_DB)('Codex MCP server at /codex', () => {
     const result = await callTool(token, 'ask', { prompt: 'hi' })
     expect(result.isError).toBe(true)
     expect(upstream).toHaveLength(0)
+    const report = JSON.parse(textOf(await callTool(token, 'status', {})))
+    expect(report.models).toEqual([])
+    expect(report.imageModels).toEqual([])
   })
 
   test('generate_image returns the image and a link that downloads it', async () => {

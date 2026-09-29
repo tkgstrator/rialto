@@ -50,7 +50,7 @@ export const planLimitsOf = (plan: {
 })
 
 export const hasAnyLimit = (limits: PlanLimits): boolean =>
-  USAGE_WINDOWS.some((w) => limits[w].requests !== null || limits[w].spendUsd !== null)
+  USAGE_WINDOWS.some((window) => limits[window].requests !== null || limits[window].spendUsd !== null)
 
 const resetOf = (window: UsageWindow, startedAt: Date): Dayjs => dayjs(startedAt).add(WINDOW_HOURS[window], 'hour')
 
@@ -105,6 +105,11 @@ function exhaustionOf(row: StoredWindow, limit: WindowLimit, now: Dayjs): Exhaus
 // never collide with one taken on the same hash for some other purpose.
 const ADMISSION_LOCK_NAMESPACE = 0x52_57_49_4e
 
+async function lockTokenWindows(client: Pick<ReturnType<typeof getPrismaClient>, '$queryRaw'>, tokenId: string) {
+  await client.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock_shared(${ADMISSION_LOCK_NAMESPACE}::bigint)`
+  await client.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(${ADMISSION_LOCK_NAMESPACE}::int, hashtext(${tokenId}))`
+}
+
 /**
  * Check a token's windows and, when neither is full, count one request in
  * both (opening or restarting whichever is not current).
@@ -121,18 +126,18 @@ const ADMISSION_LOCK_NAMESPACE = 0x52_57_49_4e
  * because the limits are the only thing bounding what a token may spend.
  */
 export async function admitRequest(tokenId: string, limits: PlanLimits): Promise<Admission> {
-  const now = dayjs()
   try {
     return await getPrismaClient().$transaction(async (tx): Promise<Admission> => {
-      await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(${ADMISSION_LOCK_NAMESPACE}::int, hashtext(${tokenId}))`
+      await lockTokenWindows(tx, tokenId)
+      const now = dayjs()
       const rows = await storedWindows(tx, tokenId)
 
       // When both windows are full the client has to wait for the later
       // reset, so that is the one the refusal names.
       const full = rows
         .map((row) => exhaustionOf(row, limits[row.window], now))
-        .filter((e): e is Exhaustion => e !== null)
-        .sort((a, b) => b.resetsAt.valueOf() - a.resetsAt.valueOf())
+        .filter((exhaustion): exhaustion is Exhaustion => exhaustion !== null)
+        .sort((first, second) => second.resetsAt.valueOf() - first.resetsAt.valueOf())
       if (full.length > 0) {
         const first = full[0]
         return {
@@ -145,7 +150,7 @@ export async function admitRequest(tokenId: string, limits: PlanLimits): Promise
       }
 
       for (const window of USAGE_WINDOWS) {
-        const row = rows.find((r) => r.window === window)
+        const row = rows.find((stored) => stored.window === window)
         const open = row !== undefined && isOpen(window, row.startedAt, now)
         const fresh = { startedAt: now.toDate(), requests: 1, costUsd: 0 }
         await tx.accessTokenUsageWindow.upsert({
@@ -167,16 +172,16 @@ export async function admitRequest(tokenId: string, limits: PlanLimits): Promise
  * Add a priced cost to the token's current windows.
  *
  * Only windows still open at `now` take it. An increment rather than a
- * read-modify-write, so it cannot lose a concurrent admission's count;
- * and it takes no advisory lock, so recording spend never waits behind
- * an admission.
+ * read-modify-write. Both increments share the admission and reset locks
+ * so the two windows cannot straddle a reset.
  */
 export async function addSpend(tokenId: string, costUsd: number): Promise<void> {
   if (!Number.isFinite(costUsd) || costUsd <= 0) return
-  const now = dayjs()
-  await Promise.all(
-    USAGE_WINDOWS.map((window) =>
-      getPrismaClient().accessTokenUsageWindow.updateMany({
+  await getPrismaClient().$transaction(async (tx) => {
+    await lockTokenWindows(tx, tokenId)
+    const now = dayjs()
+    for (const window of USAGE_WINDOWS) {
+      await tx.accessTokenUsageWindow.updateMany({
         where: {
           accessTokenId: tokenId,
           window,
@@ -184,8 +189,8 @@ export async function addSpend(tokenId: string, costUsd: number): Promise<void> 
         },
         data: { costUsd: { increment: costUsd } }
       })
-    )
-  )
+    }
+  })
 }
 
 /** What a completed call used, in the shape `computeCosts` prices. */
@@ -241,9 +246,9 @@ export interface WindowReport {
 /** Both windows for a token, as they stand now. A lapsed window reads as empty. */
 export async function readUsageWindows(tokenId: string, limits: PlanLimits | null): Promise<WindowReport[]> {
   const now = dayjs()
-  const rows = await storedWindows(getPrismaClient(), tokenId)
+  const rows = limits === null || !hasAnyLimit(limits) ? [] : await storedWindows(getPrismaClient(), tokenId)
   return USAGE_WINDOWS.map((window) => {
-    const row = rows.find((r) => r.window === window)
+    const row = rows.find((stored) => stored.window === window)
     const open = row !== undefined && isOpen(window, row.startedAt, now)
     const limit = limits === null ? { requests: null, spendUsd: null } : limits[window]
     return {
@@ -263,8 +268,15 @@ export async function readUsageWindows(tokenId: string, limits: PlanLimits | nul
  * fresh ones. Returns how many rows went.
  */
 export async function resetUsageWindows(tokenId: string | null): Promise<number> {
-  const { count } = await getPrismaClient().accessTokenUsageWindow.deleteMany({
-    where: tokenId === null ? {} : { accessTokenId: tokenId }
+  return getPrismaClient().$transaction(async (tx) => {
+    if (tokenId === null) {
+      await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(${ADMISSION_LOCK_NAMESPACE}::bigint)`
+    } else {
+      await lockTokenWindows(tx, tokenId)
+    }
+    const { count } = await tx.accessTokenUsageWindow.deleteMany({
+      where: tokenId === null ? {} : { accessTokenId: tokenId }
+    })
+    return count
   })
-  return count
 }

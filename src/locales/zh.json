@@ -961,7 +961,7 @@
       "default": "默认",
       "limits": "用量上限 · 按令牌",
       "limitsHint": "四个上限都是可选的。留空表示该项不限。",
-      "limitsInvalid": "次数：大于零的整数。金额：大于零的美元金额。或留空表示不限。",
+      "limitsInvalid": "次数：1 至 2147483647 的整数。金额：大于零的美元金额。或留空表示不限。",
       "noLimit": "不限",
       "appliesTo": "从下一次请求起，作用于 {{name}} 下的 <strong>{{n}} 个令牌</strong>。",
       "saved": "已保存套餐“{{name}}”。",

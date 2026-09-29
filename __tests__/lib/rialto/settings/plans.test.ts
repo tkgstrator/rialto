@@ -5,7 +5,6 @@ import {
   emptyPlanDraft,
   groupTargets,
   modelOf,
-  planDraftChanged,
   planDraftOf,
   planInputOf,
   providerOf,
@@ -28,6 +27,10 @@ const FREE = {
 }
 
 describe('plan targets', () => {
+  test('request limits fit the database integer column', () => {
+    expect(readCap('2147483647')).toEqual({ ok: true, value: 2_147_483_647 })
+    expect(readCap('2147483648')).toEqual({ ok: false })
+  })
   test('splits provider and model at the first comma', () => {
     expect(providerOf('codex,gpt-6-luna')).toBe('codex')
     expect(modelOf('openrouter,a,b')).toBe('a,b')
@@ -82,15 +85,6 @@ describe('plan draft', () => {
     const draft = planDraftOf(FREE)
     expect(planInputOf({ ...draft, limits: { ...draft.limits, fiveHourRequestLimit: 'x' } })).toBeNull()
     expect(planInputOf({ ...draft, limits: { ...draft.limits, sevenDaySpendLimitUsd: '0' } })).toBeNull()
-  })
-
-  test('an untouched draft is not a change, a reordered list neither', () => {
-    expect(planDraftChanged(planDraftOf(FREE), FREE)).toBe(false)
-    const reordered = { ...planDraftOf(FREE), models: [...FREE.models].reverse() }
-    expect(planDraftChanged(reordered, FREE)).toBe(false)
-    const draft = planDraftOf(FREE)
-    expect(planDraftChanged({ ...draft, limits: { ...draft.limits, sevenDayRequestLimit: '150' } }, FREE)).toBe(true)
-    expect(planDraftChanged({ ...draft, limits: { ...draft.limits, fiveHourSpendLimitUsd: '2.50' } }, FREE)).toBe(false)
   })
 })
 

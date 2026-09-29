@@ -243,7 +243,7 @@ export function createProxyAuth(options: ApiKeyAuthOptions = {}): MiddlewareHand
     // spends nothing, and an SDK that lists models before every call
     // would otherwise halve a small allowance. Speaking a reply is not a
     // second completion either.
-    if (token.plan !== null && hasAnyLimit(token.plan.limits) && !catalogRead) {
+    if (token.plan !== null && hasAnyLimit(token.plan.limits) && reached !== undefined && c.req.method === 'POST') {
       const refusal = await windowLimitRefusal(c, token.id, token.plan.limits, errorShape)
       if (refusal !== null) return refusal
     }

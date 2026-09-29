@@ -63,7 +63,7 @@ export const isSpendField = (field: LimitField): boolean => field.endsWith('Spen
 export interface PlanDraft {
   name: string
   models: string[]
-  /** Empty while no model is ticked. */
+  /** Empty until an allowed model is explicitly chosen as the default. */
   defaultModel: string
   /** Each limit field's text. Empty means no limit. */
   limits: Record<LimitField, string>
@@ -165,7 +165,7 @@ export function readCap(text: string): LimitReading {
   if (trimmed.length === 0) return { ok: true, value: null }
   if (!/^\d+$/.test(trimmed)) return { ok: false }
   const value = Number(trimmed)
-  return Number.isSafeInteger(value) && value >= 1 ? { ok: true, value } : { ok: false }
+  return Number.isInteger(value) && value >= 1 && value <= 2_147_483_647 ? { ok: true, value } : { ok: false }
 }
 
 /** A spend limit's text as USD: empty is no limit, anything else an amount above zero ("$" allowed). */
@@ -201,17 +201,4 @@ export function planInputOf(draft: PlanDraft): PlanInputWire | null {
     sevenDayRequestLimit: values[2],
     sevenDaySpendLimitUsd: values[3]
   }
-}
-
-/** Whether saving the draft would change the plan. */
-export function planDraftChanged(draft: PlanDraft, plan: PlanInputWire): boolean {
-  const input = planInputOf(draft)
-  if (input === null) return true
-  return (
-    input.name !== plan.name ||
-    input.defaultModel !== plan.defaultModel ||
-    LIMIT_FIELDS.some((field) => input[field] !== plan[field]) ||
-    input.models.length !== plan.models.length ||
-    input.models.some((m) => !plan.models.includes(m))
-  )
 }

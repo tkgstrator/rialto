@@ -9,7 +9,7 @@ import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { createPlan, deletePlan, getPlan, listPlans, updatePlan } from '../../services/plan-service'
 import { validationErrorHook } from '../zod-response'
 
-const RequestLimit = z.number().int().positive().nullable()
+const RequestLimit = z.number().int().positive().max(2_147_483_647).nullable()
 const SpendLimit = z.number().positive().nullable()
 
 const LimitFields = {

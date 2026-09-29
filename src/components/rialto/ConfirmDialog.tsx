@@ -12,7 +12,6 @@
  * `dialog` the hook hands back.
  */
 
-import { cn } from 'cn'
 import { AlertDialog } from 'radix-ui'
 import { type ReactNode, useCallback, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -101,7 +100,7 @@ function ConfirmDialog({
                   {request.description.map((paragraph) => (
                     <p
                       key={paragraph.text}
-                      className={cn(paragraph.tone === undefined ? '' : PARAGRAPH_TONE[paragraph.tone])}
+                      className={paragraph.tone === undefined ? '' : PARAGRAPH_TONE[paragraph.tone]}
                     >
                       {paragraph.text}
                     </p>

@@ -180,7 +180,43 @@ describe.skipIf(!HAS_DB)('usage windows', () => {
     expect((await rowOf('5h'))?.costUsd).toBe(0)
     expect((await rowOf('7d'))?.costUsd).toBe(2)
     // A lapsed window reads as empty rather than as its old totals.
-    expect((await readUsageWindows(tokenId.value, null))[0]).toMatchObject({ startedAt: null, requests: 0, costUsd: 0 })
+    expect((await readUsageWindows(tokenId.value, limits({ spend7d: 100 })))[0]).toMatchObject({
+      startedAt: null,
+      requests: 0,
+      costUsd: 0
+    })
+  })
+
+  test('removing all limits hides stored usage without deleting it', async () => {
+    await admitRequest(tokenId.value, limits({ requests5h: 1 }))
+    for (const plan of [null, limits({})]) {
+      const report = await readUsageWindows(tokenId.value, plan)
+      expect(report.every((window) => window.startedAt === null && window.requests === 0 && window.costUsd === 0)).toBe(
+        true
+      )
+    }
+    expect((await rowOf('5h'))?.requests).toBe(1)
+  })
+
+  test('spend at completion belongs to the newly opened window, not the expired one', async () => {
+    const plan = limits({ spend5h: 10 })
+    await admitRequest(tokenId.value, plan)
+    setSystemTime(dayjs(T0 + 5 * HOUR).toDate())
+    await admitRequest(tokenId.value, plan)
+    await addSpend(tokenId.value, 2)
+    expect((await rowOf('5h'))?.costUsd).toBe(2)
+    expect((await rowOf('7d'))?.costUsd).toBe(2)
+  })
+
+  test('resets racing admission and spend never leave half a pair of windows', async () => {
+    const plan = limits({ requests5h: 100 })
+    for (const resetTarget of [tokenId.value, null]) {
+      await Promise.all([admitRequest(tokenId.value, plan), addSpend(tokenId.value, 1), resetUsageWindows(resetTarget)])
+      const fiveHour = await rowOf('5h')
+      const sevenDay = await rowOf('7d')
+      expect(fiveHour?.requests).toBe(sevenDay?.requests)
+      expect(fiveHour?.costUsd).toBe(sevenDay?.costUsd)
+    }
   })
 
   test('a completed call is priced the way the Cost column prices it', async () => {

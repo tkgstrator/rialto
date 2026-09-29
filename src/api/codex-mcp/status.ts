@@ -19,7 +19,7 @@ import { getSubscriptionsInfo } from '../../services/subscription-info-service'
 import { hasAnyLimit, readUsageWindows } from '../../services/usage-window-service'
 import { isReasoningEffort } from '../../shared/model-reasoning-effort'
 import { planLabel } from '../../shared/plan-label'
-import { type CodexTarget, codexModels, codexProviderNames, targetId } from './targets'
+import { type CodexTarget, codexModels, codexProviderNames, planAllows, targetId } from './targets'
 import { type ToolContext, textResult } from './tool-context'
 
 interface Window {
@@ -104,11 +104,14 @@ export async function status(ctx: ToolContext): Promise<CallToolResult> {
   const efforts = await recordedEfforts(chat)
   const report = {
     accounts,
-    models: chat.map((m) => {
-      const recorded = efforts.get(targetId(m))
-      return { model: targetId(m), reasoningEfforts: recorded === undefined ? null : recorded }
-    }),
-    imageModels: images.map(targetId),
+    // Only what the plan allows: ask and generate_image refuse the rest.
+    models: chat
+      .filter((model) => planAllows(ctx.token.plan, model))
+      .map((model) => {
+        const recorded = efforts.get(targetId(model))
+        return { model: targetId(model), reasoningEfforts: recorded === undefined ? null : recorded }
+      }),
+    imageModels: images.filter((model) => planAllows(ctx.token.plan, model)).map(targetId),
     ...(allowance === null ? {} : { yourToken: allowance })
   }
   return textResult(JSON.stringify(report, null, 2))
