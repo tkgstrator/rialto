@@ -11,6 +11,7 @@
  */
 
 import { z } from '@hono/zod-openapi'
+import { ModelSupportedEffortsSchema, ModelThinkingOffSchema } from './model-capability'
 
 export const AuthModeSchema = z.enum(['api_key', 'subscription']).openapi('AuthMode')
 export const ProviderAuthModeSchema = AuthModeSchema
@@ -68,8 +69,18 @@ export const ProviderSchema = z
     // Per-model effort setting: a concrete manual override or the local
     // Auto policy. Absent keys preserve the caller/vendor setting.
     modelReasoningEfforts: z
-      .record(z.string().nonempty(), z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto']))
+      .record(
+        z.string().nonempty(),
+        z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'auto'])
+      )
       .optional(),
+    // What each subscription model accepts, recorded once from the
+    // subscription's own model list (ModelCapability). Only recorded
+    // models appear; the effort picker falls back for the rest.
+    modelSupportedEfforts: ModelSupportedEffortsSchema.optional(),
+    // Claude Code: the efforts each thinking-off setting is accepted with,
+    // for models whose thinking probe has run.
+    modelThinkingOff: ModelThinkingOffSchema.optional(),
     // Per-model apiStyle override (Model.apiStyle in the DB). Only
     // populated for models whose column is non-null — a single api_key
     // provider hosts both openai_chat and openai_responses models

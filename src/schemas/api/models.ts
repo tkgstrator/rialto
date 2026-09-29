@@ -58,11 +58,14 @@ export const UpdateModelBodySchema = z.object({
   // null clears the override; omit to leave the current value untouched.
   // `auto` is a local policy sentinel, never a wire value. Manual values
   // retain their existing pass-through semantics; a model may reject one.
-  reasoningEffort: z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto']).nullable().optional()
+  reasoningEffort: z
+    .enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'auto'])
+    .nullable()
+    .optional()
 })
 
 export const ReasoningEffortSchema = z
-  .enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+  .enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
   .openapi('ReasoningEffort')
 export type ReasoningEffort = z.infer<typeof ReasoningEffortSchema>
 

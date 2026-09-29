@@ -17,9 +17,9 @@ import dayjs from '../../lib/dayjs'
 import { noteTokenUse } from '../../services/access-token-service'
 import { isAccountExhausted } from '../../services/failover-state'
 import { getSubscriptionsInfo } from '../../services/subscription-info-service'
-import { openAiEffortsFor } from '../../shared/model-reasoning-effort'
+import { isReasoningEffort } from '../../shared/model-reasoning-effort'
 import { planLabel } from '../../shared/plan-label'
-import { codexModels, codexProviderNames, targetId } from './targets'
+import { type CodexTarget, codexModels, codexProviderNames, targetId } from './targets'
 import { type ToolContext, textResult } from './tool-context'
 
 interface Window {
@@ -73,6 +73,27 @@ async function allowanceReport(ctx: ToolContext) {
   return { dailyLimit: limit, usedToday: row === null ? 0 : row.requests, resetsAt: 'next 00:00 UTC' }
 }
 
+// The levels each model's own Codex list reported, recorded once
+// (ModelCapability). A model not recorded yet reports null.
+async function recordedEfforts(targets: readonly CodexTarget[]): Promise<Map<string, string[]>> {
+  if (targets.length === 0) return new Map()
+  const rows = await getPrismaClient().modelCapability.findMany({
+    where: {
+      model: {
+        name: { in: targets.map((t) => t.model) },
+        provider: { name: { in: [...new Set(targets.map((t) => t.provider))] } }
+      }
+    },
+    select: { efforts: true, model: { select: { name: true, provider: { select: { name: true } } } } }
+  })
+  return new Map(
+    rows.map((row) => [
+      targetId({ provider: row.model.provider.name, model: row.model.name }),
+      row.efforts.filter(isReasoningEffort)
+    ])
+  )
+}
+
 export async function status(ctx: ToolContext): Promise<CallToolResult> {
   noteTokenUse(ctx.token.id)
   const [accounts, chat, images, allowance] = await Promise.all([
@@ -81,11 +102,12 @@ export async function status(ctx: ToolContext): Promise<CallToolResult> {
     codexModels('image'),
     allowanceReport(ctx)
   ])
+  const efforts = await recordedEfforts(chat)
   const report = {
     accounts,
     models: chat.map((m) => {
-      const efforts = openAiEffortsFor(m.model)
-      return { model: targetId(m), reasoningEfforts: efforts === null ? null : [...efforts] }
+      const recorded = efforts.get(targetId(m))
+      return { model: targetId(m), reasoningEfforts: recorded === undefined ? null : recorded }
     }),
     imageModels: images.map(targetId),
     ...(allowance === null ? {} : { yourToken: allowance })

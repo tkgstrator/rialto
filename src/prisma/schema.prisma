@@ -319,7 +319,8 @@ model Model {
   // Codex models. Null = pass the request through untouched (vendor
   // default = 'medium'). Non-null values mirror the OpenAI OpenAPI
   // ReasoningEffort enum — 'none' | 'minimal' | 'low' | 'medium' |
-  // 'high' | 'xhigh' | 'max' — and are injected into the outgoing
+  // 'high' | 'xhigh' | 'max', plus Codex's 'ultra' above 'max' — and
+  // are injected into the outgoing
   // request's `reasoning_effort` (Chat Completions) or
   // `reasoning.effort` (Responses) at build time. Not every reasoning
   // model accepts every value; upstream 400s surface as request errors.
@@ -358,11 +359,42 @@ model Model {
   testError         String?
   preferenceEntries RouterPreferenceEntry[]
   tierAliases       ProviderTierAlias[]
+  capability        ModelCapability?
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
 
   @@unique([providerId, name])
   @@index([providerId])
+}
+
+// What a subscription model (claude-code, codex) accepts, read once. A
+// model id is a pinned snapshot, so its context window, effort levels and
+// `thinking` settings never change; only its price and whether it is
+// listed at all do, and those stay on the refresh. A row here means the
+// vendor's model list has been read for this model: the context window
+// went to Model.contextWindow at the same moment, where every reader
+// already looks, and no refresh overwrites it afterwards.
+// See src/services/model-capability-service.ts.
+model ModelCapability {
+  modelId              String    @id
+  model                Model     @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  // Effort levels the upstream accepts, low to high, from the vendor's
+  // own list (Anthropic GET /v1/models `capabilities.effort`, Codex
+  // `supported_reasoning_levels`). Empty = the model takes no effort.
+  // Validated by Zod, kept strings so a new level is a code change.
+  efforts              String[]
+  // Claude Code only: the efforts each "thinking off" setting was accepted
+  // with, where 'default' is a request that sends no effort. Neither the
+  // catalog nor /v1/models says whether a model takes `disabled` or
+  // `between_tools` (Sonnet 5 takes only the first, Sonnet 5.5 only the
+  // second), so each pair is sent to count_tokens, which validates them
+  // without running inference. Probed only once the model is switched on;
+  // thinkingProbedAt null = not probed, and `thinking` then goes upstream
+  // untouched.
+  thinkingProbedAt     DateTime?
+  thinkingDisabled     String[]  @default([])
+  thinkingBetweenTools String[]  @default([])
+  recordedAt           DateTime  @default(now())
 }
 
 // A named routing profile. One row per profile holds the constraint knobs

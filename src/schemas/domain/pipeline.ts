@@ -14,6 +14,7 @@
  */
 
 import { z } from '@hono/zod-openapi'
+import { ModelSupportedEffortsSchema, ModelThinkingOffSchema } from './model-capability'
 
 // ─── Runtime provider ──────────────────────────────────────────────────
 
@@ -46,8 +47,17 @@ export const RuntimeProviderSchema = z.object({
   // before send and must never reach the upstream as a wire value.
   // Absent = pass-through (caller or vendor default).
   modelReasoningEfforts: z
-    .record(z.string().nonempty(), z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto']))
-    .optional()
+    .record(
+      z.string().nonempty(),
+      z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'auto'])
+    )
+    .optional(),
+  // Recorded once per subscription model (ModelCapability): the effort
+  // levels it accepts, and on Claude Code the efforts each thinking-off
+  // setting is accepted with. Absent = not recorded yet, and the request
+  // goes out as the caller shaped it.
+  modelSupportedEfforts: ModelSupportedEffortsSchema.optional(),
+  modelThinkingOff: ModelThinkingOffSchema.optional()
 })
 export type RuntimeProvider = z.input<typeof RuntimeProviderSchema>
 

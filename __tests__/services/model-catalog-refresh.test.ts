@@ -87,20 +87,6 @@ describe('fetchContextWindows credentials', () => {
     return { seen }
   }
 
-  test('a subscription credential authenticates as a bearer with the oauth beta', async () => {
-    // An `x-api-key` bearing an OAuth token is rejected, so the scheme
-    // has to switch with the credential rather than with the vendor.
-    const { seen } = captureHeaders({ data: [{ id: 'claude-opus-4-1', max_input_tokens: 200000 }] })
-    const got = await new AnthropicProvider().fetchContextWindows(['claude-opus-4-1'], {
-      kind: 'subscription',
-      accessToken: 'oauth-token'
-    })
-    expect(seen.headers?.authorization).toBe('Bearer oauth-token')
-    expect(seen.headers?.['anthropic-beta']).toBe('oauth-2025-04-20')
-    expect(seen.headers?.['x-api-key']).toBeUndefined()
-    expect(got.get('claude-opus-4-1')).toBe(200000)
-  })
-
   test('an api_key credential keeps the vendor scheme', async () => {
     const { seen } = captureHeaders({ data: [{ id: 'claude-opus-4-1', max_input_tokens: 200000 }] })
     await new AnthropicProvider().fetchContextWindows(['claude-opus-4-1'], { kind: 'api_key', key: 'sk-ant' })
@@ -123,8 +109,8 @@ describe('fetchContextWindows credentials', () => {
       ]
     })
     const got = await new AnthropicProvider().fetchContextWindows(['claude-opus-4-1'], {
-      kind: 'subscription',
-      accessToken: 'oauth-token'
+      kind: 'api_key',
+      key: 'sk-ant'
     })
     expect([...got.keys()]).toEqual(['claude-opus-4-1'])
   })
@@ -143,5 +129,23 @@ describe('a model a refresh finds', () => {
     })
     expect(buildCreateRow('claude-sonnet-5-5', provider('api_key'), entry('claude-sonnet-5-5', 3)).enabled).toBe(false)
     expect(buildCreateRow('claude-sonnet-5-5', provider('subscription'), undefined).enabled).toBe(false)
+  })
+
+  // The scrape describes the vendor's API; a subscription row takes its
+  // window from the subscription's own list, recorded once
+  // (model-capability-service), so the scraped figure must not land first.
+  test('takes the scraped price but not the scraped window on a subscription provider', () => {
+    const provider = (authMode: 'api_key' | 'subscription') => ({
+      id: 'p1',
+      name: authMode === 'api_key' ? 'openai' : 'codex',
+      apiKey: authMode === 'api_key' ? 'sk' : null,
+      authMode,
+      models: []
+    })
+    const scraped = entry('gpt-6-sol', 3, 1_050_000)
+    expect(buildCreateRow('gpt-6-sol', provider('api_key'), scraped).contextWindow).toBe(1_050_000)
+    const subscription = buildCreateRow('gpt-6-sol', provider('subscription'), scraped)
+    expect(subscription.contextWindow).toBeNull()
+    expect(subscription.inputPer1M).toBe(3)
   })
 })
