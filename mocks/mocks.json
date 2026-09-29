@@ -72,7 +72,7 @@
       "mock": "provider-subscription.html",
       "route": "/providers/claude-code",
       "group": "Providers",
-      "note": "One subscription provider: accounts, request shape, models. Full width now that the rail is gone — reached from the Subscriptions list, back via the breadcrumb, the same way a token detail works. Adds the tier-alias strip (the one pointer a new model release moves) and, per account, the tokens and API-equivalent cost it carried this week and over 30 days against its plan fee."
+      "note": "One subscription provider: accounts, request shape, models. Full width now that the rail is gone — reached from the Subscriptions list, back via the breadcrumb, the same way a token detail works. Adds the tier-alias strip (the one pointer a new model release moves). What an account carried at API prices is not drawn here — the Usage tab shows it."
     },
     {
       "name": "provider-subscription-codex",

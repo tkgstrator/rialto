@@ -1,4 +1,3 @@
-import type { OverviewAccountUsage } from '@/lib/api-types'
 import dayjs from '@/lib/dayjs'
 import { planCapacityWeight, type SeatKind } from '@/shared/plan-capacity'
 
@@ -116,15 +115,15 @@ export function providerQuotaPct(index: QuotaIndex, kind: SeatKind, accounts: re
 }
 
 /**
- * What an account carried and what it can still spend, beside its windows.
+ * What an account can still spend beside its windows: banked resets.
  *
- * Both come on the same Overview quota row as the windows but are not
+ * They come on the same Overview quota row as the windows but are not
  * windows, so they get their own index rather than a place in QuotaIndex:
  * the rail folds QuotaIndex into one percentage, and nothing here belongs
- * in that number.
+ * in that number. What the account carried at API prices is the Usage
+ * tab's to show, not this page's.
  */
 export interface AccountExtras {
-  usage: OverviewAccountUsage | null
   resetCredits: { available: number; applicable: number | null } | null
 }
 
@@ -133,11 +132,10 @@ export type AccountExtrasIndex = Map<string, AccountExtras>
 export function indexAccountExtras(
   rows: ReadonlyArray<{
     subAccountId: string
-    usage: OverviewAccountUsage | null
     resetCredits: { available: number; applicable: number | null } | null
   }>
 ): AccountExtrasIndex {
-  return new Map(rows.map((r) => [r.subAccountId, { usage: r.usage, resetCredits: r.resetCredits }]))
+  return new Map(rows.map((r) => [r.subAccountId, { resetCredits: r.resetCredits }]))
 }
 
 /** "Oct 4" in the reader's language, or a dash when the vendor sent no date. */
