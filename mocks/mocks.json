@@ -72,14 +72,14 @@
       "mock": "provider-subscription.html",
       "route": "/providers/claude-code",
       "group": "Providers",
-      "note": "One subscription provider: accounts, request shape, models. Full width now that the rail is gone — reached from the Subscriptions list, back via the breadcrumb, the same way a token detail works. Adds the tier-alias strip (the one pointer a new model release moves). What an account carried at API prices is not drawn here — the Usage tab shows it. On a table 84rem or wider (not at the 1440 capture) two more columns follow Model: Effort levels, the levels the model's own list reported, and Thinking off, how thinking is switched off on it — both as badges."
+      "note": "One subscription provider: accounts, request shape, models. Full width now that the rail is gone — reached from the Subscriptions list, back via the breadcrumb, the same way a token detail works. Adds the tier-alias strip (the one pointer a new model release moves). What an account carried at API prices is not drawn here — the Usage tab shows it. On a table 84rem or wider (not at the 1440 capture) two more columns follow Model: Effort levels, the levels the model's own list reported, and Thinking off, how thinking is switched off on it — both as badges. Effort levels is as wide as the longest ladder needs (16rem holds any four levels, each one past that adds 2.5rem), so a Codex list up to ultra stays clear of Tier."
     },
     {
       "name": "provider-subscription-codex",
       "mock": "provider-subscription.html?codex",
       "route": null,
       "group": "Providers",
-      "note": "The same page for a Codex provider: aliases the operator chose (Codex names no Claude family), and per account the banked resets the usage poll reports with a Use reset action. Mock-only until P1-3 lands."
+      "note": "The same page for a Codex provider: aliases the operator chose (Codex names no Claude family), and per account the banked resets the usage poll reports with a Use reset action. On a wide table gpt-5.5 lists six effort levels, low to ultra, which widen the Effort levels column to 20rem; there is no Thinking off column, as Codex has no thinking probe. Mock-only until P1-3 lands."
     },
     {
       "name": "provider-subscription-codex-reset",
