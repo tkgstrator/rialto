@@ -47,11 +47,6 @@ export function TokenReadings({ token, now }: { token: AccessTokenWire; now: num
           {token.rotatedAt === null ? null : (
             <div>{t('settings.access.detailRotated', { date: token.rotatedAt.slice(0, 10) })}</div>
           )}
-          {token.revokedAt === null ? null : (
-            <div className='text-destructive'>
-              {t('settings.access.detailRevoked', { date: token.revokedAt.slice(0, 10) })}
-            </div>
-          )}
         </div>
       </SettingsField>
     </>

@@ -18,7 +18,6 @@ import {
   issueAccessToken,
   listAccessTokens,
   resolveAccessToken,
-  revokeAccessToken,
   rotateAccessToken,
   SPEND_WINDOW_DAYS,
   sumSpendByToken,
@@ -148,8 +147,49 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
       ]
     })
 
-    const [listed] = await listAccessTokens()
+    const [listed] = (await listAccessTokens()).tokens
     expect(listed.costUsd).toBeCloseTo(3, 6)
+  })
+
+  test('a revoked token leaves the list, and its window spend moves to the revoked line', async () => {
+    const { token } = await issueAccessToken({ name: 'leaked' })
+    await issueAccessToken({ name: 'kept' })
+    const prisma = getPrismaClient()
+    const provider = await prisma.provider.create({
+      data: { name: 'anthropic', apiBaseUrl: 'https://api.anthropic.com', authMode: 'api_key', apiStyle: 'anthropic' }
+    })
+    await prisma.model.create({
+      data: { providerId: provider.id, name: 'claude-sonnet', enabled: true, inputPer1M: 3, outputPer1M: 15 }
+    })
+    const session = await prisma.session.create({ data: { id: 'sess-revoked' } })
+    const log = (createdAt: Date) => ({
+      sessionId: session.id,
+      accessTokenId: token.id,
+      provider: 'anthropic',
+      model: 'claude-sonnet',
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      createdAt
+    })
+    await prisma.requestLog.createMany({
+      data: [
+        log(dayjs().subtract(1, 'day').toDate()),
+        log(dayjs().subtract(2, 'day').toDate()),
+        // Outside the window: neither counted nor priced.
+        log(
+          dayjs()
+            .subtract(SPEND_WINDOW_DAYS + 2, 'day')
+            .toDate()
+        )
+      ]
+    })
+    expect((await listAccessTokens()).revoked).toBeNull()
+
+    expect(await deleteAccessToken(token.id)).toBe(true)
+    const after = await listAccessTokens()
+    expect(after.tokens.map((t) => t.name)).toEqual(['kept'])
+    expect(after.revoked?.requestCount).toBe(2)
+    expect(after.revoked?.costUsd).toBeCloseTo(6, 6)
   })
 
   test('the window token counts ride alongside the cost', async () => {
@@ -183,7 +223,7 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
       ]
     })
 
-    const [listed] = await listAccessTokens()
+    const [listed] = (await listAccessTokens()).tokens
     expect(listed.inputTokens).toBe(1_000_000)
     expect(listed.outputTokens).toBe(250_000)
   })
@@ -206,7 +246,7 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
       }
     })
 
-    const [listed] = await listAccessTokens()
+    const [listed] = (await listAccessTokens()).tokens
     expect(listed.costUsd).toBeNull()
     expect(listed.inputTokens).toBe(900)
     expect(listed.outputTokens).toBe(100)
@@ -214,7 +254,7 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
 
   test('a token with no priced traffic reports null, not zero', async () => {
     await issueAccessToken({ name: 'unused' })
-    const [listed] = await listAccessTokens()
+    const [listed] = (await listAccessTokens()).tokens
     expect(listed.costUsd).toBeNull()
     // Same distinction on the counts: no rows in the window is an absent
     // answer, and 0 would read as "this client sent nothing" about a
@@ -271,15 +311,12 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
     expect(resolved?.profileKey).toBeNull()
   })
 
-  test('a revoked token stops resolving but stays listed', async () => {
+  test('a revoked token stops resolving and is no longer listed', async () => {
     const { token, plaintext } = await issueAccessToken({ name: 'leaked' })
-    await revokeAccessToken(token.id)
+    expect(await deleteAccessToken(token.id)).toBe(true)
 
     expect(await resolveAccessToken(plaintext)).toBeNull()
-    // Revoke keeps the row so past requests still say whose they were.
-    const listed = await listAccessTokens()
-    expect(listed).toHaveLength(1)
-    expect(listed[0].revokedAt).not.toBeNull()
+    expect((await listAccessTokens()).tokens).toHaveLength(0)
   })
 
   test('an expired token stops resolving', async () => {
@@ -311,7 +348,7 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
     const { token, plaintext } = await issueAccessToken({ name: 'ci' })
     // Prime the cache the way a real request would.
     expect(await resolveAccessToken(plaintext)).not.toBeNull()
-    await revokeAccessToken(token.id)
+    await deleteAccessToken(token.id)
     expect(await resolveAccessToken(plaintext)).toBeNull()
   })
 
@@ -329,7 +366,7 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
     expect(await resolveAccessToken(plaintext)).not.toBeNull()
     expect(await deleteAccessToken(token.id)).toBe(true)
     expect(await resolveAccessToken(plaintext)).toBeNull()
-    expect(await listAccessTokens()).toHaveLength(0)
+    expect((await listAccessTokens()).tokens).toHaveLength(0)
   })
 
   test('getAccessToken reads one row, and null for an id that is not one', async () => {
@@ -369,7 +406,7 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
     // New secret, and only one row.
     expect(result.issued.plaintext).not.toBe(plaintext)
     expect(result.issued.token.prefix).not.toBe(token.prefix)
-    expect(await listAccessTokens()).toHaveLength(1)
+    expect((await listAccessTokens()).tokens).toHaveLength(1)
   })
 
   test('the previous secret stops working the moment it is rotated', async () => {
@@ -449,8 +486,8 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
 
   test('a revoked or expired token is refused rather than handed a dead secret', async () => {
     const revoked = await issueAccessToken({ name: 'revoked' })
-    await revokeAccessToken(revoked.token.id)
-    expect(await rotateAccessToken(revoked.token.id)).toEqual({ ok: false, reason: 'revoked' })
+    await deleteAccessToken(revoked.token.id)
+    expect(await rotateAccessToken(revoked.token.id)).toEqual({ ok: false, reason: 'not-found' })
 
     const expired = await issueAccessToken({
       name: 'expired',

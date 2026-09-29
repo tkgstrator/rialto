@@ -385,23 +385,22 @@ describe('tokenUsageRows', () => {
     requestCount: 0,
     costUsd: null,
     expiresAt: null,
-    revokedAt: null,
     createdAt: '2026-09-01T00:00:00Z',
     ...over
   })
 
   test('shares are of the priced total and add up to 100', () => {
-    const rows = tokenUsageRows([token({ id: 'a', costUsd: 75 }), token({ id: 'b', costUsd: 25 })])
+    const rows = tokenUsageRows([token({ id: 'a', costUsd: 75 }), token({ id: 'b', costUsd: 25 })], null)
     expect(rows.map((r) => r.sharePct)).toEqual([75, 25])
   })
 
   test('unpriced traffic is excluded from the denominator, not counted as zero', () => {
     // Subscription traffic prices to null. Folding it in as $0 would
     // report a share of a total that does not exist.
-    const rows = tokenUsageRows([
-      token({ id: 'a', costUsd: 40 }),
-      token({ id: 'b', costUsd: null, requestCount: 9_000 })
-    ])
+    const rows = tokenUsageRows(
+      [token({ id: 'a', costUsd: 40 }), token({ id: 'b', costUsd: null, requestCount: 9_000 })],
+      null
+    )
     const priced = rows.find((r) => r.id === 'a')
     const unpriced = rows.find((r) => r.id === 'b')
     expect(priced?.sharePct).toBe(100)
@@ -409,26 +408,30 @@ describe('tokenUsageRows', () => {
   })
 
   test('unpriced tokens sort last — unknown is not cheap', () => {
-    const rows = tokenUsageRows([
-      token({ id: 'unpriced', costUsd: null, requestCount: 9_000 }),
-      token({ id: 'cheap', costUsd: 0.5 })
-    ])
+    const rows = tokenUsageRows(
+      [token({ id: 'unpriced', costUsd: null, requestCount: 9_000 }), token({ id: 'cheap', costUsd: 0.5 })],
+      null
+    )
     expect(rows.map((r) => r.id)).toEqual(['cheap', 'unpriced'])
   })
 
-  test('revoked tokens stay in the table', () => {
-    // Their traffic is part of what the window cost. Dropping them makes
-    // the surviving shares add up to more than the money actually spent.
-    const rows = tokenUsageRows([
-      token({ id: 'live', costUsd: 50 }),
-      token({ id: 'dead', costUsd: 50, revokedAt: '2026-09-02T00:00:00Z' })
-    ])
-    expect(rows).toHaveLength(2)
+  test('revoked traffic stays in the table, as one line at the bottom', () => {
+    // Revoking deletes the token, but its traffic is part of what the
+    // window cost. Dropping it would make the surviving shares add up to
+    // more than the money actually spent.
+    const rows = tokenUsageRows([token({ id: 'live', costUsd: 50 })], { requestCount: 7, costUsd: 50 })
+    expect(rows.map((r) => r.kind)).toEqual(['token', 'revoked'])
     expect(rows.map((r) => r.sharePct)).toEqual([50, 50])
+    expect(rows[1]?.requestCount).toBe(7)
+  })
+
+  test('the revoked line comes last even when it cost the most', () => {
+    const rows = tokenUsageRows([token({ id: 'live', costUsd: 1 })], { requestCount: 1, costUsd: 99 })
+    expect(rows.map((r) => r.kind)).toEqual(['token', 'revoked'])
   })
 
   test('no priced traffic at all leaves every share null rather than NaN', () => {
-    const rows = tokenUsageRows([token({ id: 'a' }), token({ id: 'b' })])
+    const rows = tokenUsageRows([token({ id: 'a' }), token({ id: 'b' })], { requestCount: 3, costUsd: null })
     expect(rows.every((r) => r.sharePct === null)).toBe(true)
   })
 })

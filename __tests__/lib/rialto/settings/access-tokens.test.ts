@@ -19,18 +19,17 @@ const token = (over: Partial<AccessTokenWire>): AccessTokenWire => ({
   lastUsedAt: null,
   requestCount: 0,
   expiresAt: null,
-  revokedAt: null,
   createdAt: at(-10),
   ...over
 })
 
 describe('tokenState', () => {
-  test('an unexpired, unrevoked token is active', () => {
+  test('an unexpired token is active', () => {
     expect(tokenState(token({}), NOW)).toBe('active')
     expect(tokenState(token({ expiresAt: at(1) }), NOW)).toBe('active')
   })
 
-  test('a past expiry is dead even though nothing revoked it', () => {
+  test('a past expiry is dead even though the row is still listed', () => {
     // resolveAccessToken rejects on expiry too, so rendering this as
     // active would show a credential that cannot actually authenticate.
     expect(tokenState(token({ expiresAt: at(-1) }), NOW)).toBe('expired')
@@ -40,42 +39,23 @@ describe('tokenState', () => {
     // Server accepts only while expiresAt > now.
     expect(tokenState(token({ expiresAt: new Date(NOW).toISOString() }), NOW)).toBe('expired')
   })
-
-  test('revoked outranks expired so the row says why it is dead', () => {
-    expect(tokenState(token({ revokedAt: at(-2), expiresAt: at(-1) }), NOW)).toBe('revoked')
-  })
 })
 
 describe('countTokens', () => {
   test('counts each state separately', () => {
-    const counts = countTokens(
-      [
-        token({ id: 'a' }),
-        token({ id: 'b' }),
-        token({ id: 'c', expiresAt: at(-1) }),
-        token({ id: 'd', revokedAt: at(-3) })
-      ],
-      NOW
-    )
-    expect(counts).toEqual({ active: 2, expired: 1, revoked: 1 })
+    const counts = countTokens([token({ id: 'a' }), token({ id: 'b' }), token({ id: 'c', expiresAt: at(-1) })], NOW)
+    expect(counts).toEqual({ active: 2, expired: 1 })
   })
 
   test('an empty list counts zero of everything', () => {
-    expect(countTokens([], NOW)).toEqual({ active: 0, expired: 0, revoked: 0 })
+    expect(countTokens([], NOW)).toEqual({ active: 0, expired: 0 })
   })
 })
 
 describe('sortTokens', () => {
-  test('live credentials first, dead ones last', () => {
-    const rows = sortTokens(
-      [
-        token({ id: 'revoked', revokedAt: at(-1) }),
-        token({ id: 'expired', expiresAt: at(-1) }),
-        token({ id: 'active' })
-      ],
-      NOW
-    )
-    expect(rows.map((r) => r.id)).toEqual(['active', 'expired', 'revoked'])
+  test('live credentials first, expired ones last', () => {
+    const rows = sortTokens([token({ id: 'expired', expiresAt: at(-1) }), token({ id: 'active' })], NOW)
+    expect(rows.map((r) => r.id)).toEqual(['active', 'expired'])
   })
 
   test('within a state, newest first', () => {
@@ -84,9 +64,9 @@ describe('sortTokens', () => {
   })
 
   test('does not mutate the caller’s array', () => {
-    const input = [token({ id: 'revoked', revokedAt: at(-1) }), token({ id: 'active' })]
+    const input = [token({ id: 'expired', expiresAt: at(-1) }), token({ id: 'active' })]
     sortTokens(input, NOW)
-    expect(input.map((r) => r.id)).toEqual(['revoked', 'active'])
+    expect(input.map((r) => r.id)).toEqual(['expired', 'active'])
   })
 })
 

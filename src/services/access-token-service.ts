@@ -19,7 +19,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { LRUCache } from 'lru-cache'
 import { getPrismaClient } from '../db/client'
 import dayjs from '../lib/dayjs'
-import { spendByToken, type TokenWindowTotals } from './access-token-spend'
+import { SPEND_WINDOW_DAYS, spendByToken, type TokenWindowTotals } from './access-token-spend'
 import {
   hasAnyLimit,
   type PlanLimits,
@@ -61,7 +61,6 @@ export interface AccessTokenRow {
   inputTokens: number | null
   outputTokens: number | null
   expiresAt: string | null
-  revokedAt: string | null
   // When the current secret was minted, if it is not the original one.
   // Rotation preserves the row, so `createdAt` is the age of the client
   // binding and this is the age of the credential it presents.
@@ -136,7 +135,6 @@ const toWire = (
     lastUsedAt: Date | null
     requestCount: number
     expiresAt: Date | null
-    revokedAt: Date | null
     rotatedAt: Date | null
     createdAt: Date
     plan?: { id: string; name: string } | null
@@ -154,18 +152,48 @@ const toWire = (
   inputTokens: totals === undefined ? null : totals.inputTokens,
   outputTokens: totals === undefined ? null : totals.outputTokens,
   expiresAt: row.expiresAt === null ? null : row.expiresAt.toISOString(),
-  revokedAt: row.revokedAt === null ? null : row.revokedAt.toISOString(),
   rotatedAt: row.rotatedAt === null ? null : row.rotatedAt.toISOString(),
   createdAt: row.createdAt.toISOString(),
   plan: row.plan === undefined || row.plan === null ? null : { id: row.plan.id, name: row.plan.name }
 })
 
-export async function listAccessTokens(): Promise<AccessTokenRow[]> {
+/**
+ * What revoked tokens' traffic still weighs in the spend window.
+ *
+ * Revoking deletes the row, but the RequestLog rows it authenticated
+ * keep its id. Without this, a per-token breakdown built from the list
+ * alone would drop that spend, and every surviving token's share of the
+ * window would read larger than it was. Null when the window holds none.
+ */
+export interface RevokedTokensTotals {
+  /** Requests over the same trailing window the cost is priced from. */
+  requestCount: number
+  costUsd: number | null
+}
+
+export async function listAccessTokens(): Promise<{
+  tokens: AccessTokenRow[]
+  revoked: RevokedTokensTotals | null
+}> {
   const [rows, spend] = await Promise.all([
     getPrismaClient().accessToken.findMany({ orderBy: { createdAt: 'desc' }, include: WIRE_INCLUDE }),
     spendByToken()
   ])
-  return rows.map((row) => toWire(row, spend.get(row.id)))
+  const live = new Set(rows.map((row) => row.id))
+  const gone = [...spend].filter(([id]) => !live.has(id))
+  return { tokens: rows.map((row) => toWire(row, spend.get(row.id))), revoked: await revokedTotals(gone) }
+}
+
+async function revokedTotals(gone: readonly [string, TokenWindowTotals][]): Promise<RevokedTokensTotals | null> {
+  if (gone.length === 0) return null
+  const priced = gone.flatMap(([, totals]) => (totals.costUsd === null ? [] : [totals.costUsd]))
+  const requestCount = await getPrismaClient().requestLog.count({
+    where: {
+      accessTokenId: { in: gone.map(([id]) => id) },
+      createdAt: { gte: dayjs().subtract(SPEND_WINDOW_DAYS, 'day').toDate() }
+    }
+  })
+  return { requestCount, costUsd: priced.length === 0 ? null : priced.reduce((sum, cost) => sum + cost, 0) }
 }
 
 /** One token by id, priced the same way the list prices it. */
@@ -266,10 +294,11 @@ export async function updateAccessToken(id: string, input: UpdateInput): Promise
 /**
  * Why a rotation was refused. Rotation replaces the secret in place, so
  * the only sensible answers for a token that cannot authenticate anyway
- * are "no" and a reason — minting a new secret onto a revoked or expired
- * row would hand back a credential that is dead the moment it is copied.
+ * are "no" and a reason — minting a new secret onto an expired row would
+ * hand back a credential that is dead the moment it is copied. A revoked
+ * token has no row left, so it is simply not found.
  */
-export type RotateRefusal = 'not-found' | 'revoked' | 'expired'
+export type RotateRefusal = 'not-found' | 'expired'
 
 export type RotateResult = { ok: true; issued: IssuedToken } | { ok: false; reason: RotateRefusal }
 
@@ -291,7 +320,6 @@ export async function rotateAccessToken(id: string): Promise<RotateResult> {
     .accessToken.findUnique({ where: { id } })
     .catch(() => null)
   if (existing === null) return { ok: false, reason: 'not-found' }
-  if (existing.revokedAt !== null) return { ok: false, reason: 'revoked' }
   if (existing.expiresAt !== null && existing.expiresAt.getTime() <= Date.now()) {
     return { ok: false, reason: 'expired' }
   }
@@ -307,17 +335,15 @@ export async function rotateAccessToken(id: string): Promise<RotateResult> {
 }
 
 /**
- * Mark a token unusable without deleting it, so the RequestLog rows it
- * authenticated still point at something that says whose they were.
+ * Revoke a token: delete its row, so it stops authenticating and stops
+ * being listed. There is no revoked state to keep. A row that could never
+ * authenticate again was only ever kept so past RequestLog rows could show
+ * its name, and the list it lingered in answers "what can reach the proxy
+ * now". Those log rows keep the id (RequestLog.accessTokenId is not a
+ * foreign key), so they still group as one client and the Activity screen
+ * falls back to the surface's client name; their spend stays in the Usage
+ * breakdown as one revoked-tokens line (listAccessTokens).
  */
-export async function revokeAccessToken(id: string): Promise<AccessTokenRow | null> {
-  const row = await getPrismaClient()
-    .accessToken.update({ where: { id }, data: { revokedAt: new Date() }, include: WIRE_INCLUDE })
-    .catch(() => null)
-  invalidateTokenCache()
-  return row === null ? null : toWire(row)
-}
-
 export async function deleteAccessToken(id: string): Promise<boolean> {
   const done = await getPrismaClient()
     .accessToken.delete({ where: { id } })
@@ -328,9 +354,9 @@ export async function deleteAccessToken(id: string): Promise<boolean> {
 }
 
 /**
- * Resolve a presented token, or null when it is unknown, revoked or
- * expired. Fails closed: any error resolving it is a rejection, never a
- * pass.
+ * Resolve a presented token, or null when it is unknown (including a
+ * revoked one, whose row is gone) or expired. Fails closed: any error
+ * resolving it is a rejection, never a pass.
  */
 export async function resolveAccessToken(presented: string): Promise<ResolvedToken | null> {
   if (presented.length === 0) return null
@@ -352,7 +378,6 @@ export async function resolveAccessToken(presented: string): Promise<ResolvedTok
 
   const usable =
     row !== null &&
-    row.revokedAt === null &&
     (row.expiresAt === null || row.expiresAt.getTime() > Date.now()) &&
     // Constant-time compare of the digests. findUnique already matched
     // on the hash, so this guards only against a storage-layer surprise

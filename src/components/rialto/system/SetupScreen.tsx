@@ -47,11 +47,10 @@ const CONNECT_OPTIONS: Array<{ label: string; icon: string; hintKey: string }> =
 ]
 
 // Mirrors the server's own liveness test in access-token-service: listing
-// returns revoked and expired rows too, and neither will authenticate.
-const isLive = (token: AccessTokenWire, now: number): boolean => {
-  if (token.revokedAt !== null) return false
-  return token.expiresAt === null ? true : Date.parse(token.expiresAt) > now
-}
+// returns expired rows too, and they will not authenticate. (A revoked
+// token is not listed; revoking deletes it.)
+const isLive = (token: AccessTokenWire, now: number): boolean =>
+  token.expiresAt === null ? true : Date.parse(token.expiresAt) > now
 
 type Translate = (key: string, options?: Record<string, unknown>) => string
 

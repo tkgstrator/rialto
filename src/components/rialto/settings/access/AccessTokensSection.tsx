@@ -10,16 +10,13 @@
  * Issuing happens in a dialog over this list, in two steps — the form,
  * then the reveal. The table never moves for either.
  *
- * Rotate, revoke and delete are not here. They live on a token's own
- * page (TokenDetail), reached by clicking its row — a destructive action
+ * Rotate and revoke are not here. They live on a token's own page
+ * (TokenDetail), reached by clicking its row — a destructive action
  * repeated once per row is an action aimed at the wrong row eventually.
  *
- * Revoked rows are folded away rather than dropped. They are the only
- * thing keeping past RequestLog entries attributable to a client, so they
- * have to exist; but this table answers "what can reach the proxy right
- * now", and a dead row is never that. The count in the heading opens
- * them, because without a way back the Delete on a revoked token's page
- * would be reachable only by remembering its URL.
+ * A revoked token is not listed at all: revoking deletes it. This table
+ * answers "what can reach the proxy right now", and a revoked row never
+ * could.
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
@@ -33,7 +30,7 @@ import { ANY, scopeForWire } from '@/components/rialto/settings/access/pickers'
 import { TokenTable } from '@/components/rialto/settings/access/TokenTable'
 import { SectionHead } from '@/components/rialto/settings/fields'
 import { type AccessTokenWire, api, type InboundSurfaceWire, type PlanWire } from '@/lib/api'
-import { countTokens, expiryToIso, type TokenCounts, tokenState } from '@/lib/rialto/settings/access-tokens'
+import { countTokens, expiryToIso, type TokenCounts } from '@/lib/rialto/settings/access-tokens'
 
 interface Revealed {
   plaintext: string
@@ -43,38 +40,13 @@ interface Revealed {
   expiry: string
 }
 
-/**
- * "4 active · 1 revoked · all /v1/*", where the revoked count is the
- * control that unfolds those rows. A plain label there would leave them
- * unreachable, and a separate toggle would spend a control on a state
- * most installs never look at.
- */
-function Summary({
-  counts,
-  showRevoked,
-  onToggleRevoked
-}: {
-  counts: TokenCounts
-  showRevoked: boolean
-  onToggleRevoked: () => void
-}) {
+/** "4 active · 1 expired · all /v1/*". */
+function Summary({ counts }: { counts: TokenCounts }) {
   const { t } = useTranslation()
   return (
     <>
       {t('settings.access.countActive', { n: counts.active })}
       {counts.expired > 0 ? ` · ${t('settings.access.countExpired', { n: counts.expired })}` : ''}
-      {counts.revoked > 0 ? (
-        <>
-          {' · '}
-          <button
-            type='button'
-            onClick={onToggleRevoked}
-            className='underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground'
-          >
-            {t(showRevoked ? 'settings.access.hideRevoked' : 'settings.access.countRevoked', { n: counts.revoked })}
-          </button>
-        </>
-      ) : null}
       {' · '}
       <Trans i18nKey='settings.access.tokensScope' components={{ mono: <span className='font-mono' /> }} />
     </>
@@ -89,7 +61,6 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
   const [draft, setDraft] = useState<IssueDraft | null>(null)
   const [revealed, setRevealed] = useState<Revealed | null>(null)
   const [issuing, setIssuing] = useState(false)
-  const [showRevoked, setShowRevoked] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [allReset, setAllReset] = useState(false)
   const { confirm, dialog: confirmDialog } = useConfirm()
@@ -180,7 +151,6 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
   }
 
   const counts = countTokens(tokens, now)
-  const listed = showRevoked ? tokens : tokens.filter((token) => tokenState(token, now) !== 'revoked')
 
   return (
     <>
@@ -188,9 +158,7 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
           tokens" already, and this is the whole screen rather than a
           section of one. */}
       <SectionHead
-        meta={
-          <Summary counts={counts} showRevoked={showRevoked} onToggleRevoked={() => setShowRevoked(!showRevoked)} />
-        }
+        meta={<Summary counts={counts} />}
         actions={
           <RButton variant='primary' icon='ri-add-line' onClick={() => setDraft(emptyDraft())}>
             {t('settings.access.issueToken')}
@@ -208,11 +176,11 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
         </div>
       </div>
 
-      <TokenTable tokens={listed} surfaces={surfaces} now={now} />
+      <TokenTable tokens={tokens} surfaces={surfaces} now={now} />
 
       {/* Quiet and below the table, away from Issue token: it acts on every
-          token and plan at once, including rows folded away, and the page's
-          primary action should not sit beside it. The table keeps its
+          token and plan at once, and the page's primary action should not
+          sit beside it. The table keeps its
           historical columns; the current windows are on each token's page. */}
       <div className='flex items-center gap-3 border-t border-border/60 px-6 py-4'>
         <span className='text-[12px] text-muted-foreground'>

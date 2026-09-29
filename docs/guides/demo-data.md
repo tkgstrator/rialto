@@ -109,7 +109,7 @@ The mix is deliberate rather than uniform: all four inbound surfaces,
 routed scenarios next to passthrough, a share of subagent-tagged requests, a
 few 429 / 500 / 400 responses so the error-rate and failover views have
 something to show, one account near its 5-hour ceiling carrying a recent
-rate limit, some archived sessions, one revoked access token, and chat
+rate limit, some archived sessions, traffic from one since-revoked access token, and chat
 content on the newest handful of sessions only — which is what an install
 that turned `CAPTURE_MESSAGES` on partway through actually looks like.
 
