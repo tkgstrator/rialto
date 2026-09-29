@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { Pill, Toggle } from '@/components/rialto/primitives'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
 import { fmtCost } from '@/lib/sessions/format'
-import { claudeCodeEffortsFor, openAiEffortsFor } from '@/shared/model-reasoning-effort'
+import { openAiEffortsFor } from '@/shared/model-reasoning-effort'
 import { fmtContext, type ModelRow } from './derive'
 import { SwitchReading } from './SwitchReading'
 import { TIERS } from './tier-aliases'
@@ -180,7 +180,17 @@ function Head({
 }
 
 const DASH = '—'
-const EFFORTS: readonly ReasoningEffort[] = ['auto', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+const EFFORTS: readonly ReasoningEffort[] = [
+  'auto',
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+  'ultra'
+]
 
 // Narrowing by lookup rather than by assertion: the select hands back a
 // string, and only options in this table are accepted.
@@ -233,7 +243,14 @@ function EffortCell({
   const value = row.effort === null ? DASH : row.effort
   const reading = row.effort === 'auto' ? t('providers.models.effortAuto') : value
   const tone = row.effort === null ? 'unset' : 'set'
-  const known = effortKind === 'claude-code' ? claudeCodeEffortsFor(row.name) : openAiEffortsFor(row.name)
+  // What the model's own list reported wins; an api_key OpenAI model, which
+  // records nothing, falls back to the static table.
+  const known =
+    row.supportedEfforts !== null
+      ? row.supportedEfforts
+      : effortKind === 'claude-code'
+        ? null
+        : openAiEffortsFor(row.name)
   const manualOptions =
     known === null
       ? effortKind === 'claude-code'

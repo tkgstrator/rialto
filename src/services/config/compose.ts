@@ -5,19 +5,23 @@
 
 import type { AppConfig } from '@/schemas/api/config'
 import type { Provider } from '@/schemas/domain'
+import { SupportedEffortSchema, ThinkingEffortKeySchema } from '@/schemas/domain/model-capability'
 import type { ConfigEnvelope } from '@/shared'
 import { getPrismaClient } from '../../db/client'
 import {
   type ApiStyle,
   AuthMode,
   type Model as DbModel,
+  type ModelCapability as DbModelCapability,
   type Provider as DbProvider,
   ModelTestStatus
 } from '../../generated/prisma/client'
 import { readConfigFile } from './envelope'
 
 export type ProviderWithModels = DbProvider & {
-  models: DbModel[]
+  // `capability` is loaded by the readers that feed the UI and the
+  // pipeline; writers that only reconcile rows leave it out.
+  models: (DbModel & { capability?: DbModelCapability | null })[]
   subscriptionAccounts?: { id: string; enabled: boolean }[]
 }
 
@@ -33,6 +37,20 @@ export type ProviderWithModels = DbProvider & {
  */
 const toWireTransformer = (disabledModels: string[]): Record<string, unknown> | undefined =>
   disabledModels.length === 0 ? undefined : { _disabledModels: disabledModels }
+
+// ModelCapability stores levels as strings so a new one is a code change,
+// not a migration; they are narrowed here, where they leave the DB, and a
+// value this build does not know is dropped.
+const supportedEfforts = (values: readonly string[]) =>
+  values.flatMap((value) => {
+    const parsed = SupportedEffortSchema.safeParse(value)
+    return parsed.success ? [parsed.data] : []
+  })
+const thinkingEffortKeys = (values: readonly string[]) =>
+  values.flatMap((value) => {
+    const parsed = ThinkingEffortKeySchema.safeParse(value)
+    return parsed.success ? [parsed.data] : []
+  })
 
 export const toProvider = (p: ProviderWithModels): Provider => {
   const deprecatedModels = p.models.filter((m) => m.deprecated).map((m) => m.name)
@@ -68,7 +86,9 @@ export const toProvider = (p: ProviderWithModels): Provider => {
   const withReasoningEffort = p.models.filter(
     (
       m
-    ): m is DbModel & { reasoningEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto' } =>
+    ): m is DbModel & {
+      reasoningEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | 'auto'
+    } =>
       m.reasoningEffort === 'none' ||
       m.reasoningEffort === 'minimal' ||
       m.reasoningEffort === 'low' ||
@@ -76,9 +96,28 @@ export const toProvider = (p: ProviderWithModels): Provider => {
       m.reasoningEffort === 'high' ||
       m.reasoningEffort === 'xhigh' ||
       m.reasoningEffort === 'max' ||
+      m.reasoningEffort === 'ultra' ||
       m.reasoningEffort === 'auto'
   )
   const modelReasoningEfforts = Object.fromEntries(withReasoningEffort.map((m) => [m.name, m.reasoningEffort]))
+  // What each subscription model accepts, recorded once
+  // (model-capability-service). Absent for a model not yet recorded.
+  const recorded = p.models.flatMap((m) =>
+    m.capability === undefined || m.capability === null ? [] : [{ name: m.name, capability: m.capability }]
+  )
+  const modelSupportedEfforts = Object.fromEntries(
+    recorded.map(({ name, capability }) => [name, supportedEfforts(capability.efforts)])
+  )
+  const probed = recorded.filter(({ capability }) => capability.thinkingProbedAt !== null)
+  const modelThinkingOff = Object.fromEntries(
+    probed.map(({ name, capability }) => [
+      name,
+      {
+        disabled: thinkingEffortKeys(capability.thinkingDisabled),
+        betweenTools: thinkingEffortKeys(capability.thinkingBetweenTools)
+      }
+    ])
+  )
   return {
     name: p.name,
     enabled: p.enabled,
@@ -94,6 +133,8 @@ export const toProvider = (p: ProviderWithModels): Provider => {
     ...(withPrice.length > 0 ? { modelPrices } : {}),
     ...(withApiStyle.length > 0 ? { modelApiStyles } : {}),
     ...(withReasoningEffort.length > 0 ? { modelReasoningEfforts } : {}),
+    ...(recorded.length > 0 ? { modelSupportedEfforts } : {}),
+    ...(probed.length > 0 ? { modelThinkingOff } : {}),
     // Not a stored value: _disabledModels is derived from Model.enabled
     // on every read, which is why the JSONB column it used to share with
     // `providerEnabled` could be dropped outright.
@@ -157,7 +198,7 @@ export async function composeUiConfig(): Promise<AppConfig> {
       // cursor. createdAt is the seed/insert order the UI was built
       // around; name breaks the ties, because a createMany batch stamps
       // every row with the same instant.
-      models: { orderBy: [{ createdAt: 'asc' }, { name: 'asc' }] },
+      models: { orderBy: [{ createdAt: 'asc' }, { name: 'asc' }], include: { capability: true } },
       subscriptionAccounts: { orderBy: { createdAt: 'asc' } }
     },
     orderBy: { createdAt: 'asc' }

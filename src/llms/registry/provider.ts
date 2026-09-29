@@ -104,6 +104,8 @@ export class ProviderRegistry {
       models: config.models ? config.models : []
     }
     if (config.modelReasoningEfforts) resolved.modelReasoningEfforts = config.modelReasoningEfforts
+    if (config.modelSupportedEfforts) resolved.modelSupportedEfforts = config.modelSupportedEfforts
+    if (config.modelThinkingOff) resolved.modelThinkingOff = config.modelThinkingOff
 
     // Carry over the non-chain keys the config side owns — the
     // subscription credential the OAuth base reads off

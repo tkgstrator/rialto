@@ -135,6 +135,8 @@ function toProviderConfigShapes(providers: Provider[]): ProviderConfigShape[] {
     ...(p.api_style ? { api_style: p.api_style } : {}),
     ...(p.modelApiStyles ? { modelApiStyles: p.modelApiStyles } : {}),
     ...(p.transformer ? { transformer: p.transformer } : {}),
-    ...(p.modelReasoningEfforts ? { modelReasoningEfforts: p.modelReasoningEfforts } : {})
+    ...(p.modelReasoningEfforts ? { modelReasoningEfforts: p.modelReasoningEfforts } : {}),
+    ...(p.modelSupportedEfforts ? { modelSupportedEfforts: p.modelSupportedEfforts } : {}),
+    ...(p.modelThinkingOff ? { modelThinkingOff: p.modelThinkingOff } : {})
   }))
 }

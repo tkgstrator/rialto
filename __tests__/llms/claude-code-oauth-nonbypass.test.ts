@@ -38,7 +38,9 @@ function providerWithSubscriptionAuth(accessToken: string, subAccountId: string)
         accountId: undefined,
         refreshToken: null
       }
-    }
+    },
+    // Sonnet 5's levels as its own model list reports them (ModelCapability).
+    modelSupportedEfforts: { 'claude-sonnet-5': ['low', 'medium', 'high', 'xhigh', 'max'] }
   } as unknown as RuntimeProvider
 }
 

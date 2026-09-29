@@ -53,6 +53,7 @@ import { readAccessConfig } from './services/cloudflare-access'
 import { initConfig, initDir } from './services/config/envelope'
 import { migrateHomeDir } from './services/config/migrate-home-dir'
 import { ensureInboundSurfaces } from './services/inbound-surface-service'
+import { captureModelCapabilities } from './services/model-capability-service'
 import { startRoutingScheduler } from './services/routing-scheduler'
 import { startUsageCapture } from './services/usage-job'
 import { CODEX_MCP_PATH } from './shared/codex-mcp'
@@ -113,6 +114,11 @@ void startUsageCapture()
 // persist its authStatus so the UI can flag accounts that need
 // re-authentication.
 void startAuthHealthCheck()
+// Record what any subscription model still lacks (context window, effort
+// levels, Claude's thinking-off settings). Two indexed queries when
+// nothing is missing; the first boot after an upgrade fills in the models
+// already switched on, which no toggle or refresh would otherwise revisit.
+void captureModelCapabilities()
 // Routing scheduler. It publishes the quota snapshot the tier router
 // reads — per subscription model, whether it is out and when it comes
 // back. Every routed request consults it, so it always runs.

@@ -5,7 +5,6 @@ import { ProviderRegistry } from '../../src/llms/registry/provider'
 import { TransformerRegistry } from '../../src/llms/registry/transformer'
 import { OpenAITransformer } from '../../src/llms/transformers/openai/endpoint-chat'
 import { OpenAIResponsesTransformer } from '../../src/llms/transformers/openai/endpoint-responses'
-import { fetchCodexModels } from '../../src/services/codex-model-catalog'
 import { __resetSchedulerStateForTest, publishSnapshot } from '../../src/services/routing-scheduler/state'
 
 const model = 'gpt-5.4'
@@ -43,6 +42,17 @@ providers.registerFromConfig([
   },
   {
     name: 'codex',
+    api_style: 'openai_responses',
+    auth_mode: 'subscription',
+    api_base_url: 'https://chatgpt.com/backend-api/codex',
+    api_key: 'fixture-subscription-placeholder',
+    models: [model],
+    modelReasoningEfforts: { [model]: 'auto' },
+    // What the model's Codex list reported, recorded once (ModelCapability).
+    modelSupportedEfforts: { [model]: ['low', 'high'] }
+  },
+  {
+    name: 'codex-unrecorded',
     api_style: 'openai_responses',
     auth_mode: 'subscription',
     api_base_url: 'https://chatgpt.com/backend-api/codex',
@@ -164,26 +174,18 @@ describe('adaptive outbound effort', () => {
     }
   })
 
-  test('uses only the selected Codex account capability after account rotation', async () => {
-    const provider = providers.get('codex')
-    if (provider === undefined) throw new Error('Fixture provider missing')
-    const catalogFor =
-      (levels: string[]): typeof fetch =>
-      async () =>
-        Response.json({ models: [{ slug: model, supported_reasoning_levels: levels.map((effort) => ({ effort })) }] })
-    await fetchCodexModels('fixture', 'account-one', catalogFor(['low', 'high']), 'rotation-one')
-    await fetchCodexModels('fixture', 'account-two', catalogFor(['medium']), 'rotation-two')
+  test('chooses among the levels the Codex model recorded, and leaves an unrecorded one alone', () => {
+    const recorded = providers.get('codex')
+    const unrecorded = providers.get('codex-unrecorded')
+    if (recorded === undefined || unrecorded === undefined) throw new Error('Fixture provider missing')
     publish('codex', 40)
-    const first = { model }
-    const second = { model }
-    const requestFor = (subAccountId: string) => ({
-      req: { body: { model }, model, headers: {}, url: '/v1/responses', subAccountId }
-    })
-    expect(applyAdaptiveEffort(first, provider, requestFor('rotation-one'))?.effort).toBe('high')
-    expect(applyAdaptiveEffort(second, provider, requestFor('rotation-two'))?.effort).toBe('medium')
-    expect(first).toEqual({ model, reasoning: { effort: 'high', summary: 'detailed' } })
-    expect(second).toEqual({ model, reasoning: { effort: 'medium', summary: 'detailed' } })
-    expect(applyAdaptiveEffort({ model }, provider, requestFor('unknown-account'))).toBeNull()
+    const request = { req: { body: { model }, model, headers: {}, url: '/v1/responses' } }
+    const outbound = { model }
+    expect(applyAdaptiveEffort(outbound, recorded, request)?.effort).toBe('high')
+    expect(outbound).toEqual({ model, reasoning: { effort: 'high', summary: 'detailed' } })
+    const untouched = { model }
+    expect(applyAdaptiveEffort(untouched, unrecorded, request)).toBeNull()
+    expect(untouched).toEqual({ model })
   })
 
   test('manual effort wins over caller effort on the Chat bypass path', () => {

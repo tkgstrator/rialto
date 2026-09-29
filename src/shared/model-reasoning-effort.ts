@@ -1,6 +1,6 @@
 import { REASONING_MODEL_RE } from './reasoning-model'
 
-export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number]
 export type ReasoningEffortSetting = ReasoningEffort | 'auto'
 
@@ -31,27 +31,10 @@ const OPENAI_EFFORTS: Record<string, readonly ReasoningEffort[]> = {
   'gpt-6-luna': GPT56_PLUS
 }
 
-// Claude Code documents these exact model IDs and levels independently of
-// the public API. An unlisted or snapshot ID is not evidence of support.
-const CLAUDE_ALL = ['low', 'medium', 'high', 'xhigh', 'max'] as const
-const CLAUDE_NO_XHIGH = ['low', 'medium', 'high', 'max'] as const
-const CLAUDE_CODE_EFFORTS: Record<string, readonly ReasoningEffort[]> = {
-  'claude-fable-5-1': CLAUDE_ALL,
-  'claude-fable-5': CLAUDE_ALL,
-  'claude-opus-5-5': CLAUDE_ALL,
-  'claude-opus-5': CLAUDE_ALL,
-  'claude-opus-4-8': CLAUDE_ALL,
-  'claude-opus-4-7': CLAUDE_ALL,
-  'claude-opus-4-6': CLAUDE_NO_XHIGH,
-  'claude-sonnet-5': CLAUDE_ALL,
-  'claude-sonnet-4-6': CLAUDE_NO_XHIGH
-}
-
-export function claudeCodeEffortsFor(model: string): readonly ReasoningEffort[] | null {
-  const supported = CLAUDE_CODE_EFFORTS[model]
-  return supported === undefined ? null : supported
-}
-
+// Claude Code and Codex models carry no table here: the levels each accepts
+// are read once from the subscription's own model list and recorded
+// (ModelCapability, surfaced as Provider.modelSupportedEfforts). This table
+// serves api_key OpenAI models, whose catalog does not publish them.
 export function openAiEffortsFor(model: string): readonly ReasoningEffort[] | null {
   const supported = OPENAI_EFFORTS[model]
   return supported === undefined ? null : supported
