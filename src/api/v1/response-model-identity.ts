@@ -129,11 +129,11 @@ export async function applyResponseModelIdentity(
   response: Response,
   identity: SelectedModelIdentity
 ): Promise<Response> {
+  if (!response.ok) return response
   const selected = selectedModelOf(identity)
   const headers = new Headers(response.headers)
   if (selected !== undefined) headers.set('x-rialto-selected-model', selected)
   const withHeader = new Response(response.body, { status: response.status, statusText: response.statusText, headers })
-  if (!withHeader.ok) return withHeader
   if (isSseContentType(withHeader.headers.get('content-type'))) return patchSseResponse(withHeader, identity)
   return patchBlockingJson(withHeader, identity)
 }
