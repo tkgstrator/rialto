@@ -25,7 +25,7 @@ const TEST_ICON: Record<TestStatus, string> = {
   unknown: 'ri-subtract-line text-muted-foreground/50'
 }
 
-function TestIcon({ status }: { status: TestStatus }) {
+export function TestIcon({ status }: { status: TestStatus }) {
   return <i className={TEST_ICON[status]} />
 }
 
@@ -250,7 +250,7 @@ const toEffort = (value: string): ReasoningEffort | null => {
  * on a manual tier the strip above; a control here would be one more
  * place for the two to disagree.
  */
-function TierCell({ row }: { row: ModelRow }) {
+export function TierCell({ row }: { row: ModelRow }) {
   if (row.tiers.length === 0) return <span className='text-[12px] text-muted-foreground/50'>{DASH}</span>
   return (
     <span className='inline-flex items-center gap-1 whitespace-nowrap'>

@@ -796,7 +796,11 @@
     "identityAccess": "Access",
     "identityLocal": "本地",
     "identityToken": "令牌",
-    "navAccessTokens": "访问令牌"
+    "navAccessTokens": "访问令牌",
+    "back": "返回",
+    "more": "更多",
+    "moreDescription": "Rialto 的所有板块，以及服务器状态与主题。",
+    "navTokensShort": "令牌"
   },
   "overview": {
     "subtitle": "{{surfaces}} 个入口 · {{providers}} 个 provider · {{models}} 个模型已启用",

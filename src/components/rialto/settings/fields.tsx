@@ -149,8 +149,15 @@ export function SectionHead({
   actions?: ReactNode
 }) {
   return (
+    // Wraps on a phone instead of squeezing: nowrap, a long meta shrank to
+    // a column one word wide beside the actions. Wrapped, each part takes
+    // the line it needs and the actions keep `ml-auto` on whichever line
+    // they land.
     <div
-      className={cn('flex items-center gap-3 px-6 pb-3', title === undefined ? 'pt-5' : 'border-t border-border pt-6')}
+      className={cn(
+        'flex items-center gap-3 px-6 pb-3 max-md:flex-wrap max-md:gap-y-2 max-md:px-4',
+        title === undefined ? 'pt-5' : 'border-t border-border pt-6'
+      )}
     >
       {title === undefined ? null : <h2 className='text-sm font-semibold'>{title}</h2>}
       {lead}

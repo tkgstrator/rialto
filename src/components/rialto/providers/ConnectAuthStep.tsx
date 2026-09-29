@@ -25,7 +25,7 @@ function VendorIntro({ entry }: { entry: CatalogEntry }) {
   const subscription = entry.authMode === 'subscription'
   const brand = vendorBrand(entry.name, entry.vendor)
   return (
-    <div className='border-b border-border px-6 py-4'>
+    <div className='border-b border-border px-4 md:px-6 py-4'>
       <div className='flex items-center gap-2'>
         <h2 className='text-sm font-semibold'>{vendorLabel(entry.name, entry.displayName)}</h2>
         {subscription ? (
@@ -63,7 +63,7 @@ function WaitingCard({
 }) {
   const { t } = useTranslation()
   return (
-    <div className='px-6 py-5'>
+    <div className='px-4 md:px-6 py-5'>
       <div className='rounded-md border border-border px-4 py-4'>
         <div className='flex items-center gap-2'>
           <i className='ri-loader-4-line text-sm text-muted-foreground' />
@@ -105,7 +105,7 @@ function FailureCard({ failure, now, flush }: { failure: AuthFailure; now: numbe
     // The mock only draws this card under the waiting card, whose py-5 is
     // the gap between them. `flush` is the other case — straight under the
     // choice grid, which ends with no padding — so the card brings its own.
-    <div className={cn('px-6 pb-6', flush ? 'pt-5' : '')}>
+    <div className={cn('px-4 md:px-6 pb-6', flush ? 'pt-5' : '')}>
       <div className='rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3'>
         <div className='flex items-center gap-2'>
           <i className='ri-error-warning-line text-sm text-destructive' />
@@ -138,10 +138,10 @@ function ApiKeyForm({
   const { t } = useTranslation()
   return (
     <>
-      <div className='px-6 pt-5 pb-2'>
+      <div className='px-4 md:px-6 pt-5 pb-2'>
         <h3 className='text-sm font-semibold'>{t('providers.connect.howToAuth')}</h3>
       </div>
-      <div className='space-y-3 px-6 pb-5'>
+      <div className='space-y-3 px-4 md:px-6 pb-5'>
         <div>
           <div className='mb-1 text-[12px] text-muted-foreground'>{t('providers.credentials.apiKey')}</div>
           <div className='flex items-center gap-2'>
@@ -160,8 +160,12 @@ function ApiKeyForm({
         </div>
         <div>
           <div className='mb-1 text-[12px] text-muted-foreground'>{t('providers.credentials.baseUrl')}</div>
-          <div className='flex h-8 items-center rounded-md border border-border px-3 font-mono text-xs'>
-            {entry.apiBaseUrl}
+          {/* Clipped rather than spilling past the box on a phone, as the
+              detail page's own Base URL box does. */}
+          <div className='flex h-8 min-w-0 items-center rounded-md border border-border px-3 font-mono text-xs'>
+            <span className='truncate' title={entry.apiBaseUrl}>
+              {entry.apiBaseUrl}
+            </span>
           </div>
         </div>
         <p className='text-[12px] leading-relaxed text-muted-foreground'>

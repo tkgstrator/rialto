@@ -67,7 +67,7 @@ export function ConnectVendorRail({
 }) {
   const { t } = useTranslation()
   return (
-    <aside className='min-w-0 overflow-y-auto border-r border-border'>
+    <aside className='min-w-0 overflow-y-auto border-border md:border-r'>
       <div className='px-4 pt-5 pb-2'>
         <h2 className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>
           {t('providers.connect.vendor')}

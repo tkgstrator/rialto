@@ -16,14 +16,16 @@
  * make the two lists disagree while one of them was stale.
  */
 import type { TFunction } from 'i18next'
-import { useCallback } from 'react'
+import { type ReactNode, useCallback } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import { SectionHead } from '@/components/rialto/settings/fields'
+import { usePhone } from '@/hooks/use-phone'
 import { BusyOverlay } from './BusyOverlay'
-import { enabledCountOf, listedModelsOf, providerState } from './derive'
+import { enabledCountOf, listedModelsOf, providerState, type QuotaIndex } from './derive'
+import { ProviderListPhone } from './ProviderListPhone'
 import { type ListedProvider, ProviderTable } from './ProviderTable'
 import { type ProvidersData, useProvidersData } from './useProvidersData'
 import { type RefreshScope, useRefresh } from './useRefresh'
@@ -98,6 +100,18 @@ export function ProvidersScreen({ kind }: { kind: Kind }) {
   const goAdd = useCallback(() => navigate('/providers/connect'), [navigate])
 
   const entries = data === null ? [] : listOf(data, kind)
+  const phone = usePhone()
+
+  const buttons = (
+    <>
+      <RButton variant='ghost' icon='ri-refresh-line' onClick={refresh} disabled={pending !== null || loading}>
+        {t('providers.screen.refresh')}
+      </RButton>
+      <RButton variant='primary' icon='ri-add-line' onClick={goAdd}>
+        {t(copy.add)}
+      </RButton>
+    </>
+  )
 
   return (
     <Screen
@@ -107,58 +121,83 @@ export function ProvidersScreen({ kind }: { kind: Kind }) {
       // call renderShell with crumbs: [] for exactly this reason.
       hideChildCrumb
       subtitle={t(copy.subtitle)}
+      // On a phone the pair moves up into the header, icon-only: beside
+      // the summary they squeezed it into a seven-line column.
+      actions={phone ? buttons : undefined}
     >
       {error !== null ? (
         <div className='px-6 py-6 text-xs text-destructive'>{error}</div>
       ) : data === null ? (
         <div className='px-6 py-6 text-xs text-muted-foreground'>{t('common.loading')}</div>
       ) : (
-        <div className='relative min-w-0'>
-          {/* No title: the breadcrumb and the sidebar both say
-              "Subscriptions" already. The Refresh / Add pair sits in this
-              row, beside the summary text, not in the sticky top header —
-              matching the mock's single "flex items-center gap-3" row. */}
-          <SectionHead
-            meta={summary(entries, kind, t)}
-            actions={
-              <>
-                <RButton
-                  variant='ghost'
-                  icon='ri-refresh-line'
-                  onClick={refresh}
-                  disabled={pending !== null || loading}
-                >
-                  {t('providers.screen.refresh')}
-                </RButton>
-                <RButton variant='primary' icon='ri-add-line' onClick={goAdd}>
-                  {t(copy.add)}
-                </RButton>
-              </>
-            }
-          />
-
-          <div className='px-6 pb-4'>
-            <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
-              <i className='ri-information-line mr-1 align-[-1px]' />
-              <Trans
-                i18nKey={copy.note}
-                components={{
-                  mono: <span className='font-mono' />,
-                  strong: <span className='font-medium text-foreground' />
-                }}
-              />
-            </div>
-          </div>
-
-          {entries.length === 0 ? (
-            <div className='px-6 py-6 text-xs text-muted-foreground'>{t(copy.empty)}</div>
-          ) : (
-            <ProviderTable entries={entries} kind={kind} quota={data.quota} />
-          )}
-
-          {pending === null ? null : <BusyOverlay label={pending} />}
-        </div>
+        <ListBody phone={phone} entries={entries} kind={kind} quota={data.quota} pending={pending} buttons={buttons} />
       )}
     </Screen>
+  )
+}
+
+/** Everything under the header, in its phone or its desktop shape. */
+function ListBody({
+  phone,
+  entries,
+  kind,
+  quota,
+  pending,
+  buttons
+}: {
+  phone: boolean
+  entries: ListedProvider[]
+  kind: Kind
+  quota: QuotaIndex
+  pending: string | null
+  buttons: ReactNode
+}) {
+  const { t } = useTranslation()
+  const copy = COPY[kind]
+  if (phone) {
+    // No explainer note: it is the same paragraph on every visit, and on
+    // a phone it pushed the first row below the fold. The buttons are in
+    // the header instead (see ProvidersScreen).
+    return (
+      <div className='relative min-w-0'>
+        <p className='px-4 py-3 text-[12px] text-muted-foreground'>{summary(entries, kind, t)}</p>
+        {entries.length === 0 ? (
+          <div className='px-4 py-6 text-xs text-muted-foreground'>{t(copy.empty)}</div>
+        ) : (
+          <ProviderListPhone entries={entries} kind={kind} quota={quota} />
+        )}
+        {pending === null ? null : <BusyOverlay label={pending} />}
+      </div>
+    )
+  }
+  return (
+    <div className='relative min-w-0'>
+      {/* No title: the breadcrumb and the sidebar both say
+          "Subscriptions" already. The Refresh / Add pair sits in this
+          row, beside the summary text, not in the sticky top header —
+          matching the mock's single "flex items-center gap-3" row. */}
+      <SectionHead meta={summary(entries, kind, t)} actions={buttons} />
+
+      <div className='px-6 pb-4'>
+        <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
+          <i className='ri-information-line mr-1 align-[-1px]' />
+          <Trans
+            i18nKey={copy.note}
+            components={{
+              mono: <span className='font-mono' />,
+              strong: <span className='font-medium text-foreground' />
+            }}
+          />
+        </div>
+      </div>
+
+      {entries.length === 0 ? (
+        <div className='px-6 py-6 text-xs text-muted-foreground'>{t(copy.empty)}</div>
+      ) : (
+        <ProviderTable entries={entries} kind={kind} quota={quota} />
+      )}
+
+      {pending === null ? null : <BusyOverlay label={pending} />}
+    </div>
   )
 }

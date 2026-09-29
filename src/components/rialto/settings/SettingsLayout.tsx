@@ -68,10 +68,18 @@ export function SettingsLayout({
     <Screen subtitle={subtitle} actions={actions}>
       <div className='min-w-0'>
         {showHeading ? (
-          <div className='flex items-center gap-3 px-6 pt-6 pb-3'>
+          // On a phone the note drops under the title rather than beside
+          // it: squeezed between the title and the actions it was a 70px
+          // column eight lines tall. `order-last` keeps the badge and the
+          // actions on the title's line and gives the note a line of its own.
+          <div className='flex items-center gap-3 px-6 pt-6 pb-3 max-md:flex-wrap max-md:gap-y-2 max-md:px-4'>
             <h2 className='text-sm font-semibold'>{title}</h2>
             {headerBadge}
-            {headerNote ? <span className='text-[12px] text-muted-foreground'>{headerNote}</span> : null}
+            {headerNote ? (
+              <span className='text-[12px] text-muted-foreground max-md:order-last max-md:basis-full'>
+                {headerNote}
+              </span>
+            ) : null}
             {headerActions ? <div className='ml-auto'>{headerActions}</div> : null}
           </div>
         ) : null}
@@ -85,10 +93,14 @@ export function SettingsLayout({
  * One labelled row of the settings form: a fixed-width label column with
  * its hint, and the control. Fixed so controls line up down the pane
  * regardless of how long each label is.
+ *
+ * On a phone the two stack. A 14rem label column leaves a 390px screen
+ * about 30px for the control, which cut "127.0.0.1" to "12"; stacked, the
+ * control gets the full width and the label still reads first.
  */
 export function SettingsField({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
-    <div className='grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4'>
+    <div className='grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4 max-md:grid-cols-1 max-md:gap-2 max-md:px-4'>
       <div>
         <div className='text-xs font-medium'>{label}</div>
         {hint ? <div className='mt-0.5 text-[12px] leading-snug text-muted-foreground'>{hint}</div> : null}

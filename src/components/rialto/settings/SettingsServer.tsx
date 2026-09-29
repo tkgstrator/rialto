@@ -115,7 +115,7 @@ function UpdateSection() {
     <>
       <SectionHead title={t('settings.server.updateTitle')} />
       <SettingsField label={t('settings.server.version')} hint={updateHint(state, checking, now, t)}>
-        <div className='flex items-center gap-3'>
+        <div className='flex items-center gap-3 max-md:flex-wrap'>
           <span className='font-mono text-xs'>v{state === null ? buildVersion : state.currentVersion}</span>
           <UpdatePill state={state} checking={checking} />
           {releaseUrl === null ? null : (

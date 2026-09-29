@@ -87,7 +87,7 @@ export function HealthPanel({
         )}
       </SettingsField>
       {raw ? (
-        <div className='px-6 pb-4'>
+        <div className='px-6 pb-4 max-md:px-4'>
           <pre className='overflow-x-auto rounded-md border border-border bg-muted/40 px-4 py-3 font-mono text-[12px] leading-relaxed'>
             {health === null ? t('settings.advanced.nothingReported') : JSON.stringify(health, null, 2)}
           </pre>

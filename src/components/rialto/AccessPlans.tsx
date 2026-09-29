@@ -20,6 +20,7 @@ import { AccessTabs } from '@/components/rialto/settings/access/AccessTabs'
 import { PlanDialog } from '@/components/rialto/settings/access/PlanDialog'
 import { SectionHead } from '@/components/rialto/settings/fields'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
+import { usePhone } from '@/hooks/use-phone'
 import { api, type PlanWire } from '@/lib/api'
 import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
 import { fmtCount } from '@/lib/rialto/format'
@@ -144,6 +145,59 @@ function PlanTable({ plans, onOpen }: { plans: PlanWire[]; onOpen: (plan: PlanWi
   )
 }
 
+/**
+ * The plan table at phone width: a plan per row, its default model on
+ * the second line and its two windows side by side under that. Six
+ * columns at 390px overlapped each other; stacked, a window keeps both
+ * of its limits and still reads as a pair with the other one.
+ */
+function PlanListPhone({ plans, onOpen }: { plans: PlanWire[]; onOpen: (plan: PlanWire) => void }) {
+  const { t } = useTranslation()
+  if (plans.length === 0) {
+    return <div className='px-4 pb-6 text-[12px] text-muted-foreground'>{t('access.plans.empty')}</div>
+  }
+  return (
+    <>
+      {plans.map((plan) => (
+        <button
+          key={plan.id}
+          type='button'
+          onClick={() => onOpen(plan)}
+          className='block w-full border-t border-border/60 px-4 py-3 text-left transition-colors active:bg-muted/50'
+        >
+          <div className='flex items-baseline gap-3'>
+            <span className='min-w-0 flex-1 truncate text-xs font-medium'>{plan.name}</span>
+            {/* The token count, marked by the icon the section itself uses
+                rather than a word: "3 tokens" beside "Tokens" in the tab
+                strip above read twice. */}
+            <span className='flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums'>
+              <i aria-hidden className='ri-key-2-line text-muted-foreground' />
+              {fmtCount(plan.tokenCount)}
+            </span>
+          </div>
+          <div className='mt-1 flex min-w-0'>
+            <ModelsCell plan={plan} />
+          </div>
+          <div className='mt-2 grid grid-cols-2 gap-3 font-mono text-[12px] tabular-nums'>
+            <div className='min-w-0'>
+              <div className='font-sans text-[11px] uppercase tracking-wider text-muted-foreground/70'>
+                {t('access.plans.col5h')}
+              </div>
+              <WindowCell requests={plan.fiveHourRequestLimit} spendUsd={plan.fiveHourSpendLimitUsd} />
+            </div>
+            <div className='min-w-0'>
+              <div className='font-sans text-[11px] uppercase tracking-wider text-muted-foreground/70'>
+                {t('access.plans.col7d')}
+              </div>
+              <WindowCell requests={plan.sevenDayRequestLimit} spendUsd={plan.sevenDaySpendLimitUsd} />
+            </div>
+          </div>
+        </button>
+      ))}
+    </>
+  )
+}
+
 interface Editing {
   plan: PlanWire | null
   draft: PlanDraft
@@ -159,6 +213,7 @@ export function AccessPlans() {
   // Tokens with no plan, for the summary's "N without". Null until the
   // token list answers; the summary then leaves the count out.
   const [withoutPlan, setWithoutPlan] = useState<number | null>(null)
+  const phone = usePhone()
 
   const load = useCallback(() => {
     api
@@ -221,36 +276,47 @@ export function AccessPlans() {
   }
 
   const onPlan = plans.reduce((sum, plan) => sum + plan.tokenCount, 0)
+  const summary = t(onPlan === 1 ? 'access.plans.summaryOneToken' : 'access.plans.summary', {
+    n: plans.length,
+    onPlan: fmtCount(onPlan),
+    without: withoutPlan === null ? '–' : fmtCount(withoutPlan)
+  })
+  const newPlan = (
+    <RButton variant='primary' icon='ri-add-line' onClick={() => setEditing({ plan: null, draft: emptyPlanDraft() })}>
+      {t('access.plans.new')}
+    </RButton>
+  )
+  const open = (plan: PlanWire) => setEditing({ plan, draft: planDraftOf(plan) })
 
   return (
     <Screen subtitle={t('access.plans.subtitle')}>
       <AccessTabs active='plans' />
-      <SectionHead
-        meta={t(onPlan === 1 ? 'access.plans.summaryOneToken' : 'access.plans.summary', {
-          n: plans.length,
-          onPlan: fmtCount(onPlan),
-          without: withoutPlan === null ? '–' : fmtCount(withoutPlan)
-        })}
-        actions={
-          <RButton
-            variant='primary'
-            icon='ri-add-line'
-            onClick={() => setEditing({ plan: null, draft: emptyPlanDraft() })}
-          >
-            {t('access.plans.new')}
-          </RButton>
-        }
-      />
-      <div className='px-6 pb-4'>
-        <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
-          <i className='ri-information-line mr-1 align-[-1px]' />
-          <Trans
-            i18nKey='access.plans.note'
-            components={{ strong: <span className='font-medium text-foreground' /> }}
-          />
-        </div>
-      </div>
-      <PlanTable plans={plans} onOpen={(plan) => setEditing({ plan, draft: planDraftOf(plan) })} />
+      {phone ? (
+        // No explainer on a phone: the paragraph pushed the first plan
+        // below the fold, and the dialog a row opens says the same thing
+        // where it applies.
+        <>
+          <div className='flex items-center gap-3 px-4 pt-4 pb-3'>
+            <span className='min-w-0 text-[12px] text-muted-foreground'>{summary}</span>
+            <span className='ml-auto shrink-0'>{newPlan}</span>
+          </div>
+          <PlanListPhone plans={plans} onOpen={open} />
+        </>
+      ) : (
+        <>
+          <SectionHead meta={summary} actions={newPlan} />
+          <div className='px-6 pb-4'>
+            <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
+              <i className='ri-information-line mr-1 align-[-1px]' />
+              <Trans
+                i18nKey='access.plans.note'
+                components={{ strong: <span className='font-medium text-foreground' /> }}
+              />
+            </div>
+          </div>
+          <PlanTable plans={plans} onOpen={open} />
+        </>
+      )}
       {editing === null ? null : (
         <PlanDialog
           plan={editing.plan}

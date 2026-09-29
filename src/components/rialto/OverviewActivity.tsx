@@ -37,7 +37,7 @@ export function FailoverEntry({ row, now }: { row: OverviewFailoverRow; now: num
       : row.error
 
   return (
-    <Link to={failoverHref(row)} className={cn('block border-t border-border/60 px-6 py-3', ROW_LINK)}>
+    <Link to={failoverHref(row)} className={cn('block border-t border-border/60 px-4 py-3 md:px-6', ROW_LINK)}>
       <div className='flex items-baseline gap-3'>
         <span className='w-14 shrink-0'>
           <Pill tone={row.tone}>{label}</Pill>

@@ -99,7 +99,9 @@ function MeasureLine({ label, measure, format }: { label: string; measure: Measu
           <Meter pct={measure.pct} />
         )}
       </div>
-      <span className='w-40 shrink-0 text-right font-mono text-xs tabular-nums'>
+      {/* Narrower on a phone, where 10rem of figures left the meter a
+          stub; "$12.34 / $50.00" still fits in 8. */}
+      <span className='w-32 shrink-0 text-right font-mono text-xs tabular-nums md:w-40'>
         {measure.limit === null
           ? t('access.token.usedOnly', { used: format(measure.used) })
           : t('access.token.usedOf', { used: format(measure.used), limit: format(measure.limit) })}
@@ -145,22 +147,39 @@ function NoLimits({ view }: { view: Extract<UsageWindowsView, { kind: 'no-plan' 
   )
 }
 
-export function TokenUsageWindows({
-  token,
-  view,
-  now,
-  onReset
-}: {
+interface TokenUsageWindowsProps {
   token: AccessTokenWire
   view: UsageWindowsView
   /** The page's pinned instant, so the countdowns agree with its other relative labels. */
   now: number
   onReset: (next: TokenUsageWindowsWire) => void
-}) {
+}
+
+export function TokenUsageWindows(props: TokenUsageWindowsProps) {
+  const { t, i18n } = useTranslation()
+  const nowIso = dayjs(props.now).toISOString()
+  return (
+    <SettingsField
+      label={t('access.token.windows')}
+      hint={t('access.token.windowsHint', {
+        zone: zoneName(nowIso, i18n.language),
+        offset: zoneOffset(nowIso)
+      })}
+    >
+      <TokenUsageWindowsBody {...props} />
+    </SettingsField>
+  )
+}
+
+/**
+ * The windows without the field around them, for the phone layout: there
+ * the label-beside-content field left the meters a 6rem column, so the
+ * phone page puts this under a section heading instead.
+ */
+export function TokenUsageWindowsBody({ token, view, now, onReset }: TokenUsageWindowsProps) {
   const { t, i18n } = useTranslation()
   const { confirm, dialog: confirmDialog } = useConfirm()
   const [busy, setBusy] = useState(false)
-  const nowIso = dayjs(now).toISOString()
 
   const reset = async () => {
     const confirmed = await confirm({
@@ -183,13 +202,7 @@ export function TokenUsageWindows({
   }
 
   return (
-    <SettingsField
-      label={t('access.token.windows')}
-      hint={t('access.token.windowsHint', {
-        zone: zoneName(nowIso, i18n.language),
-        offset: zoneOffset(nowIso)
-      })}
-    >
+    <>
       {view.kind === 'loading' ? (
         <div className='text-xs text-muted-foreground'>{t('common.loading')}</div>
       ) : view.kind === 'limited' ? (
@@ -225,6 +238,6 @@ export function TokenUsageWindows({
         <NoLimits view={view} />
       )}
       {confirmDialog}
-    </SettingsField>
+    </>
   )
 }

@@ -12,6 +12,7 @@ import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
+import { usePhone } from '@/hooks/use-phone'
 import { enableAllModels, setModelEffort, testModels, toggleModel } from './actions'
 import { ConnectAuthStep } from './ConnectAuthStep'
 import { ConnectModelsStep } from './ConnectModelsStep'
@@ -20,7 +21,7 @@ import { ConnectVendorRail } from './ConnectVendorRail'
 import { enableProvider } from './connect-actions'
 import { accountLabel, disabledModelsOf, listedModelsOf } from './derive'
 import { type ConnectFlow, type ConnectStep, useConnectFlow } from './useConnectFlow'
-import { useProvidersData } from './useProvidersData'
+import { type ProvidersData, useProvidersData } from './useProvidersData'
 import { vendorLabel } from './vendor-labels'
 
 const NEXT_STEP: Record<ConnectStep, ConnectStep> = { 1: 2, 2: 3, 3: 3 }
@@ -113,6 +114,45 @@ function ConnectPane({ flow, now, reload }: { flow: ConnectFlow; now: number; re
   )
 }
 
+/**
+ * The rail and the step pane: side by side on a desktop, one at a time on
+ * a phone. There the vendor list is step 1 and picking a vendor moves to
+ * step 2 by itself, so a rail beside the pane would only ever be a way
+ * back — which the header's Back already is.
+ */
+function ConnectBody({
+  phone,
+  flow,
+  data,
+  reload
+}: {
+  phone: boolean
+  flow: ConnectFlow
+  data: ProvidersData
+  reload: () => Promise<void>
+}) {
+  const rail = (
+    <ConnectVendorRail
+      entries={data.catalog}
+      selectedName={flow.entry === undefined ? null : flow.entry.name}
+      onSelect={flow.selectVendor}
+    />
+  )
+  if (phone) {
+    return flow.step === 1 || flow.entry === undefined ? (
+      rail
+    ) : (
+      <ConnectPane flow={flow} now={data.now} reload={reload} />
+    )
+  }
+  return (
+    <div className='grid h-full grid-cols-[22rem_1fr]'>
+      {rail}
+      <ConnectPane flow={flow} now={data.now} reload={reload} />
+    </div>
+  )
+}
+
 /** Step 1 needs a vendor; step 3 needs the row the earlier steps created. */
 const canAdvance = (flow: ConnectFlow): boolean => {
   if (flow.step === 1) return flow.entry !== undefined
@@ -126,6 +166,7 @@ export function AddProviderScreen() {
   const { data, error, reload } = useProvidersData()
   const flow = useConnectFlow(data, reload)
   const { step, setStep, provider } = flow
+  const phone = usePhone()
 
   const cancel = useCallback(() => navigate('/providers'), [navigate])
 
@@ -180,20 +221,16 @@ export function AddProviderScreen() {
         </>
       }
     >
-      <ConnectStepBar current={step} onCancel={cancel} />
+      {/* No step bar on a phone: three labelled steps and Cancel do not
+          fit a row, the header subtitle already says "Step n of 3", and
+          the header's Back is the way out. */}
+      {phone ? null : <ConnectStepBar current={step} onCancel={cancel} />}
       {error !== null ? (
         <div className='px-6 py-6 text-xs text-destructive'>{error}</div>
       ) : data === null ? (
         <div className='px-6 py-6 text-xs text-muted-foreground'>{t('common.loading')}</div>
       ) : (
-        <div className='grid h-full grid-cols-[22rem_1fr]'>
-          <ConnectVendorRail
-            entries={data.catalog}
-            selectedName={flow.entry === undefined ? null : flow.entry.name}
-            onSelect={flow.selectVendor}
-          />
-          <ConnectPane flow={flow} now={data.now} reload={reload} />
-        </div>
+        <ConnectBody phone={phone} flow={flow} data={data} reload={reload} />
       )}
     </Screen>
   )
