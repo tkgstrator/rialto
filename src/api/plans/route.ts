@@ -1,16 +1,13 @@
 /**
  * Plans — what a token on one may spend. Admin-only (/api/*).
  *
- * An edit reaches every token on the plan at its next request, hand-issued
- * and app-minted alike. Delete is refused for a plan anything still uses,
+ * An edit reaches every token on the plan at its next request. Delete is refused for a plan anything still uses,
  * because removing it would lift those tokens' caps.
  */
 
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { createPlan, deletePlan, getPlan, listPlans, updatePlan } from '../../services/plan-service'
 import { validationErrorHook } from '../zod-response'
-
-const RefBodySchema = z.object({ id: z.string().nonempty(), name: z.string().nonempty() })
 
 const PlanSchema = z
   .object({
@@ -23,8 +20,6 @@ const PlanSchema = z
     // Completions per UTC day. Null = no cap.
     dailyRequestLimit: z.number().int().positive().nullable(),
     tokenCount: z.number().int().nonnegative(),
-    // Apps whose new installs start on this plan.
-    apps: z.array(RefBodySchema),
     createdAt: z.string().nonempty(),
     updatedAt: z.string().nonempty()
   })
@@ -127,7 +122,7 @@ plansRoute.openapi(
     responses: {
       200: { description: 'Deleted', content: { 'application/json': { schema: z.object({ deleted: z.boolean() }) } } },
       404: { description: 'No such plan', content: { 'application/json': { schema: ErrorSchema } } },
-      409: { description: 'Tokens or apps still use it', content: { 'application/json': { schema: ErrorSchema } } }
+      409: { description: 'Tokens still use it', content: { 'application/json': { schema: ErrorSchema } } }
     }
   }),
   async (c) => {

@@ -7,7 +7,7 @@
  * `http://irodori-tts:8000`). The edge used to send `/v1/audio/*` to that
  * server directly, which left speech open to anyone who found the path:
  * nothing there checks a token. Behind Rialto it sits behind the same
- * `/v1` gate as the completions it speaks, so the key an app install
+ * `/v1` gate as the completions it speaks, so the key a client
  * already holds is the key that lets it talk.
  *
  * Only these two paths are relayed. Anything else the TTS server serves

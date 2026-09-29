@@ -900,7 +900,6 @@
   "access": {
     "tabs": {
       "tokens": "Tokens",
-      "apps": "Apps",
       "plans": "Plans"
     },
     "token": {
@@ -908,65 +907,11 @@
       "planHint": "Limits the models this token may use and how many completions it may make per UTC day. No plan leaves it unrestricted.",
       "noPlan": "no plan — unrestricted"
     },
-    "apps": {
-      "subtitle": "Apps whose installs register themselves",
-      "summary": "{{on}} on · {{off}} off · {{devices}} devices",
-      "note": "An authorized app's installs get their own token by proving, with Apple App Attest, that they are the genuine app on a real device — nobody types a key. Registration is <mono>POST /v1/app/challenge</mono> then <mono>POST /v1/app/devices</mono>. <strong>Turning an app off</strong> stops new installs and every token it already handed out.",
-      "empty": "No app is authorized, so /v1/app/* answers 503 and no install can register.",
-      "listFailed": "Could not list apps: {{message}}",
-      "add": "Add app",
-      "addTitle": "Add app",
-      "addFailed": "Could not add the app: {{message}}",
-      "name": "Name",
-      "appId": "App ID",
-      "appIdHint": "Team ID and bundle ID, joined by a dot. Only attestations minted for exactly this app are accepted.",
-      "planForNew": "Plan for new installs",
-      "planForNewHint": "Every install that registers gets a token on this plan. Change it later on the app's page; tokens already issued move with the plan, not with this setting.",
-      "noPlans": "Create a plan on the Plans tab first — an install's token always goes on one.",
-      "acceptDevelopment": "Accept development builds",
-      "acceptDevelopmentHint": "Builds run from Xcode attest in Apple's development environment. Turn this on only while testing — anyone with the project can make one.",
-      "off": "off",
-      "buildsStore": "App Store / TestFlight",
-      "buildsDevelopment": "Development too",
-      "colApp": "App",
-      "colBuilds": "Builds",
-      "colPlan": "Plan",
-      "colDevices": "Devices",
-      "colActive": "Active 7d",
-      "colRequestsToday": "Req today",
-      "colCost": "Cost 30d"
-    },
-    "app": {
-      "subtitle": "How this app's installs register, and the installs themselves",
-      "loadFailed": "Could not load the app: {{message}}",
-      "on": "on",
-      "turnOff": "Turn off",
-      "turnOn": "Turn on",
-      "turnOffConfirm": "Turn off “{{name}}”?\n\nNew installs stop registering, and the {{n}} tokens its installs already hold stop working at their next request. Turning it back on restores them.",
-      "appIdHint": "Team ID and bundle ID. Attestations for any other app are refused.",
-      "planHint": "The plan an install's token is put on when it registers. Existing installs keep theirs; move one on its own page.",
-      "developmentBuilds": "Development builds",
-      "saveNote": "Saves how <strong>{{name}}</strong> installs register, from the next registration.",
-      "saved": "“{{name}}” saved.",
-      "devices": "Devices",
-      "devicesSummary": "{{total}} · {{active}} active in 7 days",
-      "devicesFailed": "Could not list devices: {{message}}",
-      "searchKey": "Key ID",
-      "noDevices": "No install has registered yet.",
-      "noMatches": "No device key starts with that.",
-      "colKey": "Device key",
-      "colBuild": "Build",
-      "colPlan": "Plan",
-      "colRequestsToday": "Requests today",
-      "colCost": "Cost 30d",
-      "colLastUsed": "Last used",
-      "colRegistered": "Registered"
-    },
     "plans": {
       "subtitle": "What a token on each plan may spend",
       "summary": "{{n}} plans · {{tokens}} tokens on a plan",
-      "note": "A token on a plan may use only the plan's models — anything else goes to its default — and is capped per UTC day. <strong>Changing a plan reaches every token on it at once</strong> — nothing is copied onto the tokens. A token with no plan is unrestricted, as hand-issued ones are today.",
-      "empty": "No plans yet. An app needs one before its installs can register.",
+      "note": "A token on a plan may use only the plan's models — anything else goes to its default — and is capped per UTC day. <strong>Changing a plan reaches every token on it at once</strong> — nothing is copied onto the tokens. A token with no plan is unrestricted.",
+      "empty": "No plans yet. Create one to cap what a token may spend.",
       "listFailed": "Could not list plans: {{message}}",
       "new": "New plan",
       "newTitle": "New plan",
@@ -987,12 +932,11 @@
       "saved": "Plan “{{name}}” saved.",
       "deleted": "Plan “{{name}}” deleted.",
       "deleteConfirm": "Delete the plan “{{name}}”?\n\nNothing is on it, so no token changes.",
-      "deleteInUse": "Move its tokens and apps to another plan first.",
+      "deleteInUse": "Move its tokens to another plan first.",
       "colPlan": "Plan",
       "colModels": "Models",
       "colCap": "Daily cap",
-      "colTokens": "Tokens",
-      "colApps": "New installs of"
+      "colTokens": "Tokens"
     }
   }
 }

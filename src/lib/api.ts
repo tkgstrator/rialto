@@ -1,7 +1,5 @@
 import type {
   AccessTokenWire,
-  AppDeviceWire,
-  AuthorizedAppWire,
   HealthResponse,
   IdentityResponse,
   InboundSurfaceWire,
@@ -304,13 +302,8 @@ class ApiClient {
 
   // Access tokens (Phase 3.5). Issue returns the plaintext once; there is
   // no endpoint that can show it again.
-  /**
-   * `manual` leaves out the tokens app installs minted for themselves —
-   * the Tokens tab's list. Activity reads them all, so its spend shares
-   * add up to what the window cost.
-   */
-  async getAccessTokens(issued: 'all' | 'manual' = 'all'): Promise<{ tokens: AccessTokenWire[] }> {
-    return this.get<{ tokens: AccessTokenWire[] }>(`/access-tokens?issued=${issued}`)
+  async getAccessTokens(): Promise<{ tokens: AccessTokenWire[] }> {
+    return this.get<{ tokens: AccessTokenWire[] }>('/access-tokens')
   }
 
   async issueAccessToken(body: {
@@ -383,57 +376,9 @@ class ApiClient {
     return this.patch<PlanWire>(`/plans/${encodeURIComponent(id)}`, body)
   }
 
-  // Refused (409) while any token or app is on the plan.
+  // Refused (409) while any token is on the plan.
   async deletePlan(id: string): Promise<{ deleted: boolean }> {
     return this.deleteRequest<{ deleted: boolean }>(`/plans/${encodeURIComponent(id)}`)
-  }
-
-  // Authorized apps: apps whose installs register themselves with App Attest.
-  async getAuthorizedApps(): Promise<{ apps: AuthorizedAppWire[] }> {
-    return this.get<{ apps: AuthorizedAppWire[] }>('/authorized-apps')
-  }
-
-  async getAuthorizedApp(id: string): Promise<AuthorizedAppWire> {
-    return this.get<AuthorizedAppWire>(`/authorized-apps/${encodeURIComponent(id)}`)
-  }
-
-  async createAuthorizedApp(body: {
-    name: string
-    appleAppId: string
-    planId: string
-    allowDevelopment: boolean
-  }): Promise<AuthorizedAppWire> {
-    return this.post<AuthorizedAppWire>('/authorized-apps', body)
-  }
-
-  /** The app page's form, saved whole. The App ID is not editable. */
-  async updateAuthorizedApp(
-    id: string,
-    body: { name: string; planId: string; allowDevelopment: boolean }
-  ): Promise<AuthorizedAppWire> {
-    return this.patch<AuthorizedAppWire>(`/authorized-apps/${encodeURIComponent(id)}`, body)
-  }
-
-  /** Off stops new installs and every token the app issued; on restores them. */
-  async setAuthorizedAppEnabled(id: string, enabled: boolean): Promise<AuthorizedAppWire> {
-    return this.post<AuthorizedAppWire>(
-      `/authorized-apps/${encodeURIComponent(id)}/${enabled ? 'enable' : 'disable'}`,
-      {}
-    )
-  }
-
-  async getAppDevices(
-    id: string,
-    { query, offset, limit }: { query?: string; offset?: number; limit?: number } = {}
-  ): Promise<{ total: number; devices: AppDeviceWire[] }> {
-    const params = new URLSearchParams()
-    if (query !== undefined && query.length > 0) params.set('q', query)
-    if (offset !== undefined) params.set('offset', String(offset))
-    if (limit !== undefined) params.set('limit', String(limit))
-    const qs = params.toString()
-    return this.get<{ total: number; devices: AppDeviceWire[] }>(
-      `/authorized-apps/${encodeURIComponent(id)}/devices${qs.length > 0 ? `?${qs}` : ''}`
-    )
   }
 
   // Identity for the shell footer. Verified upstream by adminAuth — a
