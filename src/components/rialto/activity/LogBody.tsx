@@ -34,7 +34,7 @@ function LogRow({ line }: { line: LogLine }) {
     <details className='border-b border-border/40' onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary className='flex cursor-pointer list-none gap-0 hover:bg-muted/50 [&::-webkit-details-marker]:hidden'>
         <span className={cn('w-0.5 shrink-0', GUTTER[chip])} />
-        <span className='w-24 shrink-0 py-1.5 pl-4 font-mono text-[12px] tabular-nums text-muted-foreground md:w-28 md:pl-6'>
+        <span className='w-28 shrink-0 py-1.5 pl-4 font-mono text-[12px] tabular-nums text-muted-foreground md:pl-6'>
           {line.time === 0 ? '' : dayjs(line.time).format('HH:mm:ss.SSS')}
         </span>
         <span className={cn('w-14 shrink-0 py-1.5 pl-2 font-mono text-[11px] uppercase md:w-16', LEVEL_TEXT[chip])}>

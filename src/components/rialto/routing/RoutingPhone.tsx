@@ -17,6 +17,7 @@
  */
 
 import { cn } from 'cn'
+import { useEffect, useRef } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { RoutingModePill } from '@/components/rialto/OverviewSurfaces'
 import { Mono, PhoneRow, Pill } from '@/components/rialto/primitives'
@@ -41,14 +42,24 @@ function SurfaceStrip({
   active: SurfaceId
   onSelect: (id: SurfaceId) => void
 }) {
+  // Arriving from Overview's surface list lands on any of the five, and
+  // the later ones start past the right edge — a selected tab you cannot
+  // see does not say which surface the page is about.
+  const stripRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (stripRef.current === null) return
+    const tab = stripRef.current.querySelector(`[data-surface="${active}"]`)
+    if (tab !== null) tab.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [active])
   return (
-    <div className='overflow-x-auto border-b border-border [scrollbar-width:none]'>
+    <div ref={stripRef} className='overflow-x-auto border-b border-border [scrollbar-width:none]'>
       <div className='flex w-max px-1'>
         {surfaces.map((surface) => {
           const on = surface.id === active
           return (
             <button
               key={surface.id}
+              data-surface={surface.id}
               type='button'
               onClick={() => onSelect(surface.id)}
               className={cn(
