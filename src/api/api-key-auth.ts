@@ -51,7 +51,7 @@ function unauthorizedResponse(
   }
 }
 
-// A plan-minted token has a daily request cap. The refusal is a 429 in
+// A token on a plan has a daily request cap. The refusal is a 429 in
 // the surface's own envelope so an SDK's retry logic reads it as a rate
 // limit, with Retry-After set to the next UTC midnight.
 function limitResponse(

@@ -18,10 +18,8 @@ export interface PlanRow {
   defaultModel: string
   /** Completions per UTC day. Null = no cap. */
   dailyRequestLimit: number | null
-  /** Tokens on this plan, hand-issued and app-minted alike. */
+  /** Tokens on this plan. */
   tokenCount: number
-  /** Apps whose new installs start on this plan. */
-  apps: { id: string; name: string }[]
   createdAt: string
   updatedAt: string
 }
@@ -38,8 +36,7 @@ export type PlanRefusal = 'invalid' | 'duplicate-name' | 'not-found' | 'in-use'
 export type PlanResult = { ok: true; plan: PlanRow } | { ok: false; reason: PlanRefusal; message: string }
 
 const INCLUDE = {
-  _count: { select: { tokens: true } },
-  apps: { select: { id: true, name: true }, orderBy: { name: 'asc' } }
+  _count: { select: { tokens: true } }
 } as const
 
 type PlanRecord = {
@@ -51,7 +48,6 @@ type PlanRecord = {
   createdAt: Date
   updatedAt: Date
   _count: { tokens: number }
-  apps: { id: string; name: string }[]
 }
 
 const toRow = (row: PlanRecord): PlanRow => ({
@@ -61,7 +57,6 @@ const toRow = (row: PlanRecord): PlanRow => ({
   defaultModel: row.defaultModel,
   dailyRequestLimit: row.dailyRequestLimit,
   tokenCount: row._count.tokens,
-  apps: row.apps,
   createdAt: row.createdAt.toISOString(),
   updatedAt: row.updatedAt.toISOString()
 })
@@ -150,7 +145,7 @@ export async function updatePlan(id: string, patch: Partial<PlanInput>): Promise
 }
 
 /**
- * Delete a plan nothing uses. A plan with tokens or apps on it is refused
+ * Delete a plan nothing uses. A plan with tokens on it is refused
  * rather than cascaded: removing it would silently lift those tokens' caps.
  */
 export async function deletePlan(
@@ -158,8 +153,8 @@ export async function deletePlan(
 ): Promise<{ ok: true } | { ok: false; reason: PlanRefusal; message: string }> {
   const plan = await getPlan(id)
   if (plan === null) return { ok: false, reason: 'not-found', message: 'No such plan.' }
-  if (plan.tokenCount > 0 || plan.apps.length > 0) {
-    return { ok: false, reason: 'in-use', message: 'Move its tokens and apps to another plan first.' }
+  if (plan.tokenCount > 0) {
+    return { ok: false, reason: 'in-use', message: 'Move its tokens to another plan first.' }
   }
   await getPrismaClient().plan.delete({ where: { id } })
   return { ok: true }

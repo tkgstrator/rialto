@@ -128,12 +128,3 @@ export function planDraftChanged(draft: PlanDraft, plan: PlanInputWire): boolean
     input.models.some((m) => !plan.models.includes(m))
   )
 }
-
-/**
- * Share of today's cap a device has used, 0–100 for the meter. Null when
- * the device's plan has no cap: an unbounded row has nothing to fill.
- */
-export function capPct(used: number, cap: number | null): number | null {
-  if (cap === null || cap <= 0) return null
-  return Math.min(100, Math.round((used / cap) * 100))
-}

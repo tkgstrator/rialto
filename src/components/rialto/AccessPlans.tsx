@@ -2,12 +2,11 @@
  * Access tokens → Plans: what a token on each plan may spend.
  *
  * A plan is referenced, never copied onto its tokens. Raising Free's
- * daily cap is one edit that every install on Free sees at its next
- * request — the alternative, a limit stamped on each of a thousand
- * tokens at issue time, is a migration every time pricing moves.
+ * daily cap is one edit that every token on Free sees at its next
+ * request — the alternative, a limit stamped on each token at issue
+ * time, is a migration every time pricing moves.
  *
- * A plan is not only for apps: a hand-issued token can be put on one
- * too, from its own page.
+ * A token is put on a plan when it is issued, or later from its own page.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
@@ -26,15 +25,14 @@ import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
 import { fmtCount } from '@/lib/rialto/format'
 import { emptyPlanDraft, type PlanDraft, planDraftOf, planInputOf } from '@/lib/rialto/settings/plans'
 
-type PlanSortKey = 'name' | 'models' | 'cap' | 'tokens' | 'apps'
+type PlanSortKey = 'name' | 'models' | 'cap' | 'tokens'
 
 const planSortValue = (plan: PlanWire, key: PlanSortKey): SortValue => {
   if (key === 'name') return plan.name
   if (key === 'models') return plan.models.length
   // No cap is the most generous plan there is, not a missing value.
   if (key === 'cap') return plan.dailyRequestLimit === null ? Number.POSITIVE_INFINITY : plan.dailyRequestLimit
-  if (key === 'tokens') return plan.tokenCount
-  return plan.apps.length === 0 ? null : plan.apps.map((app) => app.name).join(' · ')
+  return plan.tokenCount
 }
 
 /**
@@ -67,7 +65,6 @@ function PlanTable({ plans, onOpen }: { plans: PlanWire[]; onOpen: (plan: PlanWi
         <col />
         <col className='w-32' />
         <col className='w-24' />
-        <col className='w-56' />
         <col className='w-10' />
       </colgroup>
       <thead>
@@ -83,9 +80,6 @@ function PlanTable({ plans, onOpen }: { plans: PlanWire[]; onOpen: (plan: PlanWi
           </SortTh>
           <SortTh sortKey='tokens' sort={sort} className='px-3 text-right' align='right'>
             {t('access.plans.colTokens')}
-          </SortTh>
-          <SortTh sortKey='apps' sort={sort} className='px-3 text-left'>
-            {t('access.plans.colApps')}
           </SortTh>
           <th className='pl-3 pr-6' />
         </tr>
@@ -112,9 +106,6 @@ function PlanTable({ plans, onOpen }: { plans: PlanWire[]; onOpen: (plan: PlanWi
               )}
             </td>
             <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCount(plan.tokenCount)}</td>
-            <td className='truncate px-3 text-[12px] text-muted-foreground'>
-              {plan.apps.length === 0 ? '—' : plan.apps.map((app) => app.name).join(' · ')}
-            </td>
             <td className='py-2.5 pl-3 pr-6'>
               <div className='flex justify-end text-muted-foreground/50'>
                 <i className='ri-pencil-line text-sm' />
