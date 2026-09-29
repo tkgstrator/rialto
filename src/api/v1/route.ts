@@ -244,6 +244,10 @@ async function formatResponse(
   log: Logger,
   observed: { provider: string; model: string | undefined; path: string }
 ): Promise<Response> {
+  // `formatBlockingResponse` creates its own JSON response through Hono, so
+  // carry selected-target provenance onto the context before that branch.
+  const selectedModel = response.headers.get('x-rialto-selected-model')
+  if (selectedModel !== null) c.header('x-rialto-selected-model', selectedModel)
   if (!stream) return formatBlockingResponse(c, response, log, observed)
   // SSE — relay the upstream stream as-is. Set the headers the Anthropic
   // SDK expects on the inbound client.
