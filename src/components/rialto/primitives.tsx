@@ -128,9 +128,9 @@ export type ButtonVariant = keyof typeof BUTTON_VARIANTS
  *
  * `disabled` paints, which it did not used to. A disabled button that
  * looks exactly like a live one is worse than no button: Save on an
- * unchanged form, Previous on the first page and Rotate on a revoked
- * token all invited a click and answered with nothing, and the operator
- * has no way to tell that from a control that is broken. The mocks are
+ * unchanged form and Previous on the first page both invited a click and
+ * answered with nothing, and the operator has no way to tell that from a
+ * control that is broken. The mocks are
  * static HTML with no disabled state to draw, so this is expected to
  * read as a small mock diff on the screens that rest with a disabled
  * control — state the mock cannot express, not a design difference.

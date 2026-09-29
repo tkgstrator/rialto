@@ -142,6 +142,17 @@ export interface InboundSurfaceWire {
   deniedTargets: string[]
 }
 
+/**
+ * Revoked tokens' traffic over the same trailing window as a token's
+ * `costUsd`. Revoking deletes the row, so this is where that spend still
+ * shows; a per-token breakdown without it would inflate the survivors'
+ * shares.
+ */
+export interface RevokedTokensWire {
+  requestCount: number
+  costUsd: number | null
+}
+
 export interface AccessTokenWire {
   id: string
   name: string
@@ -188,7 +199,6 @@ export interface AccessTokenWire {
   inputTokens: number | null
   outputTokens: number | null
   expiresAt: string | null
-  revokedAt: string | null
   /**
    * When the secret was last replaced, or null while the row still
    * carries the one it was issued with. Rotation keeps the row, so

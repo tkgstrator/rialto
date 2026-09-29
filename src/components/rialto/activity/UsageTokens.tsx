@@ -17,14 +17,30 @@ export function TokenRow({
 }) {
   const { t } = useTranslation()
   const paths = scopePaths(surfaces, row.surfaces)
+  const revoked = row.kind === 'revoked'
   return (
     <tr className='border-t border-border/60 transition-colors hover:bg-muted/50'>
       <td className='py-2.5 pl-6 pr-3'>
-        <div className='truncate text-xs font-medium'>{row.name}</div>
-        <div className='font-mono text-[12px] text-muted-foreground'>{row.prefix}</div>
+        {revoked ? (
+          <>
+            <div className='truncate text-xs font-medium text-muted-foreground'>
+              {t('activity.usage.revokedTokens')}
+            </div>
+            <div className='text-[12px] text-muted-foreground'>{t('activity.usage.revokedTokensHint')}</div>
+          </>
+        ) : (
+          <>
+            <div className='truncate text-xs font-medium'>{row.name}</div>
+            <div className='font-mono text-[12px] text-muted-foreground'>{row.prefix}</div>
+          </>
+        )}
       </td>
       <td className='px-3'>
-        <SurfaceScope paths={paths} allLabel={t('settings.access.scopeAll')} />
+        {revoked ? (
+          <span className='text-[12px] text-muted-foreground'>–</span>
+        ) : (
+          <SurfaceScope paths={paths} allLabel={t('settings.access.scopeAll')} />
+        )}
       </td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCount(row.requestCount)}</td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCost(row.costUsd)}</td>
@@ -37,7 +53,7 @@ export function TokenRow({
         </div>
       </td>
       <td className='py-2.5 pl-3 pr-6 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
-        {row.lastUsedAt === null ? t('settings.access.never') : fmtAgo(row.lastUsedAt, now)}
+        {revoked ? '–' : row.lastUsedAt === null ? t('settings.access.never') : fmtAgo(row.lastUsedAt, now)}
       </td>
     </tr>
   )

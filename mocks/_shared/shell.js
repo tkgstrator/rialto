@@ -388,8 +388,7 @@ const ACCESS_TOKENS = [
   // and has no per-request price, so a dash under Cost beside real In/Out
   // figures is a state the screen has to read correctly.
   { name: 'Gemini CLI', prefix: 'rialto_be44d1', surfaces: ['/v1beta/models/*'], used: '1h ago', reqs: '486', cost: '–', tin: '3.11M', tout: '77.4k', expires: '2026-12-01' },
-  { name: 'CI — nightly evals', prefix: 'rialto_0d18e9', surfaces: [], used: '6h ago', reqs: '3.10k', cost: '$9.14', tin: '9.80M', tout: '204k', expires: '2026-10-08' },
-  { name: 'Old laptop', prefix: 'rialto_2b9047', surfaces: ['/v1/messages'], used: '41d ago', reqs: '88.1k', cost: '–', tin: '–', tout: '–', expires: 'never', revoked: true }
+  { name: 'CI — nightly evals', prefix: 'rialto_0d18e9', surfaces: [], used: '6h ago', reqs: '3.10k', cost: '$9.14', tin: '9.80M', tout: '204k', expires: '2026-10-08' }
 ]
 
 /**
@@ -420,11 +419,10 @@ const tokenScopeCell = (paths) => {
  * they cost.
  */
 const tokenRow = (t) => `
-  <tr ${navTo('access-token.html')} class="cursor-pointer border-t border-border/60 transition-colors hover:bg-muted/50 ${t.revoked ? 'opacity-45' : ''}">
+  <tr ${navTo('access-token.html')} class="cursor-pointer border-t border-border/60 transition-colors hover:bg-muted/50">
     <td class="py-2.5 pl-6 pr-3">
       <div class="flex items-center gap-2">
         <span class="text-xs font-medium">${t.name}</span>
-        ${t.revoked ? pill('revoked', 'bad') : ''}
       </div>
       <div class="font-mono text-[12px] text-muted-foreground">${t.prefix}</div>
     </td>
@@ -457,7 +455,7 @@ const tokenTable = () => `
         <th class="pl-3 pr-6"></th>
       </tr>
     </thead>
-    <tbody>${ACCESS_TOKENS.filter((t) => !t.revoked).map(tokenRow).join('')}</tbody>
+    <tbody>${ACCESS_TOKENS.map(tokenRow).join('')}</tbody>
   </table>`
 
 /**

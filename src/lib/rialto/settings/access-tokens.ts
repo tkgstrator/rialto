@@ -1,12 +1,13 @@
 /**
  * Wire shape and pure state logic for the access-token list.
  *
- * The one rule worth stating: a token is dead if it has been revoked
- * **or** if its expiry has passed. `resolveAccessToken` rejects on both
- * (`revokedAt === null && (expiresAt === null || expiresAt > now)`), so
- * a UI that only looked at `revokedAt` would show an expired credential
- * as live — the exact wrong answer on a screen whose job is to say what
- * can still reach the proxy.
+ * The one rule worth stating: a listed token is dead once its expiry has
+ * passed, even though its row is still there. `resolveAccessToken`
+ * rejects it (`expiresAt === null || expiresAt > now`), so a UI that only
+ * asked "is it listed" would show an expired credential as live — the
+ * exact wrong answer on a screen whose job is to say what can still
+ * reach the proxy. A revoked token is simply not listed: revoking deletes
+ * the row.
  */
 
 import type { AccessTokenWire } from '@/lib/api'
@@ -27,11 +28,10 @@ export function fmtTokenCount(n: number | null): string {
   return n === null ? '–' : fmtTokens(n)
 }
 
-export type TokenState = 'active' | 'expired' | 'revoked'
+export type TokenState = 'active' | 'expired'
 
 /** Mirrors the server's accept test, so the badge cannot disagree with the gate. */
 export function tokenState(token: AccessTokenWire, now: number): TokenState {
-  if (token.revokedAt !== null) return 'revoked'
   if (token.expiresAt !== null && Date.parse(token.expiresAt) <= now) return 'expired'
   return 'active'
 }
@@ -44,18 +44,16 @@ export function tokenState(token: AccessTokenWire, now: number): TokenState {
  */
 export const TOKEN_STATE_PILL: Record<TokenState, { tone: 'ok' | 'warn' | 'bad'; labelKey: string }> = {
   active: { tone: 'ok', labelKey: 'settings.access.tokenActive' },
-  expired: { tone: 'warn', labelKey: 'settings.access.tokenExpired' },
-  revoked: { tone: 'bad', labelKey: 'settings.access.tokenRevoked' }
+  expired: { tone: 'warn', labelKey: 'settings.access.tokenExpired' }
 }
 
 export interface TokenCounts {
   active: number
   expired: number
-  revoked: number
 }
 
 export function countTokens(tokens: readonly AccessTokenWire[], now: number): TokenCounts {
-  const counts: TokenCounts = { active: 0, expired: 0, revoked: 0 }
+  const counts: TokenCounts = { active: 0, expired: 0 }
   for (const token of tokens) {
     const state = tokenState(token, now)
     counts[state] += 1
@@ -63,12 +61,11 @@ export function countTokens(tokens: readonly AccessTokenWire[], now: number): To
   return counts
 }
 
-const STATE_ORDER: Record<TokenState, number> = { active: 0, expired: 1, revoked: 2 }
+const STATE_ORDER: Record<TokenState, number> = { active: 0, expired: 1 }
 
 /**
- * Live credentials first, dead ones at the bottom — a revoked row still
- * matters (it keeps the attribution on past requests) but it is not what
- * someone scanning this table is looking for. Ties break on newest first.
+ * Live credentials first, expired ones at the bottom — not what someone
+ * scanning this table is looking for. Ties break on newest first.
  */
 export function sortTokens(tokens: readonly AccessTokenWire[], now: number): AccessTokenWire[] {
   return [...tokens].sort((a, b) => {

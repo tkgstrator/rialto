@@ -17,7 +17,6 @@ import {
   listAccessTokens,
   resetAllUsageWindows,
   resetTokenUsageWindows,
-  revokeAccessToken,
   rotateAccessToken,
   updateAccessToken
 } from '../../services/access-token-service'
@@ -58,7 +57,6 @@ const TokenSchema = z
     // token's traffic could be priced.
     costUsd: z.number().nullable(),
     expiresAt: z.string().nonempty().nullable(),
-    revokedAt: z.string().nonempty().nullable(),
     // Null while the row still carries the secret it was issued with.
     rotatedAt: z.string().nonempty().nullable(),
     createdAt: z.string().nonempty(),
@@ -67,7 +65,16 @@ const TokenSchema = z
   })
   .openapi('AccessToken')
 
-const ListSchema = z.object({ tokens: z.array(TokenSchema) }).openapi('AccessTokenList')
+const ListSchema = z
+  .object({
+    tokens: z.array(TokenSchema),
+    // Revoked tokens' traffic over the same window as `costUsd`. Revoking
+    // deletes the row, so this is the only place that spend still shows;
+    // a per-token breakdown without it would inflate the survivors'
+    // shares. Null when the window holds none.
+    revoked: z.object({ requestCount: z.number().int().nonnegative(), costUsd: z.number().nullable() }).nullable()
+  })
+  .openapi('AccessTokenList')
 
 const IssueBodySchema = z
   .object({
@@ -97,7 +104,7 @@ accessTokensRoute.openapi(
       200: { description: 'Issued tokens', content: { 'application/json': { schema: ListSchema } } }
     }
   }),
-  async (c) => c.json({ tokens: await listAccessTokens() }, 200)
+  async (c) => c.json(await listAccessTokens(), 200)
 )
 
 accessTokensRoute.openapi(
@@ -171,8 +178,8 @@ accessTokensRoute.openapi(
  * Rotate: a new secret on the same row.
  *
  * 409 rather than 200-with-a-dead-token when the row cannot authenticate
- * anyway — handing back a plaintext for a revoked or expired token would
- * look like success and fail at the first request.
+ * anyway — handing back a plaintext for an expired token would look like
+ * success and fail at the first request.
  */
 accessTokensRoute.openapi(
   createRoute({
@@ -185,7 +192,7 @@ accessTokensRoute.openapi(
         content: { 'application/json': { schema: IssuedSchema } }
       },
       404: { description: 'No such token' },
-      409: { description: 'Revoked or expired — issue a new token instead of rotating this one' }
+      409: { description: 'Expired — issue a new token instead of rotating this one' }
     }
   }),
   async (c) => {
@@ -196,23 +203,11 @@ accessTokensRoute.openapi(
   }
 )
 
-accessTokensRoute.openapi(
-  createRoute({
-    method: 'post',
-    path: '/api/access-tokens/{id}/revoke',
-    request: { params: z.object({ id: z.string().nonempty() }) },
-    responses: {
-      200: { description: 'Token revoked', content: { 'application/json': { schema: TokenSchema } } },
-      404: { description: 'No such token' }
-    }
-  }),
-  async (c) => {
-    const row = await revokeAccessToken(c.req.valid('param').id)
-    if (row === null) return c.json({ error: 'Not found' } as never, 404)
-    return c.json(row, 200)
-  }
-)
-
+/**
+ * Revoke: delete the token. It stops authenticating at once and leaves
+ * the list; its past requests keep its id and its spend stays in the
+ * list's `revoked` totals.
+ */
 accessTokensRoute.openapi(
   createRoute({
     method: 'delete',
@@ -220,7 +215,7 @@ accessTokensRoute.openapi(
     request: { params: z.object({ id: z.string().nonempty() }) },
     responses: {
       200: {
-        description: 'Token deleted. Prefer revoke — deleting loses the attribution on past requests.',
+        description: 'Token revoked: the row is deleted and the secret stops working immediately.',
         content: { 'application/json': { schema: z.object({ deleted: z.boolean() }) } }
       }
     }

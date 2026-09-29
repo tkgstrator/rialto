@@ -10,6 +10,7 @@ import type {
   PlanWire,
   RequestLogItem,
   ResetCreditsResponse,
+  RevokedTokensWire,
   RoutingMode,
   RoutingSchedulerStateResponse,
   SessionMessageItem,
@@ -303,8 +304,8 @@ class ApiClient {
 
   // Access tokens (Phase 3.5). Issue returns the plaintext once; there is
   // no endpoint that can show it again.
-  async getAccessTokens(): Promise<{ tokens: AccessTokenWire[] }> {
-    return this.get<{ tokens: AccessTokenWire[] }>('/access-tokens')
+  async getAccessTokens(): Promise<{ tokens: AccessTokenWire[]; revoked: RevokedTokensWire | null }> {
+    return this.get<{ tokens: AccessTokenWire[]; revoked: RevokedTokensWire | null }>('/access-tokens')
   }
 
   async issueAccessToken(body: {
@@ -354,13 +355,9 @@ class ApiClient {
     )
   }
 
-  async revokeAccessToken(id: string): Promise<AccessTokenWire> {
-    return this.post<AccessTokenWire>(`/access-tokens/${encodeURIComponent(id)}/revoke`, {})
-  }
-
-  // Prefer revoke: deleting a token also deletes the answer to "whose
-  // requests were these" on every RequestLog row it authenticated.
-  async deleteAccessToken(id: string): Promise<{ deleted: boolean }> {
+  // Revoking deletes the token: it stops working at once and leaves the
+  // list. Its past requests keep its id; there is nothing to un-revoke.
+  async revokeAccessToken(id: string): Promise<{ deleted: boolean }> {
     return this.deleteRequest<{ deleted: boolean }>(`/access-tokens/${encodeURIComponent(id)}`)
   }
 

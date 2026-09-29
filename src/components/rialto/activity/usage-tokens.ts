@@ -1,6 +1,12 @@
-import type { AccessTokenWire } from '@/lib/api'
+import type { AccessTokenWire, RevokedTokensWire } from '@/lib/api'
 
 export interface TokenUsageRow {
+  /**
+   * A listed token, or the one line standing for every revoked token's
+   * traffic in the window (revoking deletes the token, so it has no row
+   * of its own). The revoked line has no name, prefix, scope or last use.
+   */
+  kind: 'token' | 'revoked'
   id: string
   name: string
   prefix: string
@@ -21,21 +27,24 @@ export interface TokenUsageRow {
  * A token with no priced traffic gets a null share and renders as a dash,
  * the same answer its cost cell gives.
  *
- * Revoked tokens are kept. Their traffic is part of what the window cost,
- * and dropping them makes the shares of the survivors add up to more than
- * the money actually spent.
+ * Revoked tokens' traffic is kept, as one line at the bottom. It is part
+ * of what the window cost, and dropping it would make the shares of the
+ * survivors add up to more than the money actually spent.
  */
-export function tokenUsageRows(tokens: readonly AccessTokenWire[]): TokenUsageRow[] {
-  const total = tokens.reduce((sum, token) => (token.costUsd === null ? sum : sum + token.costUsd), 0)
-  return tokens
+export function tokenUsageRows(tokens: readonly AccessTokenWire[], revoked: RevokedTokensWire | null): TokenUsageRow[] {
+  const priced = [...tokens.map((token) => token.costUsd), revoked === null ? null : revoked.costUsd]
+  const total = priced.reduce<number>((sum, cost) => (cost === null ? sum : sum + cost), 0)
+  const shareOf = (cost: number | null) => (cost === null || total <= 0 ? null : Math.round((cost / total) * 100))
+  const listed = tokens
     .map((token) => ({
+      kind: 'token' as const,
       id: token.id,
       name: token.name,
       prefix: token.prefix,
       surfaces: token.surfaces,
       requestCount: token.requestCount,
       costUsd: token.costUsd,
-      sharePct: token.costUsd === null || total <= 0 ? null : Math.round((token.costUsd / total) * 100),
+      sharePct: shareOf(token.costUsd),
       lastUsedAt: token.lastUsedAt
     }))
     .sort((a, b) => {
@@ -46,4 +55,19 @@ export function tokenUsageRows(tokens: readonly AccessTokenWire[]): TokenUsageRo
       if (b.costUsd === null) return -1
       return b.costUsd - a.costUsd
     })
+  if (revoked === null) return listed
+  return [
+    ...listed,
+    {
+      kind: 'revoked',
+      id: 'revoked',
+      name: '',
+      prefix: '',
+      surfaces: [],
+      requestCount: revoked.requestCount,
+      costUsd: revoked.costUsd,
+      sharePct: shareOf(revoked.costUsd),
+      lastUsedAt: null
+    }
+  ]
 }

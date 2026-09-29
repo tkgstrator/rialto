@@ -119,9 +119,9 @@ export function ActivityRequests() {
   // Whether the archive this screen reads is even being written.
   const { config } = useConfig()
   const captureOff = config !== null && config.CAPTURE_REQUESTS === false
-  // id -> name for the issued tokens, fetched once. A revoked or deleted
-  // token leaves rows behind, so a missing id falls back rather than
-  // blanking the column.
+  // id -> name for the issued tokens, fetched once. A revoked token's row
+  // is deleted but its requests stay, so a missing id falls back rather
+  // than blanking the column.
   const [tokenNames, setTokenNames] = useState<Map<string, string>>(new Map())
 
   useEffect(() => {

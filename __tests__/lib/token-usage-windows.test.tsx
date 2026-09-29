@@ -30,7 +30,6 @@ const TOKEN: AccessTokenWire = {
   outputTokens: null,
   createdAt: '2026-06-04T00:00:00.000Z',
   expiresAt: null,
-  revokedAt: null,
   rotatedAt: null,
   plan: { id: 'plan_free', name: 'Free' }
 }

@@ -603,10 +603,10 @@ model AccessToken {
   // only tokenHash/prefix, so createdAt stops being the age of the
   // current credential and this becomes the field that answers it.
   rotatedAt    DateTime?
+  // Revoking a token deletes the row; there is no revoked state. The
+  // RequestLog rows it authenticated keep its id (not a foreign key), so
+  // they still group as one client after it is gone.
   expiresAt    DateTime?
-  // Set rather than deleted, so a revoked token's RequestLog rows keep
-  // pointing at something that says who they belonged to.
-  revokedAt    DateTime?
   createdAt    DateTime                @default(now())
   // The plan this token spends under: which models it may use and how
   // much it may spend per 5-hour and 7-day window. Null = unrestricted, as
@@ -618,7 +618,6 @@ model AccessToken {
   plan         Plan?                    @relation(fields: [planId], references: [id], onDelete: Restrict)
   usageWindows AccessTokenUsageWindow[]
 
-  @@index([revokedAt])
   @@index([planId])
 }
 
