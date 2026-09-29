@@ -63,11 +63,13 @@ export function CredentialsPanel({
   }
 
   return (
-    <div className='min-w-0 border-r border-border'>
-      <div className='px-6 pt-5 pb-2'>
+    // Divider and indent belong to the desktop two-column grid, as in
+    // AccountsPanel.
+    <div className='min-w-0 border-border md:border-r'>
+      <div className='px-4 pt-5 pb-2 md:px-6'>
         <h3 className='text-sm font-semibold'>{t('providers.credentials.title')}</h3>
       </div>
-      <div className='space-y-3 px-6 pb-5'>
+      <div className='space-y-3 px-4 pb-5 md:px-6'>
         <div>
           <div className='mb-1 text-[12px] text-muted-foreground'>{t('providers.credentials.apiKey')}</div>
           <div className='flex items-center gap-2'>
@@ -92,12 +94,13 @@ export function CredentialsPanel({
               {revealed ? t('providers.credentials.hide') : t('providers.credentials.reveal')}
             </RButton>
             {/* Invisible rather than absent while the page reads, so the
-                key field keeps its width when Edit is pressed. */}
+                key field keeps its width when Edit is pressed. Absent on a
+                phone, which never enters Edit and needs the width. */}
             <RButton
               variant='outline'
               icon='ri-refresh-line'
               onClick={() => setReplacing(true)}
-              className={editing ? undefined : 'invisible'}
+              className={editing ? undefined : 'invisible max-md:hidden'}
             >
               {current === '' ? t('providers.credentials.setKey') : t('providers.credentials.replace')}
             </RButton>

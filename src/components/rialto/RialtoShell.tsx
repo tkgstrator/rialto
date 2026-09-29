@@ -39,6 +39,7 @@ import { api, type HealthResponse, type IdentityResponse } from '@/lib/api'
 import { APP_VERSION } from '@/version'
 import { FOOTER_ROW, IdentityRow, ServingRow } from './ShellFooter'
 import { NavItem, RailTip } from './ShellNavigation'
+import { PhoneTabBar } from './ShellPhoneBar'
 import { NavSearch } from './ShellSearch'
 import { childOf, NAV, providerListChildOf, sectionOf } from './shell-navigation'
 
@@ -169,9 +170,11 @@ export function RialtoShell() {
           would have with the browser chrome hidden, so the last row of any
           screen sits under the address bar until you scroll. */}
       <div className='safe-area-inset flex h-dvh w-full overflow-hidden bg-background text-foreground'>
+        {/* Not drawn at phone width: the tab bar below the content takes
+            over (see ShellPhoneBar). */}
         <aside
           className={cn(
-            'flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200',
+            'flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 max-md:hidden',
             collapsed ? RAIL_WIDTH : 'w-64'
           )}
         >
@@ -278,6 +281,14 @@ export function RialtoShell() {
 
         <div className='flex min-w-0 flex-1 flex-col'>
           <Outlet />
+          <PhoneTabBar
+            activeSection={activeSection}
+            activeChild={activeChild}
+            health={health}
+            reachable={reachable}
+            port={port}
+            identity={identity}
+          />
         </div>
         <NavSearch open={searchOpen} onOpenChange={setSearchOpen} />
         <Toaster />

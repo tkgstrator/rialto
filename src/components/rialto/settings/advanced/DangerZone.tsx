@@ -33,7 +33,7 @@ function DangerRow({
   disabled?: boolean
 }) {
   return (
-    <div className='grid grid-cols-[1fr_auto] items-center gap-6 border-t border-border/60 px-6 py-4'>
+    <div className='grid grid-cols-[1fr_auto] items-center gap-6 border-t border-border/60 px-6 py-4 max-md:gap-3 max-md:px-4'>
       <div>
         <div className='text-xs font-medium'>{label}</div>
         <div className='mt-0.5 text-[12px] leading-snug text-muted-foreground'>{hint}</div>
@@ -81,7 +81,7 @@ export function DangerZone() {
         onClick={archive}
         disabled={archiving}
       />
-      <div className='px-6 py-4'>
+      <div className='px-6 py-4 max-md:px-4'>
         <NotYetAvailable what={t('settings.advanced.resetWhat')} needs={t('settings.advanced.resetNeeds')} />
       </div>
       {confirmDialog}

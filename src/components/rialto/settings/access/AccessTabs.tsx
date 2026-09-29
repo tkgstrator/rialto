@@ -40,7 +40,9 @@ export function AccessTabs({ active }: { active: AccessTab }) {
 
   const count = (key: keyof Counts) => (counts === null ? undefined : counts[key])
   return (
-    <div className='flex items-center gap-1 border-b border-border px-6'>
+    // Tighter on a phone so the first tab's label lines up with the 16px
+    // gutter the phone layout uses, as the shell's own section strip does.
+    <div className='flex items-center gap-1 border-b border-border px-1 md:px-6'>
       <Tabs
         active={active}
         items={[

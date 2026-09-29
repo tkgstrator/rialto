@@ -796,7 +796,11 @@
     "identityAccess": "Access",
     "identityLocal": "ローカル",
     "identityToken": "トークン",
-    "navAccessTokens": "アクセストークン"
+    "navAccessTokens": "アクセストークン",
+    "back": "戻る",
+    "more": "その他",
+    "moreDescription": "Rialto のすべてのセクションと、サーバーの状態・テーマ。",
+    "navTokensShort": "トークン"
   },
   "overview": {
     "subtitle": "受信サーフェス {{surfaces}} · プロバイダー {{providers}} · 有効なモデル {{models}}",

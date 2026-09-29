@@ -143,7 +143,7 @@ function LogPane({
     // qualify it.
     <div className='min-w-0'>
       <div className='max-w-[64rem]'>
-        <div className='flex flex-wrap items-center gap-2 border-b border-border px-6 py-3'>
+        <div className='flex flex-wrap items-center gap-2 border-b border-border px-4 py-3 md:px-6'>
           {/* The file is a control, not a rail: it is chosen once per
               visit and then never looked at again. */}
           <FilterSelect
@@ -155,11 +155,13 @@ function LogPane({
               if (next !== undefined) onSelectFile(next)
             }}
           />
-          <span className='mx-1 h-4 w-px bg-border' />
+          {/* Hidden on a phone: there the file select fills its own line and
+              the rule was left dangling at the end of it. */}
+          <span className='mx-1 h-4 w-px bg-border max-md:hidden' />
           {LEVEL_CHIPS.map((level) => (
             <LevelChipButton key={level} level={level} on={levels.has(level)} onToggle={() => toggleLevel(level)} />
           ))}
-          <div className='ml-auto flex h-7 w-44 items-center gap-2 rounded-md border border-border px-2.5 text-xs text-muted-foreground'>
+          <div className='ml-auto flex h-7 w-44 items-center gap-2 rounded-md border border-border px-2.5 text-xs text-muted-foreground max-md:w-full'>
             <i className='ri-search-line text-sm' />
             <input
               value={query}
@@ -200,7 +202,7 @@ export function ActivityLogs() {
   const { config } = useConfig()
   const fileLogOff = config !== null && config.LOG === false
   const offNotice = fileLogOff ? (
-    <div className='max-w-[64rem] px-6 pt-4 pb-1'>
+    <div className='max-w-[64rem] px-4 pt-4 pb-1 md:px-6'>
       <NoteBox>
         <Trans
           i18nKey='activity.logs.fileLogOff'

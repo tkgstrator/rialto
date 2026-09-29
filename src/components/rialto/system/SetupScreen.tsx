@@ -72,7 +72,12 @@ function Step({
 }) {
   const { t } = useTranslation()
   return (
-    <div className={cn('flex gap-4 border-t border-border px-6 py-5', state === 'todo' ? 'opacity-50' : '')}>
+    <div
+      className={cn(
+        'flex gap-4 border-t border-border px-6 py-5 max-md:gap-3 max-md:px-4',
+        state === 'todo' ? 'opacity-50' : ''
+      )}
+    >
       <span
         className={cn(
           'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-[12px] font-medium',
@@ -127,7 +132,7 @@ function ExportBlock({ baseUrl, plaintext }: { baseUrl: string; plaintext: strin
         <div>claude</div>
       </div>
       {plaintext === null ? null : (
-        <div className='mt-2 flex items-start gap-2'>
+        <div className='mt-2 flex items-start gap-2 max-md:flex-col'>
           <RButton
             variant='outline'
             icon={copied ? 'ri-check-line' : 'ri-file-copy-line'}
@@ -204,9 +209,11 @@ export function SetupScreen() {
   })
 
   return (
-    <div className='flex min-h-screen items-center justify-center bg-background px-6 py-10'>
+    // Tighter gutters on a phone, where the card's own padding plus the
+    // page's left the step text 230px of a 390px screen.
+    <div className='flex min-h-screen items-center justify-center bg-background px-6 py-10 max-md:px-3 max-md:py-6'>
       <div className='w-full max-w-2xl rounded-lg border border-border'>
-        <div className='px-6 pt-6 pb-5'>
+        <div className='px-6 pt-6 pb-5 max-md:px-4'>
           <div className='flex items-center gap-2.5'>
             <div className='flex size-7 items-center justify-center rounded bg-foreground text-background'>
               <i className='ri-route-line text-base leading-none' />
@@ -227,7 +234,9 @@ export function SetupScreen() {
           title={t('system.setup.connectTitle')}
           body={t('system.setup.connectBody')}
         >
-          <div className='mt-3 grid grid-cols-3 gap-2'>
+          {/* One per row on a phone: three across gave each card 75px and
+              "Pro / Max subscription" ran out of its box. */}
+          <div className='mt-3 grid grid-cols-3 gap-2 max-md:grid-cols-1'>
             {CONNECT_OPTIONS.map((option) => (
               <Link
                 key={option.label}
@@ -256,7 +265,7 @@ export function SetupScreen() {
         >
           <ExportBlock baseUrl={baseUrl} plaintext={issued} />
           {issued === null ? (
-            <div className='mt-2 flex items-start gap-2'>
+            <div className='mt-2 flex items-start gap-2 max-md:flex-col'>
               {/* items-start, not items-center: the note wraps once tokens
                   exist, and a centered button would drift to the middle of
                   it. The note's pt-1.5 puts its first line on the button
@@ -272,12 +281,14 @@ export function SetupScreen() {
           {issueError === null ? null : <p className='mt-2 text-[12px] text-destructive'>{issueError}</p>}
         </Step>
 
-        <div className='flex items-center gap-3 border-t border-border px-6 py-4'>
+        <div className='flex items-center gap-3 border-t border-border px-6 py-4 max-md:flex-wrap max-md:px-4'>
           {/* The note is the only part that may reflow. min-w-0 lets it
               shrink below its content width; without it flex refuses to
               compress the prose and squeezes the two actions instead,
               which wrapped "Skip setup" onto a second line. */}
-          <span className='min-w-0 text-[12px] text-muted-foreground'>
+          {/* On a phone it takes the first line whole and the two actions
+              share the second, rather than all three splitting 330px. */}
+          <span className='min-w-0 text-[12px] text-muted-foreground max-md:basis-full'>
             <Trans i18nKey='system.setup.footerNote' components={{ mono: <span className='font-mono' /> }} />
           </span>
           <Link

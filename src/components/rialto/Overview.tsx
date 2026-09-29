@@ -15,28 +15,14 @@ import { Link } from 'react-router-dom'
 import { Pill, RButton, Section } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { api, type OverviewResponse, type OverviewSpendRow } from '@/lib/api'
+import { usePhone } from '@/hooks/use-phone'
+import { api, type OverviewResponse } from '@/lib/api'
 import { fmtCost } from '@/lib/sessions/format'
 import { FailoverEntry, SessionTable } from './OverviewActivity'
+import { OverviewPhone } from './OverviewPhone'
 import { QuotaAccount } from './OverviewQuota'
 import { SurfaceTable, SurfaceTiles } from './OverviewSurfaces'
-
-// Spend is going up or down, and neither direction is an alarm on its
-// own — a rise past a tenth is the one worth colouring.
-const deltaTone = (ratio: number): 'warn' | 'ok' | 'mute' => {
-  if (ratio > 0.1) return 'warn'
-  if (ratio < 0) return 'ok'
-  return 'mute'
-}
-
-const fmtDelta = (ratio: number): string => `${ratio > 0 ? '+' : ''}${Math.round(ratio * 100)}%`
-
-const SPEND_LABEL_KEYS: Record<OverviewSpendRow['label'], string> = {
-  today: 'overview.spendToday',
-  week: 'overview.spendWeek',
-  month: 'overview.spendMonth',
-  savedBySubscription: 'overview.spendSaved'
-}
+import { deltaTone, fmtDelta, SPEND_LABEL_KEYS, windowMeta } from './overview-shared'
 
 /**
  * The window the whole page describes.
@@ -62,6 +48,7 @@ export function Overview() {
   const [now, setNow] = useState(Date.now())
   const [windowHours, setWindowHours] = useState(24)
   const [rangeOpen, setRangeOpen] = useState(false)
+  const phone = usePhone()
 
   const load = useCallback(() => {
     setLoading(true)
@@ -130,93 +117,95 @@ export function Overview() {
         <div className='px-6 py-6 text-xs text-destructive'>{error}</div>
       ) : data === null ? (
         <div className='px-6 py-6 text-xs text-muted-foreground'>{t('common.loading')}</div>
+      ) : phone ? (
+        <OverviewPhone data={data} now={now} />
       ) : (
-        <>
-          <Section title={t('overview.spend')}>
-            <div className='grid grid-cols-4 gap-px px-6 pb-6'>
-              {data.spend.map((s) => (
-                <Link
-                  key={s.label}
-                  to='/activity/usage'
-                  className='border-l-2 border-l-border px-4 py-3 transition-colors hover:bg-muted/50 hover:border-l-foreground/30'
-                >
-                  <div className='text-[12px] uppercase tracking-wider text-muted-foreground'>
-                    {t(SPEND_LABEL_KEYS[s.label])}
-                  </div>
-                  <div className='mt-1 flex items-baseline gap-2'>
-                    <span className='font-mono text-xl tabular-nums'>{fmtCost(s.usd)}</span>
-                    {s.deltaRatio === null ? null : (
-                      // A bare "+126%" reads as a share of something. It is
-                      // the move against the previous period of the same
-                      // length, which only the tooltip can say in the space.
-                      <Pill tone={deltaTone(s.deltaRatio)} title={t('overview.spendDeltaHint')}>
-                        {fmtDelta(s.deltaRatio)}
-                      </Pill>
-                    )}
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </Section>
-
-          <Section
-            title={t('overview.inboundSurfaces')}
-            meta={
-              // "last 168h" is arithmetic, not a period anyone thinks in.
-              data.windowHours >= 24 && data.windowHours % 24 === 0
-                ? t('overview.lastDays', { days: data.windowHours / 24 })
-                : t('overview.lastHours', { hours: data.windowHours })
-            }
-          >
-            {/* Which of the two is drawn is decided by the section's own
-                width, not the viewport's: the sidebar folds with ⌘B at any
-                width, so a viewport breakpoint would keep the table across
-                width the section actually has. 72rem is where a tile still
-                fits "/v1/chat/completions" beside "passthrough". */}
-            <div className='@container'>
-              <SurfaceTable data={data} />
-              <SurfaceTiles data={data} />
-            </div>
-          </Section>
-
-          {/* Stacked, not side by side. The two-column split was fine when
-              a quota row was one line per account; an account now lists
-              every window it has, so the left column wrapped while the
-              right sat half empty. */}
-          <Section title={t('overview.subscriptionQuota')} meta={t('overview.quotaMeta')}>
-            {data.quota.length === 0 ? (
-              <div className='px-6 pb-6 text-xs text-muted-foreground'>{t('overview.noQuota')}</div>
-            ) : (
-              // Inside the section the accounts do flow into columns, as
-              // many as fit at 36rem each, up to three: an account block is
-              // fixed columns (label, capped meter, percent, reset) 36rem
-              // wide with its padding, so one column on a wide pane left two
-              // thirds of it empty. Measured on the section, as the surface
-              // tiles are.
-              <div className='@container'>
-                <div className='grid grid-cols-1 gap-x-px @min-[72rem]:grid-cols-2 @min-[108rem]:grid-cols-3'>
-                  {data.quota.map((q) => (
-                    <QuotaAccount key={q.subAccountId} row={q} now={now} />
-                  ))}
-                </div>
-              </div>
-            )}
-          </Section>
-
-          <Section title={t('overview.failoverActivity')} meta={t('overview.failoverMeta')}>
-            {data.failover.length === 0 ? (
-              <div className='px-6 pb-6 text-xs text-muted-foreground'>{t('overview.noFailover')}</div>
-            ) : (
-              data.failover.map((f) => <FailoverEntry key={`${f.kind}-${f.at}-${f.account}`} row={f} now={now} />)
-            )}
-          </Section>
-
-          <Section title={t('overview.recentSessions')}>
-            <SessionTable data={data} now={now} />
-          </Section>
-          <div className='h-10' />
-        </>
+        <OverviewSections data={data} now={now} />
       )}
     </Screen>
+  )
+}
+
+/** The desktop body: every section at full width, tables and all. */
+function OverviewSections({ data, now }: { data: OverviewResponse; now: number }) {
+  const { t } = useTranslation()
+  return (
+    <>
+      <Section title={t('overview.spend')}>
+        <div className='grid grid-cols-4 gap-px px-6 pb-6'>
+          {data.spend.map((s) => (
+            <Link
+              key={s.label}
+              to='/activity/usage'
+              className='border-l-2 border-l-border px-4 py-3 transition-colors hover:bg-muted/50 hover:border-l-foreground/30'
+            >
+              <div className='text-[12px] uppercase tracking-wider text-muted-foreground'>
+                {t(SPEND_LABEL_KEYS[s.label])}
+              </div>
+              <div className='mt-1 flex items-baseline gap-2'>
+                <span className='font-mono text-xl tabular-nums'>{fmtCost(s.usd)}</span>
+                {s.deltaRatio === null ? null : (
+                  // A bare "+126%" reads as a share of something. It is
+                  // the move against the previous period of the same
+                  // length, which only the tooltip can say in the space.
+                  <Pill tone={deltaTone(s.deltaRatio)} title={t('overview.spendDeltaHint')}>
+                    {fmtDelta(s.deltaRatio)}
+                  </Pill>
+                )}
+              </div>
+            </Link>
+          ))}
+        </div>
+      </Section>
+
+      <Section title={t('overview.inboundSurfaces')} meta={windowMeta(data.windowHours, t)}>
+        {/* Which of the two is drawn is decided by the section's own
+            width, not the viewport's: the sidebar folds with ⌘B at any
+            width, so a viewport breakpoint would keep the table across
+            width the section actually has. 72rem is where a tile still
+            fits "/v1/chat/completions" beside "passthrough". */}
+        <div className='@container'>
+          <SurfaceTable data={data} />
+          <SurfaceTiles data={data} />
+        </div>
+      </Section>
+
+      {/* Stacked, not side by side. The two-column split was fine when
+          a quota row was one line per account; an account now lists
+          every window it has, so the left column wrapped while the
+          right sat half empty. */}
+      <Section title={t('overview.subscriptionQuota')} meta={t('overview.quotaMeta')}>
+        {data.quota.length === 0 ? (
+          <div className='px-6 pb-6 text-xs text-muted-foreground'>{t('overview.noQuota')}</div>
+        ) : (
+          // Inside the section the accounts do flow into columns, as
+          // many as fit at 36rem each, up to three: an account block is
+          // fixed columns (label, capped meter, percent, reset) 36rem
+          // wide with its padding, so one column on a wide pane left two
+          // thirds of it empty. Measured on the section, as the surface
+          // tiles are.
+          <div className='@container'>
+            <div className='grid grid-cols-1 gap-x-px @min-[72rem]:grid-cols-2 @min-[108rem]:grid-cols-3'>
+              {data.quota.map((q) => (
+                <QuotaAccount key={q.subAccountId} row={q} now={now} />
+              ))}
+            </div>
+          </div>
+        )}
+      </Section>
+
+      <Section title={t('overview.failoverActivity')} meta={t('overview.failoverMeta')}>
+        {data.failover.length === 0 ? (
+          <div className='px-6 pb-6 text-xs text-muted-foreground'>{t('overview.noFailover')}</div>
+        ) : (
+          data.failover.map((f) => <FailoverEntry key={`${f.kind}-${f.at}-${f.account}`} row={f} now={now} />)
+        )}
+      </Section>
+
+      <Section title={t('overview.recentSessions')}>
+        <SessionTable data={data} now={now} />
+      </Section>
+      <div className='h-10' />
+    </>
   )
 }

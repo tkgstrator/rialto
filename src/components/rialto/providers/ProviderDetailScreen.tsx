@@ -32,7 +32,7 @@ import {
 } from './actions'
 import { BusyOverlay } from './BusyOverlay'
 import { accountLabel, disabledModelsOf, enabledCountOf, fmtExpiry, listedModelsOf, providerState } from './derive'
-import { ProviderDetail } from './ProviderDetail'
+import { ProviderDetailPane } from './ProviderDetailPhone'
 import { applyDraft, EMPTY_DRAFT, hasChanges, type ProviderDraft, savePlan } from './provider-draft'
 import { aliasMapOf, aliasRowsOf, applyAliasPicks, tierViewsOf } from './tier-aliases'
 import type { Provider, SubAccountWire } from './types'
@@ -275,7 +275,7 @@ export function ProviderDetailScreen() {
       }
     >
       <div className='relative min-w-0'>
-        <ProviderDetail
+        <ProviderDetailPane
           provider={shown}
           label={label}
           state={providerState(provider, subscription)}
