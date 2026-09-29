@@ -2,10 +2,9 @@
  * Client-visible response model identity.
  *
  * A route can select a concrete provider/model after a caller supplied an
- * alias, and failover can select a later candidate. Providers do not always
- * return that model in their response, especially on streamed subscription
- * paths. Preserve an upstream-reported identity when it exists; when it does
- * not, expose the successful invocation's selected target as a fallback.
+ * alias, and a later candidate can replace it if an earlier attempt fails.
+ * The client-visible model is always the target Rialto selected for the
+ * successful invocation, rather than an upstream alias or version string.
  */
 
 import { surfaceForPath } from '../../llms/inbound/surfaces'
@@ -20,43 +19,37 @@ export type SelectedModelIdentity = {
 const selectedModelOf = (identity: SelectedModelIdentity): string | undefined =>
   identity.model !== undefined && identity.model.length > 0 ? `${identity.provider},${identity.model}` : undefined
 
-const hasModel = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value !== 'unknown'
-
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
-function applyModelFallback(payload: unknown, identity: SelectedModelIdentity): unknown {
+function applySelectedModel(payload: unknown, identity: SelectedModelIdentity): unknown {
   const selected = selectedModelOf(identity)
   if (selected === undefined || !isRecord(payload)) return payload
 
   const surface = surfaceForPath(identity.path)?.id
   if (surface === 'anthropic-messages' || surface === 'openai-chat' || surface === 'openai-responses') {
-    return hasModel(payload.model) ? payload : { ...payload, model: selected }
+    return { ...payload, model: selected }
   }
-  if (surface === 'gemini-generate') {
-    return hasModel(payload.modelVersion) ? payload : { ...payload, modelVersion: selected }
-  }
+  if (surface === 'gemini-generate') return { ...payload, modelVersion: selected }
   return payload
 }
 
-function applySseModelFallback(payload: unknown, identity: SelectedModelIdentity): unknown {
+function applySelectedSseModel(payload: unknown, identity: SelectedModelIdentity): unknown {
   const selected = selectedModelOf(identity)
   if (selected === undefined || !isRecord(payload)) return payload
 
   const surface = surfaceForPath(identity.path)?.id
   if (surface === 'anthropic-messages') {
     if (payload.type !== 'message_start' || !isRecord(payload.message)) return payload
-    return hasModel(payload.message.model) ? payload : { ...payload, message: { ...payload.message, model: selected } }
+    return { ...payload, message: { ...payload.message, model: selected } }
   }
   if (surface === 'openai-responses') {
     if ((payload.type !== 'response.created' && payload.type !== 'response.completed') || !isRecord(payload.response)) {
       return payload
     }
-    return hasModel(payload.response.model)
-      ? payload
-      : { ...payload, response: { ...payload.response, model: selected } }
+    return { ...payload, response: { ...payload.response, model: selected } }
   }
-  if (surface === 'gemini-generate' || surface === 'openai-chat') return applyModelFallback(payload, identity)
+  if (surface === 'gemini-generate' || surface === 'openai-chat') return applySelectedModel(payload, identity)
   return payload
 }
 
@@ -64,7 +57,7 @@ async function patchBlockingJson(response: Response, identity: SelectedModelIden
   const raw = await response.text()
   if (raw.length === 0) return new Response(raw, { status: response.status, statusText: response.statusText, headers: response.headers })
   try {
-    const patched = applyModelFallback(JSON.parse(raw), identity)
+    const patched = applySelectedModel(JSON.parse(raw), identity)
     return new Response(JSON.stringify(patched), {
       status: response.status,
       statusText: response.statusText,
@@ -109,7 +102,7 @@ function patchSseEvent(event: string, identity: SelectedModelIdentity): string {
   const raw = lines[dataIndex].slice(prefix.length)
   if (raw === '[DONE]') return `${event}\n\n`
   try {
-    const patched = applySseModelFallback(JSON.parse(raw), identity)
+    const patched = applySelectedSseModel(JSON.parse(raw), identity)
     lines[dataIndex] = `${prefix}${JSON.stringify(patched)}`
   } catch {
     // An opaque SSE payload belongs to the upstream protocol. Preserve it
@@ -119,9 +112,9 @@ function patchSseEvent(event: string, identity: SelectedModelIdentity): string {
 }
 
 /**
- * Adds selected-target provenance and fills only missing wire model fields.
+ * Adds selected-target provenance and sets the wire model to that target.
  *
- * JSON needs one body read to add a field. SSE stays incremental: complete
+ * JSON needs one body read to replace the field. SSE stays incremental: complete
  * SSE records are transformed as they arrive and are never accumulated beyond
  * one event boundary.
  */

@@ -31,17 +31,17 @@ describe('applyResponseModelIdentity', () => {
     expect((await response.json() as Record<string, unknown>).model).toBe('anthropic,claude-opus-5-5')
   })
 
-  test('preserves an upstream-reported model that differs from the selected target', async () => {
+  test('replaces an upstream-reported alias with the routed target', async () => {
     const response = await applyResponseModelIdentity(
       jsonResponse({ id: 'msg_1', type: 'message', model: 'claude-sonnet-5-20250929' }),
       identity('/v1/messages')
     )
 
-    expect((await response.json() as Record<string, unknown>).model).toBe('claude-sonnet-5-20250929')
+    expect((await response.json() as Record<string, unknown>).model).toBe('anthropic,claude-sonnet-5')
     expect(response.headers.get('x-rialto-selected-model')).toBe('anthropic,claude-sonnet-5')
   })
 
-  test('fills missing model values on every blocking response surface', async () => {
+  test('sets the selected model on every blocking response surface', async () => {
     const cases = [
       { path: '/v1/messages', payload: { model: '' }, field: 'model' },
       { path: '/v1/chat/completions', payload: { model: '' }, field: 'model' },
@@ -55,7 +55,7 @@ describe('applyResponseModelIdentity', () => {
     }
   })
 
-  test('fills Anthropic message_start without replacing an upstream model', async () => {
+  test('sets Anthropic message_start to the routed target', async () => {
     const missing = await applyResponseModelIdentity(
       sseResponse([{ type: 'message_start', message: { id: 'msg_1', model: 'unknown' } }]),
       identity('/v1/messages')
@@ -66,7 +66,7 @@ describe('applyResponseModelIdentity', () => {
     )
 
     expect((await sseEvents(missing))[0].message).toEqual({ id: 'msg_1', model: 'anthropic,claude-sonnet-5' })
-    expect((await sseEvents(existing))[0].message).toEqual({ id: 'msg_1', model: 'claude-upstream' })
+    expect((await sseEvents(existing))[0].message).toEqual({ id: 'msg_1', model: 'anthropic,claude-sonnet-5' })
   })
 
   test('fills both Responses lifecycle envelopes in a live stream', async () => {
