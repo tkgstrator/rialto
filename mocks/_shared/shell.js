@@ -481,10 +481,10 @@ const accessTabs = (active) =>
  * and its first entry the default a request falls back to.
  */
 const PLANS = [
-  { name: 'Free', models: ['codex,gpt-6-luna', 'google,gemini-3-flash'], limit: '100', tokens: '1' },
-  { name: 'Plus', models: ['codex,gpt-5.6-terra', 'codex,gpt-6-luna', 'anthropic,claude-haiku-4-5'], limit: '1,000', tokens: '0' },
-  { name: 'Pro', models: ['codex,gpt-6-sol', 'codex,gpt-5.6-terra', 'codex,gpt-6-luna', 'anthropic,claude-sonnet-5', 'google,gemini-3-pro'], limit: '3,000', tokens: '0' },
-  { name: 'Max', models: ['codex,gpt-6-astra', 'codex,gpt-6-sol', 'codex,gpt-5.6-terra', 'codex,gpt-6-luna', 'anthropic,claude-opus-5', 'anthropic,claude-sonnet-5'], limit: '', tokens: '0' }
+  { name: 'Free', models: ['codex,gpt-6-luna', 'google,gemini-3-flash'], windows: [{ requests: 100, usd: 2 }, { requests: 500, usd: 10 }], tokens: '1' },
+  { name: 'Plus', models: ['codex,gpt-5.6-terra', 'codex,gpt-6-luna', 'anthropic,claude-haiku-4-5'], windows: [{ requests: 1000, usd: null }, { requests: null, usd: 50 }], tokens: '0' },
+  { name: 'Pro', models: ['codex,gpt-6-sol', 'codex,gpt-5.6-terra', 'codex,gpt-6-luna', 'anthropic,claude-sonnet-5', 'google,gemini-3-pro'], windows: [{ requests: 3000, usd: 30 }, { requests: 15000, usd: 150 }], tokens: '0' },
+  { name: 'Max', models: ['codex,gpt-6-astra', 'codex,gpt-6-sol', 'codex,gpt-5.6-terra', 'codex,gpt-6-luna', 'anthropic,claude-opus-5', 'anthropic,claude-sonnet-5'], windows: [{ requests: null, usd: null }, { requests: null, usd: null }], tokens: '0' }
 ]
 
 /**
