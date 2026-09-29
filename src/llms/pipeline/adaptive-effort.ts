@@ -1,7 +1,6 @@
 import type { TransformerContext } from '@/schemas/domain/pipeline'
 import { adaptiveEffortForTarget } from '../../services/adaptive-reasoning-effort'
-import { codexEffortsFor } from '../../services/codex-model-catalog'
-import { claudeCodeEffortsFor, openAiEffortsFor, supportsReasoningEffort } from '../../shared/model-reasoning-effort'
+import { openAiEffortsFor, supportsReasoningEffort } from '../../shared/model-reasoning-effort'
 import type { ResolvedProvider } from '../registry/provider'
 
 const recordOf = (value: unknown): Record<string, unknown> | null =>
@@ -70,7 +69,7 @@ export function applyBypassManualEffort(body: unknown, provider: ResolvedProvide
   const shaped = recordOf(body)
   if (shape === null || shaped === null) return
   if (shape === 'anthropic') {
-    if (claudeCodeEffortsFor(model)?.includes(manual)) {
+    if (recordedEfforts(provider, model)?.includes(manual)) {
       const output = recordOf(shaped.output_config)
       shaped.output_config = { ...(output === null ? {} : output), effort: manual }
     }
@@ -84,15 +83,17 @@ export function applyBypassManualEffort(body: unknown, provider: ResolvedProvide
   shaped.reasoning = { ...(reasoning === null ? {} : reasoning), effort: manual }
 }
 
-function supportedEfforts(
-  provider: ResolvedProvider,
-  model: string,
-  shape: 'chat' | 'responses' | 'anthropic',
-  account: string | undefined
-) {
-  if (shape === 'anthropic') return claudeCodeEffortsFor(model)
-  if (!isCodex(provider)) return openAiEffortsFor(model)
-  return account === undefined ? null : codexEffortsFor(account, model)
+// The levels the subscription's own model list reported for this model,
+// recorded once (model-capability-service). Null until it has been read,
+// which keeps an unrecorded model's request as the caller shaped it.
+function recordedEfforts(provider: ResolvedProvider, model: string) {
+  const found = provider.modelSupportedEfforts?.[model]
+  return found === undefined ? null : found
+}
+
+function supportedEfforts(provider: ResolvedProvider, model: string, shape: 'chat' | 'responses' | 'anthropic') {
+  if (shape === 'anthropic' || isCodex(provider)) return recordedEfforts(provider, model)
+  return openAiEffortsFor(model)
 }
 
 export function applyAdaptiveEffort(
@@ -107,7 +108,7 @@ export function applyAdaptiveEffort(
   if (shaped === null || shaped.model !== model) return null
   const shape = outboundShape(provider, model)
   if (shape === null || (shape !== 'anthropic' && !isCodex(provider) && !supportsReasoningEffort(model))) return null
-  const supported = supportedEfforts(provider, model, shape, context.req?.subAccountId)
+  const supported = supportedEfforts(provider, model, shape)
   const decision = adaptiveEffortForTarget(`${provider.name},${model}`, supported)
   if (decision === null || !insertEffort(shaped, shape, decision.effort)) return null
   return { body: shaped, ...decision }

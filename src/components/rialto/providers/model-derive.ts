@@ -34,6 +34,12 @@ export interface ModelRow {
   newer: boolean
   /** Model.reasoningEffort. Null means "send nothing, let the vendor pick". */
   effort: ReasoningEffort | null
+  /**
+   * The effort levels this model's own subscription list reported,
+   * recorded once (Provider.modelSupportedEfforts). Null until recorded,
+   * and on api_key providers, which record nothing.
+   */
+  supportedEfforts: readonly ReasoningEffort[] | null
   contextWindow: number | undefined
   inputPer1M: number | null
   cachedInputPer1M: number | null
@@ -66,6 +72,7 @@ export function buildModelRows(
 ): ModelRow[] {
   const off = new Set(disabledModelsOf(p))
   const ctx = p.modelContextWindows === undefined ? {} : p.modelContextWindows
+  const recordedEfforts = p.modelSupportedEfforts === undefined ? {} : p.modelSupportedEfforts
   const prices = p.modelPrices === undefined ? {} : p.modelPrices
   const catalogModels = catalogModelIndex(catalogEntry)
   return listedModelsOf(p).map((name) => {
@@ -84,6 +91,7 @@ export function buildModelRows(
       ),
       newer: views.some((v) => v.newer.includes(name)),
       effort: effortOf(p, name),
+      supportedEfforts: recordedEfforts[name] === undefined ? null : recordedEfforts[name],
       contextWindow: ctx[name],
       inputPer1M: price === undefined ? null : price.inputPer1M,
       cachedInputPer1M: fromCatalog === undefined ? null : fromCatalog.cachedInputPer1M,

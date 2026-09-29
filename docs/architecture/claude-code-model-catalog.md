@@ -29,8 +29,9 @@ switches. A tier routes to the newest switched-on model its name says
 release, switch it on on the provider page and save: the Opus tier moves to it.
 The runtime provider and model switches remain the dispatch gates.
 
-The Code catalog's advertised context window is not used as a subscription
-entitlement check. The model row may receive a context value from Anthropic's
-pricing/Models API; that published API limit does not establish what a specific
-subscription account can use. The Code catalog is a versioned implementation
-detail; its data is validated before use, and no OAuth credential is sent to it.
+The Code catalog's advertised context window and effort levels are not used.
+A model's context window and effort levels are read once from Anthropic's
+Models API with the subscription's own token, and are never overwritten by the
+pricing scrape; see [model-capabilities.md](./model-capabilities.md). The Code
+catalog is a versioned implementation detail; its data is validated before use,
+and no OAuth credential is sent to it.

@@ -13,7 +13,6 @@
 import { HTTPException } from 'hono/http-exception'
 import type { RuntimeProvider, TransformerContext, TransformerHookResult, UnifiedChatRequest } from '@/schemas/domain'
 import { OauthRefreshResponseSchema } from '@/schemas/wire/oauth'
-import { claudeCodeEffortsFor } from '../../../shared/model-reasoning-effort'
 import { cloneResponse } from '../../utils/response-clone'
 import type { TransformerAuthResult } from '../base'
 import { type OAuthRefreshResult, OAuthTransformer } from '../oauth-base'
@@ -156,7 +155,7 @@ export function keepSignedBlock(block: unknown): boolean {
   return !SYNTHETIC_SIGNATURE_PREFIXES.some((prefix) => signature.startsWith(prefix))
 }
 
-function shapeOpenAiRequestForClaude(req: ClaudeCodeRequestShape): void {
+function shapeOpenAiRequestForClaude(req: ClaudeCodeRequestShape, provider: RuntimeProvider): void {
   // OpenAI inbound converters leave their effort in unified `reasoning`;
   // Claude Code's Messages endpoint accepts `output_config.effort` instead.
   const reasoning = req.reasoning
@@ -166,7 +165,8 @@ function shapeOpenAiRequestForClaude(req: ClaudeCodeRequestShape): void {
     const existing = output !== null && typeof output === 'object' && !Array.isArray(output) ? output : {}
     if (
       typeof effort === 'string' &&
-      claudeCodeEffortsFor(typeof req.model === 'string' ? req.model : '')?.some((level) => level === effort) &&
+      typeof req.model === 'string' &&
+      provider.modelSupportedEfforts?.[req.model]?.some((level) => level === effort) === true &&
       !('effort' in existing)
     ) {
       req.output_config = { ...existing, effort }
@@ -225,7 +225,7 @@ export class ClaudeCodeOauthTransformer extends OAuthTransformer {
     // biome-ignore plugin: the OAuth auth hook receives the inbound Anthropic body verbatim (unknown by design); narrowing to a Zod schema would re-encode the whole request, defeating the bypass-mode passthrough.
     const req = request as ClaudeCodeRequestShape
     if (context.req?.surface === 'openai-chat' || context.req?.surface === 'openai-responses') {
-      shapeOpenAiRequestForClaude(req)
+      shapeOpenAiRequestForClaude(req, provider)
     }
     hoistSystemMessages(req)
     req.system = withClaudeCodeIdentity(req.system)
@@ -248,15 +248,13 @@ export class ClaudeCodeOauthTransformer extends OAuthTransformer {
       })
     }
 
-    // `thinking` is forwarded verbatim. Anthropic accepts `enabled`
-    // and `disabled` today (verified empirically against
-    // api.anthropic.com/v1/messages with claude-sonnet-4-5); shapes it
-    // does not accept (`adaptive`, unknown values) 400 back to the
-    // client, which is the correct feedback signal. Rialto previously
-    // stripped `disabled` here as a compat shim for an older Anthropic
-    // that 400'd it — the shim silently converted the caller's
-    // opt-OUT into a server-side adaptive default, so the model burned
-    // thinking tokens on requests the user explicitly opted out of.
+    // `thinking` is not touched here. A caller's `disabled` is fitted to
+    // the target model later, in pipeline/thinking-off.ts, once the
+    // effort that will be sent is settled: which way of switching
+    // thinking off a model takes (if any) depends on both, and is probed
+    // per model rather than assumed. Stripping `disabled` outright, as an
+    // earlier shim did, turned the caller's opt-out into a server-side
+    // adaptive default on models that honour it.
 
     return {
       body: req,

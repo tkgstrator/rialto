@@ -292,9 +292,7 @@ export async function connectCodexAccount(tokens: CodexConnectTokens, prisma?: P
     await syncConnectedCodexModels(
       providers.map((row) => row.provider.name),
       result.tokens.accessToken,
-      account.accountId,
-      fetch,
-      ids
+      account.accountId
     )
   } catch (err) {
     // A model-list outage cannot undo an account whose credentials passed.

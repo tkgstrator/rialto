@@ -95,7 +95,11 @@ describe.skipIf(!HAS_DB)('GET /v1/models', () => {
         name: 'app',
         surfaces: [],
         profileKey: null,
-        plan: { models: ['openai,gpt-5-mini'], defaultModel: 'openai,gpt-5-mini', dailyRequestLimit: 100 }
+        plan: {
+          models: ['openai,gpt-5-mini'],
+          defaultModel: 'openai,gpt-5-mini',
+          limits: { '5h': { requests: 100, spendUsd: null }, '7d': { requests: null, spendUsd: null } }
+        }
       })
       await next()
     })

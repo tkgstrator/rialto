@@ -5,9 +5,11 @@ import { ProviderRegistry } from '../../src/llms/registry/provider'
 import { TransformerRegistry } from '../../src/llms/registry/transformer'
 import { ClaudeCodeOauthTransformer } from '../../src/llms/transformers/anthropic'
 import { __resetSchedulerStateForTest, publishSnapshot } from '../../src/services/routing-scheduler/state'
-import { claudeCodeEffortsFor } from '../../src/shared/model-reasoning-effort'
 
 const model = 'claude-sonnet-5'
+// The levels each model's own list reported, as ModelCapability records
+// them: Sonnet 5 takes all five, Haiku 4.5 takes none.
+const recorded = { [model]: ['low', 'medium', 'high', 'xhigh', 'max'], 'claude-haiku-4-5': [] }
 const log = pino({ level: 'silent' })
 const transformers = new TransformerRegistry(log)
 transformers.registerMany([new ClaudeCodeOauthTransformer()])
@@ -20,6 +22,16 @@ providers.registerFromConfig([
     api_base_url: 'https://api.anthropic.com/v1/messages',
     api_key: 'fixture-placeholder',
     models: [model, 'claude-haiku-4-5'],
+    modelReasoningEfforts: { [model]: 'auto' },
+    modelSupportedEfforts: recorded
+  },
+  {
+    name: 'claude-unrecorded',
+    api_style: 'anthropic',
+    auth_mode: 'subscription',
+    api_base_url: 'https://api.anthropic.com/v1/messages',
+    api_key: 'fixture-placeholder',
+    models: [model],
     modelReasoningEfforts: { [model]: 'auto' }
   },
   {
@@ -29,7 +41,8 @@ providers.registerFromConfig([
     api_base_url: 'https://api.anthropic.com/v1/messages',
     api_key: 'fixture-placeholder',
     models: [model, 'claude-haiku-4-5'],
-    modelReasoningEfforts: { [model]: 'high', 'claude-haiku-4-5': 'high' }
+    modelReasoningEfforts: { [model]: 'high', 'claude-haiku-4-5': 'high' },
+    modelSupportedEfforts: recorded
   }
 ])
 
@@ -72,13 +85,17 @@ function apply(body: Record<string, unknown>, inbound = body, intent?: 'explicit
 afterEach(() => __resetSchedulerStateForTest())
 
 describe('Claude Code effort capabilities and outbound shaping', () => {
-  test('uses documented Claude Code IDs and does not infer unlisted variants', () => {
-    expect(claudeCodeEffortsFor('claude-fable-5-1')).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
-    expect(claudeCodeEffortsFor('claude-opus-4-6')).toEqual(['low', 'medium', 'high', 'max'])
-    expect(claudeCodeEffortsFor('claude-sonnet-4-6')).not.toContain('xhigh')
-    for (const id of ['claude-haiku-4-5', 'claude-mythos-5', 'claude-opus-4-5', 'claude-sonnet-5-20260901']) {
-      expect(claudeCodeEffortsFor(id)).toBeNull()
-    }
+  test('picks only among the levels recorded for the model, and leaves an unrecorded one alone', () => {
+    publish(40)
+    const body = { model }
+    expect(apply(body)?.effort).toBe('high')
+    const untouched = { model }
+    expect(
+      applyAdaptiveEffort(untouched, provider('claude-unrecorded'), {
+        req: { body: untouched, model, headers: {}, url: '/v1/messages' }
+      })
+    ).toBeNull()
+    expect(untouched).toEqual({ model })
   })
 
   test('writes native output_config effort at each fresh quota pace', () => {

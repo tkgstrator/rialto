@@ -13,25 +13,24 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, btn, accessTabs, PLANS, sortTh, mono, dialog, pill } = window.Shell
+const { renderShell, btn, accessTabs, PLANS, sortTh, mono, dialog, pill, navTo } = window.Shell
 
 // Plans: what a token on them may spend.
 //
-// A plan is referenced, never copied onto its tokens. Raising Free's daily
-// cap from 100 to 150 is one edit that every install on Free sees at its
-// next request — the alternative, a limit stamped on each of a thousand
-// tokens at issue time, is a migration every time pricing moves.
+// A plan is referenced, never copied onto its tokens. Raising Free's
+// limits is one edit that every token on Free sees at its
+// next request — the alternative, a limit stamped on each token at issue
+// time, is a migration every time pricing moves.
 //
 // Two things a plan decides, and only two for now: which models its
-// requests may use, and how many completions a token may make per UTC day.
+// requests may use, and how much a token may use in each fixed window.
 // A request naming a model on the list goes to that model; any other name,
-// or none, goes to the plan's default rather than being refused, so an app
+// or none, goes to the plan's default rather than being refused, so a client
 // with a stale model setting keeps talking. Either way there is no routing:
 // a chain cannot pick a costlier target than the plan lists. /v1/models
 // shows a plan's token only its own list. Listing models is never counted.
 //
-// A plan is not only for apps: a hand-issued token can be put on one too,
-// which is how a friend's laptop gets the same cap as an install.
+// A token is put on a plan when it is issued, or later from its own page.
 //
 // `?edit` draws the edit dialog for Free (access-plan-edit in mocks.json).
 
@@ -46,18 +45,15 @@ const modelsCell = (models) => {
   </span>`
 }
 
-const capCell = (limit) =>
-  limit === ''
-    ? '<span class="text-[12px] text-muted-foreground/50">no cap</span>'
-    : `${limit}<span class="text-muted-foreground"> / day</span>`
+const windowCell = (window) => `<div>${window.requests === null ? '<span class="text-muted-foreground">No request limit</span>' : `${window.requests.toLocaleString('en-US')} requests`}</div>
+  <div class="text-muted-foreground">${window.usd === null ? 'No spend limit' : `$${window.usd.toFixed(2)} USD`}</div>`
 
 const planRow = (p) => `
-  <tr class="cursor-pointer border-t border-border/60 transition-colors hover:bg-muted/50">
+  <tr ${navTo(`access-plans.html?edit&plan=${p.name}`)} class="cursor-pointer border-t border-border/60 transition-colors hover:bg-muted/50">
     <td class="py-2.5 pl-6 pr-3 text-xs font-medium">${p.name}</td>
     <td class="px-3">${modelsCell(p.models)}</td>
-    <td class="px-3 text-right font-mono text-xs tabular-nums">${capCell(p.limit)}</td>
+    ${p.windows.map(window => `<td class="px-3 text-right font-mono text-xs tabular-nums">${windowCell(window)}</td>`).join('')}
     <td class="px-3 text-right font-mono text-xs tabular-nums">${p.tokens}</td>
-    <td class="px-3 text-[12px] text-muted-foreground">${p.apps}</td>
     <td class="py-2.5 pl-3 pr-6">
       <div class="flex justify-end text-muted-foreground/50"><i class="ri-pencil-line text-sm"></i></div>
     </td>
@@ -65,109 +61,131 @@ const planRow = (p) => `
 
 const editDialog = () => {
   const label = (text) => `<div class="mb-1 text-[12px] text-muted-foreground">${text}</div>`
-  const box = (value, chevron = false) => `
-    <div class="relative flex h-8 w-full items-center rounded-md border border-border pl-3 pr-8 font-mono text-xs">
-      ${value}
-      ${chevron ? '<i class="ri-arrow-down-s-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"></i>' : ''}
-    </div>`
   const hint = (text) => `<p class="mt-1 text-[12px] leading-snug text-muted-foreground">${text}</p>`
   // Providers first, then that provider's models: an install can have
   // dozens of models across a handful of providers, and one flat list of
   // them is a scroll hunt. Each provider chip counts what is ticked under
   // it, so a choice made on another provider is never out of sight.
-  const providerChip = (name, picked, on) => `
-    <button class="inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors ${
+  const providerChip = (name, picked, total, on) => `
+    <button type="button" data-provider="${name}" aria-pressed="${on}" class="inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors ${
       on ? 'border-foreground/60 bg-muted font-medium' : 'border-border text-muted-foreground hover:bg-muted/60'
-    }">${name}${picked ? `<span class="font-mono text-[12px] tabular-nums text-muted-foreground">${picked}</span>` : ''}</button>`
+    }">${name}<span class="font-mono text-[12px] tabular-nums text-muted-foreground">${picked}/${total}</span></button>`
   // A tick for the allow-list and a radio for the default, on the same
   // row, so the default can only ever be one of the allowed models.
   const modelOption = (model, allowed, isDefault) => `
     <div class="flex h-9 items-center gap-2 border-t border-border/60 px-3 first:border-t-0">
-      <span class="inline-flex size-4 shrink-0 items-center justify-center rounded border ${allowed ? 'border-primary bg-primary text-primary-foreground' : 'border-border'}">
+      <button type="button" role="checkbox" aria-checked="${allowed}" aria-label="Allow ${model}" data-model="${model}" class="inline-flex size-4 shrink-0 items-center justify-center rounded border ${allowed ? 'border-primary bg-primary text-primary-foreground' : 'border-border'}">
         ${allowed ? '<i class="ri-check-line text-[11px] leading-none"></i>' : ''}
-      </span>
+      </button>
       <span class="min-w-0 flex-1 truncate font-mono text-xs ${allowed ? '' : 'text-muted-foreground'}">${model}</span>
       ${
         allowed
-          ? `<span class="inline-flex items-center gap-1 text-[12px] ${isDefault ? 'text-foreground' : 'text-muted-foreground/60'}">
+          ? `<button type="button" role="radio" aria-checked="${isDefault}" aria-label="Use ${model} as default" data-default="${model}" class="inline-flex items-center gap-1 text-[12px] ${isDefault ? 'text-foreground' : 'text-muted-foreground/60'}">
               <span class="inline-flex size-3.5 items-center justify-center rounded-full border ${isDefault ? 'border-primary' : 'border-border'}">
                 ${isDefault ? '<span class="size-1.5 rounded-full bg-primary"></span>' : ''}
-              </span>default</span>`
+              </span>default</button>`
           : ''
       }
     </div>`
-  return dialog(
-    'Edit plan',
-    `<div class="grid gap-4">
-      <div>${label('Name')}${box('Free')}</div>
-      <div>
+  renderModelPicker = () => {
+    const provider = providers.find(provider => provider.name === activeProvider)
+    const picked = provider.models.filter(model => allowedModels.has(`${provider.id},${model}`)).length
+    return `<div class="flex items-center justify-between">
         ${label('Models')}
-        <div class="mb-2 flex flex-wrap gap-1.5">
-          ${providerChip('Codex', 1, true)}
-          ${providerChip('Google', 1, false)}
-          ${providerChip('Anthropic', 0, false)}
-          ${providerChip('OpenAI', 0, false)}
-        </div>
-        <div class="max-h-44 overflow-y-auto rounded-md border border-border">
-          ${modelOption('gpt-6-luna', true, true)}
-          ${modelOption('gpt-5.6-terra', false, false)}
-          ${modelOption('gpt-6-sol', false, false)}
-          ${modelOption('gpt-6-astra', false, false)}
-        </div>
-        <p class="mt-1 text-[12px] leading-snug text-muted-foreground">
-          2 allowed · default <span class="font-mono">codex,gpt-6-luna</span>.
-          A request naming another model, or none, goes to the default — never refused, and never routed.
-        </p>
+        <div class="flex items-center gap-1 text-[12px] text-muted-foreground"><span>All providers</span>${btn('Select all').replace('<button ', '<button type="button" data-bulk="all" ')}<span>·</span>${btn('Clear').replace('<button ', '<button type="button" data-bulk="none" ')}</div>
       </div>
+      <div class="mb-2 flex flex-wrap gap-1.5">
+        ${providers.map(provider => providerChip(provider.name, provider.models.filter(model => allowedModels.has(`${provider.id},${model}`)).length, provider.models.length, provider.name === activeProvider)).join('')}
+      </div>
+      <div class="rounded-md border border-border">
+        <button type="button" role="checkbox" aria-checked="${picked === provider.models.length ? 'true' : picked ? 'mixed' : 'false'}" aria-label="Allow all ${provider.name} models" data-bulk="provider" class="flex h-9 w-full items-center gap-2 border-b border-border/60 px-3 text-xs">
+          <span class="inline-flex size-4 shrink-0 items-center justify-center rounded border ${picked ? 'border-primary bg-primary text-primary-foreground' : 'border-border'}">${picked ? `<i class="${picked === provider.models.length ? 'ri-check-line' : 'ri-subtract-line'} text-[11px] leading-none"></i>` : ''}</span>
+          Allow all ${provider.name} models <span class="text-muted-foreground">${picked}/${provider.models.length}</span>
+        </button>
+        <div class="max-h-44 overflow-y-auto">
+          ${provider.models.map(model => modelOption(model, allowedModels.has(`${provider.id},${model}`), defaultModel === `${provider.id},${model}`)).join('')}
+        </div>
+      </div>
+      <p id="model-status" aria-live="polite" class="mt-1 text-[12px] leading-snug text-muted-foreground">${allowedModels.size} allowed · ${defaultModel ? `default <span class="font-mono">${defaultModel}</span>.` : 'No default. Allow at least one model and choose its default radio to save.'}</p>
+      ${hint('Select all keeps the current default. If none is set, choose one explicitly.')}
+      ${hint('A request naming another model, or none, goes to the default — never refused, and never routed.')}`
+  }
+  return dialog(
+    creating ? 'New plan' : 'Edit plan',
+    `<div class="grid gap-4">
+      <div>${label('Name')}<input aria-label="Plan name" value="${creating ? '' : selectedPlan.name}" placeholder="e.g. Team" class="h-8 w-full rounded-md border border-border bg-transparent px-3 text-xs"></div>
+      <div id="model-picker">${renderModelPicker()}</div>
       <div>
-        ${label('Requests per day')}
-        ${box('100')}
-        ${hint('Completions per UTC day. Over it the client gets 429 until 00:00 UTC. Empty means no cap.')}
+        ${label('Usage limits · per token')}
+        <div class="grid grid-cols-[5rem_1fr_1fr] items-center gap-2 text-xs">
+          <span></span><span class="text-muted-foreground">Requests</span><span class="text-muted-foreground">Spend (USD)</span>
+          ${['5-hour', '7-day'].map((name, index) => `<span>${name}</span>${['requests', 'usd'].map(key => `<input aria-label="${name} ${key === 'usd' ? 'spend in USD' : 'requests'} (optional)" type="number" min="0" step="${key === 'usd' ? '0.01' : '1'}" value="${creating ? '' : selectedPlan.windows[index][key] ?? ''}" placeholder="No limit" class="h-8 w-full min-w-0 rounded-md border border-border bg-transparent px-3 font-mono text-xs">`).join('')}`).join('')}
+        </div>
+        ${hint('All four limits are optional. Empty means no limit for that measure.')}
+        ${hint('Each window starts with the token’s first counted request and resets 5 hours or 7 days later. Windows are fixed, not sliding. Reaching any limit refuses requests (429) until every spent window resets.')}
       </div>
       <div class="rounded-md border border-dashed border-border px-3 py-2 text-[12px] leading-snug text-muted-foreground">
-        Applies to all <span class="font-medium text-foreground">1,287 tokens</span> on Free from their next request.
+        ${creating ? 'Tokens can be assigned after this plan is created.' : `Applies to <span class="font-medium text-foreground">${selectedPlan.tokens} token${selectedPlan.tokens === '1' ? '' : 's'}</span> on ${selectedPlan.name} from their next request.`}
       </div>
     </div>`,
-    `${btn('Cancel', 'ghost')}${btn('Save', 'primary', 'ri-check-line')}`
+    `${btn('Cancel', 'ghost', '', 'access-plans.html')}${btn(creating ? 'Create plan' : 'Save', 'primary', 'ri-check-line').replace('<button ', '<button id="save-plan" aria-describedby="model-status" ')}`
   )
 }
 
-const editing = new URLSearchParams(location.search).has('edit')
+const params = new URLSearchParams(location.search)
+const editing = params.has('edit')
+const creating = params.has('create')
+const selectedPlan = PLANS.find(plan => plan.name === params.get('plan')) || PLANS[0]
+const providers = [
+  { id: 'codex', name: 'Codex', models: ['gpt-6-luna', 'gpt-5.6-terra', 'gpt-6-sol', 'gpt-6-astra'] },
+  { id: 'google', name: 'Google', models: ['gemini-3-flash', 'gemini-3-pro'] },
+  { id: 'anthropic', name: 'Anthropic', models: ['claude-haiku-4-5', 'claude-sonnet-5', 'claude-opus-5'] },
+  { id: 'openai', name: 'OpenAI', models: ['gpt-6-luna', 'gpt-6-sol'] }
+]
+const allModels = providers.flatMap(provider => provider.models.map(model => `${provider.id},${model}`))
+let allowedModels = new Set(params.has('none') ? [] : params.has('all') ? allModels : selectedPlan.models)
+let defaultModel = params.has('none') || params.has('no-default') ? null : selectedPlan.models[0]
+let activeProvider = 'Codex'
+let renderModelPicker
+if (params.has('provider-none')) {
+  allowedModels = new Set([...allowedModels].filter(model => !model.startsWith('codex,')))
+  if (!allowedModels.has(defaultModel)) defaultModel = null
+}
 
 document.getElementById('root').innerHTML = `
   <div class="min-w-0">
       <div class="flex items-center gap-1 border-b border-border px-6">${accessTabs('plans')}</div>
 
       <div class="flex items-center gap-3 px-6 pt-5 pb-3">
-        <span class="text-[12px] text-muted-foreground">4 plans · 1,287 tokens on a plan · 4 without</span>
-        <div class="ml-auto">${btn('New plan', 'primary', 'ri-add-line')}</div>
+        <span class="text-[12px] text-muted-foreground">4 plans · 1 token on a plan · 3 without</span>
+        <div class="ml-auto">${btn('New plan', 'primary', 'ri-add-line', 'access-plans.html?create')}</div>
       </div>
 
       <div class="px-6 pb-4">
         <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
           <i class="ri-information-line mr-1 align-[-1px]"></i>
-          A token on a plan may use only the plan’s models — anything else goes to its default — and is capped per UTC day.
+          A token on a plan may use only the plan’s models — anything else goes to its default. Each token has its own 5-hour and 7-day limits, not a shared allowance.
           <span class="font-medium text-foreground">Changing a plan reaches every token on it at once</span>
-          — nothing is copied onto the tokens. A token with no plan is unrestricted, as hand-issued ones are today.
+          — nothing is copied onto the tokens. A token with no plan is unrestricted.
         </div>
       </div>
 
       <table class="w-full table-fixed">
-        <colgroup><col class="w-32"><col><col class="w-32"><col class="w-24"><col class="w-56"><col class="w-10"></colgroup>
+        <colgroup><col class="w-24"><col><col class="w-40"><col class="w-40"><col class="w-20"><col class="w-10"></colgroup>
         <thead>
           <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
             ${sortTh('Plan', 'pl-6 pr-3')}
             ${sortTh('Models', 'px-3')}
-            ${sortTh('Daily cap', 'px-3', 'right')}
+            ${sortTh('5-hour', 'px-3', 'right')}
+            ${sortTh('7-day', 'px-3', 'right')}
             ${sortTh('Tokens', 'px-3', 'right', true, 'desc')}
-            ${sortTh('New installs of', 'px-3')}
             <th class="pl-3 pr-6"></th>
           </tr>
         </thead>
         <tbody>${PLANS.map(planRow).join('')}</tbody>
       </table>
   </div>
-  ${editing ? editDialog() : ''}`
+  ${editing || creating ? editDialog() : ''}`
 
 renderShell({
   active: 'access-tokens',
@@ -175,6 +193,37 @@ renderShell({
   crumbs: [],
   subtitle: 'What a token on each plan may spend'
 })
+document.querySelector('.fixed button.absolute')?.addEventListener('click', () => { location.href = 'access-plans.html' })
+if (editing || creating) {
+  const picker = document.getElementById('model-picker')
+  const save = document.getElementById('save-plan')
+  const updateSave = () => {
+    save.disabled = !allowedModels.has(defaultModel)
+    save.classList.toggle('opacity-50', save.disabled)
+  }
+  picker.addEventListener('click', event => {
+    const control = event.target.closest('button')
+    if (!control) return
+    const provider = providers.find(provider => provider.name === activeProvider)
+    const modelId = `${provider.id},${control.dataset.model || control.dataset.default}`
+    if (control.dataset.provider) activeProvider = control.dataset.provider
+    if (control.dataset.bulk === 'all') allowedModels = new Set(allModels)
+    if (control.dataset.bulk === 'none') allowedModels.clear()
+    if (control.dataset.bulk === 'provider') {
+      const models = provider.models.map(model => `${provider.id},${model}`)
+      const clear = models.every(model => allowedModels.has(model))
+      models.forEach(model => clear ? allowedModels.delete(model) : allowedModels.add(model))
+    }
+    if (control.dataset.model) allowedModels.has(modelId) ? allowedModels.delete(modelId) : allowedModels.add(modelId)
+    if (control.dataset.default && allowedModels.has(modelId)) defaultModel = modelId
+    if (!allowedModels.has(defaultModel)) defaultModel = null
+    const focusAttribute = ['provider', 'bulk', 'model', 'default'].find(key => control.dataset[key])
+    picker.innerHTML = renderModelPicker()
+    picker.querySelector(`[data-${focusAttribute}="${control.dataset[focusAttribute]}"]`)?.focus()
+    updateSave()
+  })
+  updateSave()
+}
 </script>
 </body>
 </html>

@@ -11,39 +11,33 @@ const CodexModelListSchema = z.object({
       .object({
         slug: z.string().nonempty(),
         visibility: z.string().nonempty().optional(),
+        // `context_window` is the default the Codex CLI starts from;
+        // `max_context_window` is what the model serves once the window is
+        // raised to its limit, and is the figure routing should trust.
+        context_window: z.number().int().positive().optional(),
+        max_context_window: z.number().int().positive().optional(),
         supported_reasoning_levels: z.array(z.object({ effort: z.string().nonempty() })).default([])
       })
       .passthrough()
   )
 })
 
-type CodexModelCatalog = { ids: string[]; efforts: Map<string, readonly ReasoningEffort[]> }
-const byAccount = new Map<string, Map<string, readonly ReasoningEffort[]>>()
-const lastSuccess = new Map<string, number>()
-const pending = new Map<string, Promise<CodexModelCatalog | null>>()
-const lastAttempt = new Map<string, number>()
-const RETRY_MS = 5 * 60_000
+type CodexModelEntry = z.infer<typeof CodexModelListSchema>['models'][number]
 
-export const codexEffortsFor = (subAccountId: string, model: string): readonly ReasoningEffort[] | null => {
-  const updated = lastSuccess.get(subAccountId)
-  if (updated === undefined || Date.now() - updated > RETRY_MS) return null
-  const found = byAccount.get(subAccountId)?.get(model)
-  return found === undefined ? null : found
-}
+/** What the Codex catalog says about one model that never changes for its id. */
+export type CodexModelFacts = { id: string; contextWindow: number | null; efforts: ReasoningEffort[] }
+export type CodexModelCatalog = { ids: string[]; models: CodexModelFacts[] }
 
-function saveCapabilities(subAccountId: string | undefined, catalog: CodexModelCatalog): void {
-  if (subAccountId !== undefined) {
-    byAccount.set(subAccountId, catalog.efforts)
-    lastSuccess.set(subAccountId, Date.now())
-  }
+const contextWindowOf = (model: CodexModelEntry): number | null => {
+  if (model.max_context_window !== undefined) return model.max_context_window
+  return model.context_window === undefined ? null : model.context_window
 }
 
 /** The Codex CLI reads this account-scoped catalog, not OpenAI's API price sheet. */
 export async function fetchCodexModelCatalog(
   accessToken: string,
   accountId: string | null,
-  fetchModels: typeof fetch = fetch,
-  subAccountId?: string
+  fetchModels: typeof fetch = fetch
 ): Promise<CodexModelCatalog | null> {
   try {
     const url = new URL(CODEX_MODELS_URL)
@@ -66,18 +60,14 @@ export async function fetchCodexModelCatalog(
       return null
     }
     const visible = parsed.data.models.filter((model) => model.visibility !== 'hide')
-    const efforts = new Map<string, readonly ReasoningEffort[]>()
-    for (const model of visible) {
-      if (model.supported_reasoning_levels.length === 0) continue
-      const known = [
-        ...new Set(model.supported_reasoning_levels.map((level) => level.effort).filter(isReasoningEffort))
-      ]
-      if (known.length > 0) efforts.set(model.slug, known)
-    }
-    const catalog = { ids: [...new Set(visible.map((model) => model.slug))], efforts }
-    saveCapabilities(subAccountId, catalog)
-    if (subAccountId !== undefined) lastAttempt.set(subAccountId, Date.now())
-    return catalog
+    const models = visible.map((model) => ({
+      id: model.slug,
+      contextWindow: contextWindowOf(model),
+      // A level this build has no name for is dropped rather than guessed
+      // at; it reappears once REASONING_EFFORTS learns it.
+      efforts: [...new Set(model.supported_reasoning_levels.map((level) => level.effort).filter(isReasoningEffort))]
+    }))
+    return { ids: [...new Set(models.map((model) => model.id))], models }
   } catch {
     logger.warn('[codex-models] could not reach the model catalog')
     return null
@@ -87,33 +77,8 @@ export async function fetchCodexModelCatalog(
 export async function fetchCodexModels(
   accessToken: string,
   accountId: string | null,
-  fetchModels: typeof fetch = fetch,
-  subAccountId?: string
+  fetchModels: typeof fetch = fetch
 ): Promise<string[] | null> {
-  const catalog = await fetchCodexModelCatalog(accessToken, accountId, fetchModels, subAccountId)
+  const catalog = await fetchCodexModelCatalog(accessToken, accountId, fetchModels)
   return catalog === null ? null : catalog.ids
-}
-
-export async function ensureCodexEfforts(
-  subAccountId: string,
-  accessToken: string,
-  accountId: string | null
-): Promise<void> {
-  const updated = lastSuccess.get(subAccountId)
-  if (updated !== undefined && Date.now() - updated < RETRY_MS) return
-  const running = pending.get(subAccountId)
-  if (running !== undefined) {
-    await running
-    return
-  }
-  const attempted = lastAttempt.get(subAccountId)
-  if (attempted !== undefined && Date.now() - attempted < RETRY_MS) return
-  lastAttempt.set(subAccountId, Date.now())
-  const request = fetchCodexModelCatalog(accessToken, accountId, fetch, subAccountId)
-  pending.set(subAccountId, request)
-  try {
-    await request
-  } finally {
-    pending.delete(subAccountId)
-  }
 }

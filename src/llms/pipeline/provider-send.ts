@@ -23,6 +23,7 @@ import { captureSafeguardResultMetadata, hasSafeguards } from './classifier-diag
 import { captureAssistantMessage, extractLastUserContent } from './message-capture'
 import { shouldStripInboundHeader } from './request-chain'
 import { resolveSessionId } from './session-id'
+import { fitThinkingOff } from './thinking-off'
 import type { PipelineDeps } from './types'
 import { captureUsage } from './usage-extraction'
 
@@ -39,6 +40,9 @@ export async function sendToProvider(
   if (bypass) applyBypassManualEffort(body, provider, context)
   const adaptive = applyAdaptiveEffort(body, provider, context)
   const outboundBody = adaptive === null ? body : adaptive.body
+  // Last, because whether the model takes `disabled` depends on the effort
+  // the steps above settled on.
+  const thinkingFit = fitThinkingOff(outboundBody, provider)
   const url = outConfig.url !== undefined ? outConfig.url : new URL(provider.api_base_url)
 
   // One id per upstream send. LogViewer groups a request's lines by
@@ -79,6 +83,7 @@ export async function sendToProvider(
       'adaptive reasoning effort selected from quota pace'
     )
   }
+  logThinkingFit(reqLog, provider, context, thinkingFit)
   logRequest(reqLog, provider, outboundBody, url, bypass)
   const signals = context.req?.classifierSignals
   const diagnostic = signals?.safeguardsPresent || signals?.suspectedClassifier || hasSafeguards(outboundBody)
@@ -151,6 +156,21 @@ export async function sendToProvider(
   }
 
   return response
+}
+
+// Say when a caller's `thinking: disabled` went out as something else, so a
+// request log explains why the upstream saw a different setting.
+function logThinkingFit(
+  reqLog: Logger,
+  provider: ResolvedProvider,
+  context: TransformerContext,
+  fit: ReturnType<typeof fitThinkingOff>
+): void {
+  if (fit === null) return
+  reqLog.info(
+    { event: 'thinking_off_fitted', provider: provider.name, model: context.req?.model, thinking: fit },
+    'target model refuses thinking: disabled at this effort; sent the closest setting it accepts'
+  )
 }
 
 /**
