@@ -21,6 +21,7 @@ import type {
   TierProfileViewWire,
   TierProfileWriteWire,
   TokenScopeId,
+  TokenUsageWindowsWire,
   UpdateCheckResponse,
   UseResetResponse
 } from '@/lib/api-types'
@@ -361,6 +362,21 @@ class ApiClient {
   // requests were these" on every RequestLog row it authenticated.
   async deleteAccessToken(id: string): Promise<{ deleted: boolean }> {
     return this.deleteRequest<{ deleted: boolean }>(`/access-tokens/${encodeURIComponent(id)}`)
+  }
+
+  // A token's 5-hour and 7-day usage against its plan's limits.
+  async getTokenUsageWindows(id: string): Promise<TokenUsageWindowsWire> {
+    return this.get<TokenUsageWindowsWire>(`/access-tokens/${encodeURIComponent(id)}/usage-windows`)
+  }
+
+  // Clear one token's windows; its next request opens fresh ones.
+  async resetTokenUsageWindows(id: string): Promise<TokenUsageWindowsWire> {
+    return this.post<TokenUsageWindowsWire>(`/access-tokens/${encodeURIComponent(id)}/usage-windows/reset`, {})
+  }
+
+  // Clear every token's windows.
+  async resetAllUsageWindows(): Promise<{ cleared: number }> {
+    return this.post<{ cleared: number }>('/access-tokens/usage-windows/reset', {})
   }
 
   // Plans. An edit reaches every token on the plan at its next request.

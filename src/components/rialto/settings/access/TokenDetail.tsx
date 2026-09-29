@@ -35,6 +35,7 @@ import { IssuedTokenDialog } from '@/components/rialto/settings/access/IssuedTok
 import { ANY, Picker, SurfacePicker, sameScope, scopeForWire } from '@/components/rialto/settings/access/pickers'
 import { TokenDetailHeader } from '@/components/rialto/settings/access/TokenDetailHeader'
 import { TokenReadings } from '@/components/rialto/settings/access/TokenReadings'
+import { TokenUsageWindows } from '@/components/rialto/settings/access/TokenUsageWindows'
 import { SettingsField } from '@/components/rialto/settings/SettingsLayout'
 import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
 import { type AccessTokenWire, api, type PlanWire } from '@/lib/api'
@@ -294,7 +295,7 @@ export function TokenDetail() {
           </Picker>
         </SettingsField>
 
-        {/* A plan limits the models and the daily count; no plan leaves
+        {/* A plan limits the models and the usage windows; no plan leaves
             the token unrestricted, as hand-issued ones always were. */}
         <SettingsField label={t('access.token.plan')} hint={t('access.token.planHint')}>
           <Picker
@@ -311,6 +312,8 @@ export function TokenDetail() {
             ))}
           </Picker>
         </SettingsField>
+
+        <TokenUsageWindows token={token} />
 
         <TokenReadings token={token} now={now} />
 

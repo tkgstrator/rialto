@@ -2,7 +2,7 @@
  * Access tokens → Plans: what a token on each plan may spend.
  *
  * A plan is referenced, never copied onto its tokens. Raising Free's
- * daily cap is one edit that every token on Free sees at its next
+ * limits is one edit that every token on Free sees at its next
  * request — the alternative, a limit stamped on each token at issue
  * time, is a migration every time pricing moves.
  *
@@ -23,16 +23,51 @@ import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-
 import { api, type PlanWire } from '@/lib/api'
 import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
 import { fmtCount } from '@/lib/rialto/format'
-import { emptyPlanDraft, type PlanDraft, planDraftOf, planInputOf } from '@/lib/rialto/settings/plans'
+import { emptyPlanDraft, LIMIT_FIELDS, type PlanDraft, planDraftOf, planInputOf } from '@/lib/rialto/settings/plans'
+import { fmtCost } from '@/lib/sessions/format'
 
-type PlanSortKey = 'name' | 'models' | 'cap' | 'tokens'
+type PlanSortKey = 'name' | 'models' | 'limits' | 'tokens'
 
 const planSortValue = (plan: PlanWire, key: PlanSortKey): SortValue => {
   if (key === 'name') return plan.name
   if (key === 'models') return plan.models.length
-  // No cap is the most generous plan there is, not a missing value.
-  if (key === 'cap') return plan.dailyRequestLimit === null ? Number.POSITIVE_INFINITY : plan.dailyRequestLimit
+  // Fewer limits set is the more generous plan; none at all is unrestricted.
+  if (key === 'limits') return -LIMIT_FIELDS.filter((field) => plan[field] !== null).length
   return plan.tokenCount
+}
+
+/** "100 req · $5" for one window, or null when that window has no limit. */
+function windowLimitText(requests: number | null, spendUsd: number | null, requestsLabel: string): string | null {
+  const parts = [
+    ...(requests === null ? [] : [`${fmtCount(requests)} ${requestsLabel}`]),
+    ...(spendUsd === null ? [] : [fmtCost(spendUsd)])
+  ]
+  return parts.length === 0 ? null : parts.join(' · ')
+}
+
+/** Each window's limits on its own line, or "no limit" when the plan sets none. */
+function LimitsCell({ plan }: { plan: PlanWire }) {
+  const { t } = useTranslation()
+  const lines = [
+    {
+      label: '5h',
+      text: windowLimitText(plan.fiveHourRequestLimit, plan.fiveHourSpendLimitUsd, t('access.plans.req'))
+    },
+    { label: '7d', text: windowLimitText(plan.sevenDayRequestLimit, plan.sevenDaySpendLimitUsd, t('access.plans.req')) }
+  ].filter((line) => line.text !== null)
+  if (lines.length === 0) {
+    return <span className='text-[12px] text-muted-foreground/50'>{t('access.plans.noLimit')}</span>
+  }
+  return (
+    <div className='space-y-0.5'>
+      {lines.map((line) => (
+        <div key={line.label}>
+          <span className='text-muted-foreground'>{line.label} </span>
+          {line.text}
+        </div>
+      ))}
+    </div>
+  )
 }
 
 /**
@@ -63,7 +98,7 @@ function PlanTable({ plans, onOpen }: { plans: PlanWire[]; onOpen: (plan: PlanWi
       <colgroup>
         <col className='w-32' />
         <col />
-        <col className='w-32' />
+        <col className='w-48' />
         <col className='w-24' />
         <col className='w-10' />
       </colgroup>
@@ -75,8 +110,8 @@ function PlanTable({ plans, onOpen }: { plans: PlanWire[]; onOpen: (plan: PlanWi
           <SortTh sortKey='models' sort={sort} className='px-3 text-left'>
             {t('access.plans.colModels')}
           </SortTh>
-          <SortTh sortKey='cap' sort={sort} className='px-3 text-right' align='right'>
-            {t('access.plans.colCap')}
+          <SortTh sortKey='limits' sort={sort} className='px-3 text-right' align='right'>
+            {t('access.plans.colLimits')}
           </SortTh>
           <SortTh sortKey='tokens' sort={sort} className='px-3 text-right' align='right'>
             {t('access.plans.colTokens')}
@@ -96,14 +131,7 @@ function PlanTable({ plans, onOpen }: { plans: PlanWire[]; onOpen: (plan: PlanWi
               <ModelsCell plan={plan} />
             </td>
             <td className='px-3 text-right font-mono text-xs tabular-nums'>
-              {plan.dailyRequestLimit === null ? (
-                <span className='text-[12px] text-muted-foreground/50'>{t('access.plans.noCap')}</span>
-              ) : (
-                <>
-                  {fmtCount(plan.dailyRequestLimit)}
-                  <span className='text-muted-foreground'> {t('access.plans.perDay')}</span>
-                </>
-              )}
+              <LimitsCell plan={plan} />
             </td>
             <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCount(plan.tokenCount)}</td>
             <td className='py-2.5 pl-3 pr-6'>

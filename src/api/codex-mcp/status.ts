@@ -13,10 +13,10 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { getPrismaClient } from '../../db/client'
-import dayjs from '../../lib/dayjs'
 import { noteTokenUse } from '../../services/access-token-service'
 import { isAccountExhausted } from '../../services/failover-state'
 import { getSubscriptionsInfo } from '../../services/subscription-info-service'
+import { hasAnyLimit, readUsageWindows } from '../../services/usage-window-service'
 import { isReasoningEffort } from '../../shared/model-reasoning-effort'
 import { planLabel } from '../../shared/plan-label'
 import { type CodexTarget, codexModels, codexProviderNames, targetId } from './targets'
@@ -61,16 +61,15 @@ async function accountsReport() {
   })
 }
 
-/** The caller's own daily allowance, for a token on a capped plan. */
+/**
+ * The caller's own usage windows, for a token on a plan with limits: per
+ * window, what is used against which limit and when it resets.
+ */
 async function allowanceReport(ctx: ToolContext) {
-  const limit = ctx.token.plan === null ? null : ctx.token.plan.dailyRequestLimit
-  if (limit === null) return null
-  // The same UTC day key consumeDailyRequest writes under.
-  const day = dayjs().toDate().toISOString().slice(0, 10)
-  const row = await getPrismaClient().accessTokenDailyUsage.findUnique({
-    where: { accessTokenId_day: { accessTokenId: ctx.token.id, day } }
-  })
-  return { dailyLimit: limit, usedToday: row === null ? 0 : row.requests, resetsAt: 'next 00:00 UTC' }
+  const plan = ctx.token.plan
+  if (plan === null || !hasAnyLimit(plan.limits)) return null
+  const windows = await readUsageWindows(ctx.token.id, plan.limits)
+  return { windows }
 }
 
 // The levels each model's own Codex list reported, recorded once
@@ -123,7 +122,9 @@ export function registerStatusTool(server: McpServer, ctx: ToolContext): void {
       description: [
         "The operator's Codex subscription accounts — how much of each 5-hour and weekly window is used and",
         'when it resets — and the Codex models and image models `ask` and `generate_image` can use.',
-        'Use it to pick a model, or to find out why Codex is rate limited.'
+        'Use it to pick a model, or to find out why Codex is rate limited. On a token whose plan has limits,',
+        "`yourToken.windows` gives the token's own 5-hour and 7-day usage (requests and USD spend against",
+        'their limits) and when each resets.'
       ].join('\n'),
       annotations: { readOnlyHint: true, openWorldHint: false }
     },

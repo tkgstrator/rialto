@@ -25,6 +25,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { scopePaths } from '@/components/rialto/activity/use-surfaces'
+import { useConfirm } from '@/components/rialto/ConfirmDialog'
 import { RButton } from '@/components/rialto/primitives'
 import { IssuedTokenDialog } from '@/components/rialto/settings/access/IssuedTokenDialog'
 import { emptyDraft, type IssueDraft, IssueTokenDialog } from '@/components/rialto/settings/access/IssueTokenDialog'
@@ -32,6 +33,7 @@ import { ANY, scopeForWire } from '@/components/rialto/settings/access/pickers'
 import { TokenTable } from '@/components/rialto/settings/access/TokenTable'
 import { SectionHead } from '@/components/rialto/settings/fields'
 import { type AccessTokenWire, api, type InboundSurfaceWire, type PlanWire } from '@/lib/api'
+import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
 import { countTokens, expiryToIso, type TokenCounts, tokenState } from '@/lib/rialto/settings/access-tokens'
 
 interface Revealed {
@@ -89,6 +91,8 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
   const [revealed, setRevealed] = useState<Revealed | null>(null)
   const [issuing, setIssuing] = useState(false)
   const [showRevoked, setShowRevoked] = useState(false)
+  const [resetting, setResetting] = useState(false)
+  const { confirm, dialog: confirmDialog } = useConfirm()
   // Pinned per load so every relative label on the page measures from
   // the same instant, and so an expiry cannot flip mid-render.
   const [now, setNow] = useState(Date.now())
@@ -150,6 +154,25 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
       .finally(() => setIssuing(false))
   }
 
+  // Every token's usage windows at once. Asked first, because it hands
+  // every limited client its full allowance back in one click.
+  const resetAll = async () => {
+    const { title, description } = splitConfirmMessage(t('access.token.resetAllConfirm'))
+    const confirmed = await confirm({
+      title,
+      description,
+      confirmLabel: t('access.token.resetAll'),
+      icon: 'ri-restart-line'
+    })
+    if (!confirmed) return
+    setResetting(true)
+    api
+      .resetAllUsageWindows()
+      .then(() => toast.success(t('access.token.allReset')))
+      .catch((e: Error) => toast.error(t('access.token.resetFailed', { message: e.message })))
+      .finally(() => setResetting(false))
+  }
+
   const counts = countTokens(tokens, now)
   const listed = showRevoked ? tokens : tokens.filter((token) => tokenState(token, now) !== 'revoked')
 
@@ -163,9 +186,14 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
           <Summary counts={counts} showRevoked={showRevoked} onToggleRevoked={() => setShowRevoked(!showRevoked)} />
         }
         actions={
-          <RButton variant='primary' icon='ri-add-line' onClick={() => setDraft(emptyDraft())}>
-            {t('settings.access.issueToken')}
-          </RButton>
+          <>
+            <RButton variant='ghost' icon='ri-restart-line' onClick={resetAll} disabled={resetting}>
+              {t('access.token.resetAll')}
+            </RButton>
+            <RButton variant='primary' icon='ri-add-line' onClick={() => setDraft(emptyDraft())}>
+              {t('settings.access.issueToken')}
+            </RButton>
+          </>
         }
       />
 
@@ -201,6 +229,7 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
           onCancel={() => setDraft(null)}
         />
       ) : null}
+      {confirmDialog}
     </>
   )
 }

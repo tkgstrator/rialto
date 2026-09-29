@@ -342,8 +342,8 @@ export interface UseResetResponse {
 }
 
 /**
- * A plan: the models a token on it may use and its daily cap. Tokens
- * reference it, so an edit reaches every token on it at once.
+ * A plan: the models a token on it may use and its usage-window limits.
+ * Tokens reference it, so an edit reaches every token on it at once.
  */
 export interface PlanWire {
   id: string
@@ -352,8 +352,14 @@ export interface PlanWire {
   models: string[]
   /** Where any other model name, or none, is sent. Always one of `models`. */
   defaultModel: string
-  /** Completions per UTC day. Null = no cap. */
-  dailyRequestLimit: number | null
+  /** Completions admitted per 5-hour window. Null = no limit. */
+  fiveHourRequestLimit: number | null
+  /** USD spent per 5-hour window. Null = no limit. */
+  fiveHourSpendLimitUsd: number | null
+  /** Completions admitted per 7-day window. Null = no limit. */
+  sevenDayRequestLimit: number | null
+  /** USD spent per 7-day window. Null = no limit. */
+  sevenDaySpendLimitUsd: number | null
   tokenCount: number
   createdAt: string
   updatedAt: string
@@ -363,5 +369,26 @@ export interface PlanInputWire {
   name: string
   models: string[]
   defaultModel: string
-  dailyRequestLimit: number | null
+  fiveHourRequestLimit: number | null
+  fiveHourSpendLimitUsd: number | null
+  sevenDayRequestLimit: number | null
+  sevenDaySpendLimitUsd: number | null
+}
+
+/** One of a token's usage windows. GET /api/access-tokens/{id}/usage-windows. */
+export interface UsageWindowWire {
+  window: '5h' | '7d'
+  /** Null while no window is open — nothing counted since the last one ended. */
+  startedAt: string | null
+  resetsAt: string | null
+  requests: number
+  requestLimit: number | null
+  costUsd: number
+  spendLimitUsd: number | null
+}
+
+export interface TokenUsageWindowsWire {
+  /** False when the token's plan sets no limit, or it has no plan. */
+  limited: boolean
+  windows: UsageWindowWire[]
 }

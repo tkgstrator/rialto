@@ -12,12 +12,16 @@ import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import {
   deleteAccessToken,
   getAccessToken,
+  getTokenUsageWindows,
   issueAccessToken,
   listAccessTokens,
+  resetAllUsageWindows,
+  resetTokenUsageWindows,
   revokeAccessToken,
   rotateAccessToken,
   updateAccessToken
 } from '../../services/access-token-service'
+import { UsageWindowSchema } from '../../services/usage-window-service'
 import { CODEX_MCP_SCOPE } from '../../shared/codex-mcp'
 import { validationErrorHook } from '../zod-response'
 
@@ -222,4 +226,86 @@ accessTokensRoute.openapi(
     }
   }),
   async (c) => c.json({ deleted: await deleteAccessToken(c.req.valid('param').id) }, 200)
+)
+
+const NotFoundSchema = z.object({ error: z.string().nonempty() })
+
+const UsageWindowsSchema = z
+  .object({
+    // False when the token's plan sets no limit, or it has no plan: its
+    // windows are then not counted, and read as empty.
+    limited: z.boolean(),
+    windows: z.array(
+      z.object({
+        window: UsageWindowSchema,
+        // Null while no window is open — nothing counted since the last one ended.
+        startedAt: z.string().nonempty().nullable(),
+        resetsAt: z.string().nonempty().nullable(),
+        requests: z.number().int().nonnegative(),
+        requestLimit: z.number().int().positive().nullable(),
+        costUsd: z.number().nonnegative(),
+        spendLimitUsd: z.number().positive().nullable()
+      })
+    )
+  })
+  .openapi('AccessTokenUsageWindows')
+
+accessTokensRoute.openapi(
+  createRoute({
+    method: 'get',
+    path: '/api/access-tokens/{id}/usage-windows',
+    request: { params: z.object({ id: z.string().nonempty() }) },
+    responses: {
+      200: {
+        description: "The token's 5-hour and 7-day usage against its plan's limits",
+        content: { 'application/json': { schema: UsageWindowsSchema } }
+      },
+      404: { description: 'No such token', content: { 'application/json': { schema: NotFoundSchema } } }
+    }
+  }),
+  async (c) => {
+    const windows = await getTokenUsageWindows(c.req.valid('param').id)
+    if (windows === null) return c.json({ error: 'Not found' }, 404)
+    return c.json(windows, 200)
+  }
+)
+
+/**
+ * Reset one token's usage windows: its next request opens fresh ones.
+ * The operator's way to lift a limit early for one client without
+ * editing the plan every token on it shares.
+ */
+accessTokensRoute.openapi(
+  createRoute({
+    method: 'post',
+    path: '/api/access-tokens/{id}/usage-windows/reset',
+    request: { params: z.object({ id: z.string().nonempty() }) },
+    responses: {
+      200: {
+        description: 'The cleared windows',
+        content: { 'application/json': { schema: UsageWindowsSchema } }
+      },
+      404: { description: 'No such token', content: { 'application/json': { schema: NotFoundSchema } } }
+    }
+  }),
+  async (c) => {
+    const windows = await resetTokenUsageWindows(c.req.valid('param').id)
+    if (windows === null) return c.json({ error: 'Not found' }, 404)
+    return c.json(windows, 200)
+  }
+)
+
+/** Reset every token's usage windows at once. */
+accessTokensRoute.openapi(
+  createRoute({
+    method: 'post',
+    path: '/api/access-tokens/usage-windows/reset',
+    responses: {
+      200: {
+        description: 'How many window rows were cleared',
+        content: { 'application/json': { schema: z.object({ cleared: z.number().int().nonnegative() }) } }
+      }
+    }
+  }),
+  async (c) => c.json({ cleared: await resetAllUsageWindows() }, 200)
 )

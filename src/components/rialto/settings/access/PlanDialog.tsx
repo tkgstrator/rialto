@@ -17,11 +17,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import type { PlanWire } from '@/lib/api'
 import {
   groupTargets,
+  isSpendField,
+  LIMIT_FIELDS,
+  type LimitField,
   modelOf,
   type PlanDraft,
   planInputOf,
   providerOf,
-  readCap,
+  readLimit,
   toggleModel
 } from '@/lib/rialto/settings/plans'
 
@@ -174,6 +177,45 @@ function ProviderChip({
   )
 }
 
+const LIMIT_LABEL: Readonly<Record<LimitField, string>> = {
+  fiveHourRequestLimit: 'access.plans.limit5hRequests',
+  fiveHourSpendLimitUsd: 'access.plans.limit5hSpend',
+  sevenDayRequestLimit: 'access.plans.limit7dRequests',
+  sevenDaySpendLimitUsd: 'access.plans.limit7dSpend'
+}
+
+/** The four usage-window limits, two per window. */
+function LimitFields({ draft, onChange }: { draft: PlanDraft; onChange: (next: PlanDraft) => void }) {
+  const { t } = useTranslation()
+  const allOk = LIMIT_FIELDS.every((field) => readLimit(field, draft.limits[field]).ok)
+  return (
+    <div>
+      <div className='mb-1 text-[12px] text-muted-foreground'>{t('access.plans.limits')}</div>
+      <div className='grid grid-cols-2 gap-2'>
+        {LIMIT_FIELDS.map((field) => {
+          const ok = readLimit(field, draft.limits[field]).ok
+          return (
+            <label key={field} className='block'>
+              <span className='mb-0.5 block text-[12px] text-muted-foreground'>{t(LIMIT_LABEL[field])}</span>
+              <input
+                type='text'
+                inputMode={isSpendField(field) ? 'decimal' : 'numeric'}
+                value={draft.limits[field]}
+                placeholder={t('access.plans.noLimit')}
+                onChange={(e) => onChange({ ...draft, limits: { ...draft.limits, [field]: e.target.value } })}
+                className={cn(INPUT, ok ? '' : 'border-destructive/60')}
+              />
+            </label>
+          )
+        })}
+      </div>
+      <p className='mt-1 text-[12px] leading-snug text-muted-foreground'>
+        {allOk ? t('access.plans.limitsHint') : t('access.plans.limitsInvalid')}
+      </p>
+    </div>
+  )
+}
+
 export function PlanDialog({
   plan,
   draft,
@@ -196,7 +238,6 @@ export function PlanDialog({
   onCancel: () => void
 }) {
   const { t } = useTranslation()
-  const capOk = readCap(draft.cap).ok
   const inUse = plan !== null && plan.tokenCount > 0
 
   return (
@@ -227,19 +268,7 @@ export function PlanDialog({
 
           <ModelPicker draft={draft} available={available} onChange={onChange} />
 
-          <Field
-            label={t('access.plans.dailyCap')}
-            hint={capOk ? t('access.plans.dailyCapHint') : t('access.plans.dailyCapInvalid')}
-          >
-            <input
-              type='text'
-              inputMode='numeric'
-              value={draft.cap}
-              placeholder={t('access.plans.noCap')}
-              onChange={(e) => onChange({ ...draft, cap: e.target.value })}
-              className={cn(INPUT, capOk ? '' : 'border-destructive/60')}
-            />
-          </Field>
+          <LimitFields draft={draft} onChange={onChange} />
 
           {plan === null ? null : (
             <div className='rounded-md border border-dashed border-border px-3 py-2 text-[12px] leading-snug text-muted-foreground'>
@@ -254,7 +283,7 @@ export function PlanDialog({
 
         <div className='flex flex-col-reverse gap-2 sm:flex-row sm:items-center'>
           {/* Offered only while nothing is on the plan: the server refuses
-              the rest, because removing a plan would lift its tokens' caps. */}
+              the rest, because removing a plan would lift its tokens' limits. */}
           {plan === null ? null : (
             <RButton
               variant='danger'
