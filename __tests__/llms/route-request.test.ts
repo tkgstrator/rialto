@@ -477,17 +477,29 @@ describe('pace orders the routes that pass', () => {
     ])
   })
 
-  test('every route over pace keeps list order: a projection alone never refuses a request', async () => {
+  test('every route over pace still serves, least over first: a projection alone never refuses a request', async () => {
     publishQuota({
       [SONNET]: { projectedPct: 150 },
       [CODEX]: { projectedPct: 140 },
       [OPUS]: { projectedPct: 101 }
     })
     const req = await run()
-    expect(req.body.model).toBe(SONNET)
-    expect(req.resolvedFallbacks).toEqual([CODEX, OPUS])
+    expect(req.body.model).toBe(OPUS)
+    expect(req.resolvedFallbacks).toEqual([CODEX, SONNET])
     expect(req.quotaExhaustedRetryAfterSec).toBeUndefined()
-    expect(paceLines()).toEqual([])
+    expect(paceLines()).toHaveLength(1)
+  })
+
+  // Opus and Sonnet on one subscription share its 5h and weekly windows, so
+  // the snapshot gives them the same pace. Over it, Opus must still step
+  // down: Sonnet spends the shared budget more slowly.
+  test('over pace on one subscription, the lower tier takes the traffic', async () => {
+    __setTierProfilesForTests({ live: onDefault([opusRoute(), sonnetRoute()]) })
+    publishQuota({ [OPUS]: { projectedPct: 200 }, [SONNET]: { projectedPct: 200 } })
+    const req = await run()
+    expect(req.body.model).toBe(SONNET)
+    expect(req.resolvedFallbacks).toEqual([OPUS])
+    expect(paceLines()).toHaveLength(1)
   })
 
   test('on pace, or no reading yet, keeps list order and logs nothing', async () => {
