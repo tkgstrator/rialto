@@ -45,7 +45,7 @@ and a refused control request.
 The recorded levels reach the UI and the pipeline as
 `Provider.modelSupportedEfforts`. They drive:
 
-- the per-model effort picker;
+- the per-model effort picker, and the Effort levels column on a wide provider page;
 - which manual or Auto level may be sent ([adaptive-reasoning-effort.md](./adaptive-reasoning-effort.md));
 - the clamp of a caller's `output_config.effort` on Claude Code (`api/v1/invocation.ts`).
 
@@ -70,7 +70,9 @@ nor `/v1/models` reports it:
 The probe sends each setting to `count_tokens` at every recorded effort, plus
 once with no effort. `count_tokens` validates `thinking` and `output_config`
 exactly as `/v1/messages` does, but it runs no inference. The result reaches
-the pipeline as `modelThinkingOff`.
+the pipeline as `modelThinkingOff`. On a wide provider page it is also shown
+in the Thinking off column, for example `disabled ≤ high` or `always on`
+(`components/rialto/providers/capability-reading.ts`).
 
 `pipeline/thinking-off.ts` runs last in `sendToProvider`, after the manual and
 Auto effort steps have settled the effort that will be sent. It works through

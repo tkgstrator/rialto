@@ -139,10 +139,44 @@ spent.
 | Even | 60–100, or no reading | Stays in list order | On track, or nothing to judge by: the operator's order stands |
 | Over | above 100 (`PACE_OVER_PCT`) | To the back | On track to run out before the reset, so the route the operator listed below it — typically a lower tier — takes the traffic before the limit is hit |
 
-List order holds within each band (the sort is stable), so pace only moves a route across bands,
-never reshuffles a band. When every route is over pace, the first still leads: a projection alone
-never refuses a request — that is the quota gate's job, on readings, not forecasts. A reorder is
-logged at `info` (`[routing] pace reordered the list`, with the routes promoted and stepped down).
+List order holds within the Surplus and Even bands (the sort is stable). Within the Over band the
+route least over leads, and on a tie the lower tier. The tie is the common case: every model on one
+subscription reads the same 5h and weekly windows (Fable aside), so that subscription's Opus and
+Sonnet always carry the same `projectedPct` and cross into Over together. With list order alone the
+Opus route would stay in front however far over the shared budget ran, and nothing would ever step
+down; Sonnet spends that budget more slowly, so it takes the traffic. A projection alone never
+refuses a request — that is the quota gate's job, on readings, not forecasts — so when every route
+is over pace they all still serve, in that order. A reorder is logged at `info`
+(`[routing] pace reordered the list`, with the routes promoted and stepped down).
+
+**Pace lowers the tier one step at most, and only from Fable or Opus**: it may serve an Opus route
+ahead of a Fable one, or a Sonnet route ahead of an Opus one, and nothing else below a route listed
+above it — never Sonnet ahead of Fable, never Haiku ahead of Sonnet or Opus. Past that the quality
+drop costs more than the quota a forecast says it would save. The limit binds both bands: an
+over-pace route that has no one-step-lower route behind it keeps its place, and a surplus route is
+not promoted past a route more than one step above it. A route of the same tier (another provider's
+Sonnet) or a higher one may always move ahead. It is pace alone that is limited: the operator's own
+list order, and a gate skipping a route, can still reach any tier. `mayServeAhead` in
+`src/llms/tier-router/select.ts`.
+
+**Pace steps down only to a route the list has.** It reorders the routes that passed; it never adds
+one, and it never borrows from another scenario's list — the fallback to Default reads
+configuration only (step 7 of [One request](#one-request)). So a list with no route one tier below
+an over-pace route has nowhere to step down to, and that route keeps serving. A Think list of Fable
+and Opus alone, for example:
+
+| Fable / Opus `projectedPct` | Served, in order | Why |
+|---|---|---|
+| 80 / 200 | Fable → Opus | Opus is listed second already |
+| 200 / 80 | Opus → Fable | Fable over pace steps down one tier |
+| 150 / 200 | Fable → Opus | Both over: the one less over leads |
+| 200 / 200 | Opus → Fable | Both over on the same pace: the lower tier leads, one step down from Fable |
+| Fable spent, Opus 200 | Opus | Gate 5 holds Fable |
+| Both spent | nothing | Exhausted: 429 + `Retry-After`, or the caller's own model under `exhaustedBehavior = 'passthrough'`. Never Sonnet |
+
+The two rarely tie: Fable is paced on its own scoped weekly window, Opus on the account-wide ones.
+For Think to step down from Opus to Sonnet, list Sonnet under Opus (Fable, Opus, Sonnet): Fable over
+pace then gives way to Opus, Opus to Sonnet, and Sonnet never serves ahead of Fable.
 
 Pace orders only what passed: a route held by gate 5 is not in the list to reorder. `quotaSkipPct`
 and pace are therefore independent: `quotaSkipPct` holds a route on how much is used, pace moves
@@ -465,7 +499,7 @@ dormant: routing follows the switches there.
 
 | Test | What it pins |
 |---|---|
-| `__tests__/llms/tier-router/select.test.ts` | The pure selector: the gates and their order, the four outcomes and which wins when skip reasons mix, and the pace ordering of the routes that pass |
+| `__tests__/llms/tier-router/select.test.ts` | The pure selector: the gates and their order, the four outcomes and which wins when skip reasons mix, the pace ordering of the routes that pass, and how far pace may step a tier down |
 | `__tests__/llms/tier-router/threshold.test.ts` | The Long context base (70 % of the Default model's window, 128k without one) and the clamp to `[floor, base]`, a base under the floor winning |
 | `__tests__/llms/route-request.test.ts` | `routeRequest` end to end with seeded profiles: the scenario and lane a request is classified into, the fallback to the lane's Default, the outcome contract, profiles, marks, the snapshot, the subagent tag, the persona |
 | `__tests__/api/route-plan.test.ts` | 429 + `Retry-After` and the refusal 400 in each surface's envelope |
