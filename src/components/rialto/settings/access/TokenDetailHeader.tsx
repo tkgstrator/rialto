@@ -11,8 +11,7 @@ export function TokenDetailHeader({
   usageBlocked,
   busy,
   onRotate,
-  onRevoke,
-  onDelete
+  onRevoke
 }: {
   token: AccessTokenWire
   state: TokenState
@@ -21,7 +20,6 @@ export function TokenDetailHeader({
   busy: boolean
   onRotate: () => void
   onRevoke: () => void
-  onDelete: () => void
 }) {
   const { t } = useTranslation()
   const pill = TOKEN_STATE_PILL[state]
@@ -44,25 +42,20 @@ export function TokenDetailHeader({
         {/* Rotate first and revoke second: rotating is the answer to
             almost every reason for being on this page, and revoking is
             the one that takes a client offline.
-            Absent rather than disabled on a dead token: a new secret on
-            a revoked or expired row would not authenticate, so the
-            server refuses the call outright — there is no state in which
-            this control could become live, and a permanently greyed-out
-            button is clutter rather than information. */}
+            Rotate is absent rather than disabled on an expired token: a
+            new secret on that row would not authenticate, so the server
+            refuses the call outright — there is no state in which this
+            control could become live, and a permanently greyed-out
+            button is clutter rather than information. Revoke deletes the
+            token, so it is how an expired one leaves the list too. */}
         {state === 'active' ? (
           <RButton variant='outline' icon='ri-refresh-line' onClick={onRotate} disabled={busy}>
             {t('settings.access.rotate')}
           </RButton>
         ) : null}
-        {state === 'revoked' ? (
-          <RButton variant='danger' icon='ri-delete-bin-line' onClick={onDelete} disabled={busy}>
-            {t('settings.access.delete')}
-          </RButton>
-        ) : (
-          <RButton variant='danger' icon='ri-forbid-line' onClick={onRevoke} disabled={busy}>
-            {t('settings.access.revoke')}
-          </RButton>
-        )}
+        <RButton variant='danger' icon='ri-forbid-line' onClick={onRevoke} disabled={busy}>
+          {t('settings.access.revoke')}
+        </RButton>
       </div>
     </div>
   )

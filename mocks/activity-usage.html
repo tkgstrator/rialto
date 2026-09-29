@@ -329,22 +329,30 @@ const chart = `
 // figure to show, and `count-tokens-verify` genuinely spent nothing.
 // A token with no surface scope answers on every one of them, which is
 // why the Endpoint cell can be empty.
+// The last line is not a token: revoking deletes one, so every revoked
+// token's traffic in the window is summed into a single line at the
+// bottom. Without it the survivors' shares would add up to more than was
+// spent.
 const TOKENS = [
   { name: 'laptop (Claude Code)', prefix: 'rialto_06f0b5', surface: '',                      reqs: '1,284', cost: '$13.40', share: 33, used: '2d ago' },
-  { name: 'old laptop',           prefix: 'rialto_d0a856', surface: '',                      reqs: '903',   cost: '—',      share: 0,  used: 'revoked' },
   { name: 'codex-cli',            prefix: 'rialto_4d540e', surface: '/v1/responses',         reqs: '738',   cost: '$3.50',  share: 9,  used: '2d ago' },
   { name: 'ci-pipeline',          prefix: 'rialto_ecfd82', surface: '/v1/chat/completions',  reqs: '412',   cost: '$13.59', share: 33, used: '2d ago' },
   { name: 'scratch script',       prefix: 'rialto_7f4740', surface: '',                      reqs: '27',    cost: '$11.00', share: 27, used: '2d ago' },
-  { name: 'count-tokens-verify',  prefix: 'rialto_0d1c9b', surface: '',                      reqs: '3',     cost: '—',      share: 0,  used: '9d ago' }
+  { name: 'count-tokens-verify',  prefix: 'rialto_0d1c9b', surface: '',                      reqs: '3',     cost: '—',      share: 0,  used: '9d ago' },
+  { revoked: true, reqs: '903', cost: '—', share: 0 }
 ]
 
 const tokenRow = (t) => `
   <tr ${navTo('activity-requests.html')} class="border-t border-border/60 transition-colors hover:bg-muted/50">
-    <td class="py-2.5 pl-6 pr-3">
-      <div class="text-xs font-medium">${t.name}</div>
-      <div class="font-mono text-[12px] text-muted-foreground">${t.prefix}</div>
+    <td class="py-2.5 pl-6 pr-3">${
+      t.revoked
+        ? `<div class="text-xs font-medium text-muted-foreground">Revoked tokens</div>
+      <div class="text-[12px] text-muted-foreground">traffic from tokens since revoked</div>`
+        : `<div class="text-xs font-medium">${t.name}</div>
+      <div class="font-mono text-[12px] text-muted-foreground">${t.prefix}</div>`
+    }
     </td>
-    <td class="px-3">${surfacePill(t.surface)}</td>
+    <td class="px-3">${t.revoked ? '<span class="text-[12px] text-muted-foreground">–</span>' : surfacePill(t.surface)}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${t.reqs}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${t.cost}</td>
     <td class="px-3">
@@ -353,7 +361,7 @@ const tokenRow = (t) => `
         <span class="w-8 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${t.share}%</span>
       </div>
     </td>
-    <td class="py-2.5 pl-3 pr-6 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${t.used}</td>
+    <td class="py-2.5 pl-3 pr-6 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${t.revoked ? '–' : t.used}</td>
   </tr>`
 
 const tokenTable = `

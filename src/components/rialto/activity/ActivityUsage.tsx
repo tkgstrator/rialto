@@ -43,7 +43,7 @@ import { useActivityCounts } from '@/components/rialto/activity/use-activity-cou
 import { RButton } from '@/components/rialto/primitives'
 import type { SubscriptionsResponse, SubscriptionWire } from '@/components/rialto/providers/types'
 import { Screen } from '@/components/rialto/Screen'
-import { type AccessTokenWire, api, type InboundSurfaceWire } from '@/lib/api'
+import { type AccessTokenWire, api, type InboundSurfaceWire, type RevokedTokensWire } from '@/lib/api'
 
 // Ranges the history endpoint accepts (it caps `days` at 30). Offered as a
 // real control rather than an ornament: a week answers "did I spike", a
@@ -74,6 +74,7 @@ function useUsageData(days: number) {
   const [subscriptions, setSubscriptions] = useState<SubscriptionWire[]>([])
   const [samples, setSamples] = useState<UsageHistorySample[]>([])
   const [tokens, setTokens] = useState<AccessTokenWire[]>([])
+  const [revokedTokens, setRevokedTokens] = useState<RevokedTokensWire | null>(null)
   const [surfaces, setSurfaces] = useState<InboundSurfaceWire[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -101,6 +102,7 @@ function useUsageData(days: number) {
         setSubscriptions(subscriptionRes.subscriptions)
         setSamples(historyRes.samples)
         setTokens(tokenRes.tokens)
+        setRevokedTokens(tokenRes.revoked)
         setSurfaces(surfaceRes.surfaces)
         setError(null)
       })
@@ -110,7 +112,7 @@ function useUsageData(days: number) {
 
   useEffect(load, [load])
 
-  return { usage, accountUsage, subscriptions, samples, tokens, surfaces, error, loading, reload: load }
+  return { usage, accountUsage, subscriptions, samples, tokens, revokedTokens, surfaces, error, loading, reload: load }
 }
 
 export function ActivityUsage() {
@@ -118,7 +120,8 @@ export function ActivityUsage() {
   const navigate = useNavigate()
   const _counts = useActivityCounts()
   const [days, setDays] = useState<number>(DEFAULT_RANGE_DAYS)
-  const { usage, accountUsage, subscriptions, samples, tokens, surfaces, error, loading, reload } = useUsageData(days)
+  const { usage, accountUsage, subscriptions, samples, tokens, revokedTokens, surfaces, error, loading, reload } =
+    useUsageData(days)
   // One clock for the whole render, so two rows cannot disagree about how
   // long until the same reset.
   const [now, setNow] = useState(() => Date.now())
@@ -135,7 +138,7 @@ export function ActivityUsage() {
   const accountTotal = groups.reduce((sum, group) => sum + group.accounts.length, 0)
   const series = useMemo(() => seriesOf(samples, t), [samples, t])
   const points = useMemo(() => bucketSamples(samples, CHART_BUCKETS), [samples])
-  const rows = useMemo(() => tokenUsageRows(tokens), [tokens])
+  const rows = useMemo(() => tokenUsageRows(tokens, revokedTokens), [tokens, revokedTokens])
 
   const refresh = useCallback(() => {
     reload()

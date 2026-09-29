@@ -151,10 +151,9 @@ export function ProviderModelsSection({
             total: listedModelsOf(provider).length
           })}
         </span>
-        {/* The count is the control that unfolds them, the way the
-            revoked count is on Access tokens. A plain label would leave
-            the rows unreachable and a separate switch would spend a
-            control on a state most installs never look at. */}
+        {/* The count is the control that unfolds them. A plain label
+            would leave the rows unreachable and a separate switch would
+            spend a control on a state most installs never look at. */}
         {legacyHidden === 0 ? null : (
           <button
             type='button'

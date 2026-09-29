@@ -36,16 +36,10 @@ document.getElementById('root').innerHTML = `
       <!-- No "Access tokens" heading: the breadcrumb and the sidebar
            both already say it, and on its own screen a title repeating
            them costs a line that the counts can use.
-           Revoked rows are folded away, not deleted. They are the only
-           thing keeping past RequestLog entries attributable to a
-           client, so they have to exist — but the table answers "what
-           can reach the proxy right now", and a dead row is never that.
-           The count stays a control rather than a label: without it the
-           only way to Delete one would be to remember its URL. -->
+           A revoked token is not listed: revoking deletes it, and the
+           table answers "what can reach the proxy right now". -->
       <div class="flex items-center gap-3 px-6 pt-5 pb-3">
-        <span class="text-[12px] text-muted-foreground">4 active ·
-          <button class="underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground">1 revoked</button>
-          · all <span class="font-mono">/v1/*</span></span>
+        <span class="text-[12px] text-muted-foreground">4 active · all <span class="font-mono">/v1/*</span></span>
         <!-- Beside the list it acts on, not in the app title bar. There
              was one in each and the screen read as offering two. -->
         <div class="ml-auto">${btn('Issue token', 'primary', 'ri-add-line', 'access-token-issue.html')}</div>
