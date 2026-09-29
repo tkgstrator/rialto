@@ -156,8 +156,9 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
   // state that explains it instead. It keeps probing, so the app comes
   // back on its own once the server does.
   if (error !== null && !authFailed) {
-    // The screen polls /health and calls this once the server answers, so
-    // the app comes back on its own instead of stopping at green dots.
+    // The screen polls /health and calls this once per recovery, when the
+    // server can serve again, so the app comes back on its own instead of
+    // stopping at green dots. A failure /health cannot see waits for Retry.
     return <ApiUnreachableScreen onRecovered={() => void reloadConfig()} />
   }
 
