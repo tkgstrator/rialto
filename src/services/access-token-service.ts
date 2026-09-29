@@ -20,6 +20,14 @@ import { LRUCache } from 'lru-cache'
 import { getPrismaClient } from '../db/client'
 import dayjs from '../lib/dayjs'
 import { spendByToken, type TokenWindowTotals } from './access-token-spend'
+import {
+  hasAnyLimit,
+  type PlanLimits,
+  planLimitsOf,
+  readUsageWindows,
+  resetUsageWindows,
+  type WindowReport
+} from './usage-window-service'
 
 export type { TokenSpendGroup, TokenWindowTotals } from './access-token-spend'
 
@@ -101,9 +109,17 @@ export interface TokenPlan {
   models: string[]
   /** Where a request naming anything else, or nothing, is sent. */
   defaultModel: string
-  /** Completion requests allowed per UTC day. Null = no cap. */
-  dailyRequestLimit: number | null
+  /** Requests and USD allowed per 5-hour and 7-day window. Each null = no limit. */
+  limits: PlanLimits
 }
+
+// The four window-limit columns of a plan, as the gate and the admin page read them.
+const PLAN_LIMITS_SELECT = {
+  fiveHourRequestLimit: true,
+  fiveHourSpendLimitUsd: true,
+  sevenDayRequestLimit: true,
+  sevenDaySpendLimitUsd: true
+} as const
 
 // The relation every wire row carries: which plan the token spends under.
 const WIRE_INCLUDE = {
@@ -327,7 +343,9 @@ export async function resolveAccessToken(presented: string): Promise<ResolvedTok
     .accessToken.findUnique({
       where: { tokenHash: hash },
       include: {
-        plan: { select: { models: true, defaultModel: true, dailyRequestLimit: true } }
+        plan: {
+          select: { models: true, defaultModel: true, ...PLAN_LIMITS_SELECT }
+        }
       }
     })
     .catch(() => null)
@@ -353,7 +371,7 @@ export async function resolveAccessToken(presented: string): Promise<ResolvedTok
             : {
                 models: row.plan.models,
                 defaultModel: row.plan.defaultModel,
-                dailyRequestLimit: row.plan.dailyRequestLimit
+                limits: planLimitsOf(row.plan)
               }
       }
     : null
@@ -376,38 +394,40 @@ export function noteTokenUse(id: string): void {
     })
 }
 
-export type DailyAllowance =
-  | { outcome: 'allowed' }
-  | { outcome: 'exhausted'; retryAfterSeconds: number }
-  | { outcome: 'unavailable' }
+/** A token's usage windows against its plan's limits, as the admin page shows them. */
+export interface TokenUsageWindows {
+  /** False when the token's plan sets no limit (or it has no plan): nothing is counted. */
+  limited: boolean
+  windows: WindowReport[]
+}
+
+/** Null when there is no such token. */
+export async function getTokenUsageWindows(id: string): Promise<TokenUsageWindows | null> {
+  const row = await getPrismaClient()
+    .accessToken.findUnique({ where: { id }, select: { plan: { select: PLAN_LIMITS_SELECT } } })
+    .catch(() => null)
+  if (row === null) return null
+  const limits = row.plan === null ? null : planLimitsOf(row.plan)
+  return {
+    limited: limits !== null && hasAnyLimit(limits),
+    windows: await readUsageWindows(id, limits)
+  }
+}
 
 /**
- * Count one request against a token's daily cap and say whether it may
- * proceed.
- *
- * Increment-then-compare in a single upsert, so two concurrent requests
- * cannot both read "one left" and both go through. The request that
- * crosses the cap is refused and still counted, which is harmless: the
- * count only ever decides refusals for the rest of that day.
- *
- * A failed write refuses rather than admits ('unavailable'): the cap is
- * the only thing bounding what a free token can spend, so an outage of
- * the ledger must not turn into an outage of the cap.
+ * Clear one token's usage windows, so its next request opens fresh ones.
+ * Null when there is no such token.
  */
-export async function consumeDailyRequest(tokenId: string, limit: number): Promise<DailyAllowance> {
-  // UTC, so every instance agrees on where a day ends whatever TZ it runs in.
-  const now = dayjs().toDate()
-  const day = now.toISOString().slice(0, 10)
-  const row = await getPrismaClient()
-    .accessTokenDailyUsage.upsert({
-      where: { accessTokenId_day: { accessTokenId: tokenId, day } },
-      create: { accessTokenId: tokenId, day, requests: 1 },
-      update: { requests: { increment: 1 } }
-    })
+export async function resetTokenUsageWindows(id: string): Promise<TokenUsageWindows | null> {
+  const exists = await getPrismaClient()
+    .accessToken.findUnique({ where: { id }, select: { id: true } })
     .catch(() => null)
-  if (row === null) return { outcome: 'unavailable' }
-  if (row.requests <= limit) return { outcome: 'allowed' }
-  const nextUtcMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)
-  const retryAfterSeconds = Math.max(1, Math.ceil((nextUtcMidnight - now.getTime()) / 1000))
-  return { outcome: 'exhausted', retryAfterSeconds }
+  if (exists === null) return null
+  await resetUsageWindows(id)
+  return getTokenUsageWindows(id)
+}
+
+/** Clear every token's usage windows. Returns how many window rows went. */
+export function resetAllUsageWindows(): Promise<number> {
+  return resetUsageWindows(null)
 }

@@ -150,14 +150,14 @@
       "mock": "access-tokens.html",
       "route": "/access-tokens",
       "group": "Access tokens",
-      "note": "Per-client credentials for /v1/*. Top level rather than under Settings: Providers is outbound, this is the same question inbound, and a list carrying per-token spend, rotation and revocation is operations rather than configuration. Issuing happens in a dialog over this list — access-token-issue.html and access-token-issued.html are its two steps."
+      "note": "Per-client credentials. Historical table columns stay unchanged; current window meters live on token detail to avoid four limits and two reset clocks crowding each row. Reset everyone’s usage is a quiet secondary action below the table, separate from Issue token, with a destructive confirmation."
     },
     {
       "name": "access-token",
       "mock": "access-token.html",
       "route": "/access-tokens/demo-token-00002",
       "group": "Access tokens",
-      "note": "One token's own page: rotate, re-scope, revoke. Reached by clicking a row, which is where those actions used to live — as row actions they sat one mis-aimed click from every row of a table of live credentials. Route needs `bun run db:seed:demo`, whose token ids are deterministic; without it the capture lands on the not-found state."
+      "note": "MacBook — Codex on Free: independent 5-hour and 7-day request and USD meters using subscription meter styling, exact JST reset times and relative countdowns. Current windows are separate from historical 30-day usage. Reset usage opens a per-token confirmation."
     },
     {
       "name": "access-token-issue",
@@ -178,14 +178,182 @@
       "mock": "access-plans.html",
       "route": "/access-tokens/plans",
       "group": "Access tokens",
-      "note": "Plans: the models a plan's tokens may use — one of them the default, which any other or missing model name falls back to — and its per-UTC-day cap. Referenced by tokens, never copied onto them, so one edit reaches every token on the plan."
+      "note": "Plans retain allowed models and a default. Two compact window columns replace the daily cap: requests and USD in each 5-hour / 7-day window, with explicit No request limit / No spend limit. Limits apply independently per token, not as a shared pool."
     },
     {
       "name": "access-plan-edit",
       "mock": "access-plans.html?edit",
       "route": null,
       "group": "Access tokens",
-      "note": "Editing a plan, in a dialog that says how many tokens the change reaches before it is saved. Models are picked provider first, then among that provider's models, each provider chip counting what is ticked under it; one ticked model is marked default, so the default can only be an allowed model."
+      "note": "Edit Free: four optional numeric limits grouped by 5-hour and 7-day window; blank means no limit. Explains first counted request, fixed non-sliding resets and 429 while any window is spent. Existing provider-first allowed/default model picker and affected-token count remain."
+    },
+    {
+      "name": "access-plan-create",
+      "mock": "access-plans.html?create",
+      "route": null,
+      "group": "Access tokens",
+      "note": "New plan dialog with blank name and four empty optional limits (No limit). Starts with the displayed Free model selection as an editable mock preset; explains independent first-request windows and fixed resets."
+    },
+    {
+      "name": "access-plan-edit-all",
+      "mock": "access-plans.html?edit&all",
+      "route": null,
+      "group": "Access tokens",
+      "note": "All 11 fixture models allowed across four providers; counts 4/4, 2/2, 3/3, 2/2. Codex header checked; original Free default retained; Save enabled."
+    },
+    {
+      "name": "access-plan-edit-none",
+      "mock": "access-plans.html?edit&none",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Clear across every provider: all counts zero, unchecked header, no default, Save disabled with explicit allow-and-choose-default hint."
+    },
+    {
+      "name": "access-plan-edit-provider-none",
+      "mock": "access-plans.html?edit&provider-none",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Codex cleared only: Google stays 1/2; Codex 0/4. Removed Codex default is cleared, not replaced by Google; Save disabled."
+    },
+    {
+      "name": "access-plan-edit-all-no-default",
+      "mock": "access-plans.html?edit&all&no-default",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Select all after clearing: all provider counts full but no default is silently picked. Save disabled until an allowed model default radio is chosen."
+    },
+    {
+      "name": "access-plan-create-all",
+      "mock": "access-plans.html?create&all",
+      "route": null,
+      "group": "Access tokens",
+      "note": "New plan with all 11 fixture models selected, full provider counts and preserved preset default; name blank and usage limits unlimited."
+    },
+    {
+      "name": "access-plan-create-none",
+      "mock": "access-plans.html?create&none",
+      "route": null,
+      "group": "Access tokens",
+      "note": "New plan after global Clear: zero allowed, no default, Create plan disabled with recovery hint; name and limits remain blank."
+    },
+    {
+      "name": "access-plan-edit-plus",
+      "mock": "access-plans.html?edit&plan=Plus",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Edit Plus: 5-hour request-only limit and 7-day spend-only limit demonstrate independently optional measures; allowed models and default reflect Plus."
+    },
+    {
+      "name": "access-plan-edit-pro",
+      "mock": "access-plans.html?edit&plan=Pro",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Edit Pro with all four limits populated and its own allowed/default models; zero assigned tokens."
+    },
+    {
+      "name": "access-plan-edit-max",
+      "mock": "access-plans.html?edit&plan=Max",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Edit Max: all four limits empty, while allowed/default model rules remain in effect."
+    },
+    {
+      "name": "access-plan-edit-free",
+      "mock": "access-plans.html?edit&plan=Free",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Free row navigation opens the same four-limit edit dialog as ?edit; one assigned token."
+    },
+    {
+      "name": "access-token-spent",
+      "mock": "access-token.html?spent",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Free token at its 5-hour request limit (100/100); spend and 7-day limits remain available. Active credential, usage blocked: requests refused with 429 until Sep 29, 18:00 JST."
+    },
+    {
+      "name": "access-token-week-spent",
+      "mock": "access-token.html?week-spent",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Free token at its 7-day spend limit ($10/$10), while 5-hour usage is available. Requests refused until Oct 3, 09:00 JST; resetting the shorter window alone cannot unblock it."
+    },
+    {
+      "name": "access-token-not-started",
+      "mock": "access-token.html?not-started",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Free token before its first counted request, also the per-token reset result. Both windows show zero usage, Not started instead of a reset timestamp, and Nothing to reset."
+    },
+    {
+      "name": "access-token-partial",
+      "mock": "access-token.html?partial",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Plus token with request-only 5-hour and spend-only 7-day limits. Unbounded measures show usage and No limit, never a misleading percentage bar."
+    },
+    {
+      "name": "access-token-partial-reset",
+      "mock": "access-token.html?partial&reset",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Per-token reset confirmation on Plus, preserving its independently optional limits on cancel and after reset."
+    },
+    {
+      "name": "access-token-partial-not-started",
+      "mock": "access-token.html?not-started&partial",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Plus after reset: zero current usage and Not started for both windows. Unbounded measures remain No limit, with no percentage bar."
+    },
+    {
+      "name": "access-token-no-plan",
+      "mock": "access-token.html?no-plan",
+      "route": null,
+      "group": "Access tokens",
+      "note": "No plan: explanatory no-plan-limits message instead of meters or reset action; historical usage remains visible."
+    },
+    {
+      "name": "access-token-unlimited",
+      "mock": "access-token.html?unlimited",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Max plan without usage limits: no empty meters or reset action. Copy distinguishes unlimited usage from its still-enforced allowed/default models."
+    },
+    {
+      "name": "access-token-reset",
+      "mock": "access-token.html?reset",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Confirm resetting only MacBook — Codex: clears request and spend usage in both windows, removes any plan usage block, cannot be undone. History, secrets, other tokens and provider quotas remain unchanged."
+    },
+    {
+      "name": "access-token-spent-reset",
+      "mock": "access-token.html?spent&reset",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Per-token reset confirmation over the 5-hour request-blocked state; cancel retains that state, confirm previews unstarted windows."
+    },
+    {
+      "name": "access-token-week-spent-reset",
+      "mock": "access-token.html?week-spent&reset",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Per-token reset confirmation over the 7-day spend-blocked state; cancel retains that state, confirm previews unstarted windows."
+    },
+    {
+      "name": "access-tokens-reset-all",
+      "mock": "access-tokens.html?reset-all",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Destructive confirmation for clearing both windows for every token across every plan, not just visible rows. Warns that all plan-usage-blocked clients resume immediately and this cannot be undone."
+    },
+    {
+      "name": "access-tokens-usage-reset",
+      "mock": "access-tokens.html?usage-reset",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Bulk reset result: inline confirmation below the unchanged historical table; each token’s next counted request starts fresh windows."
     },
     {
       "name": "activity",

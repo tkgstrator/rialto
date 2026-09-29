@@ -75,6 +75,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `backfill-tier-routes.test.ts` | seed 時に旧チェーンをシナリオ × レーンのルートへ変換する処理。default / think / longContext を両レーンとも変換して `chainBackfilledAt` を打ち 2 回目は何もしないこと、webSearch / image のリストは変換せず件数をメモに残すこと、すでにルートを持つプロファイルは印だけ付けること、既定プロファイルが先にエイリアスを取り他のプロファイルはそれを通して解決し、その旨をメモに残すこと、チェーンの無いプロファイルはルート無しで印が付く（空のリストと同じく素通しになる）こと |
 | `account-usage-service.test.ts` | アカウントごとの API 換算使用量。いまの週次窓の開始（リセット時刻から窓の長さを引く。Codex は上流の窓の長さを使い、リセットが過ぎていればそこから新しい窓、読めなければ直近 7 日）、サブスクのモデルを同名の有料モデルの価格で換算すること、「価格不明」（null）と「トラフィック無し」（0）を分けること、価格の無いモデルが価格の付いた分を消さないこと、割安度は額と月額の両方が要ること、各アカウントが自分の行しか見ないこと |
 | `access-token-service.test.ts` | トークンの発行・解決・失効。保存は sha256 のみ |
+| `usage-window-service.test.ts` | 利用枠（時計は `setSystemTime`）。最初のリクエストで両方の枠が開き以後は数えるだけ、埋まった枠はリセットまで断り拒否は数えない、5 時間の枠がリセットしても 7 日の枠は数え続け 7 日で戻ること、両方埋まれば遅いリセットを名指すこと、金額はまたいだ呼び出しは通し次を断ること・開いている枠にだけ足すこと・Cost 列と同じ価格で付けること、新しいトークンへの同時リクエストとリセットの瞬間の同時リクエストがちょうど上限だけ通ること、1 本と全体のリセット |
 | `inbound-surface-service.test.ts` | 面ごとの `routingMode` / `profileKey` の解決と `ensureInboundSurfaces` の冪等性 |
 | `passthrough-profile.test.ts` | 予約プロファイル `passthrough`。プロファイルの選択肢には出るがルートを持つプロファイルとしては保存できないこと、面がこのキーを指せば `routingMode` が `routed` でも passthrough になり、実在のプロファイルへ戻せばルーティングが戻ること、このキーで保存された行があっても挙動を上書きしないこと |
 | `overview-service.test.ts` | Overview 画面の集計クエリ。加えて quota 行にアカウントの API 換算使用量が載ること、failover フィードが 429 と拒否された資格情報を新しい順に出し、重みの行を出さないこと |
@@ -88,6 +89,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `health.test.ts` | `/health` が管理ゲート（`adminAuth`）の外にあること、db / redis の両チェックを報告すること、`summarizeHealth` の切り分け（必須依存の失敗だけが 503。redis 落ちは degraded だが 200）、Redis プローブが未設定なら `skip`・到達不能なら hang せず `fail` |
 | `local-access.test.ts` | ローカルブラウザ免除の判定（トンネル背後で常に loopback に見える問題込み） |
 | `openai-bearer-auth.test.ts` | OpenAI 面が Bearer のみを受けること |
+| `usage-windows.test.ts` | プランの利用枠の `/v1` ゲート。カタログ（`/v1/models`・`count_tokens`）は数えず、補完は上限まで通して次を面の封筒の 429（`usage_limit_exceeded`、`Retry-After` はリセットまで、メッセージにリセット時刻）で断ること、金額の上限でも断ること、プランなし・上限なしのトークンは数えないこと。管理 API の枠の読み出し、トークン 1 本のリセット（404 も）と全トークンのリセット |
 | `google-surface-auth.test.ts` | Gemini 面の `x-goog-api-key` / `?key=` |
 | `request-log-events-auth.test.ts` | `/api/request-logs/events` がもう `?apikey=` を受けないこと — それを付けたリモートのリクエストは 401、ホスト上からのリクエストは通る |
 | `error-shape.test.ts` | 3 種のエラー封筒の出し分け |
@@ -98,7 +100,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `chain-failover-cooldown.test.ts` | 429 後の枯渇マークと cooldown |
 | `chain-failover-account.test.ts` | 試行がどのサブスクアカウントで走ったか（`attemptAccountOf`）。OAuth transformer が試行のリクエストに刻んだ `subAccountId` が session の最後の解決より優先されること（同じ session の並行リクエストに上書きされないため）、成功した試行はそのアカウントの枯渇マークを外し、刻みが無ければ推測でマークに触らないこと |
 | `openai-models.test.ts` | `GET /v1/models` の envelope と `provider,model` id、単価とコンテキスト長 |
-| `codex-mcp.test.ts` | Codex MCP サーバー（`/codex`）。`codex-mcp` スコープを明示したトークンだけが入れ（スコープなし・他の面だけのトークンは 403、無効なトークンは OAuth へ誘導しない 401）、`GET` は 405、SDK の知らないプロトコルバージョンを受けること、MCP SDK のクライアントが接続・一覧・呼び出しできること。`ask` が Codex の `/responses` に固定で届き、RequestLog に `surface = codex-mcp` とスレッド id のセッションで残り、`thread_id` で履歴と instructions を引き継ぎ、他のトークンのスレッドは読めないこと、Codex に無いモデルは上流を呼ばずに断ること。プランの日次上限をハンドシェイクと `status` では消費せず `ask` で消費すること、プランに無いモデルを既定モデルに差し替えず断ること。`generate_image` が画像とダウンロード URL（`x-forwarded-proto` を反映）を返し、URL から同じバイトが取れること。`status` が Codex アカウントの窓・バンク済みリセットと使えるモデルを上流を呼ばずに返すこと。長い呼び出しの間の progress / ログ通知、ファイル鍵の形式、画像形式の判定、`output_text` の取り出し |
+| `codex-mcp.test.ts` | Codex MCP サーバー（`/codex`）。`codex-mcp` スコープを明示したトークンだけが入れ（スコープなし・他の面だけのトークンは 403、無効なトークンは OAuth へ誘導しない 401）、`GET` は 405、SDK の知らないプロトコルバージョンを受けること、MCP SDK のクライアントが接続・一覧・呼び出しできること。`ask` が Codex の `/responses` に固定で届き、RequestLog に `surface = codex-mcp` とスレッド id のセッションで残り、`thread_id` で履歴と instructions を引き継ぎ、他のトークンのスレッドは読めないこと、Codex に無いモデルは上流を呼ばずに断ること。プランの利用枠をハンドシェイクと `status` では消費せず `ask` で消費し、埋まった枠が 5 時間の上限とリセット時刻を名指して断ること、`status` が枠ごとの使用量・上限・リセット時刻を返し、上限の無いプランでは返さないこと、プランに無いモデルを既定モデルに差し替えず断ること。`generate_image` が画像とダウンロード URL（`x-forwarded-proto` を反映）を返し、URL から同じバイトが取れること。`status` が Codex アカウントの窓・バンク済みリセットと使えるモデルを上流を呼ばずに返すこと。長い呼び出しの間の progress / ログ通知、ファイル鍵の形式、画像形式の判定、`output_text` の取り出し |
 | `access-log-request-id.test.ts` | アクセスログの `reqId` |
 | `oauth-export-credentials.test.ts` | 認証情報エクスポート |
 | `oauth-import-credentials.test.ts` | 認証情報の取り込み。資格情報ファイルでない JSON と account id の無い Codex 資格情報を上流に問い合わせる前に 400 で断ること、上流が拒否した資格情報は（refresh token があれば 1 回 refresh を試したうえで）400 で断り何も書かないこと、refresh で通った場合は回転後の grant を保存すること、上流に届かなければ 502 で何も書かないこと、受理されたアカウントが `live` で保存され同じリクエスト内で `SubAccountUsage` / `SubAccountQuota` まで埋まること |

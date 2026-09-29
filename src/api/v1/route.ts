@@ -19,6 +19,7 @@ import { getPrismaClient } from '../../db/client'
 import { getLlmsContext, type MessageRecord, runPipeline, type UsageRecord } from '../../llms'
 import { INBOUND_SURFACES, surfaceForPath } from '../../llms/inbound/surfaces'
 import { aggregateAnthropicSseToJson, findSseStreamDefect, isSseContentType } from '../../llms/utils/sse-aggregate'
+import { recordCallSpend } from '../../services/usage-window-service'
 import { requestLogEmitter } from '../request-logs/events'
 import { buildFailoverChain } from './candidate-chain'
 import { attemptChainEntry, type ChainCtx, type SubscriptionKindProvider } from './chain-failover'
@@ -44,6 +45,10 @@ export const v1Route = new Hono()
 const captureEnabled = (key: 'CAPTURE_REQUESTS' | 'CAPTURE_MESSAGES'): boolean => process.env[key] !== 'false'
 
 async function recordUsage(entry: UsageRecord): Promise<void> {
+  // Spend goes to the token's usage windows whether or not the request is
+  // captured: switching capture off must not switch a plan's spend limit
+  // off with it. Never throws.
+  await recordCallSpend(entry)
   if (!captureEnabled('CAPTURE_REQUESTS')) return
   const prisma = getPrismaClient()
   // New activity un-archives a previously archived session so it returns to

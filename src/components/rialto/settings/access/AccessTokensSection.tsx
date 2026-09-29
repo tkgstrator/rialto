@@ -25,6 +25,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { scopePaths } from '@/components/rialto/activity/use-surfaces'
+import { useConfirm } from '@/components/rialto/ConfirmDialog'
 import { RButton } from '@/components/rialto/primitives'
 import { IssuedTokenDialog } from '@/components/rialto/settings/access/IssuedTokenDialog'
 import { emptyDraft, type IssueDraft, IssueTokenDialog } from '@/components/rialto/settings/access/IssueTokenDialog'
@@ -89,6 +90,9 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
   const [revealed, setRevealed] = useState<Revealed | null>(null)
   const [issuing, setIssuing] = useState(false)
   const [showRevoked, setShowRevoked] = useState(false)
+  const [resetting, setResetting] = useState(false)
+  const [allReset, setAllReset] = useState(false)
+  const { confirm, dialog: confirmDialog } = useConfirm()
   // Pinned per load so every relative label on the page measures from
   // the same instant, and so an expiry cannot flip mid-render.
   const [now, setNow] = useState(Date.now())
@@ -150,6 +154,31 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
       .finally(() => setIssuing(false))
   }
 
+  // Every token's usage windows at once. Asked first, because it hands
+  // every limited client its full allowance back in one click. The answer
+  // stays on the page as the line under the table rather than a toast:
+  // nothing in the table changes (its totals are history), so the line is
+  // the only place the reset shows at all.
+  const resetAll = async () => {
+    const confirmed = await confirm({
+      title: t('access.token.resetAllTitle'),
+      description: [
+        { text: t('access.token.resetAllBody') },
+        { text: t('access.token.resetAllWarning'), tone: 'destructive' },
+        { text: t('access.token.resetAllKeeps') }
+      ],
+      confirmLabel: t('access.token.resetAll'),
+      icon: 'ri-restart-line'
+    })
+    if (!confirmed) return
+    setResetting(true)
+    api
+      .resetAllUsageWindows()
+      .then(() => setAllReset(true))
+      .catch((e: Error) => toast.error(t('access.token.resetFailed', { message: e.message })))
+      .finally(() => setResetting(false))
+  }
+
   const counts = countTokens(tokens, now)
   const listed = showRevoked ? tokens : tokens.filter((token) => tokenState(token, now) !== 'revoked')
 
@@ -181,6 +210,21 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
 
       <TokenTable tokens={listed} surfaces={surfaces} now={now} />
 
+      {/* Quiet and below the table, away from Issue token: it acts on every
+          token and plan at once, including rows folded away, and the page's
+          primary action should not sit beside it. The table keeps its
+          historical columns; the current windows are on each token's page. */}
+      <div className='flex items-center gap-3 border-t border-border/60 px-6 py-4'>
+        <span className='text-[12px] text-muted-foreground'>
+          {t(allReset ? 'access.token.allResetNote' : 'access.token.listWindowsNote')}
+        </span>
+        <div className='ml-auto shrink-0'>
+          <RButton variant='ghost' icon='ri-restart-line' onClick={resetAll} disabled={resetting}>
+            {t('access.token.resetAll')}
+          </RButton>
+        </div>
+      </div>
+
       {/* Both steps of issuing are modals over that table, and nothing
           above moves to make room for them. Naming a token is decided
           against the ones that already exist, and after issuing, the new
@@ -201,6 +245,7 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
           onCancel={() => setDraft(null)}
         />
       ) : null}
+      {confirmDialog}
     </>
   )
 }

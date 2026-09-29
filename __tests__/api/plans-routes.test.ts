@@ -29,7 +29,10 @@ const FREE = {
   name: 'Free',
   models: ['codex,gpt-6-luna', 'google,gemini-3-flash'],
   defaultModel: 'codex,gpt-6-luna',
-  dailyRequestLimit: 100
+  fiveHourRequestLimit: 100,
+  fiveHourSpendLimitUsd: 2.5,
+  sevenDayRequestLimit: null,
+  sevenDaySpendLimitUsd: 20
 }
 
 describe.skipIf(!HAS_DB)('/api/plans', () => {
@@ -50,9 +53,24 @@ describe.skipIf(!HAS_DB)('/api/plans', () => {
     const listed = await (await send('GET', '/api/plans')).json()
     expect(listed.plans.map((p: { name: string }) => p.name)).toEqual(['Free'])
 
-    const edited = await send('PATCH', `/api/plans/${plan.id}`, { dailyRequestLimit: 150 })
+    const edited = await send('PATCH', `/api/plans/${plan.id}`, {
+      sevenDayRequestLimit: 1500,
+      fiveHourSpendLimitUsd: null
+    })
     expect(edited.status).toBe(200)
-    expect((await edited.json()).dailyRequestLimit).toBe(150)
+    expect(await edited.json()).toMatchObject({
+      fiveHourRequestLimit: 100,
+      fiveHourSpendLimitUsd: null,
+      sevenDayRequestLimit: 1500,
+      sevenDaySpendLimitUsd: 20
+    })
+  })
+
+  test('answers 400 for a request limit that is not a whole number above zero, or a spend limit not above zero', async () => {
+    expect((await send('POST', '/api/plans', { ...FREE, fiveHourRequestLimit: 0 })).status).toBe(400)
+    expect((await send('POST', '/api/plans', { ...FREE, sevenDayRequestLimit: 1.5 })).status).toBe(400)
+    expect((await send('POST', '/api/plans', { ...FREE, fiveHourSpendLimitUsd: 0 })).status).toBe(400)
+    expect((await send('POST', '/api/plans', { ...FREE, sevenDaySpendLimitUsd: -1 })).status).toBe(400)
   })
 
   test('answers 400 for a default outside the list and 409 for a taken name', async () => {

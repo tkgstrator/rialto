@@ -2,7 +2,7 @@
  * Access tokens → Plans: what a token on each plan may spend.
  *
  * A plan is referenced, never copied onto its tokens. Raising Free's
- * daily cap is one edit that every token on Free sees at its next
+ * limits is one edit that every token on Free sees at its next
  * request — the alternative, a limit stamped on each token at issue
  * time, is a migration every time pricing moves.
  *
@@ -24,15 +24,41 @@ import { api, type PlanWire } from '@/lib/api'
 import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
 import { fmtCount } from '@/lib/rialto/format'
 import { emptyPlanDraft, type PlanDraft, planDraftOf, planInputOf } from '@/lib/rialto/settings/plans'
+import { fmtUsd } from '@/lib/rialto/settings/usage-windows'
 
-type PlanSortKey = 'name' | 'models' | 'cap' | 'tokens'
+type PlanSortKey = 'name' | 'models' | 'fiveHour' | 'sevenDay' | 'tokens'
 
 const planSortValue = (plan: PlanWire, key: PlanSortKey): SortValue => {
   if (key === 'name') return plan.name
   if (key === 'models') return plan.models.length
-  // No cap is the most generous plan there is, not a missing value.
-  if (key === 'cap') return plan.dailyRequestLimit === null ? Number.POSITIVE_INFINITY : plan.dailyRequestLimit
+  // A window sorts by its request limit, the cell's first line. No limit
+  // is null, which the sort keeps below every number in either direction.
+  if (key === 'fiveHour') return plan.fiveHourRequestLimit
+  if (key === 'sevenDay') return plan.sevenDayRequestLimit
   return plan.tokenCount
+}
+
+/**
+ * One window's two limits, a line each: requests over spend. Each says
+ * "No … limit" in words rather than leaving a blank, because a blank
+ * cell reads as a value that failed to load.
+ */
+function WindowCell({ requests, spendUsd }: { requests: number | null; spendUsd: number | null }) {
+  const { t } = useTranslation()
+  return (
+    <>
+      <div>
+        {requests === null ? (
+          <span className='text-muted-foreground'>{t('access.plans.noRequestLimit')}</span>
+        ) : (
+          t('access.plans.windowRequests', { n: requests.toLocaleString('en-US') })
+        )}
+      </div>
+      <div className='text-muted-foreground'>
+        {spendUsd === null ? t('access.plans.noSpendLimit') : t('access.plans.windowSpend', { usd: fmtUsd(spendUsd) })}
+      </div>
+    </>
+  )
 }
 
 /**
@@ -61,10 +87,11 @@ function PlanTable({ plans, onOpen }: { plans: PlanWire[]; onOpen: (plan: PlanWi
   return (
     <table className='w-full table-fixed'>
       <colgroup>
-        <col className='w-32' />
-        <col />
-        <col className='w-32' />
         <col className='w-24' />
+        <col />
+        <col className='w-40' />
+        <col className='w-40' />
+        <col className='w-20' />
         <col className='w-10' />
       </colgroup>
       <thead>
@@ -75,8 +102,11 @@ function PlanTable({ plans, onOpen }: { plans: PlanWire[]; onOpen: (plan: PlanWi
           <SortTh sortKey='models' sort={sort} className='px-3 text-left'>
             {t('access.plans.colModels')}
           </SortTh>
-          <SortTh sortKey='cap' sort={sort} className='px-3 text-right' align='right'>
-            {t('access.plans.colCap')}
+          <SortTh sortKey='fiveHour' sort={sort} className='px-3 text-right' align='right'>
+            {t('access.plans.col5h')}
+          </SortTh>
+          <SortTh sortKey='sevenDay' sort={sort} className='px-3 text-right' align='right'>
+            {t('access.plans.col7d')}
           </SortTh>
           <SortTh sortKey='tokens' sort={sort} className='px-3 text-right' align='right'>
             {t('access.plans.colTokens')}
@@ -96,14 +126,10 @@ function PlanTable({ plans, onOpen }: { plans: PlanWire[]; onOpen: (plan: PlanWi
               <ModelsCell plan={plan} />
             </td>
             <td className='px-3 text-right font-mono text-xs tabular-nums'>
-              {plan.dailyRequestLimit === null ? (
-                <span className='text-[12px] text-muted-foreground/50'>{t('access.plans.noCap')}</span>
-              ) : (
-                <>
-                  {fmtCount(plan.dailyRequestLimit)}
-                  <span className='text-muted-foreground'> {t('access.plans.perDay')}</span>
-                </>
-              )}
+              <WindowCell requests={plan.fiveHourRequestLimit} spendUsd={plan.fiveHourSpendLimitUsd} />
+            </td>
+            <td className='px-3 text-right font-mono text-xs tabular-nums'>
+              <WindowCell requests={plan.sevenDayRequestLimit} spendUsd={plan.sevenDaySpendLimitUsd} />
             </td>
             <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCount(plan.tokenCount)}</td>
             <td className='py-2.5 pl-3 pr-6'>
@@ -130,12 +156,21 @@ export function AccessPlans() {
   const [plans, setPlans] = useState<PlanWire[]>([])
   const [editing, setEditing] = useState<Editing | null>(null)
   const [saving, setSaving] = useState(false)
+  // Tokens with no plan, for the summary's "N without". Null until the
+  // token list answers; the summary then leaves the count out.
+  const [withoutPlan, setWithoutPlan] = useState<number | null>(null)
 
   const load = useCallback(() => {
     api
       .getPlans()
       .then((res) => setPlans(res.plans))
       .catch((e: Error) => toast.error(t('access.plans.listFailed', { message: e.message })))
+    // Counted over every row, revoked ones included, the same rows a
+    // plan's own token count covers, so the two halves add up.
+    api
+      .getAccessTokens()
+      .then((res) => setWithoutPlan(res.tokens.filter((token) => token.plan === null).length))
+      .catch(() => setWithoutPlan(null))
   }, [t])
 
   useEffect(load, [load])
@@ -191,7 +226,11 @@ export function AccessPlans() {
     <Screen subtitle={t('access.plans.subtitle')}>
       <AccessTabs active='plans' />
       <SectionHead
-        meta={t('access.plans.summary', { n: plans.length, tokens: fmtCount(onPlan) })}
+        meta={t(onPlan === 1 ? 'access.plans.summaryOneToken' : 'access.plans.summary', {
+          n: plans.length,
+          onPlan: fmtCount(onPlan),
+          without: withoutPlan === null ? '–' : fmtCount(withoutPlan)
+        })}
         actions={
           <RButton
             variant='primary'

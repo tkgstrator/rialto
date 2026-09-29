@@ -8,6 +8,7 @@ import { TOKEN_STATE_PILL, type TokenState } from '@/lib/rialto/settings/access-
 export function TokenDetailHeader({
   token,
   state,
+  usageBlocked,
   busy,
   onRotate,
   onRevoke,
@@ -15,6 +16,8 @@ export function TokenDetailHeader({
 }: {
   token: AccessTokenWire
   state: TokenState
+  /** Refused by its plan's usage windows right now, though the credential itself is fine. */
+  usageBlocked: boolean
   busy: boolean
   onRotate: () => void
   onRevoke: () => void
@@ -36,19 +39,18 @@ export function TokenDetailHeader({
         <div className='font-mono text-[12px] text-muted-foreground'>{token.prefix}</div>
       </div>
       <Pill tone={pill.tone}>{t(pill.labelKey)}</Pill>
+      {state === 'active' && usageBlocked ? <Pill tone='bad'>{t('access.token.usageBlocked')}</Pill> : null}
       <div className='ml-auto flex items-center gap-2'>
         {/* Rotate first and revoke second: rotating is the answer to
             almost every reason for being on this page, and revoking is
-            the one that takes a client offline. Both are red all the same:
-            neither can be undone — a rotated secret is gone the moment the
-            new one is issued.
+            the one that takes a client offline.
             Absent rather than disabled on a dead token: a new secret on
             a revoked or expired row would not authenticate, so the
             server refuses the call outright — there is no state in which
             this control could become live, and a permanently greyed-out
             button is clutter rather than information. */}
         {state === 'active' ? (
-          <RButton variant='danger' icon='ri-refresh-line' onClick={onRotate} disabled={busy}>
+          <RButton variant='outline' icon='ri-refresh-line' onClick={onRotate} disabled={busy}>
             {t('settings.access.rotate')}
           </RButton>
         ) : null}

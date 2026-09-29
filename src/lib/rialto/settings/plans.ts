@@ -47,56 +47,139 @@ export function groupTargets(available: readonly string[], selected: readonly st
   return [...groups.entries()].map(([provider, targets]) => ({ provider, targets }))
 }
 
+/** The plan's four usage-window limits, by their wire names. */
+export const LIMIT_FIELDS = [
+  'fiveHourRequestLimit',
+  'fiveHourSpendLimitUsd',
+  'sevenDayRequestLimit',
+  'sevenDaySpendLimitUsd'
+] as const
+
+export type LimitField = (typeof LIMIT_FIELDS)[number]
+
+/** Whether a limit counts requests (a whole number) or USD (an amount). */
+export const isSpendField = (field: LimitField): boolean => field.endsWith('SpendLimitUsd')
+
 export interface PlanDraft {
   name: string
   models: string[]
-  /** Empty while no model is ticked. */
+  /** Empty until an allowed model is explicitly chosen as the default. */
   defaultModel: string
-  /** The field's text. Empty means no cap. */
-  cap: string
+  /** Each limit field's text. Empty means no limit. */
+  limits: Record<LimitField, string>
 }
 
-export const emptyPlanDraft = (): PlanDraft => ({ name: '', models: [], defaultModel: '', cap: '' })
+const emptyLimits = (): Record<LimitField, string> => ({
+  fiveHourRequestLimit: '',
+  fiveHourSpendLimitUsd: '',
+  sevenDayRequestLimit: '',
+  sevenDaySpendLimitUsd: ''
+})
 
-export const planDraftOf = (plan: {
-  name: string
-  models: string[]
-  defaultModel: string
-  dailyRequestLimit: number | null
-}): PlanDraft => ({
+export const emptyPlanDraft = (): PlanDraft => ({ name: '', models: [], defaultModel: '', limits: emptyLimits() })
+
+const limitText = (value: number | null): string => (value === null ? '' : String(value))
+
+export const planDraftOf = (plan: PlanInputWire): PlanDraft => ({
   name: plan.name,
   models: [...plan.models],
   defaultModel: plan.defaultModel,
-  cap: plan.dailyRequestLimit === null ? '' : String(plan.dailyRequestLimit)
+  limits: {
+    fiveHourRequestLimit: limitText(plan.fiveHourRequestLimit),
+    fiveHourSpendLimitUsd: limitText(plan.fiveHourSpendLimitUsd),
+    sevenDayRequestLimit: limitText(plan.sevenDayRequestLimit),
+    sevenDaySpendLimitUsd: limitText(plan.sevenDaySpendLimitUsd)
+  }
 })
 
 /**
- * Tick or untick a model, keeping the default one of the ticked ones.
+ * The default survives only while it is allowed.
  *
- * The first model ticked becomes the default, and unticking the default
- * hands it to the first model left: a plan saved with a default outside
- * its list is refused by the server, so the dialog never offers one.
+ * Every bulk and single change runs through this: a change that removes
+ * the default clears it rather than handing it to another model, because
+ * the default is where every unlisted request goes and silently moving it
+ * could move a plan onto a costlier model. Save stays disabled until the
+ * operator picks one again.
  */
+const keepDefault = (draft: PlanDraft, models: string[]): PlanDraft => ({
+  ...draft,
+  models,
+  defaultModel: models.includes(draft.defaultModel) ? draft.defaultModel : ''
+})
+
+/** Tick or untick one model. Never picks a default. */
 export function toggleModel(draft: PlanDraft, target: string): PlanDraft {
   if (draft.models.includes(target)) {
-    const models = draft.models.filter((m) => m !== target)
-    const defaultModel = draft.defaultModel === target ? (models.length === 0 ? '' : models[0]) : draft.defaultModel
-    return { ...draft, models, defaultModel }
+    return keepDefault(
+      draft,
+      draft.models.filter((m) => m !== target)
+    )
   }
-  const models = [...draft.models, target]
-  return { ...draft, models, defaultModel: draft.defaultModel === '' ? target : draft.defaultModel }
+  return keepDefault(draft, [...draft.models, target])
 }
 
-export type CapReading = { ok: true; value: number | null } | { ok: false }
+/** Make an allowed model the default. A model not on the list cannot be one. */
+export const chooseDefault = (draft: PlanDraft, target: string): PlanDraft =>
+  draft.models.includes(target) ? { ...draft, defaultModel: target } : draft
 
-/** The cap field's text as the wire's value: empty is no cap, anything else a whole number above zero. */
-export function readCap(text: string): CapReading {
+/**
+ * Allow every model of every provider. Keeps the current default but never
+ * chooses one: with none set, the operator still picks it explicitly.
+ */
+export function selectAllModels(draft: PlanDraft, groups: readonly ProviderGroup[]): PlanDraft {
+  const all = groups.flatMap((group) => group.targets)
+  return keepDefault(draft, [...draft.models, ...all.filter((target) => !draft.models.includes(target))])
+}
+
+/** Allow nothing, across every provider. The default goes with the list. */
+export const clearModels = (draft: PlanDraft): PlanDraft => keepDefault(draft, [])
+
+/** How much of one provider is allowed, for its tri-state header checkbox. */
+export type ProviderSelection = 'all' | 'some' | 'none'
+
+export function providerSelection(draft: PlanDraft, group: ProviderGroup): ProviderSelection {
+  const picked = group.targets.filter((target) => draft.models.includes(target)).length
+  if (picked === 0) return 'none'
+  return picked === group.targets.length ? 'all' : 'some'
+}
+
+/**
+ * The provider header checkbox: all of it allowed becomes none of it, and
+ * anything less becomes all of it. Other providers are left as they are.
+ */
+export function toggleProvider(draft: PlanDraft, group: ProviderGroup): PlanDraft {
+  if (providerSelection(draft, group) === 'all') {
+    return keepDefault(
+      draft,
+      draft.models.filter((target) => !group.targets.includes(target))
+    )
+  }
+  return keepDefault(draft, [...draft.models, ...group.targets.filter((target) => !draft.models.includes(target))])
+}
+
+export type LimitReading = { ok: true; value: number | null } | { ok: false }
+
+/** A request limit's text as the wire's value: empty is no limit, anything else a whole number above zero. */
+export function readCap(text: string): LimitReading {
   const trimmed = text.trim().replaceAll(',', '')
   if (trimmed.length === 0) return { ok: true, value: null }
   if (!/^\d+$/.test(trimmed)) return { ok: false }
   const value = Number(trimmed)
-  return Number.isSafeInteger(value) && value >= 1 ? { ok: true, value } : { ok: false }
+  return Number.isInteger(value) && value >= 1 && value <= 2_147_483_647 ? { ok: true, value } : { ok: false }
 }
+
+/** A spend limit's text as USD: empty is no limit, anything else an amount above zero ("$" allowed). */
+export function readSpend(text: string): LimitReading {
+  const trimmed = text.trim().replaceAll(',', '').replace(/^\$/, '')
+  if (trimmed.length === 0) return { ok: true, value: null }
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) return { ok: false }
+  const value = Number(trimmed)
+  return Number.isFinite(value) && value > 0 ? { ok: true, value } : { ok: false }
+}
+
+/** One limit field's text, read the way its kind requires. */
+export const readLimit = (field: LimitField, text: string): LimitReading =>
+  isSpendField(field) ? readSpend(text) : readCap(text)
 
 /**
  * The draft as the body to send, or null while it could not be saved.
@@ -104,27 +187,18 @@ export function readCap(text: string): CapReading {
  * answered with a 400.
  */
 export function planInputOf(draft: PlanDraft): PlanInputWire | null {
-  const cap = readCap(draft.cap)
-  if (!cap.ok) return null
+  const read = LIMIT_FIELDS.map((field) => readLimit(field, draft.limits[field]))
+  const values = read.flatMap((reading) => (reading.ok ? [reading.value] : []))
+  if (values.length !== LIMIT_FIELDS.length) return null
   if (draft.name.trim().length === 0) return null
   if (draft.models.length === 0 || !draft.models.includes(draft.defaultModel)) return null
   return {
     name: draft.name.trim(),
     models: draft.models,
     defaultModel: draft.defaultModel,
-    dailyRequestLimit: cap.value
+    fiveHourRequestLimit: values[0],
+    fiveHourSpendLimitUsd: values[1],
+    sevenDayRequestLimit: values[2],
+    sevenDaySpendLimitUsd: values[3]
   }
-}
-
-/** Whether saving the draft would change the plan. */
-export function planDraftChanged(draft: PlanDraft, plan: PlanInputWire): boolean {
-  const input = planInputOf(draft)
-  if (input === null) return true
-  return (
-    input.name !== plan.name ||
-    input.defaultModel !== plan.defaultModel ||
-    input.dailyRequestLimit !== plan.dailyRequestLimit ||
-    input.models.length !== plan.models.length ||
-    input.models.some((m) => !plan.models.includes(m))
-  )
 }

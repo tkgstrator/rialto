@@ -16,8 +16,14 @@ export interface PlanRow {
   models: string[]
   /** Always one of `models`. */
   defaultModel: string
-  /** Completions per UTC day. Null = no cap. */
-  dailyRequestLimit: number | null
+  /** Completions admitted per 5-hour window. Null = no limit. */
+  fiveHourRequestLimit: number | null
+  /** USD spent per 5-hour window. Null = no limit. */
+  fiveHourSpendLimitUsd: number | null
+  /** Completions admitted per 7-day window. Null = no limit. */
+  sevenDayRequestLimit: number | null
+  /** USD spent per 7-day window. Null = no limit. */
+  sevenDaySpendLimitUsd: number | null
   /** Tokens on this plan. */
   tokenCount: number
   createdAt: string
@@ -28,7 +34,10 @@ export interface PlanInput {
   name: string
   models: string[]
   defaultModel: string
-  dailyRequestLimit: number | null
+  fiveHourRequestLimit: number | null
+  fiveHourSpendLimitUsd: number | null
+  sevenDayRequestLimit: number | null
+  sevenDaySpendLimitUsd: number | null
 }
 
 export type PlanRefusal = 'invalid' | 'duplicate-name' | 'not-found' | 'in-use'
@@ -39,12 +48,8 @@ const INCLUDE = {
   _count: { select: { tokens: true } }
 } as const
 
-type PlanRecord = {
+type PlanRecord = PlanInput & {
   id: string
-  name: string
-  models: string[]
-  defaultModel: string
-  dailyRequestLimit: number | null
   createdAt: Date
   updatedAt: Date
   _count: { tokens: number }
@@ -55,7 +60,10 @@ const toRow = (row: PlanRecord): PlanRow => ({
   name: row.name,
   models: row.models,
   defaultModel: row.defaultModel,
-  dailyRequestLimit: row.dailyRequestLimit,
+  fiveHourRequestLimit: row.fiveHourRequestLimit,
+  fiveHourSpendLimitUsd: row.fiveHourSpendLimitUsd,
+  sevenDayRequestLimit: row.sevenDayRequestLimit,
+  sevenDaySpendLimitUsd: row.sevenDaySpendLimitUsd,
   tokenCount: row._count.tokens,
   createdAt: row.createdAt.toISOString(),
   updatedAt: row.updatedAt.toISOString()
@@ -71,14 +79,29 @@ export function planProblem(input: PlanInput): string | null {
   if (input.models.length === 0) return 'A plan needs at least one model.'
   if (new Set(input.models).size !== input.models.length) return 'A model is listed twice.'
   if (!input.models.includes(input.defaultModel)) return 'The default model has to be one of the allowed models.'
-  if (
-    input.dailyRequestLimit !== null &&
-    (!Number.isSafeInteger(input.dailyRequestLimit) || input.dailyRequestLimit < 1)
-  ) {
-    return 'The daily cap has to be a whole number above zero, or empty for no cap.'
+  for (const limit of [input.fiveHourRequestLimit, input.sevenDayRequestLimit]) {
+    if (limit !== null && (!Number.isInteger(limit) || limit < 1 || limit > 2_147_483_647)) {
+      return 'A request limit has to be a whole number from 1 to 2147483647, or empty for no limit.'
+    }
+  }
+  for (const limit of [input.fiveHourSpendLimitUsd, input.sevenDaySpendLimitUsd]) {
+    if (limit !== null && (!Number.isFinite(limit) || limit <= 0)) {
+      return 'A spend limit has to be an amount above zero, or empty for no limit.'
+    }
   }
   return null
 }
+
+/** The four limit columns of a plan input, for Prisma writes. */
+const limitsOf = (input: PlanInput) => ({
+  fiveHourRequestLimit: input.fiveHourRequestLimit,
+  fiveHourSpendLimitUsd: input.fiveHourSpendLimitUsd,
+  sevenDayRequestLimit: input.sevenDayRequestLimit,
+  sevenDaySpendLimitUsd: input.sevenDaySpendLimitUsd
+})
+
+/** A patched field, or the stored one when the patch leaves it out. */
+const patched = <T>(value: T | undefined, current: T): T => (value === undefined ? current : value)
 
 const isUniqueViolation = (err: unknown): boolean =>
   typeof err === 'object' && err !== null && 'code' in err && err.code === 'P2002'
@@ -104,7 +127,7 @@ export async function createPlan(input: PlanInput): Promise<PlanResult> {
         name: input.name.trim(),
         models: input.models,
         defaultModel: input.defaultModel,
-        dailyRequestLimit: input.dailyRequestLimit
+        ...limitsOf(input)
       },
       include: INCLUDE
     })
@@ -121,10 +144,13 @@ export async function updatePlan(id: string, patch: Partial<PlanInput>): Promise
   const current = await prisma.plan.findUnique({ where: { id } }).catch(() => null)
   if (current === null) return { ok: false, reason: 'not-found', message: 'No such plan.' }
   const next: PlanInput = {
-    name: patch.name === undefined ? current.name : patch.name,
-    models: patch.models === undefined ? current.models : patch.models,
-    defaultModel: patch.defaultModel === undefined ? current.defaultModel : patch.defaultModel,
-    dailyRequestLimit: patch.dailyRequestLimit === undefined ? current.dailyRequestLimit : patch.dailyRequestLimit
+    name: patched(patch.name, current.name),
+    models: patched(patch.models, current.models),
+    defaultModel: patched(patch.defaultModel, current.defaultModel),
+    fiveHourRequestLimit: patched(patch.fiveHourRequestLimit, current.fiveHourRequestLimit),
+    fiveHourSpendLimitUsd: patched(patch.fiveHourSpendLimitUsd, current.fiveHourSpendLimitUsd),
+    sevenDayRequestLimit: patched(patch.sevenDayRequestLimit, current.sevenDayRequestLimit),
+    sevenDaySpendLimitUsd: patched(patch.sevenDaySpendLimitUsd, current.sevenDaySpendLimitUsd)
   }
   const problem = planProblem(next)
   if (problem !== null) return { ok: false, reason: 'invalid', message: problem }
@@ -135,7 +161,7 @@ export async function updatePlan(id: string, patch: Partial<PlanInput>): Promise
       include: INCLUDE
     })
     // Tokens read their plan through the resolver cache; without this a
-    // lowered cap would keep admitting for up to its TTL.
+    // lowered limit would keep admitting for up to its TTL.
     invalidateTokenCache()
     return { ok: true, plan: toRow(row) }
   } catch (err) {
@@ -146,7 +172,7 @@ export async function updatePlan(id: string, patch: Partial<PlanInput>): Promise
 
 /**
  * Delete a plan nothing uses. A plan with tokens on it is refused
- * rather than cascaded: removing it would silently lift those tokens' caps.
+ * rather than cascaded: removing it would silently lift those tokens' limits.
  */
 export async function deletePlan(
   id: string

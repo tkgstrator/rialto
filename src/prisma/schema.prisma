@@ -609,13 +609,14 @@ model AccessToken {
   revokedAt    DateTime?
   createdAt    DateTime                @default(now())
   // The plan this token spends under: which models it may use and how
-  // many completions a day. Null = unrestricted, as operator-issued tokens
-  // have always been. Referenced rather than copied, so editing a plan
-  // reaches every token on it at their next request. Restrict, because a
-  // plan deleted from under its tokens would silently lift their caps.
+  // much it may spend per 5-hour and 7-day window. Null = unrestricted, as
+  // operator-issued tokens have always been. Referenced rather than
+  // copied, so editing a plan reaches every token on it at their next
+  // request. Restrict, because a plan deleted from under its tokens would
+  // silently lift their limits.
   planId       String?
-  plan         Plan?                   @relation(fields: [planId], references: [id], onDelete: Restrict)
-  dailyUsage   AccessTokenDailyUsage[]
+  plan         Plan?                    @relation(fields: [planId], references: [id], onDelete: Restrict)
+  usageWindows AccessTokenUsageWindow[]
 
   @@index([revokedAt])
   @@index([planId])
@@ -627,30 +628,50 @@ model AccessToken {
 // skipped, so a routed chain cannot pick a costlier target than the plan
 // lists.
 model Plan {
-  id                String        @id @default(cuid())
-  name              String        @unique
-  models            String[]
+  id                    String        @id @default(cuid())
+  name                  String        @unique
+  models                String[]
   // Always one of `models`; the service refuses a plan where it is not.
-  defaultModel      String
-  // Completions per UTC day, counted in AccessTokenDailyUsage. Null = no cap.
-  dailyRequestLimit Int?
-  tokens            AccessToken[]
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  defaultModel          String
+  // Limits per usage window, counted in AccessTokenUsageWindow. Each is
+  // independent and null = no limit on that axis. Requests count the
+  // completions admitted; spend is the USD Rialto prices those
+  // completions at (the same pricing as the token's Cost column), so an
+  // unpriced model — every subscription model — adds requests but no
+  // spend.
+  fiveHourRequestLimit  Int?
+  fiveHourSpendLimitUsd Float?
+  sevenDayRequestLimit  Int?
+  sevenDaySpendLimitUsd Float?
+  tokens                AccessToken[]
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
 }
 
-// Per-token request count for one UTC day, the ledger behind
-// AccessToken.dailyRequestLimit. One row per (token, day) that saw
-// traffic; old rows are harmless and can be pruned freely.
-model AccessTokenDailyUsage {
+// One token's usage in one window, the ledger behind a plan's limits.
+//
+// Windows work like the subscription quotas rather than sliding: a window
+// opens at the first request counted while none is open, and everything
+// in it is forgotten once `startedAt` + its length ('5h' or '7d') has
+// passed — the next request then opens a fresh one. So a row is only
+// "the current window" while it has not expired; an expired row is left
+// in place and overwritten by the next admission, never read as usage.
+//
+// Rows exist only for tokens on a plan with at least one limit; the
+// admin reset deletes them.
+model AccessTokenUsageWindow {
   accessTokenId String
   accessToken   AccessToken @relation(fields: [accessTokenId], references: [id], onDelete: Cascade)
-  // YYYY-MM-DD in UTC. A string rather than a date so the key the
-  // counter upserts on is exactly the value it was computed from.
-  day           String
+  // '5h' or '7d', validated by UsageWindowSchema.
+  window        String
+  startedAt     DateTime
+  // Completions admitted in this window.
   requests      Int         @default(0)
+  // USD priced so far. Added after each call completes, so the request
+  // that crosses a spend limit finishes and the next one is refused.
+  costUsd       Float       @default(0)
 
-  @@id([accessTokenId, day])
+  @@id([accessTokenId, window])
 }
 
 // Per-surface routing behaviour.
