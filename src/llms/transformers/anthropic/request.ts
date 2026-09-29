@@ -226,7 +226,13 @@ export function buildToolChoice(
 }
 
 export function convertAnthropicToolsToUnified(tools: AnthropicToolDef[]): UnifiedTool[] {
-  return tools.map((tool) => {
+  return tools.flatMap((tool): UnifiedTool[] => {
+    // The advisor is Anthropic consulting a second Claude model mid-turn.
+    // No other vendor can run it, and this conversion only happens when
+    // the request is headed for one (Anthropic → Anthropic bypasses it).
+    // As a function tool it would only invite a call the client cannot
+    // answer, so the executor goes on without its advisor instead.
+    if (!isCustomTool(tool) && tool.type.startsWith('advisor_')) return []
     // Server-side tools (`web_search_*`, `computer_*`, `bash_*`,
     // `text_editor_*`, `code_execution_*`) carry only `type` + `name` on
     // the wire — no description / input_schema. Represent them as a
@@ -235,25 +241,29 @@ export function convertAnthropicToolsToUnified(tools: AnthropicToolDef[]): Unifi
     // remap them; fall back to `name` for description and empty object
     // params to satisfy the unified schema.
     if (!isCustomTool(tool)) {
-      return {
+      return [
+        {
+          type: 'function',
+          function: {
+            name: tool.name,
+            description: tool.name,
+            parameters: { type: 'object', properties: {} }
+          },
+          cache_control: tool.cache_control
+        }
+      ]
+    }
+    return [
+      {
         type: 'function',
         function: {
           name: tool.name,
-          description: tool.name,
-          parameters: { type: 'object', properties: {} }
+          description: tool.description,
+          parameters: tool.input_schema
         },
         cache_control: tool.cache_control
       }
-    }
-    return {
-      type: 'function',
-      function: {
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.input_schema
-      },
-      cache_control: tool.cache_control
-    }
+    ]
   })
 }
 

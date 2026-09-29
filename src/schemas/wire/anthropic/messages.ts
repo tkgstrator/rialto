@@ -84,16 +84,19 @@ export type AnthropicIncomingMessage = z.input<typeof AnthropicIncomingMessageSc
 //      (Anthropic defaults it to "custom") or explicitly "custom".
 //   2. Server-side tools — Anthropic hosts the tool. Identified by a
 //      versioned `type` (e.g. `web_search_20250305`, `computer_20250124`,
-//      `bash_20250124`, `text_editor_20250124`, `code_execution_20250522`).
-//      They only carry `type` and `name`, no description / input_schema,
-//      and may carry tool-specific extras (`max_uses`, `display_width_px`,
-//      …) which we let through untouched.
+//      `bash_20250124`, `text_editor_20250124`, `code_execution_20250522`,
+//      `advisor_20260301`). They only carry `type` and `name`, no
+//      description / input_schema, and may carry tool-specific extras
+//      (`max_uses`, `display_width_px`, the advisor's `model`, …) which we
+//      let through untouched.
 //
 // Prior to this split the schema was a single object with description /
 // input_schema required, which rejected every server-tool payload — see
 // router/model-selection.ts which already recognised the
 // `{ type: 'web_search_*' }` shape at the routing layer.
-const AnthropicServerToolTypeSchema = z.string().regex(/^(web_search|computer|bash|text_editor|code_execution)_/)
+const AnthropicServerToolTypeSchema = z
+  .string()
+  .regex(/^(web_search|computer|bash|text_editor|code_execution|advisor)_/)
 
 export const AnthropicCustomToolDefSchema = z.object({
   type: z.literal('custom').optional(),

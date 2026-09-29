@@ -90,13 +90,16 @@ export class AnthropicTransformer extends Transformer {
       appendIncomingMessage(messages, msg)
     }
 
+    // Checked after conversion, not before: a tool list holding only the
+    // advisor converts to nothing, and OpenAI rejects an empty `tools`.
+    const tools = convertAnthropicToolsToUnified(req.tools)
     const unified: UnifiedChatRequest = {
       messages,
       model: req.model,
       max_tokens: req.max_tokens,
       temperature: req.temperature,
       stream: req.stream,
-      tools: req.tools.length ? convertAnthropicToolsToUnified(req.tools) : undefined,
+      tools: tools.length ? tools : undefined,
       tool_choice: buildToolChoice(req.tool_choice)
     }
 
