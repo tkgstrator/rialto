@@ -583,8 +583,6 @@ model AccessToken {
   // plan deleted from under its tokens would silently lift their caps.
   planId       String?
   plan         Plan?                   @relation(fields: [planId], references: [id], onDelete: Restrict)
-  // Set when an app install minted this token for itself.
-  device       AppDevice?
   dailyUsage   AccessTokenDailyUsage[]
 
   @@index([revokedAt])
@@ -597,41 +595,16 @@ model AccessToken {
 // skipped, so a routed chain cannot pick a costlier target than the plan
 // lists.
 model Plan {
-  id                String          @id @default(cuid())
-  name              String          @unique
+  id                String        @id @default(cuid())
+  name              String        @unique
   models            String[]
   // Always one of `models`; the service refuses a plan where it is not.
   defaultModel      String
   // Completions per UTC day, counted in AccessTokenDailyUsage. Null = no cap.
   dailyRequestLimit Int?
   tokens            AccessToken[]
-  apps              AuthorizedApp[]
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-}
-
-// An app whose installs may register themselves with Apple App Attest and
-// be handed a token each. The operator's whole decision about app traffic
-// lives on this row; nothing about it is read from the environment.
-model AuthorizedApp {
-  id               String      @id @default(cuid())
-  name             String
-  // `<Team ID>.<bundle id>`. The attestation's RP ID hash is the SHA-256 of
-  // this string, which is how a registration finds its app without the
-  // client naming one.
-  appleAppId       String      @unique
-  // Accept keys minted by development (Xcode) builds.
-  allowDevelopment Boolean     @default(false)
-  // Off stops new registrations and every token this app already issued.
-  // A switch rather than a delete, so the tokens and their RequestLog rows
-  // stay attributable and come back when it is turned on again.
-  enabled          Boolean     @default(true)
-  // The plan a new install's token is put on. Existing tokens keep theirs.
-  planId           String
-  plan             Plan        @relation(fields: [planId], references: [id], onDelete: Restrict)
-  devices          AppDevice[]
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 }
 
 // Per-token request count for one UTC day, the ledger behind
@@ -646,35 +619,6 @@ model AccessTokenDailyUsage {
   requests      Int         @default(0)
 
   @@id([accessTokenId, day])
-}
-
-// An app install that proved itself with Apple App Attest and was handed
-// an access token. The attested public key is kept so a later request can
-// be verified with an App Attest assertion (key rotation, re-issue)
-// without attesting again — Apple rate-limits attestation, not assertion.
-model AppDevice {
-  id              String        @id @default(cuid())
-  // Base64 of the App Attest key identifier: the SHA-256 of the attested
-  // public key. Unique because one attested key must never mint two
-  // tokens.
-  keyId           String        @unique
-  // The attested P-256 public key, uncompressed point (65 bytes).
-  publicKey       Bytes
-  // App Attest sign counter, raised by every accepted assertion. 0 right
-  // after attestation.
-  signCount       Int           @default(0)
-  // 'production' or 'development', from the attestation's AAGUID. A
-  // development attestation comes from a debug build and is only
-  // accepted when the operator allows it.
-  environment     String
-  // The app this install proved itself as.
-  authorizedAppId String
-  authorizedApp   AuthorizedApp @relation(fields: [authorizedAppId], references: [id], onDelete: Restrict)
-  accessTokenId   String        @unique
-  accessToken     AccessToken   @relation(fields: [accessTokenId], references: [id], onDelete: Cascade)
-  createdAt       DateTime      @default(now())
-
-  @@index([authorizedAppId])
 }
 
 // Per-surface routing behaviour.

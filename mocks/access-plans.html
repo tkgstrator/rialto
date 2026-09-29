@@ -18,20 +18,19 @@ const { renderShell, btn, accessTabs, PLANS, sortTh, mono, dialog, pill } = wind
 // Plans: what a token on them may spend.
 //
 // A plan is referenced, never copied onto its tokens. Raising Free's daily
-// cap from 100 to 150 is one edit that every install on Free sees at its
-// next request — the alternative, a limit stamped on each of a thousand
-// tokens at issue time, is a migration every time pricing moves.
+// cap from 100 to 150 is one edit that every token on Free sees at its
+// next request — the alternative, a limit stamped on each token at issue
+// time, is a migration every time pricing moves.
 //
 // Two things a plan decides, and only two for now: which models its
 // requests may use, and how many completions a token may make per UTC day.
 // A request naming a model on the list goes to that model; any other name,
-// or none, goes to the plan's default rather than being refused, so an app
+// or none, goes to the plan's default rather than being refused, so a client
 // with a stale model setting keeps talking. Either way there is no routing:
 // a chain cannot pick a costlier target than the plan lists. /v1/models
 // shows a plan's token only its own list. Listing models is never counted.
 //
-// A plan is not only for apps: a hand-issued token can be put on one too,
-// which is how a friend's laptop gets the same cap as an install.
+// A token is put on a plan when it is issued, or later from its own page.
 //
 // `?edit` draws the edit dialog for Free (access-plan-edit in mocks.json).
 
@@ -57,7 +56,6 @@ const planRow = (p) => `
     <td class="px-3">${modelsCell(p.models)}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${capCell(p.limit)}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${p.tokens}</td>
-    <td class="px-3 text-[12px] text-muted-foreground">${p.apps}</td>
     <td class="py-2.5 pl-3 pr-6">
       <div class="flex justify-end text-muted-foreground/50"><i class="ri-pencil-line text-sm"></i></div>
     </td>
@@ -125,7 +123,7 @@ const editDialog = () => {
         ${hint('Completions per UTC day. Over it the client gets 429 until 00:00 UTC. Empty means no cap.')}
       </div>
       <div class="rounded-md border border-dashed border-border px-3 py-2 text-[12px] leading-snug text-muted-foreground">
-        Applies to all <span class="font-medium text-foreground">1,287 tokens</span> on Free from their next request.
+        Applies to all <span class="font-medium text-foreground">1 token</span> on Free from their next request.
       </div>
     </div>`,
     `${btn('Cancel', 'ghost')}${btn('Save', 'primary', 'ri-check-line')}`
@@ -139,7 +137,7 @@ document.getElementById('root').innerHTML = `
       <div class="flex items-center gap-1 border-b border-border px-6">${accessTabs('plans')}</div>
 
       <div class="flex items-center gap-3 px-6 pt-5 pb-3">
-        <span class="text-[12px] text-muted-foreground">4 plans · 1,287 tokens on a plan · 4 without</span>
+        <span class="text-[12px] text-muted-foreground">4 plans · 1 token on a plan · 3 without</span>
         <div class="ml-auto">${btn('New plan', 'primary', 'ri-add-line')}</div>
       </div>
 
@@ -148,19 +146,18 @@ document.getElementById('root').innerHTML = `
           <i class="ri-information-line mr-1 align-[-1px]"></i>
           A token on a plan may use only the plan’s models — anything else goes to its default — and is capped per UTC day.
           <span class="font-medium text-foreground">Changing a plan reaches every token on it at once</span>
-          — nothing is copied onto the tokens. A token with no plan is unrestricted, as hand-issued ones are today.
+          — nothing is copied onto the tokens. A token with no plan is unrestricted.
         </div>
       </div>
 
       <table class="w-full table-fixed">
-        <colgroup><col class="w-32"><col><col class="w-32"><col class="w-24"><col class="w-56"><col class="w-10"></colgroup>
+        <colgroup><col class="w-32"><col><col class="w-32"><col class="w-24"><col class="w-10"></colgroup>
         <thead>
           <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
             ${sortTh('Plan', 'pl-6 pr-3')}
             ${sortTh('Models', 'px-3')}
             ${sortTh('Daily cap', 'px-3', 'right')}
             ${sortTh('Tokens', 'px-3', 'right', true, 'desc')}
-            ${sortTh('New installs of', 'px-3')}
             <th class="pl-3 pr-6"></th>
           </tr>
         </thead>

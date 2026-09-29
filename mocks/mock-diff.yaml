@@ -375,54 +375,6 @@ screens:
           mock:
             type: html
             path: mocks/access-token-issued.html
-  - id: access-apps
-    category: Access tokens
-    devices:
-      - id: desktop
-        viewport:
-          width: 1440
-          height: 900
-          deviceScaleFactor: 2
-        colorSchemes:
-          - light
-          - dark
-        versions:
-          mock:
-            type: html
-            path: mocks/access-apps.html
-        actual:
-          type: url
-          url: http://localhost:16175/access-tokens/apps
-  - id: access-app-add
-    category: Access tokens
-    devices:
-      - id: desktop
-        viewport:
-          width: 1440
-          height: 900
-          deviceScaleFactor: 2
-        colorSchemes:
-          - light
-          - dark
-        versions:
-          mock:
-            type: url
-            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-apps.html?add
-  - id: access-app
-    category: Access tokens
-    devices:
-      - id: desktop
-        viewport:
-          width: 1440
-          height: 900
-          deviceScaleFactor: 2
-        colorSchemes:
-          - light
-          - dark
-        versions:
-          mock:
-            type: html
-            path: mocks/access-app.html
   - id: access-plans
     category: Access tokens
     devices:

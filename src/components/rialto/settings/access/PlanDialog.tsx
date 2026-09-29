@@ -197,7 +197,7 @@ export function PlanDialog({
 }) {
   const { t } = useTranslation()
   const capOk = readCap(draft.cap).ok
-  const inUse = plan !== null && (plan.tokenCount > 0 || plan.apps.length > 0)
+  const inUse = plan !== null && plan.tokenCount > 0
 
   return (
     <Dialog

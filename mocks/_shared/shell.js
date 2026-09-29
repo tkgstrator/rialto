@@ -461,81 +461,31 @@ const tokenTable = () => `
   </table>`
 
 /**
- * Access tokens: Tokens / Apps / Plans.
+ * Access tokens: Tokens / Plans.
  *
- * Tokens is the hand-issued list it always was. Apps holds the ones an
- * app install minted for itself by proving it is the genuine app on a real
- * device (App Attest) — hundreds of rows nobody issued by hand, so they get
- * a list of their own instead of drowning the dozen an operator does look
- * after. Plans is what those tokens may spend, defined once and referenced,
- * so changing a limit reaches every install at once.
+ * Tokens is the issued list. Plans is what a token on one may spend,
+ * defined once and referenced, so changing a limit reaches every token
+ * on it at once.
  */
 const accessTabs = (active) =>
   tabs(
     [
       { id: 'tokens', label: 'Tokens', count: '4', href: 'access-tokens.html' },
-      { id: 'apps', label: 'Apps', count: '1', href: 'access-apps.html' },
       { id: 'plans', label: 'Plans', count: '4', href: 'access-plans.html' }
     ],
     active
   )
 
-/** Authorized apps. The one real one plus a disabled test build. */
-const AUTHORIZED_APPS = [
-  { name: 'Connect', appId: '5Q94QJ7G98.jp.qleap.connect', builds: 'App Store / TestFlight', plan: 'Free', devices: '1,284', active: '612', reqs: '9.84k', cost: '$84.1', enabled: true },
-  { name: 'Connect (dev)', appId: '5Q94QJ7G98.jp.qleap.connect.dev', builds: 'Development too', plan: 'Free', devices: '3', active: '1', reqs: '41', cost: '$0.12', enabled: false }
-]
-
 /**
- * Plans: what a token minted on them may spend. `models` is the allow-list
+ * Plans: what a token on them may spend. `models` is the allow-list
  * and its first entry the default a request falls back to.
  */
 const PLANS = [
-  { name: 'Free', models: ['codex,gpt-6-luna', 'google,gemini-3-flash'], limit: '100', tokens: '1,287', apps: 'Connect · Connect (dev)' },
-  { name: 'Plus', models: ['codex,gpt-5.6-terra', 'codex,gpt-6-luna', 'anthropic,claude-haiku-4-5'], limit: '1,000', tokens: '0', apps: '—' },
-  { name: 'Pro', models: ['codex,gpt-6-sol', 'codex,gpt-5.6-terra', 'codex,gpt-6-luna', 'anthropic,claude-sonnet-5', 'google,gemini-3-pro'], limit: '3,000', tokens: '0', apps: '—' },
-  { name: 'Max', models: ['codex,gpt-6-astra', 'codex,gpt-6-sol', 'codex,gpt-5.6-terra', 'codex,gpt-6-luna', 'anthropic,claude-opus-5', 'anthropic,claude-sonnet-5'], limit: '', tokens: '0', apps: '—' }
+  { name: 'Free', models: ['codex,gpt-6-luna', 'google,gemini-3-flash'], limit: '100', tokens: '1' },
+  { name: 'Plus', models: ['codex,gpt-5.6-terra', 'codex,gpt-6-luna', 'anthropic,claude-haiku-4-5'], limit: '1,000', tokens: '0' },
+  { name: 'Pro', models: ['codex,gpt-6-sol', 'codex,gpt-5.6-terra', 'codex,gpt-6-luna', 'anthropic,claude-sonnet-5', 'google,gemini-3-pro'], limit: '3,000', tokens: '0' },
+  { name: 'Max', models: ['codex,gpt-6-astra', 'codex,gpt-6-sol', 'codex,gpt-5.6-terra', 'codex,gpt-6-luna', 'anthropic,claude-opus-5', 'anthropic,claude-sonnet-5'], limit: '', tokens: '0' }
 ]
-
-/** One authorized app row. Leads to the app's page, like a token row does. */
-const appRow = (a) => `
-  <tr ${navTo('access-app.html')} class="cursor-pointer border-t border-border/60 transition-colors hover:bg-muted/50 ${a.enabled ? '' : 'opacity-45'}">
-    <td class="py-2.5 pl-6 pr-3">
-      <div class="flex items-center gap-2">
-        <span class="text-xs font-medium">${a.name}</span>
-        ${a.enabled ? '' : pill('off', 'mute')}
-      </div>
-      <div class="truncate font-mono text-[12px] text-muted-foreground">${a.appId}</div>
-    </td>
-    <td class="px-3 text-[12px] text-muted-foreground">${a.builds}</td>
-    <td class="px-3">${pill(a.plan, 'info')}</td>
-    <td class="px-3 text-right font-mono text-xs tabular-nums">${a.devices}</td>
-    <td class="px-3 text-right font-mono text-xs tabular-nums">${a.active}</td>
-    <td class="px-3 text-right font-mono text-xs tabular-nums">${a.reqs}</td>
-    <td class="px-3 text-right font-mono text-xs tabular-nums">${a.cost}</td>
-    <td class="py-2.5 pl-3 pr-6">
-      <div class="flex justify-end text-muted-foreground/50"><i class="ri-arrow-right-s-line text-base"></i></div>
-    </td>
-  </tr>`
-
-/** The authorized apps, as the Apps tab and the add dialog behind it draw them. */
-const appTable = () => `
-  <table class="w-full table-fixed">
-    <colgroup><col><col class="w-44"><col class="w-24"><col class="w-24"><col class="w-24"><col class="w-24"><col class="w-24"><col class="w-10"></colgroup>
-    <thead>
-      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
-        ${sortTh('App', 'pl-6 pr-3')}
-        ${sortTh('Builds', 'px-3')}
-        ${sortTh('Plan', 'px-3')}
-        ${sortTh('Devices', 'px-3', 'right', true, 'desc')}
-        ${sortTh('Active 7d', 'px-3', 'right')}
-        ${sortTh('Req today', 'px-3', 'right')}
-        ${sortTh('Cost 30d', 'px-3', 'right')}
-        <th class="pl-3 pr-6"></th>
-      </tr>
-    </thead>
-    <tbody>${AUTHORIZED_APPS.map(appRow).join('')}</tbody>
-  </table>`
 
 /**
  * Tier cell for the model tables — editable, not a label.
@@ -1092,7 +1042,7 @@ const pager = ({ first, last, total, hasPrev = true, hasNext = true, compact = f
     tabs, railItem, SETTINGS_RAIL,
     navTo, activityTabs, providerTable, tierCell, effortCell, sortTh, toast,
     SURFACES, surfacePill, surfaceChip, ACCESS_TOKENS, tokenTable,
-    accessTabs, AUTHORIZED_APPS, PLANS, appTable,
+    accessTabs, PLANS,
     toggleTheme, currentTheme
   }
 })(window)

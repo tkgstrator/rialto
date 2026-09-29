@@ -23,9 +23,7 @@ const { renderShell, btn, tokenTable, accessTabs } = window.Shell
 
 document.getElementById('root').innerHTML = `
   <div class="min-w-0">
-      <!-- Tokens / Apps / Plans. Tokens stays the hand-issued list; what
-           app installs minted for themselves is under Apps, so this table
-           keeps answering "which clients did I let in". -->
+      <!-- Tokens / Plans. Plans is what a token on one may spend. -->
       <div class="flex items-center gap-1 border-b border-border px-6">${accessTabs('tokens')}</div>
       <!-- No "Access tokens" heading: the breadcrumb and the sidebar
            both already say it, and on its own screen a title repeating

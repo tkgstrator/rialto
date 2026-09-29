@@ -59,9 +59,7 @@ const TokenSchema = z
     rotatedAt: z.string().nonempty().nullable(),
     createdAt: z.string().nonempty(),
     // The plan this token spends under; null leaves it unrestricted.
-    plan: z.object({ id: z.string().nonempty(), name: z.string().nonempty() }).nullable(),
-    // The authorized app whose install minted it, if one did.
-    app: z.object({ id: z.string().nonempty(), name: z.string().nonempty() }).nullable()
+    plan: z.object({ id: z.string().nonempty(), name: z.string().nonempty() }).nullable()
   })
   .openapi('AccessToken')
 
@@ -91,16 +89,11 @@ accessTokensRoute.openapi(
   createRoute({
     method: 'get',
     path: '/api/access-tokens',
-    request: {
-      // `manual` leaves out the tokens app installs minted for themselves,
-      // which the Apps tab lists per app.
-      query: z.object({ issued: z.enum(['all', 'manual']).default('all') })
-    },
     responses: {
       200: { description: 'Issued tokens', content: { 'application/json': { schema: ListSchema } } }
     }
   }),
-  async (c) => c.json({ tokens: await listAccessTokens({ manualOnly: c.req.valid('query').issued === 'manual' }) }, 200)
+  async (c) => c.json({ tokens: await listAccessTokens() }, 200)
 )
 
 accessTokensRoute.openapi(

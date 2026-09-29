@@ -254,19 +254,7 @@ export function TokenDetail() {
   const planOptions = own === null || plans.some((plan) => plan.id === own.id) ? plans : [own, ...plans]
 
   return (
-    <Screen
-      crumbs={
-        // An install's token sits under its app, which is where it was reached from.
-        token.app === null
-          ? [{ label: token.name }]
-          : [
-              { label: t('access.tabs.apps'), href: '/access-tokens/apps' },
-              { label: token.app.name, href: `/access-tokens/apps/${token.app.id}` },
-              { label: token.name }
-            ]
-      }
-      subtitle={t('settings.access.tokenSubtitle')}
-    >
+    <Screen crumbs={[{ label: token.name }]} subtitle={t('settings.access.tokenSubtitle')}>
       <div className='min-w-0'>
         <TokenDetailHeader
           token={token}
