@@ -12,11 +12,13 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { useConfig } from '@/components/ConfigProvider'
 import { RButton } from '@/components/rialto/primitives'
+import { usePhone } from '@/hooks/use-phone'
 import { api, type InboundSurfaceWire } from '@/lib/api'
 import { copyName, type PersonaDraft, toDrafts } from '@/lib/rialto/settings-content/persona'
 import type { Config } from '@/types'
 import { PersonaDetail } from './personas/PersonaDetail'
 import { PersonaList } from './personas/PersonaList'
+import { PersonasPhone } from './personas/PersonasPhone'
 import { SettingsLayout } from './SettingsLayout'
 import { useUnsavedGuard } from './use-unsaved-guard'
 
@@ -34,6 +36,7 @@ function PersonasEditor({ config }: { config: Config }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [surfaces, setSurfaces] = useState<InboundSurfaceWire[]>([])
   const [saving, setSaving] = useState(false)
+  const phone = usePhone()
 
   // Re-sync whenever the provider hands over a new config — a fresh
   // mount, a save, or an edit made elsewhere. Doubles as Discard.
@@ -135,29 +138,45 @@ function PersonasEditor({ config }: { config: Config }) {
         </>
       }
     >
-      <div className='grid h-full grid-cols-[17rem_1fr]'>
-        <PersonaList
+      {phone ? (
+        <PersonasPhone
           personas={drafts}
-          selectedId={current === undefined ? null : current.id}
+          selected={selected}
           activeId={activeId}
+          surfaces={surfaces}
           onSelect={setSelectedId}
           onCreate={create}
+          onRename={(name) => patchCurrent({ name })}
+          onEditPrompt={(prompt) => patchCurrent({ prompt })}
+          onToggleActive={(id) => setActiveId((prev) => (prev === id ? null : id))}
+          onDuplicate={duplicate}
+          onDelete={remove}
         />
-        {current === undefined ? (
-          <div className='min-w-0 px-6 py-6 text-xs text-muted-foreground'>{t('settings.personas.empty')}</div>
-        ) : (
-          <PersonaDetail
-            persona={current}
-            active={current.id === activeId}
-            surfaces={surfaces}
-            onRename={(name) => patchCurrent({ name })}
-            onEditPrompt={(prompt) => patchCurrent({ prompt })}
-            onToggleActive={() => setActiveId((prev) => (prev === current.id ? null : current.id))}
-            onDuplicate={duplicate}
-            onDelete={remove}
+      ) : (
+        <div className='grid h-full grid-cols-[17rem_1fr]'>
+          <PersonaList
+            personas={drafts}
+            selectedId={current === undefined ? null : current.id}
+            activeId={activeId}
+            onSelect={setSelectedId}
+            onCreate={create}
           />
-        )}
-      </div>
+          {current === undefined ? (
+            <div className='min-w-0 px-6 py-6 text-xs text-muted-foreground'>{t('settings.personas.empty')}</div>
+          ) : (
+            <PersonaDetail
+              persona={current}
+              active={current.id === activeId}
+              surfaces={surfaces}
+              onRename={(name) => patchCurrent({ name })}
+              onEditPrompt={(prompt) => patchCurrent({ prompt })}
+              onToggleActive={() => setActiveId((prev) => (prev === current.id ? null : current.id))}
+              onDuplicate={duplicate}
+              onDelete={remove}
+            />
+          )}
+        </div>
+      )}
       {unsavedDialog}
     </SettingsLayout>
   )

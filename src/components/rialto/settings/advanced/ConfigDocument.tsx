@@ -96,7 +96,10 @@ export function ConfigDocument({
 
   return (
     <>
-      <div className='flex items-center gap-3 border-b border-border px-6 py-3'>
+      {/* On a phone the toolbar wraps, its buttons drop to their icons
+          and the backup note takes a line of its own — in one row the
+          three labelled buttons alone were wider than the screen. */}
+      <div className='flex items-center gap-3 border-b border-border px-6 py-3 max-md:flex-wrap max-md:gap-y-2 max-md:px-4'>
         <span className='font-mono text-[12px] text-muted-foreground'>config.json</span>
         <Pill tone='mute'>JSON</Pill>
         {valid ? (
@@ -104,8 +107,10 @@ export function ConfigDocument({
         ) : (
           <Pill tone='bad'>{t('settings.advanced.invalid')}</Pill>
         )}
-        <span className='text-[12px] text-muted-foreground'>{t('settings.advanced.backupsKept')}</span>
-        <div className='ml-auto flex gap-2'>
+        <span className='text-[12px] text-muted-foreground max-md:order-last max-md:basis-full'>
+          {t('settings.advanced.backupsKept')}
+        </span>
+        <div className='ml-auto flex gap-2 max-md:gap-1 max-md:[&_[data-rbutton-label]]:sr-only max-md:[&>button]:px-2'>
           <RButton variant='ghost' icon='ri-refresh-line' onClick={onLoad}>
             {t('settings.advanced.reload')}
           </RButton>
@@ -126,17 +131,20 @@ export function ConfigDocument({
             </div>
           ))}
         </div>
+        {/* On a phone a long line pans inside the textarea rather than
+            pushing the whole pane sideways. Wrapping it instead would
+            unhook the line numbers from the lines they count. */}
         <textarea
           value={text}
           aria-label={t('settings.advanced.configDocument')}
           spellCheck={false}
           rows={lineNumbers(text).length}
           onChange={(e) => onTextChange(e.target.value)}
-          className={`${LINE} min-w-0 flex-1 resize-none overflow-hidden whitespace-pre bg-transparent pr-6 outline-none`}
+          className={`${LINE} min-w-0 flex-1 resize-none overflow-hidden whitespace-pre bg-transparent pr-6 outline-none max-md:overflow-x-auto max-md:pr-4`}
         />
       </div>
 
-      <div className='px-6 py-4'>
+      <div className='px-6 py-4 max-md:px-4'>
         <InfoNotice>
           <Trans i18nKey='settings.advanced.configNote' components={{ mono: <span className='font-mono' /> }} />
         </InfoNotice>

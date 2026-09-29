@@ -27,8 +27,10 @@ import { RButton } from '@/components/rialto/primitives'
 import { IssuedTokenDialog } from '@/components/rialto/settings/access/IssuedTokenDialog'
 import { emptyDraft, type IssueDraft, IssueTokenDialog } from '@/components/rialto/settings/access/IssueTokenDialog'
 import { ANY, scopeForWire } from '@/components/rialto/settings/access/pickers'
+import { TokenListPhone } from '@/components/rialto/settings/access/TokenListPhone'
 import { TokenTable } from '@/components/rialto/settings/access/TokenTable'
 import { SectionHead } from '@/components/rialto/settings/fields'
+import { usePhone } from '@/hooks/use-phone'
 import { type AccessTokenWire, api, type InboundSurfaceWire, type PlanWire } from '@/lib/api'
 import { countTokens, expiryToIso, type TokenCounts } from '@/lib/rialto/settings/access-tokens'
 
@@ -67,6 +69,7 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
   // Pinned per load so every relative label on the page measures from
   // the same instant, and so an expiry cannot flip mid-render.
   const [now, setNow] = useState(Date.now())
+  const phone = usePhone()
 
   const load = useCallback(() => {
     api
@@ -152,6 +155,48 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
 
   const counts = countTokens(tokens, now)
 
+  // The dialogs are shared by both layouts: issuing is one of the things
+  // the phone list keeps.
+  const dialogs = (
+    <>
+      {/* Both steps of issuing are modals over that table, and nothing
+          above moves to make room for them. Naming a token is decided
+          against the ones that already exist, and after issuing, the new
+          row is the answer to "where did it go" — a panel that replaced
+          the list took both away, and one that pushed it down asked the
+          question with the answer scrolled off the page. */}
+      {revealed !== null ? (
+        <IssuedTokenDialog {...revealed} onDone={() => setRevealed(null)} />
+      ) : draft !== null ? (
+        <IssueTokenDialog
+          draft={draft}
+          surfaces={surfaces}
+          profiles={profiles}
+          plans={plans}
+          issuing={issuing}
+          onChange={setDraft}
+          onSubmit={issue}
+          onCancel={() => setDraft(null)}
+        />
+      ) : null}
+      {confirmDialog}
+    </>
+  )
+
+  if (phone) {
+    return (
+      <>
+        <TokenListPhone
+          tokens={tokens}
+          now={now}
+          summary={<Summary counts={counts} />}
+          onIssue={() => setDraft(emptyDraft())}
+        />
+        {dialogs}
+      </>
+    )
+  }
+
   return (
     <>
       {/* No title: the breadcrumb and the sidebar both say "Access
@@ -193,27 +238,7 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
         </div>
       </div>
 
-      {/* Both steps of issuing are modals over that table, and nothing
-          above moves to make room for them. Naming a token is decided
-          against the ones that already exist, and after issuing, the new
-          row is the answer to "where did it go" — a panel that replaced
-          the list took both away, and one that pushed it down asked the
-          question with the answer scrolled off the page. */}
-      {revealed !== null ? (
-        <IssuedTokenDialog {...revealed} onDone={() => setRevealed(null)} />
-      ) : draft !== null ? (
-        <IssueTokenDialog
-          draft={draft}
-          surfaces={surfaces}
-          profiles={profiles}
-          plans={plans}
-          issuing={issuing}
-          onChange={setDraft}
-          onSubmit={issue}
-          onCancel={() => setDraft(null)}
-        />
-      ) : null}
-      {confirmDialog}
+      {dialogs}
     </>
   )
 }

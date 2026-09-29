@@ -10,10 +10,12 @@ import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { type ActivityRequestLog, fetchSessionRequestLogs } from '@/components/rialto/activity/data'
 import { LANE_KEYS, lane } from '@/components/rialto/activity/requests-rows'
+import { TraceListPhone } from '@/components/rialto/activity/SessionPhone'
 import { DASH, ScreenMessage, StatusPill } from '@/components/rialto/activity/shared'
 import { useSessionPage } from '@/components/rialto/activity/use-session-page'
 import { Pager } from '@/components/rialto/Pager'
 import { Pill } from '@/components/rialto/primitives'
+import { usePhone } from '@/hooks/use-phone'
 import dayjs from '@/lib/dayjs'
 import { fmtCost } from '@/lib/sessions/format'
 
@@ -116,18 +118,20 @@ export function SessionTrace({ sessionId }: { sessionId: string }) {
   const { t } = useTranslation()
   const fetchPage = useCallback((offset: number) => fetchSessionRequestLogs(sessionId, PAGE_SIZE, offset), [sessionId])
   const { pageIndex, setPageIndex, page, error } = useSessionPage(fetchPage, PAGE_SIZE)
+  const phone = usePhone()
 
   if (error !== null) return <ScreenMessage tone='bad'>{error}</ScreenMessage>
   if (page === null) return <ScreenMessage>{t('common.loading')}</ScreenMessage>
   return (
     <>
-      <TraceTable calls={page.items} />
+      {phone && page.items.length > 0 ? <TraceListPhone calls={page.items} /> : <TraceTable calls={page.items} />}
       <Pager
         page={pageIndex}
         pageSize={PAGE_SIZE}
         loaded={page.items.length}
         total={page.total}
         onPage={setPageIndex}
+        compact={phone}
       />
     </>
   )

@@ -34,10 +34,12 @@ import { Screen } from '@/components/rialto/Screen'
 import { IssuedTokenDialog } from '@/components/rialto/settings/access/IssuedTokenDialog'
 import { ANY, Picker, SurfacePicker, sameScope, scopeForWire } from '@/components/rialto/settings/access/pickers'
 import { TokenDetailHeader } from '@/components/rialto/settings/access/TokenDetailHeader'
+import { TokenDetailPhone } from '@/components/rialto/settings/access/TokenDetailPhone'
 import { TokenReadings } from '@/components/rialto/settings/access/TokenReadings'
 import { TokenUsageWindows, useTokenUsageWindows } from '@/components/rialto/settings/access/TokenUsageWindows'
 import { SettingsField } from '@/components/rialto/settings/SettingsLayout'
 import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
+import { usePhone } from '@/hooks/use-phone'
 import { type AccessTokenWire, api, type PlanWire } from '@/lib/api'
 import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
 import { tokenState } from '@/lib/rialto/settings/access-tokens'
@@ -97,6 +99,7 @@ export function TokenDetail() {
   const [plans, setPlans] = useState<PlanWire[]>([])
   // Every relative label measures from the same instant.
   const [now, setNow] = useState(Date.now())
+  const phone = usePhone()
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 30_000)
@@ -244,6 +247,46 @@ export function TokenDetail() {
   const own = token.plan
   const planOptions = own === null || plans.some((plan) => plan.id === own.id) ? plans : [own, ...plans]
 
+  // A modal over this page, not a panel inserted into it: the rotated
+  // secret is shown once, and a panel that pushes the page down can be
+  // scrolled past. It is the same dialog the issue flow ends on — the
+  // rules are identical, only the copy says "rotated" rather than
+  // "issued". Both layouts rotate, so both carry it.
+  const rotatedDialog =
+    revealed === null ? null : (
+      <IssuedTokenDialog
+        plaintext={revealed.plaintext}
+        name={token.name}
+        scope={revealed.scope}
+        profile={revealed.profile}
+        expiry={revealed.expiry}
+        titleKey='settings.access.rotatedTitle'
+        bodyKey='settings.access.rotatedBody'
+        onDone={() => setRevealed(null)}
+      />
+    )
+
+  if (phone) {
+    return (
+      <Screen crumbs={[{ label: token.name }]} subtitle={t('settings.access.tokenSubtitle')}>
+        <TokenDetailPhone
+          token={token}
+          state={state}
+          windows={windows}
+          usageBlocked={usageBlocked(windows)}
+          surfaces={surfaces}
+          now={now}
+          busy={busy}
+          onRotate={rotate}
+          onRevoke={revoke}
+          onReset={setUsage}
+        />
+        {rotatedDialog}
+        {confirmDialog}
+      </Screen>
+    )
+  }
+
   return (
     <Screen crumbs={[{ label: token.name }]} subtitle={t('settings.access.tokenSubtitle')}>
       <div className='min-w-0'>
@@ -351,23 +394,7 @@ export function TokenDetail() {
         </div>
         <div className='h-8' />
 
-        {/* A modal over this page, not a panel inserted into it: the
-            rotated secret is shown once, and a panel that pushes the
-            page down can be scrolled past. It is the same dialog the
-            issue flow ends on — the rules are identical, only the copy
-            says "rotated" rather than "issued". */}
-        {revealed === null ? null : (
-          <IssuedTokenDialog
-            plaintext={revealed.plaintext}
-            name={token.name}
-            scope={revealed.scope}
-            profile={revealed.profile}
-            expiry={revealed.expiry}
-            titleKey='settings.access.rotatedTitle'
-            bodyKey='settings.access.rotatedBody'
-            onDone={() => setRevealed(null)}
-          />
-        )}
+        {rotatedDialog}
         {confirmDialog}
         {unsavedDialog}
       </div>

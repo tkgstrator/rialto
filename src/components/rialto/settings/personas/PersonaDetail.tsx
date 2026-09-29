@@ -52,7 +52,10 @@ function PersonaHeader({
   const { t } = useTranslation()
   const words = countWords(persona.prompt)
   return (
-    <div className='flex items-center gap-3 border-b border-border px-6 py-3'>
+    // On a phone the switch and the two actions wrap under the name, and
+    // the actions keep only their icons: in one row the name field was
+    // squeezed to nothing beside them.
+    <div className='flex items-center gap-3 border-b border-border px-6 py-3 max-md:flex-wrap max-md:gap-y-2 max-md:px-4'>
       <input
         value={persona.name}
         onChange={(e) => onRename(e.target.value)}
@@ -65,7 +68,7 @@ function PersonaHeader({
           tokens: fmtCount(estimateTokens(persona.prompt))
         })}
       </Pill>
-      <div className='ml-auto flex items-center gap-2'>
+      <div className='ml-auto flex items-center gap-2 max-md:[&_[data-rbutton-label]]:sr-only max-md:[&>button]:px-2'>
         <ActiveSwitch on={active} onToggle={onToggleActive} />
         <RButton variant='ghost' icon='ri-file-copy-line' onClick={onDuplicate}>
           {t('settings.personas.duplicate')}
@@ -89,7 +92,7 @@ function PersonaHeader({
 function AppliesToBar({ surfaces }: { surfaces: InboundSurfaceWire[] }) {
   const { t } = useTranslation()
   return (
-    <div className='flex items-center gap-2 border-b border-border px-6 py-2.5'>
+    <div className='flex items-center gap-2 border-b border-border px-6 py-2.5 max-md:flex-wrap max-md:px-4'>
       <span className='text-[12px] text-muted-foreground'>{t('settings.personas.appliesTo')}</span>
       {surfaces.map((surface) => (
         <SurfaceChip
@@ -103,7 +106,7 @@ function AppliesToBar({ surfaces }: { surfaces: InboundSurfaceWire[] }) {
           }
         />
       ))}
-      <span className='mx-1 h-4 w-px bg-border' />
+      <span className='mx-1 h-4 w-px bg-border max-md:hidden' />
       <span className='text-[12px] text-muted-foreground'>{t('settings.personas.lane')}</span>
       {/* Not a control: persona injection is not lane-scoped, so there is
           nothing to choose. A disabled button still reads as a control
@@ -150,15 +153,17 @@ export function PersonaDetail({
       />
       <AppliesToBar surfaces={surfaces} />
 
-      <div className='grid grid-cols-2'>
-        <div className='border-r border-border'>
-          <div className='flex items-center gap-2 px-6 pt-4 pb-2'>
+      {/* One column on a phone, and no preview: it restates the prompt
+          above it in a box half as wide, and the editor needs the width. */}
+      <div className='grid grid-cols-2 max-md:grid-cols-1'>
+        <div className='border-r border-border max-md:border-r-0'>
+          <div className='flex items-center gap-2 px-6 pt-4 pb-2 max-md:px-4'>
             <h3 className='text-sm font-semibold'>{t('settings.personas.prompt')}</h3>
             <span className='ml-auto text-[12px] text-muted-foreground'>{t('settings.personas.markdown')}</span>
           </div>
           <PromptEditor value={persona.prompt} onChange={onEditPrompt} />
         </div>
-        <div>
+        <div className='max-md:hidden'>
           <div className='flex items-center gap-2 px-6 pt-4 pb-2'>
             <h3 className='text-sm font-semibold'>{t('settings.personas.preview')}</h3>
             <span className='ml-auto text-[12px] text-muted-foreground'>{t('settings.personas.asSent')}</span>

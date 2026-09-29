@@ -98,7 +98,7 @@ function CaptureSection({
         onChange={(v) => onChange('REDACT_TOOL_ARGUMENTS', v)}
       />
 
-      <div className='px-6 py-4'>
+      <div className='px-6 py-4 max-md:px-4'>
         <WarnNotice title={t('settings.logging.privacyTitle')} tag={t('settings.logging.privacyTag')}>
           {t('settings.logging.privacyBody')}
         </WarnNotice>
@@ -148,7 +148,7 @@ function RetentionSection({ stats, reload }: { stats: StorageStats | null; reloa
         }
       />
       {stats === null ? (
-        <div className='px-6 py-4 text-xs text-muted-foreground'>{t('settings.logging.measuring')}</div>
+        <div className='px-6 py-4 text-xs text-muted-foreground max-md:px-4'>{t('settings.logging.measuring')}</div>
       ) : (
         <RetentionTable
           stores={stats.stores}

@@ -57,7 +57,10 @@ export function GuardsCard() {
       <div className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>
         {t('settings.access.whoGuardsWhat')}
       </div>
-      <div className='mt-2 grid grid-cols-3 gap-4'>
+      {/* One column on a phone: three side by side left each paragraph
+          ~100px, a word or two per line. The accent bars stay — they are
+          the colour key, not dividers between columns. */}
+      <div className='mt-2 grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-4'>
         {GUARDS.map((g) => (
           <div key={g.id} className={`border-l-2 ${g.accent} pl-3`}>
             <div className='text-xs font-medium'>{t(g.titleKey)}</div>

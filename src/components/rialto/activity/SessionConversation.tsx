@@ -168,7 +168,7 @@ function TurnRow({ message }: { message: SessionMessageItem }) {
   return (
     <div
       className={cn(
-        'border-t border-l-2 border-t-border/60 px-6 py-3 transition-colors hover:bg-muted/50',
+        'border-t border-l-2 border-t-border/60 px-4 py-3 transition-colors hover:bg-muted/50 md:px-6',
         isUser ? 'border-l-foreground/30' : 'border-l-transparent'
       )}
     >

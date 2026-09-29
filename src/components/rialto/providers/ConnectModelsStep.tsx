@@ -7,8 +7,10 @@
  */
 import { Trans, useTranslation } from 'react-i18next'
 import { Pill, RButton } from '@/components/rialto/primitives'
+import { usePhone } from '@/hooks/use-phone'
 import { buildModelRows, enabledCountOf, listedModelsOf } from './derive'
 import { ModelsTable } from './ModelsTable'
+import { PhoneModelList } from './ProviderDetailPhone'
 import type { CatalogEntry, Provider, ReasoningEffort } from './types'
 import { vendorLabel } from './vendor-labels'
 
@@ -37,10 +39,11 @@ export function ConnectModelsStep({
   onTestAll: () => void
 }) {
   const { t } = useTranslation()
+  const phone = usePhone()
   if (provider === undefined) {
     return (
       <div className='min-w-0 overflow-y-auto'>
-        <div className='px-6 py-6 text-xs text-muted-foreground'>
+        <div className='px-4 md:px-6 py-6 text-xs text-muted-foreground'>
           {t('providers.connect.notAddedYet', { vendor: vendorLabel(entry.name, entry.displayName) })}
         </div>
       </div>
@@ -49,7 +52,7 @@ export function ConnectModelsStep({
   const isApiKey = provider.auth_mode !== 'subscription'
   return (
     <div className='min-w-0 overflow-y-auto'>
-      <div className='border-b border-border px-6 py-4'>
+      <div className='border-b border-border px-4 md:px-6 py-4'>
         <div className='flex items-center gap-2'>
           <h2 className='text-sm font-semibold'>{vendorLabel(entry.name, entry.displayName)}</h2>
           {isApiKey ? (
@@ -71,7 +74,9 @@ export function ConnectModelsStep({
           )}
         </p>
       </div>
-      <div className='flex items-center gap-3 px-6 pt-5 pb-3'>
+      {/* Wraps on a phone: the title, the count and both buttons are
+          wider than 390px together. */}
+      <div className='flex flex-wrap items-center gap-3 px-4 pt-5 pb-3 md:flex-nowrap md:px-6'>
         <h3 className='text-sm font-semibold'>{t('providers.models.title')}</h3>
         <span className='text-[12px] text-muted-foreground'>
           {t('providers.models.enabledCount', {
@@ -88,12 +93,18 @@ export function ConnectModelsStep({
           </RButton>
         </div>
       </div>
-      <ModelsTable
-        rows={buildModelRows(provider, entry)}
-        withOverride={isApiKey}
-        onToggle={onToggle}
-        onEffort={onEffort}
-      />
+      {/* The phone list keeps the one decision this step exists for —
+          which models go on — and leaves effort to the provider's page. */}
+      {phone ? (
+        <PhoneModelList rows={buildModelRows(provider, entry)} priced={isApiKey} onToggle={onToggle} />
+      ) : (
+        <ModelsTable
+          rows={buildModelRows(provider, entry)}
+          withOverride={isApiKey}
+          onToggle={onToggle}
+          onEffort={onEffort}
+        />
+      )}
       <div className='h-6' />
     </div>
   )

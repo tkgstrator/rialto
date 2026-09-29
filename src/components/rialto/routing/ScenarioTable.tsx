@@ -43,7 +43,7 @@ const sameCell = (a: CellAddress, b: CellAddress): boolean => a.scenario === b.s
  * Agent combination, tuned by the scheduler from there — so it moves by
  * itself when the Default model changes.
  */
-function ScenarioWhen({ scenario, threshold }: { scenario: RoutingScenario; threshold: number }) {
+export function ScenarioWhen({ scenario, threshold }: { scenario: RoutingScenario; threshold: number }) {
   const { t } = useTranslation()
   if (scenario === 'default') return t('routing.scenarios.whenDefault')
   if (scenario === 'think') return t('routing.scenarios.whenThink')

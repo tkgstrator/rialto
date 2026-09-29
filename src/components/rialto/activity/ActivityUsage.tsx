@@ -27,6 +27,7 @@ import {
 } from '@/components/rialto/activity/data'
 import { FilterSelect, ScreenMessage } from '@/components/rialto/activity/shared'
 import { UtilizationChart } from '@/components/rialto/activity/UsagePaceChart'
+import { ProviderGroupPhone, TokenRowsPhone } from '@/components/rialto/activity/UsagePhone'
 import { TokenRow } from '@/components/rialto/activity/UsageTokens'
 import { ProviderGroup } from '@/components/rialto/activity/UsageWindows'
 import {
@@ -43,6 +44,7 @@ import { useActivityCounts } from '@/components/rialto/activity/use-activity-cou
 import { RButton } from '@/components/rialto/primitives'
 import type { SubscriptionsResponse, SubscriptionWire } from '@/components/rialto/providers/types'
 import { Screen } from '@/components/rialto/Screen'
+import { usePhone } from '@/hooks/use-phone'
 import { type AccessTokenWire, api, type InboundSurfaceWire, type RevokedTokensWire } from '@/lib/api'
 
 // Ranges the history endpoint accepts (it caps `days` at 30). Offered as a
@@ -59,10 +61,13 @@ const EMPTY_SUBSCRIPTIONS: SubscriptionsResponse = { subscriptions: [] }
 // Where the numbers came from is not something the reader acts on.
 function SectionHead({ title, meta, action }: { title: string; meta?: string; action?: React.ReactNode }) {
   return (
-    <div className='flex items-baseline gap-3 border-t border-border px-6 pt-6 pb-3'>
+    <div className='flex items-baseline gap-3 border-t border-border px-4 pt-6 pb-3 md:px-6'>
       <h2 className='text-sm font-semibold'>{title}</h2>
       {meta === undefined ? null : <span className='text-xs text-muted-foreground/70'>{meta}</span>}
-      {action === undefined ? null : <div className='ml-auto'>{action}</div>}
+      {/* Icon only on a phone, as in the header: title, range and a
+          worded button did not fit one line at 390px, and the button
+          wrapped its label onto two. */}
+      {action === undefined ? null : <div className='ml-auto max-md:[&_[data-rbutton-label]]:sr-only'>{action}</div>}
     </div>
   )
 }
@@ -120,6 +125,7 @@ export function ActivityUsage() {
   const navigate = useNavigate()
   const _counts = useActivityCounts()
   const [days, setDays] = useState<number>(DEFAULT_RANGE_DAYS)
+  const phone = usePhone()
   const { usage, accountUsage, subscriptions, samples, tokens, revokedTokens, surfaces, error, loading, reload } =
     useUsageData(days)
   // One clock for the whole render, so two rows cannot disagree about how
@@ -156,7 +162,7 @@ export function ActivityUsage() {
     >
       {/* The range and nothing beside it: the section heads already say
           what each part of the screen answers. */}
-      <div className='flex flex-wrap items-center gap-2 border-b border-border px-6 py-3'>
+      <div className='flex flex-wrap items-center gap-2 border-b border-border px-4 py-3 md:px-6'>
         <FilterSelect
           label={t('activity.usage.range')}
           value={String(days)}
@@ -172,9 +178,13 @@ export function ActivityUsage() {
         <ScreenMessage>{loading ? t('common.loading') : t('activity.usage.noAccounts')}</ScreenMessage>
       ) : (
         <div className='pb-2'>
-          {groups.map((group) => (
-            <ProviderGroup key={group.key} group={group} accountUsage={accountUsage} now={now} />
-          ))}
+          {groups.map((group) =>
+            phone ? (
+              <ProviderGroupPhone key={group.key} group={group} now={now} />
+            ) : (
+              <ProviderGroup key={group.key} group={group} accountUsage={accountUsage} now={now} />
+            )
+          )}
         </div>
       )}
 
@@ -198,6 +208,8 @@ export function ActivityUsage() {
       />
       {rows.length === 0 ? (
         <ScreenMessage>{loading ? t('common.loading') : t('activity.usage.noTokens')}</ScreenMessage>
+      ) : phone ? (
+        <TokenRowsPhone rows={rows} now={now} />
       ) : (
         <table className='w-full table-fixed'>
           <colgroup>

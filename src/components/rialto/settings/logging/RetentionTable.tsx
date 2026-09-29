@@ -15,6 +15,7 @@
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { RButton } from '@/components/rialto/primitives'
+import { usePhone } from '@/hooks/use-phone'
 import { fmtBytes } from '@/lib/rialto/settings/envelope'
 
 export type StoreId = 'requestLog' | 'message' | 'usageSnapshot' | 'logFiles'
@@ -109,6 +110,48 @@ function StoreRow({
   )
 }
 
+/**
+ * One store at phone width: name and size on the first line, the cutoff
+ * and the delete on the second. Five columns gave the name 40px and
+ * pushed the button off the edge; the row count goes, since the size is
+ * what a prune is weighed against.
+ */
+function StoreBlock({
+  store,
+  cutoff,
+  onCutoff,
+  onPrune,
+  pruning
+}: {
+  store: StoreStats
+  cutoff: number
+  onCutoff: (days: number) => void
+  onPrune: () => void
+  pruning: boolean
+}) {
+  const { t } = useTranslation()
+  const { labelKey, view } = STORES[store.id]
+  const label = t(labelKey)
+  return (
+    <div className='border-t border-border/60 px-4 py-3'>
+      <div className='flex items-baseline gap-3'>
+        <Link to={view} className='inline-flex min-w-0 items-center gap-1.5 text-xs'>
+          <span className='truncate'>{label}</span>
+          <i className='ri-arrow-right-up-line text-sm text-muted-foreground' />
+        </Link>
+        <span className='ml-auto shrink-0 font-mono text-xs tabular-nums'>{fmtBytes(store.bytes)}</span>
+      </div>
+      <div className='mt-2 flex items-center gap-2'>
+        <span className='text-[12px] text-muted-foreground'>{t('settings.logging.colKeep')}</span>
+        <CutoffSelect value={cutoff} onChange={onCutoff} label={label} />
+        <RButton variant='danger' icon='ri-delete-bin-line' onClick={onPrune} disabled={pruning} className='ml-auto'>
+          {t('settings.logging.pruneNow')}
+        </RButton>
+      </div>
+    </div>
+  )
+}
+
 export function RetentionTable({
   stores,
   cutoffs,
@@ -123,6 +166,27 @@ export function RetentionTable({
   pruning: StoreId | null
 }) {
   const { t } = useTranslation()
+  const phone = usePhone()
+  const cutoffOf = (store: StoreStats): number => {
+    const days = cutoffs[store.id]
+    return days === undefined ? 90 : days
+  }
+  if (phone) {
+    return (
+      <div>
+        {stores.map((store) => (
+          <StoreBlock
+            key={store.id}
+            store={store}
+            cutoff={cutoffOf(store)}
+            onCutoff={(d) => onCutoff(store.id, d)}
+            onPrune={() => onPrune(store, cutoffOf(store))}
+            pruning={pruning === store.id}
+          />
+        ))}
+      </div>
+    )
+  }
   return (
     <table className='w-full table-fixed'>
       <colgroup>
@@ -144,20 +208,16 @@ export function RetentionTable({
         </tr>
       </thead>
       <tbody>
-        {stores.map((store) => {
-          const days = cutoffs[store.id]
-          const cutoff = days === undefined ? 90 : days
-          return (
-            <StoreRow
-              key={store.id}
-              store={store}
-              cutoff={cutoff}
-              onCutoff={(d) => onCutoff(store.id, d)}
-              onPrune={() => onPrune(store, cutoff)}
-              pruning={pruning === store.id}
-            />
-          )
-        })}
+        {stores.map((store) => (
+          <StoreRow
+            key={store.id}
+            store={store}
+            cutoff={cutoffOf(store)}
+            onCutoff={(d) => onCutoff(store.id, d)}
+            onPrune={() => onPrune(store, cutoffOf(store))}
+            pruning={pruning === store.id}
+          />
+        ))}
       </tbody>
     </table>
   )
