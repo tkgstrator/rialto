@@ -135,7 +135,7 @@ export function SettingsAdvanced() {
         )
       }
     >
-      <div className='flex items-center gap-1 border-b border-border px-6'>
+      <div className='flex items-center gap-1 border-b border-border px-6 max-md:px-2'>
         <Tabs
           items={TAB_KEYS.map((item) => ({ id: item.id, label: t(item.labelKey), href: item.href }))}
           active={tab}

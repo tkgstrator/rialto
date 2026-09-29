@@ -28,9 +28,9 @@ import {
 } from './derive'
 import type { Provider, SubAccountWire, SubscriptionWire } from './types'
 
-const STATE_TONE = { off: 'mute', live: 'ok', invalid: 'bad', unknown: 'mute' } as const
+export const STATE_TONE = { off: 'mute', live: 'ok', invalid: 'bad', unknown: 'mute' } as const
 
-const STATE_LABEL_KEYS: Record<ProviderState, string> = {
+export const STATE_LABEL_KEYS: Record<ProviderState, string> = {
   off: 'providers.rail.stateOff',
   live: 'providers.rail.stateLive',
   invalid: 'providers.rail.stateInvalid',
@@ -51,16 +51,17 @@ type SortKey = 'provider' | 'plan' | 'accounts' | 'quota' | 'key' | 'models' | '
 
 // The whole account, not its id: the quota aggregate weights each seat by
 // its plan, so a Max 20x counts for twenty Pros.
-const accountsOf = (sub: SubscriptionWire | undefined): SubAccountWire[] => (sub === undefined ? [] : sub.accounts)
+export const accountsOf = (sub: SubscriptionWire | undefined): SubAccountWire[] =>
+  sub === undefined ? [] : sub.accounts
 
 // Which vendor's plan names these seats carry. 'other' is a hand-added
 // subscription provider whose plan strings follow no vendor convention —
 // null, so the weighting reads only the fragments it can trust.
-const seatKindOf = (sub: SubscriptionWire | undefined): SeatKind =>
+export const seatKindOf = (sub: SubscriptionWire | undefined): SeatKind =>
   sub === undefined || sub.kind === 'other' ? null : sub.kind
 
 /** The host a key is spent against — the second line of an api_key row. */
-const hostOf = (provider: Provider): string => new URL(provider.api_base_url).host
+export const hostOf = (provider: Provider): string => new URL(provider.api_base_url).host
 
 /**
  * A provider can exist with no key at all — the column has to say so,
@@ -68,7 +69,7 @@ const hostOf = (provider: Provider): string => new URL(provider.api_base_url).ho
  * schema spells "none" two ways (null from a provider that never had
  * one, empty string from one whose key was cleared) and both are it.
  */
-const hasKey = (provider: Provider): boolean => provider.api_key !== null && provider.api_key !== ''
+export const hasKey = (provider: Provider): boolean => provider.api_key !== null && provider.api_key !== ''
 
 /**
  * A key in a fixed-width cell.

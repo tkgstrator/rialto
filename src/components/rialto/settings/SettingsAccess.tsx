@@ -70,7 +70,7 @@ function SignedInAs({ identity }: { identity: IdentityResponse | null }) {
 
   const via = VIA[identity.mode]
   return (
-    <div className='flex items-center gap-2'>
+    <div className='flex items-center gap-2 max-md:flex-wrap'>
       <i className={via.icon} />
       <span className='font-mono text-xs'>{identity.email === null ? t(via.fallbackKey) : identity.email}</span>
       <Pill tone={via.pillTone}>{t(via.pillKey)}</Pill>
@@ -89,7 +89,7 @@ function SignedInAs({ identity }: { identity: IdentityResponse | null }) {
 function ClosedNotice({ identity }: { identity: IdentityResponse }) {
   if (identity.accessConfigured) return null
   return (
-    <div className='px-6 pt-1 pb-3'>
+    <div className='px-6 pt-1 pb-3 max-md:px-4'>
       <div className='flex items-center gap-2 rounded-md border border-border px-4 py-2 text-[12px] leading-relaxed text-muted-foreground'>
         <i className='ri-lock-line shrink-0 text-sm' />
         <span>
@@ -121,7 +121,9 @@ function RecoveryPath({ port }: { port: number }) {
         <div className='flex h-8 max-w-md items-center rounded-md border border-border px-3 font-mono text-xs'>
           {`ssh -L ${port}:localhost:${port} <host>`}
         </div>
-        <p className='text-[12px] leading-relaxed text-muted-foreground'>
+        {/* `break-words` on a phone: the paragraph carries a URL and an
+            env var name, each one unbreakable token wider than the screen. */}
+        <p className='text-[12px] leading-relaxed text-muted-foreground max-md:break-words'>
           <Trans
             i18nKey='settings.access.recoveryBody'
             values={{ port }}
@@ -356,17 +358,19 @@ export function SettingsAccess() {
         stale={stale}
       />
       {dirty && !gate.allowed ? (
-        <div className='px-6 pb-4 text-[12px] leading-relaxed text-amber-600 dark:text-amber-400'>{gate.reason}</div>
+        <div className='px-6 pb-4 text-[12px] leading-relaxed text-amber-600 max-md:px-4 dark:text-amber-400'>
+          {gate.reason}
+        </div>
       ) : null}
       {dirty && gate.allowed && gate.caveat !== null ? (
-        <div className='px-6 pb-4 text-[12px] leading-relaxed text-muted-foreground'>{gate.caveat}</div>
+        <div className='px-6 pb-4 text-[12px] leading-relaxed text-muted-foreground max-md:px-4'>{gate.caveat}</div>
       ) : null}
 
       <PolicyCoverage />
 
       <RecoveryPath port={port} />
 
-      <div className='px-6 pb-2'>
+      <div className='px-6 pb-2 max-md:px-4'>
         <GuardsCard />
       </div>
 

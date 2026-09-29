@@ -16,11 +16,13 @@ import { type ReactNode, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { SessionConversation } from '@/components/rialto/activity/SessionConversation'
+import { SessionStatsPhone } from '@/components/rialto/activity/SessionPhone'
 import { SessionTrace } from '@/components/rialto/activity/SessionTrace'
 import { ScreenMessage } from '@/components/rialto/activity/shared'
 import { useSurfaces } from '@/components/rialto/activity/use-surfaces'
 import { RButton, Tabs } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
+import { usePhone } from '@/hooks/use-phone'
 import { api, type SessionSummary } from '@/lib/api'
 import { fmtAgo, fmtRate, shortId } from '@/lib/rialto/format'
 import { fmtCost } from '@/lib/sessions/format'
@@ -60,8 +62,12 @@ function Stat({ label, value }: { label: string; value: ReactNode }) {
  */
 function StatStrip({ summary }: { summary: SessionSummary }) {
   const { t } = useTranslation()
+  const phone = usePhone()
   const totalInput = summary.totalInputTokens
   const cacheRate = totalInput === 0 ? null : summary.totalCacheReadTokens / totalInput
+  // Seven figures wrapped to four rows on a phone; it gets the four that
+  // are checked there, as a grid.
+  if (phone) return <SessionStatsPhone summary={summary} />
   return (
     <div className='flex flex-wrap items-start gap-x-10 gap-y-3 border-b border-border px-6 py-3'>
       <Stat label={t('activity.session.upstreamCalls')} value={summary.requestCount} />
@@ -173,7 +179,7 @@ export function ActivitySessionDetail() {
               the id, so a third copy beside a second way back was the
               header competing with itself. What is left is the one thing
               neither of them can carry — the session's own title. */}
-          <div className='flex items-center gap-2 border-b border-border px-6 py-3'>
+          <div className='flex items-center gap-2 border-b border-border px-4 py-3 md:px-6'>
             <div className='min-w-0 truncate text-xs font-medium'>{title}</div>
             {/* No Raw JSON: it handed the session out as a file, and the
                 screens hand out no files. No Archive button either: there
@@ -184,7 +190,7 @@ export function ActivitySessionDetail() {
                 on one last seen three days ago. */}
           </div>
           <StatStrip summary={summary} />
-          <div className='flex items-center gap-1 border-b border-border px-6'>
+          <div className='flex items-center gap-1 border-b border-border px-2 md:px-6'>
             <Tabs
               items={TABS.map((item) => ({ id: item.id, label: t(item.labelKey), href: item.href }))}
               active={tab}

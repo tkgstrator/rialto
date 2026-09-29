@@ -77,7 +77,7 @@ export function DeviceCodePane({ device }: { device: CodexDeviceStartResponse })
   }, [])
 
   return (
-    <div className='px-6 py-5'>
+    <div className='px-4 md:px-6 py-5'>
       <div className='rounded-md border border-border px-4 py-4'>
         <div className='flex items-center gap-2'>
           <i className='ri-loader-4-line text-sm text-muted-foreground' />
@@ -140,10 +140,10 @@ export function SubscriptionChoices({
   const isCodex = oauthKind === 'codex'
   return (
     <>
-      <div className='px-6 pt-5 pb-2'>
+      <div className='px-4 md:px-6 pt-5 pb-2'>
         <h3 className='text-sm font-semibold'>{t('providers.connect.howToAuth')}</h3>
       </div>
-      <div className='grid grid-cols-2 gap-3 px-6'>
+      <div className='grid grid-cols-1 gap-3 px-4 md:grid-cols-2 md:px-6'>
         <ChoiceCard
           icon={isCodex ? 'ri-keyboard-line' : 'ri-external-link-line'}
           title={isCodex ? t('providers.connect.deviceCode') : t('providers.connect.signInWith', { brand })}

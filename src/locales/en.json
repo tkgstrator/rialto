@@ -796,7 +796,11 @@
     "identityAccess": "Access",
     "identityLocal": "local",
     "identityToken": "token",
-    "navAccessTokens": "Access tokens"
+    "navAccessTokens": "Access tokens",
+    "back": "Back",
+    "more": "More",
+    "moreDescription": "Every section of Rialto, with server status and theme.",
+    "navTokensShort": "Tokens"
   },
   "overview": {
     "subtitle": "{{surfaces}} inbound surfaces · {{providers}} providers · {{models}} models enabled",

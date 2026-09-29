@@ -13,10 +13,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { fetchUsageCost, summariseUsageCost, type WindowTotals } from '@/components/rialto/activity/data'
+import { SessionsPhoneList, SessionsPhoneStats } from '@/components/rialto/activity/SessionsPhone'
 import { SessionsTable } from '@/components/rialto/activity/SessionsTable'
 import {
   ALL,
   applyFilters,
+  type Enriched,
   enrich,
   options,
   parseSessionId,
@@ -31,6 +33,7 @@ import { useConfirm } from '@/components/rialto/ConfirmDialog'
 import { Pager } from '@/components/rialto/Pager'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
+import { usePhone } from '@/hooks/use-phone'
 import { api, type SessionSummary } from '@/lib/api'
 import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
 import { fmtRate } from '@/lib/rialto/format'
@@ -75,6 +78,58 @@ function StatsRow({ totals, rangeLabel }: { totals: WindowTotals | null; rangeLa
   )
 }
 
+/** Surface, provider and model: the selects that narrow the loaded page.
+ *  Their own component so the phone layout can leave them out whole. */
+function SessionFilters({
+  rows,
+  surfacePaths,
+  surface,
+  provider,
+  model,
+  onSurface,
+  onProvider,
+  onModel
+}: {
+  rows: Enriched[]
+  surfacePaths: string[]
+  surface: string
+  provider: string
+  model: string
+  onSurface: (next: string) => void
+  onProvider: (next: string) => void
+  onModel: (next: string) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <>
+      <FilterSelect
+        label={t('activity.sessions.filterSurface')}
+        value={surface}
+        options={options(surfacePaths, t('activity.common.all'))}
+        onChange={onSurface}
+      />
+      <FilterSelect
+        label={t('activity.sessions.filterProvider')}
+        value={provider}
+        options={options(
+          rows.flatMap((r) => r.session.providers),
+          t('activity.common.all')
+        )}
+        onChange={onProvider}
+      />
+      <FilterSelect
+        label={t('activity.sessions.filterModel')}
+        value={model}
+        options={options(
+          rows.flatMap((r) => r.session.models.map((m) => m.name)),
+          t('activity.common.all')
+        )}
+        onChange={onModel}
+      />
+    </>
+  )
+}
+
 export function ActivitySessions() {
   const { t } = useTranslation()
   const [range, setRange] = useState<RangeId>('7d')
@@ -88,6 +143,7 @@ export function ActivitySessions() {
   const [page, setPage] = useState(0)
   const [live, setLive] = useState(false)
   const surfaces = useSurfaces()
+  const phone = usePhone()
 
   const load = useCallback(() => {
     const spec = rangeSpec(range)
@@ -138,9 +194,11 @@ export function ActivitySessions() {
   }, [live])
 
   const rows = useMemo(() => (sessions === null ? [] : enrich(sessions, surfaces.pathOf)), [sessions, surfaces.pathOf])
+  // A filter set on a wide window must not keep narrowing the list after
+  // the window shrinks to a phone, where its select is no longer drawn.
   const visible = useMemo(
-    () => applyFilters(rows, { surface: surfaceFilter, provider: providerFilter, model: modelFilter }),
-    [rows, surfaceFilter, providerFilter, modelFilter]
+    () => (phone ? rows : applyFilters(rows, { surface: surfaceFilter, provider: providerFilter, model: modelFilter })),
+    [rows, phone, surfaceFilter, providerFilter, modelFilter]
   )
 
   const spec = rangeSpec(range)
@@ -191,34 +249,22 @@ export function ActivitySessions() {
         </>
       }
     >
-      <div className='flex flex-wrap items-center gap-2 border-b border-border px-6 py-3'>
-        <FilterSelect
-          label={t('activity.sessions.filterSurface')}
-          value={surfaceFilter}
-          options={options(
-            surfaces.surfaces.map((s) => s.path),
-            t('activity.common.all')
-          )}
-          onChange={setSurfaceFilter}
-        />
-        <FilterSelect
-          label={t('activity.sessions.filterProvider')}
-          value={providerFilter}
-          options={options(
-            rows.flatMap((r) => r.session.providers),
-            t('activity.common.all')
-          )}
-          onChange={setProviderFilter}
-        />
-        <FilterSelect
-          label={t('activity.sessions.filterModel')}
-          value={modelFilter}
-          options={options(
-            rows.flatMap((r) => r.session.models.map((m) => m.name)),
-            t('activity.common.all')
-          )}
-          onChange={setModelFilter}
-        />
+      <div className='flex flex-wrap items-center gap-2 border-b border-border px-4 py-3 md:px-6'>
+        {/* A phone keeps the range alone. The other three wrapped the bar
+            onto three lines, above a page of 25 sessions short enough to
+            scroll through rather than narrow. */}
+        {phone ? null : (
+          <SessionFilters
+            rows={rows}
+            surfacePaths={surfaces.surfaces.map((s) => s.path)}
+            surface={surfaceFilter}
+            provider={providerFilter}
+            model={modelFilter}
+            onSurface={setSurfaceFilter}
+            onProvider={setProviderFilter}
+            onModel={setModelFilter}
+          />
+        )}
         <FilterSelect
           label={t('activity.sessions.filterRange')}
           value={range}
@@ -232,7 +278,11 @@ export function ActivitySessions() {
             measurement someone takes away. */}
       </div>
 
-      <StatsRow totals={totals} rangeLabel={rangeLabel} />
+      {phone ? (
+        <SessionsPhoneStats totals={totals} rangeLabel={rangeLabel} />
+      ) : (
+        <StatsRow totals={totals} rangeLabel={rangeLabel} />
+      )}
 
       {error !== null ? (
         <ScreenMessage tone='bad'>{error}</ScreenMessage>
@@ -242,8 +292,15 @@ export function ActivitySessions() {
         <ScreenMessage>{t('activity.sessions.empty')}</ScreenMessage>
       ) : (
         <>
-          <SessionsTable rows={visible} />
-          <Pager page={page} pageSize={SESSION_PAGE} loaded={sessions.length} total={totalSessions} onPage={setPage} />
+          {phone ? <SessionsPhoneList rows={visible} now={Date.now()} /> : <SessionsTable rows={visible} />}
+          <Pager
+            page={page}
+            pageSize={SESSION_PAGE}
+            loaded={sessions.length}
+            total={totalSessions}
+            onPage={setPage}
+            compact={phone}
+          />
         </>
       )}
       <div className='h-10' />

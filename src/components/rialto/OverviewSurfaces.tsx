@@ -6,7 +6,7 @@ import type { OverviewResponse, OverviewSurfaceTraffic } from '@/lib/api'
 import { fmtCount, fmtLatency, fmtRate } from '@/lib/rialto/format'
 import { ROW_LINK } from './overview-shared'
 
-function RoutingModePill({ mode }: { mode: OverviewSurfaceTraffic['routingMode'] }) {
+export function RoutingModePill({ mode }: { mode: OverviewSurfaceTraffic['routingMode'] }) {
   const { t } = useTranslation()
   return mode === 'routed' ? (
     <Pill tone='ok' title={t('overview.modeRoutedHint')}>

@@ -16,7 +16,14 @@ import {
   fetchRequestLogs,
   type RequestLogStats
 } from '@/components/rialto/activity/data'
-import { COLUMNS, type ColumnId, ColumnMenu, RequestsTable } from '@/components/rialto/activity/RequestsTable'
+import { RequestsPhoneList, RequestsPhoneStats } from '@/components/rialto/activity/RequestsPhone'
+import {
+  COLUMNS,
+  type ColumnDef,
+  type ColumnId,
+  ColumnMenu,
+  RequestsTable
+} from '@/components/rialto/activity/RequestsTable'
 import {
   applyFilters,
   type Filters,
@@ -33,6 +40,7 @@ import { useSurfaces } from '@/components/rialto/activity/use-surfaces'
 import { Pager } from '@/components/rialto/Pager'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
+import { usePhone } from '@/hooks/use-phone'
 import { api } from '@/lib/api'
 import { fmtLatency, fmtRate } from '@/lib/rialto/format'
 
@@ -95,6 +103,136 @@ function StatsRow({ stats, rangeLabel }: { stats: RequestLogStats | null; rangeL
   )
 }
 
+/**
+ * The filter row. A phone keeps Status and Range — "did anything fail in
+ * the last hour" — and drops Surface, Token and Rule, which wrapped the
+ * row onto three lines above a list that no longer shows those fields.
+ */
+function FilterBar({
+  rows,
+  surfacePaths,
+  filters,
+  onFilters,
+  onRange,
+  live,
+  phone
+}: {
+  rows: Row[]
+  surfacePaths: string[]
+  filters: Filters
+  onFilters: (update: (prev: Filters) => Filters) => void
+  onRange: (next: Filters['range']) => void
+  live: boolean
+  phone: boolean
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className='flex flex-wrap items-center gap-2 border-b border-border px-4 py-3 md:px-6'>
+      {phone ? null : (
+        <FilterSelect
+          label={t('activity.requests.filterSurface')}
+          value={filters.surface}
+          options={options(surfacePaths, t('activity.common.all'))}
+          onChange={(surface) => onFilters((f) => ({ ...f, surface }))}
+        />
+      )}
+      <FilterSelect
+        label={t('activity.requests.filterStatus')}
+        value={filters.status}
+        options={statusOptions(t('activity.common.all'))}
+        onChange={(status) => onFilters((f) => ({ ...f, status }))}
+      />
+      {phone ? null : (
+        <>
+          <FilterSelect
+            label={t('activity.requests.filterToken')}
+            value={filters.client}
+            options={options(
+              rows.map((r) => r.client),
+              t('activity.common.all')
+            )}
+            onChange={(client) => onFilters((f) => ({ ...f, client }))}
+          />
+          <FilterSelect
+            label={t('activity.requests.filterRule')}
+            value={filters.rule}
+            options={options(
+              rows.map((r) => r.rule),
+              t('activity.common.all')
+            )}
+            onChange={(rule) => onFilters((f) => ({ ...f, rule }))}
+          />
+        </>
+      )}
+      <FilterSelect
+        label={t('activity.requests.filterRange')}
+        value={filters.range}
+        options={RANGES.map((r) => ({ id: r.id, label: t(r.labelKey) }))}
+        onChange={onRange}
+      />
+      <div className='ml-auto flex items-center gap-2'>
+        {live ? (
+          <span className='flex items-center gap-1.5 text-[12px] text-muted-foreground'>
+            <span className='size-1.5 animate-pulse rounded-full bg-emerald-500' /> {t('activity.requests.live')}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+/** Whatever stands where the rows go: an error, the wait, the reason there
+ *  are none, or the rows — as a table, or as a list on a phone. */
+function RequestsBody({
+  error,
+  loaded,
+  rows,
+  columns,
+  captureOff,
+  phone
+}: {
+  error: string | null
+  loaded: boolean
+  rows: Row[]
+  columns: readonly ColumnDef[]
+  captureOff: boolean
+  phone: boolean
+}) {
+  const { t } = useTranslation()
+  if (error !== null) return <ScreenMessage tone='bad'>{error}</ScreenMessage>
+  if (!loaded) return <ScreenMessage>{t('common.loading')}</ScreenMessage>
+  if (rows.length === 0) {
+    return (
+      <ScreenMessage>
+        {/* An empty table because capture is switched off looks exactly
+            like a broken screen. Name the switch and link to it. */}
+        {captureOff ? (
+          <Trans
+            i18nKey='activity.requests.captureOff'
+            components={{ settings: <Link to='/settings/logging' className='underline' /> }}
+          />
+        ) : (
+          t('activity.requests.empty')
+        )}
+      </ScreenMessage>
+    )
+  }
+  return phone ? <RequestsPhoneList rows={rows} /> : <RequestsTable rows={rows} columns={columns} />
+}
+
+function RequestsNote() {
+  return (
+    <div className='px-6 py-4'>
+      <NoteBox>
+        <Trans
+          i18nKey='activity.requests.note'
+          components={{ mono: <span className='font-mono' />, strong: <span className='font-medium' /> }}
+        />
+      </NoteBox>
+    </div>
+  )
+}
+
 const EMPTY_STATS: RequestLogStats = { total: 0, ok: 0, rateLimited: 0, failed: 0, p50: null, p95: null }
 
 export function ActivityRequests() {
@@ -116,6 +254,7 @@ export function ActivityRequests() {
   })
   const throttle = useRef<ReturnType<typeof setTimeout> | null>(null)
   const surfaces = useSurfaces()
+  const phone = usePhone()
   // Whether the archive this screen reads is even being written.
   const { config } = useConfig()
   const captureOff = config !== null && config.CAPTURE_REQUESTS === false
@@ -205,7 +344,12 @@ export function ActivityRequests() {
     }))
   }, [page, surfaces.pathOf, surfaces.clientOf, tokenNames])
 
-  const visible = useMemo(() => applyFilters(rows, filters), [rows, filters])
+  // The phone bar draws only Status and Range, so the other three must not
+  // keep narrowing the list after a wide window shrinks to one.
+  const visible = useMemo(
+    () => applyFilters(rows, phone ? { ...filters, surface: 'all', client: 'all', rule: 'all' } : filters),
+    [rows, phone, filters]
+  )
   const columns = useMemo(() => COLUMNS.filter((c) => !hidden.has(c.id)), [hidden])
 
   const range = RANGES.find((r) => r.id === filters.range)
@@ -226,87 +370,41 @@ export function ActivityRequests() {
           <RButton variant='outline' icon='ri-broadcast-line' aria-pressed={live} onClick={() => setLive((v) => !v)}>
             {t('activity.requests.liveTail')}
           </RButton>
-          <ColumnMenu hidden={hidden} onChange={setHidden} />
+          {/* No column picker on a phone: its list has no columns to pick. */}
+          {phone ? null : <ColumnMenu hidden={hidden} onChange={setHidden} />}
         </>
       }
     >
-      <div className='flex flex-wrap items-center gap-2 border-b border-border px-6 py-3'>
-        <FilterSelect
-          label={t('activity.requests.filterSurface')}
-          value={filters.surface}
-          options={options(
-            surfaces.surfaces.map((s) => s.path),
-            t('activity.common.all')
-          )}
-          onChange={(surface) => setFilters((f) => ({ ...f, surface }))}
-        />
-        <FilterSelect
-          label={t('activity.requests.filterStatus')}
-          value={filters.status}
-          options={statusOptions(t('activity.common.all'))}
-          onChange={(status) => setFilters((f) => ({ ...f, status }))}
-        />
-        <FilterSelect
-          label={t('activity.requests.filterToken')}
-          value={filters.client}
-          options={options(
-            rows.map((r) => r.client),
-            t('activity.common.all')
-          )}
-          onChange={(client) => setFilters((f) => ({ ...f, client }))}
-        />
-        <FilterSelect
-          label={t('activity.requests.filterRule')}
-          value={filters.rule}
-          options={options(
-            rows.map((r) => r.rule),
-            t('activity.common.all')
-          )}
-          onChange={(rule) => setFilters((f) => ({ ...f, rule }))}
-        />
-        <FilterSelect
-          label={t('activity.requests.filterRange')}
-          value={filters.range}
-          options={RANGES.map((r) => ({ id: r.id, label: t(r.labelKey) }))}
-          onChange={(next) => {
-            // A narrower window may not have the page the viewer is
-            // standing on, and an offset past the end returns nothing at
-            // all — which reads as "no requests" rather than "wrong page".
-            setPageIndex(0)
-            setFilters((f) => ({ ...f, range: next }))
-          }}
-        />
-        <div className='ml-auto flex items-center gap-2'>
-          {live ? (
-            <span className='flex items-center gap-1.5 text-[12px] text-muted-foreground'>
-              <span className='size-1.5 animate-pulse rounded-full bg-emerald-500' /> {t('activity.requests.live')}
-            </span>
-          ) : null}
-        </div>
-      </div>
+      <FilterBar
+        rows={rows}
+        surfacePaths={surfaces.surfaces.map((s) => s.path)}
+        filters={filters}
+        onFilters={setFilters}
+        onRange={(next) => {
+          // A narrower window may not have the page the viewer is
+          // standing on, and an offset past the end returns nothing at
+          // all — which reads as "no requests" rather than "wrong page".
+          setPageIndex(0)
+          setFilters((f) => ({ ...f, range: next }))
+        }}
+        live={live}
+        phone={phone}
+      />
 
-      <StatsRow stats={stats} rangeLabel={rangeLabel} />
-
-      {error !== null ? (
-        <ScreenMessage tone='bad'>{error}</ScreenMessage>
-      ) : page === null ? (
-        <ScreenMessage>{t('common.loading')}</ScreenMessage>
-      ) : visible.length === 0 ? (
-        <ScreenMessage>
-          {/* An empty table because capture is switched off looks exactly
-              like a broken screen. Name the switch and link to it. */}
-          {captureOff ? (
-            <Trans
-              i18nKey='activity.requests.captureOff'
-              components={{ settings: <Link to='/settings/logging' className='underline' /> }}
-            />
-          ) : (
-            t('activity.requests.empty')
-          )}
-        </ScreenMessage>
+      {phone ? (
+        <RequestsPhoneStats stats={stats === null ? EMPTY_STATS : stats} rangeLabel={rangeLabel} />
       ) : (
-        <RequestsTable rows={visible} columns={columns} />
+        <StatsRow stats={stats} rangeLabel={rangeLabel} />
       )}
+
+      <RequestsBody
+        error={error}
+        loaded={page !== null}
+        rows={visible}
+        columns={columns}
+        captureOff={captureOff}
+        phone={phone}
+      />
 
       {/* `loaded` counts the fetched page, not the filtered rows: the
           filters run client-side over one page, so measuring them would
@@ -319,17 +417,13 @@ export function ActivityRequests() {
           loaded={page.items.length}
           total={page.total}
           onPage={setPageIndex}
+          compact={phone}
         />
       )}
 
-      <div className='px-6 py-4'>
-        <NoteBox>
-          <Trans
-            i18nKey='activity.requests.note'
-            components={{ mono: <span className='font-mono' />, strong: <span className='font-medium' /> }}
-          />
-        </NoteBox>
-      </div>
+      {/* A paragraph on how 429 rows relate to failover is reading for a
+          desk; on a phone it was a screen of text under the list. */}
+      {phone ? null : <RequestsNote />}
       <div className='h-6' />
     </Screen>
   )

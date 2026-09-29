@@ -32,7 +32,7 @@ export function Section({
 }) {
   return (
     <section className={cn('border-t border-border first:border-t-0', className)}>
-      <div className='flex items-baseline gap-3 px-6 pt-6 pb-3'>
+      <div className='flex items-baseline gap-3 px-4 pt-6 pb-3 md:px-6'>
         <h2 className='text-sm font-semibold'>{title}</h2>
         {meta ? <span className='text-xs text-muted-foreground/70'>{meta}</span> : null}
       </div>
@@ -163,7 +163,10 @@ export function RButton({
           screen reader announced a junk character before the label the
           icon merely decorates. */}
       {icon ? <i aria-hidden className={cn(icon, 'text-sm leading-none')} /> : null}
-      {children}
+      {/* Tagged only beside an icon: the phone header hides what is tagged
+          (see `Screen`), and a button with nothing else to show would
+          vanish with it. */}
+      {icon ? <span data-rbutton-label>{children}</span> : children}
     </button>
   )
 }
@@ -350,5 +353,86 @@ export function Toggle({
         <span className={cn('size-3 rounded-full bg-background', shown ? 'translate-x-3' : '')} />
       </span>
     </button>
+  )
+}
+
+/**
+ * One record as a phone list row — the phone layout's stand-in for a
+ * table row.
+ *
+ * A table cannot shrink to 390px: its columns either overlap or push the
+ * pane sideways, and a sideways-scrolling table on a phone shows the
+ * record's name or its figures but never both. So a record becomes two
+ * lines: what it is and the one figure worth checking on the first, a
+ * muted line of context on the second. Everything else stays on the
+ * desktop screen, one tap away on a wider window.
+ */
+export function PhoneRow({
+  href,
+  primary,
+  trailing,
+  secondary
+}: {
+  href?: string
+  primary: ReactNode
+  trailing?: ReactNode
+  secondary?: ReactNode
+}) {
+  const body = (
+    <>
+      <div className='flex items-baseline gap-3'>
+        <div className='min-w-0 flex-1 truncate text-xs'>{primary}</div>
+        {trailing === undefined ? null : <div className='shrink-0 font-mono text-xs tabular-nums'>{trailing}</div>}
+      </div>
+      {secondary === undefined ? null : (
+        <div className='mt-1 flex min-w-0 items-center gap-2 overflow-hidden text-[12px] whitespace-nowrap text-muted-foreground'>
+          {secondary}
+        </div>
+      )}
+    </>
+  )
+  const cls = 'block border-t border-border/60 px-4 py-3'
+  if (href === undefined) return <div className={cls}>{body}</div>
+  return (
+    <Link to={href} className={cn(cls, 'transition-colors active:bg-muted/50')}>
+      {body}
+    </Link>
+  )
+}
+
+/**
+ * A handful of headline figures as a two-column grid — the phone form of
+ * the four-across stat tiles several screens open with. Four tiles in a
+ * row gave each 80px, which broke "$32.74" across two lines.
+ */
+export function PhoneStats({
+  items
+}: {
+  items: readonly { label: string; value: ReactNode; note?: ReactNode; href?: string }[]
+}) {
+  return (
+    <div className='grid grid-cols-2 gap-px px-4 pb-4'>
+      {items.map((item) => {
+        const body = (
+          <>
+            <div className='truncate text-[11px] uppercase tracking-wider text-muted-foreground'>{item.label}</div>
+            <div className='mt-1 truncate font-mono text-lg tabular-nums'>{item.value}</div>
+            {item.note === undefined ? null : (
+              <div className='truncate text-[12px] text-muted-foreground'>{item.note}</div>
+            )}
+          </>
+        )
+        const cls = 'min-w-0 border-l-2 border-l-border px-3 py-2'
+        return item.href === undefined ? (
+          <div key={item.label} className={cls}>
+            {body}
+          </div>
+        ) : (
+          <Link key={item.label} to={item.href} className={cn(cls, 'active:bg-muted/50')}>
+            {body}
+          </Link>
+        )
+      })}
+    </div>
   )
 }

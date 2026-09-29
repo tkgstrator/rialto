@@ -62,7 +62,7 @@ export function PersonaList({
 }) {
   const { t } = useTranslation()
   return (
-    <aside className='min-w-0 overflow-y-auto border-r border-border'>
+    <aside className='min-w-0 overflow-y-auto border-r border-border max-md:border-r-0'>
       <div className='flex items-center gap-2 px-4 pt-5 pb-2'>
         <h2 className='text-[12px] font-semibold uppercase tracking-wider text-muted-foreground'>
           {t('settings.rail.personas')}

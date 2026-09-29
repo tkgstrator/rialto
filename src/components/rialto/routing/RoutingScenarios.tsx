@@ -15,6 +15,7 @@ import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
+import { usePhone } from '@/hooks/use-phone'
 import type { InboundSurfaceWire, RoutingMode, SurfaceId, TierAliasWire, TierProfileSummaryWire } from '@/lib/api'
 import {
   type ScenarioProfileState,
@@ -27,6 +28,7 @@ import {
 } from './data'
 import { EscalationRestrictions } from './EscalationRestrictions'
 import { PassthroughPanel } from './PassthroughPanel'
+import { RoutingPhone } from './RoutingPhone'
 import { SurfaceBar } from './RoutingTabs'
 import { ScenarioTable } from './ScenarioTable'
 import { SurfaceScopeBar } from './SurfaceModeBar'
@@ -204,6 +206,7 @@ export function RoutingScenarios() {
   const reachable = useEnabledTargets()
   const providers = useEnabledProviders()
   const aliases = useTierAliases()
+  const phone = usePhone()
 
   // The surface lives in the query string, not in state: the passthrough
   // half of this screen is only reachable as a URL, and an operator mid-way
@@ -238,6 +241,14 @@ export function RoutingScenarios() {
         <div className='px-6 py-6 text-xs text-muted-foreground'>
           {loading ? t('common.loading') : t('routing.chain.noSurfaces')}
         </div>
+      ) : phone ? (
+        <RoutingPhone
+          surfaces={surfaces}
+          surface={surface}
+          onSelectSurface={selectSurface}
+          profile={profile}
+          reachable={reachable}
+        />
       ) : (
         <LoadedSurface
           surfaces={surfaces}

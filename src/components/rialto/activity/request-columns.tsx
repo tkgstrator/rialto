@@ -102,7 +102,7 @@ function ModelCell({ value, title, muted = false }: { value: string; title?: str
  * the tooltip, because a time pasted into a thread with someone in
  * another timezone needs to carry one.
  */
-function TimeCell({ iso }: { iso: string }) {
+export function TimeCell({ iso }: { iso: string }) {
   const at = dayjs(iso)
   const sameDay = at.isSame(dayjs(), 'day')
   return <span title={at.format('YYYY-MM-DD HH:mm:ss Z')}>{at.format(sameDay ? 'HH:mm:ss' : 'MM-DD HH:mm')}</span>

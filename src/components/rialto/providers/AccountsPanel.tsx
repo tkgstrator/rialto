@@ -184,14 +184,17 @@ export function AccountsPanel({
   // they are read without one.
   const kind: SeatKind = subscription === undefined || subscription.kind === 'other' ? null : subscription.kind
   return (
-    <div className='border-r border-border'>
-      <div className='px-6 pt-5 pb-2'>
+    // The divider and the 24px indent are the desktop two-column grid's;
+    // on a phone the panel is the full width and lines up with the rest
+    // of the page at 16px.
+    <div className='border-border md:border-r'>
+      <div className='px-4 pt-5 pb-2 md:px-6'>
         <h3 className='text-sm font-semibold'>{t('providers.accounts.title')}</h3>
       </div>
       {accounts.length === 0 ? (
-        <div className='px-6 pb-5 text-[12px] text-muted-foreground'>{t('providers.accounts.empty')}</div>
+        <div className='px-4 pb-5 text-[12px] text-muted-foreground md:px-6'>{t('providers.accounts.empty')}</div>
       ) : (
-        <div className='px-2 pb-4'>
+        <div className='pb-4 md:px-2'>
           {accounts.map((a) => (
             <AccountRow
               key={a.id}
