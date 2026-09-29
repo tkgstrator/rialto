@@ -29,7 +29,7 @@ import { cleanDemoRows } from './seed-demo/demo-rows'
 import { createRandom } from './seed-demo/random'
 import { seedSurfaceModes, seedTierMap } from './seed-demo/routing'
 import { resolveTargets } from './seed-demo/targets'
-import { seedAccessTokens } from './seed-demo/tokens'
+import { DEMO_TOKEN_COUNT, seedAccessTokens } from './seed-demo/tokens'
 import { seedTraffic } from './seed-demo/traffic'
 
 interface Options {
@@ -105,7 +105,7 @@ async function main(): Promise<void> {
   line('subscription accounts', `${accounts.createdAccounts} created`)
   line('quota rows', `${accounts.createdQuotas} quota, ${accounts.createdUsageRows} per-metric`)
   line('usage history', `${accounts.usageSnapshots} samples`)
-  line('access tokens', accessTokenIds.length + 1)
+  line('access tokens', DEMO_TOKEN_COUNT)
   line('sessions', `${traffic.sessions} (${traffic.archived} archived)`)
   line('request logs', traffic.requestLogs)
   line('chat messages', traffic.messages)

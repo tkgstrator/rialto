@@ -27,7 +27,7 @@ import { Hono } from 'hono'
 import { inboundProxyAuth } from '../../src/api/api-key-auth'
 import { getPrismaClient } from '../../src/db/client'
 import { INBOUND_MOUNT_PREFIXES } from '../../src/llms/inbound/surfaces'
-import { invalidateTokenCache, issueAccessToken, revokeAccessToken } from '../../src/services/access-token-service'
+import { deleteAccessToken, invalidateTokenCache, issueAccessToken } from '../../src/services/access-token-service'
 import { HAS_DB, teardownPrisma } from '../db/helpers'
 
 const LEFTOVER = 'leftover-key-12345'
@@ -101,7 +101,7 @@ describe.skipIf(!HAS_DB)('/v1beta auth', () => {
 
     test('a revoked token', async () => {
       const issued = await issueAccessToken({ name: 'to be revoked' })
-      await revokeAccessToken(issued.token.id)
+      await deleteAccessToken(issued.token.id)
       expect((await call(buildApp(), GENERATE, { 'x-goog-api-key': issued.plaintext })).status).toBe(401)
     })
 

@@ -48,10 +48,9 @@ const BACK = '/access-tokens'
 /**
  * The server answers a refused rotation with the reason as its error
  * text. Mapped to a sentence that says what to do instead, because
- * "revoked" alone on a toast explains nothing an operator can act on.
+ * "expired" alone on a toast explains nothing an operator can act on.
  */
 const ROTATE_REFUSAL: Readonly<Record<string, string>> = {
-  revoked: 'settings.access.rotateRefusedRevoked',
   expired: 'settings.access.rotateRefusedExpired'
 }
 
@@ -184,29 +183,10 @@ export function TokenDetail() {
       .revokeAccessToken(token.id)
       .then(() => {
         toast.success(t('settings.access.revoked', { name: token.name }))
-        load()
-      })
-      .catch((e: Error) => toast.error(t('settings.access.revokeFailed', { message: e.message })))
-      .finally(() => setBusy(false))
-  }
-
-  const remove = async () => {
-    if (token === null) return
-    const confirmed = await ask(
-      t('settings.access.deleteConfirm', { name: token.name }),
-      t('settings.access.delete'),
-      'ri-delete-bin-line'
-    )
-    if (!confirmed) return
-    setBusy(true)
-    api
-      .deleteAccessToken(token.id)
-      .then(() => {
-        toast.success(t('settings.access.deleted', { name: token.name }))
-        // The row is gone, so this page has nothing left to describe.
+        // Revoking deletes the token, so this page has nothing left to describe.
         navigate(BACK)
       })
-      .catch((e: Error) => toast.error(t('settings.access.deleteFailed', { message: e.message })))
+      .catch((e: Error) => toast.error(t('settings.access.revokeFailed', { message: e.message })))
       .finally(() => setBusy(false))
   }
 
@@ -274,11 +254,10 @@ export function TokenDetail() {
           busy={busy}
           onRotate={rotate}
           onRevoke={revoke}
-          onDelete={remove}
         />
 
         {/* Editable only while the token can actually be used: changing
-            the scope of a revoked or expired row alters nothing about
+            the scope of an expired row alters nothing about
             what reaches the proxy, so the controls would be theatre. */}
         <SettingsField label={t('settings.access.colEndpoint')} hint={t('settings.access.issueEndpointHint')}>
           <SurfacePicker
