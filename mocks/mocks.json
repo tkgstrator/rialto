@@ -72,7 +72,7 @@
       "mock": "provider-subscription.html",
       "route": "/providers/claude-code",
       "group": "Providers",
-      "note": "One subscription provider: accounts, request shape, models. Full width now that the rail is gone — reached from the Subscriptions list, back via the breadcrumb, the same way a token detail works. Adds the tier-alias strip (the one pointer a new model release moves). What an account carried at API prices is not drawn here — the Usage tab shows it."
+      "note": "One subscription provider: accounts, request shape, models. Full width now that the rail is gone — reached from the Subscriptions list, back via the breadcrumb, the same way a token detail works. Adds the tier-alias strip (the one pointer a new model release moves). What an account carried at API prices is not drawn here — the Usage tab shows it. On a table 84rem or wider (not at the 1440 capture) two more columns follow Model: Effort levels, the levels the model's own list reported, and Thinking off, how thinking is switched off on it — both as badges."
     },
     {
       "name": "provider-subscription-codex",

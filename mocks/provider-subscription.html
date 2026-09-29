@@ -117,37 +117,76 @@ const aliases = `
 // switched off, serving nothing until it is switched on — which moves the
 // Opus tier to it. On Codex, where no name says a tier, the column shows
 // the tiers set by hand.
+//
+// On a wide table two more columns sit beside the model: the effort levels
+// the model's own list reported, and how thinking is switched off on it
+// (`disabled` or `between_tools`, up to which effort, or not at all:
+// always on). Measured on the table, not the viewport, and dropped below
+// 84rem rather than squeezing the model name. A model switched off has not
+// been probed yet and reads a dash; Codex has no thinking probe and so no
+// Thinking off column.
+const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const MODELS = CODEX
   ? [
-      { name: 'gpt-5.5',             tiers: [['opus', true], ['sonnet', true]], ctx: '400k', test: 'ok',      on: true },
-      { name: 'gpt-5.3-codex-spark', tiers: [['haiku', true]],                  ctx: '128k', test: 'ok',      on: true },
-      { name: 'gpt-5.3-codex',       tiers: [],                                 ctx: '400k', test: 'unknown', on: false }
+      { name: 'gpt-5.5',             tiers: [['opus', true], ['sonnet', true]], ctx: '400k', test: 'ok',      on: true,  effort: ['low', 'medium', 'high', 'xhigh', 'ultra'] },
+      { name: 'gpt-5.3-codex-spark', tiers: [['haiku', true]],                  ctx: '128k', test: 'ok',      on: true,  effort: ['low', 'medium', 'high'] },
+      { name: 'gpt-5.3-codex',       tiers: [],                                 ctx: '400k', test: 'unknown', on: false, effort: ['low', 'medium', 'high', 'xhigh'] }
     ]
   : [
-      { name: 'claude-opus-5',     tiers: [['opus', false]],   newer: true, ctx: '500k', test: 'unknown', on: false },
-      { name: 'claude-fable-5',    tiers: [['fable', true]],   ctx: '500k', test: 'ok',      on: true },
-      { name: 'claude-opus-4-8',   tiers: [['opus', true]],    ctx: '200k', test: 'ok',      on: true },
-      { name: 'claude-opus-4-7',   tiers: [['opus', false]],   ctx: '200k', test: 'ok',      on: true },
-      { name: 'claude-sonnet-5',   tiers: [['sonnet', true]],  ctx: '1M',   test: 'ok',      on: true },
-      { name: 'claude-sonnet-4-6', tiers: [['sonnet', false]], ctx: '1M',   test: 'ok',      on: true },
-      { name: 'claude-haiku-4-5',  tiers: [['haiku', true]],   ctx: '200k', test: 'fail',    on: true }
+      { name: 'claude-opus-5',     tiers: [['opus', false]],   newer: true, ctx: '500k', test: 'unknown', on: false, effort: CLAUDE_EFFORTS, thinking: null },
+      { name: 'claude-fable-5',    tiers: [['fable', true]],   ctx: '500k', test: 'ok',   on: true, effort: CLAUDE_EFFORTS, thinking: [] },
+      { name: 'claude-opus-4-8',   tiers: [['opus', true]],    ctx: '200k', test: 'ok',   on: true, effort: CLAUDE_EFFORTS, thinking: [['disabled', '≤ high']] },
+      { name: 'claude-opus-4-7',   tiers: [['opus', false]],   ctx: '200k', test: 'ok',   on: true, effort: ['low', 'medium', 'high', 'max'], thinking: [['disabled', '≤ high']] },
+      { name: 'claude-sonnet-5',   tiers: [['sonnet', true]],  ctx: '1M',   test: 'ok',   on: true, effort: CLAUDE_EFFORTS, thinking: [['disabled', '']] },
+      { name: 'claude-sonnet-4-6', tiers: [['sonnet', false]], ctx: '1M',   test: 'ok',   on: true, effort: ['low', 'medium', 'high', 'max'], thinking: [['between_tools', '≤ high']] },
+      { name: 'claude-haiku-4-5',  tiers: [['haiku', true]],   ctx: '200k', test: 'fail', on: true, effort: [], thinking: [['disabled', '']] }
     ]
 
 const testIcon = { ok: '<i class="ri-check-line text-emerald-600 dark:text-emerald-400"></i>', fail: '<i class="ri-close-line text-destructive"></i>', unknown: '<i class="ri-subtract-line text-muted-foreground/50"></i>' }
 
-const tierPill = ([tier, routed]) =>
-  routed
-    ? `<span class="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[12px]">${tier}</span>`
-    : `<span class="inline-flex items-center rounded border border-border px-1.5 py-px text-[12px] text-muted-foreground/70">${tier}</span>`
+// Filled for a value that holds, outlined for one that says "nothing
+// here" — the same two treatments the tier column uses.
+const badge = (text, filled = true) =>
+  filled
+    ? `<span class="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[12px]">${text}</span>`
+    : `<span class="inline-flex items-center rounded border border-border px-1.5 py-px text-[12px] text-muted-foreground/70">${text}</span>`
+
+const tierPill = ([tier, routed]) => badge(tier, routed)
+
+const dash = '<span class="text-[12px] text-muted-foreground/50">—</span>'
 
 const tierRead = (tiers) =>
-  tiers.length === 0
-    ? '<span class="text-[12px] text-muted-foreground/50">—</span>'
-    : `<span class="inline-flex items-center gap-1">${tiers.map(tierPill).join('')}</span>`
+  tiers.length === 0 ? dash : `<span class="inline-flex items-center gap-1">${tiers.map(tierPill).join('')}</span>`
+
+const effortRead = (efforts) =>
+  efforts === undefined
+    ? dash
+    : efforts.length === 0
+      ? badge('unsupported', false)
+      : `<span class="inline-flex items-center gap-1">${efforts.map((e) => badge(e)).join('')}</span>`
+
+const thinkingRead = (thinking) =>
+  thinking === null
+    ? dash
+    : thinking.length === 0
+      ? badge('always on', false)
+      : `<span class="inline-flex items-center gap-1.5">${thinking
+          .map(([setting, cond]) => `${badge(setting)}${cond === '' ? '' : `<span class="text-[12px] text-muted-foreground">${cond}</span>`}`)
+          .join('')}</span>`
+
+// Shown only on a wide table: hidden until the container is 84rem.
+const WIDE_CELL = 'hidden @min-[84rem]:table-cell'
+const WIDE_COL = 'hidden @min-[84rem]:table-column'
 
 const modelRow = (m) => `
   <tr class="border-t border-border/60 transition-colors hover:bg-muted/50 ${m.on ? '' : 'opacity-45'}">
-    <td class="py-2.5 pl-6 pr-2 font-mono text-xs">${m.name}${m.newer ? ` <span class="ml-1 align-[1px]">${pill('newer', 'info')}</span>` : ''}</td>
+    <td class="py-2.5 pl-6 pr-2">
+      <div class="flex items-center gap-2">
+        <span class="font-mono text-xs">${m.name}</span>${m.newer ? pill('newer', 'info') : ''}
+      </div>
+    </td>
+    <td class="${WIDE_CELL} px-2 whitespace-nowrap">${effortRead(m.effort)}</td>
+    ${CODEX ? '' : `<td class="${WIDE_CELL} px-2 whitespace-nowrap">${thinkingRead(m.thinking)}</td>`}
     <td class="px-2">${tierRead(m.tiers)}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${m.ctx}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">—</td>
@@ -158,11 +197,14 @@ const modelRow = (m) => `
   </tr>`
 
 const models = `
+  <div class="@container">
   <table class="w-full table-fixed">
-    <colgroup><col><col class="w-28"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-16"><col class="w-20"></colgroup>
+    <colgroup><col><col class="${WIDE_COL} w-64">${CODEX ? '' : `<col class="${WIDE_COL} w-44">`}<col class="w-28"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-16"><col class="w-20"></colgroup>
     <thead>
       <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         ${sortTh('Model', 'pl-6 pr-2')}
+        <th class="${WIDE_CELL} px-2 text-left font-medium">Effort levels</th>
+        ${CODEX ? '' : `<th class="${WIDE_CELL} px-2 text-left font-medium">Thinking off</th>`}
         ${sortTh('Tier', 'px-2', 'left', true, 'desc')}
         ${sortTh('Context', 'px-2', 'right')}
         ${sortTh('In /1M', 'px-2', 'right')}
@@ -173,7 +215,8 @@ const models = `
       </tr>
     </thead>
     <tbody>${MODELS.map(modelRow).join('')}</tbody>
-  </table>`
+  </table>
+  </div>`
 
 // ─── Accounts ─────────────────────────────────────────────────────────
 // Every window the account is under, not just the weekly one: all of them

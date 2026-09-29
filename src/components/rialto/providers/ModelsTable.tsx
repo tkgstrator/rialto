@@ -13,6 +13,7 @@ import { Pill, Toggle } from '@/components/rialto/primitives'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
 import { fmtCost } from '@/lib/sessions/format'
 import { openAiEffortsFor } from '@/shared/model-reasoning-effort'
+import { effortLadder, type ThinkingOffReading, thinkingOffReadings } from './capability-reading'
 import { fmtContext, type ModelRow } from './derive'
 import { SwitchReading } from './SwitchReading'
 import { TIERS } from './tier-aliases'
@@ -121,6 +122,14 @@ const modelSortValue = (row: ModelRow, key: ModelSortKey): SortValue => {
 }
 
 const NUM_CELL = 'px-2 text-right font-mono text-xs tabular-nums'
+
+// The Effort levels and Thinking off columns, shown only once the table
+// is 84rem wide. Measured on the table rather than the viewport: the
+// sidebar and a provider's own optional columns take their share first.
+// Below that they are dropped, not squeezed, so the model name keeps its
+// room; the effort picker still offers only the recorded levels.
+const WIDE_CELL = 'hidden @min-[84rem]:table-cell'
+const WIDE_COL = 'hidden @min-[84rem]:table-column'
 const HEAD_CELL = 'px-2 text-right font-medium'
 
 function Head({
@@ -128,12 +137,16 @@ function Head({
   withTier,
   hasCached,
   hasShape,
+  hasEffortReading,
+  hasThinkingReading,
   sort
 }: {
   withOverride: boolean
   withTier: boolean
   hasCached: boolean
   hasShape: boolean
+  hasEffortReading: boolean
+  hasThinkingReading: boolean
   sort: ReturnType<typeof useTableSort<ModelRow, ModelSortKey>>
 }) {
   const { t } = useTranslation()
@@ -143,6 +156,18 @@ function Head({
         <SortTh sortKey='name' sort={sort} className='pl-6 pr-2 text-left'>
           {t('providers.models.colModel')}
         </SortTh>
+        {/* Sets of values rather than one each, so like Shape and Effort
+            they have nothing to sort by. */}
+        {hasEffortReading ? (
+          <th className={cn(WIDE_CELL, 'px-2 text-left font-medium')} title={t('providers.models.capEffortTitle')}>
+            {t('providers.models.colEffortLevels')}
+          </th>
+        ) : null}
+        {hasThinkingReading ? (
+          <th className={cn(WIDE_CELL, 'px-2 text-left font-medium')} title={t('providers.models.capThinkingTitle')}>
+            {t('providers.models.colThinkingOff')}
+          </th>
+        ) : null}
         {withTier ? (
           <SortTh sortKey='tier' sort={sort} className='px-2 text-left'>
             {t('providers.models.colTier')}
@@ -276,6 +301,72 @@ function EffortCell({
   )
 }
 
+/** A value that holds, filled; one that says "nothing here", outlined — the tier column's two treatments. */
+function Badge({ children, filled = true }: { children: string; filled?: boolean }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded px-1.5 text-[12px]',
+        filled ? 'bg-muted py-0.5' : 'border border-border py-px text-muted-foreground/70'
+      )}
+    >
+      {children}
+    </span>
+  )
+}
+
+const Dash = () => <span className='text-[12px] text-muted-foreground/50'>{DASH}</span>
+
+/**
+ * The Effort levels column: what the model's own list reported, lowest
+ * first. A dash until it has been read; `unsupported` for a model whose
+ * list names no level, which is a fact rather than a gap.
+ */
+function EffortLevelsCell({ efforts }: { efforts: ModelRow['supportedEfforts'] }) {
+  const { t } = useTranslation()
+  if (efforts === null) return <Dash />
+  if (efforts.length === 0) return <Badge filled={false}>{t('providers.models.capEffortNone')}</Badge>
+  return (
+    <span className='inline-flex items-center gap-1'>
+      {effortLadder(efforts).map((level) => (
+        <Badge key={level}>{level}</Badge>
+      ))}
+    </span>
+  )
+}
+
+const thinkingCondition = (reading: ThinkingOffReading): string | null => {
+  if (reading.when === 'always') return null
+  if (reading.when === 'upTo') return `≤ ${reading.effort}`
+  return reading.keys.join('/')
+}
+
+/**
+ * The Thinking off column: each setting the model takes, as a badge in
+ * its wire spelling, with the efforts it holds at beside it. `always on`
+ * when it takes neither. A dash until the probe has run, which it does
+ * only on switched-on models.
+ */
+function ThinkingOffCell({ row }: { row: ModelRow }) {
+  const { t } = useTranslation()
+  if (row.thinkingOff === null) return <Dash />
+  const readings = thinkingOffReadings(row.thinkingOff, row.supportedEfforts)
+  if (readings.length === 0) return <Badge filled={false}>{t('providers.models.capThinkingAlwaysOn')}</Badge>
+  return (
+    <span className='inline-flex items-center gap-1.5'>
+      {readings.map((reading) => {
+        const condition = thinkingCondition(reading)
+        return (
+          <span key={reading.setting} className='inline-flex items-center gap-1.5'>
+            <Badge>{reading.setting}</Badge>
+            {condition === null ? null : <span className='text-[12px] text-muted-foreground'>{condition}</span>}
+          </span>
+        )
+      })}
+    </span>
+  )
+}
+
 function ImagePriceBadge({ pricing }: { pricing: ModelRow['imagePricing'] }) {
   if (pricing === null) return null
   return (
@@ -296,6 +387,8 @@ function Row({
   effortKind,
   hasCached,
   hasShape,
+  hasEffortReading,
+  hasThinkingReading,
   onToggle,
   onEffort
 }: {
@@ -306,6 +399,8 @@ function Row({
   effortKind: 'openai' | 'claude-code'
   hasCached: boolean
   hasShape: boolean
+  hasEffortReading: boolean
+  hasThinkingReading: boolean
   onToggle: (model: string, next: boolean) => void
   onEffort: (model: string, next: ReasoningEffort | null) => void
 }) {
@@ -328,6 +423,16 @@ function Row({
           {row.legacy ? <Pill tone='mute'>{t('providers.models.legacy')}</Pill> : null}
         </div>
       </td>
+      {hasEffortReading ? (
+        <td className={cn(WIDE_CELL, 'px-2 whitespace-nowrap')}>
+          <EffortLevelsCell efforts={row.supportedEfforts} />
+        </td>
+      ) : null}
+      {hasThinkingReading ? (
+        <td className={cn(WIDE_CELL, 'px-2 whitespace-nowrap')}>
+          <ThinkingOffCell row={row} />
+        </td>
+      ) : null}
       {withTier ? (
         <td className='px-2'>
           <TierCell row={row} />
@@ -402,6 +507,11 @@ export function ModelsTable({
   // says the same thing the dashes did, in no space at all.
   const hasCached = rows.some((row) => row.cachedInputPer1M !== null)
   const hasShape = rows.some((row) => row.apiStyleOverride !== null)
+  // The same rule for the two capability columns: Codex, which has no
+  // thinking probe, gets no Thinking off column, and an api_key provider,
+  // which records nothing, gets neither.
+  const hasEffortReading = rows.some((row) => row.supportedEfforts !== null)
+  const hasThinkingReading = rows.some((row) => row.thinkingOff !== null)
   // Wide enough for two tier pills wherever a model is in two tiers. The
   // subscription table has the room to spare anyway; the api_key one,
   // with Shape and Effort beside it, keeps the narrow column until a row
@@ -412,36 +522,50 @@ export function ModelsTable({
     return <div className='px-6 pb-6 text-xs text-muted-foreground'>{t('providers.models.empty')}</div>
   }
   return (
-    <table className='w-full table-fixed'>
-      <colgroup>
-        <col />
-        {withTier ? <col className={tierWidth} /> : null}
-        <col className='w-20' />
-        <col className='w-20' />
-        {hasCached ? <col className='w-20' /> : null}
-        <col className='w-20' />
-        {withOverride && hasShape ? <col className='w-24' /> : null}
-        {withOverride ? <col className='w-24' /> : null}
-        <col className={withOverride ? 'w-14' : 'w-16'} />
-        <col className={withOverride ? 'w-16' : 'w-20'} />
-      </colgroup>
-      <Head withOverride={withOverride} withTier={withTier} hasCached={hasCached} hasShape={hasShape} sort={sort} />
-      <tbody>
-        {(limit === undefined ? sort.sorted : sort.sorted.slice(offset, offset + limit)).map((row) => (
-          <Row
-            key={row.name}
-            row={row}
-            withOverride={withOverride}
-            withTier={withTier}
-            editable={editable}
-            effortKind={effortKind}
-            hasCached={hasCached}
-            hasShape={hasShape}
-            onToggle={onToggle}
-            onEffort={onEffort}
-          />
-        ))}
-      </tbody>
-    </table>
+    <div className='@container'>
+      <table className='w-full table-fixed'>
+        <colgroup>
+          <col />
+          {hasEffortReading ? <col className={cn(WIDE_COL, 'w-64')} /> : null}
+          {hasThinkingReading ? <col className={cn(WIDE_COL, 'w-44')} /> : null}
+          {withTier ? <col className={tierWidth} /> : null}
+          <col className='w-20' />
+          <col className='w-20' />
+          {hasCached ? <col className='w-20' /> : null}
+          <col className='w-20' />
+          {withOverride && hasShape ? <col className='w-24' /> : null}
+          {withOverride ? <col className='w-24' /> : null}
+          <col className={withOverride ? 'w-14' : 'w-16'} />
+          <col className={withOverride ? 'w-16' : 'w-20'} />
+        </colgroup>
+        <Head
+          withOverride={withOverride}
+          withTier={withTier}
+          hasCached={hasCached}
+          hasShape={hasShape}
+          hasEffortReading={hasEffortReading}
+          hasThinkingReading={hasThinkingReading}
+          sort={sort}
+        />
+        <tbody>
+          {(limit === undefined ? sort.sorted : sort.sorted.slice(offset, offset + limit)).map((row) => (
+            <Row
+              key={row.name}
+              row={row}
+              withOverride={withOverride}
+              withTier={withTier}
+              editable={editable}
+              effortKind={effortKind}
+              hasCached={hasCached}
+              hasShape={hasShape}
+              hasEffortReading={hasEffortReading}
+              hasThinkingReading={hasThinkingReading}
+              onToggle={onToggle}
+              onEffort={onEffort}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }

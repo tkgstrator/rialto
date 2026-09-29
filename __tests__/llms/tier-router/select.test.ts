@@ -9,7 +9,8 @@
  *
  * Pace only reorders what passed the gates: a surplus route (projected
  * under 60% at the reset) moves to the front, an over-pace one (over
- * 100%) to the back, and list order holds within each band.
+ * 100%) to the back. List order holds within the surplus and even bands;
+ * over pace, the route least over leads, then the lower tier.
  */
 
 import { describe, expect, test } from 'bun:test'
@@ -124,7 +125,7 @@ describe('selectTierRoute: pace', () => {
     expect(out.paced).toEqual({ promoted: [], steppedDown: ['a,b'] })
   })
 
-  test('surplus, then the rest, then over-pace, list order within each band', () => {
+  test('surplus, then the rest, then over-pace; list order within surplus and even, least over first', () => {
     const out = select([
       paced('over-1,m', 150),
       paced('even-1,m', 70),
@@ -133,14 +134,49 @@ describe('selectTierRoute: pace', () => {
       paced('even-2,m', null),
       paced('surplus-2,m', 59)
     ])
-    expect(orderOf(out)).toEqual(['surplus-1,m', 'surplus-2,m', 'even-1,m', 'even-2,m', 'over-1,m', 'over-2,m'])
+    expect(orderOf(out)).toEqual(['surplus-1,m', 'surplus-2,m', 'even-1,m', 'even-2,m', 'over-2,m', 'over-1,m'])
     expect(out.paced).toEqual({ promoted: ['surplus-1,m', 'surplus-2,m'], steppedDown: ['over-1,m', 'over-2,m'] })
   })
 
-  test('every route over pace keeps list order: a projection alone never refuses', () => {
+  test('every route over pace still serves, least over first: a projection alone never refuses', () => {
     const out = select([paced('a,b', 200), paced('c,d', 120), paced('e,f', 101)])
     expect(out.outcome).toBe('routed')
-    expect(orderOf(out)).toEqual(['a,b', 'c,d', 'e,f'])
+    expect(orderOf(out)).toEqual(['e,f', 'c,d', 'a,b'])
+    expect(out.paced).toEqual({ promoted: [], steppedDown: ['a,b', 'c,d'] })
+  })
+
+  // One subscription's Opus and Sonnet share its 5h and weekly windows, so
+  // they always read the same pace. Over it, list order would keep Opus in
+  // front for good; the lower tier spends the shared budget more slowly.
+  test('over pace on one shared budget, the lower tier steps in front', () => {
+    const out = select([
+      candidate('claude-code,claude-opus-5-5', { route: 'claude-code · opus', targetTier: 'opus', projectedPct: 200 }),
+      candidate('claude-code,claude-sonnet-5', {
+        route: 'claude-code · sonnet',
+        targetTier: 'sonnet',
+        projectedPct: 200
+      })
+    ])
+    expect(orderOf(out)).toEqual(['claude-code,claude-sonnet-5', 'claude-code,claude-opus-5-5'])
+    expect(out.paced).toEqual({ promoted: [], steppedDown: ['claude-code · opus'] })
+  })
+
+  test('over pace on one shared budget, a lower tier already in front stays there', () => {
+    const out = select([
+      candidate('claude-code,claude-haiku-4-5', { targetTier: 'haiku', projectedPct: 200 }),
+      candidate('claude-code,claude-sonnet-5', { targetTier: 'sonnet', projectedPct: 200 })
+    ])
+    expect(orderOf(out)).toEqual(['claude-code,claude-haiku-4-5', 'claude-code,claude-sonnet-5'])
+    expect(out.paced).toEqual({ promoted: [], steppedDown: [] })
+  })
+
+  test('over pace on separate budgets, the one less over leads whatever its tier', () => {
+    // A lower tier on the budget further over would only run that one out sooner.
+    const out = select([
+      candidate('codex,gpt-5.5', { targetTier: 'opus', projectedPct: 110 }),
+      candidate('claude-code,claude-sonnet-5', { targetTier: 'sonnet', projectedPct: 250 })
+    ])
+    expect(orderOf(out)).toEqual(['codex,gpt-5.5', 'claude-code,claude-sonnet-5'])
     expect(out.paced).toEqual({ promoted: [], steppedDown: [] })
   })
 
@@ -184,6 +220,86 @@ describe('selectTierRoute: pace', () => {
       candidate('claude-code,claude-sonnet-5', { route: 'claude-code · sonnet', projectedPct: 20 })
     ])
     expect(out.paced).toEqual({ promoted: ['claude-code · sonnet'], steppedDown: ['claude-code · fable'] })
+  })
+})
+
+// Pace lowers the tier one step at most, and only from Fable or Opus. A
+// route of the same or a higher tier may always move ahead; the operator's
+// own order and the gates are not bound by this.
+describe('selectTierRoute: how far pace may step down', () => {
+  const at = (tier: TierCandidate['targetTier'], projectedPct: number | null, provider = 'claude-code') =>
+    candidate(`${provider},${tier}`, { route: `${provider} · ${tier}`, targetTier: tier, projectedPct })
+
+  test('Fable over pace steps down to Opus', () => {
+    const out = select([at('fable', 200), at('opus', null)])
+    expect(orderOf(out)).toEqual(['claude-code,opus', 'claude-code,fable'])
+    expect(out.paced).toEqual({ promoted: [], steppedDown: ['claude-code · fable'] })
+  })
+
+  test('Sonnet over pace does not step down to Haiku', () => {
+    const out = select([at('sonnet', 200), at('haiku', null, 'codex')])
+    expect(orderOf(out)).toEqual(['claude-code,sonnet', 'codex,haiku'])
+    expect(out.paced).toEqual({ promoted: [], steppedDown: [] })
+  })
+
+  test('Opus over pace does not skip Sonnet down to Haiku', () => {
+    const out = select([at('opus', 200), at('haiku', null, 'codex')])
+    expect(orderOf(out)).toEqual(['claude-code,opus', 'codex,haiku'])
+    expect(out.paced).toEqual({ promoted: [], steppedDown: [] })
+  })
+
+  test('Fable over pace does not skip Opus down to Sonnet', () => {
+    const out = select([at('fable', 200), at('sonnet', null, 'codex')])
+    expect(orderOf(out)).toEqual(['claude-code,fable', 'codex,sonnet'])
+    expect(out.paced).toEqual({ promoted: [], steppedDown: [] })
+  })
+
+  test('with all three over on one budget, Opus leads and Sonnet never passes Fable', () => {
+    const out = select([at('fable', 200), at('opus', 200), at('sonnet', 200)])
+    expect(orderOf(out)).toEqual(['claude-code,opus', 'claude-code,fable', 'claude-code,sonnet'])
+    expect(out.paced).toEqual({ promoted: [], steppedDown: ['claude-code · fable'] })
+  })
+
+  test('a lower tier with quota to spare is promoted one step down from Opus, not two', () => {
+    const oneStep = select([at('opus', null), at('sonnet', 10, 'codex')])
+    expect(orderOf(oneStep)).toEqual(['codex,sonnet', 'claude-code,opus'])
+    expect(oneStep.paced).toEqual({ promoted: ['codex · sonnet'], steppedDown: [] })
+
+    const twoSteps = select([at('opus', null), at('haiku', 10, 'codex')])
+    expect(orderOf(twoSteps)).toEqual(['claude-code,opus', 'codex,haiku'])
+    expect(twoSteps.paced).toEqual({ promoted: [], steppedDown: [] })
+  })
+
+  test('a Sonnet over pace still moves behind another Sonnet: the tier does not change', () => {
+    const out = select([at('sonnet', 150), at('sonnet', 90, 'codex')])
+    expect(orderOf(out)).toEqual(['codex,sonnet', 'claude-code,sonnet'])
+    expect(out.paced).toEqual({ promoted: [], steppedDown: ['claude-code · sonnet'] })
+  })
+
+  test('a higher tier may always move ahead', () => {
+    const out = select([at('haiku', 150), at('fable', 10)])
+    expect(orderOf(out)).toEqual(['claude-code,fable', 'claude-code,haiku'])
+    expect(out.paced).toEqual({ promoted: ['claude-code · fable'], steppedDown: ['claude-code · haiku'] })
+  })
+
+  // The table in routing.md: pace steps down only to a route the list has.
+  test('a list of Fable and Opus alone never reaches Sonnet', () => {
+    const think = (fable: number, opus: number, exhausted: string[] = []) =>
+      orderOf(select([at('fable', fable), at('opus', opus)], { isExhausted: (t) => exhausted.includes(t) }))
+    expect(think(80, 200)).toEqual(['claude-code,fable', 'claude-code,opus'])
+    expect(think(200, 80)).toEqual(['claude-code,opus', 'claude-code,fable'])
+    expect(think(150, 200)).toEqual(['claude-code,fable', 'claude-code,opus'])
+    expect(think(200, 200)).toEqual(['claude-code,opus', 'claude-code,fable'])
+    expect(think(200, 200, ['claude-code,fable'])).toEqual(['claude-code,opus'])
+    const spent = select([at('fable', 200), at('opus', 200)], { isExhausted: () => true })
+    expect(spent).toMatchObject({ outcome: 'exhausted', primary: null, fallbacks: [] })
+  })
+
+  test('a gate still reaches any tier: the limit binds pace alone', () => {
+    const out = select([at('opus', 50), at('haiku', null, 'codex')], {
+      isExhausted: (t) => t === 'claude-code,opus'
+    })
+    expect(orderOf(out)).toEqual(['codex,haiku'])
   })
 })
 

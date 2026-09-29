@@ -9,13 +9,12 @@
  */
 
 import { cn } from 'cn'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { Pill, RButton } from '@/components/rialto/primitives'
 import { api, type HealthResponse } from '@/lib/api'
+import { canServe, pollDelay, shouldRetryConfig } from './health-poll'
 import { SystemPage } from './SystemPage'
-
-const POLL_MS = 5000
 
 type CheckState = HealthResponse['checks'][string]
 
@@ -129,29 +128,44 @@ export function ApiUnreachable({ probe, onRetry }: { probe: Probe | null; onRetr
  */
 export function ApiUnreachableScreen({ onRecovered }: { onRecovered?: () => void }) {
   const [probe, setProbe] = useState<Probe | null>(null)
+  // Read through a ref so a caller's new callback identity does not
+  // restart the poll. It used to: every failed retry re-rendered the
+  // caller, the new callback restarted the effect, and the restart probed
+  // at once, which made the poll a loop with no delay in it.
+  const recovered = useRef(onRecovered)
+  useEffect(() => {
+    recovered.current = onRecovered
+  }, [onRecovered])
 
   useEffect(() => {
-    const mounted = { value: true }
+    const poll: { mounted: boolean; attempt: number; couldServe: boolean; timer?: ReturnType<typeof setTimeout> } = {
+      mounted: true,
+      attempt: 0,
+      couldServe: false
+    }
     const run = () => {
       // Deliberately floating. `probeHealth` resolves either way — its own
       // try/catch turns a rejection into `{ health: null, detail }`, which
       // is the failure this screen exists to render — so a `.catch` here
       // would be unreachable rather than a missing one.
       void probeHealth().then((next) => {
-        if (!mounted.value) return
+        if (!poll.mounted) return
         setProbe(next)
-        // The server is answering again, so the fetch that put us here is
-        // worth repeating. Whoever mounted this owns what "retry" means.
-        if (next.health !== null && onRecovered !== undefined) onRecovered()
+        // The server can serve again, so the fetch that put us here is
+        // worth repeating, once. Whoever mounted this owns what "retry" means.
+        const canServeNow = canServe(next.health)
+        if (shouldRetryConfig(poll.couldServe, canServeNow) && recovered.current !== undefined) recovered.current()
+        poll.couldServe = canServeNow
+        poll.timer = setTimeout(run, pollDelay(poll.attempt))
+        poll.attempt += 1
       })
     }
     run()
-    const timer = setInterval(run, POLL_MS)
     return () => {
-      mounted.value = false
-      clearInterval(timer)
+      poll.mounted = false
+      clearTimeout(poll.timer)
     }
-  }, [onRecovered])
+  }, [])
 
   return (
     <SystemPage>
