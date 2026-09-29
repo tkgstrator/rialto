@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  capPct,
   emptyPlanDraft,
   groupTargets,
   modelOf,
@@ -65,11 +64,5 @@ describe('plan draft', () => {
     const reordered = { ...planDraftOf(FREE), models: [...FREE.models].reverse() }
     expect(planDraftChanged(reordered, FREE)).toBe(false)
     expect(planDraftChanged({ ...planDraftOf(FREE), cap: '150' }, FREE)).toBe(true)
-  })
-
-  test('measures a device against its cap, and not at all without one', () => {
-    expect(capPct(37, 100)).toBe(37)
-    expect(capPct(140, 100)).toBe(100)
-    expect(capPct(5, null)).toBeNull()
   })
 })

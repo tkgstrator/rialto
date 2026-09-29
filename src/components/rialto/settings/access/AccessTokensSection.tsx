@@ -95,7 +95,7 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
 
   const load = useCallback(() => {
     api
-      .getAccessTokens('manual')
+      .getAccessTokens()
       .then((res) => {
         setTokens(res.tokens)
         setNow(Date.now())

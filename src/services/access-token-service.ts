@@ -61,8 +61,6 @@ export interface AccessTokenRow {
   createdAt: string
   /** The plan this token spends under. Null = unrestricted. */
   plan: { id: string; name: string } | null
-  /** The authorized app whose install minted this token, if one did. */
-  app: { id: string; name: string } | null
 }
 
 export { SPEND_WINDOW_DAYS, sumSpendByToken, sumTokensByToken } from './access-token-spend'
@@ -107,10 +105,9 @@ export interface TokenPlan {
   dailyRequestLimit: number | null
 }
 
-// The relations every wire row carries: which plan, and which app minted it.
+// The relation every wire row carries: which plan the token spends under.
 const WIRE_INCLUDE = {
-  plan: { select: { id: true, name: true } },
-  device: { select: { authorizedApp: { select: { id: true, name: true } } } }
+  plan: { select: { id: true, name: true } }
 } as const
 
 const toWire = (
@@ -127,7 +124,6 @@ const toWire = (
     rotatedAt: Date | null
     createdAt: Date
     plan?: { id: string; name: string } | null
-    device?: { authorizedApp: { id: string; name: string } } | null
   },
   totals: TokenWindowTotals | undefined = undefined
 ): AccessTokenRow => ({
@@ -145,33 +141,12 @@ const toWire = (
   revokedAt: row.revokedAt === null ? null : row.revokedAt.toISOString(),
   rotatedAt: row.rotatedAt === null ? null : row.rotatedAt.toISOString(),
   createdAt: row.createdAt.toISOString(),
-  plan: row.plan === undefined || row.plan === null ? null : { id: row.plan.id, name: row.plan.name },
-  app:
-    row.device === undefined || row.device === null
-      ? null
-      : { id: row.device.authorizedApp.id, name: row.device.authorizedApp.name }
+  plan: row.plan === undefined || row.plan === null ? null : { id: row.plan.id, name: row.plan.name }
 })
 
-/**
- * Every token, or with `manualOnly` just the hand-issued ones.
- *
- * The Tokens tab asks for the hand-issued ones: tokens an app install
- * minted for itself are listed per app instead (authorized-app-service) —
- * there can be thousands, and mixed in they would bury the dozen an
- * operator looks after. Activity still reads them all, because its spend
- * shares have to add up to what the window actually cost.
- */
-export async function listAccessTokens({
-  manualOnly = false
-}: {
-  manualOnly?: boolean
-} = {}): Promise<AccessTokenRow[]> {
+export async function listAccessTokens(): Promise<AccessTokenRow[]> {
   const [rows, spend] = await Promise.all([
-    getPrismaClient().accessToken.findMany({
-      ...(manualOnly ? { where: { device: { is: null } } } : {}),
-      orderBy: { createdAt: 'desc' },
-      include: WIRE_INCLUDE
-    }),
+    getPrismaClient().accessToken.findMany({ orderBy: { createdAt: 'desc' }, include: WIRE_INCLUDE }),
     spendByToken()
   ])
   return rows.map((row) => toWire(row, spend.get(row.id)))
@@ -352,8 +327,7 @@ export async function resolveAccessToken(presented: string): Promise<ResolvedTok
     .accessToken.findUnique({
       where: { tokenHash: hash },
       include: {
-        plan: { select: { models: true, defaultModel: true, dailyRequestLimit: true } },
-        device: { select: { authorizedApp: { select: { enabled: true } } } }
+        plan: { select: { models: true, defaultModel: true, dailyRequestLimit: true } }
       }
     })
     .catch(() => null)
@@ -361,8 +335,6 @@ export async function resolveAccessToken(presented: string): Promise<ResolvedTok
   const usable =
     row !== null &&
     row.revokedAt === null &&
-    // An app switched off takes every token its installs minted with it.
-    (row.device === null || row.device.authorizedApp.enabled) &&
     (row.expiresAt === null || row.expiresAt.getTime() > Date.now()) &&
     // Constant-time compare of the digests. findUnique already matched
     // on the hash, so this guards only against a storage-layer surprise
