@@ -23,50 +23,41 @@ import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-
 import { api, type PlanWire } from '@/lib/api'
 import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
 import { fmtCount } from '@/lib/rialto/format'
-import { emptyPlanDraft, LIMIT_FIELDS, type PlanDraft, planDraftOf, planInputOf } from '@/lib/rialto/settings/plans'
-import { fmtCost } from '@/lib/sessions/format'
+import { emptyPlanDraft, type PlanDraft, planDraftOf, planInputOf } from '@/lib/rialto/settings/plans'
+import { fmtUsd } from '@/lib/rialto/settings/usage-windows'
 
-type PlanSortKey = 'name' | 'models' | 'limits' | 'tokens'
+type PlanSortKey = 'name' | 'models' | 'fiveHour' | 'sevenDay' | 'tokens'
 
 const planSortValue = (plan: PlanWire, key: PlanSortKey): SortValue => {
   if (key === 'name') return plan.name
   if (key === 'models') return plan.models.length
-  // Fewer limits set is the more generous plan; none at all is unrestricted.
-  if (key === 'limits') return -LIMIT_FIELDS.filter((field) => plan[field] !== null).length
+  // A window sorts by its request limit, the cell's first line. No limit
+  // is null, which the sort keeps below every number in either direction.
+  if (key === 'fiveHour') return plan.fiveHourRequestLimit
+  if (key === 'sevenDay') return plan.sevenDayRequestLimit
   return plan.tokenCount
 }
 
-/** "100 req · $5" for one window, or null when that window has no limit. */
-function windowLimitText(requests: number | null, spendUsd: number | null, requestsLabel: string): string | null {
-  const parts = [
-    ...(requests === null ? [] : [`${fmtCount(requests)} ${requestsLabel}`]),
-    ...(spendUsd === null ? [] : [fmtCost(spendUsd)])
-  ]
-  return parts.length === 0 ? null : parts.join(' · ')
-}
-
-/** Each window's limits on its own line, or "no limit" when the plan sets none. */
-function LimitsCell({ plan }: { plan: PlanWire }) {
+/**
+ * One window's two limits, a line each: requests over spend. Each says
+ * "No … limit" in words rather than leaving a blank, because a blank
+ * cell reads as a value that failed to load.
+ */
+function WindowCell({ requests, spendUsd }: { requests: number | null; spendUsd: number | null }) {
   const { t } = useTranslation()
-  const lines = [
-    {
-      label: '5h',
-      text: windowLimitText(plan.fiveHourRequestLimit, plan.fiveHourSpendLimitUsd, t('access.plans.req'))
-    },
-    { label: '7d', text: windowLimitText(plan.sevenDayRequestLimit, plan.sevenDaySpendLimitUsd, t('access.plans.req')) }
-  ].filter((line) => line.text !== null)
-  if (lines.length === 0) {
-    return <span className='text-[12px] text-muted-foreground/50'>{t('access.plans.noLimit')}</span>
-  }
   return (
-    <div className='space-y-0.5'>
-      {lines.map((line) => (
-        <div key={line.label}>
-          <span className='text-muted-foreground'>{line.label} </span>
-          {line.text}
-        </div>
-      ))}
-    </div>
+    <>
+      <div>
+        {requests === null ? (
+          <span className='text-muted-foreground'>{t('access.plans.noRequestLimit')}</span>
+        ) : (
+          t('access.plans.windowRequests', { n: requests.toLocaleString('en-US') })
+        )}
+      </div>
+      <div className='text-muted-foreground'>
+        {spendUsd === null ? t('access.plans.noSpendLimit') : t('access.plans.windowSpend', { usd: fmtUsd(spendUsd) })}
+      </div>
+    </>
   )
 }
 
@@ -96,10 +87,11 @@ function PlanTable({ plans, onOpen }: { plans: PlanWire[]; onOpen: (plan: PlanWi
   return (
     <table className='w-full table-fixed'>
       <colgroup>
-        <col className='w-32' />
-        <col />
-        <col className='w-48' />
         <col className='w-24' />
+        <col />
+        <col className='w-40' />
+        <col className='w-40' />
+        <col className='w-20' />
         <col className='w-10' />
       </colgroup>
       <thead>
@@ -110,8 +102,11 @@ function PlanTable({ plans, onOpen }: { plans: PlanWire[]; onOpen: (plan: PlanWi
           <SortTh sortKey='models' sort={sort} className='px-3 text-left'>
             {t('access.plans.colModels')}
           </SortTh>
-          <SortTh sortKey='limits' sort={sort} className='px-3 text-right' align='right'>
-            {t('access.plans.colLimits')}
+          <SortTh sortKey='fiveHour' sort={sort} className='px-3 text-right' align='right'>
+            {t('access.plans.col5h')}
+          </SortTh>
+          <SortTh sortKey='sevenDay' sort={sort} className='px-3 text-right' align='right'>
+            {t('access.plans.col7d')}
           </SortTh>
           <SortTh sortKey='tokens' sort={sort} className='px-3 text-right' align='right'>
             {t('access.plans.colTokens')}
@@ -131,7 +126,10 @@ function PlanTable({ plans, onOpen }: { plans: PlanWire[]; onOpen: (plan: PlanWi
               <ModelsCell plan={plan} />
             </td>
             <td className='px-3 text-right font-mono text-xs tabular-nums'>
-              <LimitsCell plan={plan} />
+              <WindowCell requests={plan.fiveHourRequestLimit} spendUsd={plan.fiveHourSpendLimitUsd} />
+            </td>
+            <td className='px-3 text-right font-mono text-xs tabular-nums'>
+              <WindowCell requests={plan.sevenDayRequestLimit} spendUsd={plan.sevenDaySpendLimitUsd} />
             </td>
             <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtCount(plan.tokenCount)}</td>
             <td className='py-2.5 pl-3 pr-6'>
@@ -158,12 +156,21 @@ export function AccessPlans() {
   const [plans, setPlans] = useState<PlanWire[]>([])
   const [editing, setEditing] = useState<Editing | null>(null)
   const [saving, setSaving] = useState(false)
+  // Tokens with no plan, for the summary's "N without". Null until the
+  // token list answers; the summary then leaves the count out.
+  const [withoutPlan, setWithoutPlan] = useState<number | null>(null)
 
   const load = useCallback(() => {
     api
       .getPlans()
       .then((res) => setPlans(res.plans))
       .catch((e: Error) => toast.error(t('access.plans.listFailed', { message: e.message })))
+    // Counted over every row, revoked ones included, the same rows a
+    // plan's own token count covers, so the two halves add up.
+    api
+      .getAccessTokens()
+      .then((res) => setWithoutPlan(res.tokens.filter((token) => token.plan === null).length))
+      .catch(() => setWithoutPlan(null))
   }, [t])
 
   useEffect(load, [load])
@@ -219,7 +226,11 @@ export function AccessPlans() {
     <Screen subtitle={t('access.plans.subtitle')}>
       <AccessTabs active='plans' />
       <SectionHead
-        meta={t('access.plans.summary', { n: plans.length, tokens: fmtCount(onPlan) })}
+        meta={t(onPlan === 1 ? 'access.plans.summaryOneToken' : 'access.plans.summary', {
+          n: plans.length,
+          onPlan: fmtCount(onPlan),
+          without: withoutPlan === null ? '–' : fmtCount(withoutPlan)
+        })}
         actions={
           <RButton
             variant='primary'

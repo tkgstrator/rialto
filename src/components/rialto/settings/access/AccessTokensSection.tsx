@@ -33,7 +33,6 @@ import { ANY, scopeForWire } from '@/components/rialto/settings/access/pickers'
 import { TokenTable } from '@/components/rialto/settings/access/TokenTable'
 import { SectionHead } from '@/components/rialto/settings/fields'
 import { type AccessTokenWire, api, type InboundSurfaceWire, type PlanWire } from '@/lib/api'
-import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
 import { countTokens, expiryToIso, type TokenCounts, tokenState } from '@/lib/rialto/settings/access-tokens'
 
 interface Revealed {
@@ -92,6 +91,7 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
   const [issuing, setIssuing] = useState(false)
   const [showRevoked, setShowRevoked] = useState(false)
   const [resetting, setResetting] = useState(false)
+  const [allReset, setAllReset] = useState(false)
   const { confirm, dialog: confirmDialog } = useConfirm()
   // Pinned per load so every relative label on the page measures from
   // the same instant, and so an expiry cannot flip mid-render.
@@ -155,12 +155,18 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
   }
 
   // Every token's usage windows at once. Asked first, because it hands
-  // every limited client its full allowance back in one click.
+  // every limited client its full allowance back in one click. The answer
+  // stays on the page as the line under the table rather than a toast:
+  // nothing in the table changes (its totals are history), so the line is
+  // the only place the reset shows at all.
   const resetAll = async () => {
-    const { title, description } = splitConfirmMessage(t('access.token.resetAllConfirm'))
     const confirmed = await confirm({
-      title,
-      description,
+      title: t('access.token.resetAllTitle'),
+      description: [
+        { text: t('access.token.resetAllBody') },
+        { text: t('access.token.resetAllWarning'), tone: 'destructive' },
+        { text: t('access.token.resetAllKeeps') }
+      ],
       confirmLabel: t('access.token.resetAll'),
       icon: 'ri-restart-line'
     })
@@ -168,7 +174,7 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
     setResetting(true)
     api
       .resetAllUsageWindows()
-      .then(() => toast.success(t('access.token.allReset')))
+      .then(() => setAllReset(true))
       .catch((e: Error) => toast.error(t('access.token.resetFailed', { message: e.message })))
       .finally(() => setResetting(false))
   }
@@ -186,14 +192,9 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
           <Summary counts={counts} showRevoked={showRevoked} onToggleRevoked={() => setShowRevoked(!showRevoked)} />
         }
         actions={
-          <>
-            <RButton variant='ghost' icon='ri-restart-line' onClick={resetAll} disabled={resetting}>
-              {t('access.token.resetAll')}
-            </RButton>
-            <RButton variant='primary' icon='ri-add-line' onClick={() => setDraft(emptyDraft())}>
-              {t('settings.access.issueToken')}
-            </RButton>
-          </>
+          <RButton variant='primary' icon='ri-add-line' onClick={() => setDraft(emptyDraft())}>
+            {t('settings.access.issueToken')}
+          </RButton>
         }
       />
 
@@ -208,6 +209,21 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
       </div>
 
       <TokenTable tokens={listed} surfaces={surfaces} now={now} />
+
+      {/* Quiet and below the table, away from Issue token: it acts on every
+          token and plan at once, including rows folded away, and the page's
+          primary action should not sit beside it. The table keeps its
+          historical columns; the current windows are on each token's page. */}
+      <div className='flex items-center gap-3 border-t border-border/60 px-6 py-4'>
+        <span className='text-[12px] text-muted-foreground'>
+          {t(allReset ? 'access.token.allResetNote' : 'access.token.listWindowsNote')}
+        </span>
+        <div className='ml-auto shrink-0'>
+          <RButton variant='ghost' icon='ri-restart-line' onClick={resetAll} disabled={resetting}>
+            {t('access.token.resetAll')}
+          </RButton>
+        </div>
+      </div>
 
       {/* Both steps of issuing are modals over that table, and nothing
           above moves to make room for them. Naming a token is decided

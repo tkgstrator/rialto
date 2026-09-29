@@ -93,20 +93,68 @@ export const planDraftOf = (plan: PlanInputWire): PlanDraft => ({
 })
 
 /**
- * Tick or untick a model, keeping the default one of the ticked ones.
+ * The default survives only while it is allowed.
  *
- * The first model ticked becomes the default, and unticking the default
- * hands it to the first model left: a plan saved with a default outside
- * its list is refused by the server, so the dialog never offers one.
+ * Every bulk and single change runs through this: a change that removes
+ * the default clears it rather than handing it to another model, because
+ * the default is where every unlisted request goes and silently moving it
+ * could move a plan onto a costlier model. Save stays disabled until the
+ * operator picks one again.
  */
+const keepDefault = (draft: PlanDraft, models: string[]): PlanDraft => ({
+  ...draft,
+  models,
+  defaultModel: models.includes(draft.defaultModel) ? draft.defaultModel : ''
+})
+
+/** Tick or untick one model. Never picks a default. */
 export function toggleModel(draft: PlanDraft, target: string): PlanDraft {
   if (draft.models.includes(target)) {
-    const models = draft.models.filter((m) => m !== target)
-    const defaultModel = draft.defaultModel === target ? (models.length === 0 ? '' : models[0]) : draft.defaultModel
-    return { ...draft, models, defaultModel }
+    return keepDefault(
+      draft,
+      draft.models.filter((m) => m !== target)
+    )
   }
-  const models = [...draft.models, target]
-  return { ...draft, models, defaultModel: draft.defaultModel === '' ? target : draft.defaultModel }
+  return keepDefault(draft, [...draft.models, target])
+}
+
+/** Make an allowed model the default. A model not on the list cannot be one. */
+export const chooseDefault = (draft: PlanDraft, target: string): PlanDraft =>
+  draft.models.includes(target) ? { ...draft, defaultModel: target } : draft
+
+/**
+ * Allow every model of every provider. Keeps the current default but never
+ * chooses one: with none set, the operator still picks it explicitly.
+ */
+export function selectAllModels(draft: PlanDraft, groups: readonly ProviderGroup[]): PlanDraft {
+  const all = groups.flatMap((group) => group.targets)
+  return keepDefault(draft, [...draft.models, ...all.filter((target) => !draft.models.includes(target))])
+}
+
+/** Allow nothing, across every provider. The default goes with the list. */
+export const clearModels = (draft: PlanDraft): PlanDraft => keepDefault(draft, [])
+
+/** How much of one provider is allowed, for its tri-state header checkbox. */
+export type ProviderSelection = 'all' | 'some' | 'none'
+
+export function providerSelection(draft: PlanDraft, group: ProviderGroup): ProviderSelection {
+  const picked = group.targets.filter((target) => draft.models.includes(target)).length
+  if (picked === 0) return 'none'
+  return picked === group.targets.length ? 'all' : 'some'
+}
+
+/**
+ * The provider header checkbox: all of it allowed becomes none of it, and
+ * anything less becomes all of it. Other providers are left as they are.
+ */
+export function toggleProvider(draft: PlanDraft, group: ProviderGroup): PlanDraft {
+  if (providerSelection(draft, group) === 'all') {
+    return keepDefault(
+      draft,
+      draft.models.filter((target) => !group.targets.includes(target))
+    )
+  }
+  return keepDefault(draft, [...draft.models, ...group.targets.filter((target) => !draft.models.includes(target))])
 }
 
 export type LimitReading = { ok: true; value: number | null } | { ok: false }

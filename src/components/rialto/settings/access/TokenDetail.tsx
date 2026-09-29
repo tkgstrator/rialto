@@ -35,12 +35,13 @@ import { IssuedTokenDialog } from '@/components/rialto/settings/access/IssuedTok
 import { ANY, Picker, SurfacePicker, sameScope, scopeForWire } from '@/components/rialto/settings/access/pickers'
 import { TokenDetailHeader } from '@/components/rialto/settings/access/TokenDetailHeader'
 import { TokenReadings } from '@/components/rialto/settings/access/TokenReadings'
-import { TokenUsageWindows } from '@/components/rialto/settings/access/TokenUsageWindows'
+import { TokenUsageWindows, useTokenUsageWindows } from '@/components/rialto/settings/access/TokenUsageWindows'
 import { SettingsField } from '@/components/rialto/settings/SettingsLayout'
 import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
 import { type AccessTokenWire, api, type PlanWire } from '@/lib/api'
 import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
 import { tokenState } from '@/lib/rialto/settings/access-tokens'
+import { usageBlocked, usageWindowsView } from '@/lib/rialto/settings/usage-windows'
 
 const BACK = '/access-tokens'
 
@@ -208,6 +209,7 @@ export function TokenDetail() {
   // return between renders would change the hook order.
   const dirty = token !== null && draft !== null && draftChanged(draft, token)
   const unsavedDialog = useUnsavedGuard(dirty)
+  const { usage, setUsage } = useTokenUsageWindows(token)
 
   const save = () => {
     if (token === null || draft === null) return
@@ -249,6 +251,9 @@ export function TokenDetail() {
   }
 
   const state = tokenState(token, now)
+  // Read from the saved plan, not the draft: the windows are what the
+  // gate applies now, and an unsaved plan choice applies nothing yet.
+  const windows = usageWindowsView(token.plan === null ? null : token.plan.name, usage)
   const editable = state === 'active'
   // The token's own plan stays selectable even if the plans list failed to load.
   const own = token.plan
@@ -260,6 +265,7 @@ export function TokenDetail() {
         <TokenDetailHeader
           token={token}
           state={state}
+          usageBlocked={usageBlocked(windows)}
           busy={busy}
           onRotate={rotate}
           onRevoke={revoke}
@@ -313,7 +319,7 @@ export function TokenDetail() {
           </Picker>
         </SettingsField>
 
-        <TokenUsageWindows token={token} />
+        <TokenUsageWindows token={token} view={windows} now={now} onReset={setUsage} />
 
         <TokenReadings token={token} now={now} />
 

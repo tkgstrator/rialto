@@ -50,8 +50,8 @@ Claude / Codex のサブスクリプションの枠と同じ形で、スライ�
 
 ## リセット
 
-- トークン 1 本: `POST /api/access-tokens/{id}/usage-windows/reset`。トークンの詳細ページの「利用量をリセット」。
-- 全トークン: `POST /api/access-tokens/usage-windows/reset`。Access tokens 一覧の「すべての利用量をリセット」。
+- トークン 1 本: `POST /api/access-tokens/{id}/usage-windows/reset`。トークンの詳細ページ、「利用枠」の下の「利用量をリセット」（枠が始まっていなければ出ない）。
+- 全トークン: `POST /api/access-tokens/usage-windows/reset`。Access tokens 一覧の表の下の「全員の利用量をリセット」。
 
 どちらも枠の行を消すだけで、プランは変わらない。次のリクエストで新しい枠が始まる。
 現在の値は `GET /api/access-tokens/{id}/usage-windows` と、Codex MCP の `status` ツールの `yourToken.windows` で読める。
