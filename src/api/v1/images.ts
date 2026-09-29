@@ -5,7 +5,7 @@ import { getPrismaClient } from '../../db/client'
 import { AuthMode } from '../../generated/prisma/client'
 import dayjs from '../../lib/dayjs'
 import { fetchProvider } from '../../llms/provider-fetch'
-import { CODEX_USER_AGENT } from '../../llms/transformers/openai/codex-oauth'
+import { CODEX_ORIGINATOR, CODEX_USER_AGENT } from '../../llms/transformers/openai/codex-oauth'
 import { logger } from '../../logger'
 import { ensureFreshCodexAccessToken } from '../../services/codex-auth/token'
 import { clearAccountExhaustion, markAccountExhausted } from '../../services/failover-state'
@@ -221,7 +221,7 @@ async function sendImage(url: string, body: ImageInput, target: ImageTarget, acc
     headers: {
       Authorization: `Bearer ${token}`,
       ...(account.accountId === null ? {} : { 'chatgpt-account-id': account.accountId }),
-      originator: 'codex_cli',
+      originator: CODEX_ORIGINATOR,
       'user-agent': CODEX_USER_AGENT,
       'x-client-request-id': randomUUID(),
       accept: 'application/json'

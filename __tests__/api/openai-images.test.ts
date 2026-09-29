@@ -123,7 +123,7 @@ describe.skipIf(!HAS_DB)('POST /v1/images/generations', () => {
     expect(calls[0].url).toBe(ENDPOINT)
     expect(calls[0].headers.get('authorization')).toBe('Bearer oauth-a')
     expect(calls[0].headers.get('chatgpt-account-id')).toBe('account-a')
-    expect(calls[0].headers.get('originator')).toBe('codex_cli')
+    expect(calls[0].headers.get('originator')).toBe('codex_exec')
     expect(calls[0].body).toEqual({ model: MODEL, prompt: 'A paper lantern', size: '1024x1024' })
     const logs = await getPrismaClient().requestLog.findMany()
     expect(logs).toHaveLength(1)

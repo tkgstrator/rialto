@@ -91,9 +91,12 @@ export const UnifiedMessageSchema = z.object({
   // predates custom tools.
   tool_call_type: z.enum(['function', 'custom']).optional(),
   cache_control: z.object({ type: z.string().nonempty().optional() }).optional(),
+  // `content` may be empty when the signature is the point: Codex asked for
+  // no reasoning summary (its CLI's default) still returns the reasoning
+  // itself, encrypted, and the next turn has to hand it back.
   thinking: z
     .object({
-      content: z.string().nonempty(),
+      content: z.string().min(0),
       signature: z.string().nonempty().optional()
     })
     .optional()

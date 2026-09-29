@@ -312,7 +312,13 @@ describe.skipIf(!HAS_DB)('Codex MCP server at /codex', () => {
 
     expect(upstream).toHaveLength(1)
     expect(upstream[0].url).toBe(`${BASE}/responses`)
-    expect(upstream[0].body.instructions).toBe('Be terse')
+    // An ask's instructions are a role for Codex to take, which the Codex
+    // CLI sends as developer instructions: the first input message.
+    expect(upstream[0].body.input).toContainEqual({
+      type: 'message',
+      role: 'developer',
+      content: [{ type: 'input_text', text: 'Be terse' }]
+    })
 
     const row = await logRowFor(issued.id)
     expect(row?.surface).toBe('codex-mcp')
@@ -323,12 +329,13 @@ describe.skipIf(!HAS_DB)('Codex MCP server at /codex', () => {
     expect(second.isError).toBeUndefined()
     const input = upstream[1].body.input
     expect(Array.isArray(input) ? input.map((m: { role: string }) => m.role) : input).toEqual([
+      'developer',
       'user',
       'assistant',
       'user'
     ])
     // The thread's instructions carry over without being sent again.
-    expect(upstream[1].body.instructions).toBe('Be terse')
+    expect(Array.isArray(input) ? input[0].content : input).toEqual([{ type: 'input_text', text: 'Be terse' }])
 
     const stranger = await issue(['codex-mcp'])
     const refused = await callTool(stranger.plaintext, 'ask', { prompt: 'hi', thread_id: threadId })

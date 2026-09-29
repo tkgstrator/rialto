@@ -4,7 +4,7 @@
  * session id for a given request).
  *
  * Order of preference:
- *   1. `thread_id` header
+ *   1. `thread-id` / `thread_id` header (Codex CLI)
  *   2. `x-claude-code-session-id` header
  *   3. the session id inside the request body's `metadata.user_id`
  *      (Claude Code sends it there as a JSON blob, or the legacy
@@ -58,7 +58,9 @@ function sessionFromBody(body: unknown): string | undefined {
  */
 export function sessionIdFromRequest(headers: Record<string, string> | undefined, body: unknown): string | undefined {
   const h = headers !== undefined ? headers : {}
-  const threadId = typeof h.thread_id === 'string' ? h.thread_id : undefined
+  // Codex CLI 0.158 spells it `thread-id`; earlier releases, and the Codex
+  // MCP server's in-process requests, `thread_id`.
+  const threadId = [h['thread-id'], h.thread_id].find((value) => typeof value === 'string' && value.length > 0)
   if (threadId) return threadId
   const ccSession = typeof h['x-claude-code-session-id'] === 'string' ? h['x-claude-code-session-id'] : undefined
   if (ccSession) return ccSession

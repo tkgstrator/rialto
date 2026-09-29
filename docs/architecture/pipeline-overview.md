@@ -768,7 +768,7 @@ flowchart TD
 | `openai` / `openai-responses` | `/v1/chat/completions` および Responses API のリシェイプ。出力上限は面ごとに名前が違うので、unified の `max_tokens` から `openai` が `max_completion_tokens` (gpt-5 系)、`openai-responses` が `max_output_tokens` に付け替える |
 | `gemini` | Google Gemini 形式変換 |
 | `claude-code-oauth` | Anthropic 直叩き subscription。`auth()` で `.credentials.json` の bearer token 注入 |
-| `codex-oauth` | ChatGPT backend (codex) — openai-responses chain と組合せ |
+| `codex-oauth` | ChatGPT backend (codex) — openai-responses chain と組合せ。`openai-responses` が作った Responses の本文を、Codex CLI 0.158.0（`codex exec`）が送るのと同じ classic 形に直す: 呼び手の system は `input` 先頭の developer メッセージ（`instructions` は Responses の呼び手が書いたときだけそれ、他は中立の一文）、CLI が送るトップレベルの項目だけ、`include: reasoning.encrypted_content`、ヘッダと `client_metadata` も CLI のもの。暗号化 reasoning は thinking の signature に封入して往復させ、生んだアカウントにだけ戻す（`src/llms/utils/codex-reasoning.ts`）。CLI が `gpt-5.6-*` / `gpt-6-*` に送る Responses Lite の形はまだ再現していない。詳細は `src/llms/transformers/openai/codex/request-shape.ts` の冒頭 |
 
 登録されているのは**この6つで全部**である。`maxtoken` / `tooluse` / `reasoning` / `enhancetool`
 といった旧ベンダーコード由来のユーティリティ系 transformer は存在しない（吸収時に消えた）。
@@ -830,7 +830,7 @@ cache write のうち 1 時間 TTL の分は `cacheWrite1hTokens` に別に残�
 ### sessionId 解決
 
 `resolveSessionId(context)`:
-1. `headers.thread_id` (Codex)
+1. `headers['thread-id']` / `headers.thread_id` (Codex。0.158 はハイフンの綴り)
 2. `headers['x-claude-code-session-id']` (Claude Code)
 3. それ以外は `randomUUID()`
 

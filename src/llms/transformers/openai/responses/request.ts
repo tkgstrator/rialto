@@ -8,6 +8,7 @@
 
 import { isUnifiedFunctionTool, type UnifiedChatRequest } from '@/schemas/domain/unified'
 import type { ResponsesUnifiedChatRequest } from '@/schemas/wire/openai/responses'
+import { openCodexReasoning } from '../../../utils/codex-reasoning'
 import { isObject } from '../../../utils/guards'
 
 type MutableMessage = Record<string, unknown>
@@ -103,10 +104,44 @@ function normalizeRequestContent(
   return null
 }
 
-export function processNonSystemMessage(message: UnifiedChatRequest['messages'][number], input: unknown[]): void {
+// A reasoning item Codex produced, handed back ahead of the output it
+// preceded — where the Codex CLI replays it. Only to the provider that
+// produced it: that provider's codex-oauth step checks the account and
+// unseals it, so it stays sealed here (utils/codex-reasoning.ts). Any other
+// upstream could not decrypt it, and gets nothing.
+function replayedReasoning(
+  thinking: UnifiedChatRequest['messages'][number]['thinking'],
+  providerName: string | undefined
+): Record<string, unknown> | null {
+  if (thinking?.signature === undefined || providerName === undefined) return null
+  const sealed = openCodexReasoning(thinking.signature)
+  if (sealed === null || sealed.provider !== providerName) return null
+  return {
+    type: 'reasoning',
+    ...(sealed.id === undefined ? {} : { id: sealed.id }),
+    summary: thinking.content.length > 0 ? [{ type: 'summary_text', text: thinking.content }] : [],
+    content: null,
+    encrypted_content: thinking.signature
+  }
+}
+
+function hasContent(content: unknown): boolean {
+  return (typeof content === 'string' || Array.isArray(content)) && content.length > 0
+}
+
+export function processNonSystemMessage(
+  message: UnifiedChatRequest['messages'][number],
+  input: unknown[],
+  providerName?: string
+): void {
   // The message is already an object — narrow it for mutation without `as`.
   if (!isObject(message)) return
   const mutable: MutableMessage = message
+
+  if (message.role === 'assistant') {
+    const reasoning = replayedReasoning(message.thinking, providerName)
+    if (reasoning !== null) input.push(reasoning)
+  }
 
   if (Array.isArray(message.content)) {
     const convertedContent = message.content
@@ -138,6 +173,10 @@ export function processNonSystemMessage(message: UnifiedChatRequest['messages'][
   }
 
   if (message.role === 'assistant' && Array.isArray(message.tool_calls)) {
+    // What the turn said before calling its tools stays in its history,
+    // ahead of the calls, as the Codex CLI replays it. Only the calls used
+    // to be sent, so the model lost its own preamble on every later turn.
+    if (hasContent(mutable.content)) input.push({ role: 'assistant', content: mutable.content })
     message.tool_calls.forEach((tool) => {
       if (tool.type === 'custom') {
         input.push({
