@@ -14,6 +14,7 @@ import { getPrismaClient } from '../../db/client'
 import type { Prisma } from '../../generated/prisma/client'
 import { resetLlmsContext } from '../../llms'
 import { syncLoggerFromEnv } from '../../logger'
+import { captureModelCapabilities } from '../model-capability-service'
 import { applyProviders } from './apply/providers'
 import { RETIRED_ENVELOPE_KEYS } from './compose'
 import { applyEnvelopeToEnv, readRawConfigFile, writeConfigFile } from './envelope'
@@ -137,6 +138,8 @@ export async function applyUiConfig(payload: Record<string, unknown>): Promise<A
   // Force the llms context to rebuild on the next request so provider
   // and persona changes take effect immediately without a server restart.
   resetLlmsContext()
+  // A save can switch models on; record what they accept if still unknown.
+  if (incomingProviders !== undefined) void captureModelCapabilities()
 
   return { success: true, warnings }
 }

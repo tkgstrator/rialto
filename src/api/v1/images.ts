@@ -12,6 +12,7 @@ import { clearAccountExhaustion, markAccountExhausted } from '../../services/fai
 import { passthroughDenial } from '../../services/inbound-surface-service'
 import { releaseAccountForSession, resolveAccountForSession } from '../../services/session-account-router'
 import { getSubAccountTokensForProvider } from '../../services/subscription-account-sync-service'
+import { recordCallSpend } from '../../services/usage-window-service'
 import type { CODEX_MCP_SCOPE } from '../../shared/codex-mcp'
 import { CODEX_IMAGE_MODELS } from '../../shared/data/subscriptions'
 import { buildErrorEnvelope } from './error-shape'
@@ -149,6 +150,18 @@ async function recordImageUsage(input: {
   durationMs: number
   usage: { input: number; output: number }
 }): Promise<void> {
+  // Priced into the token's usage windows before the capture switch is
+  // read, for the same reason as on the completion path.
+  await recordCallSpend({
+    accessTokenId: input.caller.accessTokenId,
+    provider: input.provider,
+    model: input.model,
+    inputTokens: input.usage.input,
+    outputTokens: input.usage.output,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    cacheWrite1hTokens: 0
+  })
   if (process.env.CAPTURE_REQUESTS === 'false') return
   const prisma = getPrismaClient()
   await prisma.session.upsert({

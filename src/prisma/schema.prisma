@@ -319,7 +319,8 @@ model Model {
   // Codex models. Null = pass the request through untouched (vendor
   // default = 'medium'). Non-null values mirror the OpenAI OpenAPI
   // ReasoningEffort enum — 'none' | 'minimal' | 'low' | 'medium' |
-  // 'high' | 'xhigh' | 'max' — and are injected into the outgoing
+  // 'high' | 'xhigh' | 'max', plus Codex's 'ultra' above 'max' — and
+  // are injected into the outgoing
   // request's `reasoning_effort` (Chat Completions) or
   // `reasoning.effort` (Responses) at build time. Not every reasoning
   // model accepts every value; upstream 400s surface as request errors.
@@ -358,11 +359,42 @@ model Model {
   testError         String?
   preferenceEntries RouterPreferenceEntry[]
   tierAliases       ProviderTierAlias[]
+  capability        ModelCapability?
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
 
   @@unique([providerId, name])
   @@index([providerId])
+}
+
+// What a subscription model (claude-code, codex) accepts, read once. A
+// model id is a pinned snapshot, so its context window, effort levels and
+// `thinking` settings never change; only its price and whether it is
+// listed at all do, and those stay on the refresh. A row here means the
+// vendor's model list has been read for this model: the context window
+// went to Model.contextWindow at the same moment, where every reader
+// already looks, and no refresh overwrites it afterwards.
+// See src/services/model-capability-service.ts.
+model ModelCapability {
+  modelId              String    @id
+  model                Model     @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  // Effort levels the upstream accepts, low to high, from the vendor's
+  // own list (Anthropic GET /v1/models `capabilities.effort`, Codex
+  // `supported_reasoning_levels`). Empty = the model takes no effort.
+  // Validated by Zod, kept strings so a new level is a code change.
+  efforts              String[]
+  // Claude Code only: the efforts each "thinking off" setting was accepted
+  // with, where 'default' is a request that sends no effort. Neither the
+  // catalog nor /v1/models says whether a model takes `disabled` or
+  // `between_tools` (Sonnet 5 takes only the first, Sonnet 5.5 only the
+  // second), so each pair is sent to count_tokens, which validates them
+  // without running inference. Probed only once the model is switched on;
+  // thinkingProbedAt null = not probed, and `thinking` then goes upstream
+  // untouched.
+  thinkingProbedAt     DateTime?
+  thinkingDisabled     String[]  @default([])
+  thinkingBetweenTools String[]  @default([])
+  recordedAt           DateTime  @default(now())
 }
 
 // A named routing profile. One row per profile holds the constraint knobs
@@ -577,15 +609,14 @@ model AccessToken {
   revokedAt    DateTime?
   createdAt    DateTime                @default(now())
   // The plan this token spends under: which models it may use and how
-  // many completions a day. Null = unrestricted, as operator-issued tokens
-  // have always been. Referenced rather than copied, so editing a plan
-  // reaches every token on it at their next request. Restrict, because a
-  // plan deleted from under its tokens would silently lift their caps.
+  // much it may spend per 5-hour and 7-day window. Null = unrestricted, as
+  // operator-issued tokens have always been. Referenced rather than
+  // copied, so editing a plan reaches every token on it at their next
+  // request. Restrict, because a plan deleted from under its tokens would
+  // silently lift their limits.
   planId       String?
-  plan         Plan?                   @relation(fields: [planId], references: [id], onDelete: Restrict)
-  // Set when an app install minted this token for itself.
-  device       AppDevice?
-  dailyUsage   AccessTokenDailyUsage[]
+  plan         Plan?                    @relation(fields: [planId], references: [id], onDelete: Restrict)
+  usageWindows AccessTokenUsageWindow[]
 
   @@index([revokedAt])
   @@index([planId])
@@ -597,84 +628,50 @@ model AccessToken {
 // skipped, so a routed chain cannot pick a costlier target than the plan
 // lists.
 model Plan {
-  id                String          @id @default(cuid())
-  name              String          @unique
-  models            String[]
+  id                    String        @id @default(cuid())
+  name                  String        @unique
+  models                String[]
   // Always one of `models`; the service refuses a plan where it is not.
-  defaultModel      String
-  // Completions per UTC day, counted in AccessTokenDailyUsage. Null = no cap.
-  dailyRequestLimit Int?
-  tokens            AccessToken[]
-  apps              AuthorizedApp[]
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  defaultModel          String
+  // Limits per usage window, counted in AccessTokenUsageWindow. Each is
+  // independent and null = no limit on that axis. Requests count the
+  // completions admitted; spend is the USD Rialto prices those
+  // completions at (the same pricing as the token's Cost column), so an
+  // unpriced model — every subscription model — adds requests but no
+  // spend.
+  fiveHourRequestLimit  Int?
+  fiveHourSpendLimitUsd Float?
+  sevenDayRequestLimit  Int?
+  sevenDaySpendLimitUsd Float?
+  tokens                AccessToken[]
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
 }
 
-// An app whose installs may register themselves with Apple App Attest and
-// be handed a token each. The operator's whole decision about app traffic
-// lives on this row; nothing about it is read from the environment.
-model AuthorizedApp {
-  id               String      @id @default(cuid())
-  name             String
-  // `<Team ID>.<bundle id>`. The attestation's RP ID hash is the SHA-256 of
-  // this string, which is how a registration finds its app without the
-  // client naming one.
-  appleAppId       String      @unique
-  // Accept keys minted by development (Xcode) builds.
-  allowDevelopment Boolean     @default(false)
-  // Off stops new registrations and every token this app already issued.
-  // A switch rather than a delete, so the tokens and their RequestLog rows
-  // stay attributable and come back when it is turned on again.
-  enabled          Boolean     @default(true)
-  // The plan a new install's token is put on. Existing tokens keep theirs.
-  planId           String
-  plan             Plan        @relation(fields: [planId], references: [id], onDelete: Restrict)
-  devices          AppDevice[]
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
-}
-
-// Per-token request count for one UTC day, the ledger behind
-// AccessToken.dailyRequestLimit. One row per (token, day) that saw
-// traffic; old rows are harmless and can be pruned freely.
-model AccessTokenDailyUsage {
+// One token's usage in one window, the ledger behind a plan's limits.
+//
+// Windows work like the subscription quotas rather than sliding: a window
+// opens at the first request counted while none is open, and everything
+// in it is forgotten once `startedAt` + its length ('5h' or '7d') has
+// passed — the next request then opens a fresh one. So a row is only
+// "the current window" while it has not expired; an expired row is left
+// in place and overwritten by the next admission, never read as usage.
+//
+// Rows exist only for tokens on a plan with at least one limit; the
+// admin reset deletes them.
+model AccessTokenUsageWindow {
   accessTokenId String
   accessToken   AccessToken @relation(fields: [accessTokenId], references: [id], onDelete: Cascade)
-  // YYYY-MM-DD in UTC. A string rather than a date so the key the
-  // counter upserts on is exactly the value it was computed from.
-  day           String
+  // '5h' or '7d', validated by UsageWindowSchema.
+  window        String
+  startedAt     DateTime
+  // Completions admitted in this window.
   requests      Int         @default(0)
+  // USD priced so far. Added after each call completes, so the request
+  // that crosses a spend limit finishes and the next one is refused.
+  costUsd       Float       @default(0)
 
-  @@id([accessTokenId, day])
-}
-
-// An app install that proved itself with Apple App Attest and was handed
-// an access token. The attested public key is kept so a later request can
-// be verified with an App Attest assertion (key rotation, re-issue)
-// without attesting again — Apple rate-limits attestation, not assertion.
-model AppDevice {
-  id              String        @id @default(cuid())
-  // Base64 of the App Attest key identifier: the SHA-256 of the attested
-  // public key. Unique because one attested key must never mint two
-  // tokens.
-  keyId           String        @unique
-  // The attested P-256 public key, uncompressed point (65 bytes).
-  publicKey       Bytes
-  // App Attest sign counter, raised by every accepted assertion. 0 right
-  // after attestation.
-  signCount       Int           @default(0)
-  // 'production' or 'development', from the attestation's AAGUID. A
-  // development attestation comes from a debug build and is only
-  // accepted when the operator allows it.
-  environment     String
-  // The app this install proved itself as.
-  authorizedAppId String
-  authorizedApp   AuthorizedApp @relation(fields: [authorizedAppId], references: [id], onDelete: Restrict)
-  accessTokenId   String        @unique
-  accessToken     AccessToken   @relation(fields: [accessTokenId], references: [id], onDelete: Cascade)
-  createdAt       DateTime      @default(now())
-
-  @@index([authorizedAppId])
+  @@id([accessTokenId, window])
 }
 
 // Per-surface routing behaviour.

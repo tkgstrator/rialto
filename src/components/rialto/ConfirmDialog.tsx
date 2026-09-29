@@ -11,6 +11,7 @@
  * confirm({...}))) return` where `window.confirm` stood, plus rendering the
  * `dialog` the hook hands back.
  */
+
 import { AlertDialog } from 'radix-ui'
 import { type ReactNode, useCallback, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -23,11 +24,28 @@ import {
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
 
+/**
+ * One paragraph of a description that needs a paragraph set apart — the
+ * sentence saying what cannot be undone, in the foreground or in red.
+ */
+export interface ConfirmParagraph {
+  text: string
+  tone?: 'strong' | 'destructive'
+}
+
+const PARAGRAPH_TONE: Readonly<Record<NonNullable<ConfirmParagraph['tone']>, string>> = {
+  strong: 'font-medium text-foreground',
+  destructive: 'font-medium text-destructive'
+}
+
 export interface ConfirmRequest {
   /** Names the action, as a question: "Remove OpenAI?". */
   title: string
-  /** What goes with it, stated before the click. Blank lines separate paragraphs. */
-  description: string
+  /**
+   * What goes with it, stated before the click. Blank lines separate
+   * paragraphs; a list of paragraphs lets one of them carry a tone.
+   */
+  description: string | readonly ConfirmParagraph[]
   /** The button that does it — the same words as the one that opened the dialog. */
   confirmLabel: string
   /** Remix icon class for that button, when the opener had one. */
@@ -72,9 +90,24 @@ function ConfirmDialog({
             <AlertDialogTitle className='text-sm'>{request.title}</AlertDialogTitle>
             {/* pre-line: a warning appended after a blank line is a second
                 paragraph, and collapsing it into the first hid it. */}
-            <AlertDialogDescription className='whitespace-pre-line text-xs leading-relaxed'>
-              {request.description}
-            </AlertDialogDescription>
+            {typeof request.description === 'string' ? (
+              <AlertDialogDescription className='whitespace-pre-line text-xs leading-relaxed'>
+                {request.description}
+              </AlertDialogDescription>
+            ) : (
+              <AlertDialogDescription asChild className='space-y-3 text-xs leading-relaxed'>
+                <div>
+                  {request.description.map((paragraph) => (
+                    <p
+                      key={paragraph.text}
+                      className={paragraph.tone === undefined ? '' : PARAGRAPH_TONE[paragraph.tone]}
+                    >
+                      {paragraph.text}
+                    </p>
+                  ))}
+                </div>
+              </AlertDialogDescription>
+            )}
           </AlertDialogHeader>
           <AlertDialogFooter>
             {/* Radix's Cancel takes the focus when the dialog opens, so an

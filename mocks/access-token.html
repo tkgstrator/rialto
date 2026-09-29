@@ -13,7 +13,7 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, btn, navTo, SURFACES, surfaceChip } = window.Shell
+const { renderShell, pill, btn, navTo, SURFACES, surfaceChip, meter, dialog, PLANS } = window.Shell
 
 // One token's own page.
 //
@@ -46,6 +46,64 @@ const select = (value) => `
     <i class="ri-arrow-down-s-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"></i>
   </div>`
 
+const params = new URLSearchParams(location.search)
+const noPlan = params.has('no-plan')
+const unlimited = params.has('unlimited')
+const partial = params.has('partial')
+const notStarted = params.has('not-started')
+const spent = params.has('spent')
+const weekSpent = params.has('week-spent')
+const plan = PLANS[unlimited ? 3 : partial ? 1 : 0]
+const returnHref = `access-token.html${spent ? '?spent' : weekSpent ? '?week-spent' : partial ? '?partial' : ''}`
+const resetHref = `${returnHref}${returnHref.includes('?') ? '&' : '?'}reset`
+const limitMeter = (label, used, limit, usd = false) => {
+  const format = value => usd ? `$${value.toFixed(2)}` : value.toLocaleString('en-US')
+  return `<div class="mt-2 flex items-center gap-3">
+    <span class="w-20 shrink-0 text-[12px] text-muted-foreground">${label}</span>
+    <div class="min-w-0 flex-1">${limit === null ? '<span class="text-[12px] text-muted-foreground">No limit</span>' : meter(Math.min(100, used / limit * 100))}</div>
+    <span class="w-40 shrink-0 text-right font-mono text-xs tabular-nums">${format(used)}${limit === null ? ' used' : ` / ${format(limit)}`}</span>
+  </div>`
+}
+const usageWindow = (name, index, resets) => {
+  const limits = plan.windows[index]
+  const requests = notStarted ? 0 : index === 0 ? spent ? 100 : 42 : 286
+  const spend = notStarted ? 0 : index === 0 ? spent ? 1.84 : 0.84 : weekSpent ? 10 : 5.72
+  const exhausted = (index === 0 && spent) || (index === 1 && weekSpent)
+  return `<div class="border-t border-border/60 py-3 first:border-t-0 first:pt-0">
+    <div class="flex items-center gap-2 text-xs">
+      <span class="font-medium">${name}</span>${exhausted ? pill('spent', 'bad') : ''}
+      <span class="ml-auto text-[12px] text-muted-foreground">${notStarted ? 'Not started' : `Resets ${resets}`}</span>
+    </div>
+    ${limitMeter('Requests', requests, limits.requests)}
+    ${limitMeter('Spend (USD)', spend, limits.usd, true)}
+  </div>`
+}
+const usageWindows = noPlan || unlimited
+  ? `<div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
+      <span class="font-medium text-foreground">No plan usage limits.</span>
+      ${noPlan ? 'Assign a plan to apply per-token usage windows and model rules.' : 'Max has no request or spend limits in either window. Its allowed models and default model still apply.'}
+      Historical usage is shown below.
+    </div>`
+  : `<div class="max-w-2xl">
+      ${spent || weekSpent ? `<div class="mb-3 rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">
+        Requests refused (429) until ${weekSpent ? 'Oct 3, 09:00 JST' : 'Sep 29, 18:00 JST'}.
+        ${weekSpent ? '7-day spend limit reached.' : '5-hour request limit reached.'} Every spent window must reset before requests resume.
+      </div>` : ''}
+      ${usageWindow('5-hour window', 0, 'in 2h 41m · Sep 29, 18:00 JST')}
+      ${usageWindow('7-day window', 1, 'in 3d 17h 41m · Oct 3, 09:00 JST')}
+      <div class="flex items-center gap-3 border-t border-border/60 pt-3">
+        <span class="text-[12px] leading-snug text-muted-foreground">${notStarted ? 'The next counted request starts each window.' : 'Each window starts at the first counted request; it resets 5 hours or 7 days later, not on a sliding schedule.'}</span>
+        <span class="ml-auto shrink-0">${notStarted ? '<span class="text-[12px] text-muted-foreground">Nothing to reset</span>' : btn('Reset usage', 'outline', 'ri-restart-line', resetHref)}</span>
+      </div>
+    </div>`
+const resetDialog = () => dialog('Reset usage for MacBook — Codex?',
+  `<div class="space-y-3 text-xs leading-relaxed text-muted-foreground">
+    <p>Clears this token’s request counts and spend in both the 5-hour and 7-day windows. The next counted request starts fresh windows.</p>
+    <p class="font-medium text-foreground">This removes any current plan usage block immediately. It cannot be undone.</p>
+    <p>Other tokens, plan limits, token credentials and historical usage stay unchanged. Provider subscription quotas are not reset.</p>
+  </div>`,
+  `${btn('Cancel', 'ghost', '', returnHref)}${btn('Reset usage', 'danger', 'ri-restart-line', `access-token.html?not-started${partial ? '&partial' : ''}`)}`)
+
 document.getElementById('root').innerHTML = `
   <div class="min-w-0">
 
@@ -63,7 +121,7 @@ document.getElementById('root').innerHTML = `
         <div class="truncate text-sm font-semibold">MacBook — Codex</div>
         <div class="font-mono text-[12px] text-muted-foreground">rlt_7c02…</div>
       </div>
-      ${pill('active', 'ok')}
+      ${pill('active', 'ok')}${spent || weekSpent ? pill('usage blocked', 'bad') : ''}
       <div class="ml-auto flex items-center gap-2">
         ${btn('Rotate', 'outline', 'ri-refresh-line')}
         ${btn('Revoke', 'danger', 'ri-forbid-line')}
@@ -89,14 +147,16 @@ document.getElementById('root').innerHTML = `
       select('live')
     )}
 
-    <!-- A plan caps what the token may spend: one model and a daily
-         request count, both read from the plan at request time, so the
-         Plans tab changes every token on it at once. None is the
-         unrestricted default a hand-issued token has always had. -->
     ${field(
       'Plan',
-      'Send every request to the plan’s model and cap it per UTC day. None leaves this token unrestricted.',
-      select('None')
+      'Apply the plan’s allowed models, default model and per-token usage limits. None applies no plan restrictions.',
+      select(noPlan ? 'None' : plan.name)
+    )}
+
+    ${field(
+      'Usage windows',
+      'Current plan usage, separate from historical totals. Reaching either request or spend limit blocks requests until that window resets. Times shown in JST (UTC+09:00).',
+      usageWindows
     )}
 
     ${field(
@@ -147,7 +207,7 @@ document.getElementById('root').innerHTML = `
          that materialises moves everything around it. -->
     <div class="flex items-center gap-2 border-t border-border/60 px-6 py-4">
       <span class="text-[12px] text-muted-foreground">
-        Saves the endpoint and profile of <span class="font-medium text-foreground">MacBook — Codex</span>,
+        Saves the endpoint, profile and plan of <span class="font-medium text-foreground">MacBook — Codex</span>,
         from its next request. The token value itself does not change.
       </span>
       <div class="ml-auto flex gap-2">
@@ -157,7 +217,8 @@ document.getElementById('root').innerHTML = `
     </div>
 
     <div class="h-8"></div>
-  </div>`
+  </div>
+  ${params.has('reset') ? resetDialog() : ''}`
 
 renderShell({
   active: 'access-tokens',
@@ -165,6 +226,7 @@ renderShell({
   crumbs: [{ label: 'Access tokens', href: 'access-tokens.html' }, 'MacBook — Codex'],
   subtitle: 'Rotate, re-scope or revoke one client’s credential'
 })
+document.querySelector('.fixed button.absolute')?.addEventListener('click', () => { location.href = returnHref })
 </script>
 </body>
 </html>

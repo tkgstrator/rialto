@@ -10,6 +10,7 @@ import { getPrismaClient } from '../../db/client'
 import { ModelTestStatus, type PrismaClient } from '../../generated/prisma/client'
 import { resetLlmsContext } from '../../llms'
 import { logger } from '../../logger'
+import { captureModelCapabilities } from '../model-capability-service'
 import { applyProviderRow } from './apply'
 import { routeCascadeWarning } from './apply/tier-route-cascade'
 import { toProvider } from './compose'
@@ -25,7 +26,7 @@ export async function getProviders(prisma: PrismaClient = getPrismaClient()): Pr
       // cursor. createdAt is the seed/insert order the UI was built
       // around; name breaks the ties, because a createMany batch stamps
       // every row with the same instant.
-      models: { orderBy: [{ createdAt: 'asc' }, { name: 'asc' }] },
+      models: { orderBy: [{ createdAt: 'asc' }, { name: 'asc' }], include: { capability: true } },
       subscriptionAccounts: { orderBy: { createdAt: 'asc' } }
     },
     orderBy: { createdAt: 'asc' }
@@ -59,7 +60,7 @@ export async function upsertProvider(incoming: Provider): Promise<{ provider: Pr
   resetLlmsContext()
   const p = await prisma.provider.findUniqueOrThrow({
     where: { name: parsed.name },
-    include: { models: true, subscriptionAccounts: { orderBy: { createdAt: 'asc' } } }
+    include: { models: { include: { capability: true } }, subscriptionAccounts: { orderBy: { createdAt: 'asc' } } }
   })
   return { provider: toProvider(p), warnings }
 }
@@ -103,6 +104,10 @@ export async function setModelEnabled(providerName: string, modelName: string, e
   })
   await syncToConfigFile()
   resetLlmsContext()
+  // A model switched on is one a request can now reach: record what it
+  // accepts if that is still unknown. In the background — the probe is a
+  // dozen upstream calls, and the toggle should not wait on them.
+  if (enabled) void captureModelCapabilities()
 }
 
 // Per-model effort override, including the local Auto policy sentinel.
@@ -111,7 +116,7 @@ export async function setModelEnabled(providerName: string, modelName: string, e
 export async function setModelReasoningEffort(
   providerName: string,
   modelName: string,
-  reasoningEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto' | null
+  reasoningEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | 'auto' | null
 ): Promise<void> {
   const prisma = getPrismaClient()
   const model = await prisma.model.findFirst({

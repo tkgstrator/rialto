@@ -1,16 +1,23 @@
 /**
  * Plans — what a token on one may spend. Admin-only (/api/*).
  *
- * An edit reaches every token on the plan at its next request, hand-issued
- * and app-minted alike. Delete is refused for a plan anything still uses,
- * because removing it would lift those tokens' caps.
+ * An edit reaches every token on the plan at its next request. Delete is refused for a plan anything still uses,
+ * because removing it would lift those tokens' limits.
  */
 
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { createPlan, deletePlan, getPlan, listPlans, updatePlan } from '../../services/plan-service'
 import { validationErrorHook } from '../zod-response'
 
-const RefBodySchema = z.object({ id: z.string().nonempty(), name: z.string().nonempty() })
+const RequestLimit = z.number().int().positive().max(2_147_483_647).nullable()
+const SpendLimit = z.number().positive().nullable()
+
+const LimitFields = {
+  fiveHourRequestLimit: RequestLimit,
+  fiveHourSpendLimitUsd: SpendLimit,
+  sevenDayRequestLimit: RequestLimit,
+  sevenDaySpendLimitUsd: SpendLimit
+}
 
 const PlanSchema = z
   .object({
@@ -20,11 +27,10 @@ const PlanSchema = z
     models: z.array(z.string().nonempty()),
     // Where any other model name, or none, is sent. Always one of `models`.
     defaultModel: z.string().nonempty(),
-    // Completions per UTC day. Null = no cap.
-    dailyRequestLimit: z.number().int().positive().nullable(),
+    // Limits per usage window (5 hours, 7 days), each null = no limit:
+    // completions admitted, and USD spent at Rialto's pricing.
+    ...LimitFields,
     tokenCount: z.number().int().nonnegative(),
-    // Apps whose new installs start on this plan.
-    apps: z.array(RefBodySchema),
     createdAt: z.string().nonempty(),
     updatedAt: z.string().nonempty()
   })
@@ -35,7 +41,7 @@ const PlanBodySchema = z
     name: z.string().nonempty(),
     models: z.array(z.string().nonempty()).nonempty(),
     defaultModel: z.string().nonempty(),
-    dailyRequestLimit: z.number().int().positive().nullable()
+    ...LimitFields
   })
   .openapi('PlanRequest')
 
@@ -127,7 +133,7 @@ plansRoute.openapi(
     responses: {
       200: { description: 'Deleted', content: { 'application/json': { schema: z.object({ deleted: z.boolean() }) } } },
       404: { description: 'No such plan', content: { 'application/json': { schema: ErrorSchema } } },
-      409: { description: 'Tokens or apps still use it', content: { 'application/json': { schema: ErrorSchema } } }
+      409: { description: 'Tokens still use it', content: { 'application/json': { schema: ErrorSchema } } }
     }
   }),
   async (c) => {

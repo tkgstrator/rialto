@@ -15,7 +15,7 @@ export type AuthStatus = 'unknown' | 'live' | 'invalid'
 /** A Claude family a route can name. The tier-alias wire's own type, so the two cannot drift. */
 export type Tier = ModelTier
 /** The PATCH setting includes local Auto, which is never sent upstream. */
-export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto'
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | 'auto'
 export type TestStatus = 'unknown' | 'ok' | 'fail'
 
 /** One SubAccount as GET /api/subscriptions reports it. */

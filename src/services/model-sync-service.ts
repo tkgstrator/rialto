@@ -10,6 +10,11 @@
  *      the scrape covers — so the UI's cost figures stay in sync with
  *      the vendor's list price without a redeploy.
  *
+ * Subscription providers (claude-code, codex) take only the id list and
+ * prices from here. Their context window and effort levels are read once
+ * from the subscription's own model list by model-capability-service,
+ * and nothing here overwrites them.
+ *
  * All vendor-specific plumbing lives under providers/<vendor>/; this
  * service just orchestrates. Subscription providers (claude-code,
  * codex) resolve to the same VendorProvider instance as their api_key
@@ -27,6 +32,7 @@ import type { ModelsCredential, ScrapedPriceEntry } from '../vendors/base'
 import { getVendorProvider } from '../vendors/registry'
 import { claudeCodeModels, refreshClaudeCodeModels } from './claude-code-model-catalog'
 import { fetchCodexModels } from './codex-model-catalog'
+import { captureModelCapabilities } from './model-capability-service'
 import { emptyCatalog, loadVendorCatalogs, scrapeVendorFor, type VendorCatalog } from './model-sync-catalog'
 
 export type { VendorCatalog } from './model-sync-catalog'
@@ -37,12 +43,15 @@ import { getUsableSubAccountAuth } from './subscription-account-sync/read'
 
 export type RefreshOutcome = z.infer<typeof RefreshOutcomeSchema>
 
-const modelDataFromScrape = (entry: ScrapedPriceEntry) => ({
+// A subscription row's context window is the subscription's own figure,
+// recorded once (model-capability-service); the scraped one describes the
+// vendor's API and must not replace it.
+const modelDataFromScrape = (entry: ScrapedPriceEntry, authMode: AuthMode) => ({
   legacy: entry.legacy,
   inputPer1M: entry.inputPer1M,
   outputPer1M: entry.outputPer1M,
   cachedInputPer1M: entry.cachedInputPer1M,
-  ...(entry.contextWindow === null ? {} : { contextWindow: entry.contextWindow })
+  ...(entry.contextWindow === null || authMode === AuthMode.subscription ? {} : { contextWindow: entry.contextWindow })
 })
 
 interface ProviderRow {
@@ -74,7 +83,7 @@ export const buildCreateRow = (
   inputPer1M: scr === undefined ? null : scr.inputPer1M,
   outputPer1M: scr === undefined ? null : scr.outputPer1M,
   cachedInputPer1M: scr === undefined ? null : scr.cachedInputPer1M,
-  contextWindow: scr === undefined ? null : scr.contextWindow,
+  contextWindow: scr === undefined || p.authMode === AuthMode.subscription ? null : scr.contextWindow,
   apiStyle: modelApiStyleOverride(name)
 })
 
@@ -96,7 +105,7 @@ async function fetchLiveCatalog(p: ProviderRow): Promise<LiveFetchResult> {
     if (p.name !== 'codex') return { ids: [], error: undefined }
     const auth = await getUsableSubAccountAuth(p.name)
     if (auth === null || auth.accessToken === null) return { ids: [], error: 'no Codex account connected' }
-    const ids = await fetchCodexModels(auth.accessToken, auth.accountId, fetch, auth.subAccountId)
+    const ids = await fetchCodexModels(auth.accessToken, auth.accountId)
     return ids === null ? { ids: [], error: 'Codex model catalog unavailable' } : { ids, error: undefined }
   }
   if (p.apiKey === null || p.apiKey.trim() === '') {
@@ -126,7 +135,7 @@ async function applyScrapedPrices(
     if (scr === undefined) continue
     await prisma.model.update({
       where: { providerId_name: { providerId: p.id, name } },
-      data: modelDataFromScrape(scr)
+      data: modelDataFromScrape(scr, p.authMode)
     })
   }
 }
@@ -151,40 +160,21 @@ async function syncDeprecationFlags(p: ProviderRow, allCurrentNames: string[]): 
   }
 }
 
-// Ask the vendor to look up per-model contextWindow from its docs pages
-// for every id Rialto knows about (DB rows ∪ freshly-added rows). Runs
-// regardless of whether the pricing scrape or /v1/models returned
-// anything — subscription providers with an empty live catalog still
-// get their existing rows' context refreshed. Values the vendor returns
-// overwrite the current DB value; missing ids are left alone.
-/**
- * What the catalog call can authenticate with.
- *
- * A subscription provider holds no api key, so this used to hand the
- * vendor `undefined` and the default implementation returned early. That
- * is why a signed-in Claude Code had a context window on four models and
- * null on the other thirteen: Anthropic publishes the figure per model on
- * `/v1/models` as `max_input_tokens`, and the only reason it went unread
- * was that nothing offered a credential. The OAuth access token is the
- * same one the request path already sends to that host.
- */
-const modelsCredentialFor = async (p: ProviderRow): Promise<ModelsCredential | undefined> => {
-  if (p.authMode === AuthMode.subscription) {
-    const auth = await getUsableSubAccountAuth(p.name)
-    if (auth === null || auth.accessToken === null) return undefined
-    return { kind: 'subscription', accessToken: auth.accessToken }
-  }
-  if (p.apiKey === null || p.apiKey.trim() === '') return undefined
-  return { kind: 'api_key', key: p.apiKey }
-}
+const modelsCredentialFor = (p: ProviderRow): ModelsCredential | undefined =>
+  p.apiKey === null || p.apiKey.trim() === '' ? undefined : { kind: 'api_key', key: p.apiKey }
 
+// Ask the vendor to look up per-model contextWindow from its docs pages
+// for every id Rialto knows about (DB rows ∪ freshly-added rows). Values
+// the vendor returns overwrite the current DB value; missing ids are left
+// alone. Subscription providers are skipped: their window is recorded
+// once from the subscription's own list (model-capability-service).
 async function refreshContextWindows(p: ProviderRow, ids: string[]): Promise<number> {
-  if (ids.length === 0) return 0
+  if (ids.length === 0 || p.authMode === AuthMode.subscription) return 0
   const provider = getVendorProvider(p.name)
   if (provider === undefined) return 0
   // The credential is what lets the default implementation read the
   // vendor's own catalog endpoint; scraping overrides ignore it.
-  const contexts = await provider.fetchContextWindows(ids, await modelsCredentialFor(p))
+  const contexts = await provider.fetchContextWindows(ids, modelsCredentialFor(p))
   if (contexts.size === 0) return 0
   const prisma = getPrismaClient()
   for (const [name, contextWindow] of contexts) {
@@ -250,15 +240,10 @@ export async function syncConnectedCodexModels(
   providerNames: readonly string[],
   accessToken: string,
   accountId: string | null,
-  fetchModels: typeof fetch = fetch,
-  subAccountIds: readonly string[] = []
+  fetchModels: typeof fetch = fetch
 ): Promise<void> {
-  const catalogs = await Promise.all(
-    (subAccountIds.length === 0 ? [undefined] : subAccountIds).map((id) =>
-      fetchCodexModels(accessToken, accountId, fetchModels, id)
-    )
-  )
-  const ids = [...new Set(catalogs.flatMap((catalog) => (catalog === null ? [] : catalog)))]
+  const found = await fetchCodexModels(accessToken, accountId, fetchModels)
+  const ids = found === null ? [] : found
   if (ids.length === 0) return
   const prisma = getPrismaClient()
   const providers = await prisma.provider.findMany({
@@ -270,6 +255,7 @@ export async function syncConnectedCodexModels(
     const rows = ids.filter((name) => !existing.has(name)).map((name) => buildCreateRow(name, provider, undefined))
     if (rows.length > 0) await prisma.model.createMany({ data: rows, skipDuplicates: true })
   }
+  await captureModelCapabilities(fetchModels)
 }
 
 export async function refreshModelsForAllProviders(): Promise<RefreshOutcome[]> {
@@ -302,6 +288,8 @@ export async function refreshModelsForAllProviders(): Promise<RefreshOutcome[]> 
     results.push(await refreshOneProvider(p, catalog))
   }
   await backfillStaticPrices()
+  // Rows this refresh added still lack what never changes for their id.
+  await captureModelCapabilities()
   return results
 }
 

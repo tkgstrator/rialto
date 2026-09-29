@@ -8,9 +8,14 @@ import { ProviderRegistry } from '../../src/llms/registry/provider'
 import { TokenizerRegistry } from '../../src/llms/registry/tokenizer'
 import { TransformerRegistry } from '../../src/llms/registry/transformer'
 import { AnthropicTransformer, ClaudeCodeOauthTransformer } from '../../src/llms/transformers/anthropic'
+import type { SupportedEffort } from '../../src/schemas/domain/model-capability'
 
 const log = pino({ level: 'silent' })
 const model = 'claude-sonnet-4-6'
+// What each model's own list reported, as ModelCapability records it:
+// Sonnet 4.6 has no xhigh, Haiku 4.5 takes no effort, and the third model
+// has not been recorded yet.
+const sonnet46: SupportedEffort[] = ['low', 'medium', 'high', 'max']
 const providersConfig = [
   {
     name: 'claude-code',
@@ -18,7 +23,8 @@ const providersConfig = [
     api_style: 'anthropic' as const,
     api_key: 'fixture-placeholder',
     api_base_url: 'https://api.anthropic.com/v1/messages',
-    models: [model]
+    models: [model, 'claude-haiku-4-5', 'claude-unrecorded'],
+    modelSupportedEfforts: { [model]: sonnet46, 'claude-haiku-4-5': [] }
   },
   {
     name: 'api-key',
@@ -72,6 +78,18 @@ describe('Claude Code per-attempt invocation', () => {
     const fallback = resolveInvocationForModel(input, `api-key,${model}`, ctx)
     expect(fallback?.body.output_config).toBeUndefined()
     expect(input.routedBody.output_config).toEqual({ effort: 'xhigh', format: { type: 'json_schema' } })
+  })
+
+  test('drops the effort of a model whose list reports no level at all', () => {
+    const input = plan({ effort: 'high', format: { type: 'json_schema' } })
+    const haiku = resolveInvocationForModel(input, 'claude-code,claude-haiku-4-5', ctx)
+    expect(haiku?.body.output_config).toEqual({ format: { type: 'json_schema' } })
+  })
+
+  test('sends the effort of a model not yet recorded as the caller wrote it', () => {
+    const input = plan({ effort: 'xhigh' })
+    const unrecorded = resolveInvocationForModel(input, 'claude-code,claude-unrecorded', ctx)
+    expect(unrecorded?.body.output_config).toEqual({ effort: 'xhigh' })
   })
 
   test('keeps unverified effort untouched rather than inventing a different value', () => {

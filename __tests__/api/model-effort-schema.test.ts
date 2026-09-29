@@ -10,6 +10,6 @@ describe('model effort PATCH contract', () => {
   })
 
   test('never accepts Auto as an arbitrary upstream effort level', () => {
-    expect(UpdateModelBodySchema.safeParse({ reasoningEffort: 'ultra' }).success).toBe(false)
+    expect(UpdateModelBodySchema.safeParse({ reasoningEffort: 'turbo' }).success).toBe(false)
   })
 })

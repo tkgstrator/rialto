@@ -18,28 +18,35 @@ import type { LlmsContext, ResolvedProvider, Transformer } from '../../llms'
 import { inboundTypeForPath, surfaceForPath } from '../../llms/inbound/surfaces'
 import { isLongContextDenied } from '../../services/failover-state'
 import { getActiveAccountForSession } from '../../services/session-account-router'
-import { claudeCodeEffortsFor } from '../../shared/model-reasoning-effort'
 import type { RoutePlan } from './route-plan'
 import { prepareSubscriptionBetas } from './subscription-betas'
 
 // ─── Claude Code effort normalisation ────────────────────────────────
 
-function normalizeClaudeCodeEffort(body: Record<string, unknown>, model: string): void {
+// The effort to send in place of `requested`, given what the model's own
+// list reported: the highest supported level at or below it. Undefined
+// when the model takes no effort at all (Haiku 4.5 refuses the field).
+function clampedEffort(requested: string, supported: readonly string[]): string | undefined {
+  if (supported.length === 0) return undefined
+  if (supported.includes(requested)) return requested
+  const ladder = ['low', 'medium', 'high', 'xhigh', 'max']
+  const rank = ladder.indexOf(requested)
+  if (rank < 0) return requested
+  const replacement = supported.filter((level) => ladder.indexOf(level) <= rank).at(-1)
+  return replacement === undefined ? requested : replacement
+}
+
+// `supported` is what the model's own list reported (ModelCapability);
+// undefined until recorded, which leaves the caller's effort as sent.
+function normalizeClaudeCodeEffort(body: Record<string, unknown>, supported: readonly string[] | undefined): void {
   const output = body.output_config
   if (output === null || typeof output !== 'object' || Array.isArray(output)) return
   const config = { ...output }
   const requested = Reflect.get(config, 'effort')
-  if (typeof requested === 'string') {
-    const supported = claudeCodeEffortsFor(model)
-    if (supported !== null && !supported.some((level) => level === requested)) {
-      const ladder = ['low', 'medium', 'high', 'xhigh', 'max']
-      const rank = ladder.indexOf(requested)
-      if (rank >= 0) {
-        const atOrBelow = supported.filter((level) => ladder.indexOf(level) <= rank)
-        const replacement = atOrBelow.at(-1)
-        if (replacement !== undefined) Reflect.set(config, 'effort', replacement)
-      }
-    }
+  if (typeof requested === 'string' && supported !== undefined) {
+    const effort = clampedEffort(requested, supported)
+    if (effort === undefined) Reflect.deleteProperty(config, 'effort')
+    else Reflect.set(config, 'effort', effort)
   }
   body.output_config = config
 }
@@ -141,7 +148,7 @@ export function resolveInvocationForModel(
   // Only the Claude Code subscription path carries the native Messages
   // output_config upstream. Other targets keep the existing strip policy.
   const claudeCode = provider.transformer?.use?.some((step) => step.name === 'claude-code-oauth') === true
-  if (claudeCode) normalizeClaudeCodeEffort(body, model)
+  if (claudeCode) normalizeClaudeCodeEffort(body, provider.modelSupportedEfforts?.[model])
   else delete body.output_config
 
   // Consume Rialto-internal extensions before any upstream dispatch.

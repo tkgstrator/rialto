@@ -35,11 +35,13 @@ import { IssuedTokenDialog } from '@/components/rialto/settings/access/IssuedTok
 import { ANY, Picker, SurfacePicker, sameScope, scopeForWire } from '@/components/rialto/settings/access/pickers'
 import { TokenDetailHeader } from '@/components/rialto/settings/access/TokenDetailHeader'
 import { TokenReadings } from '@/components/rialto/settings/access/TokenReadings'
+import { TokenUsageWindows, useTokenUsageWindows } from '@/components/rialto/settings/access/TokenUsageWindows'
 import { SettingsField } from '@/components/rialto/settings/SettingsLayout'
 import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
 import { type AccessTokenWire, api, type PlanWire } from '@/lib/api'
 import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
 import { tokenState } from '@/lib/rialto/settings/access-tokens'
+import { usageBlocked, usageWindowsView } from '@/lib/rialto/settings/usage-windows'
 
 const BACK = '/access-tokens'
 
@@ -94,8 +96,13 @@ export function TokenDetail() {
   const [draft, setDraft] = useState<ScopeDraft | null>(null)
   const [profiles, setProfiles] = useState<{ key: string }[]>([])
   const [plans, setPlans] = useState<PlanWire[]>([])
-  // Pinned per load so every relative label measures from one instant.
+  // Every relative label measures from the same instant.
   const [now, setNow] = useState(Date.now())
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(interval)
+  }, [])
 
   const load = useCallback(() => {
     api
@@ -207,6 +214,7 @@ export function TokenDetail() {
   // return between renders would change the hook order.
   const dirty = token !== null && draft !== null && draftChanged(draft, token)
   const unsavedDialog = useUnsavedGuard(dirty)
+  const { usage, setUsage } = useTokenUsageWindows(token)
 
   const save = () => {
     if (token === null || draft === null) return
@@ -248,29 +256,21 @@ export function TokenDetail() {
   }
 
   const state = tokenState(token, now)
+  // Read from the saved plan, not the draft: the windows are what the
+  // gate applies now, and an unsaved plan choice applies nothing yet.
+  const windows = usageWindowsView(token.plan === null ? null : token.plan.name, usage)
   const editable = state === 'active'
   // The token's own plan stays selectable even if the plans list failed to load.
   const own = token.plan
   const planOptions = own === null || plans.some((plan) => plan.id === own.id) ? plans : [own, ...plans]
 
   return (
-    <Screen
-      crumbs={
-        // An install's token sits under its app, which is where it was reached from.
-        token.app === null
-          ? [{ label: token.name }]
-          : [
-              { label: t('access.tabs.apps'), href: '/access-tokens/apps' },
-              { label: token.app.name, href: `/access-tokens/apps/${token.app.id}` },
-              { label: token.name }
-            ]
-      }
-      subtitle={t('settings.access.tokenSubtitle')}
-    >
+    <Screen crumbs={[{ label: token.name }]} subtitle={t('settings.access.tokenSubtitle')}>
       <div className='min-w-0'>
         <TokenDetailHeader
           token={token}
           state={state}
+          usageBlocked={usageBlocked(windows)}
           busy={busy}
           onRotate={rotate}
           onRevoke={revoke}
@@ -306,7 +306,7 @@ export function TokenDetail() {
           </Picker>
         </SettingsField>
 
-        {/* A plan limits the models and the daily count; no plan leaves
+        {/* A plan limits the models and the usage windows; no plan leaves
             the token unrestricted, as hand-issued ones always were. */}
         <SettingsField label={t('access.token.plan')} hint={t('access.token.planHint')}>
           <Picker
@@ -323,6 +323,8 @@ export function TokenDetail() {
             ))}
           </Picker>
         </SettingsField>
+
+        <TokenUsageWindows token={token} view={windows} now={now} onReset={setUsage} />
 
         <TokenReadings token={token} now={now} />
 

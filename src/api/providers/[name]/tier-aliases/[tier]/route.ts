@@ -3,6 +3,7 @@ import { resetLlmsContext } from '../../../../../llms'
 import { RoutingErrorSchema, SetTierAliasSchema } from '../../../../../schemas/api/routing'
 import { ModelTierSchema } from '../../../../../schemas/domain/tier-route'
 import { syncToConfigFile } from '../../../../../services/config/sync-to-disk'
+import { captureModelCapabilities } from '../../../../../services/model-capability-service'
 import { republishRoutingSnapshot } from '../../../../../services/routing-scheduler'
 import { clearTierAlias, setTierAlias } from '../../../../../services/tier-alias-service'
 import { validationErrorHook } from '../../../../zod-response'
@@ -69,6 +70,8 @@ providerTierAliasRoute.openapi(
       // quota at all; republish so the first request after a promotion
       // is already judged on the model's accounts.
       await republishRoutingSnapshot()
+      // Record what the newly switched-on model accepts, if still unknown.
+      void captureModelCapabilities()
     }
     return c.json({ enabledModel: outcome.enabledModel }, 200)
   }

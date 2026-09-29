@@ -4,7 +4,9 @@
 
 import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'
 import type { CallToolResult, ServerNotification, ServerRequest } from '@modelcontextprotocol/sdk/types.js'
-import { consumeDailyRequest, noteTokenUse, type ResolvedToken } from '../../services/access-token-service'
+import { noteTokenUse, type ResolvedToken } from '../../services/access-token-service'
+import { admitRequest, hasAnyLimit } from '../../services/usage-window-service'
+import { USAGE_LEDGER_UNAVAILABLE, windowLimitMessage } from '../usage-limit-message'
 
 export interface ToolContext {
   /** The access token that opened /codex, already checked for the scope. */
@@ -26,25 +28,25 @@ export const errorResult = (text: string): CallToolResult => ({
 
 /**
  * Count a tool call that spends a subscription against the token, and the
- * message that refuses it when a plan's daily cap is spent. Null when the
- * call may proceed.
+ * message that refuses it when one of its plan's usage windows is full.
+ * Null when the call may proceed.
  *
  * The /v1 gate charges every request it admits. This server cannot: one
  * MCP session opens with `initialize`, a notification and `tools/list`
  * before any work is asked for, and a plan's allowance would be spent on
  * those. So the gate admits, and each tool that sends work to Codex
- * charges here — once per call, the same as one /v1 completion.
+ * charges here — once per call, the same as one /v1 completion. Its
+ * spend, if the model it reaches is priced, is added when the call's
+ * usage is recorded, as on /v1.
  */
 export async function chargeCall(token: ResolvedToken): Promise<string | null> {
-  noteTokenUse(token.id)
-  const limit = token.plan === null ? null : token.plan.dailyRequestLimit
-  if (limit === null) return null
-  const allowance = await consumeDailyRequest(token.id, limit)
-  if (allowance.outcome === 'allowed') return null
-  if (allowance.outcome === 'exhausted') {
-    return "This access token has used today's requests. It resets at 00:00 UTC."
+  if (token.plan !== null && hasAnyLimit(token.plan.limits)) {
+    const admission = await admitRequest(token.id, token.plan.limits)
+    if (admission.outcome === 'exhausted') return windowLimitMessage(admission)
+    if (admission.outcome === 'unavailable') return USAGE_LEDGER_UNAVAILABLE
   }
-  return 'The usage ledger is unavailable, so this capped token cannot be admitted right now.'
+  noteTokenUse(token.id)
+  return null
 }
 
 const HEARTBEAT_MS = 15_000

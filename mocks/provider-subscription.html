@@ -179,12 +179,8 @@ const models = `
 // Every window the account is under, not just the weekly one: all of them
 // bind, and the per-model row is the only place a Fable ceiling shows.
 //
-// Under the windows, what the account carried. A subscription has no
-// per-token price, so the figure is what the same tokens would have cost
-// at the model's API price — "API equiv", never a bill — over the weekly
-// window the account is in now, and over 30 days next to the plan's
-// monthly price. The ratio is the question an operator with several
-// accounts actually asks: which plan is earning its fee.
+// What the account carried at API prices ("API equiv") is not drawn
+// here: the Usage tab shows it, over time, beside the same windows.
 //
 // Codex accounts also carry banked resets. The count comes from the same
 // usage poll as the windows; spending one is the one action on this page
@@ -199,8 +195,6 @@ const ACCOUNTS = CODEX
           { label: '5-hour', pct: 100, resets: '3h 12m' },
           { label: 'weekly', pct: 64,  resets: '4d 02h' }
         ],
-        week: { tokens: '38.2M', cost: '$412' },
-        month: { cost: '$1.31k', fee: '$200', ratio: '×6.6' },
         resets: { available: 2, expires: 'Oct 14' }
       },
       {
@@ -209,8 +203,6 @@ const ACCOUNTS = CODEX
           { label: '5-hour', pct: 18, resets: '4h 40m' },
           { label: 'weekly', pct: 31, resets: '6d 11h' }
         ],
-        week: { tokens: '4.10M', cost: '$47.9' },
-        month: { cost: '$96.2', fee: '$20', ratio: '×4.8' },
         resets: { available: 0, expires: null }
       }
     ]
@@ -224,8 +216,6 @@ const ACCOUNTS = CODEX
           { label: '7-day',         pct: 100, resets: '2d 09h' },
           { label: '7-day · Fable', pct: 9,   resets: '2d 09h' }
         ],
-        week: { tokens: '61.4M', cost: '$684' },
-        month: { cost: '$2.20k', fee: '$200', ratio: '×11' }
       },
       {
         label: 'second.account@gmail.com', plan: 'Pro', auth: 'live',
@@ -234,8 +224,6 @@ const ACCOUNTS = CODEX
           { label: '7-day',         pct: 22, resets: '3d 04h' },
           { label: '7-day · Fable', pct: 4,  resets: '3d 04h' }
         ],
-        week: { tokens: '2.04M', cost: '$18.7' },
-        month: { cost: '$61.0', fee: '$20', ratio: '×3.1' }
       }
     ]
 
@@ -247,17 +235,6 @@ const windowLine = (w) => `
     <span class="w-9 shrink-0 text-right font-mono text-[12px] tabular-nums">${w.pct}%</span>
     <span class="w-14 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${w.resets}</span>
   </div>`
-
-// Usage lines share the window rows' label column, so the two blocks read
-// as one small table. One figure per cell: tokens, cost, and — on the
-// 30-day line — the plan's fee and the ratio, each right-aligned mono.
-const usageLine = (label, cells) => `
-  <div class="mt-1.5 flex items-center gap-2">
-    <span class="w-24 shrink-0 truncate text-[12px] text-muted-foreground">${label}</span>
-    <span class="min-w-0 flex-1"></span>
-    ${cells.map((c) => `<span class="${c.w} shrink-0 text-right font-mono text-[12px] tabular-nums ${c.mute ? 'text-muted-foreground' : ''}">${c.v}</span>`).join('')}
-  </div>`
-
 const resetLine = (r) => `
   <div class="mt-2.5 flex items-center gap-2 border-t border-border/60 pt-2.5">
     <span class="w-24 shrink-0 text-[12px] text-muted-foreground">Banked resets</span>
@@ -279,26 +256,6 @@ const accountRow = (a) => `
       <span class="ml-auto text-[12px] text-muted-foreground/70">resets in</span>
     </div>
     ${a.windows.map(windowLine).join('')}
-    <div class="mt-2.5 flex items-center gap-2 text-[12px] uppercase tracking-wider text-muted-foreground/60">
-      <span class="w-24 shrink-0">API equiv</span>
-      <span class="min-w-0 flex-1"></span>
-      <span class="w-16 shrink-0 text-right">tokens</span>
-      <span class="w-14 shrink-0 text-right">cost</span>
-      <span class="w-12 shrink-0 text-right">fee</span>
-      <span class="w-10 shrink-0 text-right">×</span>
-    </div>
-    ${usageLine('this week', [
-      { v: a.week.tokens, w: 'w-16' },
-      { v: a.week.cost, w: 'w-14' },
-      { v: '', w: 'w-12' },
-      { v: '', w: 'w-10' }
-    ])}
-    ${usageLine('30 days', [
-      { v: '', w: 'w-16' },
-      { v: a.month.cost, w: 'w-14' },
-      { v: a.month.fee, w: 'w-12', mute: true },
-      { v: a.month.ratio, w: 'w-10' }
-    ])}
     ${a.resets === undefined ? '' : resetLine(a.resets)}
     <div class="mt-2 text-[12px] text-muted-foreground">auth ${a.auth}</div>
   </div>`

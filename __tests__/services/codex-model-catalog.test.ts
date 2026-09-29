@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { codexEffortsFor, fetchCodexModels } from '../../src/services/codex-model-catalog'
+import { fetchCodexModelCatalog, fetchCodexModels } from '../../src/services/codex-model-catalog'
 
 describe('Codex account model catalog', () => {
   test('reads account-scoped model slugs without leaking authentication to the result', async () => {
@@ -26,23 +26,33 @@ describe('Codex account model catalog', () => {
     expect(requested.headers?.get('chatgpt-account-id')).toBe('test-account')
   })
 
-  test('retains only supported levels for each account and visible model', async () => {
+  test('reports each visible model window and the levels this build can name', async () => {
     const catalog: typeof fetch = async () =>
       Response.json({
         models: [
-          { slug: 'gpt-5.5', supported_reasoning_levels: [{ effort: 'low' }, { effort: 'high' }, { effort: 'ultra' }] },
-          { slug: 'hidden', visibility: 'hide', supported_reasoning_levels: [{ effort: 'max' }] }
+          {
+            slug: 'gpt-6-sol',
+            context_window: 272000,
+            max_context_window: 872000,
+            supported_reasoning_levels: [
+              { effort: 'low' },
+              { effort: 'max' },
+              { effort: 'ultra' },
+              { effort: 'beyond' }
+            ]
+          },
+          { slug: 'gpt-5.5', context_window: 272000, supported_reasoning_levels: [{ effort: 'medium' }] },
+          { slug: 'no-window' },
+          { slug: 'hidden', visibility: 'hide', max_context_window: 1, supported_reasoning_levels: [{ effort: 'max' }] }
         ]
       })
-    await fetchCodexModels('secret', 'acct-1', catalog, 'sub-1')
-    expect(codexEffortsFor('sub-1', 'gpt-5.5')).toEqual(['low', 'high'])
-    expect(codexEffortsFor('sub-1', 'hidden')).toBeNull()
-    expect(codexEffortsFor('sub-2', 'gpt-5.5')).toBeNull()
-    const otherAccount: typeof fetch = async () =>
-      Response.json({ models: [{ slug: 'gpt-5.5', supported_reasoning_levels: [{ effort: 'medium' }] }] })
-    await fetchCodexModels('other-token', 'acct-2', otherAccount, 'sub-2')
-    expect(codexEffortsFor('sub-1', 'gpt-5.5')).toEqual(['low', 'high'])
-    expect(codexEffortsFor('sub-2', 'gpt-5.5')).toEqual(['medium'])
+    const got = await fetchCodexModelCatalog('secret', 'acct-1', catalog)
+    expect(got?.models).toEqual([
+      // The raised limit, not the CLI's starting default; an unknown level is dropped.
+      { id: 'gpt-6-sol', contextWindow: 872000, efforts: ['low', 'max', 'ultra'] },
+      { id: 'gpt-5.5', contextWindow: 272000, efforts: ['medium'] },
+      { id: 'no-window', contextWindow: null, efforts: [] }
+    ])
   })
 
   test('does not substitute pricing ids when upstream fails or returns a different shape', async () => {

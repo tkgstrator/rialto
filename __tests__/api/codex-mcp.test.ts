@@ -224,7 +224,7 @@ describe.skipIf(!HAS_DB)('Codex MCP server at /codex', () => {
     delete process.env.CAPTURE_REQUESTS
     await resetDbTables()
     await getPrismaClient().$executeRawUnsafe(
-      'TRUNCATE "AccessTokenDailyUsage","AccessToken","Plan" RESTART IDENTITY CASCADE'
+      'TRUNCATE "AccessTokenUsageWindow","AccessToken","Plan" RESTART IDENTITY CASCADE'
     )
     invalidateTokenCache()
     invalidateSurfaceCache()
@@ -356,26 +356,62 @@ describe.skipIf(!HAS_DB)('Codex MCP server at /codex', () => {
     expect(upstream).toHaveLength(0)
   })
 
-  test('a plan cap is spent by work, not by the MCP handshake', async () => {
+  test('a plan limit is spent by work, not by the MCP handshake or status', async () => {
     await seedCodex()
     const plan = await getPrismaClient().plan.create({
-      data: { name: 'one-a-day', models: ['codex,gpt-5.5'], defaultModel: 'codex,gpt-5.5', dailyRequestLimit: 1 }
+      data: { name: 'one-per-5h', models: ['codex,gpt-5.5'], defaultModel: 'codex,gpt-5.5', fiveHourRequestLimit: 1 }
     })
-    const capped = (await issue(['codex-mcp'], plan.id)).plaintext
+    const limited = await issue(['codex-mcp'], plan.id)
+    const capped = limited.plaintext
 
     for (const method of ['initialize', 'tools/list', 'tools/list']) {
       expect((await rpc(capped, method, method === 'initialize' ? { protocolVersion: '2025-06-18' } : {})).status).toBe(
         200
       )
     }
-    const status = await callTool(capped, 'status', {})
-    expect(JSON.parse(textOf(status)).yourToken).toEqual({ dailyLimit: 1, usedToday: 0, resetsAt: 'next 00:00 UTC' })
+    const before = JSON.parse(textOf(await callTool(capped, 'status', {}))).yourToken
+    expect(before.windows).toEqual([
+      {
+        window: '5h',
+        startedAt: null,
+        resetsAt: null,
+        requests: 0,
+        requestLimit: 1,
+        costUsd: 0,
+        spendLimitUsd: null
+      },
+      {
+        window: '7d',
+        startedAt: null,
+        resetsAt: null,
+        requests: 0,
+        requestLimit: null,
+        costUsd: 0,
+        spendLimitUsd: null
+      }
+    ])
 
     expect((await callTool(capped, 'ask', { prompt: 'one' })).isError).toBeUndefined()
     const second = await callTool(capped, 'ask', { prompt: 'two' })
     expect(second.isError).toBe(true)
-    expect(textOf(second)).toContain("today's requests")
+    expect(textOf(second)).toContain('5-hour request limit')
     expect(upstream).toHaveLength(1)
+
+    const after = JSON.parse(textOf(await callTool(capped, 'status', {}))).yourToken
+    const fiveHour = after.windows[0]
+    expect(fiveHour.requests).toBe(1)
+    expect(textOf(second)).toContain(fiveHour.resetsAt)
+    expect(dayjs(fiveHour.resetsAt).diff(dayjs(fiveHour.startedAt), 'hour')).toBe(5)
+    // Both windows count the call; only the 5-hour one has a limit.
+    expect(after.windows[1].requests).toBe(1)
+  })
+
+  test('status reports no windows for a token whose plan sets no limit', async () => {
+    const plan = await getPrismaClient().plan.create({
+      data: { name: 'open', models: ['codex,gpt-5.5'], defaultModel: 'codex,gpt-5.5' }
+    })
+    const token = (await issue(['codex-mcp'], plan.id)).plaintext
+    expect(JSON.parse(textOf(await callTool(token, 'status', {}))).yourToken).toBeUndefined()
   })
 
   test("a plan that does not list the model refuses rather than answering with the plan's default", async () => {
@@ -384,14 +420,16 @@ describe.skipIf(!HAS_DB)('Codex MCP server at /codex', () => {
       data: {
         name: 'other',
         models: ['anthropic,claude-x'],
-        defaultModel: 'anthropic,claude-x',
-        dailyRequestLimit: null
+        defaultModel: 'anthropic,claude-x'
       }
     })
     const token = (await issue(['codex-mcp'], plan.id)).plaintext
     const result = await callTool(token, 'ask', { prompt: 'hi' })
     expect(result.isError).toBe(true)
     expect(upstream).toHaveLength(0)
+    const report = JSON.parse(textOf(await callTool(token, 'status', {})))
+    expect(report.models).toEqual([])
+    expect(report.imageModels).toEqual([])
   })
 
   test('generate_image returns the image and a link that downloads it', async () => {

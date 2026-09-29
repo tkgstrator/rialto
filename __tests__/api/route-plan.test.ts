@@ -190,7 +190,7 @@ describe('a routed surface walks the scenario routes', () => {
     const plan: TokenPlan = {
       models: [SONNET, 'openai,gpt-cheap'],
       defaultModel: 'openai,gpt-cheap',
-      dailyRequestLimit: null
+      limits: { '5h': { requests: null, spendUsd: null }, '7d': { requests: null, spendUsd: null } }
     }
     const result = asPlan(await plan_('/v1/chat/completions', { ...body(), model: SONNET }, plan))
     expect(result.primaryModel).toBe(SONNET)
@@ -200,7 +200,11 @@ describe('a routed surface walks the scenario routes', () => {
 
   test('a token on a plan sends any other model to the plan’s default', async () => {
     __setTierProfilesForTests({ live: onDefault([opusRoute()]) })
-    const plan: TokenPlan = { models: [SONNET], defaultModel: SONNET, dailyRequestLimit: null }
+    const plan: TokenPlan = {
+      models: [SONNET],
+      defaultModel: SONNET,
+      limits: { '5h': { requests: null, spendUsd: null }, '7d': { requests: null, spendUsd: null } }
+    }
     const result = asPlan(await plan_('/v1/chat/completions', body(), plan))
     expect(result.primaryModel).toBe(SONNET)
     expect(result.routedBody.model).toBe(SONNET)
@@ -524,7 +528,11 @@ describe('passthrough denial', () => {
 })
 
 describe('planModel', () => {
-  const plan: TokenPlan = { models: ['a,one', 'b,two'], defaultModel: 'a,one', dailyRequestLimit: 5 }
+  const plan: TokenPlan = {
+    models: ['a,one', 'b,two'],
+    defaultModel: 'a,one',
+    limits: { '5h': { requests: 5, spendUsd: null }, '7d': { requests: null, spendUsd: null } }
+  }
 
   test('leaves a token with no plan to the caller and the router', () => {
     expect(planModel(null, 'x,y')).toBeUndefined()

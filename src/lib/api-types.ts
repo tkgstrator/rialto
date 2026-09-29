@@ -199,8 +199,6 @@ export interface AccessTokenWire {
   createdAt: string
   /** The plan this token spends under. Null = unrestricted. */
   plan: { id: string; name: string } | null
-  /** The authorized app whose install minted this token, if one did. */
-  app: { id: string; name: string } | null
 }
 
 export interface IdentityResponse {
@@ -344,8 +342,8 @@ export interface UseResetResponse {
 }
 
 /**
- * A plan: the models a token on it may use and its daily cap. Tokens
- * reference it, so an edit reaches every token on it at once.
+ * A plan: the models a token on it may use and its usage-window limits.
+ * Tokens reference it, so an edit reaches every token on it at once.
  */
 export interface PlanWire {
   id: string
@@ -354,11 +352,15 @@ export interface PlanWire {
   models: string[]
   /** Where any other model name, or none, is sent. Always one of `models`. */
   defaultModel: string
-  /** Completions per UTC day. Null = no cap. */
-  dailyRequestLimit: number | null
+  /** Completions admitted per 5-hour window. Null = no limit. */
+  fiveHourRequestLimit: number | null
+  /** USD spent per 5-hour window. Null = no limit. */
+  fiveHourSpendLimitUsd: number | null
+  /** Completions admitted per 7-day window. Null = no limit. */
+  sevenDayRequestLimit: number | null
+  /** USD spent per 7-day window. Null = no limit. */
+  sevenDaySpendLimitUsd: number | null
   tokenCount: number
-  /** Apps whose new installs start on this plan. */
-  apps: { id: string; name: string }[]
   createdAt: string
   updatedAt: string
 }
@@ -367,41 +369,26 @@ export interface PlanInputWire {
   name: string
   models: string[]
   defaultModel: string
-  dailyRequestLimit: number | null
+  fiveHourRequestLimit: number | null
+  fiveHourSpendLimitUsd: number | null
+  sevenDayRequestLimit: number | null
+  sevenDaySpendLimitUsd: number | null
 }
 
-/** An app whose installs may register themselves with App Attest. */
-export interface AuthorizedAppWire {
-  id: string
-  name: string
-  /** `<Team ID>.<bundle id>`. */
-  appleAppId: string
-  allowDevelopment: boolean
-  enabled: boolean
-  /** The plan a new install's token is put on. */
-  plan: { id: string; name: string }
-  deviceCount: number
-  /** Installs whose token was used in the last 7 days. */
-  activeDevices: number
-  /** Completions counted against caps today (UTC). */
-  requestsToday: number
-  /** USD over the 30-day spend window; null when none of it priced. */
-  costUsd: number | null
-  createdAt: string
-  updatedAt: string
+/** One of a token's usage windows. GET /api/access-tokens/{id}/usage-windows. */
+export interface UsageWindowWire {
+  window: '5h' | '7d'
+  /** Null while no window is open — nothing counted since the last one ended. */
+  startedAt: string | null
+  resetsAt: string | null
+  requests: number
+  requestLimit: number | null
+  costUsd: number
+  spendLimitUsd: number | null
 }
 
-/** One install of an authorized app, as its app's page lists it. */
-export interface AppDeviceWire {
-  /** The access token this install presents; its page is where it is revoked. */
-  tokenId: string
-  keyPrefix: string
-  environment: string
-  plan: { id: string; name: string } | null
-  requestsToday: number
-  dailyRequestLimit: number | null
-  costUsd: number | null
-  lastUsedAt: string | null
-  registeredAt: string
-  revokedAt: string | null
+export interface TokenUsageWindowsWire {
+  /** False when the token's plan sets no limit, or it has no plan. */
+  limited: boolean
+  windows: UsageWindowWire[]
 }

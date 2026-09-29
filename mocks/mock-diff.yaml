@@ -375,54 +375,6 @@ screens:
           mock:
             type: html
             path: mocks/access-token-issued.html
-  - id: access-apps
-    category: Access tokens
-    devices:
-      - id: desktop
-        viewport:
-          width: 1440
-          height: 900
-          deviceScaleFactor: 2
-        colorSchemes:
-          - light
-          - dark
-        versions:
-          mock:
-            type: html
-            path: mocks/access-apps.html
-        actual:
-          type: url
-          url: http://localhost:16175/access-tokens/apps
-  - id: access-app-add
-    category: Access tokens
-    devices:
-      - id: desktop
-        viewport:
-          width: 1440
-          height: 900
-          deviceScaleFactor: 2
-        colorSchemes:
-          - light
-          - dark
-        versions:
-          mock:
-            type: url
-            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-apps.html?add
-  - id: access-app
-    category: Access tokens
-    devices:
-      - id: desktop
-        viewport:
-          width: 1440
-          height: 900
-          deviceScaleFactor: 2
-        colorSchemes:
-          - light
-          - dark
-        versions:
-          mock:
-            type: html
-            path: mocks/access-app.html
   - id: access-plans
     category: Access tokens
     devices:
@@ -456,6 +408,366 @@ screens:
           mock:
             type: url
             url: http://localhost:16175/mock-diff/api/workspace/mocks/access-plans.html?edit
+  - id: access-plan-create
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-plans.html?create
+  - id: access-plan-edit-all
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-plans.html?edit&all
+  - id: access-plan-edit-none
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-plans.html?edit&none
+  - id: access-plan-edit-provider-none
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-plans.html?edit&provider-none
+  - id: access-plan-edit-all-no-default
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-plans.html?edit&all&no-default
+  - id: access-plan-create-all
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-plans.html?create&all
+  - id: access-plan-create-none
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-plans.html?create&none
+  - id: access-plan-edit-plus
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-plans.html?edit&plan=Plus
+  - id: access-plan-edit-pro
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-plans.html?edit&plan=Pro
+  - id: access-plan-edit-max
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-plans.html?edit&plan=Max
+  - id: access-plan-edit-free
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-plans.html?edit&plan=Free
+  - id: access-token-spent
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-token.html?spent
+  - id: access-token-week-spent
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-token.html?week-spent
+  - id: access-token-not-started
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-token.html?not-started
+  - id: access-token-partial
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-token.html?partial
+  - id: access-token-partial-reset
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-token.html?partial&reset
+  - id: access-token-partial-not-started
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-token.html?not-started&partial
+  - id: access-token-no-plan
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-token.html?no-plan
+  - id: access-token-unlimited
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-token.html?unlimited
+  - id: access-token-reset
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-token.html?reset
+  - id: access-token-spent-reset
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-token.html?spent&reset
+  - id: access-token-week-spent-reset
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-token.html?week-spent&reset
+  - id: access-tokens-reset-all
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-tokens.html?reset-all
+  - id: access-tokens-usage-reset
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-tokens.html?usage-reset
   - id: activity
     category: Activity
     devices:
