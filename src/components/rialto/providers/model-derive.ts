@@ -1,4 +1,5 @@
 import type { CatalogEntry, CatalogModel } from '@/schemas/api/catalog'
+import type { ThinkingOff } from '@/schemas/domain/model-capability'
 import { apiStyleOverrideOf, disabledModelsOf, effortOf, listedModelsOf, testStatusOf } from './derive'
 import type { TierView } from './tier-aliases'
 import type { ApiStyle, Provider, ReasoningEffort, TestStatus, Tier } from './types'
@@ -40,6 +41,13 @@ export interface ModelRow {
    * and on api_key providers, which record nothing.
    */
   supportedEfforts: readonly ReasoningEffort[] | null
+  /**
+   * Claude Code: the efforts each way of switching thinking off was
+   * accepted with (Provider.modelThinkingOff). Null until the probe has
+   * run, which it does only on switched-on models, and on every other
+   * provider.
+   */
+  thinkingOff: ThinkingOff | null
   contextWindow: number | undefined
   inputPer1M: number | null
   cachedInputPer1M: number | null
@@ -73,6 +81,7 @@ export function buildModelRows(
   const off = new Set(disabledModelsOf(p))
   const ctx = p.modelContextWindows === undefined ? {} : p.modelContextWindows
   const recordedEfforts = p.modelSupportedEfforts === undefined ? {} : p.modelSupportedEfforts
+  const probedThinking = p.modelThinkingOff === undefined ? {} : p.modelThinkingOff
   const prices = p.modelPrices === undefined ? {} : p.modelPrices
   const catalogModels = catalogModelIndex(catalogEntry)
   return listedModelsOf(p).map((name) => {
@@ -92,6 +101,7 @@ export function buildModelRows(
       newer: views.some((v) => v.newer.includes(name)),
       effort: effortOf(p, name),
       supportedEfforts: recordedEfforts[name] === undefined ? null : recordedEfforts[name],
+      thinkingOff: probedThinking[name] === undefined ? null : probedThinking[name],
       contextWindow: ctx[name],
       inputPer1M: price === undefined ? null : price.inputPer1M,
       cachedInputPer1M: fromCatalog === undefined ? null : fromCatalog.cachedInputPer1M,

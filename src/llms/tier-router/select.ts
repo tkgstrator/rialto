@@ -28,8 +28,22 @@
  *     before the limit is hit;
  *   - the rest, and any target with no reading yet, keep list order.
  *
- * Within each band the list order holds. When every route is over pace the
- * first still leads: a projection alone never refuses a request.
+ * Within the surplus and even bands the list order holds. Within the over
+ * band the route least over leads, and on a tie the lower tier: routes on
+ * one subscription share its 5h and weekly windows, so its Opus and its
+ * Sonnet always read the same pace and land in this band together — list
+ * order alone would keep Opus in front and never step down, though Sonnet
+ * spends the shared budget more slowly. A projection alone never refuses
+ * a request: when every route is over pace, they all still serve, in
+ * that order.
+ *
+ * Pace lowers the tier one step at most, and only from the top two: it may
+ * put an Opus route ahead of a Fable one, or a Sonnet route ahead of an
+ * Opus one, never Sonnet ahead of Fable nor anything ahead of Sonnet that
+ * is below it. Past that the quality drop is worth more than the quota a
+ * forecast says it would save. A route of the same or a higher tier may
+ * always move ahead. Only pace is bound by this: the operator's own list
+ * order, and a gate skipping a route, can still reach any tier.
  *
  * What an empty result means depends on why — see `TierOutcome`.
  */
@@ -141,19 +155,58 @@ const REFUSAL_TEXT: Partial<Record<TierSkipReason, string>> = {
 
 const NOT_PACED = { promoted: [], steppedDown: [] }
 
-// Stable: list order holds within each band.
+// The tiers pace may step down from, one tier each (see the header).
+const STEP_DOWN_FROM: readonly ModelTier[] = ['fable', 'opus']
+
+// REQUESTED_MODEL_TIERS runs top tier first, so a higher index is a lower tier.
+const tierIndex = (tier: ModelTier): number => REQUESTED_MODEL_TIERS.indexOf(tier)
+
+// Whether pace may serve `later`, listed below `earlier`, ahead of it.
+const mayServeAhead = (later: TierCandidate, earlier: TierCandidate): boolean => {
+  const drop = tierIndex(later.targetTier) - tierIndex(earlier.targetTier)
+  return drop <= 0 || (drop === 1 && STEP_DOWN_FROM.includes(earlier.targetTier))
+}
+
+// Over pace, the route least over goes first, then the lower tier (see the
+// header). The other bands keep list order.
+const overPaceOf = (band: PaceBand, projectedPct: number | null): number =>
+  band === 'over' && projectedPct !== null ? projectedPct : 0
+const overTierRank = (band: PaceBand, tier: ModelTier): number => (band === 'over' ? -tierIndex(tier) : 0)
+
+type Banded = { c: TierCandidate; i: number; band: PaceBand }
+
+// The order pace would like, before the step-down limit. Stable: list order
+// breaks every tie.
+const byPreference = (a: Banded, b: Banded): number =>
+  BAND_ORDER.indexOf(a.band) - BAND_ORDER.indexOf(b.band) ||
+  overPaceOf(a.band, a.c.projectedPct) - overPaceOf(b.band, b.c.projectedPct) ||
+  overTierRank(a.band, a.c.targetTier) - overTierRank(b.band, b.c.targetTier) ||
+  a.i - b.i
+
 function byPace(passing: readonly TierCandidate[]): { ordered: TierCandidate[]; paced: TierSelection['paced'] } {
-  const banded = passing.map((c, i) => ({ c, i, band: paceBandOf(c.projectedPct) }))
-  const ordered = [...banded].sort((a, b) => BAND_ORDER.indexOf(a.band) - BAND_ORDER.indexOf(b.band) || a.i - b.i)
-  const firstEven = banded.findIndex((b) => b.band !== 'surplus')
+  const banded = passing.map((c, i): Banded => ({ c, i, band: paceBandOf(c.projectedPct) }))
+  const preferred = [...banded].sort(byPreference)
+  // Place one route per step: the most preferred of those waiting that pace
+  // may serve ahead of every route still waiting above it in the list. The
+  // first waiting in list order always qualifies, so every route is placed.
+  const ordered = banded.reduce<Banded[]>((placed) => {
+    const waiting = preferred.filter((b) => !placed.includes(b))
+    const next = waiting.find((b) => waiting.every((above) => above.i >= b.i || mayServeAhead(b.c, above.c)))
+    return next === undefined ? placed : [...placed, next]
+  }, [])
+  // Where each route, by its list index, ends up.
+  const position = banded.map((b) => ordered.indexOf(b))
+  const overtook = (b: Banded): boolean => banded.some((above) => above.i < b.i && position[above.i] > position[b.i])
+  const overtaken = (b: Banded): boolean => banded.some((below) => below.i > b.i && position[below.i] < position[b.i])
   return {
     ordered: ordered.map((b) => b.c),
     paced: {
-      // A surplus route already at the front was not moved.
-      promoted: banded.filter((b, i) => b.band === 'surplus' && firstEven >= 0 && i > firstEven).map((b) => b.c.route),
-      steppedDown: banded
-        .filter((b, i) => b.band === 'over' && banded.slice(i + 1).some((later) => later.band !== 'over'))
-        .map((b) => b.c.route)
+      // A surplus route already at the front, or held behind a higher tier
+      // by the step-down limit, was not moved.
+      promoted: banded.filter((b) => b.band === 'surplus' && overtook(b)).map((b) => b.c.route),
+      // An over-pace route something listed below it now serves ahead of:
+      // a route on pace, one less over, or a lower tier on the same pace.
+      steppedDown: banded.filter((b) => b.band === 'over' && overtaken(b)).map((b) => b.c.route)
     }
   }
 }
