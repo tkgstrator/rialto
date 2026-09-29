@@ -130,6 +130,23 @@ const NUM_CELL = 'px-2 text-right font-mono text-xs tabular-nums'
 // room; the effort picker still offers only the recorded levels.
 const WIDE_CELL = 'hidden @min-[84rem]:table-cell'
 const WIDE_COL = 'hidden @min-[84rem]:table-column'
+
+// The Effort levels column, sized for the longest ladder a row reports:
+// its badges sit on one line and would otherwise run on into the Tier
+// column, as a Codex list up to `ultra` did at a fixed 16rem. At 12px the
+// widest badges (medium, minimal) are about 58px and the rest narrower, so
+// 16rem holds any four levels and each level past that adds 2.5rem, with
+// room to spare at every count. At 84rem, where the column first shows,
+// the model name keeps 19.5rem beside Claude's five levels and Thinking
+// off, and 12rem even beside all eight.
+const EFFORT_LEVELS_WIDTHS = ['w-64', 'w-70', 'w-80', 'w-90', 'w-100'] as const
+const effortLevelsWidth = (rows: readonly ModelRow[]): string => {
+  const longest = Math.max(
+    0,
+    ...rows.map((row) => (row.supportedEfforts === null ? 0 : effortLadder(row.supportedEfforts).length))
+  )
+  return EFFORT_LEVELS_WIDTHS[Math.min(Math.max(longest - 4, 0), EFFORT_LEVELS_WIDTHS.length - 1)]
+}
 const HEAD_CELL = 'px-2 text-right font-medium'
 
 function Head({
@@ -526,7 +543,7 @@ export function ModelsTable({
       <table className='w-full table-fixed'>
         <colgroup>
           <col />
-          {hasEffortReading ? <col className={cn(WIDE_COL, 'w-64')} /> : null}
+          {hasEffortReading ? <col className={cn(WIDE_COL, effortLevelsWidth(rows))} /> : null}
           {hasThinkingReading ? <col className={cn(WIDE_COL, 'w-44')} /> : null}
           {withTier ? <col className={tierWidth} /> : null}
           <col className='w-20' />
