@@ -10,6 +10,7 @@
  */
 
 import { describe, expect, test } from 'bun:test'
+import { AnthropicTransformer } from '../../../src/llms/transformers/anthropic/endpoint'
 import { convertAnthropicToolsToUnified } from '../../../src/llms/transformers/anthropic/request'
 import { AnthropicIncomingRequestSchema } from '../../../src/schemas/wire/anthropic/messages'
 
@@ -45,7 +46,8 @@ describe('AnthropicToolDefSchema', () => {
       'computer_20250124',
       'bash_20250124',
       'text_editor_20250124',
-      'code_execution_20250522'
+      'code_execution_20250522',
+      'advisor_20260301'
     ]
     for (const type of kinds) {
       const parsed = AnthropicIncomingRequestSchema.parse({
@@ -151,5 +153,36 @@ describe('convertAnthropicToolsToUnified', () => {
     })
     const unified = convertAnthropicToolsToUnified(parsed.tools)
     expect(unified.map((t) => t.function.name)).toEqual(['web_search', 'lookup'])
+  })
+
+  // The advisor only runs on Anthropic, and this conversion only runs for
+  // other vendors: carried as a function it would be called and left
+  // unanswered, so it is dropped while the rest of the tools stay.
+  test('drops the advisor tool and keeps the others', () => {
+    const parsed = AnthropicIncomingRequestSchema.parse({
+      ...baseRequest,
+      tools: [
+        { type: 'advisor_20260301', name: 'advisor', model: 'claude-opus-5-5', max_uses: 3 },
+        {
+          name: 'lookup',
+          description: 'looks something up',
+          input_schema: { type: 'object', properties: {} }
+        }
+      ]
+    })
+    const unified = convertAnthropicToolsToUnified(parsed.tools)
+    expect(unified.map((t) => t.function.name)).toEqual(['lookup'])
+  })
+})
+
+describe('AnthropicTransformer.transformRequestOut', () => {
+  // An advisor-only tool list converts to nothing; `tools` must then be
+  // absent rather than `[]`, which OpenAI rejects.
+  test('omits tools when the advisor was the only one', async () => {
+    const unified = await new AnthropicTransformer().transformRequestOut(
+      { ...baseRequest, tools: [{ type: 'advisor_20260301', name: 'advisor', model: 'claude-opus-5-5' }] },
+      {}
+    )
+    expect(unified.tools).toBeUndefined()
   })
 })
