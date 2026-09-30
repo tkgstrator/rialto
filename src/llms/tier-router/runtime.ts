@@ -26,6 +26,7 @@ import {
   type TierRouteView
 } from '../../services/tier-route-service'
 import { tierOf } from '../../shared/model-tier'
+import { preferredTier } from './decision'
 import { selectTierRoute, type TierCandidate, type TierSelection } from './select'
 import { effectiveLongContextThreshold, longContextBase } from './threshold'
 
@@ -55,7 +56,13 @@ const emptyView = (key: string): TierProfileView => ({
     longContextThreshold: null,
     previousLongContextThreshold: null,
     longContextTunedAt: null,
-    autoTuneLongContext: true
+    autoTuneLongContext: true,
+    decisionApiBaseUrl: null,
+    decisionApiKeyEnv: null,
+    decisionEnabled: false,
+    decisionMinConfidence: 0.9,
+    decisionModel: null,
+    decisionTimeoutMs: 1_500
   },
   longContextThreshold: longContextBase(null)
 })
@@ -160,6 +167,7 @@ export interface TierRoutingInput {
   thinking: boolean
   isSubagent: boolean
   needsWebSearch: boolean
+  hasTools: boolean
 }
 
 // Projected use at the reset, from the snapshot; null for a target it has
@@ -186,9 +194,45 @@ export async function routeByScenario(input: TierRoutingInput): Promise<TierRout
   }))
   const model = input.requestedModel
   const requestedTier = model === undefined ? undefined : tierOf(model.slice(model.indexOf(',') + 1))
+  const classifierCandidates = [
+    ...new Set(
+      candidates
+        .filter((candidate) => candidate.enabled && candidate.targetEnabled && candidate.target !== null)
+        .map((candidate) => candidate.targetTier)
+    )
+  ]
+  const preferred = await preferredTier(
+    {
+      apiBaseUrl: view.constraints.decisionApiBaseUrl,
+      apiKeyEnv: view.constraints.decisionApiKeyEnv,
+      enabled: view.constraints.decisionEnabled,
+      minConfidence: view.constraints.decisionMinConfidence,
+      model: view.constraints.decisionModel,
+      timeoutMs: view.constraints.decisionTimeoutMs
+    },
+    {
+      candidates: classifierCandidates,
+      hasTools: input.hasTools,
+      isSubagent: input.isSubagent,
+      needsWebSearch: input.needsWebSearch,
+      requestedModel: input.requestedModel,
+      requestTokenCount: input.requestTokenCount,
+      scenario: classification.scenario,
+      thinking: input.thinking
+    }
+  )
+  // A decision service can express a preference but cannot introduce a new
+  // route. Keeping all other routes preserves the operator's failover order.
+  const orderedCandidates =
+    preferred === null
+      ? candidates
+      : [
+          ...candidates.filter((candidate) => candidate.targetTier === preferred),
+          ...candidates.filter((candidate) => candidate.targetTier !== preferred)
+        ]
   const selection = selectTierRoute({
     requestedTier,
-    candidates,
+    candidates: orderedCandidates,
     constraints: view.constraints,
     needsWebSearch: input.needsWebSearch,
     requestTokenCount: input.requestTokenCount,

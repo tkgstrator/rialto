@@ -109,6 +109,18 @@ export interface ScenarioProfileState {
   view: TierProfileViewWire | null
   blockedEscalationTiers: ModelTier[]
   setBlockedEscalationTiers: React.Dispatch<React.SetStateAction<ModelTier[]>>
+  decisionEnabled: boolean
+  setDecisionEnabled: React.Dispatch<React.SetStateAction<boolean>>
+  decisionApiBaseUrl: string
+  setDecisionApiBaseUrl: React.Dispatch<React.SetStateAction<string>>
+  decisionApiKeyEnv: string
+  setDecisionApiKeyEnv: React.Dispatch<React.SetStateAction<string>>
+  decisionModel: string
+  setDecisionModel: React.Dispatch<React.SetStateAction<string>>
+  decisionMinConfidence: number
+  setDecisionMinConfidence: React.Dispatch<React.SetStateAction<number>>
+  decisionTimeoutMs: number
+  setDecisionTimeoutMs: React.Dispatch<React.SetStateAction<number>>
   draft: ScenarioDraft
   setDraft: React.Dispatch<React.SetStateAction<ScenarioDraft>>
   loading: boolean
@@ -130,6 +142,12 @@ export function useScenarioProfile(profileKey: string | null): ScenarioProfileSt
   const mounted = useMountedRef()
   const [view, setView] = useState<TierProfileViewWire | null>(null)
   const [blockedEscalationTiers, setBlockedEscalationTiers] = useState<ModelTier[]>([])
+  const [decisionEnabled, setDecisionEnabled] = useState(false)
+  const [decisionApiBaseUrl, setDecisionApiBaseUrl] = useState('')
+  const [decisionApiKeyEnv, setDecisionApiKeyEnv] = useState('')
+  const [decisionModel, setDecisionModel] = useState('')
+  const [decisionMinConfidence, setDecisionMinConfidence] = useState(0.9)
+  const [decisionTimeoutMs, setDecisionTimeoutMs] = useState(1_500)
   const [draft, setDraft] = useState<ScenarioDraft>(emptyDraft)
   // Server snapshot in write shape, kept so the toolbar can tell an
   // edited profile from a freshly loaded one without diffing against a
@@ -150,6 +168,12 @@ export function useScenarioProfile(profileKey: string | null): ScenarioProfileSt
         const loaded = draftOf(res)
         setView(res)
         setBlockedEscalationTiers(res.constraints.blockedEscalationTiers)
+        setDecisionEnabled(res.constraints.decisionEnabled)
+        setDecisionApiBaseUrl(res.constraints.decisionApiBaseUrl ?? '')
+        setDecisionApiKeyEnv(res.constraints.decisionApiKeyEnv ?? '')
+        setDecisionModel(res.constraints.decisionModel ?? '')
+        setDecisionMinConfidence(res.constraints.decisionMinConfidence)
+        setDecisionTimeoutMs(res.constraints.decisionTimeoutMs)
         setDraft(loaded)
         setBaseline(loaded)
         setError(null)
@@ -171,9 +195,26 @@ export function useScenarioProfile(profileKey: string | null): ScenarioProfileSt
     () =>
       draftDiffers(draft, baseline) ||
       (view !== null &&
-        JSON.stringify([...blockedEscalationTiers].sort()) !==
-          JSON.stringify([...view.constraints.blockedEscalationTiers].sort())),
-    [draft, baseline, blockedEscalationTiers, view]
+        (JSON.stringify([...blockedEscalationTiers].sort()) !==
+          JSON.stringify([...view.constraints.blockedEscalationTiers].sort()) ||
+          decisionEnabled !== view.constraints.decisionEnabled ||
+          decisionApiBaseUrl !== (view.constraints.decisionApiBaseUrl ?? '') ||
+          decisionApiKeyEnv !== (view.constraints.decisionApiKeyEnv ?? '') ||
+          decisionModel !== (view.constraints.decisionModel ?? '') ||
+          decisionMinConfidence !== view.constraints.decisionMinConfidence ||
+          decisionTimeoutMs !== view.constraints.decisionTimeoutMs)),
+    [
+      draft,
+      baseline,
+      blockedEscalationTiers,
+      decisionEnabled,
+      decisionApiBaseUrl,
+      decisionApiKeyEnv,
+      decisionModel,
+      decisionMinConfidence,
+      decisionTimeoutMs,
+      view
+    ]
   )
 
   // Save is the PUT and then a fresh read: the write answers only with
@@ -186,7 +227,16 @@ export function useScenarioProfile(profileKey: string | null): ScenarioProfileSt
     if (profileKey === null || view === null || view.key !== profileKey) return { success: false, warnings: [] }
     const outcome = await api.putTierProfile(profileKey, {
       routes: draft,
-      constraints: { ...view.constraints, blockedEscalationTiers }
+      constraints: {
+        ...view.constraints,
+        blockedEscalationTiers,
+        decisionEnabled,
+        decisionApiBaseUrl: decisionApiBaseUrl.length === 0 ? null : decisionApiBaseUrl,
+        decisionApiKeyEnv: decisionApiKeyEnv.length === 0 ? null : decisionApiKeyEnv,
+        decisionModel: decisionModel.length === 0 ? null : decisionModel,
+        decisionMinConfidence,
+        decisionTimeoutMs
+      }
     })
     if (outcome.success) await load(profileKey)
     return outcome
@@ -195,6 +245,12 @@ export function useScenarioProfile(profileKey: string | null): ScenarioProfileSt
   const reset = useCallback(() => {
     setDraft(baseline)
     setBlockedEscalationTiers(view === null ? [] : view.constraints.blockedEscalationTiers)
+    setDecisionEnabled(view !== null && view.constraints.decisionEnabled)
+    setDecisionApiBaseUrl(view?.constraints.decisionApiBaseUrl ?? '')
+    setDecisionApiKeyEnv(view?.constraints.decisionApiKeyEnv ?? '')
+    setDecisionModel(view?.constraints.decisionModel ?? '')
+    setDecisionMinConfidence(view?.constraints.decisionMinConfidence ?? 0.9)
+    setDecisionTimeoutMs(view?.constraints.decisionTimeoutMs ?? 1_500)
   }, [baseline, view])
 
   return {
@@ -203,6 +259,18 @@ export function useScenarioProfile(profileKey: string | null): ScenarioProfileSt
     setDraft,
     blockedEscalationTiers,
     setBlockedEscalationTiers,
+    decisionEnabled,
+    setDecisionEnabled,
+    decisionApiBaseUrl,
+    setDecisionApiBaseUrl,
+    decisionApiKeyEnv,
+    setDecisionApiKeyEnv,
+    decisionModel,
+    setDecisionModel,
+    decisionMinConfidence,
+    setDecisionMinConfidence,
+    decisionTimeoutMs,
+    setDecisionTimeoutMs,
     loading,
     error,
     dirty,
