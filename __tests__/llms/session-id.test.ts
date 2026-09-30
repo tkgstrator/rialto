@@ -14,6 +14,12 @@ test('resolveSessionId: thread_id header beats the cc-session header', () => {
   expect(resolveSessionId(c)).toBe('th')
 })
 
+// Codex CLI 0.158 sends it hyphenated.
+test('resolveSessionId: the thread-id header is the thread_id header', () => {
+  const c = ctx({ headers: { 'thread-id': 'th-new', 'x-claude-code-session-id': 'sess-h' }, body: {} })
+  expect(resolveSessionId(c)).toBe('th-new')
+})
+
 test('resolveSessionId: extracts session_id from a JSON user_id blob', () => {
   const body = { metadata: { user_id: JSON.stringify({ device_id: 'd', account_uuid: '', session_id: 'sess-b' }) } }
   expect(resolveSessionId(ctx({ headers: {}, body }))).toBe('sess-b')

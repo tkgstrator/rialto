@@ -24,7 +24,7 @@
 
 import { describe, expect, test } from 'bun:test'
 import { convertChatCompletionToResponses } from '../../src/llms/transformers/openai/responses/inbound'
-import { handleStreamEvent } from '../../src/llms/transformers/openai/responses/stream-chunks'
+import { handleStreamEvent, ResponsesStreamCursor } from '../../src/llms/transformers/openai/responses/stream-chunks'
 import { aggregateOpenAiChatSseToJson } from '../../src/llms/utils/sse-aggregate'
 
 function driveStream(events: unknown[]): Response {
@@ -35,8 +35,9 @@ function driveStream(events: unknown[]): Response {
   const enqueue = (chunk: unknown): void => {
     chunks.push(`data: ${JSON.stringify(chunk)}\n\n`)
   }
+  const cursor = new ResponsesStreamCursor()
   for (const ev of events) {
-    handleStreamEvent(ev as never, bumpIndex, enqueue)
+    handleStreamEvent(ev as never, bumpIndex, enqueue, cursor)
   }
   chunks.push('data: [DONE]\n\n')
   return new Response(chunks.join(''), {

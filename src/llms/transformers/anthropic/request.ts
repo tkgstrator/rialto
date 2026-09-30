@@ -171,11 +171,14 @@ function buildAssistantToolCalls(blocks: AnthropicContentBlock[]): UnifiedMessag
   })
 }
 
+// A signed block with no text is kept: it is how Anthropic answers with
+// thinking omitted, and how a Codex reply with no reasoning summary carries
+// its encrypted reasoning to the next turn (utils/codex-reasoning.ts).
 function buildAssistantThinking(blocks: AnthropicContentBlock[]): UnifiedMessage['thinking'] {
-  const thinkingPart = blocks.find((c) => c.type === 'thinking' && c.signature && c.thinking)
+  const thinkingPart = blocks.find((c) => c.type === 'thinking' && c.signature)
   if (!thinkingPart) return undefined
   return {
-    content: thinkingPart.thinking!,
+    content: typeof thinkingPart.thinking === 'string' ? thinkingPart.thinking : '',
     signature: thinkingPart.signature
   }
 }

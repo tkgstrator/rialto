@@ -16,6 +16,7 @@ import type {
   GeminiPart,
   GeminiTextPart
 } from '@/schemas/wire/gemini/content'
+import { isSealedCodexReasoning } from '../codex-reasoning'
 import { liftToolResultImages } from '../tool-result-images'
 
 const genRandomToolId = (): string => `tool_${Math.random().toString(36).substring(2, 15)}`
@@ -50,13 +51,24 @@ function geminiRoleOf(message: UnifiedMessage): 'user' | 'model' {
 }
 
 /**
+ * The thinking signature to hand Gemini back, if it is one Gemini could
+ * have issued. A Codex reasoning item sealed into the signature
+ * (utils/codex-reasoning.ts) is only ever readable by Codex.
+ */
+function thoughtSignatureOf(message: UnifiedMessage): string | undefined {
+  const signature = message?.thinking?.signature
+  return signature === undefined || isSealedCodexReasoning(signature) ? undefined : signature
+}
+
+/**
  * Build parts[] from a string-valued message body, attaching the
  * thoughtSignature when present.
  */
 function buildStringContentParts(content: string, message: UnifiedMessage): GeminiPart[] {
   const part: GeminiTextPart = { text: content }
-  if (message?.thinking?.signature) {
-    part.thoughtSignature = message.thinking.signature
+  const signature = thoughtSignatureOf(message)
+  if (signature) {
+    part.thoughtSignature = signature
   }
   return [part]
 }
@@ -141,8 +153,9 @@ function appendToolCallParts(parts: GeminiPart[], message: UnifiedMessage): void
         args: parseToolArguments(toolCall.function.arguments)
       }
     }
-    if (index === 0 && message.thinking?.signature) {
-      part.thoughtSignature = message.thinking.signature
+    const signature = thoughtSignatureOf(message)
+    if (index === 0 && signature) {
+      part.thoughtSignature = signature
     }
     parts.push(part)
   })

@@ -24,7 +24,8 @@ export function buildTextDeltaChunk(
 
 export function buildToolCallAddedChunk(
   data: ResponsesStreamEvent,
-  getCurrentIndex: (eventType: string) => number
+  getCurrentIndex: (eventType: string) => number,
+  slot: number
 ): Record<string, unknown> {
   const item = data.item
   const toolName = item?.name
@@ -44,7 +45,7 @@ export function buildToolCallAddedChunk(
           role: 'assistant',
           tool_calls: [
             {
-              index: 0,
+              index: slot,
               id: callId,
               function: {
                 name: toolName,
@@ -149,7 +150,8 @@ export function buildAnnotationChunk(
 // would say nothing the accumulator does not already hold.
 export function buildToolCallPayloadDeltaChunk(
   data: ResponsesStreamEvent,
-  getCurrentIndex: (eventType: string) => number
+  getCurrentIndex: (eventType: string) => number,
+  slot: number
 ): Record<string, unknown> {
   return {
     id: newChatcmplId(data.item_id),
@@ -162,7 +164,7 @@ export function buildToolCallPayloadDeltaChunk(
         delta: {
           tool_calls: [
             {
-              index: 0,
+              index: slot,
               function: {
                 arguments: stringDeltaOrEmpty(data.delta)
               }
