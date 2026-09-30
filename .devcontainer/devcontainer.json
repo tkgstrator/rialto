@@ -19,6 +19,7 @@
     "1455": { "label": "Codex OAuth callback", "onAutoForward": "silent" }
   },
   "remoteEnv": {
+    "OPENAI_API_KEY": "${localEnv:OPENAI_API_KEY}",
     "CODEX_HOME": "/home/vscode/app/.codex",
     "CLAUDE_CODE_AUTO_MODE_SERVER": "0",
     "CLOUDFLARE_API_TOKEN": "${localEnv:CLOUDFLARE_API_TOKEN}",
