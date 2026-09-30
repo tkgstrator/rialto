@@ -125,12 +125,13 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `codex-stream-failure.test.ts` | 200 を返した後の Codex ストリームで `response.failed` / `error` / `response.incomplete` が来たとき、`/v1/messages` には上流のメッセージを持つ Anthropic の `error` イベントが 1 つだけ届き（後ろに `message_stop` を付けない）、非ストリームの再試行ではエラーコードに応じた 400 / 429 / 529 / 502 になること。`max_output_tokens` での incomplete は `max_tokens` で終わる通常のメッセージになること。`message_start` の無いストリームは `message_delta` + `message_stop` の 2 イベントではなく 0 イベントで閉じること |
 | `tool-result-images.test.ts` | `tool_result` の画像が base64 テキストにならないこと。unified では image part のまま保ち、Responses（Codex）では `function_call_output.output` の `input_image` 配列、Chat Completions と Gemini では tool メッセージ群の直後の user メッセージへ移すこと。テキストだけの配列は JSON ではなくテキストそのものになること |
 | `bypass-header-strip.test.ts` | bypass 時の hop-by-hop ヘッダ除去 |
-| `session-id.test.ts` | `thread_id` / `x-claude-code-session-id` / ランダム UUID の解決順 |
+| `session-id.test.ts` | `thread-id`（Codex CLI 0.158 の綴り）/ `thread_id` / `x-claude-code-session-id` / ランダム UUID の解決順 |
 | `persona-inbound-gate.test.ts` | ペルソナ挿入が `/v1/messages` **だけ**で走ること（routed な面で `routeRequest` を直接呼び、OpenAI 形の面では `body.system` に触らないこと） |
 | `openai-bypass-routing.test.ts` | passthrough 面（`/v1/chat/completions` / `/v1/responses`）ではルーティングを通らず `body.model` がそのまま残ること、routed な `/v1/messages` と `inboundPath` の無い旧呼び出しはルーティングを通ること（トークン数が付き、model が書き換わる） |
 | `openai-responses-*.test.ts` / `anthropic-response-to-chat.test.ts` / `gemini-*.test.ts` / `response-format-converter.test.ts` | 各ワイヤ形式の双方向変換とストリーム |
 | `claude-code-oauth-nonbypass.test.ts` | OAuth chain が bypass に落ちない経路 |
 | `transformers/*.test.ts` | 各 transformer のリクエスト整形と OAuth 基底 |
+| `transformers/codex-request.test.ts` | Codex へのリクエストが、どの入口から来ても Codex CLI 0.158.0（`codex exec`）の classic 形になること。呼び手の system は `input` 先頭の developer メッセージになり（`json_object` の "json" 検査はここを見る）、`instructions` は Responses の呼び手だけが自分で書く。CLI が送るトップレベルの項目だけを送り、`tool_choice: 'auto'`・並列ツール呼び出し（呼び手が切ったときだけ false）・`text.verbosity: 'low'`・`include: reasoning.encrypted_content`。ヘッダと `client_metadata` が CLI のもの（`x-codex-turn-metadata` は CLI と同じ項目順）。暗号化 reasoning が thinking ブロックの signature に封入されてクライアントへ届き、次のターンに同じアカウントへだけ reasoning 項目として戻ること（別アカウント・別プロバイダ・Anthropic・Gemini には行かない）。1 つの応答の 2 つのツール呼び出しが 2 つの `tool_use` になること |
 
 ### `__tests__/services` — サービス層
 

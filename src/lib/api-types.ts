@@ -293,6 +293,12 @@ export interface RoutingConstraintsWire {
   previousLongContextThreshold: number | null
   longContextTunedAt: string | null
   autoTuneLongContext: boolean
+  decisionApiBaseUrl: string | null
+  decisionApiKeyEnv: string | null
+  decisionEnabled: boolean
+  decisionMinConfidence: number
+  decisionModel: string | null
+  decisionTimeoutMs: number
 }
 
 export type ScenarioRoutesWire<R> = Record<RoutingScenario, Record<RoutingLane, R[]>>

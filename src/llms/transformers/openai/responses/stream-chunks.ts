@@ -6,7 +6,8 @@
  * purely to keep that file under the line-count budget.
  */
 
-import type { ResponsesStreamEvent } from '@/schemas/wire/openai/responses'
+import type { ResponsesStreamEvent, ResponsesStreamItem } from '@/schemas/wire/openai/responses'
+import type { ReasoningSealer } from '../../../utils/codex-reasoning'
 import { nowSeconds } from '../../../utils/time'
 import { modelOr, newChatcmplId, stringDeltaOrEmpty } from './helpers'
 import {
@@ -20,6 +21,63 @@ import {
 export type StreamIndexState = {
   index: number
   lastEventType: string
+}
+
+/**
+ * What the event mapping has to remember across one stream.
+ *
+ * Tool-call slots: a Responses stream sends call items one after another,
+ * each opened by `output_item.added` and followed by its own payload
+ * deltas, while Chat Completions tells calls apart by `tool_calls[].index`.
+ * Every call used to be stamped 0, so a consumer appended a second call's
+ * arguments onto the first call's — which is why parallel tool calls were
+ * switched off upstream rather than carried.
+ *
+ * Reasoning: a finished reasoning item is signed once, with its encrypted
+ * content sealed for the next turn when there is one (utils/codex-reasoning).
+ */
+export class ResponsesStreamCursor {
+  private readonly slots = new Map<string, number>()
+  private nextSlot = 0
+  private readonly sealReasoning: ReasoningSealer | null
+
+  constructor(sealReasoning: ReasoningSealer | null = null) {
+    this.sealReasoning = sealReasoning
+  }
+
+  openToolCall(data: ResponsesStreamEvent): number {
+    const slot = this.nextSlot
+    this.nextSlot += 1
+    for (const key of callKeys(data.item?.id, data.output_index)) this.slots.set(key, slot)
+    return slot
+  }
+
+  toolCallSlot(data: ResponsesStreamEvent): number {
+    const known = callKeys(data.item_id, data.output_index)
+      .map((key) => this.slots.get(key))
+      .find((slot) => slot !== undefined)
+    if (known !== undefined) return known
+    // A delta naming no call it can be matched to belongs to the call
+    // opened last: calls are streamed one at a time.
+    return Math.max(0, this.nextSlot - 1)
+  }
+
+  reasoningSignature(item: ResponsesStreamItem): string | null {
+    if (item.encrypted_content !== undefined && this.sealReasoning !== null) {
+      return this.sealReasoning(item.id, item.encrypted_content)
+    }
+    // Nothing the next turn could hand back. The item id still closes a
+    // thinking block that has summary text in it, as it always did.
+    const hasText = item.summary.some((part) => part.text.length > 0)
+    return hasText && item.id !== undefined ? item.id : null
+  }
+}
+
+// A call item is named by its id and by its output position; the `added`
+// event and the payload deltas each carry either or both.
+function callKeys(itemId: string | undefined, outputIndex: number | undefined): string[] {
+  const keys = itemId === undefined ? [] : [itemId]
+  return outputIndex === undefined ? keys : [...keys, `#${outputIndex}`]
 }
 
 function buildCompletedChunk(data: ResponsesStreamEvent, finishReasonOverride?: string): Record<string, unknown> {
@@ -88,7 +146,8 @@ function detailsField(source: object, from: string, to: string): Record<string, 
 
 function buildReasoningDeltaChunk(
   data: ResponsesStreamEvent,
-  getCurrentIndex: (eventType: string) => number
+  getCurrentIndex: (eventType: string) => number,
+  text: string
 ): Record<string, unknown> {
   return {
     id: newChatcmplId(data.item_id),
@@ -100,7 +159,7 @@ function buildReasoningDeltaChunk(
         index: getCurrentIndex(data.type),
         delta: {
           thinking: {
-            content: stringDeltaOrEmpty(data.delta)
+            content: text
           }
         },
         finish_reason: null
@@ -111,28 +170,53 @@ function buildReasoningDeltaChunk(
 
 function buildReasoningSignatureChunk(
   data: ResponsesStreamEvent,
-  getCurrentIndex: (eventType: string) => number
+  getCurrentIndex: (eventType: string) => number,
+  signature: string
 ): Record<string, unknown> {
-  // Use the same index as the most recent reasoning_summary_text delta
-  // (the original code reused `currentIndex` without bumping). This
-  // helper inspects the tracker without mutating it by passing the
-  // type that already advanced it.
   return {
-    id: newChatcmplId(data.item_id),
+    id: newChatcmplId(data.item?.id),
     object: 'chat.completion.chunk',
     created: nowSeconds(),
     model: data.response?.model,
     choices: [
       {
-        index: getCurrentIndex('response.reasoning_summary_text.delta'),
+        index: getCurrentIndex(data.type),
         delta: {
           thinking: {
-            signature: data.item_id
+            signature
           }
         },
         finish_reason: null
       }
     ]
+  }
+}
+
+/**
+ * One reasoning item becomes one thinking block: its summary parts stream
+ * into it, a blank line apart, and the item's signature closes it once the
+ * item is done. Signing each part as it ended split one item into as many
+ * blocks, and signed none at all when the request asked for no summary —
+ * the Codex CLI's own default — though the encrypted reasoning still came.
+ */
+function handleReasoningEvent(
+  data: ResponsesStreamEvent,
+  getCurrentIndex: (eventType: string) => number,
+  enqueueChunk: (chunk: unknown) => void,
+  cursor: ResponsesStreamCursor
+): void {
+  if (data.type === 'response.reasoning_summary_text.delta') {
+    enqueueChunk(buildReasoningDeltaChunk(data, getCurrentIndex, stringDeltaOrEmpty(data.delta)))
+    return
+  }
+  if (data.type === 'response.reasoning_summary_part.added') {
+    const later = data.summary_index !== undefined && data.summary_index > 0
+    if (later) enqueueChunk(buildReasoningDeltaChunk(data, getCurrentIndex, '\n\n'))
+    return
+  }
+  if (data.type === 'response.output_item.done' && data.item?.type === 'reasoning') {
+    const signature = cursor.reasoningSignature(data.item)
+    if (signature !== null) enqueueChunk(buildReasoningSignatureChunk(data, getCurrentIndex, signature))
   }
 }
 
@@ -230,7 +314,8 @@ function handleIncomplete(data: ResponsesStreamEvent, enqueueChunk: (chunk: unkn
 export function handleStreamEvent(
   data: ResponsesStreamEvent,
   getCurrentIndex: (eventType: string) => number,
-  enqueueChunk: (chunk: unknown) => void
+  enqueueChunk: (chunk: unknown) => void,
+  cursor: ResponsesStreamCursor
 ): boolean {
   switch (data.type) {
     case 'response.output_text.delta':
@@ -238,7 +323,7 @@ export function handleStreamEvent(
       return false
     case 'response.output_item.added':
       if (data.item?.type === 'function_call' || data.item?.type === 'custom_tool_call') {
-        enqueueChunk(buildToolCallAddedChunk(data, getCurrentIndex))
+        enqueueChunk(buildToolCallAddedChunk(data, getCurrentIndex, cursor.openToolCall(data)))
       } else if (data.item?.type === 'message') {
         const chunk = buildMessageAddedChunk(data, getCurrentIndex)
         if (chunk) enqueueChunk(chunk)
@@ -249,7 +334,7 @@ export function handleStreamEvent(
       return false
     case 'response.function_call_arguments.delta':
     case 'response.custom_tool_call_input.delta':
-      enqueueChunk(buildToolCallPayloadDeltaChunk(data, getCurrentIndex))
+      enqueueChunk(buildToolCallPayloadDeltaChunk(data, getCurrentIndex, cursor.toolCallSlot(data)))
       return false
     case 'response.completed':
       enqueueChunk(buildCompletedChunk(data))
@@ -262,10 +347,9 @@ export function handleStreamEvent(
       handleIncomplete(data, enqueueChunk)
       return true
     case 'response.reasoning_summary_text.delta':
-      enqueueChunk(buildReasoningDeltaChunk(data, getCurrentIndex))
-      return false
-    case 'response.reasoning_summary_part.done':
-      if (data.part) enqueueChunk(buildReasoningSignatureChunk(data, getCurrentIndex))
+    case 'response.reasoning_summary_part.added':
+    case 'response.output_item.done':
+      handleReasoningEvent(data, getCurrentIndex, enqueueChunk, cursor)
       return false
     default:
       return false
