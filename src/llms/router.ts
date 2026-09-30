@@ -122,7 +122,8 @@ async function routeThroughScenarios(req: RouterRequest, ctx: RouterContext, isS
     requestTokenCount: tokenCount,
     thinking: signals.thinking,
     isSubagent,
-    needsWebSearch: signals.webSearch
+    needsWebSearch: signals.webSearch,
+    hasTools: Array.isArray(req.body.tools) && req.body.tools.length > 0
   })
   const { selection, classification } = routing
   const { scenario, lane } = classification

@@ -81,7 +81,13 @@ export const DEFAULT_CONSTRAINTS: RoutingConstraints = {
   longContextThreshold: null,
   previousLongContextThreshold: null,
   longContextTunedAt: null,
-  autoTuneLongContext: true
+  autoTuneLongContext: true,
+  decisionApiBaseUrl: null,
+  decisionApiKeyEnv: null,
+  decisionEnabled: false,
+  decisionMinConfidence: 0.9,
+  decisionModel: null,
+  decisionTimeoutMs: 1_500
 }
 
 export function mapWith(

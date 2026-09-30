@@ -249,9 +249,11 @@ export function ProviderDetail(props: ProviderDetailProps) {
         key={provider.name}
         provider={provider}
         rows={rows}
+        tiers={props.tiers}
         editing={props.editing}
         onToggle={props.onToggleModel}
         onEffort={props.onModelEffort}
+        onAlias={props.onAlias}
       />
     </div>
   )
