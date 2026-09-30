@@ -45,6 +45,9 @@
     "source=${env:HOME}/.gemini,target=/home/vscode/.gemini,type=bind,consistency=cached,readonly"
   ],
   "features": {
+    "ghcr.io/thamaji/devcontainer-features/codex-cli:1": {
+      "VERSION": "latest"
+    },
     "ghcr.io/devcontainers/features/common-utils:2": {
       "configureZshAsDefaultShell": true
     },
