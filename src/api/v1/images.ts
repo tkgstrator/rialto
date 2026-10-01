@@ -7,9 +7,11 @@ import dayjs from '../../lib/dayjs'
 import { fetchProvider } from '../../llms/provider-fetch'
 import { CODEX_ORIGINATOR, CODEX_USER_AGENT } from '../../llms/transformers/openai/codex-oauth'
 import { logger } from '../../logger'
+import type { TokenPlan } from '../../services/access-token-service'
 import { ensureFreshCodexAccessToken } from '../../services/codex-auth/token'
 import { clearAccountExhaustion, markAccountExhausted } from '../../services/failover-state'
 import { passthroughDenial } from '../../services/inbound-surface-service'
+import { resolvePreferredProvider } from '../../services/model-provider-preference'
 import { releaseAccountForSession, resolveAccountForSession } from '../../services/session-account-router'
 import { getSubAccountTokensForProvider } from '../../services/subscription-account-sync-service'
 import { recordCallSpend } from '../../services/usage-window-service'
@@ -45,6 +47,7 @@ export type ImageInput = z.infer<typeof ImageBody>
 export interface ImageCaller {
   accessTokenId: string
   surface: 'openai-images' | typeof CODEX_MCP_SCOPE
+  plan?: TokenPlan | null
 }
 
 type ImageFailure = { ok: false; status: number; message: unknown; via?: string; retryAfter?: string }
@@ -69,8 +72,8 @@ const fail = (c: Context, status: number, message: unknown, via?: string): Respo
   })
 }
 
-/** Refuse ambiguous bare ids rather than charging the wrong subscription. */
-export async function resolveImageTarget(model: string) {
+/** Keep native image IDs public; choose the subscription inside Rialto. */
+export async function resolveImageTarget(model: string, plan?: TokenPlan | null) {
   const comma = model.indexOf(',')
   const name = comma < 0 ? model : model.slice(comma + 1)
   if (!CODEX_IMAGE_MODELS.includes(name)) return null
@@ -87,7 +90,30 @@ export async function resolveImageTarget(model: string) {
     },
     select: { provider: { select: { name: true, apiBaseUrl: true } } }
   })
-  return rows.length === 1 ? { provider: rows[0].provider, model: name } : null
+  const pools = await Promise.all(
+    rows.map(async (row) => ({
+      provider: row.provider.name,
+      tokens: await getSubAccountTokensForProvider(row.provider.name)
+    }))
+  )
+  const usable = new Set(
+    pools.filter((pool) => pool.tokens !== null && pool.tokens.codex.length > 0).map((pool) => pool.provider)
+  )
+  const allowed =
+    plan === null || plan === undefined
+      ? undefined
+      : plan.models.flatMap((entry) => {
+          const index = entry.indexOf(',')
+          return index > 0 && entry.slice(index + 1) === name ? [entry.slice(0, index)] : []
+        })
+  const selected = await resolvePreferredProvider(
+    name,
+    rows.filter((row) => usable.has(row.provider.name)).map((row) => row.provider.name),
+    allowed
+  )
+  const provider =
+    selected.status === 'preferred' ? rows.find((row) => row.provider.name === selected.provider)?.provider : undefined
+  return provider === undefined ? null : { provider, model: name }
 }
 
 async function readImageInput(c: Context): Promise<ImageInput | null> {
@@ -329,7 +355,7 @@ async function dispatchImage(
  * denials, the rotation and the request log are the same for both.
  */
 export async function generateImage(body: ImageInput, caller: ImageCaller): Promise<ImageOutcome> {
-  const target = await resolveImageTarget(body.model)
+  const target = await resolveImageTarget(body.model, caller.plan)
   if (target === null) return failure(400, 'Image model is unavailable, disabled, or ambiguous.')
   const denied = await passthroughDenial(IMAGE_PATH, `${target.provider.name},${target.model}`)
   if (denied !== undefined) return failure(403, denied)
@@ -342,7 +368,8 @@ export async function handleImageGeneration(c: Context): Promise<Response> {
   const body = await readImageInput(c)
   if (body === null)
     return fail(c, 400, 'Invalid image request (JSON, model, prompt, and supported image options required).')
-  const outcome = await generateImage(body, { accessTokenId: c.get('accessToken').id, surface: 'openai-images' })
+  const token = c.get('accessToken')
+  const outcome = await generateImage(body, { accessTokenId: token.id, surface: 'openai-images', plan: token.plan })
   if (outcome.ok) return c.json(outcome.payload)
   // Set before `fail`, which carries the context's headers onto its response.
   if (outcome.retryAfter !== undefined) c.header('retry-after', outcome.retryAfter)

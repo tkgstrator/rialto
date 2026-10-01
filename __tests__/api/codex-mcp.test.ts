@@ -14,6 +14,7 @@ import { resetLlmsContext } from '../../src/llms/context'
 import { invalidateTokenCache, issueAccessToken } from '../../src/services/access-token-service'
 import { clearAccountExhaustion } from '../../src/services/failover-state'
 import { invalidateSurfaceCache } from '../../src/services/inbound-surface-service'
+import { setModelProviderPriorities } from '../../src/services/model-provider-preference'
 import { encryptionKey, encryptString } from '../../src/services/subscription-account-sync/crypto'
 import { HAS_DB, resetDbTables, teardownPrisma } from '../db/helpers'
 
@@ -308,7 +309,7 @@ describe.skipIf(!HAS_DB)('Codex MCP server at /codex', () => {
     expect(first.content[0].text).toBe('Looks good')
     const threadId = /thread_id: (\S+)/.exec(textOf(first))?.[1]
     expect(threadId).toBeDefined()
-    expect(textOf(first)).toContain('model: codex,gpt-5.5')
+    expect(textOf(first)).toContain('model: gpt-5.5')
 
     expect(upstream).toHaveLength(1)
     expect(upstream[0].url).toBe(`${BASE}/responses`)
@@ -351,7 +352,7 @@ describe.skipIf(!HAS_DB)('Codex MCP server at /codex', () => {
     const mcp = (await issue(['codex-mcp'])).plaintext
     const result = await callTool(mcp, 'ask', { prompt: 'hi' })
     expect(result.isError).toBeUndefined()
-    expect(textOf(result)).toContain('model: codex,gpt-5.5')
+    expect(textOf(result)).toContain('model: gpt-5.5')
   })
 
   test('ask refuses a model Codex does not have without calling upstream', async () => {
@@ -359,7 +360,7 @@ describe.skipIf(!HAS_DB)('Codex MCP server at /codex', () => {
     const mcp = (await issue(['codex-mcp'])).plaintext
     const result = await callTool(mcp, 'ask', { prompt: 'hi', model: 'claude-opus-5' })
     expect(result.isError).toBe(true)
-    expect(textOf(result)).toContain('codex,gpt-5.5')
+    expect(textOf(result)).toContain('Available: gpt-5.5')
     expect(upstream).toHaveLength(0)
   })
 
@@ -469,6 +470,41 @@ describe.skipIf(!HAS_DB)('Codex MCP server at /codex', () => {
     expect((await app.fetch(new Request('http://local/codex/files/AAAAAAAAAAAAAAAAAAAAAA'))).status).toBe(404)
   })
 
+  test('duplicate Codex models need a priority and remain bare in status', async () => {
+    await seedCodex()
+    const db = getPrismaClient()
+    const provider = await db.provider.create({
+      data: {
+        name: 'codex-alt',
+        apiBaseUrl: BASE,
+        authMode: 'subscription',
+        apiStyle: 'openai_responses',
+        enabled: true
+      }
+    })
+    await db.model.create({ data: { providerId: provider.id, name: 'gpt-5.5', enabled: true } })
+    await db.subAccount.create({
+      data: {
+        providerId: provider.id,
+        label: 'second',
+        plan: 'pro',
+        sourcePath: 'oauth:test:second',
+        accountId: 'account-second',
+        accessTokenEnc: encryptString('oauth-second', encryptionKey()),
+        expiresAt: dayjs('2099-01-01T00:00:00Z').toDate()
+      }
+    })
+    resetLlmsContext()
+    const mcp = (await issue(['codex-mcp'])).plaintext
+    const report = JSON.parse(textOf(await callTool(mcp, 'status', {})))
+    expect(report.models).toEqual([])
+    expect(textOf(await callTool(mcp, 'ask', { prompt: 'hi', model: 'gpt-5.5' }))).toContain('configure their priority')
+    await setModelProviderPriorities('gpt-5.5', ['codex-alt', 'codex'])
+    const configured = JSON.parse(textOf(await callTool(mcp, 'status', {})))
+    expect(configured.models).toMatchObject([{ model: 'gpt-5.5', provider: 'codex-alt' }])
+    expect((await callTool(mcp, 'ask', { prompt: 'hi', model: 'gpt-5.5' })).isError).toBeUndefined()
+  })
+
   test('status reports the Codex accounts, their windows, and the models', async () => {
     const accountId = await seedCodex()
     clearAccountExhaustion(accountId)
@@ -497,8 +533,8 @@ describe.skipIf(!HAS_DB)('Codex MCP server at /codex', () => {
       weekly: { usedPercent: 7 },
       bankedResets: 2
     })
-    expect(report.models.map((m: { model: string }) => m.model)).toEqual(['codex,gpt-5.5'])
-    expect(report.imageModels).toEqual(['codex,gpt-image-2.5-flare'])
+    expect(report.models).toMatchObject([{ model: 'gpt-5.5', provider: 'codex' }])
+    expect(report.imageModels).toEqual(['gpt-image-2.5-flare'])
     expect(report.yourToken).toBeUndefined()
     expect(upstream).toHaveLength(0)
   })

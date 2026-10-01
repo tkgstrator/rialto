@@ -9,10 +9,12 @@ import { adminAuth, inboundProxyAuth } from './api/api-key-auth'
 import { catalogRoute } from './api/catalog/route'
 import { codexMcpRoute } from './api/codex-mcp/route'
 import { configRoute } from './api/config/route'
+import { decisionsRoute } from './api/decisions/route'
 import { healthRoute } from './api/health/route'
 import { identityRoute } from './api/identity/route'
 import { inboundSurfacesRoute } from './api/inbound-surfaces/route'
 import { logsRoute } from './api/logs/route'
+import { modelProviderPrioritiesRoute } from './api/models/provider-priorities/route'
 import { modelsRoute } from './api/models/route'
 import { modelTestRoute } from './api/models/test/route'
 import { modelTestAllRoute } from './api/models/test-all/route'
@@ -55,7 +57,6 @@ import { captureModelCapabilities } from './services/model-capability-service'
 import { startRoutingScheduler } from './services/routing-scheduler'
 import { startUsageCapture } from './services/usage-job'
 import { CODEX_MCP_PATH } from './shared/codex-mcp'
-import { HOME_DIR } from './shared/constants'
 import { APP_VERSION } from './version'
 
 // Hono root. Backend routes live under src/api/<path>/route.ts (one
@@ -180,6 +181,7 @@ app.onError((err, c) => {
 // Each sub-app declares its own absolute /api/... paths, so mount them
 // at root. OpenAPIHono.route() also merges their OpenAPI registries.
 app.route('/', configRoute)
+app.route('/', decisionsRoute)
 app.route('/', logsRoute)
 app.route('/', transformersRoute)
 app.route('/', subscriptionsRoute)
@@ -197,6 +199,7 @@ app.route('/', providerModelRoute)
 app.route('/', providerTierAliasRoute)
 app.route('/', providersTestRoute)
 app.route('/', modelsRoute)
+app.route('/', modelProviderPrioritiesRoute)
 app.route('/', modelTestRoute)
 app.route('/', modelTestAllRoute)
 app.route('/', scrapePricesRoute)

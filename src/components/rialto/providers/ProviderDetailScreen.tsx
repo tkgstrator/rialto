@@ -33,9 +33,17 @@ import {
 import { BusyOverlay } from './BusyOverlay'
 import { accountLabel, disabledModelsOf, enabledCountOf, fmtExpiry, listedModelsOf, providerState } from './derive'
 import { ProviderDetailPane } from './ProviderDetailPhone'
-import { applyDraft, EMPTY_DRAFT, hasChanges, type ProviderDraft, savePlan } from './provider-draft'
+import {
+  applyDraft,
+  applySubscriptionDraft,
+  EMPTY_DRAFT,
+  hasChanges,
+  type ProviderDraft,
+  savePlan
+} from './provider-draft'
 import { aliasMapOf, aliasRowsOf, applyAliasPicks, tierViewsOf } from './tier-aliases'
 import type { Provider, SubAccountWire } from './types'
+import { useProvidersAutoRefresh } from './useProvidersAutoRefresh'
 import { type ProvidersData, useProvidersData } from './useProvidersData'
 import { type RefreshScope, useRefresh } from './useRefresh'
 import { vendorBrand, vendorLabel } from './vendor-labels'
@@ -48,6 +56,9 @@ const SAVE_FAILURE_KEYS: Record<SaveFailure['write'], string> = {
 }
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
+
+const autoRefreshPaused = (loading: boolean, busy: boolean, pending: string | null, editing: boolean): boolean =>
+  loading || busy || pending !== null || editing
 
 // A subscription provider's page refreshes its accounts along with the
 // catalog; an api_key provider has none.
@@ -113,7 +124,7 @@ export function ProviderDetailScreen() {
   const { t, i18n } = useTranslation()
   const { name } = useParams<{ name: string }>()
   const navigate = useNavigate()
-  const { data, error, loading, reload } = useProvidersData()
+  const { data, error, loading, reload, reloadBackground, cancelBackground } = useProvidersData()
   const { confirm, dialog } = useConfirm()
   // Gates every button while a save, a removal or a test run is out.
   const [busy, setBusy] = useState(false)
@@ -124,6 +135,12 @@ export function ProviderDetailScreen() {
 
   const provider = data === null ? undefined : data.providers.find((p) => p.name === name)
   const { pending, refresh } = useRefresh(refreshScopeOf(provider), reload)
+  const now = useProvidersAutoRefresh({
+    enabled: provider?.auth_mode === 'subscription',
+    paused: autoRefreshPaused(loading, busy, pending, edit?.provider === name),
+    refresh: reloadBackground,
+    cancel: cancelBackground
+  })
 
   // The catch is not optional. Without it a failed action rejects into
   // nothing — the spinner stops, the screen re-reads unchanged data, and
@@ -173,6 +190,7 @@ export function ProviderDetailScreen() {
   // What the page renders: the provider and its tiers as Save would
   // leave them, so a switch staged in the table already moves its tier.
   const shown = draft === null ? provider : applyDraft(provider, draft, storedAliases)
+  const shownSubscription = applySubscriptionDraft(subscription, draft)
   const shownAliases = draft === null ? storedAliases : applyAliasPicks(storedAliases, draft.aliases)
   const tiers = tierViewsOf(shown, shownAliases)
   const plan = draft === null ? null : savePlan(provider, draft, storedAliases)
@@ -260,7 +278,7 @@ export function ProviderDetailScreen() {
         <>
           {/* Locked while editing, with Add: a refresh re-reads the page and
               Add leaves it, and an unsaved edit would go either way. */}
-          <RButton variant='ghost' icon='ri-refresh-line' onClick={refresh} disabled={locked || editing}>
+          <RButton variant='outline' icon='ri-refresh-line' onClick={refresh} disabled={locked || editing}>
             {t('providers.screen.refresh')}
           </RButton>
           <RButton
@@ -279,12 +297,12 @@ export function ProviderDetailScreen() {
           provider={shown}
           label={label}
           state={providerState(provider, subscription)}
-          subscription={subscription}
+          subscription={shownSubscription}
           catalogEntry={entry}
           transformers={data.transformers}
           quota={data.quota}
           accounts={data.accounts}
-          now={data.now}
+          now={now}
           tiers={tiers}
           storedAliases={storedAliases}
           busy={locked}
@@ -300,6 +318,7 @@ export function ProviderDetailScreen() {
             run(() => testModels(provider.name, enabled))
           }}
           onToggleProvider={(next) => stage((d) => ({ ...d, enabled: next }))}
+          onToggleAccount={(id, next) => stage((d) => ({ ...d, accounts: { ...d.accounts, [id]: next } }))}
           onToggleModel={(model, next) => stage((d) => ({ ...d, models: { ...d.models, [model]: next } }))}
           onAlias={(tier, model) => stage((d) => ({ ...d, aliases: { ...d.aliases, [tier]: model } }))}
           onModelEffort={(model, next) => stage((d) => ({ ...d, efforts: { ...d.efforts, [model]: next } }))}

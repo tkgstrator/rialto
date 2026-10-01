@@ -51,6 +51,34 @@ describe.skipIf(!HAS_DB)('scheduler tick targets', () => {
     expect(snapshot === null ? null : [...snapshot.targets.keys()]).toEqual(['claude-code,claude-sonnet-5'])
   })
 
+  test('a spent account-wide week holds every model on that provider before pace can reorder them', async () => {
+    const prisma = getPrismaClient()
+    const provider = await prisma.provider.create({
+      data: { name: 'claude-code', apiBaseUrl: 'https://api.anthropic.com/v1/messages', authMode: 'subscription' }
+    })
+    await prisma.model.createMany({
+      data: [
+        { providerId: provider.id, name: 'claude-sonnet-5-5', enabled: true },
+        { providerId: provider.id, name: 'claude-opus-5-5', enabled: true }
+      ]
+    })
+    const account = await prisma.subAccount.create({
+      data: { providerId: provider.id, sourcePath: 'oauth:test:spent-week', label: 'spent' }
+    })
+    await prisma.subAccountQuota.create({
+      data: {
+        subAccountId: account.id,
+        weeklyUsed: 100,
+        weeklyLimit: 100,
+        weeklyResetAt: dayjs().add(2, 'day').toDate(),
+        quotaRefreshedAt: dayjs().toDate()
+      }
+    })
+    const snapshot = await runSchedulerTick()
+    expect(snapshot?.targets.get('claude-code,claude-sonnet-5-5')?.exhausted).toBe(true)
+    expect(snapshot?.targets.get('claude-code,claude-opus-5-5')?.exhausted).toBe(true)
+  })
+
   test("an account's spent weekly window holds the target until it resets", async () => {
     const prisma = getPrismaClient()
     const claude = await prisma.provider.create({

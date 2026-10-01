@@ -23,6 +23,8 @@ import { type ClassifierSignals, classifierSignals } from '../../llms/pipeline/c
 import { sessionIdFromRequest } from '../../llms/pipeline/session-id'
 import type { TokenPlan } from '../../services/access-token-service'
 import { passthroughDenial } from '../../services/inbound-surface-service'
+import { preferredProviderOrder } from '../../services/model-provider-preference'
+import { qualifiedModelId } from '../../shared/public-model-id'
 import { buildErrorEnvelope, errorShapeForPath } from './error-shape'
 
 // ─── Endpoint transformer index ────────────────────────────────────────
@@ -133,11 +135,33 @@ function applyPathParams(body: Record<string, unknown>, path: string): void {
 
 /**
  * The model a plan sends a request to, or undefined for a token with no
- * plan (the caller and the router decide, as before).
+ * plan (the caller and the router decide, as before). An allowed bare name
+ * with multiple hosts stays bare until provider priority resolves it below.
  */
 export function planModel(plan: TokenPlan | null | undefined, requested: string | undefined): string | undefined {
   if (plan === null || plan === undefined) return undefined
-  return requested !== undefined && plan.models.includes(requested) ? requested : plan.defaultModel
+  if (requested !== undefined && plan.models.includes(requested)) return requested
+  if (requested !== undefined && !requested.includes(',')) {
+    const matching = plan.models.filter((allowed) => allowed.slice(allowed.indexOf(',') + 1) === requested)
+    if (matching.length === 1) return matching[0]
+    if (matching.length > 1) return requested
+  }
+  return plan.defaultModel
+}
+
+async function bareModelProviders(model: string, ctx: LlmsContext, plan: TokenPlan | null | undefined) {
+  const hosts = ctx.providers
+    .getAll()
+    .filter((provider) => Array.isArray(provider.models) && provider.models.includes(model))
+    .map((provider) => provider.name)
+  const allowed =
+    plan === null || plan === undefined
+      ? undefined
+      : plan.models.flatMap((entry) => {
+          const comma = entry.indexOf(',')
+          return comma > 0 && entry.slice(comma + 1) === model ? [entry.slice(0, comma)] : []
+        })
+  return preferredProviderOrder(model, hosts, allowed)
 }
 
 export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Response | RoutePlan> {
@@ -247,6 +271,30 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
     return c.json(buildErrorEnvelope({ shape, status: 400, from: routeReq.routingRefusal }), 400)
   }
 
+  // A bare passthrough name is a public model id. Resolve the provider here,
+  // before deny rules and the failover walker, so both judge the same target.
+  const bareModel = typeof body.model === 'string' && !body.model.includes(',') ? body.model : undefined
+  if (route === PASSTHROUGH_ROUTE && bareModel !== undefined && bareModel.length > 0) {
+    const order = await bareModelProviders(bareModel, ctx, token?.plan)
+    if (order.status === 'ambiguous') {
+      diagnosticLog(400, 'model_provider_ambiguous')
+      return c.json(
+        buildErrorEnvelope({
+          shape,
+          status: 400,
+          from: `Model "${bareModel}" has multiple providers; configure their priority in Providers → Models.`
+        }),
+        400
+      )
+    }
+    if (order.status === 'preferred') {
+      body.model = qualifiedModelId({ provider: order.providers[0], model: bareModel })
+      routeReq.resolvedFallbacks = order.providers
+        .slice(1)
+        .map((provider) => qualifiedModelId({ provider, model: bareModel }))
+    }
+  }
+
   // A passthrough surface can refuse a target. The check lives here and
   // not in `routeRequest` because that function never throws — it
   // catches everything and falls back, so a rejection raised inside it
@@ -262,6 +310,15 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   if (denial !== undefined) {
     diagnosticLog(400, 'passthrough_denial')
     return c.json(buildErrorEnvelope({ shape, status: 400, from: denial }), 400)
+  }
+  if (route === PASSTHROUGH_ROUTE && routeReq.resolvedFallbacks !== undefined) {
+    const checked = await Promise.all(
+      routeReq.resolvedFallbacks.map(async (target) => ({
+        target,
+        denied: await passthroughDenial(path, target)
+      }))
+    )
+    routeReq.resolvedFallbacks = checked.filter((entry) => entry.denied === undefined).map((entry) => entry.target)
   }
 
   const primaryModel = typeof body.model === 'string' ? body.model : ''

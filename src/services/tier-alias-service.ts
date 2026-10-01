@@ -28,7 +28,16 @@ export const PROVIDER_TIER_SELECT = {
   apiBaseUrl: true,
   authMode: true,
   apiStyle: true,
-  models: { select: { id: true, name: true, enabled: true, apiStyle: true, contextWindow: true } },
+  models: {
+    select: {
+      id: true,
+      name: true,
+      enabled: true,
+      apiStyle: true,
+      contextWindow: true,
+      capability: { select: { efforts: true } }
+    }
+  },
   tierAliases: { select: { tier: true, modelId: true, updatedAt: true } }
 } satisfies Prisma.ProviderSelect
 

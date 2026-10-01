@@ -55,6 +55,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `update-check.test.ts` | 更新チェック: バージョン比較（`v` 付きタグ・prerelease・読めないタグ）と、取得失敗を「最新です」に畳まないこと、成功だけをキャッシュすること |
 | `rialto/format.test.ts` | 表示フォーマッタ（金額の有効数字など） |
 | `rialto/provider-draft.test.ts` | プロバイダ詳細の Edit → Save が書くもの。手で元に戻した変更は何も書かないこと、プロバイダ・モデルのスイッチとキーは読み込んだ行を土台にした 1 回の upsert に載り、ティアエイリアスと effort は変わったものだけが個別の書き込みになること（upsert には載せない）。エイリアスを新しく向けたモデルは ON として描かれ（サーバ側の昇格がモデルを有効にするのと揃える）、スイッチの切れたモデルの昇格だけなら upsert を伴わないエイリアスの書き込み 1 回、解除はモデルを名指さない書き込みで、エイリアスの書き込みは帯の順に並ぶこと |
+| `rialto/provider-account-draft.test.ts` | アカウント単位の利用フラグのドラフト。認証情報を変えずに表示へ反映し、変更された既存 id だけを保存すること、手で戻した変更は no-op、モデルだけの保存は古いアカウント一覧を送り直さないこと、最後の有効アカウントも OFF にできること |
 | `rialto/provider-tier-aliases.test.ts` | プロバイダページのティア帯。名前がティアを示すモデルのうちオンの最新にティアが向き、オフの新しい版は動かさずに「newer」として数えて印を付けること、編集中に切り替えたスイッチがプレビューのティアをすぐ動かすこと、名前がティアを示さないティア（Codex・OpenAI）だけが手動のエイリアスで、そのピッカーは現在のモデル → それ以外の全モデルの順に出すこと、Tier 列が名前の示すティアを全モデルに出し、ルーティング先だけを routed にすること |
 | `rialto/account-extras.test.ts` | アカウント行の付帯情報（API 換算の使用量と Codex のバンク済みリセット）をアカウント id で引けること、欠けた読み取りを null のまま残すこと、割安度と失効日のフォーマッタ |
 | `rialto/redact-tool-arguments.test.ts` | `REDACT_TOOL_ARGUMENTS` の除去処理 |
@@ -112,7 +113,8 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | ファイル | 担保しているもの |
 |---|---|
 | `inbound-surfaces.test.ts` | 面レジストリ。登録済み transformer 全件について「旧分岐が返す関数 === 記述子の `aggregateSse`」を突き合わせる |
-| `route-request.test.ts` | `routeRequest` の通し契約（[routing.md](./routing.md) の結果の表）。シナリオはリクエストから決まり（しきい値超えの入力 → Long context、thinking → Think、それ以外 → Default。長い入力が thinking に勝つ。しきい値は default / agent の先頭の使えるルートのコンテキスト長の 70 % で、調整値も基準値を超えない。モデル名は何も選ばない）、レーンはサブエージェントタグから決まる（両綴り。subagent のリストが空でも agent のリストは借りない）。使えるルートの無い Think / Long context は同じレーンの Default へ落ちるが、quota で止まった Think は Default へ落ちずに 429、Default が空なら素通し。通ったルートはペースで並べ替えられる（超過は末尾、余りは先頭、全部超過なら元の順、ゲートで落ちたルートは戻らない）。ゲートは 429 マーク（モデル単位・provider 全体）、snapshot の spent と `quotaSkipPct`（snapshot が知らない target は quota で止めない）、サンプル数に達してからの error rate、web_search、context window。ルートが無い・全ルートかターゲットが OFF のリストは `exhaustedBehavior` によらず素通しで 429 にしない／quota・health で全部止まれば `'429'` では `Retry-After`（429 マークの期限 → snapshot の reset → 既定 30 秒）、`'passthrough'` では素通し／エイリアス未設定・web_search を運べない・プロンプトが入らない（Long context のリストで収まらなくても Default へは落ちない）は `routingRefusal` で `exhaustedBehavior` でも緩まず、quota で止まったルートが 1 本でも混ざれば refusal ではなく exhaustion／プロファイル読込失敗・例外は呼び出し側の model のまま error ログ／token の `passthrough` profile と passthrough 面はルーティングを飛ばすが、タグは除去・記録する／persona は routed な `/v1/messages` の全出口（429 を含む）に、タグの除去の後で付き、passthrough 面には付かない |
+| `route-request.test.ts`（分類・レーン・Default fallback）<br/>`route-request-gates.test.ts`（pace・ゲート・無効ターゲット）<br/>`route-request-outcomes.test.ts`（枯渇・拒否・読込失敗）<br/>`route-request-passthrough.test.ts`（passthrough・persona・escalation） | `routeRequest` の通し契約（[routing.md](./routing.md) の結果の表）。シナリオはリクエストから決まり（しきい値超えの入力 → Long context、thinking → Think、それ以外 → Default。長い入力が thinking に勝つ。しきい値は default / agent の先頭の使えるルートのコンテキスト長の 70 % で、調整値も基準値を超えない。モデル名は何も選ばない）、レーンはサブエージェントタグから決まる（両綴り。subagent のリストが空でも agent のリストは借りない）。使えるルートの無い Think / Long context は同じレーンの Default へ落ちるが、quota で止まった Think は Default へ落ちずに 429、Default が空なら素通し。通ったルートはペースで並べ替えられる（超過は末尾、余りは先頭、全部超過なら元の順、ゲートで落ちたルートは戻らない）。ゲートは 429 マーク（モデル単位・provider 全体）、snapshot の spent と `quotaSkipPct`（snapshot が知らない target は quota で止めない）、サンプル数に達してからの error rate、web_search、context window。ルートが無い・全ルートかターゲットが OFF のリストは `exhaustedBehavior` によらず素通しで 429 にしない／quota・health で全部止まれば `'429'` では `Retry-After`（429 マークの期限 → snapshot の reset → 既定 30 秒）、`'passthrough'` では素通し／エイリアス未設定・web_search を運べない・プロンプトが入らない（Long context のリストで収まらなくても Default へは落ちない）は `routingRefusal` で `exhaustedBehavior` でも緩まず、quota で止まったルートが 1 本でも混ざれば refusal ではなく exhaustion／プロファイル読込失敗・例外は呼び出し側の model のまま error ログ／token の `passthrough` profile と passthrough 面はルーティングを飛ばすが、タグは除去・記録する／persona は routed な `/v1/messages` の全出口（429 を含む）に、タグの除去の後で付き、passthrough 面には付かない |
+| `route-request-fixture.ts` | 通し契約テストのログ・tokenizer と初期化／復元。各スイートの `describe` 内で作成し、hook と可変状態をスイート単位に閉じる |
 | `tier-fixture.ts` | 上記と parity テストが DB 無しでシナリオ × レーンのルートを seed する fixture。`route(provider, tier, model)` がエイリアスで解決済みのルートを作り（model が null ならエイリアス未設定）、`__setTierProfilesForTests` に渡す |
 | `tier-router/select.test.ts` | 純関数のセレクタ `selectTierRoute`。リストの順で最初に通ったものが primary で残りが fallback／ルート無し・OFF だけなら passthrough／exhaustion が 1 つでもあれば（拒否と並んでも）exhausted／error rate はサンプル数が揃ってから数える／設定済みだがこのリクエストを受けられなければ理由付きで refused／全ルートの window を超えるプロンプトは refused で、window 不明は信用する／Web 検索はツールを持つリクエストにだけ効く。ペース: 境界は 60 % と 100 %（ちょうどはそのまま）、余りは先頭・超過は末尾・各グループ内は元の順、全部超過でも全部余りでも元の順、読みの無いものは動かさない、並べ替えるのはゲートを通ったものだけ、動かしたルートの報告（元から先頭の余り・元から末尾の超過は動いたと数えない） |
 | `tier-router/threshold.test.ts` | Long context のしきい値。基準値は default のモデルのコンテキスト長の 70 %、解決できなければ 128k。調整値はそのまま使い、基準値より上（default のモデルを小さいものに替えたとき）と 30k より下には出ない。基準値が 30k を下回るなら基準値が勝つ |
@@ -143,6 +145,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `failover-state.test.ts` | 枯渇マークとその失効。モデル単位のマークは同 provider の他モデルを塞がず、provider 単位のマークは全モデルを塞ぐこと、`clear*` が即座に外すこと（モデルのマークを外しても provider のマークは残る）、`modelMarksFor` が 1 provider の生きたモデルマークだけを列挙すること |
 | `session-account-router.test.ts` | ハードリミット除外 → sticky → balancingScore の 4 段 |
 | `usage-headroom.test.ts` | `drainTarget` / `getKindWindowHeadroom` の算術。**src に呼び出し元の無い関数のテスト**（`usage-service.ts` が再 export しているだけで、ルーティング経路からは呼ばれない） |
+| `jeff-client-queue.test.ts` | Jeff への評価が到着順に1件ずつ送られ、同時に届かないこと。失敗・タイムアウトでも順番が解放されること。5秒のタイムアウトが順番待ちを含まないこと。待ち時間の上限と8件の上限で諦めて列を詰まらせないこと。529 は `Retry-After` に従って1回だけ再試行し、2回目や待つ上限を超える場合は失敗にすること。health は評価を待たないこと。fetch は stub で実際の Jeff は呼ばない |
 | `usage-fetch-force.test.ts` | usage 取得の `forceRefresh`（TTL 内のキャッシュを迂回して上流を呼び、再キャッシュする）と `enabledProvidersOnly`。既定の経路が変わらずキャッシュを返し、失敗時は直前の値を残してアカウントを `failed` に名指しすること。5h が 100 % でも 7d / Fable は上流の値とリセットのまま返すこと（100 % 扱いはスケジューラだけの話） |
 | `model-test/subscription-probe.test.ts` | Codex サブスクの Test が、プロキシと同じ `openai-responses` → `codex-oauth` で request を組むこと。ChatGPT バックエンドが拒否する `max_output_tokens` を送らない、`messages` を残さない、`/responses` へ account id と `originator` 付きで送る |
 | `model-test/probes.test.ts` | api_key の Responses 疎通確認は `max_output_tokens: 16` を送り続けること（公開 Responses API は 16 未満を 400 にする）。Codex 側と取り違えて「直さない」ための対 |
@@ -203,7 +206,26 @@ context ゲートが効くことも見る — seed しなければ「プロフ�
 | `fixture-schemas.test.ts` | フィクスチャ自体がスキーマに合っていること |
 | `fixtures.ts` / `helpers.ts` | Rialto API 呼び出し、SSE パーサ、モデル行列取得 |
 
-フィクスチャの取り直しは `scripts/capture-fixtures.ts`。
+フィクスチャの取り直しは `scripts/capture-fixtures.ts`。記録・リクエスト行列・一時キーの
+注入／復元は `scripts/capture-fixtures/` の各モジュールに分離している。
+
+### `__tests__/scripts` — 開発スクリプトの契約
+
+| ファイル | 担保しているもの |
+|---|---|
+| `capture-fixtures.test.ts` | 分割前と同じリクエスト行列・順序・本文と replay hash、資格情報の redaction、記録／skip／force、HTTP エラーと通信失敗の区別、subscription の有効モデルの列挙、一時 API キーの注入／復元が全プロバイダの設定を保つこと。fetch はローカル応答に差し替え、上流や開発 DB は触らない |
+| `compose-decisions.test.ts` | Jeff CPUサイドカーが任意profileだけで起動し、ホスト公開・認証・Rialtoからの依存を持たないこと、JEFF_URLの空既定、モデルvolume、Readyを待つhealthcheck、上流commit固定と公式CPU導入／起動コマンド。Dockerやネットワークは使わずファイルを読み取る |
+
+### `__tests__/e2e` — Providers のブラウザ契約
+
+既存の :16175 を使い、サーバーが無ければ skip する。下のアカウント操作テストは API を
+ブラウザ内で stub し、実アカウントや上流ベンダーを更新しない。
+
+| ファイル | 担保しているもの |
+|---|---|
+| `subscription-account-toggle.test.ts` | Edit → Toggle → Save、Revert、手で戻した変更の no-op、最後の有効アカウントの OFF と再有効化、保存失敗時の読み直し、スマホでは状態だけを表示すること |
+| `subscription-account-status.test.ts` | valid / invalid / unknown バッジ、長い認証エラー本文の非表示、長いアカウント名の省略と tooltip、リセット表示の nowrap、デスクトップ／スマホで横にはみ出さないこと |
+| `subscriptions-auto-refresh.test.ts` | 30 秒ごとの GET による背景更新、カウントダウン、編集の保護、失敗時の成功データ保持、遅い応答の取消と重複防止、非表示タブの停止と復帰、Subscriptions 一覧での更新と API-key 詳細で更新しないこと |
 
 ### `__tests__/preset`
 

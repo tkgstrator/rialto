@@ -181,6 +181,8 @@ export interface ProviderDetailProps {
   onTestAll: () => void
   onToggleProvider: (next: boolean) => void
   onToggleModel: (model: string, next: boolean) => void
+  /** Stage whether this account participates in routing; credentials stay intact. */
+  onToggleAccount: (id: string, next: boolean) => void
   /** Point a manual tier's alias at a model; null unsets it. */
   onAlias: (tier: Tier, model: string | null) => void
   /** Per-model reasoning effort; null clears it back to the vendor default. */
@@ -218,7 +220,9 @@ export function ProviderDetail(props: ProviderDetailProps) {
             quota={quota}
             accounts={props.accounts}
             now={now}
-            locked={props.busy || props.editing}
+            busy={props.busy}
+            editing={props.editing}
+            onToggle={props.onToggleAccount}
             onUseReset={props.onUseReset}
           />
         ) : (

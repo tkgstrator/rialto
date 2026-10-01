@@ -3,7 +3,7 @@
  *
  * Verifies the endpoint returns the DB-backed enabled model list in
  * OpenAI's `{object:'list', data:[{id, object, created, owned_by}]}`
- * shape, with `id` set to Rialto's canonical `provider,model` string so
+ * shape, with `id` bare when unique or qualified when ambiguous so
  * OpenAI SDK clients can round-trip the id straight back into
  * /v1/chat/completions' `model` field.
  *
@@ -18,6 +18,7 @@ import '../../src/api/context'
 import { v1ModelsRoute } from '../../src/api/v1/models-list'
 import { getPrismaClient } from '../../src/db/client'
 import { applyUiConfig, ensurePreferenceProfile } from '../../src/services/config'
+import { setModelProviderPriorities } from '../../src/services/model-provider-preference'
 import { HAS_DB, resetDbTables, teardownPrisma } from '../db/helpers'
 
 describe.skipIf(!HAS_DB)('GET /v1/models', () => {
@@ -40,7 +41,7 @@ describe.skipIf(!HAS_DB)('GET /v1/models', () => {
     expect(body.data).toEqual([])
   })
 
-  test('lists enabled models in `provider,model` id form', async () => {
+  test('lists globally unique enabled models by their native bare ids', async () => {
     await applyUiConfig({
       Providers: [
         {
@@ -65,7 +66,7 @@ describe.skipIf(!HAS_DB)('GET /v1/models', () => {
     }
     expect(body.object).toBe('list')
     const ids = body.data.map((m) => m.id).sort()
-    expect(ids).toEqual(['openai,gpt-4.1', 'openai,gpt-5-mini'])
+    expect(ids).toEqual(['gpt-4.1', 'gpt-5-mini'])
     for (const item of body.data) {
       expect(item.object).toBe('model')
       expect(item.owned_by).toBe('openai')
@@ -73,7 +74,7 @@ describe.skipIf(!HAS_DB)('GET /v1/models', () => {
     }
   })
 
-  test('a token on a plan sees only the plan’s models', async () => {
+  test('a plan advertises a bare id when it allows one host of a duplicated name', async () => {
     await applyUiConfig({
       Providers: [
         {
@@ -82,6 +83,13 @@ describe.skipIf(!HAS_DB)('GET /v1/models', () => {
           api_key: 'sk-test',
           auth_mode: 'api_key',
           models: ['gpt-5-mini', 'gpt-4.1']
+        },
+        {
+          name: 'mirror',
+          api_base_url: 'https://example.com/v1/chat/completions',
+          api_key: 'sk-mirror',
+          auth_mode: 'api_key',
+          models: ['gpt-5-mini']
         }
       ]
     })
@@ -106,7 +114,34 @@ describe.skipIf(!HAS_DB)('GET /v1/models', () => {
     app.route('/', v1ModelsRoute)
     const res = await app.fetch(new Request('http://local/v1/models'))
     const body = (await res.json()) as { data: Array<{ id: string }> }
-    expect(body.data.map((m) => m.id)).toEqual(['openai,gpt-5-mini'])
+    expect(body.data.map((m) => m.id)).toEqual(['gpt-5-mini'])
+  })
+
+  test('a duplicate name is listed once only after its provider priority is configured', async () => {
+    await applyUiConfig({
+      Providers: [
+        {
+          name: 'first',
+          api_base_url: 'https://first.example/v1',
+          api_key: 'sk-first',
+          auth_mode: 'api_key',
+          models: ['same']
+        },
+        {
+          name: 'second',
+          api_base_url: 'https://second.example/v1',
+          api_key: 'sk-second',
+          auth_mode: 'api_key',
+          models: ['same']
+        }
+      ]
+    })
+    await getPrismaClient().model.updateMany({ data: { enabled: true } })
+    expect((await (await call()).json()).data).toEqual([])
+    await setModelProviderPriorities('same', ['second', 'first'])
+    const body = await (await call()).json()
+    expect(body.data).toHaveLength(1)
+    expect(body.data[0]).toMatchObject({ id: 'same', provider: 'second', model: 'same' })
   })
 
   test('hides models on providers with no api_key (unroutable)', async () => {
@@ -134,7 +169,7 @@ describe.skipIf(!HAS_DB)('GET /v1/models', () => {
     const res = await call()
     const body = (await res.json()) as { data: Array<{ id: string }> }
     const ids = body.data.map((m) => m.id)
-    expect(ids).toContain('openai,gpt-5-mini')
+    expect(ids).toContain('gpt-5-mini')
     // anthropic has no key — its models must not be advertised as routable.
     expect(ids).not.toContain('anthropic,claude-haiku')
   })
@@ -165,7 +200,7 @@ describe.skipIf(!HAS_DB)('GET /v1/models', () => {
       .safeParse(await (await call()).json())
     if (!parsed.success) throw parsed.error
     const byId = new Map(parsed.data.data.map((m) => [m.id, m]))
-    expect(byId.get('openai,gpt-5-mini')).toMatchObject({
+    expect(byId.get('gpt-5-mini')).toMatchObject({
       provider: 'openai',
       model: 'gpt-5-mini',
       context_window: 400_000,
@@ -178,6 +213,6 @@ describe.skipIf(!HAS_DB)('GET /v1/models', () => {
         cache_write_1h: 0.5
       }
     })
-    expect(byId.get('openai,gpt-4.1')).toMatchObject({ context_window: null, pricing: null })
+    expect(byId.get('gpt-4.1')).toMatchObject({ context_window: null, pricing: null })
   })
 })
