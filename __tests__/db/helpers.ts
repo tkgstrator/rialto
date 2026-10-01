@@ -21,7 +21,7 @@ export async function resetDbTables(): Promise<void> {
   if (!HAS_DB) return
   const prisma = getPrismaClient()
   await prisma.$executeRawUnsafe(
-    'TRUNCATE "RequestLog","Session","UsageSnapshot","RoutingWeightChange","RouterPreferenceProfile","InboundSurfaceConfig","SubAccount","Model","Provider" RESTART IDENTITY CASCADE'
+    'TRUNCATE "RoutingDecision","RequestLog","Session","UsageSnapshot","RoutingWeightChange","RouterPreferenceProfile","InboundSurfaceConfig","SubAccount","Model","Provider" RESTART IDENTITY CASCADE'
   )
 }
 

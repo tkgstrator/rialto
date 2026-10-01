@@ -54,6 +54,7 @@ export class GeminiTransformer extends Transformer {
     return {
       body: buildRequestBody(request),
       config: {
+        outboundModel: request.model,
         url: geminiEndpointUrl(provider.api_base_url, request.model, request.stream === true),
         headers: {
           'x-goog-api-key': provider.api_key,
@@ -96,6 +97,7 @@ export class GeminiTransformer extends Transformer {
     return {
       body,
       config: {
+        outboundModel: model.length > 0 ? model : undefined,
         url: geminiEndpointUrl(provider.api_base_url, model, stream),
         headers: {
           'x-goog-api-key': provider.api_key,

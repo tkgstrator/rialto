@@ -170,7 +170,13 @@ export function resolveInvocationForModel(
     prepareSubscriptionBetas(headers, longContextDeniedFor(plan.accountSessionKey, providerName))
   }
 
+  // The first selector candidate wins when several tier aliases share a target,
+  // matching the chain's target deduplication rather than guessing from a model id.
+  const selected = plan.selectedRoutes?.find((entry) => entry.target === `${providerName},${model}`)
   const request: PipelineRequest = {
+    reqId: plan.reqId,
+    selectedTier: selected?.targetTier,
+    selectedRoute: selected?.route,
     body,
     headers,
     url: plan.path + plan.search,

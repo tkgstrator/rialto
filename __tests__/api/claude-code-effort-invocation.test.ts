@@ -3,6 +3,7 @@ import pino from 'pino'
 import { resolveInvocationForModel } from '../../src/api/v1/invocation'
 import type { RoutePlan } from '../../src/api/v1/route-plan'
 import type { LlmsContext } from '../../src/llms'
+import { sendToProvider } from '../../src/llms/pipeline/provider-send'
 import { ConfigStore } from '../../src/llms/registry/config'
 import { ProviderRegistry } from '../../src/llms/registry/provider'
 import { TokenizerRegistry } from '../../src/llms/registry/tokenizer'
@@ -69,6 +70,111 @@ function plan(output: Record<string, unknown>): RoutePlan {
 }
 
 describe('Claude Code per-attempt invocation', () => {
+  test('keeps selector identity and request correlation through failover sends', async () => {
+    const input: RoutePlan = {
+      ...plan({}),
+      reqId: 'inbound-request',
+      selectedRoutes: [
+        { target: `claude-code,${model}`, targetTier: 'opus', route: 'claude-code · opus' },
+        { target: `claude-code,${model}`, targetTier: 'sonnet', route: 'claude-code · sonnet' },
+        { target: `api-key,${model}`, targetTier: 'haiku', route: 'api-key · haiku' }
+      ]
+    }
+    const primary = resolveInvocationForModel(input, `claude-code,${model}`, ctx)
+    const fallback = resolveInvocationForModel(input, `api-key,${model}`, ctx)
+    if (primary === null || fallback === null) throw new Error('fixture must resolve')
+    expect(primary.request.selectedTier).toBe('opus')
+    expect(fallback.request.selectedTier).toBe('haiku')
+    const entries: Record<string, unknown>[] = []
+    const capture = pino({}, { write: (line: string) => entries.push(JSON.parse(line)) })
+    const originalFetch = globalThis.fetch
+    try {
+      globalThis.fetch = async () => new Response('private-error', { status: 429 })
+      await expect(
+        sendToProvider(
+          { ...primary.body, model: 'transformed-model' },
+          {},
+          primary.provider,
+          primary.transformer,
+          false,
+          { req: primary.request },
+          { log: capture }
+        )
+      ).rejects.toThrow()
+      globalThis.fetch = async () => new Response('{}', { status: 200 })
+      await sendToProvider(
+        fallback.body,
+        {},
+        fallback.provider,
+        fallback.transformer,
+        false,
+        { req: fallback.request },
+        { log: capture }
+      )
+      const observations = entries.filter((entry) => entry.event === 'routing_upstream')
+      expect(observations.map((entry) => entry.outcome)).toEqual(['send', 'failure', 'send', 'success'])
+      expect(observations.map((entry) => entry.reqId)).toEqual(Array(4).fill('inbound-request'))
+      expect(observations[0]?.attemptId).toBe(observations[1]?.attemptId)
+      expect(observations[2]?.attemptId).toBe(observations[3]?.attemptId)
+      expect(observations[0]?.attemptId).not.toBe(observations[2]?.attemptId)
+      expect(observations[1]).toMatchObject({
+        provider: 'claude-code',
+        model: 'transformed-model',
+        selectedTier: 'opus',
+        status: 429
+      })
+      expect(observations[3]).toMatchObject({
+        provider: 'api-key',
+        model,
+        selectedTier: 'haiku',
+        status: 200,
+        expectedTier: null,
+        evaluationStatus: 'unrated'
+      })
+      expect(JSON.stringify(observations)).not.toContain('private-error')
+      expect(JSON.stringify(observations)).not.toContain('fixture-key')
+      expect(JSON.stringify(observations)).not.toContain('https://')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+  test('reports network failure without error details or inventing a passthrough tier', async () => {
+    const invocation = resolveInvocationForModel({ ...plan({}), reqId: 'network-request' }, `api-key,${model}`, ctx)
+    if (invocation === null) throw new Error('fixture must resolve')
+    const entries: Record<string, unknown>[] = []
+    const capture = pino({}, { write: (line: string) => entries.push(JSON.parse(line)) })
+    const originalFetch = globalThis.fetch
+    try {
+      globalThis.fetch = async () => {
+        throw new Error('private-network-error')
+      }
+      await expect(
+        sendToProvider(
+          invocation.body,
+          {},
+          invocation.provider,
+          invocation.transformer,
+          false,
+          { req: invocation.request },
+          { log: capture }
+        )
+      ).rejects.toThrow('private-network-error')
+      const observations = entries.filter((entry) => entry.event === 'routing_upstream')
+      expect(observations.map((entry) => entry.outcome)).toEqual(['send', 'failure'])
+      expect(observations[1]).toMatchObject({
+        reqId: 'network-request',
+        reason: 'network_error',
+        status: null,
+        selectedTier: null,
+        selectedRoute: null
+      })
+      expect(observations[0]?.attemptId).toBe(observations[1]?.attemptId)
+      expect(JSON.stringify(observations)).not.toContain('private-network-error')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
   test('retains native output_config and clamps only a documented unsupported level on a copy', () => {
     const input = plan({ effort: 'xhigh', format: { type: 'json_schema' } })
     const claude = resolveInvocationForModel(input, `claude-code,${model}`, ctx)

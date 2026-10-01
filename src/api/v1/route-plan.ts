@@ -13,6 +13,7 @@
  *   - `invocation.ts`       one candidate → a ready-to-run invocation
  */
 
+import { randomUUID } from 'node:crypto'
 import type { Context } from 'hono'
 import '../context'
 import type { PipelineRequest } from '@/schemas/domain/pipeline'
@@ -48,6 +49,8 @@ function endpointTransformerMap(ctx: LlmsContext): Map<string, Map<string, Trans
 // per-model shaping (effort clamp, internal-field strip) so every chain
 // attempt re-derives those from a clean copy.
 export interface RoutePlan {
+  reqId?: string
+  selectedRoutes?: RouterRequest['selectedRoutes']
   routedBody: Record<string, unknown>
   headers: Record<string, string>
   transformersByName: Map<string, Transformer>
@@ -165,6 +168,8 @@ async function bareModelProviders(model: string, ctx: LlmsContext, plan: TokenPl
 }
 
 export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Response | RoutePlan> {
+  const reqId = randomUUID()
+  const requestLog = ctx.log.child({ reqId })
   const url = new URL(c.req.url)
   const path = url.pathname
   const shape = errorShapeForPath(path)
@@ -223,7 +228,8 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   // route, the fallbacks and the 429 / 400 outcomes back below.
   const routeReq: RouterRequest = {
     body: body as PipelineRequest['body'] & { model: string },
-    log: ctx.log,
+    log: requestLog,
+    reqId,
     // The router uses this to gate Anthropic-idiom mutations
     // (persona injection etc.) so OpenAI-compat callers on
     // /v1/chat/completions and /v1/responses get the exact request
@@ -328,6 +334,8 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   }
 
   return {
+    reqId,
+    selectedRoutes: routeReq.selectedRoutes,
     routedBody: body,
     headers,
     accountSessionKey: resolveInboundSession(headers, body, tokenId),
