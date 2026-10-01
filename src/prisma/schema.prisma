@@ -785,6 +785,35 @@ model RequestLog {
   @@index([surface, createdAt])
 }
 
+// Independent of usage rows: classifier failures and requests without usage
+// still need their actual decision input archived. reqId joins file-log events,
+// not a Session or RequestLog FK that may never exist for a failed request.
+model RoutingDecision {
+  id                String   @id @default(cuid())
+  reqId             String
+  // Exact serialized SystemOne body, including the caller's model identifier
+  // and fixed English instructions/criteria. No headers, URLs or credentials.
+  // Potentially sensitive: this archive must never be copied to console logs.
+  requestBody       String   @db.Text
+  outcome           String
+  reason            String
+  predictedTier     String?
+  confidence        Float?
+  probabilities     Json?
+  chosenProbability Float?
+  decisionAccepted  Boolean
+  minConfidence     Float
+  durationMs        Int
+  httpStatus        Int?
+  // Neither prediction nor actual routing is a ground-truth quality label.
+  expectedTier      String?
+  evaluationStatus  String   @default("unrated")
+  createdAt         DateTime @default(now())
+
+  @@index([reqId])
+  @@index([createdAt])
+}
+
 // Time series of per-account subscription windows. `metric` is the
 // window key (e.g. claude.five_hour, codex.primary); `percent` is the
 // vendor's unmodified use. `projectedPct` is the pace at capture time,
