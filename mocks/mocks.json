@@ -26,6 +26,13 @@
       "note": "Routing for one surface's profile: a table of scenarios (Default, Think — extended thinking on, Long context — input over the threshold) by caller (Agent, Subagent — the subagent tag), each cell one or more provider · tier combinations tried top first; a combination switched off keeps its place and is skipped. An empty Think or Long context cell falls back to Default for the same caller; an empty Default passes the requested model through. Only the provider and the tier are shown; the provider's tier alias, set on its page, says which model the tier is, so a model release moves one alias instead of this table."
     },
     {
+      "name": "decisions",
+      "mock": "decisions.html",
+      "route": "/decisions",
+      "group": "Top level",
+      "note": "Decisions playground with Jeff not configured; the live screen's initial connection state, editable question and empty result."
+    },
+    {
       "name": "routing-passthrough",
       "mock": "routing-passthrough.html",
       "route": "/routing?surface=openai-responses",
@@ -66,6 +73,13 @@
       "route": "/providers/api-keys",
       "group": "Providers",
       "note": "API keys list. Different columns from Subscriptions on purpose — a key has a secret and a price list where a subscription has accounts, a plan and a window that runs out, and the union would be four dashes per row on one side. 'not set' is a real row: a provider can exist with no key, and that is why its models never answer."
+    },
+    {
+      "name": "providers-priorities",
+      "mock": "providers-priorities.html",
+      "route": "/providers/priorities",
+      "group": "Providers",
+      "note": "Bare model names shared by providers need a Rialto-owned priority list. The initial empty state is shown when no names collide."
     },
     {
       "name": "provider-subscription",

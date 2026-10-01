@@ -24,6 +24,7 @@ export const NAV: readonly NavEntry[] = [
   // Routing has no children: the chain IS the screen, and it is the only
   // selector.
   { id: 'routing', labelKey: 'shell.navRouting', icon: 'ri-git-branch-line', href: '/routing', children: [] },
+  { id: 'decisions', labelKey: 'shell.navDecisions', icon: 'ri-code-box-line', href: '/decisions', children: [] },
   // Neither child is href '/providers' — the section root redirects to
   // the first instead. Activity and Settings can let their first child
   // hold the section's own path because `childOf` matches by prefix and
@@ -42,7 +43,9 @@ export const NAV: readonly NavEntry[] = [
         icon: 'ri-shield-user-line',
         href: '/providers/subscriptions'
       },
-      { id: 'api-keys', labelKey: 'providers.rail.apiKeys', icon: 'ri-key-line', href: '/providers/api-keys' }
+      { id: 'api-keys', labelKey: 'providers.rail.apiKeys', icon: 'ri-key-line', href: '/providers/api-keys' },
+      { id: 'models', labelKey: 'providers.models.listTitle', icon: 'ri-list-check-2', href: '/providers/models' },
+      { id: 'priorities', labelKey: 'providers.priorities.nav', icon: 'ri-sort-asc', href: '/providers/priorities' }
     ]
   },
   // Next to Providers because it is the same question pointed the other
@@ -102,8 +105,8 @@ export function childOf(pathname: string): NavChild | undefined {
     .find((child) => pathname === child.href || pathname.startsWith(`${child.href}/`))
 }
 
-/** The three `/providers/*` paths that are not a provider's own page. */
-const PROVIDER_NON_DETAIL_SEGMENTS = new Set(['subscriptions', 'api-keys', 'connect'])
+/** Provider section pages that are not a provider's own detail. */
+const PROVIDER_NON_DETAIL_SEGMENTS = new Set(['subscriptions', 'api-keys', 'models', 'connect'])
 
 /**
  * The Providers sub-entry a provider's own detail page belongs to.

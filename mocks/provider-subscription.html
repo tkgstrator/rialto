@@ -282,7 +282,7 @@ const windowLine = (w) => `
     <span class="w-24 shrink-0 truncate text-[12px] text-muted-foreground">${w.label}</span>
     <div class="min-w-0 flex-1">${meter(w.pct)}</div>
     <span class="w-9 shrink-0 text-right font-mono text-[12px] tabular-nums">${w.pct}%</span>
-    <span class="w-14 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${w.resets}</span>
+    <span class="w-14 shrink-0 truncate whitespace-nowrap text-right font-mono text-[12px] tabular-nums text-muted-foreground">${w.resets}</span>
   </div>`
 const resetLine = (r) => `
   <div class="mt-2.5 flex items-center gap-2 border-t border-border/60 pt-2.5">
@@ -300,13 +300,16 @@ const resetLine = (r) => `
 const accountRow = (a) => `
   <div class="px-4 py-3 transition-colors hover:bg-muted/50">
     <div ${navTo('activity-usage.html')} class="flex items-center gap-2">
-      <span class="text-xs font-medium">${a.label}</span>
-      ${pill(a.plan, 'info')}
-      <span class="ml-auto text-[12px] text-muted-foreground/70">resets in</span>
+      <span class="min-w-0 truncate text-xs font-medium" title="${a.label}">${a.label}</span>
+      ${withClass(pill(a.plan, 'info'), 'shrink-0 whitespace-nowrap')}
+      <span class="ml-auto shrink-0 whitespace-nowrap text-[12px] text-muted-foreground/70">resets in</span>
     </div>
     ${a.windows.map(windowLine).join('')}
     ${a.resets === undefined ? '' : resetLine(a.resets)}
-    <div class="mt-2 text-[12px] text-muted-foreground">auth ${a.auth}</div>
+    <div class="mt-2 flex items-center gap-2 text-[12px] text-muted-foreground">
+      ${withClass(pill(a.auth === 'live' ? 'valid' : a.auth, a.auth === 'live' ? 'ok' : a.auth === 'invalid' ? 'bad' : 'mute'), 'shrink-0 whitespace-nowrap')}
+      <span class="ml-auto flex items-center gap-1.5">Routable ${toggle(a.enabled !== false)}</span>
+    </div>
   </div>`
 
 const PROVIDER = CODEX
@@ -342,11 +345,10 @@ document.getElementById('root').innerHTML = `
           </div>
           <p class="mt-0.5 font-mono text-[12px] text-muted-foreground">${PROVIDER.url}</p>
         </div>
-        <!-- Edit, then Revert / Save, for the switch Routing reads, the tier
-             aliases and each model's switch. The accounts are read-only
-             either way: they change by signing in, and a reset is an action
-             on the vendor's side, not an edit of this page — which is also
-             why Use reset is locked while an edit is open. -->
+        <!-- Edit, then Revert / Save, for provider, model and account
+             switches and tier aliases. Account switches only select which
+             seats may route: OAuth credentials remain read-only. A reset
+             acts on the vendor and stays locked while an edit is open. -->
         <div class="ml-auto flex items-center gap-2">
           <span class="flex items-center gap-1.5 pr-1 text-[12px] text-muted-foreground">Routable ${toggle(true)}</span>
           ${withClass(btn('Test all', 'outline', 'ri-pulse-line'), lockedWhileEditing)}
