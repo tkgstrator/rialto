@@ -61,6 +61,8 @@ const tags = (value: string): string[] =>
  * UI disagree with the thing it is describing.
  */
 const SHARED_VOCABULARY = new Set([
+  // Decisions is the operator-facing feature name, not a translated sentence.
+  'shell.navDecisions',
   'activity.requests.laneAgent',
   'activity.requests.laneSubagent',
   // Codex names its own quota windows `primary` / `secondary`. The
@@ -130,16 +132,15 @@ function usedKeys(): Set<string> {
   return keys
 }
 
-const FLAT = new Map(BUNDLES.map(([lang, tree]) => [lang, flatten(tree)]))
-const EN = FLAT.get('en') ?? new Map()
+const EN = flatten(en)
 
 describe('locale parity', () => {
   test('en is non-empty', () => {
     expect(EN.size).toBeGreaterThan(0)
   })
 
-  for (const lang of ['ja', 'zh']) {
-    const other = FLAT.get(lang) ?? new Map()
+  for (const [lang, tree] of BUNDLES.slice(1)) {
+    const other = flatten(tree)
 
     test(`${lang} has no keys missing from en`, () => {
       expect([...EN.keys()].filter((k) => !other.has(k)).sort()).toEqual([])

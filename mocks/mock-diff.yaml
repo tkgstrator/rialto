@@ -36,6 +36,24 @@ screens:
         actual:
           type: url
           url: http://localhost:16175/routing
+  - id: decisions
+    category: Top level
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/decisions.html
+        actual:
+          type: url
+          url: http://localhost:16175/decisions
   - id: routing-passthrough
     category: Routing
     devices:
@@ -135,6 +153,24 @@ screens:
         actual:
           type: url
           url: http://localhost:16175/providers/api-keys
+  - id: providers-priorities
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/providers-priorities.html
+        actual:
+          type: url
+          url: http://localhost:16175/providers/priorities
   - id: provider-subscription
     category: Providers
     devices:

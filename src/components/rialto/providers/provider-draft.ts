@@ -13,11 +13,13 @@
 import { setModelDisabled } from '@/lib/providers/provider-edits'
 import { disabledModelsOf, effortOf } from './derive'
 import { type AliasChange, type AliasMap, type AliasPicks, aliasChanges } from './tier-aliases'
-import type { Provider, ReasoningEffort } from './types'
+import type { Provider, ReasoningEffort, SubscriptionWire } from './types'
 
 export interface ProviderDraft {
   /** The provider switch Routing reads, once flipped. */
   enabled?: boolean
+  /** Account switches flipped; OAuth credentials are never edited here. */
+  accounts: Record<string, boolean>
   /** Model switches flipped, by the value each was flipped to. */
   models: Record<string, boolean>
   /** Reasoning efforts picked; null clears one back to the vendor default. */
@@ -28,7 +30,19 @@ export interface ProviderDraft {
   apiKey?: string
 }
 
-export const EMPTY_DRAFT: ProviderDraft = { models: {}, efforts: {}, aliases: {} }
+export const EMPTY_DRAFT: ProviderDraft = { accounts: {}, models: {}, efforts: {}, aliases: {} }
+
+/** Keep the account panel's switches aligned with the staged provider edit. */
+export function applySubscriptionDraft(subscription: SubscriptionWire | undefined, draft: ProviderDraft | null) {
+  if (subscription === undefined || draft === null) return subscription
+  return {
+    ...subscription,
+    accounts: subscription.accounts.map((account) => {
+      const enabled = draft.accounts[account.id]
+      return enabled === undefined ? account : { ...account, enabled }
+    })
+  }
+}
 
 // The picks laid over a stored map; a null pick removes the entry.
 function overlay<V extends string>(
@@ -54,6 +68,13 @@ function applyRowEdits(provider: Provider, draft: ProviderDraft): Provider {
     ...switched,
     enabled: draft.enabled === undefined ? provider.enabled : draft.enabled,
     api_key: apiKeyOf(provider, draft),
+    subscription_accounts:
+      provider.auth_mode !== 'subscription' || provider.subscription_accounts === undefined
+        ? provider.subscription_accounts
+        : provider.subscription_accounts.map((account) => {
+            const enabled = draft.accounts[account.id]
+            return enabled === undefined ? account : { ...account, enabled }
+          }),
     modelReasoningEfforts: overlay(provider.modelReasoningEfforts, draft.efforts)
   }
 }
@@ -75,7 +96,7 @@ export function applyDraft(provider: Provider, draft: ProviderDraft, stored: Ali
 }
 
 export interface SavePlan {
-  /** The provider upsert, when its switch, a model switch or the key changed. */
+  /** One provider upsert for provider, model, account switches and the key. */
   upsert: Provider | null
   /** One write per alias that differs from the stored one. */
   aliases: AliasChange[]
@@ -91,7 +112,7 @@ const sameMembers = (a: readonly string[], b: readonly string[]): boolean => {
 /**
  * What Save writes: only what differs from the provider as loaded.
  *
- * The upsert is the loaded row with just the three things a draft changes
+ * The upsert is the loaded row with just the persisted fields a draft changes
  * in it. The draft's efforts stay out of that body on purpose:
  * `POST /api/providers` does not store them, and a body that carried them
  * would read as though it did. So does the switch-on an alias implies —
@@ -100,13 +121,29 @@ const sameMembers = (a: readonly string[], b: readonly string[]): boolean => {
  */
 export function savePlan(loaded: Provider, draft: ProviderDraft, stored: AliasMap): SavePlan {
   const edited = applyRowEdits(loaded, draft)
+  // The server accepts sparse flips. Resending untouched accounts could
+  // overwrite a peer's newer choice with the values this page loaded.
+  const accounts =
+    loaded.auth_mode !== 'subscription' || loaded.subscription_accounts === undefined
+      ? []
+      : loaded.subscription_accounts.flatMap((account) => {
+          const enabled = draft.accounts[account.id]
+          return enabled === undefined || enabled === account.enabled ? [] : [{ id: account.id, enabled }]
+        })
   const rowChanged =
     edited.enabled !== loaded.enabled ||
     edited.api_key !== loaded.api_key ||
-    !sameMembers(disabledModelsOf(edited), disabledModelsOf(loaded))
+    !sameMembers(disabledModelsOf(edited), disabledModelsOf(loaded)) ||
+    accounts.length > 0
   return {
     upsert: rowChanged
-      ? { ...loaded, enabled: edited.enabled, api_key: edited.api_key, transformer: edited.transformer }
+      ? {
+          ...loaded,
+          enabled: edited.enabled,
+          api_key: edited.api_key,
+          transformer: edited.transformer,
+          subscription_accounts: accounts.length === 0 ? undefined : accounts
+        }
       : null,
     aliases: aliasChanges(stored, draft.aliases),
     efforts: Object.entries(draft.efforts)

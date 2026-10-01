@@ -26,12 +26,8 @@ export function fmtAgo(iso: string, now: number): string {
 }
 
 /**
- * Time remaining, at the two-unit precision the quota rows use:
- * `2h 11m`, `3d 04h`, `46m`. Returns 'now' once the instant has passed —
- * a reset that is due reads better than a negative duration.
- */
-/**
- * Time left until `iso`, or `null` when it has already passed.
+ * Time left until `iso`, at two-unit precision (`2h 11m`, `3d 04h`, `46m`),
+ * or `null` when it has already passed.
  *
  * The elapsed case returns null rather than a word: it used to return
  * the literal `'now'`, which every caller then interpolated into
@@ -40,9 +36,9 @@ export function fmtAgo(iso: string, now: number): string {
  * case is the caller's job because only the caller has the sentence.
  */
 export function fmtUntil(iso: string | null, now: number): string | null {
-  if (iso === null) return '–'
+  if (iso === null || !Number.isFinite(now)) return '–'
   const target = Date.parse(iso)
-  if (Number.isNaN(target)) return '–'
+  if (!Number.isFinite(target)) return '–'
   const secs = Math.round((target - now) / 1000)
   if (secs <= 0) return null
   if (secs < HOUR) return `${Math.ceil(secs / MINUTE)}m`
