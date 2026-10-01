@@ -118,16 +118,21 @@ async function routeThroughScenarios(req: RouterRequest, ctx: RouterContext, isS
   const profileKey = req.profileKeyOverride !== undefined ? req.profileKeyOverride : surfaceProfile
 
   const requestedModel = typeof req.body.model === 'string' ? req.body.model : undefined
-  const routing = await routeByScenario({
-    profileKey,
-    requestedModel,
-    requestTokenCount: tokenCount,
-    thinking: signals.thinking,
-    isSubagent,
-    needsWebSearch: signals.webSearch,
-    hasTools: Array.isArray(req.body.tools) && req.body.tools.length > 0
-  })
+  const routing = await routeByScenario(
+    {
+      profileKey,
+      requestedModel,
+      requestTokenCount: tokenCount,
+      thinking: signals.thinking,
+      isSubagent,
+      needsWebSearch: signals.webSearch,
+      hasTools: Array.isArray(req.body.tools) && req.body.tools.length > 0
+    },
+    req.log,
+    req.reqId
+  )
   const { selection, classification } = routing
+  req.selectedRoutes = selection.selectedRoutes
   // Shadow only: the decision sees the routes that already passed the live
   // gates, while the request still follows the selector's original answer.
   if (isSubagent) {

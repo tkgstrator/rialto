@@ -14,7 +14,10 @@
  * the profile forbids; it does not choose the scenario or block demotion.
  */
 
+import type { Logger } from 'pino'
+import { logger } from '@/logger'
 import type { RoutingConstraints, RoutingLane, RoutingScenario } from '@/schemas/domain/tier-route'
+import { recordRoutingDecision } from '@/services/routing-decision-service'
 import type { ModelTier } from '../../schemas/domain/tier-route'
 import { exhaustedUntil, isModelExhausted } from '../../services/failover-state'
 import { getRoutingSnapshot } from '../../services/routing-scheduler'
@@ -187,7 +190,11 @@ const projectedPctOf = (target: string | null): number | null => {
   return quota === undefined ? null : quota.projectedPct
 }
 
-export async function routeByScenario(input: TierRoutingInput): Promise<TierRouting> {
+export async function routeByScenario(
+  input: TierRoutingInput,
+  log: Pick<Logger, 'info' | 'warn'> = logger,
+  reqId?: string
+): Promise<TierRouting> {
   const view = await loadView(input.profileKey)
   const classification = classify(view, input)
   const routes = view.routes[classification.scenario][classification.lane]
@@ -228,7 +235,10 @@ export async function routeByScenario(input: TierRoutingInput): Promise<TierRout
       requestTokenCount: input.requestTokenCount,
       scenario: classification.scenario,
       thinking: input.thinking
-    }
+    },
+    process.env,
+    log,
+    reqId === undefined ? undefined : (observation) => recordRoutingDecision(reqId, observation, process.env, log)
   )
   // A decision service can express a preference but cannot introduce a new
   // route. Keeping all other routes preserves the operator's failover order.

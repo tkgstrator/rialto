@@ -116,6 +116,7 @@ export type TierOutcome = 'routed' | 'passthrough' | 'exhausted' | 'refused'
 export interface TierSelection {
   outcome: TierOutcome
   primary: string | null
+  selectedRoutes?: Array<{ target: string; targetTier: ModelTier; route: string }>
   fallbacks: string[]
   skipped: { route: string; reason: TierSkipReason }[]
   // Set when outcome is 'refused': why, in words a client can act on.
@@ -222,7 +223,17 @@ export function selectTierRoute(input: TierSelectInput): TierSelection {
   if (passing.length > 0) {
     const { ordered, paced } = byPace(passing)
     const [primary, ...fallbacks] = ordered.flatMap((c) => (c.target === null ? [] : [c.target]))
-    return { outcome: 'routed', primary, fallbacks, skipped, refusal: null, paced }
+    return {
+      outcome: 'routed',
+      primary,
+      fallbacks,
+      skipped,
+      refusal: null,
+      paced,
+      selectedRoutes: ordered.flatMap((c) =>
+        c.target === null ? [] : [{ target: c.target, targetTier: c.targetTier, route: c.route }]
+      )
+    }
   }
   const reasons = new Set(skipped.map((s) => s.reason))
   const none = { primary: null, fallbacks: [], skipped, paced: NOT_PACED }

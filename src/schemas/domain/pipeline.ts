@@ -93,6 +93,9 @@ export type ProviderConfigShape = z.input<typeof ProviderConfigShapeSchema>
 // boundary.
 
 export const PipelineRequestSchema = z.object({
+  reqId: z.string().nonempty().optional(),
+  selectedTier: z.enum(['fable', 'opus', 'sonnet', 'haiku']).optional(),
+  selectedRoute: z.string().nonempty().optional(),
   // HTTP header values are legitimately allowed to be empty per RFC; .min(0) keeps
   // the schema explicit about that while satisfying the no-bare-z-string plugin.
   headers: z.record(z.string().nonempty(), z.string().min(0)),
@@ -161,6 +164,9 @@ export const TransformerContextSchema = z.object({ req: PipelineRequestSchema.op
 export type TransformerContext = z.infer<typeof TransformerContextSchema>
 
 export const TransformerConfigSchema = z.object({
+  // Path-based vendors remove body.model; preserve the model at the same
+  // transformation boundary that builds their URL without parsing that URL later.
+  outboundModel: z.string().nonempty().optional(),
   url: z.union([z.instanceof(URL), z.string().nonempty()]).optional(),
   // Header values may be empty per RFC; .min(0) keeps that explicit while
   // satisfying the no-bare-z-string plugin.

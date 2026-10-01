@@ -8,6 +8,7 @@
  */
 
 import type { Logger } from 'pino'
+import type { ModelTier } from '@/schemas/domain/tier-route'
 import type { ConfigStore } from '../registry/config'
 import type { TokenizerRegistry } from '../registry/tokenizer'
 import type { TokenizeMessage, TokenizeSystem, TokenizeTool } from '../tokenizers/base'
@@ -24,6 +25,8 @@ export type RouterRequestBody = {
 
 export type RouterRequest = {
   body: RouterRequestBody
+  reqId?: string
+  selectedRoutes?: Array<{ target: string; targetTier: ModelTier; route: string }>
   log: Logger
   // Inbound wire endpoint the request arrived on (e.g. `/v1/messages`,
   // `/v1/chat/completions`, `/v1/responses`). Rialto-idiom mutations that

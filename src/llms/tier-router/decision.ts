@@ -7,6 +7,7 @@
 
 import type { Logger } from 'pino'
 import { logger } from '@/logger'
+import { type RoutingDecisionObservation, RoutingDecisionObservationSchema } from '@/schemas/domain/routing-decision'
 import type { ModelTier } from '@/schemas/domain/tier-route'
 
 export type DecisionConfig = {
@@ -29,7 +30,7 @@ export type DecisionInput = {
   thinking: boolean
 }
 
-type DecisionAnswer = { choice: string; confidence: number }
+type DecisionAnswer = { choice: string; confidence: number; probabilities: Record<string, number> | null }
 
 const descriptions: Record<ModelTier, string> = {
   fable: 'Use only for the most difficult, ambiguous, or high-stakes work that needs the strongest reasoning.',
@@ -49,7 +50,26 @@ function answerOf(value: unknown, candidates: readonly ModelTier[]): DecisionAns
   const confidence = route === null ? undefined : route.confidence
   if (typeof choice !== 'string' || !candidates.includes(choice as ModelTier)) return null
   if (typeof confidence !== 'number' || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) return null
-  return { choice, confidence }
+  const distribution = route === null ? null : record(route.probabilities)
+  const probabilities =
+    distribution === null
+      ? null
+      : Object.fromEntries(
+          candidates.flatMap((tier) => {
+            const probability = distribution[tier]
+            return typeof probability === 'number' &&
+              Number.isFinite(probability) &&
+              probability >= 0 &&
+              probability <= 1
+              ? [[tier, probability]]
+              : []
+          })
+        )
+  return {
+    choice,
+    confidence,
+    probabilities: probabilities !== null && Object.keys(probabilities).length > 0 ? probabilities : null
+  }
 }
 
 function endpointOf(apiBaseUrl: string): string {
@@ -58,6 +78,46 @@ function endpointOf(apiBaseUrl: string): string {
 
 function criteriaOf(candidates: readonly ModelTier[]): Record<string, string> {
   return Object.fromEntries(candidates.map((tier) => [tier, descriptions[tier]]))
+}
+
+export type DecisionObserver = (observation: RoutingDecisionObservation) => void | Promise<void>
+
+async function notifyObserver(
+  observer: DecisionObserver | undefined,
+  observation: unknown,
+  log: Pick<Logger, 'warn'>
+): Promise<void> {
+  const parsed = RoutingDecisionObservationSchema.safeParse(observation)
+  if (observer === undefined || !parsed.success) return
+  try {
+    await observer(parsed.data)
+  } catch {
+    // Observer failures must never re-enter the classifier's fallback path.
+    log.warn({ event: 'routing_decision_capture', reason: 'observer_error' }, '[routing] decision capture failed')
+  }
+}
+
+function requestBodyOf(config: DecisionConfig, input: DecisionInput): string {
+  return JSON.stringify({
+    model: config.model,
+    // The caller's messages, source files and tool arguments remain inside Rialto.
+    state: {
+      has_tools: input.hasTools,
+      is_subagent: input.isSubagent,
+      needs_web_search: input.needsWebSearch,
+      requested_model: input.requestedModel,
+      request_token_count: input.requestTokenCount,
+      scenario: input.scenario,
+      thinking_enabled: input.thinking
+    },
+    questions: {
+      route: {
+        type: 'choice',
+        instructions: 'Choose the lowest capability tier that can reliably serve this request.',
+        criteria: criteriaOf(input.candidates)
+      }
+    }
+  })
 }
 
 function skipReason(
@@ -84,13 +144,20 @@ export async function preferredTier(
   config: DecisionConfig,
   input: DecisionInput,
   env: Record<string, string | undefined> = process.env,
-  log: Pick<Logger, 'info' | 'warn'> = logger
+  log: Pick<Logger, 'info' | 'warn'> = logger,
+  observer?: DecisionObserver
 ): Promise<ModelTier | null> {
   const started = performance.now()
+  const attempt: { requestBody: string | null; httpStatus: number | null } = { requestBody: null, httpStatus: null }
   const report = (
     outcome: 'success' | 'skipped' | 'fallback',
     reason: string,
-    details: { tier?: string; confidence?: number; httpStatus?: number } = {}
+    details: {
+      tier?: string
+      confidence?: number
+      probabilities?: Record<string, number> | null
+      httpStatus?: number
+    } = {}
   ): void => {
     // Allowlist metadata: upstream bodies and exception messages can contain secrets.
     const metadata = {
@@ -101,10 +168,30 @@ export async function preferredTier(
       candidateTiers: input.candidates,
       minConfidence: config.minConfidence,
       durationMs: Math.round(performance.now() - started),
+      predictedTier: details.tier === undefined ? null : details.tier,
+      probabilities: details.probabilities === undefined ? null : details.probabilities,
+      chosenProbability:
+        details.tier === undefined || details.probabilities == null || details.probabilities[details.tier] === undefined
+          ? null
+          : details.probabilities[details.tier],
+      decisionAccepted: outcome === 'success',
+      expectedTier: null,
+      evaluationStatus: 'unrated',
       ...details
     }
     if (outcome === 'fallback') log.warn(metadata, '[routing] decision')
     else log.info(metadata, '[routing] decision')
+    // Skips have no serialized request, and must not look like sent inputs.
+    void notifyObserver(
+      observer,
+      {
+        ...metadata,
+        requestBody: attempt.requestBody,
+        confidence: details.confidence === undefined ? null : details.confidence,
+        httpStatus: attempt.httpStatus
+      },
+      log
+    )
   }
   const reason = skipReason(config, input, env)
   if (reason !== null) {
@@ -121,6 +208,7 @@ export async function preferredTier(
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs)
   try {
+    attempt.requestBody = requestBodyOf(config, input)
     const response = await fetch(endpointOf(config.apiBaseUrl), {
       method: 'POST',
       headers: {
@@ -128,28 +216,9 @@ export async function preferredTier(
         ...(apiKey === undefined ? {} : { authorization: `Bearer ${apiKey}` })
       },
       signal: controller.signal,
-      body: JSON.stringify({
-        model: config.model,
-        // This intentionally contains routing metadata only. The caller's
-        // messages, source files and tool arguments remain inside Rialto.
-        state: {
-          has_tools: input.hasTools,
-          is_subagent: input.isSubagent,
-          needs_web_search: input.needsWebSearch,
-          requested_model: input.requestedModel,
-          request_token_count: input.requestTokenCount,
-          scenario: input.scenario,
-          thinking_enabled: input.thinking
-        },
-        questions: {
-          route: {
-            type: 'choice',
-            instructions: 'Choose the lowest capability tier that can reliably serve this request.',
-            criteria: criteriaOf(input.candidates)
-          }
-        }
-      })
+      body: attempt.requestBody
     })
+    attempt.httpStatus = response.status
     if (!response.ok) {
       report('fallback', 'http_error', { httpStatus: response.status })
       return null
@@ -164,7 +233,7 @@ export async function preferredTier(
       report('fallback', 'invalid_response')
       return null
     }
-    const details = { tier: answer.choice, confidence: answer.confidence }
+    const details = { tier: answer.choice, confidence: answer.confidence, probabilities: answer.probabilities }
     if (answer.confidence < config.minConfidence) {
       report('fallback', 'low_confidence', details)
       return null

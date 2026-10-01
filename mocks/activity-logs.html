@@ -80,13 +80,13 @@ const gutter = { info: 'bg-transparent', debug: 'bg-transparent', warn: 'bg-ambe
 // stays scannable however long a debug body gets.
 const line = (l) => `
   <details class="border-b border-border/40" ${l.open ? 'open' : ''}>
-    <summary class="flex cursor-pointer list-none gap-0 hover:bg-muted/50 [&::-webkit-details-marker]:hidden">
-      <span class="w-0.5 shrink-0 ${gutter[l.lv]}"></span>
-      <span class="w-28 shrink-0 py-1.5 pl-6 font-mono text-[12px] tabular-nums text-muted-foreground">${l.t}</span>
-      <span class="w-16 shrink-0 py-1.5 pl-2 font-mono text-[11px] uppercase ${
+    <summary class="flex cursor-pointer list-none items-center gap-0 hover:bg-muted/50 [&::-webkit-details-marker]:hidden">
+      <span class="w-0.5 shrink-0 self-stretch ${gutter[l.lv]}"></span>
+      <span class="w-28 shrink-0 py-1.5 pl-6 font-mono text-[12px] leading-5 tabular-nums text-muted-foreground">${l.t}</span>
+      <span class="w-16 shrink-0 py-1.5 pl-2 font-mono text-[11px] leading-5 uppercase ${
         l.lv === 'warn' ? 'text-amber-600 dark:text-amber-400' : l.lv === 'error' ? 'text-destructive' : 'text-muted-foreground/60'
       }">${l.lv}</span>
-      <span class="min-w-0 flex-1 py-1.5 pr-6 ${l.open ? '' : 'truncate'}">
+      <span class="min-w-0 flex-1 py-1.5 pr-6 text-[12px] leading-5 ${l.open ? '' : 'truncate'}">
         <span class="font-mono text-[12px]">${l.msg}</span>
         ${l.kv ? `<span class="ml-2 font-mono text-[12px] text-muted-foreground">${l.kv}</span>` : ''}
       </span>
