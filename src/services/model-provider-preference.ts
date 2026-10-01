@@ -114,7 +114,7 @@ export async function preferredProviderOrder(
   modelName: string,
   eligibleProviderNames: readonly string[],
   planAllowedProviderNames?: readonly string[],
-  prisma: PrismaClient = getPrismaClient()
+  prisma?: PrismaClient
 ): Promise<ProviderPreferenceOrder> {
   const planAllowed = planAllowedProviderNames === undefined ? undefined : new Set(planAllowedProviderNames)
   const eligible = new Set(
@@ -122,7 +122,9 @@ export async function preferredProviderOrder(
   )
   if (eligible.size === 0) return { status: 'unavailable' }
   if (eligible.size === 1) return { status: 'preferred', providers: [...eligible] }
-  const preferred = (await readPreferences(prisma, modelName))
+  // Only collisions need stored preferences. Acquiring the client earlier
+  // makes an unambiguous registry lookup unnecessarily depend on Postgres.
+  const preferred = (await readPreferences(prisma === undefined ? getPrismaClient() : prisma, modelName))
     .filter((row) => eligible.has(row.providerName))
     .map((row) => row.providerName)
   return preferred.length === 0 ? { status: 'ambiguous' } : { status: 'preferred', providers: preferred }
@@ -132,7 +134,7 @@ export async function resolvePreferredProvider(
   modelName: string,
   eligibleProviderNames: readonly string[],
   planAllowedProviderNames?: readonly string[],
-  prisma: PrismaClient = getPrismaClient()
+  prisma?: PrismaClient
 ): Promise<ProviderPreferenceResolution> {
   const order = await preferredProviderOrder(modelName, eligibleProviderNames, planAllowedProviderNames, prisma)
   return order.status === 'preferred' ? { status: 'preferred', provider: order.providers[0] } : order
