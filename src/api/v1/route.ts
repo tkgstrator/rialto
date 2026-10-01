@@ -27,6 +27,7 @@ import { buildErrorEnvelope, errorShapeForPath } from './error-shape'
 import { handleImageGeneration } from './images'
 import type { ResolvedInvocation } from './invocation'
 import { redactToolArguments } from './redact'
+import { applyResponseModelIdentity } from './response-model-identity'
 import { buildRoutePlan } from './route-plan'
 import { bestSupportedLevel, deepReplaceValue, forwardUpstreamError } from './upstream-error'
 
@@ -243,6 +244,10 @@ async function formatResponse(
   log: Logger,
   observed: { provider: string; model: string | undefined; path: string }
 ): Promise<Response> {
+  // `formatBlockingResponse` creates its own JSON response through Hono, so
+  // carry selected-target provenance onto the context before that branch.
+  const selectedModel = response.headers.get('x-rialto-selected-model')
+  if (selectedModel !== null) c.header('x-rialto-selected-model', selectedModel)
   if (!stream) return formatBlockingResponse(c, response, log, observed)
   // SSE — relay the upstream stream as-is. Set the headers the Anthropic
   // SDK expects on the inbound client.
@@ -315,7 +320,12 @@ const handleInbound = async (c: Context): Promise<Response> => {
       },
       { log: ctx.log, httpsProxy: ctx.config.getHttpsProxy(), recordUsage, recordMessages }
     )
-    return formatResponse(c, upstream, clientAskedStream, ctx.log, {
+    const identified = await applyResponseModelIdentity(upstream, {
+      provider: inv.provider.name,
+      model: inv.request.model,
+      path: plan.path
+    })
+    return formatResponse(c, identified, clientAskedStream, ctx.log, {
       provider: inv.provider.name,
       model: inv.request.model,
       path: plan.path
