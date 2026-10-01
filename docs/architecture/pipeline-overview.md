@@ -615,8 +615,10 @@ quota か error rate で落ちていれば、待てば通る見込みがある�
 無ければ scheduler の snapshot の `resetAt`、どちらも無ければ 30 秒。
 
 `body.model` が書き換わるのはルートの target に置き換えるときだけ。振り先を捏造する経路は無い。
-テストは `__tests__/llms/route-request.test.ts`、`__tests__/llms/router.test.ts`（`classify`）と
-`__tests__/llms/tier-router/select.test.ts`。
+テストは `__tests__/llms/route-request.test.ts`（分類・レーン・Default fallback）、
+`route-request-gates.test.ts`（pace・ゲート）、`route-request-outcomes.test.ts`（枯渇・拒否・読込失敗）、
+`route-request-passthrough.test.ts`（passthrough・persona・escalation）、
+`__tests__/llms/router.test.ts`（`classify`）と `__tests__/llms/tier-router/select.test.ts`。
 
 **persona** — routed な面の `/v1/messages` では、どの出口（routed / passthrough / 例外）でも
 `applyGlobalSystemPrompt` が ActivePersona を append する。persona はインストールの属性であって、ルートが

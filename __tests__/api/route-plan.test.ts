@@ -289,8 +289,8 @@ describe('the gemini surface', () => {
 
   test('lands the path model on body.model, which is what every later stage reads', async () => {
     const result = asPlan(await plan('/v1beta/models/gemini-3-pro:generateContent', { contents: [] }))
-    expect(result.routedBody.model).toBe('gemini-3-pro')
-    expect(result.primaryModel).toBe('gemini-3-pro')
+    expect(result.routedBody.model).toBe('google,gemini-3-pro')
+    expect(result.primaryModel).toBe('google,gemini-3-pro')
     // The client asked for this model by URL; recording it as the
     // requested model is what makes the Activity row honest.
     expect(result.requestedModel).toBe('gemini-3-pro')
@@ -314,7 +314,7 @@ describe('the gemini surface', () => {
     const result = asPlan(
       await plan('/v1beta/models/gemini-3-pro:generateContent', { model: 'something-else', contents: [] })
     )
-    expect(result.primaryModel).toBe('gemini-3-pro')
+    expect(result.primaryModel).toBe('google,gemini-3-pro')
   })
 
   test('on a routed gemini surface the path model is recorded, and the list picks the target', async () => {
@@ -498,6 +498,17 @@ describe('a list that yields no primary answers by why', () => {
  * only judges the caller's own model — a routed surface never sends it.
  */
 describe('passthrough denial', () => {
+  test('bare and legacy qualified IDs keep the same tool-bearing request shape', async () => {
+    const tools = [{ type: 'function', name: 'apply_patch', parameters: { type: 'object' } }]
+    const body = { messages: [{ role: 'user', content: 'Edit this file' }], tools }
+    const bare = asPlan(await plan('/v1/chat/completions', { ...body, model: 'claude-sonnet-5' }))
+    const qualified = asPlan(await plan('/v1/chat/completions', { ...body, model: SONNET }))
+    expect(bare.primaryModel).toBe(SONNET)
+    expect(qualified.primaryModel).toBe(SONNET)
+    expect(bare.routedBody.tools).toEqual(qualified.routedBody.tools)
+    expect(bare.routedBody.messages).toEqual(qualified.routedBody.messages)
+  })
+
   test('a denied target on a passthrough surface is a 400 that names it', async () => {
     __setSurfacesForTests({}, { 'anthropic-messages': [OPUS] })
     const response = asResponse(await plan('/v1/messages', { model: OPUS, messages: [] }))
@@ -539,9 +550,11 @@ describe('planModel', () => {
     expect(planModel(undefined, undefined)).toBeUndefined()
   })
 
-  test('keeps an allowed model and defaults everything else', () => {
+  test('keeps allowed qualified or unique bare models and defaults everything else', () => {
     expect(planModel(plan, 'b,two')).toBe('b,two')
+    expect(planModel(plan, 'two')).toBe('b,two')
     expect(planModel(plan, 'c,three')).toBe('a,one')
     expect(planModel(plan, undefined)).toBe('a,one')
+    expect(planModel({ ...plan, models: ['a,one', 'b,one', 'c,three'], defaultModel: 'c,three' }, 'one')).toBe('one')
   })
 })

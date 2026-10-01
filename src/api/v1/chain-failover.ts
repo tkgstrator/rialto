@@ -8,9 +8,9 @@
  *     map), `tryRotateAccount` marks just that account exhausted, drops
  *     the sticky, and re-runs the same chain entry — letting the
  *     session-account router pick a peer account on the next iteration.
- *   - Once the kind has no usable accounts left (or the failure wasn't
- *     subscription-related), the whole provider is marked exhausted and
- *     the walker advances to the next chain entry.
+ *   - With no account left to rotate, fresh account-wide spent quota marks
+ *     the provider; otherwise the 429 holds only this model, leaving a
+ *     different model on the same provider eligible for rescue.
  *
  * Extracted from route.ts so the HTTP handler stays compact and the
  * cognitive-complexity budget isn't blown by the rotation logic.
@@ -26,7 +26,9 @@ import {
   markModelExhausted,
   markProviderExhausted
 } from '../../services/failover-state'
+import { getRoutingSnapshot } from '../../services/routing-scheduler'
 import { recordModelFailure, recordModelSuccess } from '../../services/routing-scheduler/model-health'
+import { providerExhaustionOf } from '../../services/routing-scheduler/provider-exhaustion'
 import { getActiveAccountForSession, releaseAccountForSession } from '../../services/session-account-router'
 import { type AccountUsageMap, getPerAccountUsage, windowBinds } from '../../services/subaccount-usage-store'
 import { getSubAccountTokensForKind } from '../../services/subscription-account-sync-service'
@@ -175,6 +177,19 @@ export async function attemptChainEntry(chain: ChainCtx, model: string): Promise
 
     if (await tryRotateAccount(chain, inv, triedAccounts)) continue
 
+    // Only a fresh snapshot showing every account's account-wide window
+    // actually spent justifies parking sibling models too. A scoped Fable
+    // 429 (or missing quota data) must still allow an Opus rescue.
+    const providerBlock = providerExhaustionOf(getRoutingSnapshot(), inv.provider.name, Date.now())
+    if (providerBlock !== null) {
+      markProviderExhausted(inv.provider.name, providerBlock.resetAt === null ? undefined : providerBlock.resetAt)
+      ctx.log.warn(
+        { provider: inv.provider.name, model: inv.request.model, route: plan.route },
+        'account-wide quota spent; marking provider exhausted and failing over'
+      )
+      return { kind: 'next', forwarded: lastForwarded }
+    }
+
     // Provider has no rotatable accounts left (or this isn't a
     // subscription provider): mark THIS model exhausted (not the whole
     // provider) so a same-provider fallback on a different model — the
@@ -293,7 +308,7 @@ async function tryRotateAccount(
       route: plan.route,
       subAccountId: failedAcct,
       rotation: triedAccounts.size,
-      exhaustedUntil: until ?? null
+      exhaustedUntil: until === undefined ? null : until
     },
     'rate limited on subscription account; rotating to peer account on same provider'
   )

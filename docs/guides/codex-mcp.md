@@ -22,6 +22,9 @@ Claude Code（CLI・Desktop とも）から使える。Codex の OAuth、アカ�
   レビューしてほしいコードや差分は、呼び出し側（Claude）がプロンプトに入れる。
   Codex に手元のリポジトリを直接触らせたいなら、従来どおりローカルの `codex mcp-server` を使う。
 - `/v1/responses` と `/v1/images/generations` のパススルーで拒否しているターゲットは、MCP からも使えない。
+- `status` の `model` はモデル名だけを返す。複数の Codex プロバイダーが同じモデルを提供する場合は
+  Providers → Priorities で順序を設定し、Rialto が接続先を選ぶ。未設定の重複モデルは一覧に出さず、
+  `ask` / `generate_image` も断る。既存クライアントの `provider,model` 入力は引き続き受け付ける。
 
 ## トークンとスコープ
 

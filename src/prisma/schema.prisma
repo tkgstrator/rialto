@@ -359,12 +359,27 @@ model Model {
   testError         String?
   preferenceEntries RouterPreferenceEntry[]
   tierAliases       ProviderTierAlias[]
+  providerPreference ModelProviderPreference?
   capability        ModelCapability?
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
 
   @@unique([providerId, name])
   @@index([providerId])
+}
+
+// One position in the global preference for a bare model name shared by
+// multiple providers. The model FK removes a stale choice when that model
+// disappears; writes verify the stored name still matches the model row.
+// A missing preference is intentionally ambiguous, not an implicit first
+// provider based on database or catalog order.
+model ModelProviderPreference {
+  modelId   String @id
+  model     Model  @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  modelName String
+  priority  Int
+
+  @@unique([modelName, priority])
 }
 
 // What a subscription model (claude-code, codex) accepts, read once. A
@@ -768,6 +783,35 @@ model RequestLog {
   @@index([sessionId])
   @@index([provider, model])
   @@index([surface, createdAt])
+}
+
+// Independent of usage rows: classifier failures and requests without usage
+// still need their actual decision input archived. reqId joins file-log events,
+// not a Session or RequestLog FK that may never exist for a failed request.
+model RoutingDecision {
+  id                String   @id @default(cuid())
+  reqId             String
+  // Exact serialized SystemOne body, including the caller's model identifier
+  // and fixed English instructions/criteria. No headers, URLs or credentials.
+  // Potentially sensitive: this archive must never be copied to console logs.
+  requestBody       String   @db.Text
+  outcome           String
+  reason            String
+  predictedTier     String?
+  confidence        Float?
+  probabilities     Json?
+  chosenProbability Float?
+  decisionAccepted  Boolean
+  minConfidence     Float
+  durationMs        Int
+  httpStatus        Int?
+  // Neither prediction nor actual routing is a ground-truth quality label.
+  expectedTier      String?
+  evaluationStatus  String   @default("unrated")
+  createdAt         DateTime @default(now())
+
+  @@index([reqId])
+  @@index([createdAt])
 }
 
 // Time series of per-account subscription windows. `metric` is the

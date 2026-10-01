@@ -45,11 +45,10 @@ export async function sendToProvider(
   const thinkingFit = fitThinkingOff(outboundBody, provider)
   const url = outConfig.url !== undefined ? outConfig.url : new URL(provider.api_base_url)
 
-  // One id per upstream send. LogViewer groups a request's lines by
-  // reqId — bind it on a child logger so request body / response /
-  // error all carry the same id.
-  const reqId = randomUUID()
-  const reqLog = deps.log.child({ reqId })
+  // Correlate routing and every retry; each actual send has its own attempt id.
+  const reqId = context.req?.reqId !== undefined ? context.req.reqId : randomUUID()
+  const attemptId = randomUUID()
+  const reqLog = deps.log.child({ reqId, attemptId })
   const startedAt = Date.now()
 
   // Info-level heartbeat when a transformer rewrote `config.url` away
@@ -117,7 +116,31 @@ export async function sendToProvider(
     }
   }
 
-  const response = await fetchProvider(url, outboundBody, { headers, httpsProxy: deps.httpsProxy }, { reqId }, reqLog)
+  const bodyModel = viewPipelineBody(outboundBody).model
+  const actualModel = bodyModel !== undefined ? bodyModel : outConfig.outboundModel
+  const observation = {
+    event: 'routing_upstream',
+    provider: provider.name,
+    model: actualModel !== undefined ? actualModel : null,
+    selectedTier: context.req?.selectedTier !== undefined ? context.req.selectedTier : null,
+    selectedRoute: context.req?.selectedRoute !== undefined ? context.req.selectedRoute : null,
+    expectedTier: null,
+    evaluationStatus: 'unrated'
+  }
+  reqLog.info({ ...observation, outcome: 'send' }, '[routing] upstream send')
+  const response = await fetchProvider(
+    url,
+    outboundBody,
+    { headers, httpsProxy: deps.httpsProxy },
+    { reqId },
+    reqLog
+  ).catch((error: unknown) => {
+    reqLog.warn(
+      { ...observation, outcome: 'failure', reason: 'network_error', status: null, durationMs: Date.now() - startedAt },
+      '[routing] upstream failed'
+    )
+    throw error
+  })
   const durationMs = Date.now() - startedAt
 
   if (diagnostic) {
@@ -134,9 +157,17 @@ export async function sendToProvider(
     if (response.ok) captureSafeguardResultMetadata(response, reqLog)
   }
   if (!response.ok) {
+    reqLog.warn(
+      { ...observation, outcome: 'failure', reason: 'http_error', status: response.status, durationMs },
+      '[routing] upstream failed'
+    )
     await handleProviderError(response, provider, transformer, outboundBody, durationMs, url, reqLog)
   }
 
+  reqLog.info(
+    { ...observation, outcome: 'success', status: response.status, durationMs },
+    '[routing] upstream accepted'
+  )
   logResponse(reqLog, provider, outboundBody, response.status, durationMs)
 
   // Best-effort usage capture from a cloned stream so the completion

@@ -1,16 +1,13 @@
 /**
  * One load for everything the Providers screens read.
  *
- * Six endpoints because six things own the answer: the provider rows,
- * the OAuth accounts on them, the vendor catalog (display names, cached
- * prices, legacy flags), the live transformer registry, the quota
- * collector, and the tier aliases. Only the provider list is required —
- * the rest degrade to empty so a cold install still renders its providers
- * instead of an error.
+ * Only providers are required. Optional reads retain their last successful
+ * values during a background poll rather than blanking a healthy screen.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/lib/api'
+import dayjs from '@/lib/dayjs'
 import { type AccountExtrasIndex, indexAccountExtras, indexQuota, type QuotaIndex } from './derive'
 import type {
   CatalogEntry,
@@ -33,60 +30,125 @@ export interface ProvidersData {
   accounts: AccountExtrasIndex
   /** Every provider's four tier aliases and the candidates for each. */
   aliases: TierAliasWire[]
-  /**
-   * Server-side totals, so the subtitle here reports the same numbers the
-   * Overview screen does. Null when the summary endpoint was unreachable —
-   * the screen then counts what it has.
-   */
+  /** Server-side totals; null when the summary has never been available. */
   counts: { providers: number; enabledModels: number } | null
-  /** The instant the quota snapshot describes, for every "resets in" label. */
+  /** Current wall clock, not the instant an old quota snapshot was captured. */
   now: number
 }
 
-const EMPTY_SUBS: SubscriptionsResponse = { subscriptions: [] }
-const EMPTY_CATALOG: CatalogResponse = { entries: [] }
-const EMPTY_TRANSFORMERS: TransformersResponse = { transformers: [] }
+const readProviders = () =>
+  Promise.allSettled([
+    api.get<Provider[]>('/providers'),
+    api.get<SubscriptionsResponse>('/subscriptions'),
+    api.get<CatalogResponse>('/catalog'),
+    api.get<TransformersResponse>('/transformers'),
+    api.getOverview({ windowHours: 24 }),
+    api.getTierAliases()
+  ])
+
+const keepSuccessful = <T, U>(result: PromiseSettledResult<T>, project: (value: T) => U, previous: U): U =>
+  result.status === 'fulfilled' ? project(result.value) : previous
+
+const EMPTY_DATA: ProvidersData = {
+  providers: [],
+  subscriptions: new Map(),
+  catalog: [],
+  transformers: [],
+  quota: new Map(),
+  accounts: new Map(),
+  aliases: [],
+  counts: null,
+  now: 0
+}
+
+function mergeRead(previous: ProvidersData | null, read: Awaited<ReturnType<typeof readProviders>>): ProvidersData {
+  const known = previous === null ? EMPTY_DATA : previous
+  const [providers, subs, catalog, transformers, overview, aliases] = read
+  return {
+    providers: keepSuccessful(providers, (rows) => rows, known.providers),
+    subscriptions: keepSuccessful(
+      subs,
+      (value) => new Map(value.subscriptions.map((s) => [s.providerName, s])),
+      known.subscriptions
+    ),
+    catalog: keepSuccessful(catalog, (value) => value.entries, known.catalog),
+    transformers: keepSuccessful(transformers, (value) => value.transformers, known.transformers),
+    quota: keepSuccessful(overview, (value) => indexQuota(value.quota), known.quota),
+    accounts: keepSuccessful(overview, (value) => indexAccountExtras(value.quota), known.accounts),
+    aliases: keepSuccessful(aliases, (value) => value, known.aliases),
+    counts: keepSuccessful(
+      overview,
+      (value) => ({ providers: value.providerCount, enabledModels: value.enabledModelCount }),
+      known.counts
+    ),
+    now: dayjs().valueOf()
+  }
+}
 
 export function useProvidersData() {
   const { t } = useTranslation()
   const [data, setData] = useState<ProvidersData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const requests = useRef({ generation: 0, pending: 0, foreground: false, mounted: false })
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [providers, subs, catalog, transformers, overview, aliases] = await Promise.all([
-        api.get<Provider[]>('/providers'),
-        api.get<SubscriptionsResponse>('/subscriptions').catch(() => EMPTY_SUBS),
-        api.get<CatalogResponse>('/catalog').catch(() => EMPTY_CATALOG),
-        api.get<TransformersResponse>('/transformers').catch(() => EMPTY_TRANSFORMERS),
-        api.getOverview({ windowHours: 24 }).catch(() => null),
-        api.getTierAliases().catch((): TierAliasWire[] => [])
-      ])
-      setData({
-        providers,
-        subscriptions: new Map(subs.subscriptions.map((s) => [s.providerName, s])),
-        catalog: catalog.entries,
-        transformers: transformers.transformers,
-        quota: indexQuota(overview === null ? [] : overview.quota),
-        accounts: indexAccountExtras(overview === null ? [] : overview.quota),
-        aliases,
-        counts:
-          overview === null ? null : { providers: overview.providerCount, enabledModels: overview.enabledModelCount },
-        now: overview === null ? Date.now() : Date.parse(overview.generatedAt)
-      })
-      setError(null)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t('providers.screen.loadFailed'))
-    } finally {
-      setLoading(false)
-    }
-  }, [t])
+  const cancelBackground = useCallback(() => {
+    if (!requests.current.foreground) requests.current.generation++
+  }, [])
+
+  const finishRead = useCallback((background: boolean, generation: number) => {
+    requests.current.pending--
+    if (background || !requests.current.mounted || requests.current.generation !== generation) return
+    requests.current.foreground = false
+    setLoading(false)
+  }, [])
+
+  const reportReadError = useCallback(
+    (background: boolean, generation: number, err: unknown) => {
+      if (background || !requests.current.mounted || requests.current.generation !== generation) return
+      setError(err instanceof Error ? err.message : t('providers.screen.loadFailed'))
+    },
+    [t]
+  )
+
+  const load = useCallback(
+    async (background: boolean) => {
+      // Polls never overlap another read. A foreground save/reload may
+      // supersede a slow poll, whose older response must then be ignored.
+      if (background && requests.current.pending > 0) return
+      const generation = ++requests.current.generation
+      requests.current.pending++
+      requests.current.foreground = !background
+      if (!background) setLoading(true)
+      const isCurrent = () => requests.current.mounted && requests.current.generation === generation
+      try {
+        const read = await readProviders()
+        if (!isCurrent()) return
+        if (read[0].status === 'rejected') throw read[0].reason
+        setData((previous) => mergeRead(previous, read))
+        setError(null)
+      } catch (err) {
+        // A transient background failure is not a replacement for the last
+        // good data. Explicit initial/reload failures still surface normally.
+        reportReadError(background, generation, err)
+      } finally {
+        finishRead(background, generation)
+      }
+    },
+    [finishRead, reportReadError]
+  )
+
+  const reload = useCallback(() => load(false), [load])
+  const reloadBackground = useCallback(() => load(true), [load])
 
   useEffect(() => {
-    load()
-  }, [load])
+    requests.current.mounted = true
+    void reload()
+    return () => {
+      requests.current.mounted = false
+      requests.current.generation++
+    }
+  }, [reload])
 
-  return { data, error, loading, reload: load }
+  return { data, error, loading, reload, reloadBackground, cancelBackground }
 }

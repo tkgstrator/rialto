@@ -16,7 +16,7 @@
 
 import { cn } from 'cn'
 import { useTranslation } from 'react-i18next'
-import { Meter, Pill, RButton } from '@/components/rialto/primitives'
+import { Meter, Pill, RButton, Toggle } from '@/components/rialto/primitives'
 import { fmtUntil } from '@/lib/rialto/format'
 import type { SeatKind } from '@/shared/plan-capacity'
 import { planLabel } from '@/shared/plan-label'
@@ -28,15 +28,16 @@ import {
   type QuotaIndex,
   quotaForAccount
 } from './derive'
+import { SwitchReading } from './SwitchReading'
 import type { AuthStatus, SubAccountWire, SubscriptionWire } from './types'
 
-// Same three states the provider rail labels, so an account and its
-// provider never describe the same condition in two vocabularies.
+// A probe not yet completed must not look like a valid credential.
 const AUTH_STATUS_KEYS: Record<AuthStatus, string> = {
-  unknown: 'providers.rail.stateUnknown',
-  live: 'providers.rail.stateLive',
-  invalid: 'providers.rail.stateInvalid'
+  unknown: 'providers.accounts.authUnknown',
+  live: 'providers.accounts.authValid',
+  invalid: 'providers.accounts.authInvalid'
 }
+const AUTH_STATUS_TONES = { unknown: 'mute', live: 'ok', invalid: 'bad' } as const
 
 /**
  * One window: label, bar, percentage, reset clock.
@@ -64,7 +65,7 @@ function WindowLine({ row, now }: { row: AccountQuota; now: number }) {
       {/* A duration is a number: mono and tabular so the column lines up.
           "4h 06m" and "4d 01h" are different widths otherwise. An account
           the collector has not seen spend yet has no reset time at all. */}
-      <span className='w-14 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
+      <span className='w-14 shrink-0 truncate whitespace-nowrap text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
         {until === null ? DASH : until}
       </span>
     </div>
@@ -119,7 +120,9 @@ function AccountRow({
   quota,
   extras,
   now,
-  locked,
+  busy,
+  editing,
+  onToggle,
   onUseReset
 }: {
   account: SubAccountWire
@@ -127,7 +130,9 @@ function AccountRow({
   quota: QuotaIndex
   extras: AccountExtras | undefined
   now: number
-  locked: boolean
+  busy: boolean
+  editing: boolean
+  onToggle: (id: string, next: boolean) => void
   onUseReset: (account: SubAccountWire) => void
 }) {
   const { t } = useTranslation()
@@ -135,29 +140,50 @@ function AccountRow({
   // "Max 20x", not "max": the stored plan cannot say which of two plans
   // the seat is on, and the meters below are a share of that plan.
   const plan = planLabel(kind, account.plan, account.rateLimitTier)
+  const switchLabel = t('providers.accounts.toggleAccount', { account: accountLabel(account) })
   return (
     <div className={cn('px-4 py-3 transition-colors hover:bg-muted/50', account.enabled ? '' : 'opacity-45')}>
       <div className='flex items-center gap-2'>
-        <span className='text-xs font-medium'>{accountLabel(account)}</span>
-        {plan === null ? null : <Pill tone='info'>{plan}</Pill>}
+        <span className='min-w-0 truncate text-xs font-medium' title={accountLabel(account)}>
+          {accountLabel(account)}
+        </span>
+        {plan === null ? null : (
+          <Pill tone='info' className='shrink-0 whitespace-nowrap'>
+            {plan}
+          </Pill>
+        )}
         {windows.length === 0 ? null : (
-          <span className='ml-auto text-[12px] text-muted-foreground/70'>{t('providers.accounts.resetsIn')}</span>
+          <span className='ml-auto shrink-0 whitespace-nowrap text-[12px] text-muted-foreground/70'>
+            {t('providers.accounts.resetsIn')}
+          </span>
         )}
       </div>
       {windows.map((row) => (
         <WindowLine key={`${row.window}-${row.scope}`} row={row} now={now} />
       ))}
       {extras === undefined || extras.resetCredits === null ? null : (
-        <ResetLine credits={extras.resetCredits} locked={locked} onUse={() => onUseReset(account)} />
+        <ResetLine credits={extras.resetCredits} locked={busy || editing} onUse={() => onUseReset(account)} />
       )}
       <div className='mt-2 flex items-center gap-2 text-[12px] text-muted-foreground'>
-        {/* The rail translates this same enum; interpolating it raw here
-            printed "認証 live" beside the rail's 稼働中. */}
-        <span>{t('providers.accounts.auth', { status: t(AUTH_STATUS_KEYS[account.authStatus]) })}</span>
+        <Pill tone={AUTH_STATUS_TONES[account.authStatus]} className='shrink-0 whitespace-nowrap'>
+          {t(AUTH_STATUS_KEYS[account.authStatus])}
+        </Pill>
+        {/* Selection is independent of auth health and quota: an account
+            stays signed in while excluded from routing. */}
+        <span className='ml-auto flex items-center gap-1.5'>
+          {t('providers.detail.routable')}
+          {editing ? (
+            <Toggle
+              on={account.enabled}
+              disabled={busy}
+              label={switchLabel}
+              onClick={() => onToggle(account.id, !account.enabled)}
+            />
+          ) : (
+            <SwitchReading on={account.enabled} label={switchLabel} />
+          )}
+        </span>
       </div>
-      {account.authError === null ? null : (
-        <p className='mt-1.5 font-mono text-[12px] leading-relaxed text-destructive'>{account.authError}</p>
-      )}
     </div>
   )
 }
@@ -167,15 +193,19 @@ export function AccountsPanel({
   quota,
   accounts: extrasIndex,
   now,
-  locked,
+  busy,
+  editing,
+  onToggle,
   onUseReset
 }: {
   subscription: SubscriptionWire | undefined
   quota: QuotaIndex
   accounts: AccountExtrasIndex
   now: number
-  /** An edit, a save or another action is out: the reset waits. */
-  locked: boolean
+  /** A save or another action is out: all controls wait. */
+  busy: boolean
+  editing: boolean
+  onToggle: (id: string, next: boolean) => void
   onUseReset: (account: SubAccountWire) => void
 }) {
   const { t } = useTranslation()
@@ -203,7 +233,9 @@ export function AccountsPanel({
               quota={quota}
               extras={extrasIndex.get(a.id)}
               now={now}
-              locked={locked}
+              busy={busy}
+              editing={editing}
+              onToggle={onToggle}
               onUseReset={onUseReset}
             />
           ))}

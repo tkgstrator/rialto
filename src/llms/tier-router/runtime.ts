@@ -14,10 +14,15 @@
  * the profile forbids; it does not choose the scenario or block demotion.
  */
 
+import type { Logger } from 'pino'
+import { logger } from '@/logger'
 import type { RoutingConstraints, RoutingLane, RoutingScenario } from '@/schemas/domain/tier-route'
+import { recordRoutingDecision } from '@/services/routing-decision-service'
+import type { ModelTier } from '../../schemas/domain/tier-route'
 import { exhaustedUntil, isModelExhausted } from '../../services/failover-state'
 import { getRoutingSnapshot } from '../../services/routing-scheduler'
 import { errorRateOf, sampleCountOf } from '../../services/routing-scheduler/model-health'
+import { providerExhaustionOf } from '../../services/routing-scheduler/provider-exhaustion'
 import {
   defaultAgentWindowOf,
   isUsableRoute,
@@ -25,6 +30,7 @@ import {
   type TierProfileView,
   type TierRouteView
 } from '../../services/tier-route-service'
+import type { ReasoningEffort } from '../../shared/model-reasoning-effort'
 import { tierOf } from '../../shared/model-tier'
 import { preferredTier } from './decision'
 import { selectTierRoute, type TierCandidate, type TierSelection } from './select'
@@ -114,13 +120,16 @@ const splitTarget = (target: string): { provider: string; model: string } | null
 
 // Out of use right now: a mark from a 429 on this model or its provider, or
 // the quota snapshot's reading — spent, or used at or past the profile's
-// quotaSkipPct. A target the snapshot has never seen (api_key providers, a
-// cold start) is not held on quota.
+// quotaSkipPct. A provider whose every fresh account has actually spent an
+// account-wide window is held even if this particular target is absent from
+// the snapshot. Unknown accounts and api_key providers are not held.
 const buildIsExhausted = (quotaSkipPct: number): ((target: string) => boolean) => {
   const snapshot = getRoutingSnapshot()
+  const now = Date.now()
   return (target) => {
     const parts = splitTarget(target)
     if (parts !== null && isModelExhausted(parts.provider, parts.model)) return true
+    if (parts !== null && providerExhaustionOf(snapshot, parts.provider, now) !== null) return true
     const quota = snapshot === null ? undefined : snapshot.targets.get(target)
     if (quota === undefined) return false
     if (quota.exhausted) return true
@@ -135,6 +144,8 @@ const backAt = (target: string): number | null => {
   const until = parts === null ? null : exhaustedUntil(parts.provider, parts.model)
   if (until !== null) return until
   const snapshot = getRoutingSnapshot()
+  const providerBlock = parts === null ? null : providerExhaustionOf(snapshot, parts.provider, Date.now())
+  if (providerBlock !== null) return providerBlock.resetAt
   const quota = snapshot === null ? undefined : snapshot.targets.get(target)
   return quota === undefined ? null : quota.resetAt
 }
@@ -155,6 +166,7 @@ const retryAfterFor = (selection: TierSelection, candidates: readonly TierCandid
 export interface TierRouting {
   classification: Classification
   selection: TierSelection
+  shadowCandidates: Array<{ target: string; targetTier: ModelTier; efforts: ReasoningEffort[] }>
   constraints: RoutingConstraints
   // Set only for an exhausted tier under exhaustedBehavior '429'.
   retryAfterSec: number | null
@@ -178,7 +190,11 @@ const projectedPctOf = (target: string | null): number | null => {
   return quota === undefined ? null : quota.projectedPct
 }
 
-export async function routeByScenario(input: TierRoutingInput): Promise<TierRouting> {
+export async function routeByScenario(
+  input: TierRoutingInput,
+  log: Pick<Logger, 'info' | 'warn'> = logger,
+  reqId?: string
+): Promise<TierRouting> {
   const view = await loadView(input.profileKey)
   const classification = classify(view, input)
   const routes = view.routes[classification.scenario][classification.lane]
@@ -219,7 +235,10 @@ export async function routeByScenario(input: TierRoutingInput): Promise<TierRout
       requestTokenCount: input.requestTokenCount,
       scenario: classification.scenario,
       thinking: input.thinking
-    }
+    },
+    process.env,
+    log,
+    reqId === undefined ? undefined : (observation) => recordRoutingDecision(reqId, observation, process.env, log)
   )
   // A decision service can express a preference but cannot introduce a new
   // route. Keeping all other routes preserves the operator's failover order.
@@ -239,10 +258,28 @@ export async function routeByScenario(input: TierRoutingInput): Promise<TierRout
     isExhausted: buildIsExhausted(view.constraints.quotaSkipPct),
     health: (target) => ({ errorRate: errorRateOf(target), samples: sampleCountOf(target) })
   })
+  const skipped = new Set(selection.skipped.map((entry) => entry.route))
+  // Two provider tiers can resolve to one concrete model. Present that model
+  // only once to the decision service rather than weighting it twice.
+  const selected = [...new Set([selection.primary, ...selection.fallbacks])].filter(
+    (target): target is string => target !== null
+  )
+  const shadowCandidates = selected.flatMap((target) => {
+    const route = routes.find(
+      (entry) =>
+        isUsableRoute(entry) &&
+        !skipped.has(`${entry.provider} · ${entry.targetTier}`) &&
+        `${entry.provider},${entry.resolved?.model}` === target
+    )
+    return route === undefined || route.resolved === null
+      ? []
+      : [{ target, targetTier: route.targetTier, efforts: route.resolved.efforts }]
+  })
   const answers429 = selection.outcome === 'exhausted' && view.constraints.exhaustedBehavior === '429'
   return {
     classification,
     selection,
+    shadowCandidates,
     constraints: view.constraints,
     retryAfterSec: answers429 ? retryAfterFor(selection, candidates, Date.now()) : null
   }

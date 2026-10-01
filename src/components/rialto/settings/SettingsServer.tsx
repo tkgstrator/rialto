@@ -128,7 +128,7 @@ function UpdateSection() {
               {t('settings.server.releaseNotes')}
             </a>
           )}
-          <RButton variant='ghost' icon='ri-refresh-line' onClick={() => check(true)} disabled={checking}>
+          <RButton variant='outline' icon='ri-refresh-line' onClick={() => check(true)} disabled={checking}>
             {t('settings.server.checkNow')}
           </RButton>
         </div>
