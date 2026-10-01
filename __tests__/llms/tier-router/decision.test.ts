@@ -62,6 +62,47 @@ describe('preferredTier', () => {
     expect(JSON.stringify(entries)).not.toContain(input.requestedModel)
   })
 
+  test('retains only candidate probabilities and separates confidence from chosen probability', async () => {
+    const { entries, log } = captureLog()
+    globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          answers: {
+            route: {
+              choice: 'opus',
+              confidence: 0.19,
+              probabilities: { opus: 0.595, sonnet: 0.405, credential: 'secret', haiku: 0.9 }
+            }
+          }
+        })
+      )
+    await expect(preferredTier(config, input, env, log.child({ reqId: 'routing-request' }))).resolves.toBeNull()
+    expect(entries[0]).toMatchObject({
+      reqId: 'routing-request',
+      predictedTier: 'opus',
+      chosenProbability: 0.595,
+      probabilities: { opus: 0.595, sonnet: 0.405 },
+      confidence: 0.19,
+      decisionAccepted: false,
+      outcome: 'fallback',
+      expectedTier: null,
+      evaluationStatus: 'unrated'
+    })
+    expect(JSON.stringify(entries)).not.toContain('credential')
+    expect(JSON.stringify(entries)).not.toContain('haiku')
+  })
+
+  test('missing or invalid probabilities stay unknown without rejecting a valid choice', async () => {
+    for (const probabilities of [undefined, { opus: -1, sonnet: 1.2 }, { opus: 'secret', sonnet: null }]) {
+      const { entries, log } = captureLog()
+      globalThis.fetch = async () =>
+        new Response(JSON.stringify({ answers: { route: { choice: 'opus', confidence: 0.94, probabilities } } }))
+      await expect(preferredTier(config, input, env, log)).resolves.toBe('opus')
+      expect(entries[0]).toMatchObject({ probabilities: null, chosenProbability: null, decisionAccepted: true })
+      expect(JSON.stringify(entries)).not.toContain('secret')
+    }
+  })
+
   test('logs each skipped configuration without fetching', async () => {
     const cases = [
       { settings: { ...config, enabled: false }, candidates: input, environment: env, reason: 'disabled' },
