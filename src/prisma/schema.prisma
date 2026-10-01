@@ -359,12 +359,27 @@ model Model {
   testError         String?
   preferenceEntries RouterPreferenceEntry[]
   tierAliases       ProviderTierAlias[]
+  providerPreference ModelProviderPreference?
   capability        ModelCapability?
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
 
   @@unique([providerId, name])
   @@index([providerId])
+}
+
+// One position in the global preference for a bare model name shared by
+// multiple providers. The model FK removes a stale choice when that model
+// disappears; writes verify the stored name still matches the model row.
+// A missing preference is intentionally ambiguous, not an implicit first
+// provider based on database or catalog order.
+model ModelProviderPreference {
+  modelId   String @id
+  model     Model  @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  modelName String
+  priority  Int
+
+  @@unique([modelName, priority])
 }
 
 // What a subscription model (claude-code, codex) accepts, read once. A

@@ -19,6 +19,9 @@
     "1455": { "label": "Codex OAuth callback", "onAutoForward": "silent" }
   },
   "remoteEnv": {
+    "OPENAI_API_KEY": "${localEnv:OPENAI_API_KEY}",
+    "CODEX_HOME": "${containerWorkspaceFolder}/.codex",
+    "CLAUDE_CODE_AUTO_MODE_SERVER": "0",
     "CLOUDFLARE_API_TOKEN": "${localEnv:CLOUDFLARE_API_TOKEN}",
     "CLOUDFLARE_ACCOUNT_ID": "${localEnv:CLOUDFLARE_ACCOUNT_ID}",
     "WAKATIME_API_KEY": "${localEnv:WAKATIME_API_KEY}"
@@ -42,6 +45,9 @@
     "source=${env:HOME}/.gemini,target=/home/vscode/.gemini,type=bind,consistency=cached,readonly"
   ],
   "features": {
+    "ghcr.io/thamaji/devcontainer-features/codex-cli:1": {
+      "VERSION": "latest"
+    },
     "ghcr.io/devcontainers/features/common-utils:2": {
       "configureZshAsDefaultShell": true
     },

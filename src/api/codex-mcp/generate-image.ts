@@ -26,7 +26,9 @@ const ImageArgs = {
     .string()
     .nonempty()
     .optional()
-    .describe('Codex image model, as the `status` tool lists it. Omit for the newest enabled one.'),
+    .describe(
+      'Bare Codex image model name from `status`. Rialto chooses the provider; omit for the newest enabled one.'
+    ),
   size: z.enum(['auto', '1024x1024', '1024x1536', '1536x1024']).optional(),
   quality: z.enum(['auto', 'low', 'medium', 'high']).optional(),
   background: z.enum(['auto', 'opaque', 'transparent']).optional(),
@@ -61,11 +63,11 @@ export async function generateImageTool(
   args: ImageArgsInput,
   run: <T>(f: () => Promise<T>) => Promise<T>
 ): Promise<CallToolResult> {
-  const resolved = await resolveCodexTarget('image', args.model)
+  const resolved = await resolveCodexTarget('image', args.model, ctx.token.plan)
   if (!resolved.ok) return errorResult(resolved.message)
   const target = resolved.target
   if (!planAllows(ctx.token.plan, target)) {
-    return errorResult(`This access token's plan does not include ${targetId(target)}.`)
+    return errorResult(`This access token's plan does not include ${target.model}.`)
   }
   const refusal = await chargeCall(ctx.token)
   if (refusal !== null) return errorResult(refusal)
@@ -79,7 +81,7 @@ export async function generateImageTool(
         ...(args.quality === undefined ? {} : { quality: args.quality }),
         ...(args.background === undefined ? {} : { background: args.background })
       },
-      { accessTokenId: ctx.token.id, surface: CODEX_MCP_SCOPE }
+      { accessTokenId: ctx.token.id, surface: CODEX_MCP_SCOPE, plan: ctx.token.plan }
     )
   )
   if (!outcome.ok) return errorResult(`Image generation failed (HTTP ${outcome.status}): ${describe(outcome.message)}`)
@@ -91,7 +93,7 @@ export async function generateImageTool(
   const link = [
     `Download link (valid ${minutes} minutes, no credentials needed): ${url}`,
     `Save it with: curl -fsSL -o image.${extensionFor(mimeType)} '${url}'`,
-    `model: ${targetId(target)}`
+    `model: ${target.model}`
   ].join('\n')
   return {
     content: [

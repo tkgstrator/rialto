@@ -26,12 +26,14 @@ import {
   type TierProfileView,
   type TierRouteView
 } from '../../src/services/tier-route-service'
+import type { ReasoningEffort } from '../../src/shared/model-reasoning-effort'
 
 interface RouteOptions {
   enabled?: boolean
   targetEnabled?: boolean
   hostsWebSearch?: boolean
   contextWindow?: number | null
+  efforts?: ReasoningEffort[]
 }
 
 export function route(
@@ -51,7 +53,8 @@ export function route(
             model,
             targetEnabled: options.targetEnabled !== false,
             hostsWebSearch: options.hostsWebSearch !== false,
-            contextWindow: options.contextWindow === undefined ? null : options.contextWindow
+            contextWindow: options.contextWindow === undefined ? null : options.contextWindow,
+            efforts: options.efforts === undefined ? [] : options.efforts
           }
   }
 }

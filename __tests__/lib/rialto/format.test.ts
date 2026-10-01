@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test'
+import dayjs from '../../../src/lib/dayjs'
 import { fmtAgo, fmtCount, fmtLatency, fmtRate, fmtUntil, fmtUptime, shortId } from '../../../src/lib/rialto/format'
 
 // A fixed "now" so the assertions never depend on wall-clock drift.
 const NOW = Date.parse('2026-08-31T12:00:00.000Z')
-const at = (offsetSeconds: number): string => new Date(NOW + offsetSeconds * 1000).toISOString()
+const at = (offsetSeconds: number): string => dayjs(NOW).add(offsetSeconds, 'second').toISOString()
 
 describe('fmtAgo', () => {
   test('steps through seconds, minutes, hours, days', () => {
@@ -31,6 +32,13 @@ describe('fmtUntil', () => {
   test('rounds up inside the hour so a due-soon window never reads 0m', () => {
     expect(fmtUntil(at(46 * 60), NOW)).toBe('46m')
     expect(fmtUntil(at(30), NOW)).toBe('1m')
+  })
+
+  test('invalid reset timestamps and nonfinite clocks never leak NaN into the label', () => {
+    expect(fmtUntil('not-a-date', NOW)).toBe('–')
+    expect(fmtUntil(at(3600), Number.NaN)).toBe('–')
+    expect(fmtUntil(at(3600), Number.POSITIVE_INFINITY)).toBe('–')
+    expect(fmtUntil(at(3600), Number.NEGATIVE_INFINITY)).toBe('–')
   })
 
   test('reports an elapsed or missing reset without a negative duration', () => {
