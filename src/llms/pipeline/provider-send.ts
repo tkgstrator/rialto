@@ -146,10 +146,9 @@ export async function sendToProvider(
     void captureUsage(clone, context, provider, outboundBody, response.status, durationMs, deps).catch(() => {})
   }
 
-  // Best-effort assistant-content capture from a second clone. Parses
-  // the Anthropic SSE stream into text / tool_use blocks. Independent
+  // Observe Agent calls even when message persistence is disabled. Independent
   // from usage capture so a parse failure in one doesn't kill the other.
-  if (deps.recordMessages && response.ok && typeof response.clone === 'function') {
+  if (response.ok && typeof response.clone === 'function') {
     const clone = response.clone()
     const sessionId = resolveSessionId(context)
     void captureAssistantMessage(clone, sessionId, deps).catch(() => {})
