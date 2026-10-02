@@ -87,19 +87,24 @@ export function stripSubagentTag(system: RouterRequestBody['system']): boolean {
 
 const TASK_TEXT_LIMIT = 2000
 
-// The newest user turn's own words. Harness-injected <system-reminder> blocks
-// and tool results are skipped: they are not the task and would drown it.
+// The newest user turn that carries words of its own. Agent loops end on
+// tool_result-only turns, so the last user turn is usually empty of task;
+// harness-injected <system-reminder> blocks are skipped for the same reason.
 export function latestUserText(messages: unknown): string | undefined {
   if (!Array.isArray(messages)) return undefined
-  const user = messages
+  const texts = messages
     .filter((m: unknown) => typeof m === 'object' && m !== null && Reflect.get(m, 'role') === 'user')
-    .at(-1)
-  const content: unknown = user === undefined ? undefined : Reflect.get(user, 'content')
+    .map((m: unknown) => textOf(m === null || typeof m !== 'object' ? undefined : Reflect.get(m, 'content')))
+    .filter((t) => t !== '')
+  const text = texts.at(-1)
+  return text === undefined ? undefined : text.slice(0, TASK_TEXT_LIMIT)
+}
+
+function textOf(content: unknown): string {
   const parts: unknown[] = typeof content === 'string' ? [content] : Array.isArray(content) ? content : []
-  const text = parts
+  return parts
     .map((p) => (typeof p === 'string' ? p : typeof p === 'object' && p !== null ? Reflect.get(p, 'text') : undefined))
     .filter((t): t is string => typeof t === 'string' && !t.trimStart().startsWith('<system-reminder>'))
     .join('\n')
     .trim()
-  return text === '' ? undefined : text.slice(0, TASK_TEXT_LIMIT)
 }
