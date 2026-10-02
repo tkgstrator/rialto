@@ -22,6 +22,7 @@ import { type LlmsContext, PASSTHROUGH_ROUTE, type RouterRequest, routeRequest, 
 import { surfaceForPath } from '../../llms/inbound/surfaces'
 import { type ClassifierSignals, classifierSignals } from '../../llms/pipeline/classifier-diagnostics'
 import { sessionIdFromRequest } from '../../llms/pipeline/session-id'
+import { archiveRequest, requestArchiveEnabled } from '../../llms/request-archive'
 import type { TokenPlan } from '../../services/access-token-service'
 import { passthroughDenial } from '../../services/inbound-surface-service'
 import { preferredProviderOrder } from '../../services/model-provider-preference'
@@ -214,6 +215,8 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   // what the client asked for next to what the plan sent.
   const pinnedModel = planModel(token?.plan, requestedModel)
   if (pinnedModel !== undefined) body.model = pinnedModel
+  // Before routeRequest rewrites model and strips the subagent tag in place.
+  const archivedBody = requestArchiveEnabled() ? structuredClone(body) : undefined
   const signals = path === '/v1/messages' ? classifierSignals(body) : undefined
   const diagnosticLog = (status: number, reason: string): void => {
     if (!signals || (!signals.safeguardsPresent && !signals.suspectedClassifier)) return
@@ -245,6 +248,20 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   // could otherwise swap the plan's model for a costlier target.
   if (pinnedModel === undefined) await routeRequest(routeReq, { config: ctx.config, tokenizers: ctx.tokenizers })
   const route = routeReq.route !== undefined ? routeReq.route : PASSTHROUGH_ROUTE
+  if (archivedBody !== undefined) {
+    void archiveRequest({
+      reqId,
+      sessionId: sessionIdFromRequest(headers, archivedBody),
+      path,
+      headers,
+      body: archivedBody,
+      requestedModel,
+      routedModel: body.model,
+      route,
+      isSubagent: routeReq.isSubagent,
+      tokenCount: routeReq.tokenCount
+    })
+  }
 
   // Every route of the scenario's list is out of quota and the profile's
   // `exhaustedBehavior` is '429'. Answered here so no upstream dispatch
