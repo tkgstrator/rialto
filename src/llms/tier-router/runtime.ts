@@ -180,6 +180,7 @@ export interface TierRoutingInput {
   isSubagent: boolean
   needsWebSearch: boolean
   hasTools: boolean
+  taskText?: string
 }
 
 // Projected use at the reset, from the snapshot; null for a target it has
@@ -234,7 +235,8 @@ export async function routeByScenario(
       requestedModel: input.requestedModel,
       requestTokenCount: input.requestTokenCount,
       scenario: classification.scenario,
-      thinking: input.thinking
+      thinking: input.thinking,
+      taskText: input.taskText
     },
     process.env,
     log,

@@ -26,7 +26,7 @@ import { isRoutedPath, resolveSurfaceForPath } from '../services/inbound-surface
 import { shadowEvaluateSubagent } from '../services/subagent-shadow-evaluation'
 import { DEFAULT_PROFILE_KEY, PASSTHROUGH_PROFILE_KEY } from '../services/tier-route-service'
 import { applyGlobalSystemPrompt, resolveActivePersonaPrompt } from './router/persona'
-import { stripSubagentTag } from './router/request-signals'
+import { latestUserText, stripSubagentTag } from './router/request-signals'
 import { signalsOf } from './router/surface-signals'
 import type { RouterContext, RouterRequest } from './router/types'
 import { routeByScenario } from './tier-router/runtime'
@@ -126,7 +126,8 @@ async function routeThroughScenarios(req: RouterRequest, ctx: RouterContext, isS
       thinking: signals.thinking,
       isSubagent,
       needsWebSearch: signals.webSearch,
-      hasTools: Array.isArray(req.body.tools) && req.body.tools.length > 0
+      hasTools: Array.isArray(req.body.tools) && req.body.tools.length > 0,
+      taskText: latestUserText(req.body.messages)
     },
     req.log,
     req.reqId

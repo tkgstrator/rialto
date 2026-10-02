@@ -84,9 +84,7 @@ describe('decision completion observer', () => {
     })
     const body = JSON.parse(rows[0].requestBody)
     expect(body.state.requested_model).toBe(input.requestedModel)
-    expect(body.questions.route.instructions).toBe(
-      'Choose the lowest capability tier that can reliably serve this request.'
-    )
+    expect(body.questions.route.instructions).toContain('state.task')
     expect(body.questions.route.criteria.opus).toContain('complex multi-step')
     expect(rows[0].requestBody).not.toContain(env.JEV_API_KEY)
     expect(rows[0].requestBody).not.toContain(config.apiBaseUrl)

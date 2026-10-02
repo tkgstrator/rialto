@@ -67,3 +67,20 @@ export function stripSubagentTag(system: RouterRequestBody['system']): boolean {
   }
   return true
 }
+
+const TASK_TEXT_LIMIT = 2000
+
+// The newest user turn's own words. Harness-injected <system-reminder> blocks
+// and tool results are skipped: they are not the task and would drown it.
+export function latestUserText(messages: unknown): string | undefined {
+  if (!Array.isArray(messages)) return undefined
+  const user = messages.filter((m: unknown) => typeof m === 'object' && m !== null && Reflect.get(m, 'role') === 'user').at(-1)
+  const content: unknown = user === undefined ? undefined : Reflect.get(user, 'content')
+  const parts: unknown[] = typeof content === 'string' ? [content] : Array.isArray(content) ? content : []
+  const text = parts
+    .map((p) => (typeof p === 'string' ? p : typeof p === 'object' && p !== null ? Reflect.get(p, 'text') : undefined))
+    .filter((t): t is string => typeof t === 'string' && !t.trimStart().startsWith('<system-reminder>'))
+    .join('\n')
+    .trim()
+  return text === '' ? undefined : text.slice(0, TASK_TEXT_LIMIT)
+}
