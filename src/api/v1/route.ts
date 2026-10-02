@@ -18,6 +18,7 @@ import type { Logger } from 'pino'
 import { getPrismaClient } from '../../db/client'
 import { getLlmsContext, type MessageRecord, runPipeline, type UsageRecord } from '../../llms'
 import { INBOUND_SURFACES, surfaceForPath } from '../../llms/inbound/surfaces'
+import { hasSafeguards } from '../../llms/pipeline/classifier-diagnostics'
 import { aggregateAnthropicSseToJson, findSseStreamDefect, isSseContentType } from '../../llms/utils/sse-aggregate'
 import { recordCallSpend } from '../../services/usage-window-service'
 import { requestLogEmitter } from '../request-logs/events'
@@ -27,7 +28,7 @@ import { buildErrorEnvelope, errorShapeForPath } from './error-shape'
 import { handleImageGeneration } from './images'
 import type { ResolvedInvocation } from './invocation'
 import { redactToolArguments } from './redact'
-import { buildRoutePlan } from './route-plan'
+import { buildRoutePlan, type RoutePlan } from './route-plan'
 import { bestSupportedLevel, deepReplaceValue, forwardUpstreamError } from './upstream-error'
 
 export const v1Route = new Hono()
@@ -284,6 +285,23 @@ function errorResponse(c: Context, err: unknown): Response {
   return c.json(envelope, status as 500)
 }
 
+// Keep actual native upstream refusals (such as 429) ahead of compatibility
+// errors. No candidate outside the operator's chain is selected here.
+export function exhaustedChainResponse(c: Context, plan: RoutePlan, lastForwarded: Response | null): Response {
+  if (lastForwarded) return lastForwarded
+  if (plan.path === '/v1/messages' && hasSafeguards(plan.routedBody)) {
+    return c.json(
+      buildErrorEnvelope({
+        shape: errorShapeForPath(plan.path),
+        status: 400,
+        from: 'Anthropic safeguards requires a native Messages provider; no usable native target exists in the configured routing chain.'
+      }),
+      400
+    )
+  }
+  return c.json({ type: 'error', error: { type: 'invalid_request', message: 'No usable model for this request' } }, 400)
+}
+
 // ─── Handler ────────────────────────────────────────────────────────────
 
 const handleInbound = async (c: Context): Promise<Response> => {
@@ -354,9 +372,8 @@ const handleInbound = async (c: Context): Promise<Response> => {
     if (outcome.forwarded !== null) lastForwarded = outcome.forwarded
   }
 
-  // Chain exhausted: every candidate was rate-limited (or unresolvable).
-  if (lastForwarded) return lastForwarded
-  return c.json({ type: 'error', error: { type: 'invalid_request', message: 'No usable model for this request' } }, 400)
+  // Chain exhausted: every candidate was rate-limited, incompatible or unresolvable.
+  return exhaustedChainResponse(c, plan, lastForwarded)
 }
 
 // Route mounts come from the registry, one per surface — including
