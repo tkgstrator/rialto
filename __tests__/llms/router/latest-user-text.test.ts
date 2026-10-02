@@ -17,6 +17,14 @@ describe('latestUserText', () => {
     ]
     expect(latestUserText(messages)).toBe('リファクタして')
   })
+  test('walks back past tool_result-only turns to the real task', () => {
+    const messages = [
+      { role: 'user', content: 'バグを直して' },
+      { role: 'assistant', content: [{ type: 'tool_use', name: 'Read' }] },
+      { role: 'user', content: [{ type: 'tool_result', content: 'file body' }] }
+    ]
+    expect(latestUserText(messages)).toBe('バグを直して')
+  })
   test('truncates and tolerates junk', () => {
     expect(latestUserText([{ role: 'user', content: 'a'.repeat(5000) }])?.length).toBe(2000)
     expect(latestUserText(undefined)).toBeUndefined()
