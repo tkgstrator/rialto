@@ -137,6 +137,7 @@ export function ProviderDetailPhone(props: ProviderDetailProps) {
           editing={false}
           onToggle={props.onToggleAccount}
           onUseReset={props.onUseReset}
+          onReauthenticated={props.onReauthenticated}
         />
       ) : (
         <CredentialsPanel

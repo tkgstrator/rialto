@@ -11,6 +11,7 @@ import { getPrismaClient } from '../../db/client'
 import { AuthMode, type PrismaClient, type SubAccount } from '../../generated/prisma/client'
 import { logger } from '../../logger'
 import type { DiscoveredAccount } from '../../schemas/domain/subscription'
+import { assertReauthenticationIdentity, reauthenticationTarget } from '../account-reauthentication'
 import { encryptionKey } from './crypto'
 import { buildAccountPayload, stableIdentityFor } from './discovery'
 
@@ -78,9 +79,17 @@ const enableOnFirstAccount = async (prisma: PrismaClient, providerId: string, na
 export const recordDiscoveredAccount = async (
   kind: 'claude' | 'codex',
   account: DiscoveredAccount,
-  prisma: PrismaClient = getPrismaClient()
+  prisma: PrismaClient = getPrismaClient(),
+  targetAccountId?: string
 ): Promise<string[]> => {
   const key = encryptionKey()
+  if (targetAccountId !== undefined) {
+    const target = await reauthenticationTarget(kind, targetAccountId, prisma)
+    assertReauthenticationIdentity(kind, target, account)
+    const { label: _label, ...payload } = buildAccountPayload(target.provider.name, account, key)
+    await prisma.subAccount.update({ where: { id: target.id }, data: payload })
+    return [target.id]
+  }
   const providers = await providersForKind(prisma, kind)
   if (providers.length === 0) {
     logger.warn({ kind }, '[subaccount] no subscription provider matched; skipping upsert')

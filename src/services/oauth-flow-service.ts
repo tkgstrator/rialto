@@ -14,6 +14,7 @@
  */
 
 import { createHash, randomBytes } from 'node:crypto'
+import type { OAuthFlowResult } from '../schemas/api/oauth'
 
 const FLOW_TTL_MS = 10 * 60_000
 const FLOW_GC_THRESHOLD = 100
@@ -23,9 +24,25 @@ export interface PendingOAuthFlow {
   redirectUri: string
   provider: string
   createdAt: number
+  targetAccountId?: string
 }
 
 const pendingFlows = new Map<string, PendingOAuthFlow>()
+const results = new Map<string, { createdAt: number; result: OAuthFlowResult }>()
+
+export const oauthFlowResult = (state: string): OAuthFlowResult => {
+  const entry = results.get(state)
+  if (!entry || Date.now() - entry.createdAt > FLOW_TTL_MS) {
+    results.delete(state)
+    return { status: 'expired' }
+  }
+  return entry.result
+}
+
+export const completeOAuthFlow = (state: string, error?: string): void => {
+  const entry = results.get(state)
+  if (entry) entry.result = error === undefined ? { status: 'connected' } : { status: 'error', error }
+}
 
 const gcExpiredFlows = (now: number): void => {
   if (pendingFlows.size < FLOW_GC_THRESHOLD) return
@@ -46,6 +63,10 @@ export const generatePkcePair = (): { codeVerifier: string; codeChallenge: strin
 export const generateState = (): string => randomBytes(32).toString('base64url')
 
 export const storePendingFlow = (state: string, flow: PendingOAuthFlow): void => {
+  for (const [id, entry] of results) {
+    if (Date.now() - entry.createdAt > FLOW_TTL_MS) results.delete(id)
+  }
+  results.set(state, { createdAt: flow.createdAt, result: { status: 'pending' } })
   pendingFlows.set(state, flow)
   gcExpiredFlows(Date.now())
 }
