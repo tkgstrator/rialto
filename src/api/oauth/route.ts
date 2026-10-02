@@ -69,17 +69,25 @@ import { buildClaudeAuthorizeUrl, CLAUDE_SCOPES, exchangeClaudeCode } from '../.
 import { CODEX_CALLBACK_PORT, ensureCodexCallbackListener } from '../../services/codex-auth/callback-listener'
 import { buildCodexAuthorizeUrl, CODEX_CALLBACK_PATH, exchangeCodexCode } from '../../services/codex-auth/oauth'
 import {
+  completeOAuthFlow,
   consumePendingFlow,
   generatePkcePair,
   generateState,
+  oauthFlowResult,
   storePendingFlow
 } from '../../services/oauth-flow-service'
 import { connectClaudeAccount, connectCodexAccount } from '../../services/subscription-connect-service'
 import { connectFailure } from './connect-failure'
 import { registerCredentialRoutes } from './credential-routes'
 import { registerDeviceRoutes } from './device-routes'
+import { requestedReauthenticationTarget } from './reauthentication-target'
 
 export const oauthRoute = new Hono()
+
+oauthRoute.get('/api/oauth/status/:state', (c) => {
+  c.header('cache-control', 'no-store')
+  return c.json(oauthFlowResult(c.req.param('state')))
+})
 
 const CLAUDE_CALLBACK_PATH = '/callback'
 
@@ -96,6 +104,12 @@ oauthRoute.post('/api/oauth/initiate/:provider', async (c) => {
     return c.json({ success: false as const, error: `unsupported provider "${provider}"` }, 400)
   }
 
+  const target = await requestedReauthenticationTarget(provider, await c.req.json().catch(() => ({}))).then(
+    (id) => ({ id }),
+    (err: unknown) => ({ failure: connectFailure(err, 'Failed to start reauthentication.') })
+  )
+  if ('failure' in target) return c.json(target.failure.body, target.failure.status)
+  const targetAccountId = target.id
   const callbackPath = PROVIDER_CALLBACK_PATH[provider]
   const initiateUrl = new URL(c.req.url)
   const rialtoBaseUrl = `${initiateUrl.protocol}//${initiateUrl.host}`
@@ -133,7 +147,7 @@ oauthRoute.post('/api/oauth/initiate/:provider', async (c) => {
 
   const state = generateState()
   const { codeVerifier, codeChallenge } = generatePkcePair()
-  storePendingFlow(state, { codeVerifier, redirectUri, provider, createdAt: Date.now() })
+  storePendingFlow(state, { codeVerifier, redirectUri, provider, createdAt: Date.now(), targetAccountId })
 
   const authorizeUrl =
     provider === 'claude'
@@ -159,7 +173,13 @@ oauthRoute.get(CLAUDE_CALLBACK_PATH, async (c) => {
     return `${baseUrl}/oauth-result?${p.toString()}`
   }
 
-  if (errorParam) return c.redirect(resultUrl('error', `Upstream returned error: ${errorParam}`))
+  if (errorParam) {
+    if (state) {
+      consumePendingFlow(state)
+      completeOAuthFlow(state, `Upstream returned error: ${errorParam}`)
+    }
+    return c.redirect(resultUrl('error', `Upstream returned error: ${errorParam}`))
+  }
   if (typeof code !== 'string' || code.length === 0)
     return c.redirect(resultUrl('error', 'Missing `code` in callback URL.'))
   if (typeof state !== 'string' || state.length === 0)
@@ -177,16 +197,22 @@ oauthRoute.get(CLAUDE_CALLBACK_PATH, async (c) => {
       redirectUri: pending.redirectUri,
       state
     })
-    await connectClaudeAccount({
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresAt: Date.now() + tokens.expires_in * 1000,
-      scopes: CLAUDE_SCOPES
-    })
+    await connectClaudeAccount(
+      {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresAt: Date.now() + tokens.expires_in * 1000,
+        scopes: CLAUDE_SCOPES
+      },
+      undefined,
+      pending.targetAccountId
+    )
+    completeOAuthFlow(state)
     return c.redirect(resultUrl('ok'))
   } catch (err) {
     logger.error({ err, provider: 'claude' }, '[oauth] callback failed')
     const message = err instanceof Error ? err.message : 'Unknown error during token exchange.'
+    completeOAuthFlow(state, message)
     return c.redirect(resultUrl('error', message))
   }
 })
@@ -196,7 +222,7 @@ oauthRoute.get(CLAUDE_CALLBACK_PATH, async (c) => {
 // copy the redirect URL and POST it here. Extracts code+state and runs the
 // same token exchange as the loopback GET /callback handler above.
 oauthRoute.post('/api/oauth/manual-callback', async (c) => {
-  const body = await c.req.json<{ url?: string; code?: string; state?: string }>()
+  const body = await c.req.json<{ url?: string; code?: string; state?: string; expectedState?: string }>()
 
   let code: string | undefined
   let state: string | undefined
@@ -230,6 +256,15 @@ oauthRoute.post('/api/oauth/manual-callback', async (c) => {
 
   if (!code) return c.json({ success: false as const, error: 'Missing `code` in URL.' }, 400)
   if (!state) return c.json({ success: false as const, error: 'Missing `state` in URL.' }, 400)
+  if (body.expectedState !== undefined && body.expectedState !== state) {
+    return c.json(
+      {
+        success: false as const,
+        error: 'This callback belongs to a different sign-in attempt. Paste the code or URL from this attempt.'
+      },
+      400
+    )
+  }
 
   const pending = consumePendingFlow(state)
   if (!pending)
@@ -253,11 +288,16 @@ oauthRoute.post('/api/oauth/manual-callback', async (c) => {
         codeVerifier: pending.codeVerifier,
         redirectUri: pending.redirectUri
       })
-      await connectCodexAccount({
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token,
-        idToken: tokens.id_token
-      })
+      await connectCodexAccount(
+        {
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          idToken: tokens.id_token
+        },
+        undefined,
+        pending.targetAccountId
+      )
+      completeOAuthFlow(state)
       return c.json({ success: true as const })
     }
     const tokens = await exchangeClaudeCode({
@@ -266,15 +306,21 @@ oauthRoute.post('/api/oauth/manual-callback', async (c) => {
       redirectUri: pending.redirectUri,
       state
     })
-    await connectClaudeAccount({
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresAt: Date.now() + tokens.expires_in * 1000,
-      scopes: CLAUDE_SCOPES
-    })
+    await connectClaudeAccount(
+      {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresAt: Date.now() + tokens.expires_in * 1000,
+        scopes: CLAUDE_SCOPES
+      },
+      undefined,
+      pending.targetAccountId
+    )
+    completeOAuthFlow(state)
     return c.json({ success: true as const })
   } catch (err) {
     logger.error({ err, provider: flowProvider }, '[oauth] manual-callback failed')
+    completeOAuthFlow(state, err instanceof Error ? err.message : 'Authentication failed.')
     const failure = connectFailure(err, 'Unknown error during token exchange.')
     return c.json(failure.body, failure.status)
   }

@@ -40,3 +40,13 @@ export const CodexDevicePollResponseSchema = z
   ])
   .openapi('CodexDevicePollResponse')
 export type CodexDevicePollResponse = z.infer<typeof CodexDevicePollResponseSchema>
+
+// Read the result of this exact browser authorization, rather than infer
+// completion from account health probes running in the background.
+export const OAuthFlowResultSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('pending') }),
+  z.object({ status: z.literal('connected') }),
+  z.object({ status: z.literal('expired') }),
+  z.object({ status: z.literal('error'), error: z.string().nonempty() })
+])
+export type OAuthFlowResult = z.infer<typeof OAuthFlowResultSchema>
