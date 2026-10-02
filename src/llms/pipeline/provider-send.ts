@@ -2,8 +2,8 @@
  * Send the (already request-chain-transformed) body to the provider.
  *
  * Owns the bypass-mode auth hook, header assembly, request/response
- * logging, upstream error surfacing, and kicking off the best-effort
- * usage / chat-view message capture on cloned response streams.
+ * logging, upstream error surfacing, and kicking off best-effort
+ * usage capture on cloned upstream response streams.
  */
 
 import { randomUUID } from 'node:crypto'
@@ -19,10 +19,8 @@ import { fetchProvider } from '../provider-fetch'
 import type { ResolvedProvider } from '../registry/provider'
 import type { Transformer } from '../transformers/base'
 import { applyAdaptiveEffort, applyBypassManualEffort } from './adaptive-effort'
-import { captureSafeguardResultMetadata, hasSafeguards } from './classifier-diagnostics'
-import { captureAssistantMessage, extractLastUserContent } from './message-capture'
+import { captureSafeguardResultMetadata, hasSafeguards, hasStructuredOutput } from './classifier-diagnostics'
 import { shouldStripInboundHeader } from './request-chain'
-import { resolveSessionId } from './session-id'
 import { fitThinkingOff } from './thinking-off'
 import type { PipelineDeps } from './types'
 import { captureUsage } from './usage-extraction'
@@ -85,15 +83,22 @@ export async function sendToProvider(
   logThinkingFit(reqLog, provider, context, thinkingFit)
   logRequest(reqLog, provider, outboundBody, url, bypass)
   const signals = context.req?.classifierSignals
-  const diagnostic = signals?.safeguardsPresent || signals?.suspectedClassifier || hasSafeguards(outboundBody)
+  const structuredOutputRequested = hasStructuredOutput(context.req?.body)
+  const diagnostic =
+    signals?.safeguardsPresent ||
+    signals?.suspectedClassifier ||
+    hasSafeguards(outboundBody) ||
+    structuredOutputRequested
   if (diagnostic) {
     reqLog.info(
       {
         event: 'classifier_diagnostic',
         phase: 'upstream_request',
-        safeguardsPresent: signals?.safeguardsPresent ?? false,
+        safeguardsPresent: signals?.safeguardsPresent === true,
         safeguardsForwarded: hasSafeguards(outboundBody),
-        suspectedClassifier: signals?.suspectedClassifier ?? false,
+        suspectedClassifier: signals?.suspectedClassifier === true,
+        structuredOutputRequested,
+        structuredOutputForwarded: hasStructuredOutput(outboundBody),
         provider: provider.name,
         model: context.req?.model,
         requestedModel: context.req?.requestedModel,
@@ -102,18 +107,6 @@ export async function sendToProvider(
       },
       'classifier diagnostic: upstream request signals'
     )
-  }
-
-  // Capture the user turn before we send. Anthropic's message array is
-  // the same in bypass and unified paths, so pulling the last user block
-  // works in both. Fire-and-forget: message capture must never delay
-  // the upstream call or fail it.
-  if (deps.recordMessages) {
-    const sessionId = resolveSessionId(context)
-    const userContent = extractLastUserContent(outboundBody)
-    if (userContent !== null) {
-      void deps.recordMessages([{ sessionId, role: 'user', content: userContent }]).catch(() => {})
-    }
   }
 
   const bodyModel = viewPipelineBody(outboundBody).model
@@ -175,14 +168,6 @@ export async function sendToProvider(
   if (deps.recordUsage && typeof response.clone === 'function') {
     const clone = response.clone()
     void captureUsage(clone, context, provider, outboundBody, response.status, durationMs, deps).catch(() => {})
-  }
-
-  // Observe Agent calls even when message persistence is disabled. Independent
-  // from usage capture so a parse failure in one doesn't kill the other.
-  if (response.ok && typeof response.clone === 'function') {
-    const clone = response.clone()
-    const sessionId = resolveSessionId(context)
-    void captureAssistantMessage(clone, sessionId, deps).catch(() => {})
   }
 
   return response

@@ -32,9 +32,11 @@
  */
 
 import type { PipelineBodyView, TransformerHookResult } from '@/schemas/domain/pipeline'
+import { captureAssistantMessage, extractLastUserContent } from './pipeline/message-capture'
 import { sendToProvider } from './pipeline/provider-send'
 import { processRequestTransformers, shouldBypass } from './pipeline/request-chain'
 import { processResponseTransformers } from './pipeline/response-chain'
+import { resolveSessionId } from './pipeline/session-id'
 import type { PipelineDeps, PipelineInput } from './pipeline/types'
 
 export type { MessageRecord, UsageRecord } from '@/schemas/domain/usage-record'
@@ -48,11 +50,34 @@ export type { PipelineDeps, PipelineInput } from './pipeline/types'
 export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Promise<Response> {
   const { provider, transformer } = input
 
+  // Capture at the client wire boundary, not between vendor transforms: Codex
+  // replaces messages with input and returns Responses events, not tool_use.
+  const userContent = structuredClone(extractLastUserContent(input.body))
+  const sessionId = resolveSessionId(input.context)
+  const captureLog = deps.log.child({ sessionId })
   const bypass = shouldBypass(provider.transformer, transformer, input.body)
   const { requestBody, config } = await processRequestTransformers(input, bypass)
-  return sendToProvider(requestBody, config, provider, transformer, bypass, input.context, deps).then((response) =>
-    processResponseTransformers(requestBody, response, provider, transformer, bypass, input.context)
+  if (deps.recordMessages && userContent !== null) {
+    void deps.recordMessages([{ sessionId, role: 'user', content: userContent }]).catch(() => {
+      captureLog.warn({ event: 'message_capture_failed', phase: 'user' }, 'User message archive failed')
+    })
+  }
+  const upstream = await sendToProvider(requestBody, config, provider, transformer, bypass, input.context, deps)
+  const response = await processResponseTransformers(
+    requestBody,
+    upstream,
+    provider,
+    transformer,
+    bypass,
+    input.context
   )
+  // Keep observation enabled without persistence; never consume the client's stream.
+  if (response.ok && typeof response.clone === 'function') {
+    void captureAssistantMessage(response.clone(), sessionId, { ...deps, log: captureLog }).catch(() => {
+      captureLog.warn({ event: 'message_capture_failed', phase: 'assistant' }, 'Assistant message archive failed')
+    })
+  }
+  return response
 }
 
 // Re-export helper types used by tests / callers that previously imported
