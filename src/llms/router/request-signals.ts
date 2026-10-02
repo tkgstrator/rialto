@@ -52,7 +52,24 @@ const SUBAGENT_TAGS = ['RIALTO-SUBAGENT-MODEL', 'CCR-SUBAGENT-MODEL'] as const
 // usage record; its VALUE is not read. Only a well-formed (closed) tag is
 // stripped, matching the old extractSubagentModel behaviour; a malformed
 // (unclosed) tag still counts as present but is left untouched.
+// Claude Code itself marks the subagents it spawns: system[0] is the
+// `x-anthropic-billing-header` line and carries `cc_is_subagent=true` only
+// for them (observed in the request archive). Real subagents never carry
+// the Rialto tag, so this is the signal that actually fires.
+const CLAUDE_CODE_SUBAGENT_MARKER = 'cc_is_subagent=true'
+
+function hasClaudeCodeSubagentMarker(system: RouterRequestBody['system']): boolean {
+  if (!Array.isArray(system)) return false
+  const text = system[0]?.text
+  return (
+    typeof text === 'string' &&
+    text.startsWith('x-anthropic-billing-header:') &&
+    text.includes(CLAUDE_CODE_SUBAGENT_MARKER)
+  )
+}
+
 export function stripSubagentTag(system: RouterRequestBody['system']): boolean {
+  if (hasClaudeCodeSubagentMarker(system)) return true
   if (!Array.isArray(system) || system.length < 2) return false
   const block = system[1]
   const text = typeof block?.text === 'string' ? block.text : undefined
@@ -66,4 +83,23 @@ export function stripSubagentTag(system: RouterRequestBody['system']): boolean {
     block.text = text.replace(`<${tag}>${match[1]}</${tag}>`, '')
   }
   return true
+}
+
+const TASK_TEXT_LIMIT = 2000
+
+// The newest user turn's own words. Harness-injected <system-reminder> blocks
+// and tool results are skipped: they are not the task and would drown it.
+export function latestUserText(messages: unknown): string | undefined {
+  if (!Array.isArray(messages)) return undefined
+  const user = messages
+    .filter((m: unknown) => typeof m === 'object' && m !== null && Reflect.get(m, 'role') === 'user')
+    .at(-1)
+  const content: unknown = user === undefined ? undefined : Reflect.get(user, 'content')
+  const parts: unknown[] = typeof content === 'string' ? [content] : Array.isArray(content) ? content : []
+  const text = parts
+    .map((p) => (typeof p === 'string' ? p : typeof p === 'object' && p !== null ? Reflect.get(p, 'text') : undefined))
+    .filter((t): t is string => typeof t === 'string' && !t.trimStart().startsWith('<system-reminder>'))
+    .join('\n')
+    .trim()
+  return text === '' ? undefined : text.slice(0, TASK_TEXT_LIMIT)
 }

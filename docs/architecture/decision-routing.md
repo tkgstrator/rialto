@@ -60,3 +60,8 @@ The stored body is the same string passed to the classifier fetch, including the
 Treat this DB archive as potentially sensitive request data: it is not added to console/file logs or a public API endpoint. There is no automatic expiry or historical backfill; rows remain until the operator deliberately deletes them. The archive is independent of existing RequestLog/Message pruning. The created-at index supports an operator-selected retention cutoff without silently choosing one on their behalf.
 
 Persistence is asynchronous and best-effort. A missing migration, unavailable database or write failure must not change routing, confidence thresholds or the classifier timeout. Capture failures emit only a metadata-only warning with `reqId`, never the body or database exception. An abrupt process exit may lose an in-flight archive write; this is an observability archive, not a transactionally guaranteed audit ledger.
+
+
+## Task text
+
+The latest user instruction (system-reminder blocks and tool results skipped, truncated to 2000 characters) is sent as `state.task`. Without it the classifier saw only metadata and returned near-identical probabilities for every request, so it never reached `decisionMinConfidence`. History, source files and tool arguments are still not sent.
