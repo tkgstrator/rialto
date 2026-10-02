@@ -28,6 +28,9 @@ export type DecisionInput = {
   requestTokenCount: number | undefined
   scenario: string
   thinking: boolean
+  // The latest user instruction, already truncated; without it the classifier
+  // sees only metadata and answers the same distribution for every request.
+  taskText?: string
 }
 
 type DecisionAnswer = { choice: string; confidence: number; probabilities: Record<string, number> | null }
@@ -100,7 +103,7 @@ async function notifyObserver(
 function requestBodyOf(config: DecisionConfig, input: DecisionInput): string {
   return JSON.stringify({
     model: config.model,
-    // The caller's messages, source files and tool arguments remain inside Rialto.
+    // Only the latest user instruction leaves Rialto; history, source files and tool arguments stay.
     state: {
       has_tools: input.hasTools,
       is_subagent: input.isSubagent,
@@ -108,12 +111,14 @@ function requestBodyOf(config: DecisionConfig, input: DecisionInput): string {
       requested_model: input.requestedModel,
       request_token_count: input.requestTokenCount,
       scenario: input.scenario,
-      thinking_enabled: input.thinking
+      thinking_enabled: input.thinking,
+      task: input.taskText
     },
     questions: {
       route: {
         type: 'choice',
-        instructions: 'Choose the lowest capability tier that can reliably serve this request.',
+        instructions:
+          'Read state.task, the user instruction, and choose the lowest capability tier that can reliably do that work: trivial lookups and edits need a small tier, multi-file design, debugging and architecture need a large one.',
         criteria: criteriaOf(input.candidates)
       }
     }
