@@ -74,7 +74,9 @@ const TASK_TEXT_LIMIT = 2000
 // and tool results are skipped: they are not the task and would drown it.
 export function latestUserText(messages: unknown): string | undefined {
   if (!Array.isArray(messages)) return undefined
-  const user = messages.filter((m: unknown) => typeof m === 'object' && m !== null && Reflect.get(m, 'role') === 'user').at(-1)
+  const user = messages
+    .filter((m: unknown) => typeof m === 'object' && m !== null && Reflect.get(m, 'role') === 'user')
+    .at(-1)
   const content: unknown = user === undefined ? undefined : Reflect.get(user, 'content')
   const parts: unknown[] = typeof content === 'string' ? [content] : Array.isArray(content) ? content : []
   const text = parts
