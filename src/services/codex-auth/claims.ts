@@ -70,6 +70,13 @@ export const codexAccessTokenExpiry = (accessToken: string | null): Date | null 
   return dayjs.unix(exp).toDate()
 }
 
+/** The official Codex identity parser uses these ChatGPT user claims, not JWT sub. */
+export const codexChatgptUserId = (idToken: string | null): string | null => {
+  const auth = claimsAuthSection(decodeJwtPayload(idToken))
+  const userId = asString(auth.chatgpt_user_id)
+  return userId !== null ? userId : asString(auth.user_id)
+}
+
 /** Identity + entitlement fields carried by a Codex id_token. */
 export interface CodexIdentityClaims {
   accountId: string | null

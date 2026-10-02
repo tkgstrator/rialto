@@ -12,7 +12,7 @@ import { AuthMode, type PrismaClient, type SubAccount } from '../../generated/pr
 import { logger } from '../../logger'
 import type { DiscoveredAccount } from '../../schemas/domain/subscription'
 import { assertReauthenticationIdentity, reauthenticationTarget } from '../account-reauthentication'
-import { encryptionKey } from './crypto'
+import { decryptString, encryptionKey } from './crypto'
 import { buildAccountPayload, stableIdentityFor } from './discovery'
 
 const upsertAccount = async (
@@ -85,7 +85,11 @@ export const recordDiscoveredAccount = async (
   const key = encryptionKey()
   if (targetAccountId !== undefined) {
     const target = await reauthenticationTarget(kind, targetAccountId, prisma)
-    assertReauthenticationIdentity(kind, target, account)
+    assertReauthenticationIdentity(
+      kind,
+      { ...target, idToken: kind === 'codex' ? decryptString(target.idTokenEnc, key) : null },
+      account
+    )
     const { label: _label, ...payload } = buildAccountPayload(target.provider.name, account, key)
     await prisma.subAccount.update({ where: { id: target.id }, data: payload })
     return [target.id]

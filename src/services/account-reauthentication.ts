@@ -1,6 +1,7 @@
 import { getPrismaClient } from '../db/client'
 import { AuthMode, type PrismaClient } from '../generated/prisma/client'
 import type { DiscoveredAccount } from '../schemas/domain/subscription'
+import { codexChatgptUserId } from './codex-auth/claims'
 
 export class AccountReauthenticationError extends Error {
   readonly status = 400
@@ -24,18 +25,33 @@ export async function reauthenticationTarget(
   return target
 }
 
+type ReauthenticationIdentity = { userId: string | null; accountId: string | null; idToken: string | null }
+
+const sameCodexUser = (target: ReauthenticationIdentity, account: DiscoveredAccount): boolean => {
+  const previousUser = codexChatgptUserId(target.idToken)
+  const nextUser = codexChatgptUserId(account.idToken)
+  if (previousUser !== null && nextUser !== null) return previousUser === nextUser
+  // Older credential imports may have no ID token. Retain their previous
+  // matching rule rather than infer a user from an email or workspace alone.
+  return target.userId === null || account.userId === null || target.userId === account.userId
+}
+
 export function assertReauthenticationIdentity(
   kind: 'claude' | 'codex',
-  target: { userId: string | null; accountId: string | null },
+  target: ReauthenticationIdentity,
   account: DiscoveredAccount
 ): void {
+  if (kind === 'codex' && target.accountId !== null && target.accountId !== account.accountId) {
+    throw new AccountReauthenticationError(
+      'You signed in to a different ChatGPT workspace. Select the workspace linked to this account and try again. Nothing was saved.'
+    )
+  }
   const matches =
     kind === 'claude'
       ? target.userId !== null && target.userId === account.userId
       : target.accountId !== null
-        ? target.accountId === account.accountId &&
-          (target.userId === null || account.userId === null || target.userId === account.userId)
-        : target.userId !== null && target.userId === account.userId
+        ? sameCodexUser(target, account)
+        : target.userId !== null && account.userId !== null && sameCodexUser(target, account)
   if (!matches)
     throw new AccountReauthenticationError(
       'You signed in to a different account. Sign in to the selected account to reauthenticate it. Nothing was saved.'
