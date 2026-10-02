@@ -324,6 +324,7 @@ export function ProviderDetailScreen() {
           onModelEffort={(model, next) => stage((d) => ({ ...d, efforts: { ...d.efforts, [model]: next } }))}
           onReplaceKey={(key) => stage((d) => ({ ...d, apiKey: key }))}
           onUseReset={spendReset}
+          onReauthenticated={reload}
         />
         {pending === null ? null : <BusyOverlay label={pending} />}
       </div>
