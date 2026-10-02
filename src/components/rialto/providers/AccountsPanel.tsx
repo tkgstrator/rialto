@@ -15,6 +15,7 @@
  */
 
 import { cn } from 'cn'
+import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Meter, Pill, RButton, Toggle } from '@/components/rialto/primitives'
 import { fmtUntil } from '@/lib/rialto/format'
@@ -28,6 +29,7 @@ import {
   type QuotaIndex,
   quotaForAccount
 } from './derive'
+import { ReauthenticateAccount } from './ReauthenticateAccount'
 import { SwitchReading } from './SwitchReading'
 import type { AuthStatus, SubAccountWire, SubscriptionWire } from './types'
 
@@ -73,6 +75,7 @@ function WindowLine({ row, now }: { row: AccountQuota; now: number }) {
 }
 
 const DASH = '—'
+const NO_RELOAD = async (): Promise<void> => {}
 
 /**
  * Banked Codex resets: how many, and the one action on this page that acts
@@ -123,7 +126,8 @@ function AccountRow({
   busy,
   editing,
   onToggle,
-  onUseReset
+  onUseReset,
+  onReauthenticate
 }: {
   account: SubAccountWire
   kind: SeatKind
@@ -134,6 +138,7 @@ function AccountRow({
   editing: boolean
   onToggle: (id: string, next: boolean) => void
   onUseReset: (account: SubAccountWire) => void
+  onReauthenticate?: (account: SubAccountWire) => void
 }) {
   const { t } = useTranslation()
   const windows = quotaForAccount(quota, account.id)
@@ -168,6 +173,16 @@ function AccountRow({
         <Pill tone={AUTH_STATUS_TONES[account.authStatus]} className='shrink-0 whitespace-nowrap'>
           {t(AUTH_STATUS_KEYS[account.authStatus])}
         </Pill>
+        {account.authStatus !== 'invalid' || onReauthenticate === undefined ? null : (
+          <RButton
+            variant='outline'
+            icon='ri-login-circle-line'
+            disabled={busy || editing}
+            onClick={() => onReauthenticate(account)}
+          >
+            {t('providers.accounts.reauthenticate')}
+          </RButton>
+        )}
         {/* Selection is independent of auth health and quota: an account
             stays signed in while excluded from routing. */}
         <span className='ml-auto flex items-center gap-1.5'>
@@ -196,7 +211,8 @@ export function AccountsPanel({
   busy,
   editing,
   onToggle,
-  onUseReset
+  onUseReset,
+  onReauthenticated
 }: {
   subscription: SubscriptionWire | undefined
   quota: QuotaIndex
@@ -207,8 +223,11 @@ export function AccountsPanel({
   editing: boolean
   onToggle: (id: string, next: boolean) => void
   onUseReset: (account: SubAccountWire) => void
+  onReauthenticated?: () => Promise<void>
 }) {
   const { t } = useTranslation()
+  const [reauthenticating, setReauthenticating] = useState<SubAccountWire | null>(null)
+  const closeReauthentication = useCallback(() => setReauthenticating(null), [])
   const accounts = subscription === undefined ? [] : subscription.accounts
   // A hand-added provider's plan strings follow no vendor convention, so
   // they are read without one.
@@ -221,6 +240,17 @@ export function AccountsPanel({
       <div className='px-4 pt-5 pb-2 md:px-6'>
         <h3 className='text-sm font-semibold'>{t('providers.accounts.title')}</h3>
       </div>
+      {reauthenticating !== null && subscription !== undefined && (kind === 'claude' || kind === 'codex') ? (
+        <ReauthenticateAccount
+          key={reauthenticating.id}
+          account={reauthenticating}
+          kind={kind}
+          providerName={subscription.providerName}
+          now={now}
+          onClose={closeReauthentication}
+          onDone={onReauthenticated === undefined ? NO_RELOAD : onReauthenticated}
+        />
+      ) : null}
       {accounts.length === 0 ? (
         <div className='px-4 pb-5 text-[12px] text-muted-foreground md:px-6'>{t('providers.accounts.empty')}</div>
       ) : (
@@ -233,10 +263,11 @@ export function AccountsPanel({
               quota={quota}
               extras={extrasIndex.get(a.id)}
               now={now}
-              busy={busy}
+              busy={busy || reauthenticating !== null}
               editing={editing}
               onToggle={onToggle}
               onUseReset={onUseReset}
+              onReauthenticate={kind === 'claude' || kind === 'codex' ? setReauthenticating : undefined}
             />
           ))}
         </div>

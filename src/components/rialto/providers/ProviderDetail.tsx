@@ -189,6 +189,7 @@ export interface ProviderDetailProps {
   onModelEffort: (model: string, next: ReasoningEffort | null) => void
   onReplaceKey: (key: string) => void
   /** Spend one of the account's banked resets; the screen confirms first. */
+  onReauthenticated?: () => Promise<void>
   onUseReset: (account: SubAccountWire) => void
 }
 
@@ -224,6 +225,7 @@ export function ProviderDetail(props: ProviderDetailProps) {
             editing={props.editing}
             onToggle={props.onToggleAccount}
             onUseReset={props.onUseReset}
+            onReauthenticated={props.onReauthenticated}
           />
         ) : (
           <CredentialsPanel
