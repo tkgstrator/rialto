@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import { getPrismaClient } from '../../src/db/client'
 import { AuthMode } from '../../src/generated/prisma/client'
-import { decryptString } from '../../src/services/subscription-account-sync/crypto'
+import { decryptString, encryptString } from '../../src/services/subscription-account-sync/crypto'
 import {
   buildCodexDiscoveredAccount,
   claudeAccountFromProfile
@@ -68,6 +68,40 @@ describe.skipIf(!HAS_DB)('targeted account reauthentication (DB)', () => {
     expect(row.sourcePath).toBe('legacy-path')
     expect((await prisma.provider.findUniqueOrThrow({ where: { id: 'provider' } })).enabled).toBe(false)
     expect(decryptString(row.accessTokenEnc, Buffer.from(key, 'hex'))).toBe('fresh-access')
+  })
+
+  test('compares decrypted ChatGPT identity and updates the selected row when subjects differ', async () => {
+    const prisma = getPrismaClient()
+    const identityToken = (subject: string, user: string) =>
+      `header.${Buffer.from(JSON.stringify({ sub: subject, 'https://api.openai.com/auth': { chatgpt_account_id: 'account', chatgpt_user_id: user } })).toString('base64url')}.sig`
+    await prisma.subAccount.update({
+      where: { id: 'target' },
+      data: {
+        userId: 'old-subject',
+        idTokenEnc: encryptString(identityToken('old-subject', 'selected-user'), Buffer.from(key, 'hex'))
+      }
+    })
+    const fresh = buildCodexDiscoveredAccount({
+      accessToken: 'fresh-access',
+      refreshToken: 'fresh-refresh',
+      idToken: identityToken('new-subject', 'selected-user')
+    })
+    const wrong = buildCodexDiscoveredAccount({
+      accessToken: 'wrong-access',
+      refreshToken: 'wrong-refresh',
+      idToken: identityToken('old-subject', 'other-user')
+    })
+    if (fresh === null || wrong === null) throw new Error('Invalid fixture')
+    await expect(recordDiscoveredAccount('codex', wrong, prisma, 'target')).rejects.toThrow()
+    expect((await target()).accessTokenEnc).toBeNull()
+    expect(await recordDiscoveredAccount('codex', fresh, prisma, 'target')).toEqual(['target'])
+    const row = await target()
+    expect(row.userId).toBe('new-subject')
+    expect(row.label).toBe('My account')
+    expect(row.enabled).toBe(false)
+    expect(row.sourcePath).toBe('legacy-path')
+    expect(decryptString(row.idTokenEnc, Buffer.from(key, 'hex'))).toBe(fresh.idToken)
+    expect(await prisma.subAccount.count()).toBe(1)
   })
 
   test('a different account cannot overwrite the target or create another account', async () => {
