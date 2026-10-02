@@ -1,6 +1,6 @@
 # Checking Agent tool calls
 
-Rialto annotates captured upstream assistant `tool_use` blocks whose name is exactly
+Rialto annotates captured client-facing assistant `tool_use` blocks whose name is exactly
 `Agent` or legacy `Task`. This is observation only: no model rewriting, routing,
 hooks or tool execution. The live response is untouched.
 
@@ -62,10 +62,13 @@ not render these metadata flags separately.
 
 Both Anthropic-shaped JSON responses and Anthropic SSE content blocks are
 supported, including interleaved argument deltas split across transport chunks,
-LF/CRLF framing and arguments supplied in the start block. This runs on the
-upstream response clone **before response transformers**; other upstream wire
-formats (OpenAI Chat/Responses, Gemini) are not detected here even if a later
-transformer emits Anthropic-shaped content.
+LF/CRLF framing and arguments supplied in the start block. Capture runs on a
+client-facing response clone **after response transformers**, so Anthropic clients
+using Codex, OpenAI or Gemini upstreams are supported too. The user turn is captured
+from the original inbound request before vendor transformations can replace
+`messages` with `input`. Non-Anthropic client response formats are not parsed here.
+Archive failures emit `message_capture_failed` with the phase and session id,
+without including prompt text, arguments or database error details.
 
 A malformed or cut-off argument JSON can still yield a name-based detection,
 but its flags are all false: Rialto does not infer fields from partial text.

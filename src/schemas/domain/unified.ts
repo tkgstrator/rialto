@@ -167,12 +167,29 @@ export type ThinkLevel = z.infer<typeof ThinkLevelSchema>
 
 // ─── Unified chat request / response ───────────────────────────────────
 
+// Chat Completions is the canonical container; Responses flattens the
+// json_schema wrapper when shaping text.format for its upstream.
+export const UnifiedResponseFormatSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('text') }),
+  z.object({ type: z.literal('json_object') }),
+  z.object({
+    type: z.literal('json_schema'),
+    json_schema: z.object({
+      name: z.string().nonempty(),
+      schema: z.record(z.string().nonempty(), z.unknown()),
+      strict: z.boolean().default(false),
+      description: z.string().nonempty().optional()
+    })
+  })
+])
+
 export const UnifiedChatRequestSchema = z.object({
   messages: z.array(UnifiedMessageSchema),
   model: z.string().nonempty(),
   max_tokens: z.number().optional(),
   temperature: z.number().optional(),
   stream: z.boolean().default(false),
+  response_format: UnifiedResponseFormatSchema.optional(),
   tools: z.array(UnifiedToolSchema).default([]),
   tool_choice: z
     .union([

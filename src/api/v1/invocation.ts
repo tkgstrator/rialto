@@ -16,6 +16,8 @@
 import type { PipelineRequest } from '@/schemas/domain/pipeline'
 import type { LlmsContext, ResolvedProvider, Transformer } from '../../llms'
 import { inboundTypeForPath, surfaceForPath } from '../../llms/inbound/surfaces'
+import { hasSafeguards } from '../../llms/pipeline/classifier-diagnostics'
+import { shouldBypass } from '../../llms/pipeline/request-chain'
 import { isLongContextDenied } from '../../services/failover-state'
 import { getActiveAccountForSession } from '../../services/session-account-router'
 import type { RoutePlan } from './route-plan'
@@ -49,6 +51,27 @@ function normalizeClaudeCodeEffort(body: Record<string, unknown>, supported: rea
     else Reflect.set(config, 'effort', effort)
   }
   body.output_config = config
+}
+
+function preserveMessagesFormat(body: Record<string, unknown>, path: string): void {
+  const output = body.output_config
+  if (path === '/v1/messages' && output !== null && typeof output === 'object' && 'format' in output) {
+    body.output_config = { format: output.format }
+  } else delete body.output_config
+}
+
+function safeguardsCompatible(
+  path: string,
+  body: Record<string, unknown>,
+  provider: ResolvedProvider,
+  transformer: Transformer
+): boolean {
+  // The tier router has no safeguards capability gate. Only the native
+  // Messages bypass is known to preserve this Anthropic-only contract;
+  // conversion must not turn a permission check into ordinary generation.
+  if (path !== '/v1/messages' || !hasSafeguards(body)) return true
+  const nativeMessages = transformer.name === 'anthropic' || transformer.name === 'claude-code-oauth'
+  return nativeMessages && shouldBypass(provider.transformer, transformer, body)
 }
 
 // ─── Anthropic subscription beta header reshape ────────────────────────
@@ -145,11 +168,11 @@ export function resolveInvocationForModel(
   const headers: Record<string, string> = { ...plan.headers }
   body.model = model
 
-  // Only the Claude Code subscription path carries the native Messages
-  // output_config upstream. Other targets keep the existing strip policy.
+  // Effort remains subscription-specific here, but the format must reach
+  // the inbound transformer even when routing Messages to another vendor.
   const claudeCode = provider.transformer?.use?.some((step) => step.name === 'claude-code-oauth') === true
   if (claudeCode) normalizeClaudeCodeEffort(body, provider.modelSupportedEfforts?.[model])
-  else delete body.output_config
+  else preserveMessagesFormat(body, plan.path)
 
   // Consume Rialto-internal extensions before any upstream dispatch.
   delete body.context_management
@@ -162,6 +185,21 @@ export function resolveInvocationForModel(
   const swapped =
     soleUseName && plan.transformersByName.has(soleUseName) ? plan.transformersByName.get(soleUseName) : undefined
   const transformer: Transformer = swapped !== undefined ? swapped : plan.defaultTransformer
+
+  // Check every attempt, including fallbacks, before any upstream dispatch.
+  if (!safeguardsCompatible(plan.path, body, provider, transformer)) {
+    ctx.log.warn(
+      {
+        event: 'provider_compatibility_skip',
+        reason: 'anthropic_safeguards',
+        provider: providerName,
+        model,
+        route: plan.route
+      },
+      'safeguards requires native Messages; skipping incompatible configured candidate'
+    )
+    return null
+  }
 
   // Subscription path: subscriptions route through *-oauth transformers.
   // Reshape the anthropic-beta header (add oauth beta; drop context-1m
