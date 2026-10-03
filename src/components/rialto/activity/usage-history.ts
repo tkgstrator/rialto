@@ -19,6 +19,20 @@ export interface UsageSeries {
   label: string
 }
 
+export const PACE_CHART_MAX = 300
+
+// Cap only plotted values; the original points retain forecasts for tooltips.
+export function capPacePoints(points: readonly ChartPoint[], series: readonly UsageSeries[]): ChartPoint[] {
+  return points.map((point) => {
+    const capped: ChartPoint = { ...point }
+    for (const { metric } of series) {
+      const value = point[metric]
+      if (typeof value === 'number') capped[metric] = Math.min(value, PACE_CHART_MAX)
+    }
+    return capped
+  })
+}
+
 /**
  * Human label for a collector metric key.
  *
