@@ -81,7 +81,7 @@ describe('routing decision persistence', () => {
          const lines = []
          const log = pino({}, {write: line => lines.push(line)}).child({reqId: 'logger-only-id'})
          globalThis.fetch = async () => new Response(JSON.stringify({answers: {route: {choice: 'opus', confidence: 0.94}}}))
-         const routed = await routeByScenario({profileKey: 'live', requestedModel: 'caller-model-識別子', requestTokenCount: 1000, thinking: false, isSubagent: false, needsWebSearch: false, hasTools: false}, log, 'explicit-request-id')
+         const routed = await routeByScenario({profileKey: 'live', requestedModel: 'caller-model-識別子', requestTokenCount: 1000, thinking: false, isSubagent: false, needsWebSearch: false, hasTools: false, taskText: 'Fix a typo'}, log, 'explicit-request-id')
          const data = await saved.promise
          console.log(JSON.stringify({data, primary: routed.selection.primary, lines: lines.map(line => JSON.parse(line))}))`
       ],
@@ -95,7 +95,8 @@ describe('routing decision persistence', () => {
     const output = JSON.parse(result.stdout.toString())
     expect(output.data.reqId).toBe('explicit-request-id')
     expect(output.primary).toBe('provider,opus-model')
-    expect(JSON.parse(output.data.requestBody).state.requested_model).toBe('caller-model-識別子')
+    expect(JSON.parse(output.data.requestBody).state).toEqual({ task: 'Fix a typo' })
+    expect(output.data.requestBody).not.toContain('caller-model-識別子')
     expect(output.data).toMatchObject({ expectedTier: null, evaluationStatus: 'unrated', httpStatus: 200 })
     expect(JSON.stringify(output.lines)).not.toContain('caller-model-識別子')
   })

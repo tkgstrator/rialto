@@ -103,17 +103,9 @@ async function notifyObserver(
 function requestBodyOf(config: DecisionConfig, input: DecisionInput): string {
   return JSON.stringify({
     model: config.model,
-    // Only the latest user instruction leaves Rialto; history, source files and tool arguments stay.
-    state: {
-      has_tools: input.hasTools,
-      is_subagent: input.isSubagent,
-      needs_web_search: input.needsWebSearch,
-      requested_model: input.requestedModel,
-      request_token_count: input.requestTokenCount,
-      scenario: input.scenario,
-      thinking_enabled: input.thinking,
-      task: input.taskText
-    },
+    // Classify the work itself, not the caller's model or harness settings.
+    // Routing metadata stays inside Rialto for selection and observability.
+    state: { task: input.taskText },
     questions: {
       route: {
         type: 'choice',

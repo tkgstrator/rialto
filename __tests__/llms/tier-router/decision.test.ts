@@ -176,24 +176,48 @@ describe('preferredTier', () => {
     expect(JSON.stringify(entries)).not.toContain('secret')
   })
 
-  test('sends only routing metadata and accepts a confident eligible choice', async () => {
+  test('sends only task text and accepts a confident eligible choice', async () => {
     let sent: unknown
     globalThis.fetch = async (_url, init) => {
       sent = JSON.parse(String(init?.body))
       return new Response(JSON.stringify({ answers: { route: { choice: 'opus', confidence: 0.94 } } }))
     }
 
-    await expect(preferredTier(config, input, { JEV_API_KEY: 'test-key' })).resolves.toBe('opus')
+    await expect(
+      preferredTier(config, { ...input, taskText: 'Fix a typo' }, { JEV_API_KEY: 'test-key' })
+    ).resolves.toBe('opus')
     expect(sent).toMatchObject({
       model: 'jev-latest',
-      state: {
-        has_tools: true,
-        scenario: 'think',
-        thinking_enabled: true
-      },
       questions: { route: { criteria: { opus: expect.any(String), sonnet: expect.any(String) } } }
     })
+    expect((sent as { state: unknown }).state).toEqual({ task: 'Fix a typo' })
     expect(JSON.stringify(sent)).not.toContain('test-key')
+  })
+
+  test('changing routing metadata does not change the classifier request', async () => {
+    const bodies: string[] = []
+    globalThis.fetch = async (_url, init) => {
+      bodies.push(String(init?.body))
+      return new Response(JSON.stringify({ answers: { route: { choice: 'opus', confidence: 0.94 } } }))
+    }
+    await preferredTier(config, { ...input, taskText: 'Fix a typo' }, env)
+    await preferredTier(
+      config,
+      {
+        ...input,
+        taskText: 'Fix a typo',
+        requestedModel: 'haiku',
+        thinking: false,
+        scenario: 'default',
+        hasTools: false,
+        needsWebSearch: true,
+        isSubagent: true,
+        requestTokenCount: 100000
+      },
+      env
+    )
+    expect(bodies).toHaveLength(2)
+    expect(bodies[1]).toBe(bodies[0])
   })
 
   test('keeps the profile order when confidence is low, choice is unavailable, or the API fails', async () => {

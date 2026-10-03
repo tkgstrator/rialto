@@ -19,13 +19,11 @@ A profile is left in its configured route order unless every required setting is
 
 ## Request contents
 
-The outbound `state` is intentionally limited to routing metadata:
+The outbound `state` contains only `task`: the latest user instruction with text, truncated to 2000 characters. Tool-result-only user turns are skipped by walking back to the latest text-bearing turn; system-reminder text blocks are also skipped. Text is sent in its original language, not translated.
 
-- scenario, token count, thinking and subagent flags;
-- whether tools or hosted web search are present; and
-- the caller's requested model name.
+The requested model, thinking setting, scenario, token count, tool presence, web-search and subagent flags are not sent. These remain internal inputs to Rialto's route selection and observations, rather than shortcuts for the classifier to infer task difficulty. Candidate tiers still reflect the profile's eligible scenario and lane.
 
-Rialto does not send messages, system prompts, source code, tool arguments, images or API credentials to a Decision service. This makes a hosted service such as Jev safe to trial without expanding the request-data boundary. It also means the first version is a metadata classifier; deployments that need semantic task classification should add an explicit, redacted task-summary contract rather than silently exporting raw prompts.
+Full conversation history, system prompts, tool arguments, tool results and images are not sent. However, the selected user text can itself contain source code or sensitive content: this is not redaction. Enable the Decision service only when that request-data boundary is acceptable.
 
 ## Failure behavior
 
@@ -55,13 +53,9 @@ Use the existing log viewer to search for `[routing] decision`, or filter JSON l
 
 When request capture is enabled (the existing `CAPTURE_REQUESTS` switch defaults to enabled), each attempted live classifier call stores a `RoutingDecision` row. `CAPTURE_REQUESTS=false` disables these writes before acquiring a database client. Skipped evaluations create no row because nothing was sent. Accepted, low-confidence, HTTP-failure, malformed-response, timeout and network-failure attempts all retain their exact serialized SystemOne `requestBody` alongside the normalized decision, threshold, duration, HTTP status when available, and `reqId`. Query the archive by `reqId` to correlate it with decision and upstream file-log events; this is not a RequestLog foreign key, because failed and usage-free calls need not produce a usage row.
 
-The stored body is the same string passed to the classifier fetch, including the configured decision-model identifier, state, fixed English instruction and candidate criteria. It includes the caller's requested model identifier without replacing it with a reconstructed value. The instruction is English; this is **not** language detection or translation of the caller's messages. Those messages are not sent to the live classifier or added to this archive. HTTP headers, endpoint URLs, API keys, environment credentials and raw classifier responses are excluded. Normalized probability keys are limited to offered candidates, and expected tier remains null/unrated.
+The stored body is the same string passed to the classifier fetch, including the configured decision-model identifier, task text, fixed English instruction and candidate criteria. New requests exclude the caller's requested model and routing metadata; historical rows retain the bodies that were actually sent. The instruction is English; task text remains in its original language. HTTP headers, endpoint URLs, API keys, environment credentials and raw classifier responses are excluded. Normalized probability keys are limited to offered candidates, and expected tier remains null/unrated.
 
 Treat this DB archive as potentially sensitive request data: it is not added to console/file logs or a public API endpoint. There is no automatic expiry or historical backfill; rows remain until the operator deliberately deletes them. The archive is independent of existing RequestLog/Message pruning. The created-at index supports an operator-selected retention cutoff without silently choosing one on their behalf.
 
 Persistence is asynchronous and best-effort. A missing migration, unavailable database or write failure must not change routing, confidence thresholds or the classifier timeout. Capture failures emit only a metadata-only warning with `reqId`, never the body or database exception. An abrupt process exit may lose an in-flight archive write; this is an observability archive, not a transactionally guaranteed audit ledger.
 
-
-## Task text
-
-The latest user instruction (system-reminder blocks and tool results skipped, truncated to 2000 characters) is sent as `state.task`. Without it the classifier saw only metadata and returned near-identical probabilities for every request, so it never reached `decisionMinConfidence`. History, source files and tool arguments are still not sent.
