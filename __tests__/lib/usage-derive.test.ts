@@ -253,7 +253,7 @@ describe('providerWindows — windows', () => {
     expect(windows[1].projectedPct).toBeNull()
   })
 
-  test('a window before the 10% warm-up has unknown pace', () => {
+  test('a window before 10% elapsed still displays its projected pace', () => {
     const windows = windowsOf({
       claude: [],
       codex: [
@@ -264,7 +264,7 @@ describe('providerWindows — windows', () => {
         })
       ]
     })
-    expect(windows[0].projectedPct).toBeNull()
+    expect(windows[0].projectedPct).toBeCloseTo(400)
   })
 
   test('a cached reading older than fifteen minutes keeps utilization but has no current pace', () => {

@@ -53,6 +53,17 @@ describe('account pace history', () => {
     ])
   })
 
+  test('records and exposes an early weekly Codex forecast instead of a chart gap', () => {
+    const rows = codexHistoryRows(
+      codex({ primary: { usedPercent: 90, resetAt: iso(NOW + 0.95 * WEEK), windowSeconds: 604_800 } }),
+      { kind: 'codex', plan: 'pro', rateLimitTier: null },
+      NOW
+    )
+    expect(rows[0].percent).toBe(90)
+    expect(rows[0].projectedPct).toBeCloseTo(1800)
+    expect(aggregatePaceHistory(rows)).toEqual([{ metric: 'codex.primary', t: iso(NOW), projectedPct: 1800 }])
+  })
+
   test('uses capture time, not collection time, and rejects a stale cached read', () => {
     const fresh = claudeHistoryRows(claude({ capturedAt: iso(NOW - 2 * 60_000) }), undefined, NOW)
     expect(fresh[0].projectedPct).toBeGreaterThan(120)
