@@ -54,12 +54,16 @@ const accountRows = (
       resetAt,
       subAccountId,
       planWeight: weight,
-      projectedPct: windowProjectedPct(
-        w.percent,
-        resetAt === null ? null : resetAt.valueOf(),
-        w.durationMs,
-        captured.valueOf()
-      ),
+      // An idle window has no running reset clock, not missing usage.
+      projectedPct:
+        w.percent === 0 && resetAt === null
+          ? 0
+          : windowProjectedPct(
+              w.percent,
+              resetAt === null ? null : resetAt.valueOf(),
+              w.durationMs,
+              captured.valueOf()
+            ),
       capturedAt: dayjs(now).floor('minute', 5).toDate()
     }
   })
