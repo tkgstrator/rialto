@@ -1,7 +1,12 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import type { ChartPoint, UsageSeries } from '@/components/rialto/activity/usage-derive'
+import {
+  type ChartPoint,
+  capPacePoints,
+  PACE_CHART_MAX,
+  type UsageSeries
+} from '@/components/rialto/activity/usage-derive'
 import dayjs from '@/lib/dayjs'
 
 /**
@@ -59,15 +64,18 @@ function ChartTooltip({
   active,
   payload,
   label,
-  series
+  series,
+  points
 }: {
   active?: boolean
   payload?: { dataKey?: string | number; value?: number | string }[]
   label?: number | string
   series: readonly UsageSeries[]
+  points: readonly ChartPoint[]
 }) {
   const { t } = useTranslation()
   if (active !== true || payload === undefined || payload.length === 0) return null
+  const point = points.find((p) => p.t === label)
   return (
     <div className='w-44 rounded-md border border-border bg-background px-3 py-2 shadow-sm'>
       <div className='text-[12px] text-muted-foreground'>
@@ -75,12 +83,13 @@ function ChartTooltip({
       </div>
       {series.map((s, index) => {
         const entry = payload.find((p) => p.dataKey === s.metric)
-        if (entry === undefined || typeof entry.value !== 'number') return null
+        const value = point?.[s.metric]
+        if (entry === undefined || typeof value !== 'number') return null
         return (
           <div key={s.metric} className='mt-1 flex items-center gap-2'>
             <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass(index)}`} />
             <span className='text-[12px]'>{s.label}</span>
-            <span className='ml-auto font-mono text-[12px] tabular-nums'>{`${Math.round(entry.value)}%`}</span>
+            <span className='ml-auto font-mono text-[12px] tabular-nums'>{`${Math.round(value)}%`}</span>
           </div>
         )
       })}
@@ -93,6 +102,7 @@ function ChartTooltip({
 
 export function UtilizationChart({ points, series }: { points: ChartPoint[]; series: readonly UsageSeries[] }) {
   const ticks = useMemo(() => dayTicks(points), [points])
+  const plottedPoints = useMemo(() => capPacePoints(points, series), [points, series])
   return (
     <>
       {/* Identity never rests on colour alone: the legend names every
@@ -109,7 +119,7 @@ export function UtilizationChart({ points, series }: { points: ChartPoint[]; ser
       </div>
       <div className='px-6 pb-5' style={{ height: 200 }}>
         <ResponsiveContainer width='100%' height='100%'>
-          <LineChart data={points} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+          <LineChart data={plottedPoints} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
             <CartesianGrid vertical={false} className='stroke-border' strokeWidth={1} />
             {/* 12px, the floor everything else on these screens uses.
                 The axes were at 10 and were the only text under it. */}
@@ -126,8 +136,9 @@ export function UtilizationChart({ points, series }: { points: ChartPoint[]; ser
               tick={{ fontSize: 12 }}
             />
             <YAxis
-              domain={[0, 100]}
-              ticks={[0, 25, 50, 75, 100]}
+              domain={[0, PACE_CHART_MAX]}
+              ticks={[0, 100, 200, PACE_CHART_MAX]}
+              allowDataOverflow
               tickFormatter={(value: number) => `${value}%`}
               tickLine={false}
               axisLine={false}
@@ -135,7 +146,10 @@ export function UtilizationChart({ points, series }: { points: ChartPoint[]; ser
               tick={{ fontSize: 12 }}
               width={40}
             />
-            <Tooltip content={<ChartTooltip series={series} />} cursor={{ className: 'stroke-border' }} />
+            <Tooltip
+              content={<ChartTooltip series={series} points={points} />}
+              cursor={{ className: 'stroke-border' }}
+            />
             {series.map((s, index) => (
               <Line
                 key={s.metric}
