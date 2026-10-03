@@ -24,7 +24,8 @@ const input: DecisionInput = {
   requestedModel: 'caller-model-識別子',
   requestTokenCount: 4000,
   scenario: 'think',
-  thinking: true
+  thinking: true,
+  taskText: 'Fix the authentication race condition'
 }
 const env = { JEV_API_KEY: 'private-api-key' }
 const originalFetch = globalThis.fetch
@@ -83,7 +84,9 @@ describe('decision completion observer', () => {
       evaluationStatus: 'unrated'
     })
     const body = JSON.parse(rows[0].requestBody)
-    expect(body.state.requested_model).toBe(input.requestedModel)
+    expect(body.state).toEqual({ task: input.taskText })
+    expect(rows[0].requestBody).not.toContain(input.requestedModel)
+    expect(logs.join('')).not.toContain(input.taskText)
     expect(body.questions.route.instructions).toContain('state.task')
     expect(body.questions.route.criteria.opus).toContain('complex multi-step')
     expect(rows[0].requestBody).not.toContain(env.JEV_API_KEY)
