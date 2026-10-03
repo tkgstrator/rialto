@@ -64,6 +64,24 @@ describe('account pace history', () => {
     expect(aggregatePaceHistory(rows)).toEqual([{ metric: 'codex.primary', t: iso(NOW), projectedPct: 1800 }])
   })
 
+  test('records idle zero-use windows without a reset as zero, but keeps unknown nonzero pace null', () => {
+    const rows = claudeHistoryRows(
+      claude({ fiveHour: { utilization: 0, resetsAt: null }, sevenDay: { utilization: 30, resetsAt: null } }),
+      undefined,
+      NOW
+    )
+    expect(rows[0].projectedPct).toBe(0)
+    expect(rows[1].projectedPct).toBeNull()
+    expect(claudeHistoryRows(claude({ fiveHour: null, weeklyScoped: [] }), undefined, NOW)).toEqual([])
+    expect(
+      claudeHistoryRows(
+        claude({ fiveHour: { utilization: 0, resetsAt: null }, capturedAt: iso(NOW - 16 * 60_000) }),
+        undefined,
+        NOW
+      )
+    ).toEqual([])
+  })
+
   test('uses capture time, not collection time, and rejects a stale cached read', () => {
     const fresh = claudeHistoryRows(claude({ capturedAt: iso(NOW - 2 * 60_000) }), undefined, NOW)
     expect(fresh[0].projectedPct).toBeGreaterThan(120)

@@ -105,6 +105,8 @@ const paceOf = (pct: number, reset: string | null, seconds: number | null, obser
   const observedAt = Date.parse(observed)
   // A cached reading cannot describe the current pace after polling stops.
   if (!Number.isFinite(observedAt) || Math.abs(Date.now() - observedAt) > STALE_USAGE_MS) return null
+  // Upstream leaves the reset unset until an idle window starts being used.
+  if (pct === 0 && reset === null) return 0
   const resetAt = reset === null ? null : Date.parse(reset)
   const value = windowProjectedPct(
     pct,
