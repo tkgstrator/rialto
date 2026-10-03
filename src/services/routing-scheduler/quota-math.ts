@@ -130,7 +130,7 @@ export const earliestReset = (candidate: ModelCandidateState): number | null => 
 // existing band and snapshot arithmetic stays unchanged.
 const windowProjection = (w: QuotaWindowState, now: number): number | null => {
   if (w.limit <= 0) return null
-  const projectedPct = windowProjectedPct((w.used / w.limit) * 100, w.resetAt, w.windowLengthMs, now)
+  const projectedPct = windowProjectedPct((w.used / w.limit) * 100, w.resetAt, w.windowLengthMs, now, PACE_MIN_ELAPSED)
   return projectedPct === null ? null : projectedPct / 100
 }
 
