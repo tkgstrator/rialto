@@ -28,7 +28,7 @@ describe('applyResponseModelIdentity', () => {
     )
 
     expect(response.headers.get('x-rialto-selected-model')).toBe('anthropic,claude-opus-5-5')
-    expect((await response.json() as Record<string, unknown>).model).toBe('anthropic,claude-opus-5-5')
+    expect(((await response.json()) as Record<string, unknown>).model).toBe('anthropic,claude-opus-5-5')
   })
 
   test('replaces an upstream-reported alias with the routed target', async () => {
@@ -37,7 +37,7 @@ describe('applyResponseModelIdentity', () => {
       identity('/v1/messages')
     )
 
-    expect((await response.json() as Record<string, unknown>).model).toBe('anthropic,claude-sonnet-5')
+    expect(((await response.json()) as Record<string, unknown>).model).toBe('anthropic,claude-sonnet-5')
     expect(response.headers.get('x-rialto-selected-model')).toBe('anthropic,claude-sonnet-5')
   })
 
@@ -51,7 +51,7 @@ describe('applyResponseModelIdentity', () => {
 
     for (const current of cases) {
       const response = await applyResponseModelIdentity(jsonResponse(current.payload), identity(current.path))
-      expect((await response.json() as Record<string, unknown>)[current.field]).toBe('anthropic,claude-sonnet-5')
+      expect(((await response.json()) as Record<string, unknown>)[current.field]).toBe('anthropic,claude-sonnet-5')
     }
   })
 

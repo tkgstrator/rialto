@@ -55,7 +55,8 @@ function applySelectedSseModel(payload: unknown, identity: SelectedModelIdentity
 
 async function patchBlockingJson(response: Response, identity: SelectedModelIdentity): Promise<Response> {
   const raw = await response.text()
-  if (raw.length === 0) return new Response(raw, { status: response.status, statusText: response.statusText, headers: response.headers })
+  if (raw.length === 0)
+    return new Response(raw, { status: response.status, statusText: response.statusText, headers: response.headers })
   try {
     const patched = applySelectedModel(JSON.parse(raw), identity)
     return new Response(JSON.stringify(patched), {
