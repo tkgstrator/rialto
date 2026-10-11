@@ -221,7 +221,7 @@ Rialto 不只是 Claude Code 的代理。入口处接收四种线路格式，每
 
 路由配置还有四个约束，通过 `PUT /api/routing/profiles/{key}` 设置（Routing 页面不显示它们）：`exhaustedBehavior`（`429` / `passthrough`）、`quotaSkipPct`（默认 100）、`errorRateSkipPct`（比例，默认 0.5）和 `minHealthSamples`（默认 5）。
 
-**直通**（`passthrough`，或被固定到保留路由配置 `passthrough` 的访问令牌）。调用方的 `body.model` 按原样送往上游：`provider,model`，或恰好只有一个已启用提供商托管的裸模型名。在这种模式下，入口面可以拒绝特定的 `provider,model` 组合（Routing → Reachable targets）。
+**直通**（`passthrough`，或被固定到保留路由配置 `passthrough` 的访问令牌）。调用方的 `body.model` 按原样送往上游：`gpt-5.5` 这样的裸模型名，或旧的 `provider,model` 写法。同一个裸模型名由多个已启用提供商托管时，按 Providers → Priorities 中设定的顺序送往第一个，其余作为故障切换；未设定顺序时，请求会被拒绝，而不是随意送往某个提供商。在这种模式下，入口面可以拒绝特定的 `provider,model` 组合（Routing → Reachable targets）。
 
 无论哪种模式，在 Providers 页面关闭的提供商或模型都不会被派发——不会来自路线，不会来自直通请求，不会作为兜底目标，也不会经由已关闭的订阅型提供商的账户。手工点名也会被拒绝而不是转发。
 
@@ -316,8 +316,8 @@ Please help me analyze this code...
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| `GET`  | `/v1/models`             | 以 `{object:'list', data:[…]}` 返回已启用且可路由的模型。每个 `id` 都是 Rialto 的规范 `provider,model` 形式，可直接用于下一次调用；`owned_by` 是提供商名。 |
-| `POST` | `/v1/chat/completions`   | 标准 Chat Completions——支持流式与非流式。body 的 `model` 字段接受 `/v1/models` 返回的 `provider,model` id。 |
+| `GET`  | `/v1/models`             | 以 `{object:'list', data:[…]}` 返回已启用且可路由的模型。每个 `id` 都是裸模型名，可直接用于下一次调用；`owned_by` 是 Rialto 会把该模型送往的提供商名。由多个提供商托管的模型名，要在 Providers → Priorities 中设定顺序后才会列出。 |
+| `POST` | `/v1/chat/completions`   | 标准 Chat Completions——支持流式与非流式。body 的 `model` 字段接受 `/v1/models` 返回的 `id`。为兼容旧客户端，仍接受 `provider,model` 写法。 |
 | `POST` | `/v1/responses`          | OpenAI Responses API——支持流式与非流式。模型寻址方式同上。 |
 
 这三个路径的认证**仅接受 `Authorization: Bearer <签发的访问令牌>`**（`x-api-key` 属于 Anthropic 的约定，在这里会被拒绝；401 的响应体遵循 OpenAI 的 `{error:{message,type,code}}` 形状）。Anthropic 面（`/v1/messages`）额外读取 `x-api-key`，但其取值同样必须是签发的访问令牌。
@@ -334,14 +334,14 @@ client = OpenAI(
 
 # 1. 列出可路由的模型
 for m in client.models.list().data:
-    print(m.id, m.owned_by)
-# → codex,gpt-5.5  (owned_by=codex)
-# → claude-code,claude-sonnet-5  (owned_by=claude-code)
+    print(m.id)
+# → gpt-5.5
+# → claude-sonnet-5
 # ...
 
 # 2. Chat Completions（经由你的 Codex Plus/Pro 订阅路由）
 res = client.chat.completions.create(
-    model="codex,gpt-5.5",
+    model="gpt-5.5",
     messages=[{"role": "user", "content": "reply pong"}],
 )
 print(res.choices[0].message.content)  # → pong
@@ -358,7 +358,7 @@ const client = new OpenAI({
 })
 
 const stream = await client.chat.completions.create({
-  model: 'codex,gpt-5.5',
+  model: 'gpt-5.5',
   messages: [{ role: 'user', content: 'reply pong' }],
   stream: true,
 })
@@ -367,7 +367,7 @@ for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.
 
 任何支持覆盖 `base_url` / `baseURL` 的客户端都同理。
 
-**这些入口面上哪些能力生效。** 故障切换、账户轮换以及 `provider,model` 寻址始终生效。按场景路由只有在把该入口面从 `passthrough` 切换为 `routed` 之后才生效——而且此时客户端发送的模型名（`codex,gpt-5.5`、`gemini-2.5-pro`）不决定任何事：要求推理的请求（`reasoning_effort`、`reasoning`、`thinkingConfig`）走 Think 列表，长请求走 Long context 列表，其余走 Default 列表，都在 Agent 通道上。多个入口面共用一个路由配置时也共用其列表，想让某个面走不同的路线，就给它指向专用的路由配置。人格注入**不**生效——它只作用于 `/v1/messages`（见上文「人格」）。
+**这些入口面上哪些能力生效。** 故障切换、账户轮换以及按裸模型名寻址始终生效。按场景路由只有在把该入口面从 `passthrough` 切换为 `routed` 之后才生效——而且此时客户端发送的模型名（`gpt-5.5`、`gemini-2.5-pro`）不决定任何事：要求推理的请求（`reasoning_effort`、`reasoning`、`thinkingConfig`）走 Think 列表，长请求走 Long context 列表，其余走 Default 列表，都在 Agent 通道上。多个入口面共用一个路由配置时也共用其列表，想让某个面走不同的路线，就给它指向专用的路由配置。人格注入**不**生效——它只作用于 `/v1/messages`（见上文「人格」）。
 
 ## 🧩 Codex MCP 服务器
 

@@ -38,11 +38,15 @@ jobs:
       # batch of already-validated commits, so re-linting the whole
       # backlog from --from HEAD~commits-count just trips on historical
       # commits that predate the current commitlint rules.
+      # Lint base..head, not head~<commit count>..head. `~N` walks first
+      # parents only, so once a branch contains a merge (develop merged in to
+      # catch up, or a master backmerge) it overshoots into commits develop
+      # already has and fails on ones linted, or exempted, long ago.
       - name: Validate PR commits
         if: github.event_name == 'pull_request' && github.base_ref != 'master'
         run: |
           bunx commitlint \
-            --from ${{ github.event.pull_request.head.sha }}~${{ github.event.pull_request.commits }} \
+            --from ${{ github.event.pull_request.base.sha }} \
             --to ${{ github.event.pull_request.head.sha }} \
             --verbose
 

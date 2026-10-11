@@ -68,6 +68,11 @@
       "version": "0.1.0",
       "resolved": "ghcr.io/stu-bell/devcontainer-features/claude-code@sha256:f87b4da3f8648db9111cb25c6bd3817d096018d81f3fb596340f7ffdba14409a",
       "integrity": "sha256:f87b4da3f8648db9111cb25c6bd3817d096018d81f3fb596340f7ffdba14409a"
+    },
+    "ghcr.io/thamaji/devcontainer-features/codex-cli:1": {
+      "version": "1.2.5",
+      "resolved": "ghcr.io/thamaji/devcontainer-features/codex-cli@sha256:06c222cde6ec9d57486a2aadf6603ff872bb1f031f599b11a7be74e69965672f",
+      "integrity": "sha256:06c222cde6ec9d57486a2aadf6603ff872bb1f031f599b11a7be74e69965672f"
     }
   }
 }
