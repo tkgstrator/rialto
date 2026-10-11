@@ -19,7 +19,8 @@ import { getSubscriptionsInfo } from '../../services/subscription-info-service'
 import { hasAnyLimit, readUsageWindows } from '../../services/usage-window-service'
 import { isReasoningEffort } from '../../shared/model-reasoning-effort'
 import { planLabel } from '../../shared/plan-label'
-import { type CodexTarget, codexModels, codexProviderNames, planAllows, targetId } from './targets'
+import { publicModelId } from '../../shared/public-model-id'
+import { type CodexTarget, callableCodexModels, codexProviderNames, targetId } from './targets'
 import { type ToolContext, textResult } from './tool-context'
 
 interface Window {
@@ -97,21 +98,22 @@ export async function status(ctx: ToolContext): Promise<CallToolResult> {
   noteTokenUse(ctx.token.id)
   const [accounts, chat, images, allowance] = await Promise.all([
     accountsReport(),
-    codexModels('completion'),
-    codexModels('image'),
+    callableCodexModels('completion', ctx.token.plan),
+    callableCodexModels('image', ctx.token.plan),
     allowanceReport(ctx)
   ])
   const efforts = await recordedEfforts(chat)
   const report = {
     accounts,
-    // Only what the plan allows: ask and generate_image refuse the rest.
-    models: chat
-      .filter((model) => planAllows(ctx.token.plan, model))
-      .map((model) => {
-        const recorded = efforts.get(targetId(model))
-        return { model: targetId(model), reasoningEfforts: recorded === undefined ? null : recorded }
-      }),
-    imageModels: images.filter((model) => planAllows(ctx.token.plan, model)).map(targetId),
+    models: chat.map((model) => {
+      const recorded = efforts.get(targetId(model))
+      return {
+        model: publicModelId(model),
+        provider: model.provider,
+        reasoningEfforts: recorded === undefined ? null : recorded
+      }
+    }),
+    imageModels: images.map(publicModelId),
     ...(allowance === null ? {} : { yourToken: allowance })
   }
   return textResult(JSON.stringify(report, null, 2))
@@ -125,7 +127,8 @@ export function registerStatusTool(server: McpServer, ctx: ToolContext): void {
       description: [
         "The operator's Codex subscription accounts — how much of each 5-hour and weekly window is used and",
         'when it resets — and the Codex models and image models `ask` and `generate_image` can use.',
-        'Use it to pick a model, or to find out why Codex is rate limited. On a token whose plan has limits,',
+        'Use the listed bare model name directly with `ask`; Rialto chooses the provider by its configured priority.',
+        'Use it to find out why Codex is rate limited. On a token whose plan has limits,',
         "`yourToken.windows` gives the token's own 5-hour and 7-day usage (requests and USD spend against",
         'their limits) and when each resets.'
       ].join('\n'),

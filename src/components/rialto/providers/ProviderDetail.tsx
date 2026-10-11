@@ -181,12 +181,15 @@ export interface ProviderDetailProps {
   onTestAll: () => void
   onToggleProvider: (next: boolean) => void
   onToggleModel: (model: string, next: boolean) => void
+  /** Stage whether this account participates in routing; credentials stay intact. */
+  onToggleAccount: (id: string, next: boolean) => void
   /** Point a manual tier's alias at a model; null unsets it. */
   onAlias: (tier: Tier, model: string | null) => void
   /** Per-model reasoning effort; null clears it back to the vendor default. */
   onModelEffort: (model: string, next: ReasoningEffort | null) => void
   onReplaceKey: (key: string) => void
   /** Spend one of the account's banked resets; the screen confirms first. */
+  onReauthenticated?: () => Promise<void>
   onUseReset: (account: SubAccountWire) => void
 }
 
@@ -218,8 +221,11 @@ export function ProviderDetail(props: ProviderDetailProps) {
             quota={quota}
             accounts={props.accounts}
             now={now}
-            locked={props.busy || props.editing}
+            busy={props.busy}
+            editing={props.editing}
+            onToggle={props.onToggleAccount}
             onUseReset={props.onUseReset}
+            onReauthenticated={props.onReauthenticated}
           />
         ) : (
           <CredentialsPanel
@@ -249,9 +255,11 @@ export function ProviderDetail(props: ProviderDetailProps) {
         key={provider.name}
         provider={provider}
         rows={rows}
+        tiers={props.tiers}
         editing={props.editing}
         onToggle={props.onToggleModel}
         onEffort={props.onModelEffort}
+        onAlias={props.onAlias}
       />
     </div>
   )

@@ -47,7 +47,7 @@ const AskInput = {
     .string()
     .nonempty()
     .optional()
-    .describe('Codex model, as the `status` tool lists it. Omit for the newest enabled one.'),
+    .describe('Bare Codex model name from `status`. Rialto chooses the provider; omit for the newest enabled one.'),
   reasoning_effort: z
     .enum(REASONING_EFFORTS)
     .optional()
@@ -129,11 +129,11 @@ export async function ask(ctx: ToolContext, args: AskArgs, run: <T>(f: () => Pro
       'Unknown or expired thread_id. Threads last 24 hours and do not survive a Rialto restart; ask again without thread_id to start a new one.'
     )
   }
-  const resolved = await resolveCodexTarget('completion', args.model)
+  const resolved = await resolveCodexTarget('completion', args.model, ctx.token.plan)
   if (!resolved.ok) return errorResult(resolved.message)
   const target = resolved.target
   if (!planAllows(ctx.token.plan, target)) {
-    return errorResult(`This access token's plan does not include ${targetId(target)}.`)
+    return errorResult(`This access token's plan does not include ${target.model}.`)
   }
   const refusal = await chargeCall(ctx.token)
   if (refusal !== null) return errorResult(refusal)
@@ -167,7 +167,7 @@ export async function ask(ctx: ToolContext, args: AskArgs, run: <T>(f: () => Pro
   if (answer.length === 0) return errorResult('Codex returned no text.')
 
   saveThread(threadId, ctx.token.id, instructions, [...turns, { role: 'assistant', text: answer }])
-  return textResult(answer, `thread_id: ${threadId}\nmodel: ${targetId(target)}`)
+  return textResult(answer, `thread_id: ${threadId}\nmodel: ${target.model}`)
 }
 
 export function registerAskTool(server: McpServer, ctx: ToolContext): void {

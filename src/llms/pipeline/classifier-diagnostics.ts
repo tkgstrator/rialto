@@ -15,6 +15,18 @@ export function hasSafeguards(body: unknown): boolean {
   return Object.hasOwn(record(body) ?? {}, 'safeguards')
 }
 
+// Check both client and vendor envelopes without logging the schema or prompt.
+export function hasStructuredOutput(body: unknown): boolean {
+  const value = record(body)
+  if (value === undefined) return false
+  return [
+    record(value.output_config)?.format,
+    value.output_format,
+    value.response_format,
+    record(value.text)?.format
+  ].some((format) => record(format)?.type === 'json_schema')
+}
+
 // This is an observed Claude Code permission-gate phrase, not a protocol marker.
 // Search only bounded text in known prompt locations; never write the text to logs.
 export function classifierSignals(body: Record<string, unknown>): ClassifierSignals {

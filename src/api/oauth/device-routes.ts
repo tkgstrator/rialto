@@ -19,6 +19,7 @@ import {
 } from '../../services/codex-auth/device-flow-store'
 import { connectCodexAccount } from '../../services/subscription-connect-service'
 import { connectFailure } from './connect-failure'
+import { requestedReauthenticationTarget } from './reauthentication-target'
 
 export function registerDeviceRoutes(oauthRoute: Hono): void {
   // Start a Codex device-code sign-in: ask auth.openai.com for a one-time
@@ -27,8 +28,9 @@ export function registerDeviceRoutes(oauthRoute: Hono): void {
   // device-auth endpoint set, and nothing here allows a `provider` param.
   oauthRoute.post('/api/oauth/device/start', async (c) => {
     try {
+      const targetAccountId = await requestedReauthenticationTarget('codex', await c.req.json().catch(() => ({})))
       const code = await requestCodexDeviceCode()
-      const { flowId, expiresAt } = createDeviceFlow(code)
+      const { flowId, expiresAt } = createDeviceFlow(code, targetAccountId)
       return c.json({
         flowId,
         userCode: code.userCode,
@@ -38,8 +40,8 @@ export function registerDeviceRoutes(oauthRoute: Hono): void {
       } satisfies CodexDeviceStartResponse)
     } catch (err) {
       logger.error({ err }, '[oauth] codex device-code start failed')
-      const message = err instanceof Error ? err.message : 'Failed to start Codex device-code sign-in.'
-      return c.json({ success: false as const, error: message }, 502)
+      const failure = connectFailure(err, 'Failed to start Codex device-code sign-in.')
+      return c.json(failure.body, failure.status === 400 ? 400 : 502)
     }
   })
 
@@ -90,11 +92,15 @@ export function registerDeviceRoutes(oauthRoute: Hono): void {
     setDeviceFlowPhase(parsed.data.flowId, 'completing')
     try {
       const tokens = await exchangeCodexDeviceCode({ code: result.code, codeVerifier: result.codeVerifier })
-      await connectCodexAccount({
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token,
-        idToken: tokens.id_token
-      })
+      await connectCodexAccount(
+        {
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          idToken: tokens.id_token
+        },
+        undefined,
+        flow.targetAccountId
+      )
       setDeviceFlowPhase(parsed.data.flowId, 'connected')
       return c.json(connected)
     } catch (err) {

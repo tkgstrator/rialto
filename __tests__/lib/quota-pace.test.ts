@@ -14,9 +14,22 @@ describe('windowProjectedPct', () => {
     expect(project(25, 0.5)).toBe(50)
   })
 
-  test('does not judge before the warm-up but judges at its boundary', () => {
-    expect(project(8, PACE_MIN_ELAPSED / 2)).toBeNull()
-    expect(project(8, PACE_MIN_ELAPSED)).toBeCloseTo(80)
+  test('projects early usage without waiting for a tenth of the window', () => {
+    expect(project(8, 0.05)).toBeCloseTo(160)
+    expect(project(10, 0.01)).toBeCloseTo(1000)
+    expect(project(0, 0.01)).toBe(0)
+    expect(project(90, 0.05, 7 * 24 * HOUR)).toBeCloseTo(1800)
+  })
+
+  test('keeps the routing warm-up when explicitly requested', () => {
+    expect(windowProjectedPct(8, NOW + 0.95 * LENGTH, LENGTH, NOW, PACE_MIN_ELAPSED)).toBeNull()
+    expect(windowProjectedPct(8, NOW + 0.9 * LENGTH, LENGTH, NOW, PACE_MIN_ELAPSED)).toBeCloseTo(80)
+  })
+
+  test('leaves the exact start and future windows unknown instead of dividing by zero', () => {
+    expect(project(8, 0)).toBeNull()
+    expect(project(0, 0)).toBeNull()
+    expect(project(8, -0.01)).toBeNull()
   })
 
   test('uses the reported Codex duration rather than assuming five hours', () => {

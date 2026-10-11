@@ -27,6 +27,7 @@ import { BusyOverlay } from './BusyOverlay'
 import { enabledCountOf, listedModelsOf, providerState, type QuotaIndex } from './derive'
 import { ProviderListPhone } from './ProviderListPhone'
 import { type ListedProvider, ProviderTable } from './ProviderTable'
+import { useProvidersAutoRefresh } from './useProvidersAutoRefresh'
 import { type ProvidersData, useProvidersData } from './useProvidersData'
 import { type RefreshScope, useRefresh } from './useRefresh'
 import { vendorBrand, vendorLabel } from './vendor-labels'
@@ -93,8 +94,14 @@ function summary(entries: ListedProvider[], kind: Kind, t: TFunction): string {
 export function ProvidersScreen({ kind }: { kind: Kind }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { data, error, loading, reload } = useProvidersData()
+  const { data, error, loading, reload, reloadBackground, cancelBackground } = useProvidersData()
   const { pending, refresh } = useRefresh(REFRESH_SCOPE[kind], reload)
+  useProvidersAutoRefresh({
+    enabled: kind === 'subscription' && data !== null,
+    paused: loading || pending !== null,
+    refresh: reloadBackground,
+    cancel: cancelBackground
+  })
 
   const copy = COPY[kind]
   const goAdd = useCallback(() => navigate('/providers/connect'), [navigate])
@@ -104,7 +111,7 @@ export function ProvidersScreen({ kind }: { kind: Kind }) {
 
   const buttons = (
     <>
-      <RButton variant='ghost' icon='ri-refresh-line' onClick={refresh} disabled={pending !== null || loading}>
+      <RButton variant='outline' icon='ri-refresh-line' onClick={refresh} disabled={pending !== null || loading}>
         {t('providers.screen.refresh')}
       </RButton>
       <RButton variant='primary' icon='ri-add-line' onClick={goAdd}>

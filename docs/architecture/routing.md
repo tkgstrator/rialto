@@ -32,7 +32,7 @@ see [inbound-surfaces.md](./inbound-surfaces.md)).
 | Mode | What happens | Chosen by |
 |---|---|---|
 | `routed` | The request is classified into a scenario and a lane, and `body.model` is rewritten to the first route of that list that can serve it | The surface's `routingMode` |
-| `passthrough` | The caller's own `body.model` goes upstream — `provider,model`, or a bare name hosted by exactly one enabled provider. Classification, the gates and the persona are skipped; `passthroughDenial` may refuse a target the surface's `deniedTargets` lists | The surface's `routingMode`, or the reserved profile key `passthrough` on the authenticating `AccessToken` (or on the surface) |
+| `passthrough` | The caller supplies a bare model name; Rialto chooses its provider from the configured priority for duplicates, then sends only the native model name upstream. An unconfigured duplicate is refused; older `provider,model` inputs remain accepted. Classification and persona are skipped; `passthroughDenial` may refuse the resolved target | The surface's `routingMode`, or the reserved profile key `passthrough` on the authenticating `AccessToken` (or on the surface) |
 
 In both modes the subagent tag is stripped first and recorded as `RequestLog.isSubagent` (see
 [The subagent tag](#the-subagent-tag)).
@@ -121,7 +121,7 @@ surface. Absence is never an opt-in, even though some vendors reason by default.
 | 2 | The route's tier resolves to a model | `alias_unset` | the provider's models, then `ProviderTierAlias` | A route to "that provider's opus" means nothing while no model on it is named opus and no alias says which model that is |
 | 3 | It can run the request's web-search tool | `no_web_search` | `hostsWebSearch` (`src/shared/transformer-chain.ts`) | Anthropic sends `web_search` as-is, Responses maps it to the hosted tool, Gemini to `googleSearch`; Chat Completions has no equivalent. Decided on the same apiStyle the transformer chain is built from, so the skip cannot drift from what runs. This is what replaced the `webSearch` scenario |
 | 4 | Its context window holds the prompt | `context_too_small` | `Model.contextWindow` vs the token count | A prompt too big for one route goes to the next that can hold it, instead of to an upstream that would refuse it. An unknown window is trusted |
-| 5 | It is not out of quota | `exhausted` | Exhaustion marks (`failover-state`) and the scheduler snapshot's `targets` | Held when a 429 marked the model or its provider, or the snapshot reads it spent, or used at or past `quotaSkipPct`. A target the snapshot has never seen (api_key providers, a cold start) is not held on quota. See [The quota snapshot](#the-quota-snapshot) |
+| 5 | It is not out of quota | `exhausted` | Exhaustion marks (`failover-state`) and the scheduler snapshot's targets and account-wide windows | Held when a 429 marked the model or provider, the target reads as spent, or fresh readings show every provider account's 5h/7d window spent — even if this particular model is absent from the target snapshot. Otherwise `quotaSkipPct` can hold a target used past its threshold. Unknown or stale account readings never alone hold a provider. See [The quota snapshot](#the-quota-snapshot) |
 | 6 | Its recent error rate is under the threshold | `error_rate` | `model-health` (5-minute in-process ring per target) | Only once the target has `minHealthSamples` samples: one failure out of one is not a rate |
 
 The ring behind gate 6 is fed by the chain walker: a success, and a 429 that could not be rotated
@@ -501,7 +501,10 @@ dormant: routing follows the switches there.
 |---|---|
 | `__tests__/llms/tier-router/select.test.ts` | The pure selector: the gates and their order, the four outcomes and which wins when skip reasons mix, the pace ordering of the routes that pass, and how far pace may step a tier down |
 | `__tests__/llms/tier-router/threshold.test.ts` | The Long context base (70 % of the Default model's window, 128k without one) and the clamp to `[floor, base]`, a base under the floor winning |
-| `__tests__/llms/route-request.test.ts` | `routeRequest` end to end with seeded profiles: the scenario and lane a request is classified into, the fallback to the lane's Default, the outcome contract, profiles, marks, the snapshot, the subagent tag, the persona |
+| `__tests__/llms/route-request.test.ts` | Scenario and lane classification, the subagent tag, and fallback to the lane's Default |
+| `__tests__/llms/route-request-gates.test.ts` | Pace ordering, profiles, exhaustion marks, the quota snapshot, health, web search, context windows, and disabled targets |
+| `__tests__/llms/route-request-outcomes.test.ts` | Passthrough for unconfigured lists, exhaustion with Retry-After, refusal, and map failures |
+| `__tests__/llms/route-request-passthrough.test.ts` | Passthrough surfaces and profiles, persona on routed exits, and escalation restrictions |
 | `__tests__/api/route-plan.test.ts` | 429 + `Retry-After` and the refusal 400 in each surface's envelope |
 | `__tests__/services/routing-scheduler/pace.test.ts` | `projectedUsage`: used ÷ elapsed, no judgement before 10 % of the window, the tightest window binding, Fable on its own window, plan-capacity weighting, unknown and stale accounts left out |
 | `__tests__/services/routing-scheduler/threshold-tuner.test.ts` | `tuneThreshold`: ±20 % by pace, the floor and the base, no change on pace or without a reading, once a day, the rollback of a lowering and not of a raise |

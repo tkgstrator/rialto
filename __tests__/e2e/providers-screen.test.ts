@@ -84,6 +84,97 @@ describe.skipIf(!HAS_E2E)('Providers lists', () => {
     })
   }
 
+  test('Models in the sidebar opens a searchable cross-provider list', async () => {
+    const page = await open('/providers/subscriptions')
+    await page.getByRole('link', { name: 'Model list', exact: true }).click()
+    await page.waitForURL('**/providers/models')
+    await page.getByRole('searchbox', { name: 'Filter models' }).waitFor({ state: 'visible' })
+    expect(await page.getByRole('searchbox', { name: 'Filter models' }).isVisible()).toBe(true)
+    await page.context().close()
+  })
+
+  test('model switches and manual tier picks use the provider mutations', async () => {
+    const page = await open('/overview')
+    const writes: Array<{ method: string; url: string; body: string }> = []
+    const provider = {
+      name: 'e2e-manual',
+      auth_mode: 'api_key',
+      api_base_url: 'https://example.com/v1',
+      api_key: 'test-key',
+      enabled: true,
+      models: ['alpha', 'beta'],
+      transformer: { _disabledModels: ['alpha'] }
+    }
+    await page.route('**/api/providers', async (route) => {
+      const request = route.request()
+      if (request.method() === 'GET') {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([provider]) })
+        return
+      }
+      const body = request.postData()
+      writes.push({ method: request.method(), url: request.url(), body: body === null ? '' : body })
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+    })
+    await page.route('**/api/tier-aliases', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    })
+    await page.route('**/api/providers/e2e-manual/tier-aliases/opus', async (route) => {
+      const request = route.request()
+      const body = request.postData()
+      writes.push({ method: request.method(), url: request.url(), body: body === null ? '' : body })
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"enabledModel":true}' })
+    })
+    await page.goto(`${E2E_BASE_URL}/providers/models`, { waitUntil: 'networkidle' })
+    expect(await page.getByRole('button', { name: 'Toggle beta' }).isDisabled()).toBe(true)
+    expect(await page.getByRole('combobox', { name: 'Model the opus alias points at' }).count()).toBe(0)
+    await page.getByRole('button', { name: 'Edit', exact: true }).click()
+    expect(await page.getByRole('button', { name: 'Toggle beta' }).isDisabled()).toBe(false)
+    await page.getByRole('button', { name: 'Toggle beta' }).click()
+    await page.waitForFunction(
+      () => document.querySelector<HTMLButtonElement>('button[aria-label="Toggle beta"]')?.disabled === false
+    )
+    const switchWrite = writes[0]
+    if (switchWrite === undefined) throw new Error('model switch did not write')
+    expect(switchWrite.method).toBe('POST')
+    expect(JSON.parse(switchWrite.body).transformer._disabledModels).toEqual(['alpha', 'beta'])
+
+    await page.getByRole('combobox', { name: 'Model the opus alias points at' }).selectOption('alpha')
+    await page.waitForFunction(
+      () =>
+        document.querySelector('select[aria-label="Model the opus alias points at"]')?.getAttribute('disabled') === null
+    )
+    const tierWrite = writes[1]
+    if (tierWrite === undefined) throw new Error('tier picker did not write')
+    expect(tierWrite.method).toBe('PUT')
+    expect(JSON.parse(tierWrite.body)).toEqual({ model: 'alpha' })
+    await page.setViewportSize({ width: 390, height: 844 })
+    expect(await page.getByRole('button', { name: 'Toggle beta' }).isVisible()).toBe(true)
+    expect(await page.getByRole('combobox', { name: 'Model the opus alias points at' }).isVisible()).toBe(true)
+    await page.getByRole('button', { name: 'Done', exact: true }).click()
+    expect(await page.getByRole('button', { name: 'Toggle beta' }).isDisabled()).toBe(true)
+    expect(await page.getByRole('combobox', { name: 'Model the opus alias points at' }).count()).toBe(0)
+    const refreshed: string[] = []
+    await page.route('**/api/catalog/refresh', async (route) => {
+      refreshed.push('catalog')
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+    })
+    await page.route('**/api/refresh-models', async (route) => {
+      refreshed.push('models')
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+    })
+    await Promise.all([
+      page.waitForResponse('**/api/refresh-models'),
+      page.getByRole('button', { name: 'Refresh', exact: true }).click()
+    ])
+    expect(refreshed).toEqual(['catalog', 'models'])
+    const overflow = await page.evaluate(() => {
+      const main = document.querySelector('main')
+      return main === null ? 0 : main.scrollWidth - main.clientWidth
+    })
+    expect(overflow).toBe(0)
+    await page.context().close()
+  })
+
   // Once, not once per list. The two lists are the same component with a
   // different filter, and the console is shared with everything else the
   // app has open — a second window on it only doubles the chance of

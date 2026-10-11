@@ -3,7 +3,8 @@ import { Trans, useTranslation } from 'react-i18next'
 import { Pager } from '@/components/rialto/Pager'
 import { enabledCountOf, hidesAsLegacy, listedModelsOf, type ModelRow, passesShow, type ShowMode } from './derive'
 import { ModelsTable } from './ModelsTable'
-import type { Provider, ReasoningEffort } from './types'
+import type { TierView } from './tier-aliases'
+import type { Provider, ReasoningEffort, Tier } from './types'
 
 const SHOW_LABEL_KEYS: Record<ShowMode, string> = {
   priced: 'providers.models.showPriced',
@@ -40,8 +41,8 @@ const NOTE_COMPONENTS = {
 }
 
 /**
- * The note under the table: how a model is reached at all, since nothing
- * in a row says it. OpenAI-style providers also explain their Effort column.
+ * The note under the table: how a model is reached at all. OpenAI-style
+ * providers also explain their Effort column.
  */
 function ModelsNote({
   isApiKey,
@@ -94,15 +95,19 @@ function ModelsNote({
 export function ProviderModelsSection({
   provider,
   rows,
+  tiers,
   editing,
   onToggle,
-  onEffort
+  onEffort,
+  onAlias
 }: {
   provider: Provider
   rows: ModelRow[]
+  tiers: readonly TierView[]
   editing: boolean
   onToggle: (model: string, next: boolean) => void
   onEffort: (model: string, next: ReasoningEffort | null) => void
+  onAlias: (tier: Tier, model: string | null) => void
 }) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
@@ -187,8 +192,10 @@ export function ProviderModelsSection({
         effortKind={claudeCode ? 'claude-code' : 'openai'}
         withTier
         editable={editing}
+        tiers={tiers}
         onToggle={onToggle}
         onEffort={onEffort}
+        onAlias={onAlias}
       />
       <ModelsNote isApiKey={isApiKey} hasEffort={hasEffort} claudeCode={claudeCode} />
       {isApiKey ? (

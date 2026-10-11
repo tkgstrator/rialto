@@ -71,8 +71,8 @@ export async function ensureProvider(entry: CatalogEntry): Promise<void> {
 }
 
 /** Open the vendor's consent page in a new tab. Returns the flow's state token. */
-export async function startOAuth(kind: OAuthKind, t: Translate): Promise<string> {
-  const res = await api.post<OAuthInitiateResponse>(`/oauth/initiate/${kind}`, {})
+export async function startOAuth(kind: OAuthKind, t: Translate, targetAccountId?: string): Promise<string> {
+  const res = await api.post<OAuthInitiateResponse>(`/oauth/initiate/${kind}`, { targetAccountId })
   if (!res.success || res.authorizeUrl === undefined) {
     throw new Error(res.error === undefined ? t('providers.connect.errorStartOauth') : res.error)
   }
@@ -81,8 +81,12 @@ export async function startOAuth(kind: OAuthKind, t: Translate): Promise<string>
 }
 
 /** Relay a redirect URL the browser could not deliver to the loopback callback. */
-export async function submitManualCallback(url: string, t: Translate): Promise<void> {
-  const res = await api.post<OAuthSubmitResponse>('/oauth/manual-callback', { url: url.trim() })
+export async function submitManualCallback(url: string, t: Translate, state?: string): Promise<void> {
+  const res = await api.post<OAuthSubmitResponse>('/oauth/manual-callback', {
+    url: url.trim(),
+    state,
+    expectedState: state
+  })
   if (!res.success) throw new Error(res.error === undefined ? t('providers.connect.errorRedirect') : res.error)
 }
 
@@ -93,8 +97,8 @@ export async function submitManualCallback(url: string, t: Translate): Promise<v
  * non-2xx status), so the caller's `guard` surfaces it the same way every
  * other connect action does.
  */
-export async function startCodexDevice(): Promise<CodexDeviceStartResponse> {
-  return api.post<CodexDeviceStartResponse>('/oauth/device/start', {})
+export async function startCodexDevice(targetAccountId?: string): Promise<CodexDeviceStartResponse> {
+  return api.post<CodexDeviceStartResponse>('/oauth/device/start', { targetAccountId })
 }
 
 /**
@@ -115,10 +119,19 @@ async function parseJsonFile(file: File): Promise<unknown> {
   }
 }
 
-export async function importCredentials(kind: OAuthKind, file: File, t: Translate): Promise<void> {
+export async function importCredentials(
+  kind: OAuthKind,
+  file: File,
+  t: Translate,
+  targetAccountId?: string
+): Promise<void> {
   const parsed = await parseJsonFile(file)
   if (parsed === undefined) throw new Error(t('providers.connect.errorNotJson', { name: file.name }))
-  const res = await api.post<OAuthSubmitResponse>('/oauth/import-credentials', { provider: kind, credentials: parsed })
+  const res = await api.post<OAuthSubmitResponse>('/oauth/import-credentials', {
+    provider: kind,
+    credentials: parsed,
+    targetAccountId
+  })
   if (!res.success) throw new Error(res.error === undefined ? t('providers.connect.errorCredentials') : res.error)
 }
 

@@ -107,7 +107,7 @@ export function Overview() {
               ))}
             </PopoverContent>
           </Popover>
-          <RButton variant='ghost' icon='ri-refresh-line' onClick={load} disabled={loading}>
+          <RButton variant='outline' icon='ri-refresh-line' onClick={load} disabled={loading}>
             {t('settings.advanced.refresh')}
           </RButton>
         </>

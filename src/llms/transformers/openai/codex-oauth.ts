@@ -6,55 +6,41 @@
  * the ChatGPT backend. So it runs the full transform chain (anthropic
  * endpoint transformer -> openai-responses) and this transformer sits
  * LAST in the provider's `use` list: openai-responses has already
- * reshaped the body to Responses format, and we add the subscription
- * auth + the chatgpt.com/backend-api/codex requirements.
+ * reshaped the body to Responses format, and this step makes it the
+ * request Codex CLI itself would send — the body (`./codex/request-shape`)
+ * and the markers the CLI identifies itself with (`./codex/client-identity`)
+ * — plus the subscription auth.
  */
 
 import { createHash, randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
-import { arch } from 'node:os'
 import type { RuntimeProvider, TransformerContext, TransformerHookResult, UnifiedChatRequest } from '@/schemas/domain'
-import { type CodexRequestShape, PackageJsonSchema } from '@/schemas/wire'
 import { ensureFreshCodexAccessToken } from '../../../services/codex-auth/token'
 import { sessionIdFromRequest } from '../../pipeline/session-id'
+import { codexAccountTag } from '../../utils/codex-reasoning'
+import { isObject } from '../../utils/guards'
 import { cloneResponse } from '../../utils/response-clone'
 import { OAuthTransformer, type SubscriptionTokenState } from '../oauth-base'
+import { CODEX_ORIGINATOR, CODEX_USER_AGENT, codexTurnIdentity } from './codex/client-identity'
+import { codexCallerIntent, shapeCodexBody } from './codex/request-shape'
 
-// Identify as the official Codex CLI. The ChatGPT backend classifies a
-// request as "CLI" (subscription allotment) vs "Other" (overage) by
-// these markers; without them codex requests bill as Other and skip the
-// CLI path. Version source order: CODEX_CLI_VERSION env (lets prod pin
-// it if @openai/codex is ever pruned) -> the installed @openai/codex
-// package -> "0.0.0". Resolved once at boot; never throws.
-export const CODEX_USER_AGENT: string = (() => {
-  const safe = (fn: () => string, fallback: string): string => {
-    try {
-      const v = fn().trim()
-      return v.length > 0 ? v : fallback
-    } catch {
-      return fallback
-    }
-  }
-  const envVer = (process.env.CODEX_CLI_VERSION ? process.env.CODEX_CLI_VERSION : '').trim()
-  const codexVer =
-    envVer.length > 0
-      ? envVer
-      : safe(() => {
-          const pkg = PackageJsonSchema.safeParse(createRequire(import.meta.url)('@openai/codex/package.json'))
-          if (!pkg.success) throw new Error('@openai/codex/package.json: missing version field')
-          return pkg.data.version
-        }, '0.0.0')
-  const osStr = safe(() => {
-    const rel = readFileSync('/etc/os-release', 'utf-8')
-    const nameMatch = rel.match(/^NAME="?([^"\n]+)"?/m)
-    const verMatch = rel.match(/^VERSION_ID="?([^"\n]+)"?/m)
-    const name = nameMatch ? nameMatch[1] : 'Linux'
-    const ver = verMatch ? verMatch[1] : ''
-    return `${name} ${ver}`.trim()
-  }, 'Linux')
-  return `codex_cli/${codexVer} (${osStr}; ${arch()})`
-})()
+export { CODEX_ORIGINATOR, CODEX_USER_AGENT }
+
+// OpenAI routes its prompt cache by `prompt_cache_key`; the official CLI
+// uses a per-session uuid. This proxy derives a deterministic key from the
+// stable request prefix instead — model, instructions, the developer
+// instructions that open the input, and tools — so every turn of the same
+// conversation hashes identically and hits the cache, and conversations
+// that share a prefix share it too.
+function promptCacheKey(body: Record<string, unknown>): string {
+  const input = Array.isArray(body.input) ? body.input : []
+  const opening = input.filter((item) => isObject(item) && item.role === 'developer')
+  const model = typeof body.model === 'string' ? body.model : ''
+  const instructions = typeof body.instructions === 'string' ? body.instructions : ''
+  return createHash('sha256')
+    .update(`${model}\n${instructions}\n${JSON.stringify(opening)}\n${JSON.stringify(body.tools ? body.tools : [])}`)
+    .digest('hex')
+    .slice(0, 32)
+}
 
 export class CodexOauthTransformer extends OAuthTransformer {
   readonly name = 'codex-oauth'
@@ -85,39 +71,15 @@ export class CodexOauthTransformer extends OAuthTransformer {
     // layer, absent only on probe contexts, which stay on the overlay.
     const sessionId = context?.req?.accountSessionKey
     const { token, accountId } = await this.resolveSubscriptionAuth(provider, sessionId, 'codex', request, context)
-    // biome-ignore plugin: CodexRequestShape adds optional Responses-API-specific fields (store/instructions/input/prompt_cache_key) on top of UnifiedChatRequest; the unified schema cannot model these without leaking codex-specific shape into the shared type.
-    const req = request as CodexRequestShape
+    // Stamped by resolveSubscriptionAuth: the account this attempt runs on.
+    const subAccountId = context?.req?.subAccountId
 
-    // chatgpt.com/backend-api/codex requires `instructions`, `input` as
-    // a list, store=false and stream=true. openai-responses already
-    // produced `input` and lifts `instructions` from the system block;
-    // enforce the rest (and a non-empty instructions fallback).
-    req.store = false
-    req.stream = true
-    if (typeof req.instructions !== 'string' || req.instructions.length === 0) {
-      req.instructions = 'You are a helpful assistant.'
-    }
-
-    // The output ceiling stops here. openai-responses translates the
-    // unified cap into `max_output_tokens` because the public Responses
-    // API takes it, but this backend allow-lists top-level params and
-    // was reported answering 400 "Unsupported parameter" for it (#463).
-    // Losing the ceiling costs a cap; sending it costs the request.
-    // biome-ignore plugin: explicit removal of a field the backend rejects — CodexRequestShape does not model max_output_tokens and the schema cannot express deletion.
-    delete (req as { max_output_tokens?: unknown }).max_output_tokens
-
-    // OpenAI routes its prompt cache by `prompt_cache_key`; the official
-    // CLI uses a per-session uuid. This proxy is stateless, so derive a
-    // deterministic key from the stable request prefix instead — every
-    // turn of the same conversation hashes identically and hits the
-    // cache, fixing the prefix being re-billed each turn.
-    const cacheModel = req.model ? req.model : ''
-    const cacheInstructions = req.instructions ? req.instructions : ''
-    const cacheTools = JSON.stringify(req.tools ? req.tools : [])
-    req.prompt_cache_key = createHash('sha256')
-      .update(`${cacheModel}\n${cacheInstructions}\n${cacheTools}`)
-      .digest('hex')
-      .slice(0, 32)
+    const inFlight: Record<string, unknown> = { ...request }
+    const shaped = shapeCodexBody(
+      inFlight,
+      codexCallerIntent(context?.req),
+      subAccountId === undefined ? null : codexAccountTag(subAccountId)
+    )
 
     // provider.api_base_url is the codex backend root
     // (https://chatgpt.com/backend-api/codex); the Responses endpoint
@@ -126,32 +88,33 @@ export class CodexOauthTransformer extends OAuthTransformer {
     const base = (provider.api_base_url ? provider.api_base_url : '').replace(/\/+$/, '')
     const url = /\/responses$/.test(base) ? base : `${base}/responses`
 
-    // Reuse the inbound session ID so ChatGPT sees a stable session for
-    // the lifetime of the Claude Code session (aids server-side caching).
-    // Fall back to a fresh UUID only when the client didn't send one —
-    // read from the request rather than from `sessionId` above, whose
-    // fallback is a Rialto-internal client identity ("token:<id>") that
-    // has no business being announced upstream as a thread id.
+    // Reuse the inbound session ID so ChatGPT sees a stable thread for the
+    // lifetime of the client's session (aids server-side caching). Fall
+    // back to a fresh UUID only when the client didn't send one — read
+    // from the request rather than from `sessionId` above, whose fallback
+    // is a Rialto-internal client identity ("token:<id>") that has no
+    // business being announced upstream as a thread id.
     const carriedSessionId = sessionIdFromRequest(context?.req?.headers, context?.req?.body)
-    const upstreamSessionId = carriedSessionId !== undefined ? carriedSessionId : randomUUID()
-    const threadId = upstreamSessionId
-    const windowId = `${upstreamSessionId}:0`
+    const threadId = carriedSessionId !== undefined ? carriedSessionId : randomUUID()
+    const reasoning = shaped.reasoning
+    const identity = codexTurnIdentity({
+      threadId,
+      subAccountId,
+      model: typeof shaped.model === 'string' ? shaped.model : undefined,
+      effort: isObject(reasoning) && typeof reasoning.effort === 'string' ? reasoning.effort : undefined
+    })
 
     return {
-      body: req,
+      body: { ...shaped, prompt_cache_key: promptCacheKey(shaped), client_metadata: identity.clientMetadata },
       config: {
         url,
         headers: {
           Authorization: `Bearer ${token}`,
           'content-type': 'application/json',
           accept: 'text/event-stream',
-          originator: 'codex_cli',
+          originator: CODEX_ORIGINATOR,
           'user-agent': CODEX_USER_AGENT,
-          session_id: upstreamSessionId,
-          thread_id: threadId,
-          'x-client-request-id': randomUUID(),
-          'x-codex-beta-features': 'terminal_resize_reflow',
-          'x-codex-window-id': windowId,
+          ...identity.headers,
           ...(accountId ? { 'chatgpt-account-id': accountId } : {})
         }
       }

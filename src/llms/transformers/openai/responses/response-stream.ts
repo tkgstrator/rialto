@@ -8,7 +8,8 @@
 
 import type { Logger } from 'pino'
 import { type ResponsesStreamEvent, ResponsesStreamEventSchema } from '@/schemas/wire/openai/responses'
-import { failureOf, handleStreamEvent } from './stream-chunks'
+import type { ReasoningSealer } from '../../../utils/codex-reasoning'
+import { failureOf, handleStreamEvent, ResponsesStreamCursor } from './stream-chunks'
 
 const FAILURE_EVENTS = new Set(['response.failed', 'response.incomplete', 'error'])
 
@@ -35,12 +36,18 @@ export class ResponsesStreamSession {
   private readonly decoder = new TextDecoder()
   private readonly encoder = new TextEncoder()
   private readonly logger: Logger | undefined
+  private readonly cursor: ResponsesStreamCursor
   private buffer = ''
   private isStreamEnded = false
 
-  constructor(controller: ReadableStreamDefaultController<Uint8Array>, logger?: Logger) {
+  constructor(
+    controller: ReadableStreamDefaultController<Uint8Array>,
+    logger?: Logger,
+    sealReasoning: ReasoningSealer | null = null
+  ) {
     this.controller = controller
     this.logger = logger
+    this.cursor = new ResponsesStreamCursor(sealReasoning)
   }
 
   async run(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
@@ -120,7 +127,8 @@ export class ResponsesStreamSession {
     const ended = handleStreamEvent(
       parsed,
       (eventType) => this.bumpIndex(eventType),
-      (chunk) => this.enqueueChunk(chunk)
+      (chunk) => this.enqueueChunk(chunk),
+      this.cursor
     )
     if (ended) this.isStreamEnded = true
   }

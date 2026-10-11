@@ -141,6 +141,18 @@ function RoutedBody({ profileKey, profile, actions, providers, aliases }: Routed
           selected={profile.blockedEscalationTiers}
           onChange={profile.setBlockedEscalationTiers}
           editing={actions.editing}
+          decisionEnabled={profile.decisionEnabled}
+          onDecisionEnabled={profile.setDecisionEnabled}
+          decisionApiBaseUrl={profile.decisionApiBaseUrl}
+          onDecisionApiBaseUrl={profile.setDecisionApiBaseUrl}
+          decisionApiKeyEnv={profile.decisionApiKeyEnv}
+          onDecisionApiKeyEnv={profile.setDecisionApiKeyEnv}
+          decisionModel={profile.decisionModel}
+          onDecisionModel={profile.setDecisionModel}
+          decisionMinConfidence={profile.decisionMinConfidence}
+          onDecisionMinConfidence={profile.setDecisionMinConfidence}
+          decisionTimeoutMs={profile.decisionTimeoutMs}
+          onDecisionTimeoutMs={profile.setDecisionTimeoutMs}
         />
       </div>
     </>

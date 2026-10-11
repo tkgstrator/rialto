@@ -83,7 +83,7 @@ describe.skipIf(!HAS_E2E)('Sidebar collapse', () => {
   test('every rail destination keeps an accessible name', async () => {
     const page = await openShell({ width: 900, height: 900 })
     await expectWidth(page, RAIL_WIDTH)
-    for (const name of ['Overview', 'Routing']) {
+    for (const name of ['Overview', 'Routing', 'Decisions']) {
       expect(await page.getByRole('link', { name, exact: true }).count()).toBe(1)
     }
     // A section with a second level trades its link for the button that

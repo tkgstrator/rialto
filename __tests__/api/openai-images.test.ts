@@ -7,6 +7,7 @@ import dayjs from '../../src/lib/dayjs'
 import { invalidateTokenCache, issueAccessToken } from '../../src/services/access-token-service'
 import { clearAccountExhaustion, isAccountExhausted } from '../../src/services/failover-state'
 import { invalidateSurfaceCache } from '../../src/services/inbound-surface-service'
+import { setModelProviderPriorities } from '../../src/services/model-provider-preference'
 import { encryptionKey, encryptString } from '../../src/services/subscription-account-sync/crypto'
 import { HAS_DB, resetDbTables, teardownPrisma } from '../db/helpers'
 
@@ -123,7 +124,7 @@ describe.skipIf(!HAS_DB)('POST /v1/images/generations', () => {
     expect(calls[0].url).toBe(ENDPOINT)
     expect(calls[0].headers.get('authorization')).toBe('Bearer oauth-a')
     expect(calls[0].headers.get('chatgpt-account-id')).toBe('account-a')
-    expect(calls[0].headers.get('originator')).toBe('codex_cli')
+    expect(calls[0].headers.get('originator')).toBe('codex_exec')
     expect(calls[0].body).toEqual({ model: MODEL, prompt: 'A paper lantern', size: '1024x1024' })
     const logs = await getPrismaClient().requestLog.findMany()
     expect(logs).toHaveLength(1)
@@ -145,7 +146,8 @@ describe.skipIf(!HAS_DB)('POST /v1/images/generations', () => {
     const provider = await createProvider()
     await createAccount(provider.id, 'a')
     const token = (await issueAccessToken({ name: 'image' })).plaintext
-    await createProvider('codex-other')
+    const second = await createProvider('codex-other')
+    await createAccount(second.id, 'second')
     expect((await send({ model: MODEL, prompt: 'x' }, token)).status).toBe(400)
     expect((await send({ model: 'codex,gpt-5.5', prompt: 'x' }, token)).status).toBe(400)
     await getPrismaClient().model.updateMany({ where: { providerId: provider.id }, data: { enabled: false } })
@@ -154,6 +156,30 @@ describe.skipIf(!HAS_DB)('POST /v1/images/generations', () => {
     await getPrismaClient().provider.update({ where: { id: provider.id }, data: { enabled: false } })
     expect((await send({ model: `codex,${MODEL}`, prompt: 'x' }, token)).status).toBe(400)
     expect(calls).toHaveLength(0)
+  })
+
+  test('uses the configured provider for a duplicated bare image model', async () => {
+    const first = await createProvider('codex')
+    await createAccount(first.id, 'first')
+    const second = await createProvider('codex-other')
+    await createAccount(second.id, 'second')
+    const token = (await issueAccessToken({ name: 'image', surfaces: ['openai-images'] })).plaintext
+    expect((await send({ model: MODEL, prompt: 'x' }, token)).status).toBe(400)
+    await setModelProviderPriorities(MODEL, ['codex-other', 'codex'])
+    const result = await send({ model: MODEL, prompt: 'x' }, token)
+    expect(result.status).toBe(200)
+    expect(calls[0].headers.get('chatgpt-account-id')).toBe('account-second')
+    expect(calls[0].body.model).toBe(MODEL)
+  })
+
+  test('skips a preferred image provider without a usable account', async () => {
+    const first = await createProvider('codex')
+    await createAccount(first.id, 'first')
+    await createProvider('codex-other')
+    await setModelProviderPriorities(MODEL, ['codex-other', 'codex'])
+    const token = (await issueAccessToken({ name: 'image', surfaces: ['openai-images'] })).plaintext
+    expect((await send({ model: MODEL, prompt: 'x' }, token)).status).toBe(200)
+    expect(calls[0].headers.get('chatgpt-account-id')).toBe('account-first')
   })
 
   test('refuses image upstream URLs with credentials or other URL modifiers', async () => {

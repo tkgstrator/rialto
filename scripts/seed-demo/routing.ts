@@ -157,7 +157,13 @@ const DEFAULT_CONSTRAINTS = {
   longContextThreshold: null,
   previousLongContextThreshold: null,
   longContextTunedAt: null,
-  autoTuneLongContext: true
+  autoTuneLongContext: true,
+  decisionApiBaseUrl: null,
+  decisionApiKeyEnv: null,
+  decisionEnabled: null,
+  decisionMinConfidence: null,
+  decisionModel: null,
+  decisionTimeoutMs: null
 } as const
 
 /**

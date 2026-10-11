@@ -26,12 +26,14 @@ import {
   type TierProfileView,
   type TierRouteView
 } from '../../src/services/tier-route-service'
+import type { ReasoningEffort } from '../../src/shared/model-reasoning-effort'
 
 interface RouteOptions {
   enabled?: boolean
   targetEnabled?: boolean
   hostsWebSearch?: boolean
   contextWindow?: number | null
+  efforts?: ReasoningEffort[]
 }
 
 export function route(
@@ -51,7 +53,8 @@ export function route(
             model,
             targetEnabled: options.targetEnabled !== false,
             hostsWebSearch: options.hostsWebSearch !== false,
-            contextWindow: options.contextWindow === undefined ? null : options.contextWindow
+            contextWindow: options.contextWindow === undefined ? null : options.contextWindow,
+            efforts: options.efforts === undefined ? [] : options.efforts
           }
   }
 }
@@ -81,7 +84,13 @@ export const DEFAULT_CONSTRAINTS: RoutingConstraints = {
   longContextThreshold: null,
   previousLongContextThreshold: null,
   longContextTunedAt: null,
-  autoTuneLongContext: true
+  autoTuneLongContext: true,
+  decisionApiBaseUrl: null,
+  decisionApiKeyEnv: null,
+  decisionEnabled: false,
+  decisionMinConfidence: 0.9,
+  decisionModel: null,
+  decisionTimeoutMs: 1_500
 }
 
 export function mapWith(

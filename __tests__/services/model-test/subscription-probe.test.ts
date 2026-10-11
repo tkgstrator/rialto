@@ -41,6 +41,6 @@ describe('buildCodexRequest', () => {
     expect(built.url).toBe(`${BASE}/responses`)
     expect(built.headers.Authorization).toBe('Bearer tok-codex')
     expect(built.headers['chatgpt-account-id']).toBe('chatgpt-account-1')
-    expect(built.headers.originator).toBe('codex_cli')
+    expect(built.headers.originator).toBe('codex_exec')
   })
 })

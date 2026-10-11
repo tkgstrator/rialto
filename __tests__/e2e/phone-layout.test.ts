@@ -43,6 +43,7 @@ const ROUTES = [
   '/routing',
   '/providers/subscriptions',
   '/providers/api-keys',
+  '/providers/models',
   '/providers/connect',
   '/access-tokens',
   '/access-tokens/plans',
@@ -72,6 +73,17 @@ describe.skipIf(!HAS_E2E)('Phone layout', () => {
     for (const name of ['Overview', 'Providers', 'Tokens', 'Activity']) {
       expect(await page.getByRole('link', { name, exact: true }).isVisible()).toBe(true)
     }
+    await page.close()
+  })
+
+  test('the Models entry in More opens the cross-provider model list', async () => {
+    const page = await openPhone('/overview')
+    await page.getByRole('button', { name: 'More', exact: true }).tap()
+    await page.getByRole('link', { name: 'Model list', exact: true }).tap()
+    await page.waitForURL('**/providers/models')
+    await page.locator('[data-slot="sheet-content"]').waitFor({ state: 'detached' })
+    expect(await page.getByRole('searchbox', { name: 'Filter models' }).isVisible()).toBe(true)
+    expect(await page.getByRole('link', { name: 'Model list', exact: true }).isVisible()).toBe(true)
     await page.close()
   })
 

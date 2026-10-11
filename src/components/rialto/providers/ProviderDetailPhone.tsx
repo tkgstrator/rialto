@@ -133,8 +133,11 @@ export function ProviderDetailPhone(props: ProviderDetailProps) {
           quota={props.quota}
           accounts={props.accounts}
           now={props.now}
-          locked={props.busy}
+          busy={props.busy}
+          editing={false}
+          onToggle={props.onToggleAccount}
           onUseReset={props.onUseReset}
+          onReauthenticated={props.onReauthenticated}
         />
       ) : (
         <CredentialsPanel

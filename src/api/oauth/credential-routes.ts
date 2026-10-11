@@ -7,13 +7,14 @@ import { providersForKind } from '../../services/subscription-account-sync/persi
 import { getUsableSubAccountAuth } from '../../services/subscription-account-sync/read'
 import { connectClaudeAccount, connectCodexAccount } from '../../services/subscription-connect-service'
 import { connectFailure } from './connect-failure'
+import { requestedReauthenticationTarget } from './reauthentication-target'
 
 export function registerCredentialRoutes(oauthRoute: Hono): void {
   // Bypass the OAuth dance: accept a raw credential payload and connect the
   // account from it. Useful for remote deployments where the loopback
   // callback is unreachable and the user already has a credentials file.
   oauthRoute.post('/api/oauth/import-credentials', async (c) => {
-    const body = await c.req.json<{ provider: string; credentials: unknown }>()
+    const body = await c.req.json<{ provider: string; credentials: unknown; targetAccountId?: string }>()
 
     // A payload the schema refuses is answered with the schema's own reasons.
     // "Not a credentials file" alone sent an operator hunting for a format
@@ -30,12 +31,17 @@ export function registerCredentialRoutes(oauthRoute: Hono): void {
       }
       const { accessToken, refreshToken, expiresAt, scopes } = parsed.data
       try {
-        await connectClaudeAccount({
-          accessToken,
-          refreshToken,
-          expiresAt: typeof expiresAt === 'number' ? expiresAt : null,
-          scopes: scopes === undefined ? CLAUDE_SCOPES : scopes
-        })
+        const targetAccountId = await requestedReauthenticationTarget('claude', body)
+        await connectClaudeAccount(
+          {
+            accessToken,
+            refreshToken,
+            expiresAt: typeof expiresAt === 'number' ? expiresAt : null,
+            scopes: scopes === undefined ? CLAUDE_SCOPES : scopes
+          },
+          undefined,
+          targetAccountId
+        )
         return c.json({ success: true as const })
       } catch (err) {
         logger.error({ err }, '[oauth] import-credentials (claude) failed')
@@ -50,7 +56,8 @@ export function registerCredentialRoutes(oauthRoute: Hono): void {
         return c.json(notCredentials('Codex', '~/.codex/auth.json', parsed.error.issues), 400)
       }
       try {
-        await connectCodexAccount(parsed.data)
+        const targetAccountId = await requestedReauthenticationTarget('codex', body)
+        await connectCodexAccount(parsed.data, undefined, targetAccountId)
         return c.json({ success: true as const })
       } catch (err) {
         logger.error({ err }, '[oauth] import-credentials (codex) failed')

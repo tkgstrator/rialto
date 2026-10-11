@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rialto — Provider Priorities</title>
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/inter/index.css">
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/geist-mono/index.css">
+<link rel="stylesheet" href="../node_modules/remixicon/fonts/remixicon.css">
+<link rel="stylesheet" href="_shared/mock.build.css">
+<script src="_shared/shell.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const { renderShell, btn } = window.Shell
+
+document.getElementById('root').innerHTML = `
+  <div class="min-w-0">
+    <div class="flex flex-wrap items-center gap-3 px-6 pt-6 pb-3">
+      <h2 class="text-sm font-semibold">Provider priority</h2>
+      <span class="text-[12px] text-muted-foreground">Clients use the model name alone. Rialto tries these providers in order.</span>
+      <div class="ml-auto">${btn('Refresh', 'outline', 'ri-refresh-line')}</div>
+    </div>
+    <p class="border-t border-border/60 px-6 py-4 text-xs text-muted-foreground">No model names are shared by multiple providers.</p>
+  </div>`
+renderShell({
+  active: 'providers',
+  sub: 'priorities',
+  navMode: 'cloudflare',
+  crumbs: ['Priorities'],
+  subtitle: 'Choose which provider serves a model name shared by several providers'
+})
+</script>
+</body>
+</html>

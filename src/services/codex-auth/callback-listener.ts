@@ -37,7 +37,7 @@
 
 import { createServer, type Server, type ServerResponse } from 'node:http'
 import { logger } from '../../logger'
-import { consumePendingFlow } from '../oauth-flow-service'
+import { completeOAuthFlow, consumePendingFlow } from '../oauth-flow-service'
 import { connectCodexAccount } from '../subscription-connect-service'
 import { exchangeCodexCode } from './oauth'
 
@@ -91,6 +91,10 @@ const handleCallback = async (
 ): Promise<void> => {
   const { code, state, errorParam } = params
   if (errorParam) {
+    if (state) {
+      consumePendingFlow(state)
+      completeOAuthFlow(state, `Upstream returned error: ${errorParam}`)
+    }
     redirectToResult(res, 'error', `Upstream returned error: ${errorParam}`)
     return
   }
@@ -113,15 +117,21 @@ const handleCallback = async (
       codeVerifier: pending.codeVerifier,
       redirectUri: pending.redirectUri
     })
-    await connectCodexAccount({
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      idToken: tokens.id_token
-    })
+    await connectCodexAccount(
+      {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        idToken: tokens.id_token
+      },
+      undefined,
+      pending.targetAccountId
+    )
+    completeOAuthFlow(state)
     redirectToResult(res, 'ok')
   } catch (err) {
     logger.error({ err }, '[codex-callback] token exchange failed')
     const message = err instanceof Error ? err.message : 'Unknown error during token exchange.'
+    completeOAuthFlow(state, message)
     redirectToResult(res, 'error', message)
   }
 }

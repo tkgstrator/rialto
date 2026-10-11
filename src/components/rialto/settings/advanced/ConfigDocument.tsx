@@ -111,7 +111,7 @@ export function ConfigDocument({
           {t('settings.advanced.backupsKept')}
         </span>
         <div className='ml-auto flex gap-2 max-md:gap-1 max-md:[&_[data-rbutton-label]]:sr-only max-md:[&>button]:px-2'>
-          <RButton variant='ghost' icon='ri-refresh-line' onClick={onLoad}>
+          <RButton variant='outline' icon='ri-refresh-line' onClick={onLoad}>
             {t('settings.advanced.reload')}
           </RButton>
           <RButton variant='ghost' icon='ri-code-line' onClick={onFormat} disabled={!valid}>

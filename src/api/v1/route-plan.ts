@@ -13,6 +13,7 @@
  *   - `invocation.ts`       one candidate → a ready-to-run invocation
  */
 
+import { randomUUID } from 'node:crypto'
 import type { Context } from 'hono'
 import '../context'
 import type { PipelineRequest } from '@/schemas/domain/pipeline'
@@ -21,8 +22,11 @@ import { type LlmsContext, PASSTHROUGH_ROUTE, type RouterRequest, routeRequest, 
 import { surfaceForPath } from '../../llms/inbound/surfaces'
 import { type ClassifierSignals, classifierSignals } from '../../llms/pipeline/classifier-diagnostics'
 import { sessionIdFromRequest } from '../../llms/pipeline/session-id'
+import { archiveRequest, requestArchiveEnabled } from '../../llms/request-archive'
 import type { TokenPlan } from '../../services/access-token-service'
 import { passthroughDenial } from '../../services/inbound-surface-service'
+import { preferredProviderOrder } from '../../services/model-provider-preference'
+import { qualifiedModelId } from '../../shared/public-model-id'
 import { buildErrorEnvelope, errorShapeForPath } from './error-shape'
 
 // ─── Endpoint transformer index ────────────────────────────────────────
@@ -46,6 +50,8 @@ function endpointTransformerMap(ctx: LlmsContext): Map<string, Map<string, Trans
 // per-model shaping (effort clamp, internal-field strip) so every chain
 // attempt re-derives those from a clean copy.
 export interface RoutePlan {
+  reqId?: string
+  selectedRoutes?: RouterRequest['selectedRoutes']
   routedBody: Record<string, unknown>
   headers: Record<string, string>
   transformersByName: Map<string, Transformer>
@@ -133,14 +139,38 @@ function applyPathParams(body: Record<string, unknown>, path: string): void {
 
 /**
  * The model a plan sends a request to, or undefined for a token with no
- * plan (the caller and the router decide, as before).
+ * plan (the caller and the router decide, as before). An allowed bare name
+ * with multiple hosts stays bare until provider priority resolves it below.
  */
 export function planModel(plan: TokenPlan | null | undefined, requested: string | undefined): string | undefined {
   if (plan === null || plan === undefined) return undefined
-  return requested !== undefined && plan.models.includes(requested) ? requested : plan.defaultModel
+  if (requested !== undefined && plan.models.includes(requested)) return requested
+  if (requested !== undefined && !requested.includes(',')) {
+    const matching = plan.models.filter((allowed) => allowed.slice(allowed.indexOf(',') + 1) === requested)
+    if (matching.length === 1) return matching[0]
+    if (matching.length > 1) return requested
+  }
+  return plan.defaultModel
+}
+
+async function bareModelProviders(model: string, ctx: LlmsContext, plan: TokenPlan | null | undefined) {
+  const hosts = ctx.providers
+    .getAll()
+    .filter((provider) => Array.isArray(provider.models) && provider.models.includes(model))
+    .map((provider) => provider.name)
+  const allowed =
+    plan === null || plan === undefined
+      ? undefined
+      : plan.models.flatMap((entry) => {
+          const comma = entry.indexOf(',')
+          return comma > 0 && entry.slice(comma + 1) === model ? [entry.slice(0, comma)] : []
+        })
+  return preferredProviderOrder(model, hosts, allowed)
 }
 
 export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Response | RoutePlan> {
+  const reqId = randomUUID()
+  const requestLog = ctx.log.child({ reqId })
   const url = new URL(c.req.url)
   const path = url.pathname
   const shape = errorShapeForPath(path)
@@ -185,6 +215,8 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   // what the client asked for next to what the plan sent.
   const pinnedModel = planModel(token?.plan, requestedModel)
   if (pinnedModel !== undefined) body.model = pinnedModel
+  // Before routeRequest rewrites model and strips the subagent tag in place.
+  const archivedBody = requestArchiveEnabled() ? structuredClone(body) : undefined
   const signals = path === '/v1/messages' ? classifierSignals(body) : undefined
   const diagnosticLog = (status: number, reason: string): void => {
     if (!signals || (!signals.safeguardsPresent && !signals.suspectedClassifier)) return
@@ -199,7 +231,8 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   // route, the fallbacks and the 429 / 400 outcomes back below.
   const routeReq: RouterRequest = {
     body: body as PipelineRequest['body'] & { model: string },
-    log: ctx.log,
+    log: requestLog,
+    reqId,
     // The router uses this to gate Anthropic-idiom mutations
     // (persona injection etc.) so OpenAI-compat callers on
     // /v1/chat/completions and /v1/responses get the exact request
@@ -215,6 +248,20 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   // could otherwise swap the plan's model for a costlier target.
   if (pinnedModel === undefined) await routeRequest(routeReq, { config: ctx.config, tokenizers: ctx.tokenizers })
   const route = routeReq.route !== undefined ? routeReq.route : PASSTHROUGH_ROUTE
+  if (archivedBody !== undefined) {
+    void archiveRequest({
+      reqId,
+      sessionId: sessionIdFromRequest(headers, archivedBody),
+      path,
+      headers,
+      body: archivedBody,
+      requestedModel,
+      routedModel: body.model,
+      route,
+      isSubagent: routeReq.isSubagent,
+      tokenCount: routeReq.tokenCount
+    })
+  }
 
   // Every route of the scenario's list is out of quota and the profile's
   // `exhaustedBehavior` is '429'. Answered here so no upstream dispatch
@@ -247,6 +294,30 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
     return c.json(buildErrorEnvelope({ shape, status: 400, from: routeReq.routingRefusal }), 400)
   }
 
+  // A bare passthrough name is a public model id. Resolve the provider here,
+  // before deny rules and the failover walker, so both judge the same target.
+  const bareModel = typeof body.model === 'string' && !body.model.includes(',') ? body.model : undefined
+  if (route === PASSTHROUGH_ROUTE && bareModel !== undefined && bareModel.length > 0) {
+    const order = await bareModelProviders(bareModel, ctx, token?.plan)
+    if (order.status === 'ambiguous') {
+      diagnosticLog(400, 'model_provider_ambiguous')
+      return c.json(
+        buildErrorEnvelope({
+          shape,
+          status: 400,
+          from: `Model "${bareModel}" has multiple providers; configure their priority in Providers → Models.`
+        }),
+        400
+      )
+    }
+    if (order.status === 'preferred') {
+      body.model = qualifiedModelId({ provider: order.providers[0], model: bareModel })
+      routeReq.resolvedFallbacks = order.providers
+        .slice(1)
+        .map((provider) => qualifiedModelId({ provider, model: bareModel }))
+    }
+  }
+
   // A passthrough surface can refuse a target. The check lives here and
   // not in `routeRequest` because that function never throws — it
   // catches everything and falls back, so a rejection raised inside it
@@ -263,6 +334,15 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
     diagnosticLog(400, 'passthrough_denial')
     return c.json(buildErrorEnvelope({ shape, status: 400, from: denial }), 400)
   }
+  if (route === PASSTHROUGH_ROUTE && routeReq.resolvedFallbacks !== undefined) {
+    const checked = await Promise.all(
+      routeReq.resolvedFallbacks.map(async (target) => ({
+        target,
+        denied: await passthroughDenial(path, target)
+      }))
+    )
+    routeReq.resolvedFallbacks = checked.filter((entry) => entry.denied === undefined).map((entry) => entry.target)
+  }
 
   const primaryModel = typeof body.model === 'string' ? body.model : ''
   if (primaryModel.length === 0) {
@@ -271,6 +351,8 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   }
 
   return {
+    reqId,
+    selectedRoutes: routeReq.selectedRoutes,
     routedBody: body,
     headers,
     accountSessionKey: resolveInboundSession(headers, body, tokenId),

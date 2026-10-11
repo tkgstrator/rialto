@@ -25,14 +25,26 @@ export function extractLastUserContent(body: unknown): unknown {
   return content !== undefined ? content : null
 }
 
-// Truncate tool_use input JSON so a single verbose tool call doesn't
-// blow the row size. The full input still exists in the upstream
-// response the client received — this is only the chat-view archive.
+// Keep ordinary tool inputs bounded, but retain Agent task prompts in full
+// so the archive can support model-selection analysis without missing instructions.
 const TOOL_INPUT_PREVIEW_CHARS = 2_000
+
+type AgentCallDetection = {
+  prompt_present: boolean
+  subagent_type_present: boolean
+  model_present: boolean
+}
 
 type AssistantBlock =
   | { type: 'text'; text: string }
-  | { type: 'tool_use'; id?: string; name?: string; input: unknown; input_truncated?: boolean }
+  | {
+      type: 'tool_use'
+      id?: string
+      name?: string
+      input: unknown
+      input_truncated?: boolean
+      agent_call?: AgentCallDetection
+    }
 
 // Assemble assistant content by streaming the Anthropic SSE response.
 // text_delta events append to the current text block; input_json_delta
@@ -45,6 +57,20 @@ export async function captureAssistantMessage(resp: Response, sessionId: string,
   const contentType = typeof rawContentType === 'string' ? rawContentType.toLowerCase() : ''
   const blocks = contentType.includes('application/json') ? await assembleFromJson(resp) : await assembleFromSse(resp)
   if (blocks.length === 0) return
+  for (const block of blocks) {
+    if (block.type !== 'tool_use' || !block.agent_call) continue
+    // Log structural metadata only; full arguments belong in the redaction-aware archive.
+    deps.log.info(
+      {
+        event: 'agent_call_detected',
+        sessionId,
+        toolUseId: block.id,
+        toolName: block.name,
+        ...block.agent_call
+      },
+      'Agent tool call detected'
+    )
+  }
   await deps.recordMessages?.([{ sessionId, role: 'assistant', content: blocks }])
 }
 
@@ -76,13 +102,30 @@ function normaliseBlock(block: unknown): AssistantBlock | null {
       type: 'tool_use',
       id: typeof id === 'string' ? id : undefined,
       name: typeof name === 'string' ? name : undefined,
-      ...truncateToolInput(input)
+      ...detectAgentCall(name, input),
+      ...archiveToolInput(name, input)
     }
   }
   return null
 }
 
-function truncateToolInput(input: unknown): { input: unknown; input_truncated?: boolean } {
+// Detect only response tool blocks, never text mentions or replayed request history.
+// Presence flags survive archive truncation/redaction without duplicating argument secrets.
+function detectAgentCall(name: unknown, input: unknown): { agent_call?: AgentCallDetection } {
+  if (name !== 'Agent' && name !== 'Task') return {}
+  const hasString = (key: string): boolean =>
+    input !== null && typeof input === 'object' && !Array.isArray(input) && typeof Reflect.get(input, key) === 'string'
+  return {
+    agent_call: {
+      prompt_present: hasString('prompt'),
+      subagent_type_present: hasString('subagent_type'),
+      model_present: hasString('model')
+    }
+  }
+}
+
+function archiveToolInput(name: unknown, input: unknown): { input: unknown; input_truncated?: boolean } {
+  if (detectAgentCall(name, input).agent_call?.prompt_present) return { input }
   const serialised = safeSerialise(input)
   if (serialised.length <= TOOL_INPUT_PREVIEW_CHARS) return { input }
   return { input: `${serialised.slice(0, TOOL_INPUT_PREVIEW_CHARS)}…`, input_truncated: true }
@@ -104,6 +147,7 @@ type AssemblyState = {
   text: string
   toolId?: string
   toolName?: string
+  initialInput?: unknown
   jsonParts: string
 }
 
@@ -112,10 +156,13 @@ async function assembleFromSse(resp: Response): Promise<AssistantBlock[]> {
   if (text.length === 0) return []
   const state = new Map<number, AssemblyState>()
   const finalised: Array<{ index: number; block: AssistantBlock }> = []
-  for (const rawEvent of text.split('\n\n')) {
-    const dataLine = rawEvent.split('\n').find((l) => l.startsWith('data:'))
-    if (!dataLine) continue
-    const raw = dataLine.slice(5).trim()
+  for (const rawEvent of text.replace(/\r\n/g, '\n').split('\n\n')) {
+    const dataLines = rawEvent.split('\n').filter((l) => l.startsWith('data:'))
+    if (dataLines.length === 0) continue
+    const raw = dataLines
+      .map((l) => l.slice(5).trimStart())
+      .join('\n')
+      .trim()
     if (raw === '' || raw === '[DONE]') continue
     let event: unknown
     try {
@@ -172,6 +219,8 @@ function initState(cb: unknown): AssemblyState {
     const name = Reflect.get(cb, 'name')
     if (typeof id === 'string') state.toolId = id
     if (typeof name === 'string') state.toolName = name
+    const input = Reflect.get(cb, 'input')
+    state.initialInput = input !== undefined ? input : {}
   }
   return state
 }
@@ -195,12 +244,13 @@ function finaliseState(s: AssemblyState): AssistantBlock | null {
     return s.text.length > 0 ? { type: 'text', text: s.text } : null
   }
   if (s.type === 'tool_use') {
-    const input = parseToolInput(s.jsonParts)
+    const input = s.jsonParts.length > 0 ? parseToolInput(s.jsonParts) : s.initialInput
     return {
       type: 'tool_use',
       id: s.toolId,
       name: s.toolName,
-      ...truncateToolInput(input)
+      ...detectAgentCall(s.toolName, input),
+      ...archiveToolInput(s.toolName, input)
     }
   }
   return null

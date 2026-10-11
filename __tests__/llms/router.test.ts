@@ -17,7 +17,7 @@ import { type RouterRequest, routeRequest, subscriptionKindOf } from '../../src/
 import { isThinkingEnabled } from '../../src/llms/router/request-signals'
 import { readSignals } from '../../src/llms/router/surface-signals'
 import type { RouterRequestBody } from '../../src/llms/router/types'
-import { __setTierProfilesForTests, classify } from '../../src/llms/tier-router/runtime'
+import { __setTierProfilesForTests, classify, routeByScenario } from '../../src/llms/tier-router/runtime'
 import { __setSurfacesForTests } from '../../src/services/inbound-surface-service'
 import { mapWith, route } from './tier-fixture'
 
@@ -201,6 +201,76 @@ beforeEach(() => {
 afterEach(() => {
   __setSurfacesForTests({})
   __setTierProfilesForTests(null)
+})
+
+test('shadow candidates follow the selected primary and fallbacks, excluding skipped routes', async () => {
+  __setTierProfilesForTests({
+    live: mapWith({
+      default: {
+        subagent: [
+          route('disabled', 'fable', 'nope', { enabled: false, efforts: ['ultra'] }),
+          route('claude-code', 'opus', 'claude-opus-5', { efforts: ['low', 'high'] }),
+          route('codex', 'sonnet', 'gpt-5.5', { efforts: ['none', 'medium'] }),
+          route('unset', 'haiku', null)
+        ]
+      }
+    })
+  })
+  const result = await routeByScenario({
+    profileKey: 'live',
+    requestedModel: 'claude-sonnet-5',
+    requestTokenCount: 100,
+    thinking: false,
+    isSubagent: true,
+    needsWebSearch: false
+  })
+  expect(result.selection).toMatchObject({
+    outcome: 'routed',
+    primary: 'claude-code,claude-opus-5',
+    fallbacks: ['codex,gpt-5.5']
+  })
+  expect(result.shadowCandidates).toEqual([
+    { target: 'claude-code,claude-opus-5', targetTier: 'opus', efforts: ['low', 'high'] },
+    { target: 'codex,gpt-5.5', targetTier: 'sonnet', efforts: ['none', 'medium'] }
+  ])
+})
+
+test('shadow candidates do not duplicate one model reached through two tiers', async () => {
+  __setTierProfilesForTests({
+    live: mapWith({
+      default: {
+        agent: [
+          route('codex', 'opus', 'gpt-5.5', { efforts: ['high'] }),
+          route('codex', 'sonnet', 'gpt-5.5', { efforts: ['high'] })
+        ]
+      }
+    })
+  })
+  const result = await routeByScenario({
+    profileKey: 'live',
+    requestedModel: 'gpt-5.5',
+    requestTokenCount: 100,
+    thinking: false,
+    isSubagent: false,
+    needsWebSearch: false
+  })
+  expect(result.shadowCandidates).toEqual([{ target: 'codex,gpt-5.5', targetTier: 'opus', efforts: ['high'] }])
+})
+
+test('shadow candidates are empty without a routed selection', async () => {
+  __setTierProfilesForTests({
+    live: mapWith({ default: { agent: [route('off', 'sonnet', 'model', { enabled: false })] } })
+  })
+  const result = await routeByScenario({
+    profileKey: 'live',
+    requestedModel: 'claude-sonnet-5',
+    requestTokenCount: 100,
+    thinking: false,
+    isSubagent: false,
+    needsWebSearch: false
+  })
+  expect(result.selection.outcome).toBe('passthrough')
+  expect(result.shadowCandidates).toEqual([])
 })
 
 async function routeWithSystem(

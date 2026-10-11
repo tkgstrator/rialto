@@ -102,8 +102,9 @@ Google のワイヤ規約に代替が無いのでこの面だけ受理する。`
 - **宛先は Codex サブスクリプションだけ。** 受け付けるモデルは `CODEX_IMAGE_MODELS`
   （`src/shared/data/subscriptions.ts`：`gpt-image-2.5-flare` / `gpt-image-2.5-sunburst`）で、
   `authMode = subscription` かつ `apiBaseUrl = https://chatgpt.com/backend-api/codex` の
-  provider 上で provider・model とも有効なものに限る。`provider,model` か、有効な provider が
-  1つだけのときの素の名前。曖昧・無効・未対応は 400 で、上流へは何も送らない。
+  provider 上で provider・model とも有効なものに限る。公開のモデル名は素の名前で、同名を
+  複数 provider が持つときは Providers → Priorities の順序で選ぶ。未設定の重複・無効・未対応は
+  400 で、上流へは何も送らない。旧 `provider,model` 入力も互換のため受け付ける。
 - **既定は無効（オプトイン）。** 両モデルは接続前の Codex のカタログに出るが、他のモデルと同じく
   オフで入る。provider ページで有効化する。価格は公開されていないので
   通常の価格3列は null のまま。Codexのサブスク枠に実際の従量課金単価があると誤認させないため、
@@ -156,7 +157,7 @@ OpenAI の公開 Images API の契約ではない。予告なく形が変わり�
 
 `routed` はシナリオ別のルーティング（入力の長さと thinking でシナリオを、サブエージェントタグでレーンを決め、
 そのリストのルートを順にゲートへ通してペースで並べる）→ failover の全段を通す。詳細は [routing.md](./routing.md)。
-`passthrough` は呼び出し側が `provider,model` を自分で指定する前提で、**全段をスキップ**する
+`passthrough` は呼び出し側が素のモデル名を指定し、Rialto が provider を解決した上で**シナリオ分類をスキップ**する
 （サブエージェントタグの除去だけはどちらのモードでも走る — タグは Rialto の内部マーカーで、
 どの上流にも意味が無いため）。ルーティングの機構はこの 2 つだけである（ルール・スロット・
 プリセット、モデルを直接並べたチェーンは無い）。

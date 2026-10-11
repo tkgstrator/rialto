@@ -32,15 +32,20 @@ function LogRow({ line }: { line: LogLine }) {
   const [open, setOpen] = useState(false)
   return (
     <details className='border-b border-border/40' onToggle={(e) => setOpen(e.currentTarget.open)}>
-      <summary className='flex cursor-pointer list-none gap-0 hover:bg-muted/50 [&::-webkit-details-marker]:hidden'>
-        <span className={cn('w-0.5 shrink-0', GUTTER[chip])} />
-        <span className='w-28 shrink-0 py-1.5 pl-4 font-mono text-[12px] tabular-nums text-muted-foreground md:pl-6'>
+      <summary className='flex cursor-pointer list-none items-center gap-0 hover:bg-muted/50 [&::-webkit-details-marker]:hidden'>
+        <span className={cn('w-0.5 shrink-0 self-stretch', GUTTER[chip])} />
+        <span className='w-28 shrink-0 py-1.5 pl-4 font-mono text-[12px] leading-5 tabular-nums text-muted-foreground md:pl-6'>
           {line.time === 0 ? '' : dayjs(line.time).format('HH:mm:ss.SSS')}
         </span>
-        <span className={cn('w-14 shrink-0 py-1.5 pl-2 font-mono text-[11px] uppercase md:w-16', LEVEL_TEXT[chip])}>
+        <span
+          className={cn(
+            'w-14 shrink-0 py-1.5 pl-2 font-mono text-[11px] leading-5 uppercase md:w-16',
+            LEVEL_TEXT[chip]
+          )}
+        >
           {line.level}
         </span>
-        <span className={cn('min-w-0 flex-1 py-1.5 pr-4 md:pr-6', open ? '' : 'truncate')}>
+        <span className={cn('min-w-0 flex-1 py-1.5 pr-4 text-[12px] leading-5 md:pr-6', open ? '' : 'truncate')}>
           <span className='font-mono text-[12px]'>{line.msg}</span>
           {detail === '' ? null : <span className='ml-2 font-mono text-[12px] text-muted-foreground'>{detail}</span>}
         </span>

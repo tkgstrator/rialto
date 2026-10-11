@@ -3,7 +3,8 @@ import pino from 'pino'
 import {
   captureSafeguardResultMetadata,
   classifierSignals,
-  hasSafeguards
+  hasSafeguards,
+  hasStructuredOutput
 } from '../../src/llms/pipeline/classifier-diagnostics'
 
 const captured: string[] = []
@@ -30,6 +31,26 @@ describe('classifier diagnostics', () => {
       })
     ).toEqual({ safeguardsPresent: false, suspectedClassifier: false })
     expect(hasSafeguards({ model: 'codex' })).toBe(false)
+  })
+
+  test('recognises structured output before and after conversion without inferring a permission decision', () => {
+    const format = { type: 'json_schema', schema: { secret: 'PRIVATE_SCHEMA' } }
+    for (const body of [
+      { output_config: { format } },
+      { output_format: format },
+      { response_format: format },
+      { text: { format } }
+    ])
+      expect(hasStructuredOutput(body)).toBe(true)
+    for (const body of [
+      null,
+      {},
+      { output_config: { effort: 'high' } },
+      { output_format: null },
+      { text: { format: { type: 'text' } } }
+    ]) {
+      expect(hasStructuredOutput(body)).toBe(false)
+    }
   })
 
   test('logs only small JSON result metadata, never decisions or text', async () => {

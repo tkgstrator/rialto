@@ -93,6 +93,7 @@ const navTo = (href) => `data-nav="${href}"`
 const NAV = [
   { id: 'overview', label: 'Overview', icon: 'ri-dashboard-3-line', href: 'overview.html' },
   { id: 'routing', label: 'Routing', icon: 'ri-git-branch-line', href: 'routing.html' },
+  { id: 'decisions', label: 'Decisions', icon: 'ri-code-box-line', href: 'decisions.html' },
   { id: 'providers', label: 'Providers', icon: 'ri-plug-line', href: 'providers.html' },
   // Next to Providers because it is the same question pointed the other
   // way: Providers is outbound (who Rialto sends to), this is inbound
@@ -626,7 +627,9 @@ const SUBNAV = {
   // the account rows were short of.
   providers: [
     { id: 'subscriptions', label: 'Subscriptions', icon: 'ri-shield-user-line', href: 'providers.html' },
-    { id: 'api-keys', label: 'API keys', icon: 'ri-key-line', href: 'providers-keys.html' }
+    { id: 'api-keys', label: 'API keys', icon: 'ri-key-line', href: 'providers-keys.html' },
+    { id: 'models', label: 'Model list', icon: 'ri-list-check-2', href: 'providers-models.html' },
+    { id: 'priorities', label: 'Priorities', icon: 'ri-sort-asc', href: 'providers-priorities.html' }
   ],
   activity: [
     { id: 'sessions', label: 'Sessions', icon: 'ri-chat-1-line', href: 'activity.html' },

@@ -20,7 +20,14 @@ routingProfileRoute.openapi(
       }
     }
   }),
-  async (c) => c.json(await loadTierProfileView(c.req.valid('param').key), 200)
+  async (c) => {
+    const view = await loadTierProfileView(c.req.valid('param').key)
+    // The internal view also carries effort metadata for shadow evaluation;
+    // keep the public routing response on its declared wire shape.
+    const publicView = TierProfileViewSchema.safeParse(view)
+    if (!publicView.success) throw new Error('The routing profile could not be serialized.')
+    return c.json(publicView.data, 200)
+  }
 )
 
 // Whole-profile replacement. Warnings name what was dropped (an unknown

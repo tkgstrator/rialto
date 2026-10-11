@@ -12,6 +12,7 @@ import { getPrismaClient } from '../../db/client'
 import { AuthMode } from '../../generated/prisma/client'
 import type { TokenPlan } from '../../services/access-token-service'
 import { getEnabledModels } from '../../services/config/enabled-models'
+import { resolvePreferredProvider } from '../../services/model-provider-preference'
 import { newestFirst } from '../../shared/model-version'
 
 const CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex'
@@ -46,40 +47,64 @@ export async function codexModels(operation: 'completion' | 'image'): Promise<Co
   return enabled.filter((m) => names.has(m.provider))
 }
 
-/**
- * Resolve what a caller asked for to one Codex target.
- *
- * - `provider,model` must be exactly one of the enabled pairs.
- * - A bare model must be hosted by exactly one Codex provider; two would
- *   leave the choice of which subscription pays to chance.
- * - Nothing named: the newest enabled model. What is enabled is the
- *   operator's choice; nothing here names a model to prefer.
- */
+/** One callable target per bare name; unresolved collisions stay out of status. */
+async function chooseCodexModels(eligible: readonly CodexTarget[]): Promise<CodexTarget[]> {
+  const names = [...new Set(eligible.map((target) => target.model))]
+  const chosen = await Promise.all(
+    names.map(async (name) => {
+      const candidates = eligible.filter((target) => target.model === name)
+      const resolution = await resolvePreferredProvider(
+        name,
+        candidates.map((target) => target.provider)
+      )
+      return resolution.status === 'preferred'
+        ? candidates.find((target) => target.provider === resolution.provider)
+        : undefined
+    })
+  )
+  return chosen.filter((target): target is CodexTarget => target !== undefined)
+}
+
+export async function callableCodexModels(
+  operation: 'completion' | 'image',
+  plan: TokenPlan | null = null
+): Promise<CodexTarget[]> {
+  return chooseCodexModels((await codexModels(operation)).filter((target) => planAllows(plan, target)))
+}
+
+/** Qualified names remain valid for older clients; bare names use Rialto's provider priority. */
 export async function resolveCodexTarget(
   operation: 'completion' | 'image',
-  requested: string | undefined
+  requested: string | undefined,
+  plan: TokenPlan | null = null
 ): Promise<TargetResult> {
-  const models = await codexModels(operation)
-  if (models.length === 0) {
+  const eligible = (await codexModels(operation)).filter((target) => planAllows(plan, target))
+  if (eligible.length === 0) {
     const kind = operation === 'image' ? 'image model' : 'model'
-    return {
-      ok: false,
-      message: `No Codex ${kind} is enabled. Enable one on the Codex provider's page in Rialto.`
-    }
+    return { ok: false, message: `No Codex ${kind} is enabled for this token.` }
   }
-  const available = `Available: ${models.map(targetId).join(', ')}.`
+  if (requested?.includes(',')) {
+    const qualified = eligible.find((target) => targetId(target) === requested)
+    return qualified === undefined
+      ? { ok: false, message: `"${requested}" is not an enabled Codex model for this token.` }
+      : { ok: true, target: qualified }
+  }
+  const callable = await chooseCodexModels(eligible)
   if (requested === undefined) {
-    const [newest] = [...models].sort((a, b) => newestFirst(a.model, b.model) || a.provider.localeCompare(b.provider))
-    return { ok: true, target: newest }
+    const newest = [...callable].sort((a, b) => newestFirst(a.model, b.model))[0]
+    return newest === undefined
+      ? { ok: false, message: 'No unambiguous Codex model is available; configure provider priority in Rialto.' }
+      : { ok: true, target: newest }
   }
-  const matches = requested.includes(',')
-    ? models.filter((m) => targetId(m) === requested)
-    : models.filter((m) => m.model === requested)
-  if (matches.length === 1) return { ok: true, target: matches[0] }
-  if (matches.length > 1) {
-    return { ok: false, message: `"${requested}" is hosted by more than one Codex provider; name one. ${available}` }
+  const target = callable.find((model) => model.model === requested)
+  if (target !== undefined) return { ok: true, target }
+  const colliding = eligible.filter((model) => model.model === requested).length > 1
+  return {
+    ok: false,
+    message: colliding
+      ? `"${requested}" has multiple Codex providers; configure their priority in Rialto.`
+      : `"${requested}" is not an enabled Codex model. Available: ${callable.map((model) => model.model).join(', ')}.`
   }
-  return { ok: false, message: `"${requested}" is not an enabled Codex model. ${available}` }
 }
 
 /**

@@ -7,9 +7,12 @@ import { ActivityRequests } from '@/components/rialto/activity/ActivityRequests'
 import { ActivitySessionDetail } from '@/components/rialto/activity/ActivitySessionDetail'
 import { ActivitySessions } from '@/components/rialto/activity/ActivitySessions'
 import { ActivityUsage } from '@/components/rialto/activity/ActivityUsage'
+import { DecisionsScreen } from '@/components/rialto/decisions/DecisionsScreen'
 import { Overview } from '@/components/rialto/Overview'
 import { AddProviderScreen } from '@/components/rialto/providers/AddProviderScreen'
 import { ProviderDetailScreen } from '@/components/rialto/providers/ProviderDetailScreen'
+import { ProviderModelsScreen } from '@/components/rialto/providers/ProviderModelsScreen'
+import { ProviderPrioritiesScreen } from '@/components/rialto/providers/ProviderPrioritiesScreen'
 import { ProvidersScreen } from '@/components/rialto/providers/ProvidersScreen'
 import { RialtoShell } from '@/components/rialto/RialtoShell'
 import { RouteError } from '@/components/rialto/RouteError'
@@ -62,17 +65,18 @@ export const router = createBrowserRouter([
           // path that shows one of two peers without saying which is a
           // path the sidebar cannot highlight.
           { path: '/providers', element: <Navigate to='/providers/subscriptions' replace /> },
-          // Static before dynamic so these three are what they say rather
-          // than providers literally named "subscriptions", "api-keys" or
-          // "connect".
+          // Static before dynamic so section pages cannot become provider names.
           { path: '/providers/subscriptions', element: <ProvidersScreen kind='subscription' /> },
           { path: '/providers/api-keys', element: <ProvidersScreen kind='api_key' /> },
+          { path: '/providers/models', element: <ProviderModelsScreen /> },
+          { path: '/providers/priorities', element: <ProviderPrioritiesScreen /> },
           { path: '/providers/connect', element: <AddProviderScreen /> },
           { path: '/providers/:name', element: <ProviderDetailScreen /> },
           // One table is the whole of Routing: per surface's profile, a
           // scenario per row and a lane per column, each cell a list of
           // provider · tier combinations.
           { path: '/routing', element: <RoutingScenarios /> },
+          { path: '/decisions', element: <DecisionsScreen /> },
           // Top level, beside Providers: outbound and inbound at the same
           // depth. These were /settings/access and
           // /settings/access/tokens/:id.

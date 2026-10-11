@@ -20,6 +20,12 @@ services:
       # server named here, reached by its service name on this network.
       # Unset, those paths answer 503. See docs/guides/tts-relay.md.
       # RIALTO_TTS_URL: http://irodori-tts:8000
+      # Decisions screen. Empty means "not configured", so an ordinary
+      # `docker compose up` is unchanged. To use the CPU sidecar below, set
+      # COMPOSE_PROFILES=decisions and JEFF_URL=http://jeff:8765 in your own
+      # environment (.env). See docs/guides/decisions.md.
+      JEFF_URL: ${JEFF_URL:-}
+      JEFF_SHADOW_ENABLED: ${JEFF_SHADOW_ENABLED:-false}
     ports:
       # The server listens on the envelope PORT (default 3456). Map it to
       # whatever host port you want.
@@ -55,6 +61,37 @@ services:
       - ${HOME}/.codex:/root/.codex
     restart: unless-stopped
 
+  # Optional CPU sidecar for the Decisions screen. Off unless the `decisions`
+  # profile is enabled, so it is never built or pulled by default, and rialto
+  # deliberately does not depend_on it: Decisions simply reads "unavailable"
+  # until Jeff is up.
+  #
+  # Internal only: no `ports`, so nothing is published to the host, and Jeff's
+  # own authentication is not enabled (JEFF_API_KEY unset), so rialto sends no
+  # key. It is reached as http://jeff:8765 on this Compose network.
+  jeff:
+    profiles: ["decisions"]
+    build:
+      context: docker/jeff
+    volumes:
+      # The checkpoint is downloaded here on first start.
+      - jeff_models:/models
+    restart: unless-stopped
+    healthcheck:
+      # Jeff's /health answers status "ready" once the model is loaded.
+      test:
+        - CMD
+        - /app/.venv/bin/python
+        - -c
+        - >-
+          import json, sys, urllib.request;
+          sys.exit(0 if json.load(urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=3)).get('status') == 'ready' else 1)
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      # First start downloads the checkpoint and loads it; allow for both.
+      start_period: 600s
+
   postgres:
     image: postgres:17.9
     environment:
@@ -85,3 +122,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  jeff_models:

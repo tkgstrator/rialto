@@ -28,6 +28,7 @@ import {
   type TierProfileWrite,
   type TierRoute
 } from '../schemas/domain/tier-route'
+import { isReasoningEffort, openAiEffortsFor, type ReasoningEffort } from '../shared/model-reasoning-effort'
 import { hostsWebSearch } from '../shared/transformer-chain'
 import { aliasKey, loadResolvedTiers } from './tier-alias-service'
 
@@ -249,11 +250,24 @@ export async function listTierProfiles(prisma: PrismaClient = getPrismaClient())
   ]
 }
 
+const supportedEffortsFor = (
+  authMode: 'subscription' | 'api_key',
+  apiStyle: 'openai_chat' | 'openai_responses' | 'anthropic' | 'gemini',
+  model: string,
+  recorded: string[] | null
+): ReasoningEffort[] => {
+  if (authMode === 'subscription') return (recorded === null ? [] : recorded).filter(isReasoningEffort)
+  if (apiStyle !== 'openai_chat' && apiStyle !== 'openai_responses') return []
+  const known = openAiEffortsFor(model)
+  return (known === null ? [] : known).filter(isReasoningEffort)
+}
+
 export interface TierRouteResolution {
   model: string
   targetEnabled: boolean
   hostsWebSearch: boolean
   contextWindow: number | null
+  efforts: ReasoningEffort[]
 }
 
 export interface TierRouteView extends TierRoute {
@@ -322,7 +336,15 @@ export async function loadTierProfileView(
                     },
                     model.apiStyle === null ? undefined : model.apiStyle
                   ),
-                  contextWindow: model.contextWindow
+                  contextWindow: model.contextWindow,
+                  // Only recorded subscription capabilities or verified API-key
+                  // model IDs establish supported effort levels.
+                  efforts: supportedEffortsFor(
+                    provider.authMode,
+                    model.apiStyle === null ? provider.apiStyle : model.apiStyle,
+                    model.name,
+                    model.capability === null ? null : model.capability.efforts
+                  )
                 }
               ]
             ]

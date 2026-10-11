@@ -69,3 +69,6 @@ logs/
 # and `mocks:diff`; the compiled mock stylesheet by `mocks:css`.
 mocks/.shots/
 mocks/_shared/mock.build.css
+
+# Local Codex configuration, credentials, and session state.
+/.codex/

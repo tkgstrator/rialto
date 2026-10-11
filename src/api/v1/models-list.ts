@@ -5,9 +5,9 @@
  * dropdown; without it the SDK errors before making any inference call.
  * We serve the same DB-backed enabled-model list `/api/models` returns,
  * reshaped into OpenAI's `{object:'list', data:[{id, object, created,
- * owned_by}]}` envelope. `id` is Rialto's canonical "provider,model" form
- * so a client can round-trip the string straight into
- * /v1/chat/completions' `model` field.
+ * owned_by}]}` envelope. `id` is always the native bare model name;
+ * Rialto chooses the provider from its configured priority when needed.
+ * A duplicate name with no preference is not listed as callable.
  *
  * The list only includes models the router can actually reach right now
  * (auth resolved + provider enabled), mirroring what the Router selects
@@ -26,6 +26,8 @@ import '../context'
 import { getPrismaClient } from '../../db/client'
 import { getEnabledModels } from '../../services/config'
 import { buildPriceMap, CACHE_WRITE_1H, CACHE_WRITE_5M, type PriceEntry } from '../../services/cost-service'
+import { resolvePreferredProvider } from '../../services/model-provider-preference'
+import { publicModelId, qualifiedModelId } from '../../shared/public-model-id'
 
 export const v1ModelsRoute = new Hono()
 
@@ -49,9 +51,21 @@ v1ModelsRoute.get('/v1/models', async (c) => {
   // cannot spend would invite a request the plan then quietly reroutes to
   // its default.
   const plan = c.get('accessToken')?.plan
-  const models = [...chatModels, ...imageModels].filter(
-    (m) => plan === null || plan === undefined || plan.models.includes(`${m.provider},${m.model}`)
+  const eligible = [...chatModels, ...imageModels].filter(
+    (m) => plan === null || plan === undefined || plan.models.includes(qualifiedModelId(m))
   )
+  const names = [...new Set(eligible.map((m) => m.model))]
+  const selected = await Promise.all(
+    names.map(async (name) => {
+      const candidates = eligible.filter((m) => m.model === name)
+      const resolution = await resolvePreferredProvider(
+        name,
+        candidates.map((m) => m.provider)
+      )
+      return resolution.status === 'preferred' ? candidates.find((m) => m.provider === resolution.provider) : undefined
+    })
+  )
+  const models = selected.filter((m): m is (typeof eligible)[number] => m !== undefined)
   // OpenAI uses seconds-since-epoch for `created`; the value carries no
   // real meaning here (there is no per-model creation time in Rialto), so
   // stamp the response time uniformly. SDKs that render "last modified"
@@ -74,7 +88,7 @@ v1ModelsRoute.get('/v1/models', async (c) => {
   return c.json({
     object: 'list',
     data: models.map((m) => ({
-      id: `${m.provider},${m.model}`,
+      id: publicModelId(m),
       object: 'model',
       created: now,
       owned_by: m.provider,

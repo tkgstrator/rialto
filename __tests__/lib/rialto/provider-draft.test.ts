@@ -35,6 +35,7 @@ describe('applyDraft', () => {
     const shown = applyDraft(
       provider(),
       {
+        ...EMPTY_DRAFT,
         enabled: false,
         models: { o3: true, 'gpt-4.1': false },
         efforts: { o3: null, 'gpt-5': 'low' },
@@ -93,6 +94,7 @@ describe('savePlan', () => {
     const plan = savePlan(
       provider(),
       {
+        ...EMPTY_DRAFT,
         enabled: true,
         models: { o3: false, 'gpt-5': true },
         efforts: { o3: 'high', 'gpt-5': null },
@@ -108,6 +110,7 @@ describe('savePlan', () => {
     const plan = savePlan(
       loaded,
       {
+        ...EMPTY_DRAFT,
         models: { o3: true },
         efforts: { 'gpt-5': 'low' },
         aliases: { sonnet: 'gpt-4.1' },

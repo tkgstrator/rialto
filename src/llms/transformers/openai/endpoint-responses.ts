@@ -25,6 +25,7 @@ import {
   type ResponsesStreamItem,
   type ResponsesUnifiedChatRequest
 } from '@/schemas/wire'
+import { codexAccountTag, type ReasoningSealer, sealCodexReasoning } from '../../utils/codex-reasoning'
 import { cloneResponse } from '../../utils/response-clone'
 import { aggregateOpenAiChatSseToJson, isSseContentType } from '../../utils/sse-aggregate'
 import { Transformer } from '../base'
@@ -150,7 +151,7 @@ export class OpenAIResponsesTransformer extends Transformer {
     // empty request) and the transformer must not crash.
     for (const message of Array.isArray(responsesReq.messages) ? responsesReq.messages : []) {
       if (message.role === 'system') continue
-      processNonSystemMessage(message, input)
+      processNonSystemMessage(message, input, provider?.name)
     }
 
     responsesReq.input = input
@@ -202,7 +203,7 @@ export class OpenAIResponsesTransformer extends Transformer {
     return responsesReq
   }
 
-  async transformResponseOut(response: Response, _context: TransformerContext): Promise<Response> {
+  async transformResponseOut(response: Response, context: TransformerContext): Promise<Response> {
     const contentType = response.headers.get('Content-Type')
     if (typeof contentType !== 'string') return response
 
@@ -211,7 +212,7 @@ export class OpenAIResponsesTransformer extends Transformer {
     }
 
     if (contentType.includes('text/event-stream')) {
-      return this.handleStreamResponse(response)
+      return this.handleStreamResponse(response, reasoningSealerFor(context))
     }
 
     return response
@@ -236,7 +237,7 @@ export class OpenAIResponsesTransformer extends Transformer {
     return cloneResponse(response, JSON.stringify(jsonResponse))
   }
 
-  private handleStreamResponse(response: Response): Response {
+  private handleStreamResponse(response: Response, sealReasoning: ReasoningSealer | null): Response {
     if (!response.body) {
       return response
     }
@@ -246,7 +247,7 @@ export class OpenAIResponsesTransformer extends Transformer {
 
     const stream = new ReadableStream({
       async start(controller) {
-        const session = new ResponsesStreamSession(controller, logger)
+        const session = new ResponsesStreamSession(controller, logger, sealReasoning)
         await session.run(upstreamBody.getReader())
       }
     })
@@ -262,6 +263,19 @@ export class OpenAIResponsesTransformer extends Transformer {
       }
     })
   }
+}
+
+// A reply from a subscription provider on this chain — Codex — seals the
+// encrypted reasoning it carries for the account that produced it, so the
+// next turn can hand it back to that account and no other
+// (utils/codex-reasoning.ts). An API-key upstream is never asked for
+// encrypted reasoning, and gets nothing to seal it with.
+function reasoningSealerFor(context: TransformerContext): ReasoningSealer | null {
+  const provider = context?.req?.provider
+  const subAccountId = context?.req?.subAccountId
+  if (provider === undefined || subAccountId === undefined) return null
+  const account = codexAccountTag(subAccountId)
+  return (id, encryptedContent) => sealCodexReasoning({ provider, account, id, encryptedContent })
 }
 
 // Silence unused-type lint for the streaming inner item type re-exported

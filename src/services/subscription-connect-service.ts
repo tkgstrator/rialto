@@ -119,11 +119,12 @@ const refusalError = (vendor: 'Claude' | 'Codex', probe: Refusal): AccountConnec
 const storeVerified = async (
   kind: 'claude' | 'codex',
   account: DiscoveredAccount,
-  prismaOverride: PrismaClient | undefined
+  prismaOverride: PrismaClient | undefined,
+  targetAccountId?: string
 ): Promise<string[]> => {
   // Resolved only now, so credentials refused above never needed a database.
   const prisma = prismaOverride === undefined ? getPrismaClient() : prismaOverride
-  const ids = await recordDiscoveredAccount(kind, account, prisma)
+  const ids = await recordDiscoveredAccount(kind, account, prisma, targetAccountId)
   if (ids.length === 0) throw noProviderError(kind)
   // The vendor accepted these credentials a moment ago, so the account is
   // live now rather than `unknown` until the health job's next pass.
@@ -181,7 +182,11 @@ const refreshClaude = async (tokens: ClaudeConnectTokens): Promise<ClaudeConnect
   }
 }
 
-export async function connectClaudeAccount(tokens: ClaudeConnectTokens, prisma?: PrismaClient): Promise<string[]> {
+export async function connectClaudeAccount(
+  tokens: ClaudeConnectTokens,
+  prisma?: PrismaClient,
+  targetAccountId?: string
+): Promise<string[]> {
   const result = await verify(tokens, probeClaude, refreshClaude, providerCheck('claude', prisma))
   const { probe } = result
   if (probe.kind === 'unreachable' && result.rotated) {
@@ -202,7 +207,7 @@ export async function connectClaudeAccount(tokens: ClaudeConnectTokens, prisma?:
       'Claude accepted these credentials, but its profile carried no account id to key the account on.'
     )
   }
-  return storeVerified('claude', account, prisma)
+  return storeVerified('claude', account, prisma, targetAccountId)
 }
 
 export interface CodexConnectTokens {
@@ -250,7 +255,11 @@ const refreshCodex = async (tokens: CodexConnectTokens): Promise<CodexConnectTok
   }
 }
 
-export async function connectCodexAccount(tokens: CodexConnectTokens, prisma?: PrismaClient): Promise<string[]> {
+export async function connectCodexAccount(
+  tokens: CodexConnectTokens,
+  prisma?: PrismaClient,
+  targetAccountId?: string
+): Promise<string[]> {
   // Codex identity is read off the tokens themselves, so it is settled
   // before the vendor is asked: credentials that cannot be keyed to an
   // account should not spend an upstream call, or a refresh token, first.
@@ -283,7 +292,7 @@ export async function connectCodexAccount(tokens: CodexConnectTokens, prisma?: P
       'Codex refreshed these credentials, but the new grant could not be keyed to an account.'
     )
   }
-  const ids = await storeVerified('codex', account, prisma)
+  const ids = await storeVerified('codex', account, prisma, targetAccountId)
   try {
     const providers = await (prisma === undefined ? getPrismaClient() : prisma).subAccount.findMany({
       where: { id: { in: ids } },

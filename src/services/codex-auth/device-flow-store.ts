@@ -34,16 +34,20 @@ export interface DeviceFlowState {
   expiresAt: number
   nextPollAt: number
   phase: DeviceFlowPhase
+  targetAccountId?: string
 }
 
 const flows = new Map<string, DeviceFlowState>()
 
-export const createDeviceFlow = (code: {
-  deviceAuthId: string
-  userCode: string
-  verificationUri: string
-  intervalSeconds: number
-}): { flowId: string; expiresAt: number } => {
+export const createDeviceFlow = (
+  code: {
+    deviceAuthId: string
+    userCode: string
+    verificationUri: string
+    intervalSeconds: number
+  },
+  targetAccountId?: string
+): { flowId: string; expiresAt: number } => {
   // A flow is only removed when a poll finds it finished or expired, so a
   // tab closed mid sign-in would leave its entry here for the life of the
   // process. Starting a new flow is the natural moment to drop those.
@@ -55,6 +59,7 @@ export const createDeviceFlow = (code: {
   const flowId = randomBytes(24).toString('base64url')
   const expiresAt = now + CODEX_DEVICE_CODE_TTL_MS
   flows.set(flowId, {
+    targetAccountId,
     deviceAuthId: code.deviceAuthId,
     userCode: code.userCode,
     verificationUri: code.verificationUri,

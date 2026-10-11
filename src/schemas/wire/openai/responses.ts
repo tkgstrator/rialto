@@ -91,7 +91,12 @@ export const ResponsesStreamItemSchema = z.object({
   call_id: z.string().nonempty().optional(),
   name: z.string().nonempty().optional(),
   content: z.array(ResponsesStreamItemContentSchema).default([]),
-  reasoning: z.string().nonempty().optional()
+  reasoning: z.string().nonempty().optional(),
+  // A finished reasoning item: its summary parts, and — when the request
+  // asked for `reasoning.encrypted_content` — the reasoning itself,
+  // encrypted, for the next turn to hand back.
+  summary: z.array(z.object({ text: z.string().min(0) }).loose()).default([]),
+  encrypted_content: z.string().nonempty().optional()
 })
 export type ResponsesStreamItem = z.infer<typeof ResponsesStreamItemSchema>
 
@@ -160,6 +165,9 @@ export const ResponsesStreamEventSchema = z.object({
     .optional(),
   annotation: ResponsesAnnotationSchema.optional(),
   part: z.unknown().optional(),
+  // Which summary part of a reasoning item a `reasoning_summary_part.*`
+  // event opens or closes.
+  summary_index: z.number().int().nonnegative().optional(),
   reasoning_summary: z.string().nonempty().optional(),
   // The bare `error` event's own fields.
   code: z.unknown().optional(),
@@ -167,20 +175,6 @@ export const ResponsesStreamEventSchema = z.object({
   error: ResponsesStreamFailureSchema.nullish()
 })
 export type ResponsesStreamEvent = z.infer<typeof ResponsesStreamEventSchema>
-
-// ─── Codex (ChatGPT subscription) request shape ────────────────────────
-//
-// The Codex backend (chatgpt.com/backend-api/codex) requires several
-// Responses-API fields that the unified chat request schema doesn't
-// model. codex-oauth populates them just-in-time before sending.
-
-export const CodexRequestShapeSchema = UnifiedChatRequestSchema.extend({
-  store: z.boolean().default(false),
-  instructions: z.string().min(0).optional(),
-  prompt_cache_key: z.string().nonempty().optional(),
-  input: z.unknown().optional()
-})
-export type CodexRequestShape = z.input<typeof CodexRequestShapeSchema>
 
 // ─── Responses-API request shape ───────────────────────────────────────
 //

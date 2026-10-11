@@ -12,91 +12,22 @@ import { useTranslation } from 'react-i18next'
 import { Pill, Toggle } from '@/components/rialto/primitives'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
 import { fmtCost } from '@/lib/sessions/format'
-import { openAiEffortsFor } from '@/shared/model-reasoning-effort'
-import { effortLadder, type ThinkingOffReading, thinkingOffReadings } from './capability-reading'
+import { effortLadder } from './capability-reading'
 import { fmtContext, type ModelRow } from './derive'
+import {
+  DASH,
+  EffortCell,
+  EffortLevelsCell,
+  ImagePriceBadge,
+  TestIcon,
+  ThinkingOffCell,
+  TierCell
+} from './ModelsTableCells'
 import { SwitchReading } from './SwitchReading'
-import { TIERS } from './tier-aliases'
-import type { ReasoningEffort, TestStatus } from './types'
+import { TIERS, type TierView } from './tier-aliases'
+import type { ReasoningEffort, Tier } from './types'
 
-const TEST_ICON: Record<TestStatus, string> = {
-  ok: 'ri-check-line text-emerald-600 dark:text-emerald-400',
-  fail: 'ri-close-line text-destructive',
-  unknown: 'ri-subtract-line text-muted-foreground/50'
-}
-
-export function TestIcon({ status }: { status: TestStatus }) {
-  return <i className={TEST_ICON[status]} />
-}
-
-/** The two states an effort cell can be in: someone chose one, or the vendor picks. */
-type CellTone = 'set' | 'unset'
-
-const CELL_TONE: Record<CellTone, string> = {
-  set: 'bg-muted text-foreground',
-  unset: 'text-muted-foreground/50'
-}
-
-/**
- * An inline override picker: the value, a chevron, and a native select
- * over the top.
- *
- * Native rather than a popover because the list is four to eight fixed
- * options in a dense table row — a keyboard user should get the platform
- * control, and a row that opens a floating panel per cell is a table that
- * cannot be scanned. The select is transparent and absolutely positioned
- * so the cell keeps the mock's compact treatment.
- */
-function OverrideCell({
-  value,
-  reading = value,
-  tone,
-  label,
-  options,
-  onChange
-}: {
-  value: string
-  reading?: string
-  tone: CellTone
-  label: string
-  options: readonly { value: string; label: string }[]
-  onChange: (next: string) => void
-}) {
-  return (
-    <span
-      className={cn(
-        'relative inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] transition-colors hover:bg-muted/60',
-        CELL_TONE[tone]
-      )}
-    >
-      {reading}
-      <i className='ri-arrow-down-s-line text-xs opacity-60' />
-      <select
-        aria-label={label}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className='absolute inset-0 cursor-pointer opacity-0'
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </span>
-  )
-}
-
-/**
- * The same cell while the page reads: the picker's tone, so a chosen
- * effort still stands out from the vendor default, without the chevron
- * that says it opens.
- */
-function ReadCell({ value, tone }: { value: string; tone: CellTone }) {
-  return (
-    <span className={cn('inline-flex items-center rounded px-1.5 py-0.5 text-[12px]', CELL_TONE[tone])}>{value}</span>
-  )
-}
+export { TestIcon, TierCell } from './ModelsTableCells'
 
 type ModelSortKey =
   | 'name'
@@ -221,181 +152,6 @@ function Head({
   )
 }
 
-const DASH = '—'
-const EFFORTS: readonly ReasoningEffort[] = [
-  'auto',
-  'none',
-  'minimal',
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'max',
-  'ultra'
-]
-
-// Narrowing by lookup rather than by assertion: the select hands back a
-// string, and only options in this table are accepted.
-const toEffort = (value: string): ReasoningEffort | null => {
-  const found = EFFORTS.find((effort) => effort === value)
-  return found === undefined ? null : found
-}
-
-/**
- * The tier column: every tier this model belongs to on its provider,
- * filled where the tier reaches it today and outlined where it does not
- * (an older or switched-off model its name still says).
- *
- * A reading on both sides of Edit. A tier follows the model switches, or
- * on a manual tier the strip above; a control here would be one more
- * place for the two to disagree.
- */
-export function TierCell({ row }: { row: ModelRow }) {
-  if (row.tiers.length === 0) return <span className='text-[12px] text-muted-foreground/50'>{DASH}</span>
-  return (
-    <span className='inline-flex items-center gap-1 whitespace-nowrap'>
-      {row.tiers.map(({ tier, routed }) => (
-        <span
-          key={tier}
-          className={cn(
-            'inline-flex items-center rounded px-1.5 text-[12px]',
-            routed ? 'bg-muted py-0.5' : 'border border-border py-px text-muted-foreground/70'
-          )}
-        >
-          {tier}
-        </span>
-      ))}
-    </span>
-  )
-}
-
-/** The effort column: a picker while editing, the reading otherwise. */
-function EffortCell({
-  row,
-  editable,
-  effortKind,
-  onEffort
-}: {
-  row: ModelRow
-  editable: boolean
-  effortKind: 'openai' | 'claude-code'
-  onEffort: (model: string, next: ReasoningEffort | null) => void
-}) {
-  const { t } = useTranslation()
-  const value = row.effort === null ? DASH : row.effort
-  const reading = row.effort === 'auto' ? t('providers.models.effortAuto') : value
-  const tone = row.effort === null ? 'unset' : 'set'
-  // What the model's own list reported wins; an api_key OpenAI model, which
-  // records nothing, falls back to the static table.
-  const known =
-    row.supportedEfforts !== null
-      ? row.supportedEfforts
-      : effortKind === 'claude-code'
-        ? null
-        : openAiEffortsFor(row.name)
-  const manualOptions =
-    known === null
-      ? effortKind === 'claude-code'
-        ? EFFORTS.filter((option) => option === 'auto' || option === row.effort)
-        : EFFORTS
-      : EFFORTS.filter((option) => option === 'auto' || option === row.effort || known.includes(option))
-  if (!editable) return <ReadCell value={reading} tone={tone} />
-  return (
-    <OverrideCell
-      value={value}
-      reading={reading}
-      tone={tone}
-      label={t('providers.models.setEffort', { model: row.name })}
-      options={[
-        { value: DASH, label: t('providers.models.effortDefault') },
-        ...manualOptions.map((option) => ({
-          value: option,
-          label: option === 'auto' ? t('providers.models.effortAutoOption') : option
-        }))
-      ]}
-      onChange={(next) => onEffort(row.name, toEffort(next))}
-    />
-  )
-}
-
-/** A value that holds, filled; one that says "nothing here", outlined — the tier column's two treatments. */
-function Badge({ children, filled = true }: { children: string; filled?: boolean }) {
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded px-1.5 text-[12px]',
-        filled ? 'bg-muted py-0.5' : 'border border-border py-px text-muted-foreground/70'
-      )}
-    >
-      {children}
-    </span>
-  )
-}
-
-const Dash = () => <span className='text-[12px] text-muted-foreground/50'>{DASH}</span>
-
-/**
- * The Effort levels column: what the model's own list reported, lowest
- * first. A dash until it has been read; `unsupported` for a model whose
- * list names no level, which is a fact rather than a gap.
- */
-function EffortLevelsCell({ efforts }: { efforts: ModelRow['supportedEfforts'] }) {
-  const { t } = useTranslation()
-  if (efforts === null) return <Dash />
-  if (efforts.length === 0) return <Badge filled={false}>{t('providers.models.capEffortNone')}</Badge>
-  return (
-    <span className='inline-flex items-center gap-1'>
-      {effortLadder(efforts).map((level) => (
-        <Badge key={level}>{level}</Badge>
-      ))}
-    </span>
-  )
-}
-
-const thinkingCondition = (reading: ThinkingOffReading): string | null => {
-  if (reading.when === 'always') return null
-  if (reading.when === 'upTo') return `≤ ${reading.effort}`
-  return reading.keys.join('/')
-}
-
-/**
- * The Thinking off column: each setting the model takes, as a badge in
- * its wire spelling, with the efforts it holds at beside it. `always on`
- * when it takes neither. A dash until the probe has run, which it does
- * only on switched-on models.
- */
-function ThinkingOffCell({ row }: { row: ModelRow }) {
-  const { t } = useTranslation()
-  if (row.thinkingOff === null) return <Dash />
-  const readings = thinkingOffReadings(row.thinkingOff, row.supportedEfforts)
-  if (readings.length === 0) return <Badge filled={false}>{t('providers.models.capThinkingAlwaysOn')}</Badge>
-  return (
-    <span className='inline-flex items-center gap-1.5'>
-      {readings.map((reading) => {
-        const condition = thinkingCondition(reading)
-        return (
-          <span key={reading.setting} className='inline-flex items-center gap-1.5'>
-            <Badge>{reading.setting}</Badge>
-            {condition === null ? null : <span className='text-[12px] text-muted-foreground'>{condition}</span>}
-          </span>
-        )
-      })}
-    </span>
-  )
-}
-
-function ImagePriceBadge({ pricing }: { pricing: ModelRow['imagePricing'] }) {
-  if (pricing === null) return null
-  return (
-    <span
-      className='text-[11px] text-muted-foreground'
-      title={`API-equivalent USD per 1M tokens (not subscription billing). Text input $${pricing.textInputPer1M}, cached text input $${pricing.cachedTextInputPer1M}; image input $${pricing.imageInputPer1M}, cached image input $${pricing.cachedImageInputPer1M}, image output $${pricing.imageOutputPer1M}. Snapshot ${pricing.snapshot}. Source: ${pricing.source}. Supports ${pricing.endpoints.join(', ')}.`}
-    >
-      image · API equivalent
-    </span>
-  )
-}
-
 function Row({
   row,
   withOverride,
@@ -406,8 +162,10 @@ function Row({
   hasShape,
   hasEffortReading,
   hasThinkingReading,
+  tiers,
   onToggle,
-  onEffort
+  onEffort,
+  onAlias
 }: {
   row: ModelRow
   withOverride: boolean
@@ -418,8 +176,10 @@ function Row({
   hasShape: boolean
   hasEffortReading: boolean
   hasThinkingReading: boolean
+  tiers: readonly TierView[]
   onToggle: (model: string, next: boolean) => void
   onEffort: (model: string, next: ReasoningEffort | null) => void
+  onAlias: (tier: Tier, model: string | null) => void
 }) {
   const { t } = useTranslation()
   // Generic money columns do not describe image vs text modalities.
@@ -452,7 +212,7 @@ function Row({
       ) : null}
       {withTier ? (
         <td className='px-2'>
-          <TierCell row={row} />
+          <TierCell row={row} editable={editable} tiers={tiers} onAlias={onAlias} />
         </td>
       ) : null}
       <td className={cn(NUM_CELL, 'text-muted-foreground')}>{fmtContext(row.contextWindow)}</td>
@@ -491,8 +251,10 @@ export function ModelsTable({
   withTier = false,
   editable = true,
   effortKind = 'openai',
+  tiers = [],
   onToggle,
-  onEffort
+  onEffort,
+  onAlias = () => {}
 }: {
   rows: ModelRow[]
   /** Rows to render, from `offset`. Paging happens AFTER the sort, not
@@ -510,8 +272,11 @@ export function ModelsTable({
    *  add-provider wizard's table is always editable. */
   editable?: boolean
   effortKind?: 'openai' | 'claude-code'
+  /** Every tier this provider resolves, so manual tiers can be assigned from a model row. */
+  tiers?: readonly TierView[]
   onToggle: (model: string, next: boolean) => void
   onEffort: (model: string, next: ReasoningEffort | null) => void
+  onAlias?: (tier: Tier, model: string | null) => void
 }) {
   const { t } = useTranslation()
   // Hooks run before the empty-state return: an early return above a hook
@@ -577,8 +342,10 @@ export function ModelsTable({
               hasShape={hasShape}
               hasEffortReading={hasEffortReading}
               hasThinkingReading={hasThinkingReading}
+              tiers={tiers}
               onToggle={onToggle}
               onEffort={onEffort}
+              onAlias={onAlias}
             />
           ))}
         </tbody>

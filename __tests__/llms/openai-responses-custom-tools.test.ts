@@ -29,7 +29,7 @@ import {
 } from '../../src/llms/transformers/openai/responses/inbound'
 import { processNonSystemMessage, remapTools } from '../../src/llms/transformers/openai/responses/request'
 import { convertResponseToChat } from '../../src/llms/transformers/openai/responses/response-json'
-import { handleStreamEvent } from '../../src/llms/transformers/openai/responses/stream-chunks'
+import { handleStreamEvent, ResponsesStreamCursor } from '../../src/llms/transformers/openai/responses/stream-chunks'
 import { aggregateOpenAiChatSseToJson } from '../../src/llms/utils/sse-aggregate'
 import { ChatCompletionResponseSchema } from '../../src/schemas/wire/openai/chat'
 import { ResponsesAPIPayloadSchema } from '../../src/schemas/wire/openai/responses'
@@ -40,13 +40,15 @@ type Bag = Record<string, unknown>
  *  and the chat aggregator, exactly as ResponsesStreamSession does. */
 async function aggregateResponsesStream(events: unknown[]): Promise<Bag> {
   const chunks: string[] = []
+  const cursor = new ResponsesStreamCursor()
   for (const event of events) {
     handleStreamEvent(
       event as never,
       () => 0,
       (chunk) => {
         chunks.push(`data: ${JSON.stringify(chunk)}\n\n`)
-      }
+      },
+      cursor
     )
   }
   chunks.push('data: [DONE]\n\n')

@@ -54,6 +54,16 @@ const orderOf = (out: ReturnType<typeof select>): (string | null)[] => [out.prim
 const paced = (target: string, projectedPct: number | null) => candidate(target, { projectedPct })
 
 describe('selectTierRoute', () => {
+  test('preserves route identity when different tiers alias the same concrete model', () => {
+    const out = select([
+      candidate('provider,shared', { route: 'provider · opus', targetTier: 'opus', projectedPct: 150 }),
+      candidate('provider,shared', { route: 'provider · sonnet', targetTier: 'sonnet', projectedPct: 150 })
+    ])
+    expect(out.selectedRoutes).toEqual([
+      { target: 'provider,shared', targetTier: 'sonnet', route: 'provider · sonnet' },
+      { target: 'provider,shared', targetTier: 'opus', route: 'provider · opus' }
+    ])
+  })
   test('routes in list order: the first that passes is primary, the rest fall back', () => {
     const out = select([candidate('claude-code,claude-sonnet-5'), candidate('codex,gpt-5.5')])
     expect(out).toMatchObject({

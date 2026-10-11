@@ -18,6 +18,7 @@
 import { HTTPException } from 'hono/http-exception'
 import type { RuntimeProvider, TransformerContext, UnifiedChatRequest, UnifiedMessage } from '@/schemas/domain'
 import { AnthropicIncomingRequestSchema } from '@/schemas/wire/anthropic/messages'
+import { hasSafeguards } from '../../pipeline/classifier-diagnostics'
 import { getThinkLevel } from '../../utils/thinking'
 import { Transformer, type TransformerAuthResult } from '../base'
 import { appendIncomingMessage, buildSystemMessage, buildToolChoice, convertAnthropicToolsToUnified } from './request'
@@ -72,6 +73,13 @@ export class AnthropicTransformer extends Transformer {
   }
 
   async transformRequestOut(request: unknown, _context: TransformerContext): Promise<UnifiedChatRequest> {
+    // Native Messages bypasses this hook. Internal callers that skip route
+    // planning must also fail closed rather than discard this safety field.
+    if (hasSafeguards(request)) {
+      throw new HTTPException(400, {
+        message: 'Anthropic safeguards cannot be converted to another provider; use a native Messages route.'
+      })
+    }
     const result = AnthropicIncomingRequestSchema.safeParse(request)
     if (!result.success) {
       throw new HTTPException(500, {
@@ -101,6 +109,16 @@ export class AnthropicTransformer extends Transformer {
       stream: req.stream,
       tools: tools.length ? tools : undefined,
       tool_choice: buildToolChoice(req.tool_choice)
+    }
+
+    // The modern field wins when both SDK spellings are present, including
+    // explicit null (no format). Never rewrite the supplied JSON Schema.
+    const format = req.output_config?.format === undefined ? req.output_format : req.output_config.format
+    if (format !== undefined && format !== null) {
+      unified.response_format = {
+        type: 'json_schema',
+        json_schema: { name: 'anthropic_output', schema: format.schema, strict: true }
+      }
     }
 
     if (req.thinking?.type === 'enabled') {

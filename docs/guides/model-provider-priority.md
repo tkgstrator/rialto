@@ -1,0 +1,9 @@
+# Bare model names and provider priority
+
+Clients name a model by its native name, for example `gpt-5.6-sol`. `GET /v1/models` publishes one `id` per callable bare name; Codex MCP `status` does the same. Rialto keeps `provider,model` internally for routing, authorization, accounting and failover, and removes the provider prefix before sending the upstream request. Older clients may still send a qualified pair, but new clients do not need to know the provider.
+
+When multiple enabled providers offer the same model, go to **Providers → Priorities** and choose a primary provider. The remaining providers are the fallback order and can be moved up or down. Without an explicit priority, the ambiguous model is omitted from the public catalog and a bare request is refused rather than sending it to an arbitrary account. A token plan restricts the eligible providers before a priority is applied.
+
+The admin API is `GET /api/models/provider-priorities` and `PUT /api/models/provider-priorities` with `{ "model": "gpt-5.6-sol", "providers": ["codex", "openai"] }`. An empty providers array clears the preference. Only providers that have that model can be saved. Deleting a model removes its preference row. The UI and API use the same global order across completion and image entry points; Codex MCP considers only Codex subscription providers.
+
+A routed inbound surface still uses its scenario/provider-tier configuration, not the client's requested model. For a client that explicitly chooses a model, set that surface or access token to passthrough. A preference does not override a surface's denied targets or an access token's plan. Rialto does not claim that shortening catalog IDs alone fixes Codex Desktop's reported editing-tool behavior; test a new Desktop thread with the native ID after deployment.

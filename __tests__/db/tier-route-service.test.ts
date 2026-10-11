@@ -233,13 +233,74 @@ describe.skipIf(!HAS_DB)('loadTierProfileView', () => {
       model: 'claude-sonnet-5',
       targetEnabled: true,
       hostsWebSearch: true,
-      contextWindow: 1_000_000
+      contextWindow: 1_000_000,
+      efforts: []
     })
     expect(view.routes.think.subagent.map((r) => (r.resolved === null ? null : r.resolved.model))).toEqual([
       'claude-opus-4-8',
       null
     ])
     expect(view.routes.longContext).toEqual({ agent: [], subagent: [] })
+  })
+
+  test('subscription efforts come from the resolved model capability, never a different model', async () => {
+    const prisma = getPrismaClient()
+    const provider = await prisma.provider.findUniqueOrThrow({ where: { name: 'claude-code' } })
+    const older = await prisma.model.findUniqueOrThrow({
+      where: { providerId_name: { providerId: provider.id, name: 'claude-sonnet-5' } }
+    })
+    await prisma.modelCapability.create({ data: { modelId: older.id, efforts: ['low', 'future', 'high', 'auto'] } })
+    const newer = await prisma.model.create({
+      data: { providerId: provider.id, name: 'claude-sonnet-5-5', enabled: false }
+    })
+    await prisma.modelCapability.create({ data: { modelId: newer.id, efforts: ['medium'] } })
+    await saveTierProfile('live', profileWith({ default: { agent: [on('claude-code', 'sonnet')] } }))
+    expect((await loadTierProfileView('live')).routes.default.agent[0].resolved?.efforts).toEqual(['low', 'high'])
+    await prisma.model.update({ where: { id: newer.id }, data: { enabled: true } })
+    expect((await loadTierProfileView('live')).routes.default.agent[0].resolved?.efforts).toEqual(['medium'])
+    await prisma.modelCapability.delete({ where: { modelId: newer.id } })
+    expect((await loadTierProfileView('live')).routes.default.agent[0].resolved?.efforts).toEqual([])
+  })
+
+  test('API-key models use only verified effort levels, not subscription capability rows', async () => {
+    const prisma = getPrismaClient()
+    const provider = await prisma.provider.create({
+      data: { name: 'openai', authMode: 'api_key', apiBaseUrl: 'https://api.openai.com/v1' }
+    })
+    const known = await prisma.model.create({ data: { providerId: provider.id, name: 'gpt-5.4', enabled: true } })
+    await prisma.modelCapability.create({ data: { modelId: known.id, efforts: ['ultra'] } })
+    await prisma.model.create({ data: { providerId: provider.id, name: 'gpt-5.4-unknown', enabled: true } })
+    await saveTierProfile('live', profileWith({ default: { agent: [on('openai', 'sonnet'), on('openai', 'haiku')] } }))
+    await prisma.providerTierAlias.createMany({
+      data: [
+        { providerId: provider.id, tier: 'sonnet', modelId: known.id },
+        {
+          providerId: provider.id,
+          tier: 'haiku',
+          modelId: (
+            await prisma.model.findUniqueOrThrow({
+              where: { providerId_name: { providerId: provider.id, name: 'gpt-5.4-unknown' } }
+            })
+          ).id
+        }
+      ]
+    })
+    const view = await loadTierProfileView('live')
+    expect(view.routes.default.agent.map((r) => r.resolved?.efforts)).toEqual([
+      ['none', 'low', 'medium', 'high', 'xhigh'],
+      []
+    ])
+  })
+
+  test('an API-key provider on a non-OpenAI wire shape does not inherit OpenAI effort support', async () => {
+    const prisma = getPrismaClient()
+    const provider = await prisma.provider.create({
+      data: { name: 'custom', authMode: 'api_key', apiStyle: 'anthropic', apiBaseUrl: 'https://example.com' }
+    })
+    const model = await prisma.model.create({ data: { providerId: provider.id, name: 'gpt-5.4', enabled: true } })
+    await saveTierProfile('live', profileWith({ default: { agent: [on('custom', 'sonnet')] } }))
+    await prisma.providerTierAlias.create({ data: { providerId: provider.id, tier: 'sonnet', modelId: model.id } })
+    expect((await loadTierProfileView('live')).routes.default.agent[0].resolved?.efforts).toEqual([])
   })
 
   test("the threshold is 70% of the first usable Default · agent route's window", async () => {

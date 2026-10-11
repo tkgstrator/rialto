@@ -141,6 +141,13 @@ export const AnthropicToolChoiceSchema = z.discriminatedUnion('type', [
 ])
 export type AnthropicToolChoice = z.input<typeof AnthropicToolChoiceSchema>
 
+// Matches the SDK's JSONOutputFormat / BetaJSONOutputFormat. The schema is
+// arbitrary JSON Schema, not a tool's narrower object-parameters schema.
+export const AnthropicJsonOutputFormatSchema = z.object({
+  type: z.literal('json_schema'),
+  schema: z.record(z.string().nonempty(), z.unknown())
+})
+
 export const AnthropicIncomingRequestSchema = z.object({
   model: z.string().nonempty(),
   // max_tokens is required by the Anthropic Messages API spec.
@@ -172,7 +179,12 @@ export const AnthropicIncomingRequestSchema = z.object({
   // Typed loosely — internal shapes may evolve without notice.
   metadata: z.record(z.string(), z.unknown()).optional(),
   context_management: z.record(z.string(), z.unknown()).optional(),
-  output_config: z.record(z.string(), z.unknown()).optional(),
+  output_config: z
+    .object({ format: AnthropicJsonOutputFormatSchema.nullable().optional() })
+    .catchall(z.unknown())
+    .optional(),
+  // The beta SDK's deprecated spelling has the same wire shape.
+  output_format: AnthropicJsonOutputFormatSchema.nullable().optional(),
   diagnostics: z.record(z.string(), z.unknown()).optional()
 })
 export type AnthropicIncomingRequest = z.input<typeof AnthropicIncomingRequestSchema>
