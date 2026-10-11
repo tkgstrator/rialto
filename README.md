@@ -221,7 +221,7 @@ If the profile cannot be loaded or routing fails for any other reason, the calle
 
 The profile also carries four constraints, set with `PUT /api/routing/profiles/{key}` (the Routing page does not show them): `exhaustedBehavior` (`429` / `passthrough`), `quotaSkipPct` (default 100), `errorRateSkipPct` (a fraction, default 0.5) and `minHealthSamples` (default 5).
 
-**Passthrough** (`passthrough`, or an access token pinned to the reserved `passthrough` profile). The caller's `body.model` goes upstream as sent: `provider,model`, or a bare model name that exactly one enabled provider hosts. A surface can deny specific `provider,model` pairs in this mode (Routing → Reachable targets).
+**Passthrough** (`passthrough`, or an access token pinned to the reserved `passthrough` profile). The caller's `body.model` goes upstream as sent: a bare model name such as `gpt-5.5`, or the older `provider,model` form. When several enabled providers host the same bare name, the order set in Providers → Priorities picks one and the rest become its fallbacks; with no order set, the request is refused rather than sent to an arbitrary provider. A surface can deny specific `provider,model` pairs in this mode (Routing → Reachable targets).
 
 Either way, a provider or model switched off on the Providers page is never dispatched — not from a route, not from a passthrough request, not as a failover target, and not through a disabled subscription provider's accounts. Naming one by hand is refused rather than forwarded.
 
@@ -316,8 +316,8 @@ Any OpenAI SDK caller (Codex CLI, Cline, OpenWebUI, `openai` for Python / JS, `c
 
 | Method | Path | Notes |
 |---|---|---|
-| `GET`  | `/v1/models`             | Returns the enabled, routable models as `{object:'list', data:[…]}`. Each `id` is Rialto's canonical `provider,model` (round-trip it straight into the next call); `owned_by` is the provider name. Each entry also carries `provider`, the bare `model` name, `context_window` and `pricing` (USD per million tokens: input, output, cached input and both cache-write rates; `null` unless input and output are both known), so an app that bills its own users can price a call from this list. |
-| `POST` | `/v1/chat/completions`   | Standard Chat Completions — stream + non-stream. Body's `model` field takes the `provider,model` id from `/v1/models`. |
+| `GET`  | `/v1/models`             | Returns the enabled, routable models as `{object:'list', data:[…]}`. Each `id` is the bare model name (round-trip it straight into the next call); `owned_by` is the provider Rialto will send it to. A name several providers host is listed only once Providers → Priorities orders them. Each entry also carries `provider`, the bare `model` name, `context_window` and `pricing` (USD per million tokens: input, output, cached input and both cache-write rates; `null` unless input and output are both known), so an app that bills its own users can price a call from this list. |
+| `POST` | `/v1/chat/completions`   | Standard Chat Completions — stream + non-stream. Body's `model` field takes an `id` from `/v1/models`. A `provider,model` pair is still accepted from older clients. |
 | `POST` | `/v1/responses`          | OpenAI Responses API — stream + non-stream. Same model addressing as above. |
 
 Auth on these three paths is **`Authorization: Bearer <issued access token>` only** — `x-api-key` is an Anthropic convention and is rejected here, and 401 bodies follow OpenAI's `{error:{message,type,code}}` shape. The Anthropic surface (`/v1/messages`) additionally reads `x-api-key`, but the value must still be an issued access token.
@@ -334,14 +334,14 @@ client = OpenAI(
 
 # 1. Discover routable models
 for m in client.models.list().data:
-    print(m.id, m.owned_by)
-# → codex,gpt-5.5  (owned_by=codex)
-# → claude-code,claude-sonnet-5  (owned_by=claude-code)
+    print(m.id)
+# → gpt-5.5
+# → claude-sonnet-5
 # ...
 
 # 2. Chat Completions (routed through your Codex Plus/Pro subscription)
 res = client.chat.completions.create(
-    model="codex,gpt-5.5",
+    model="gpt-5.5",
     messages=[{"role": "user", "content": "reply pong"}],
 )
 print(res.choices[0].message.content)  # → pong
@@ -358,7 +358,7 @@ const client = new OpenAI({
 })
 
 const stream = await client.chat.completions.create({
-  model: 'codex,gpt-5.5',
+  model: 'gpt-5.5',
   messages: [{ role: 'user', content: 'reply pong' }],
   stream: true,
 })
@@ -367,7 +367,7 @@ for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.
 
 Any client that supports overriding `base_url` / `baseURL` works the same way.
 
-**What applies on these surfaces.** Failover, account rotation, and the `provider,model` addressing always apply. Scenario routing applies only once you switch the surface from `passthrough` to `routed` — and then the model name the client sends (`codex,gpt-5.5`, `gemini-2.5-pro`) picks nothing: a request that asks for reasoning (`reasoning_effort`, `reasoning`, `thinkingConfig`) walks the Think list, a long one the Long context list, the rest Default, on the Agent lane. A profile shared between surfaces shares its lists, so point a surface at its own profile when it should route differently. Persona injection does **not** apply — it is `/v1/messages` only (see Personas above).
+**What applies on these surfaces.** Failover, account rotation, and model addressing by bare name always apply. Scenario routing applies only once you switch the surface from `passthrough` to `routed` — and then the model name the client sends (`gpt-5.5`, `gemini-2.5-pro`) picks nothing: a request that asks for reasoning (`reasoning_effort`, `reasoning`, `thinkingConfig`) walks the Think list, a long one the Long context list, the rest Default, on the Agent lane. A profile shared between surfaces shares its lists, so point a surface at its own profile when it should route differently. Persona injection does **not** apply — it is `/v1/messages` only (see Personas above).
 
 ## 🧩 Codex MCP server
 
