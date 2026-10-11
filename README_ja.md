@@ -221,7 +221,7 @@ Rialto が `body.model` に対してすることは、この 2 つだけです�
 
 プロファイルは制約も 4 つ持ち、`PUT /api/routing/profiles/{key}` で設定します（Routing ページには出ません）：`exhaustedBehavior`（`429` / `passthrough`）、`quotaSkipPct`（デフォルト 100）、`errorRateSkipPct`（比率、デフォルト 0.5）、`minHealthSamples`（デフォルト 5）。
 
-**パススルー**（`passthrough`、または予約プロファイル `passthrough` に固定されたアクセストークン）。呼び出し側の `body.model` が送られたとおりに上流へ出ます：`provider,model` か、有効なプロバイダーがちょうど 1 つだけ提供している bare なモデル名。このモードでは受け口が特定の `provider,model` を拒否できます（Routing → Reachable targets）。
+**パススルー**（`passthrough`、または予約プロファイル `passthrough` に固定されたアクセストークン）。呼び出し側の `body.model` が送られたとおりに上流へ出ます：`gpt-5.5` のような bare なモデル名か、従来の `provider,model` 形式。同じ bare 名を複数の有効なプロバイダーが提供している場合は、Providers → Priorities で決めた順序の先頭に送り、残りはフォールバックになります。順序が未設定なら、任意のプロバイダーに送ることはせずリクエストを拒否します。このモードでは受け口が特定の `provider,model` を拒否できます（Routing → Reachable targets）。
 
 どちらのモードでも、Providers ページで無効化したプロバイダーやモデルには決して送られません — ルートからも、パススルーのリクエストからも、フェイルオーバー先としても、無効化されたサブスクリプションプロバイダーのアカウント経由でも。手で名指ししても転送されず、拒否されます。
 
@@ -316,8 +316,8 @@ OpenAI SDK の呼び手（Codex CLI、Cline、OpenWebUI、Python / JS の `opena
 
 | メソッド | パス | 備考 |
 |---|---|---|
-| `GET`  | `/v1/models`             | 有効でルーティング可能なモデルを `{object:'list', data:[…]}` で返します。各 `id` は Rialto の正準形 `provider,model` なので、そのまま次の呼び出しに使い回せます。`owned_by` はプロバイダー名です。 |
-| `POST` | `/v1/chat/completions`   | 標準の Chat Completions — ストリーム / 非ストリーム両対応。body の `model` には `/v1/models` の `provider,model` id を渡します。 |
+| `GET`  | `/v1/models`             | 有効でルーティング可能なモデルを `{object:'list', data:[…]}` で返します。各 `id` は bare なモデル名で、そのまま次の呼び出しに使い回せます。`owned_by` は Rialto がそのモデルを送るプロバイダーの名前です。複数のプロバイダーが提供するモデル名は、Providers → Priorities で順序を決めるまで一覧に出ません。 |
+| `POST` | `/v1/chat/completions`   | 標準の Chat Completions — ストリーム / 非ストリーム両対応。body の `model` には `/v1/models` の `id` を渡します。古いクライアント向けに `provider,model` も引き続き受け付けます。 |
 | `POST` | `/v1/responses`          | OpenAI Responses API — ストリーム / 非ストリーム両対応。モデル指定は上と同じ。 |
 
 この 3 パスの認証は **`Authorization: Bearer <発行済みアクセストークン>` のみ**です（`x-api-key` は Anthropic の規約なのでここでは拒否され、401 の body は OpenAI の `{error:{message,type,code}}` 形式に従います）。Anthropic 面（`/v1/messages`）は追加で `x-api-key` も読みますが、値はやはり発行済みアクセストークンでなければなりません。
@@ -334,14 +334,14 @@ client = OpenAI(
 
 # 1. ルーティング可能なモデルを列挙
 for m in client.models.list().data:
-    print(m.id, m.owned_by)
-# → codex,gpt-5.5  (owned_by=codex)
-# → claude-code,claude-sonnet-5  (owned_by=claude-code)
+    print(m.id)
+# → gpt-5.5
+# → claude-sonnet-5
 # ...
 
 # 2. Chat Completions（Codex Plus/Pro サブスクリプション経由でルーティング）
 res = client.chat.completions.create(
-    model="codex,gpt-5.5",
+    model="gpt-5.5",
     messages=[{"role": "user", "content": "reply pong"}],
 )
 print(res.choices[0].message.content)  # → pong
@@ -358,7 +358,7 @@ const client = new OpenAI({
 })
 
 const stream = await client.chat.completions.create({
-  model: 'codex,gpt-5.5',
+  model: 'gpt-5.5',
   messages: [{ role: 'user', content: 'reply pong' }],
   stream: true,
 })
@@ -367,7 +367,7 @@ for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.
 
 `base_url` / `baseURL` を上書きできるクライアントなら同じように動きます。
 
-**これらの受け口で何が効くか。** フェイルオーバー、アカウントローテーション、`provider,model` 形式のモデル指定は常に効きます。シナリオ別ルーティングは、その受け口を `passthrough` から `routed` に切り替えて初めて効きます — そしてそのとき、クライアントが送るモデル名（`codex,gpt-5.5`、`gemini-2.5-pro`）は何も選びません。推論を求めるリクエスト（`reasoning_effort`・`reasoning`・`thinkingConfig`）は Think のリスト、長いリクエストは Long context のリスト、それ以外は Default のリストで、いずれも Agent レーンで振り分けられます。プロファイルを受け口どうしで共有すればリストも共有されるので、振り分けを変えたい受け口には専用のプロファイルを向けてください。ペルソナ挿入は効き**ません** — `/v1/messages` 専用です（上記「ペルソナ」参照）。
+**これらの受け口で何が効くか。** フェイルオーバー、アカウントローテーション、bare なモデル名による指定は常に効きます。シナリオ別ルーティングは、その受け口を `passthrough` から `routed` に切り替えて初めて効きます — そしてそのとき、クライアントが送るモデル名（`gpt-5.5`、`gemini-2.5-pro`）は何も選びません。推論を求めるリクエスト（`reasoning_effort`・`reasoning`・`thinkingConfig`）は Think のリスト、長いリクエストは Long context のリスト、それ以外は Default のリストで、いずれも Agent レーンで振り分けられます。プロファイルを受け口どうしで共有すればリストも共有されるので、振り分けを変えたい受け口には専用のプロファイルを向けてください。ペルソナ挿入は効き**ません** — `/v1/messages` 専用です（上記「ペルソナ」参照）。
 
 ## 🧩 Codex MCP サーバー
 
