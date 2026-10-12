@@ -76,9 +76,10 @@ export function buildToolConfig(toolChoice: UnifiedChatRequest['tool_choice']): 
 /** Build the `tools[]` slice (function declarations + optional googleSearch). */
 export function buildTools(requestTools: UnifiedChatRequest['tools']): GeminiTool[] {
   const tools: GeminiTool[] = []
-  // Gemini's wire format has no equivalent of the hosted tools Codex sends
-  // (`namespace`, `custom`, `local_shell`) — no function signature to declare.
-  // Drop them rather than inventing a declaration Gemini would reject.
+  // Namespace and custom tools arrive here already lowered to functions
+  // (`buildRequestBody` → `tool-lowering.ts`). What is left that is not a
+  // function — a hosted tool such as `local_shell` — has no signature to
+  // declare, and is dropped rather than invented into one Gemini rejects.
   const functionTools = requestTools?.filter(isUnifiedFunctionTool)
   const functionDeclarations: GeminiFunctionDeclaration[] | undefined = functionTools
     ?.filter((tool) => tool.function.name !== 'web_search')

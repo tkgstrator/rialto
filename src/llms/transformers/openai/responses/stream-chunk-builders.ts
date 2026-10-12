@@ -1,7 +1,7 @@
 import type { MessageContent } from '@/schemas/domain/unified'
 import type { ResponsesStreamEvent } from '@/schemas/wire/openai/responses'
 import { nowSeconds } from '../../../utils/time'
-import { firstDefined, modelOr, newChatcmplId, stringDeltaOrEmpty } from './helpers'
+import { firstDefined, modelOr, namespaceOf, newChatcmplId, stringDeltaOrEmpty } from './helpers'
 
 export function buildTextDeltaChunk(
   data: ResponsesStreamEvent,
@@ -55,7 +55,10 @@ export function buildToolCallAddedChunk(
               // aggregator keeps it while the payload deltas accumulate,
               // and the Responses inbound converter reads it to decide
               // which output item the caller gets back.
-              type: item?.type === 'custom_tool_call' ? 'custom' : 'function'
+              type: item?.type === 'custom_tool_call' ? 'custom' : 'function',
+              // Likewise the namespace tool the call is in, which the
+              // Responses inbound converter hands back on the item.
+              ...namespaceOf(item?.namespace)
             }
           ]
         },

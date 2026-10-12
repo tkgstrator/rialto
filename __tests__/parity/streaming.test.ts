@@ -174,3 +174,63 @@ describe('gemini-generate — supported, incrementally', () => {
     expect(texts).toEqual(['Hel', 'lo'])
   })
 })
+
+// The rows above start from chat chunks because that is what a provider
+// step hands the surface. A Claude provider step has an Anthropic stream
+// to hand over, and converts it event by event
+// (`anthropic/response-to-chat-stream.ts`), so the surface's converter
+// relays Claude's cadence too. Note (14) in inbound-parity.md.
+describe('Claude as the target of an OpenAI surface — supported, incrementally', () => {
+  const anthropicFrame = (event: Record<string, unknown>): string =>
+    `event: ${String(event.type)}\ndata: ${JSON.stringify(event)}\n\n`
+  const textDelta = (text: string) => ({
+    type: 'content_block_delta',
+    index: 0,
+    delta: { type: 'text_delta', text }
+  })
+  const START = {
+    type: 'message_start',
+    message: { id: 'msg_p', type: 'message', role: 'assistant', model: 'claude-opus-5-5', content: [], usage: {} }
+  }
+
+  test('two Anthropic text deltas reach a Responses caller as two output_text deltas', async () => {
+    const events = [
+      START,
+      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+      textDelta('Hel'),
+      textDelta('lo'),
+      { type: 'content_block_stop', index: 0 },
+      { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 2 } },
+      { type: 'message_stop' }
+    ]
+    const anthropic = new Response(events.map(anthropicFrame).join(''), {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' }
+    })
+    const chat = await new AnthropicTransformer().transformResponseOut(anthropic, ctx)
+    const converted = await new OpenAIResponsesTransformer().transformResponseIn(chat, ctx)
+    const deltas = dataPayloads(await converted.text())
+      .filter((e) => e.type === 'response.output_text.delta')
+      .map((e) => e.delta)
+    expect(deltas).toEqual(['Hel', 'lo'])
+  })
+
+  test('the first chat chunk is readable before the Anthropic stream has ended', async () => {
+    const upstream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(anthropicFrame(START)))
+        // Deliberately left open.
+      }
+    })
+    const chat = await new AnthropicTransformer().transformResponseOut(
+      new Response(upstream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }),
+      ctx
+    )
+    const body = chat.body
+    if (body === null) throw new Error('the converted response carries no body')
+    const reader = body.getReader()
+    const first = await reader.read()
+    expect(new TextDecoder().decode(first.value)).toContain('chat.completion.chunk')
+    await reader.cancel()
+  })
+})

@@ -30,7 +30,13 @@ const ANTHROPIC_TO_OPENAI: Record<string, string> = {
   // Asymmetric override: sequence-triggered stops read as ordinary
   // completions to an OpenAI Chat client; there is no equivalent of
   // Anthropic's `stop_sequence` in the OpenAI taxonomy.
-  stop_sequence: 'stop'
+  stop_sequence: 'stop',
+  // Reverse-only: Anthropic's safety decline is what OpenAI calls a
+  // content filter, and running out of context window cuts the answer
+  // short exactly as running out of `max_tokens` does. Read as `stop`,
+  // both looked like a finished answer that happened to be empty.
+  refusal: 'content_filter',
+  model_context_window_exceeded: 'length'
 }
 
 /**

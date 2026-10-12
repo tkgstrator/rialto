@@ -34,6 +34,10 @@ function foldOpenAiChatChunks(chunks: Record<string, unknown>[]): Record<string,
       {
         id?: string
         type?: string
+        // Not OpenAI's: the namespace a call from a Responses upstream was
+        // made in (UnifiedToolCallSchema), stated on its first chunk. Kept
+        // so the Responses envelope built from this one can hand it back.
+        namespace?: string
         function: { name?: string; arguments: string }
       }
     >
@@ -77,6 +81,7 @@ function foldOpenAiChatChunks(chunks: Record<string, unknown>[]): Record<string,
             const existing = acc.toolCalls.get(tcIndex) ?? { function: { arguments: '' } }
             if (typeof tcObj.id === 'string') existing.id = tcObj.id
             if (typeof tcObj.type === 'string') existing.type = tcObj.type
+            if (typeof tcObj.namespace === 'string' && tcObj.namespace.length > 0) existing.namespace = tcObj.namespace
             const fn = tcObj.function
             if (fn !== null && typeof fn === 'object') {
               const fnObj = fn as Record<string, unknown>
@@ -100,6 +105,7 @@ function foldOpenAiChatChunks(chunks: Record<string, unknown>[]): Record<string,
           .map(([, tc]) => ({
             id: tc.id,
             type: tc.type ?? 'function',
+            ...(tc.namespace === undefined ? {} : { namespace: tc.namespace }),
             function: { name: tc.function.name, arguments: tc.function.arguments }
           }))
       }

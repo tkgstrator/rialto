@@ -38,9 +38,9 @@ cell note below.
 
 | | messages | chat/completions | responses | gemini |
 |---|---|---|---|---|
-| streaming (SSE) | Supported | Supported | Supported (1) | Supported |
+| streaming (SSE) | Supported | Supported (14) | Supported (1) | Supported |
 | non-streaming aggregation | Supported | Supported | Supported | Supported |
-| tool use | Supported | Supported | Supported | Supported (2) |
+| tool use | Supported | Supported (14) | Supported (13) | Supported (2) |
 | system prompt | Supported | Supported | Supported | Supported (3) |
 | image input | Supported | Supported | Supported | Supported (4) |
 | thinking / reasoning | Supported (5) | Partial (6) | Partial (7) | Supported (8) |
@@ -53,14 +53,14 @@ cell note below.
 
 | Row | Tests that back it |
 |---|---|
-| streaming (SSE) | `__tests__/parity/streaming.test.ts` |
+| streaming (SSE) | `__tests__/parity/streaming.test.ts`, `__tests__/llms/anthropic-response-to-chat-stream.test.ts`, `__tests__/llms/claude-conversion-pipeline.test.ts` |
 | non-streaming aggregation | `__tests__/parity/non-stream-aggregate.test.ts`, `__tests__/llms/sse-aggregate.test.ts` |
-| tool use | `__tests__/parity/tool-use.test.ts`, `__tests__/llms/transformers/anthropic-request.test.ts`, `__tests__/llms/openai-responses-inbound.test.ts`, `__tests__/llms/gemini-inbound-response.test.ts` |
+| tool use | `__tests__/parity/tool-use.test.ts`, `__tests__/llms/transformers/anthropic-request.test.ts`, `__tests__/llms/openai-responses-inbound.test.ts`, `__tests__/llms/openai-responses-lite.test.ts`, `__tests__/llms/transformers/codex-request.test.ts`, `__tests__/llms/gemini-inbound-response.test.ts`, `__tests__/llms/tool-lowering.test.ts`, `__tests__/llms/transformers/anthropic-request-from-unified.test.ts` |
 | system prompt | `__tests__/parity/system-prompt.test.ts`, `__tests__/llms/openai-transformer-request-out.test.ts` |
 | image input | `__tests__/parity/image-input.test.ts` |
 | thinking / reasoning | `__tests__/parity/thinking.test.ts` |
-| usage record (RequestLog) | `__tests__/parity/usage-record.test.ts` |
-| error shape | `__tests__/parity/error-envelope.test.ts`, `__tests__/api/error-shape.test.ts` |
+| usage record (RequestLog) | `__tests__/parity/usage-record.test.ts`, `__tests__/llms/claude-conversion-pipeline.test.ts` |
+| error shape | `__tests__/parity/error-envelope.test.ts`, `__tests__/api/error-shape.test.ts`, `__tests__/llms/anthropic-response-to-chat-stream.test.ts` |
 | cache token accounting | `__tests__/parity/cache-tokens.test.ts` |
 | failover / 429 | `__tests__/parity/failover-429.test.ts`, `__tests__/parity/routing-mode.test.ts` |
 
@@ -322,6 +322,166 @@ This began as "before there is anywhere to read `cachedContentTokenCount`, no ro
 all". The fix in (9) made the rows appear, and `cachedContentTokenCount` is now read as a breakdown
 along with them. The return direction (`toUsageMetadata` emitting `cachedContentTokenCount`) was
 already correct.
+
+### (13) responses × tool use — the Lite shape and tool namespaces — **fixed** (2026-10-12)
+
+Codex CLI 0.160 sends the models it knows (`gpt-5.6-*`, `gpt-6-*`) the **"Responses Lite"** shape:
+no top-level `instructions` or `tools`, its base prompt as `developer` messages, and its tools as
+the first input item, `{type:'additional_tools', role:'developer', tools:[…]}`. Every tool there
+sits inside a `namespace` (`functions`, `clock`, `collaboration`), and commands run only through
+`functions.exec`, a custom tool with a lark grammar whose input is JavaScript. The model calls it
+as `{type:'custom_tool_call', name:'exec', namespace:'functions', input}`; the CLI dispatches on
+namespace and name together, and on the next turn replays that item verbatim beside a
+`custom_tool_call_output` whose `output` is an **array of content parts**. With a model name the
+CLI does not recognise it sends the classic shape instead, which is why the `codex,`-prefixed
+names kept working.
+
+**What broke.** `convertResponsesRequestToUnified` skipped the `additional_tools` item as an
+unknown one, so the upstream was sent **no tools at all** and the model could not run a command.
+The other two legs would have failed next: a call's `namespace` was dropped in both directions,
+and an array output was `JSON.stringify`'d into the tool message, so the model read its tool's
+result as a JSON dump of part objects.
+
+**The fix** stays in the conversion path — no bypass — so it holds in both routing modes:
+
+- **Declaration.** The item's tools are read exactly as top-level ones (`declaredTools` in
+  `src/llms/transformers/openai/responses/inbound.ts`): a function becomes a unified function
+  tool, a namespace / custom tool rides as a `UnifiedPassthroughTool`. Top-level tools come first,
+  then each item's in input order, and one name keeps one tool — the later declaration, in the
+  earlier one's place, so a redefinition does not reorder the cached tool list.
+- **Call.** `UnifiedToolCallSchema` has an optional `namespace` beside `type`, carried on every
+  leg: request (`responses/request.ts` re-emits it on `function_call` / `custom_tool_call`),
+  upstream stream (`stream-chunk-builders.ts`), upstream JSON (`response-json.ts`), the chat
+  aggregator (`utils/sse-aggregate/openai-chat.ts`), and back to the caller
+  (`buildResponsesOutputItems`, `inbound-stream.ts` on `output_item.added` / `.done` and
+  `response.completed`; `inbound-envelope-sse.ts` replays those items as built).
+- **Result.** An array output becomes unified content parts (text, and images with the media type
+  a data URL names), and goes back to a Responses upstream as the same `input_text` /
+  `input_image` array, which both output kinds take.
+
+Upstream, `codex-oauth` sends the classic shape (`request-shape.ts`): the namespaces as top-level
+`tools`, the developer messages kept in `input`, the neutral `instructions`. The
+`x-openai-internal-codex-responses-lite` header is not forwarded — the provider chain sends only
+the headers its transformers write.
+
+**What other targets do with it.** Chat Completions, Anthropic and Gemini take function tools only,
+so for them the namespaces and custom tools are **lowered to functions** on the way out and the
+calls **raised back** on the way in — see (14). (This first shipped dropping them instead: a Lite
+request routed to Chat or Gemini ran without tools, a custom call in history broke both, and
+Anthropic was sent no conversion at all.)
+
+Backed by `__tests__/llms/openai-responses-lite.test.ts` (each leg),
+`__tests__/llms/transformers/codex-request.test.ts` (the CLI's own requests, minimised under
+`__tests__/fixtures/codex/cli-0.160-*.json`, through the whole Codex chain) and the Lite rows of
+`__tests__/parity/tool-use.test.ts`.
+
+### (14) chat/completions and responses × a Claude (or any function-only) target — **fixed** (2026-10-12)
+
+The cells above judge a surface's own conversion. What its caller can actually do also depends on
+the provider step converting unified into the target's wire format — and for a Claude target it did
+not. `/v1/chat/completions` and `/v1/responses` should answer in their own format whatever model
+they are routed to, exactly as `/v1/messages` answers in Anthropic's when Claude Code is routed to
+Codex or Gemini.
+
+**What broke.** `claude-code-oauth.transformRequestIn` only ran `auth()` (bearer, identity, system
+hoist, effort → `output_config`) and sent the Chat-shaped body as it was —
+`tools: [{type:'function', function}]`, `tool_calls`, `role:'tool'`, `content: null` — which
+Anthropic refuses; the API-key `anthropic` step had no `transformRequestIn` at all and sent the body
+under the key as a Bearer with no `anthropic-version`. On the way back the blocking JSON was
+converted, but an SSE stream — what the Codex CLI and most SDK clients ask for — was relayed as raw
+Anthropic events no OpenAI parser reads. The subscription step also never sent the
+`oauth-2025-04-20` beta on this path: the /v1 adapter adds it to the client's headers, and the
+conversion path forwards none of those.
+
+**The fix** stays in the conversion path, inside the two Claude steps — adding a separate conversion
+step would make the chain two long and break the `/v1/messages` bypass (see
+[pipeline-overview.md](./pipeline-overview.md), "transformer chain の導出"):
+
+- **Request** — `src/llms/transformers/anthropic/request-from-unified.ts`, run by both steps' `transformRequestIn`.
+  The body is built field by field, so nothing OpenAI-only (`stream_options`, `store`, `include`,
+  `parallel_tool_calls`, `user`, …) goes with it. System and developer messages are hoisted into
+  `system` (the subscription step then adds the Claude Code identity first); image parts become
+  base64 or url image blocks; `tool_calls` become `tool_use` with the parsed input; a run of tool
+  messages becomes one user turn of `tool_result` blocks, results first, content parts and images
+  kept; consecutive same-role messages merge. `tool_choice` maps to `auto` / `none` / `any` / `tool`,
+  and `parallel_tool_calls: false` (the Codex CLI's Lite setting) to `disable_parallel_tool_use`.
+  `max_tokens` is required by Anthropic and defaults to 32 000 (`model-rules.ts`) when the caller set
+  no cap. Effort becomes `output_config.effort` when the model's own list reported that level. A
+  strict JSON schema becomes `output_config.format`. The function `web_search` marker becomes
+  Anthropic's `web_search_20250305` server tool. Both steps write their own headers
+  (`anthropic-version`; the subscription adds its bearer and the OAuth beta; the API-key step sends
+  the key once, as `x-api-key`).
+- **Prompt caching.** OpenAI caches a repeated prefix by itself; Anthropic caches only up to a
+  `cache_control` breakpoint, which no OpenAI wire format can place — so without one, every turn of a
+  long Codex session would be billed as fresh input. The conversion puts one on the tool list, the
+  system prompt and the last block of the conversation, the way Claude Code places its own, counting
+  any a caller set against Anthropic's limit of four.
+- **What the target model refuses.** The caller shaped its request for whatever model it had in
+  mind, and Rialto may route it to a newer one. `model-rules.ts` reads the model id: `temperature` /
+  `top_p` are left out for Opus 4.7+, Sonnet 5+, Fable and Mythos (and only one of the two is sent
+  where they are allowed; temperature is clamped from OpenAI's 0–2 to Anthropic's 0–1); a forced
+  `tool_choice` relaxes to `auto` for Opus 5.5, Sonnet 5.5, Fable 5.1 and Mythos 5.1.
+- **Thinking and tool loops.** An OpenAI-family caller never hands Anthropic thinking blocks back —
+  its wire format has nowhere to keep them — so a continued tool loop arrives without them. Nothing
+  on this path turns thinking on: with `thinking` left out the model runs its default (adaptive on
+  Opus 5 and later, Sonnet 5.5, Fable; off on older models), and adaptive thinking does not require
+  the last assistant turn to start with a thinking block. Manual thinking (`budget_tokens`) does,
+  so if a caller sends one anyway on a turn that answers a tool call it is left out of that turn
+  rather than sent as a certain 400.
+- **Response** — both steps' `transformResponseOut`: blocking JSON through `response-to-chat.ts`,
+  SSE event by event through `response-to-chat-stream.ts` (text deltas, `tool_use` with its
+  `input_json_delta` fragments as indexed `tool_calls`, thinking as `delta.thinking`, usage with the
+  cache read as `prompt_tokens_details.cached_tokens`, `stop_reason` → `finish_reason`, `refusal` →
+  `content_filter`). An `error` event mid-stream becomes the `{error:{…}}` chunk the Responses → Chat
+  converter already writes for a Codex failure, so a stream:false caller gets the status
+  (`findSseStreamDefect`, 529 for `overloaded_error`) and the `/v1/responses` stream converter now
+  turns that chunk into `response.failed` instead of folding it into a completed turn. The request
+  row is unaffected: usage is read off the raw Anthropic clone, as for any provider.
+
+**Responses-only tools on a function-only wire.** Chat Completions, Anthropic and Gemini declare
+functions only, so before any of them is sent a Responses caller's namespace and custom tools are
+**lowered** (`src/llms/utils/tool-lowering.ts`): each namespace member becomes a function of its own,
+and a custom tool a function taking one string, `input`, whose description carries the tool's
+grammar (the lark grammar of the Codex CLI's `exec`) so the model can write valid input without the
+grammar-constrained decoding its own upstream had. Hosted tools with no function form are dropped,
+and `tool_choice` with them when nothing is left. A namespace member keeps its bare name when no other
+declared tool would get the same one — so the model sees `exec`, `sleep`, `spawn_agent`, the names
+the Codex prompt talks about — and becomes `${namespace}__${name}` otherwise; a caller's own
+top-level function keeps its name. Names are fitted to `^[a-zA-Z_][a-zA-Z0-9_-]{0,63}$`, which all
+three wire formats accept. Calls in history are lowered the same way: a custom call's text becomes
+`{"input": …}` arguments, and no `namespace` or `tool_call_type` reaches a wire with no field for it.
+
+On the way back the `/v1/responses` endpoint **raises** each call (blocking `buildResponsesOutputItems`,
+streaming `inbound-stream.ts`; `inbound-envelope-sse.ts` replays the raised items). The mapping is
+recomputed from the caller's own body on `context.req.body` with the same `declaredTools` the request
+side used, so both arrive at the same names from the declared list alone. A call into a lowered tool
+gets its declared name and namespace back, and a lowered custom tool comes back as a
+`custom_tool_call` whose `input` is the text under `arguments.input` (the raw arguments when they do
+not parse to that). Raising only fills in what is missing: a call that states a namespace, or the
+custom kind, came from a Responses upstream that was sent the tools verbatim — the Codex backend —
+and goes back byte for byte as it came. While streaming, a raised custom call's fragments are held
+until the call closes and sent as one `response.custom_tool_call_input.delta`: the deltas have to
+concatenate to the raw text `.done` states, which is unknowable until the arguments are complete, and
+the cost is nil in practice — Anthropic delivers a tool's input in one burst at the end of the block
+unless eager input streaming is requested, Gemini sends whole calls, and the CLI runs nothing before
+`.done`. Everything else in the response keeps streaming around it.
+
+**Still not carried** (honest edges): thinking blocks do not round-trip (the Responses return has no
+reasoning item — (7)); Claude's own server-tool blocks (web search calls and results) are not
+surfaced, only the text they produce; `pause_turn` ends as `stop`; a non-strict JSON schema is left
+out rather than enforced; an API-key provider has no recorded effort levels, so its effort is left
+out; a Chat Completions caller's own nested `custom` tool is not lowered. None of this has been run
+against the real Anthropic API from this path — the tests use a loopback upstream and recorded
+shapes.
+
+Backed by `__tests__/llms/transformers/anthropic-request-from-unified.test.ts` (the body each step
+sends, asserted whole, incl. the Lite fixtures), `__tests__/llms/anthropic-response-to-chat-stream.test.ts`
+(Anthropic SSE → Chat SSE → Responses SSE, errors, the raised `exec`),
+`__tests__/llms/claude-conversion-pipeline.test.ts` (real registry and pipeline against a loopback
+upstream, the usage row, and the `/v1/messages` bypass pinned unchanged),
+`__tests__/llms/tool-lowering.test.ts` and `__tests__/llms/openai-responses-lite.test.ts` (lowering
+and raising, the fixtures through Chat and Gemini), and the Claude rows of
+`__tests__/parity/tool-use.test.ts` and `__tests__/parity/streaming.test.ts`.
 
 ## Confirmed not to vary by surface
 
