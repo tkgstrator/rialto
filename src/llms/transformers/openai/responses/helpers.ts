@@ -25,6 +25,17 @@ export function firstDefined(candidates: Array<string | undefined>): string | un
 }
 
 /**
+ * A call's `namespace`, as a fragment to spread into the item or tool call
+ * being built: `{ namespace }` for a non-empty string, `{}` for anything
+ * else. Absent, `null` and `""` all mean a top-level tool, and a call
+ * outside a namespace has to come out with no key at all — byte-identical
+ * to every call before namespaces were carried.
+ */
+export function namespaceOf(value: unknown): { namespace?: string } {
+  return typeof value === 'string' && value.length > 0 ? { namespace: value } : {}
+}
+
+/**
  * Returns the provided model name, or a neutral placeholder when upstream
  * omitted it. Keeps the wire shape stable for downstream consumers that
  * expect a non-empty model, without naming a model the upstream never

@@ -10,6 +10,7 @@ import { isUnifiedFunctionTool, type UnifiedChatRequest } from '@/schemas/domain
 import type { ResponsesUnifiedChatRequest } from '@/schemas/wire/openai/responses'
 import { openCodexReasoning } from '../../../utils/codex-reasoning'
 import { isObject } from '../../../utils/guards'
+import { namespaceOf } from './helpers'
 
 type MutableMessage = Record<string, unknown>
 
@@ -162,6 +163,10 @@ export function processNonSystemMessage(
     // a custom tool call, and the mirror image too.
     toolMessage.type = message.tool_call_type === 'custom' ? 'custom_tool_call_output' : 'function_call_output'
     toolMessage.call_id = message.tool_call_id
+    // Content parts, converted above, go out as the output's own
+    // `input_text` / `input_image` array rather than joined into text: both
+    // output kinds take that array, and it is what the Codex CLI itself
+    // sends for each (its code-mode `exec` answers with several text parts).
     toolMessage.output = message.content
     deleteField(toolMessage, 'cache_control')
     deleteField(toolMessage, 'role')
@@ -178,11 +183,15 @@ export function processNonSystemMessage(
     // to be sent, so the model lost its own preamble on every later turn.
     if (hasContent(mutable.content)) input.push({ role: 'assistant', content: mutable.content })
     message.tool_calls.forEach((tool) => {
+      // A call into a namespace tool goes back under its namespace, as the
+      // Codex CLI replays it: the upstream reads the call's name within it.
+      const namespace = namespaceOf(tool.namespace)
       if (tool.type === 'custom') {
         input.push({
           type: 'custom_tool_call',
           input: tool.function.arguments,
           name: tool.function.name,
+          ...namespace,
           call_id: tool.id
         })
         return
@@ -191,6 +200,7 @@ export function processNonSystemMessage(
         type: 'function_call',
         arguments: tool.function.arguments,
         name: tool.function.name,
+        ...namespace,
         call_id: tool.id
       })
     })

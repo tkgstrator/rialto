@@ -52,6 +52,13 @@ export const ResponsesAPIOutputItemSchema = z.object({
   // `.min(0)` because a custom tool can legitimately be called with
   // nothing, and dropping the field would read as "no call at all".
   input: z.string().min(0).optional(),
+  // The namespace tool a call belongs to (`functions` for the Codex CLI's
+  // code-mode `exec`). `name` alone is ambiguous once tools are grouped:
+  // the CLI dispatches on the pair, so a call that loses this names a tool
+  // the caller does not have. Loose on purpose — an explicit `null` or `""`
+  // means no namespace, and must not fail the item it rides on (readers
+  // take only a non-empty string; see `namespaceOf`).
+  namespace: z.string().min(0).nullish(),
   content: z.array(ResponsesAPIOutputContentSchema).default([]),
   reasoning: z.string().nonempty().optional()
 })
@@ -90,6 +97,11 @@ export const ResponsesStreamItemSchema = z.object({
   type: z.string().nonempty().optional(),
   call_id: z.string().nonempty().optional(),
   name: z.string().nonempty().optional(),
+  // As on the blocking item: a call's namespace, stated once on
+  // `output_item.added` and nowhere in the payload deltas after it. Loose
+  // for the reason `usage` below is: an event that fails to parse is
+  // dropped, and with it the whole call.
+  namespace: z.string().min(0).nullish(),
   content: z.array(ResponsesStreamItemContentSchema).default([]),
   reasoning: z.string().nonempty().optional(),
   // A finished reasoning item: its summary parts, and — when the request
@@ -223,12 +235,17 @@ export const ResponsesInboundMessageItemSchema = z
   .loose()
 export type ResponsesInboundMessageItem = z.infer<typeof ResponsesInboundMessageItemSchema>
 
+// `namespace` on both call kinds: a caller replays the call it was handed,
+// and the upstream matches a call in history against its tools by name
+// within that namespace. Loose like the output item's, so that a replayed
+// `null` costs the call its namespace rather than the call itself.
 export const ResponsesInboundFunctionCallItemSchema = z
   .object({
     type: z.literal('function_call'),
     call_id: z.string().nonempty().optional(),
     id: z.string().nonempty().optional(),
     name: z.string().min(0).optional(),
+    namespace: z.string().min(0).nullish(),
     arguments: z.string().min(0).optional()
   })
   .loose()
@@ -253,6 +270,7 @@ export const ResponsesInboundCustomToolCallItemSchema = z
     call_id: z.string().nonempty().optional(),
     id: z.string().nonempty().optional(),
     name: z.string().min(0).optional(),
+    namespace: z.string().min(0).nullish(),
     input: z.string().min(0).optional()
   })
   .loose()
@@ -267,11 +285,25 @@ export const ResponsesInboundCustomToolCallOutputItemSchema = z
   .loose()
 export type ResponsesInboundCustomToolCallOutputItem = z.infer<typeof ResponsesInboundCustomToolCallOutputItemSchema>
 
+// The "Responses Lite" shape Codex CLI 0.160 sends its `gpt-5.6-*` /
+// `gpt-6-*` models declares no top-level `tools`: they arrive as the first
+// input item, `{type:'additional_tools', role:'developer', tools:[...]}`,
+// in the same flat shape top-level tools take (namespaces, custom tools,
+// functions). The tools stay `unknown` here because the converter reads
+// them exactly as it reads top-level ones.
+export const ResponsesInboundAdditionalToolsItemSchema = z
+  .object({
+    type: z.literal('additional_tools'),
+    tools: z.array(z.unknown()).default([])
+  })
+  .loose()
+
 export const ResponsesInboundInputItemSchema = z.union([
   ResponsesInboundFunctionCallItemSchema,
   ResponsesInboundFunctionCallOutputItemSchema,
   ResponsesInboundCustomToolCallItemSchema,
   ResponsesInboundCustomToolCallOutputItemSchema,
+  ResponsesInboundAdditionalToolsItemSchema,
   ResponsesInboundMessageItemSchema
 ])
 export type ResponsesInboundInputItem = z.infer<typeof ResponsesInboundInputItemSchema>

@@ -5,21 +5,33 @@
  *   1. an OAuth bearer (not x-api-key)
  *   2. the Claude Code identity string as the first system block
  *
- * The anthropic-beta `oauth-2025-04-20` header is added by the /v1
- * adapter on the subscription path so other client betas are preserved
- * verbatim.
+ * Two paths reach it. On the bypass path (`/v1/messages`, the body already
+ * Anthropic's) only `auth()` runs, and the anthropic-beta
+ * `oauth-2025-04-20` header is added by the /v1 adapter so the client's
+ * other betas are preserved verbatim. On the conversion path (an OpenAI or
+ * Gemini caller routed to Claude) `transformRequestIn` converts the unified
+ * body to Anthropic Messages (`request-from-unified.ts`) and writes every
+ * header itself — none of the client's are forwarded there — and
+ * `transformResponseOut` converts the reply back to Chat.
  */
 
 import { HTTPException } from 'hono/http-exception'
 import type { RuntimeProvider, TransformerContext, TransformerHookResult, UnifiedChatRequest } from '@/schemas/domain'
 import { OauthRefreshResponseSchema } from '@/schemas/wire/oauth'
-import { cloneResponse } from '../../utils/response-clone'
 import type { TransformerAuthResult } from '../base'
 import { type OAuthRefreshResult, OAuthTransformer } from '../oauth-base'
-import { convertAnthropicResponseToChat, isAnthropicMessageResponse } from './response-to-chat'
+import { convertUnifiedToAnthropic } from './request-from-unified'
+import { convertAnthropicReplyToChat } from './response-to-chat-stream'
 
 const REFRESH_URL = 'https://platform.claude.com/v1/oauth/token'
 const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
+
+// Anthropic authenticates an OAuth bearer only alongside this beta. The
+// bypass path gets it from the /v1 adapter (`prepareSubscriptionBetas`),
+// which edits the client's headers; the conversion path forwards none of
+// those, so this transformer has to send it.
+const OAUTH_BETA = 'oauth-2025-04-20'
+const ANTHROPIC_VERSION = '2023-06-01'
 
 // A Claude subscription OAuth token only gets the subscription's model
 // allotment (incl. premium models like Opus/Sonnet) when the request is
@@ -73,17 +85,17 @@ export function withClaudeCodeIdentity(system: unknown): AnthropicSystemBlock[] 
 }
 
 // Anthropic takes the system prompt as a top-level `system`, never as
-// `messages[0]`. Callers who came in through /v1/responses or
-// /v1/chat/completions carry it the other way round — the OpenAI wire
-// shape has no top-level system field, so the unified body reaching this
-// hook has a leading `role: 'system'` message and nothing in `system`.
-// Forwarded verbatim, Anthropic answers 400 "messages.0: use the
-// top-level 'system' parameter for the initial system prompt".
+// `messages[0]`; forwarded there, it answers 400 "messages.0: use the
+// top-level 'system' parameter for the initial system prompt". This hook
+// was written for OpenAI-surface callers, whose system prompt is a leading
+// `role: 'system'` message; those now reach Anthropic through
+// `convertUnifiedToAnthropic`, which hoists the same way. It stays on the
+// bypass body `auth()` shapes, unchanged.
 //
-// Hoist them here. Every system message is taken, not just the first:
-// a client is free to send several (one per stable prefix block) and
-// dropping the later ones would silently lose instructions. Order is
-// preserved, and an existing top-level `system` stays in front of them.
+// Every system message is taken, not just the first: a client is free to
+// send several (one per stable prefix block) and dropping the later ones
+// would silently lose instructions. Order is preserved, and an existing
+// top-level `system` stays in front of them.
 function hoistSystemMessages(req: ClaudeCodeRequestShape): void {
   if (!Array.isArray(req.messages)) return
   const carried = req.messages.filter((message) => message.role === 'system')
@@ -155,33 +167,6 @@ export function keepSignedBlock(block: unknown): boolean {
   return !SYNTHETIC_SIGNATURE_PREFIXES.some((prefix) => signature.startsWith(prefix))
 }
 
-function shapeOpenAiRequestForClaude(req: ClaudeCodeRequestShape, provider: RuntimeProvider): void {
-  // OpenAI inbound converters leave their effort in unified `reasoning`;
-  // Claude Code's Messages endpoint accepts `output_config.effort` instead.
-  const reasoning = req.reasoning
-  if (reasoning !== null && typeof reasoning === 'object' && !Array.isArray(reasoning)) {
-    const effort = Reflect.get(reasoning, 'effort')
-    const output = req.output_config
-    const existing = output !== null && typeof output === 'object' && !Array.isArray(output) ? output : {}
-    if (
-      typeof effort === 'string' &&
-      typeof req.model === 'string' &&
-      provider.modelSupportedEfforts?.[req.model]?.some((level) => level === effort) === true &&
-      !('effort' in existing)
-    ) {
-      req.output_config = { ...existing, effort }
-    }
-    delete req.reasoning
-  }
-  delete req.reasoning_effort
-  const completionCap = req.max_completion_tokens
-  if (req.max_tokens === undefined && typeof completionCap === 'number') req.max_tokens = completionCap
-  delete req.max_completion_tokens
-  const outputCap = req.max_output_tokens
-  if (req.max_tokens === undefined && typeof outputCap === 'number') req.max_tokens = outputCap
-  delete req.max_output_tokens
-}
-
 export class ClaudeCodeOauthTransformer extends OAuthTransformer {
   readonly name = 'claude-code-oauth'
   readonly endPoint = '/v1/messages'
@@ -224,9 +209,6 @@ export class ClaudeCodeOauthTransformer extends OAuthTransformer {
     const { token } = await this.resolveSubscriptionAuth(provider, sessionId, 'claude', request, context)
     // biome-ignore plugin: the OAuth auth hook receives the inbound Anthropic body verbatim (unknown by design); narrowing to a Zod schema would re-encode the whole request, defeating the bypass-mode passthrough.
     const req = request as ClaudeCodeRequestShape
-    if (context.req?.surface === 'openai-chat' || context.req?.surface === 'openai-responses') {
-      shapeOpenAiRequestForClaude(req, provider)
-    }
     hoistSystemMessages(req)
     req.system = withClaudeCodeIdentity(req.system)
 
@@ -274,66 +256,45 @@ export class ClaudeCodeOauthTransformer extends OAuthTransformer {
     return request as never
   }
 
-  // Non-bypass provider-chain hook. Fires when the endpoint transformer
-  // is NOT claude-code-oauth (i.e. the caller hit /v1/chat/completions
-  // or /v1/responses instead of /v1/messages). Without this override,
-  // only `auth()` runs — and only in bypass mode — leaving the outgoing
-  // request with no OAuth bearer. `applySubscriptionAuth` stamps
-  // `api_key: 'oauth'` on the provider as a marker, and `sendToProvider`
-  // then forwards that literal string as the Bearer, so Anthropic
-  // upstream sees `Authorization: Bearer oauth` and 401s with
-  // "Invalid bearer token". Reuses the same auth() logic so the
-  // Claude Code identity injection + thinking-strip stay consistent.
+  // Conversion-path hook: the endpoint transformer is not this one, so the
+  // caller hit /v1/chat/completions, /v1/responses or the Gemini surface,
+  // and the body is unified (Chat-shaped). It is converted to Anthropic
+  // Messages, then given what `auth()` gives a bypass body: the Claude Code
+  // identity, and the subscription's bearer. Without the bearer the
+  // provider's `api_key: 'oauth'` marker went out as the token and
+  // Anthropic answered 401 "Invalid bearer token". The conversion emits no
+  // thinking blocks, so there is nothing for `keepSignedBlock` to filter.
   async transformRequestIn(
     request: UnifiedChatRequest,
     provider: RuntimeProvider,
     context: TransformerContext
   ): Promise<TransformerHookResult> {
-    const auth = await this.auth(request, provider, context)
-    return { body: auth.body, config: auth.config }
+    const sessionId = context?.req?.accountSessionKey
+    const { token } = await this.resolveSubscriptionAuth(provider, sessionId, 'claude', request, context)
+    const body = convertUnifiedToAnthropic(request, provider, context)
+    body.system = withClaudeCodeIdentity(body.system)
+    return {
+      body,
+      config: {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'anthropic-version': ANTHROPIC_VERSION,
+          'anthropic-beta': OAUTH_BETA,
+          'x-api-key': undefined
+        }
+      }
+    }
   }
 
   async transformResponseIn(response: Response, _context?: TransformerContext): Promise<Response> {
     return response
   }
 
-  // Non-bypass provider-chain outbound hook (mirror of transformRequestIn).
-  // Fires when the endpoint transformer is NOT claude-code-oauth — i.e.
-  // the caller hit /v1/chat/completions or /v1/responses instead of
-  // /v1/messages. Anthropic upstream returns its native message envelope
-  // (`{type:'message', content:[{type:'text',text}], usage:{input_tokens,
-  // output_tokens}}`), but the OpenAI-compat caller expects
-  // `{object:'chat.completion', choices:[{message,finish_reason}], usage:{
-  // prompt_tokens, completion_tokens, total_tokens}}`. Detect the Anthropic
-  // shape and convert; leave everything else untouched (bypass mode never
-  // reaches this hook, so /v1/messages callers still see the raw Anthropic
-  // response). SSE streams are passed through unchanged for now — an
-  // incremental Anthropic-SSE → Chat-SSE converter is a follow-up.
+  // The conversion path's reply hook (mirror of transformRequestIn): the
+  // Anthropic answer, streamed or not, in Chat shape for the surface's own
+  // endpoint converter. Bypass never reaches it, so /v1/messages callers
+  // still see the raw Anthropic response.
   async transformResponseOut(response: Response, _context: TransformerContext): Promise<Response> {
-    if (!response.ok) return response
-    const contentType = response.headers.get('content-type')
-    // SSE not yet supported for cross-shape (Anthropic → Chat) streams.
-    // Passthrough keeps the client's stream reader happy syntactically
-    // even though the event shapes will confuse an OpenAI SDK parser.
-    if (typeof contentType === 'string' && contentType.includes('text/event-stream')) return response
-    const raw = await response.text()
-    if (raw.length === 0) return response
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(raw)
-    } catch {
-      // Non-JSON body (upstream 4xx text, HTML from a fronting proxy) —
-      // hand it back untouched. Rewrapping non-JSON would hide the real
-      // error from the client.
-      return cloneResponse(response, raw)
-    }
-    if (!isAnthropicMessageResponse(parsed)) {
-      // Already Chat-shape / Responses-shape / unknown. Return as-is
-      // rather than crashing — the endpoint transformer downstream will
-      // either accept it or the client will surface the mismatch.
-      return cloneResponse(response, raw)
-    }
-    const chat = convertAnthropicResponseToChat(parsed)
-    return cloneResponse(response, JSON.stringify(chat))
+    return convertAnthropicReplyToChat(response, this.logger)
   }
 }

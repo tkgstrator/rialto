@@ -30,6 +30,7 @@ import { cloneResponse } from '../../utils/response-clone'
 import { aggregateOpenAiChatSseToJson, isSseContentType } from '../../utils/sse-aggregate'
 import { Transformer } from '../base'
 import {
+  callerToolLowering,
   convertChatCompletionToResponses,
   convertResponsesRequestToUnified,
   wrapResponsesEnvelopeAsSse
@@ -69,18 +70,26 @@ export class OpenAIResponsesTransformer extends Transformer {
   // is converted event by event (`convertChatSseToResponsesSse`) so the
   // client's first byte arrives with the upstream's first token rather
   // than with its last — see that module for what buffering here costs.
-  async transformResponseIn(response: Response, _context?: TransformerContext): Promise<Response> {
+  //
+  // Every leg is given how the caller's tools were lowered for a
+  // function-only upstream (Chat, Anthropic, Gemini), read again off the
+  // caller's own body, so a call into a namespace or custom tool goes back
+  // as the caller declared it. A Responses upstream was sent the tools
+  // verbatim and states namespace and kind itself; raising never touches
+  // what an upstream stated, so its calls go back as they came.
+  async transformResponseIn(response: Response, context?: TransformerContext): Promise<Response> {
     if (!response.ok) return response
+    const lowering = callerToolLowering(context?.req?.body)
     const contentType = response.headers.get('content-type')
     if (isSseContentType(contentType)) {
-      const streamed = convertChatSseToResponsesSse(response, this.logger)
+      const streamed = convertChatSseToResponsesSse(response, this.logger, lowering)
       if (streamed !== null) return streamed
       // No body to read: nothing to be incremental about. Fold whatever
       // the response can still give us and wrap the finished envelope.
       const chatJsonRaw = await aggregateOpenAiChatSseToJson(response)
       const chat = ChatCompletionResponseSchema.safeParse(chatJsonRaw)
       if (!chat.success) return response
-      const envelope = convertChatCompletionToResponses(chat.data)
+      const envelope = convertChatCompletionToResponses(chat.data, lowering)
       const sse = wrapResponsesEnvelopeAsSse(envelope)
       return cloneResponse(response, sse, { 'content-type': 'text/event-stream' })
     }
@@ -89,7 +98,7 @@ export class OpenAIResponsesTransformer extends Transformer {
     const parsedJson = JSON.parse(text)
     const chat = ChatCompletionResponseSchema.safeParse(parsedJson)
     if (!chat.success) return response
-    const envelope = convertChatCompletionToResponses(chat.data)
+    const envelope = convertChatCompletionToResponses(chat.data, lowering)
     return cloneResponse(response, JSON.stringify(envelope))
   }
 

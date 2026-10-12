@@ -63,9 +63,18 @@ export type MessageContent = z.infer<typeof MessageContentSchema>
 // of them narrow for a distinction only the Responses converters act on.
 // `type` is what tells those converters which spelling to re-emit; get it
 // wrong and the upstream 400s the call_id's follow-up output.
+//
+// `namespace` follows the same design for a second Responses-only fact: the
+// namespace tool (`{type:'namespace', name, tools}`) the called tool sits
+// in. The Codex CLI's Lite shape puts every tool in one — its shell is
+// `exec` inside `functions` — and dispatches a call on the pair, so a call
+// handed back without it names a tool the CLI does not have. Absent means
+// a top-level tool, which is every call outside a namespace. Only the
+// Responses converters read it; a wire format with no namespaces drops it.
 export const UnifiedToolCallSchema = z.object({
   id: z.string().nonempty(),
   type: z.enum(['function', 'custom']),
+  namespace: z.string().nonempty().optional(),
   function: z.object({
     name: z.string().nonempty(),
     arguments: z.string().nonempty()

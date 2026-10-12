@@ -10,8 +10,10 @@
  *
  * These tests exercise the new transformRequestIn directly and assert
  * (a) the OAuth bearer lands in the outgoing config.headers,
- * (b) the auth() body mutations still fire (Claude Code identity in
- * system[0], thinking-strip).
+ * (b) the body is shaped as auth() shapes a native one (Claude Code
+ * identity in system[0], no unsigned thinking). transformRequestIn now
+ * also converts the unified body to Anthropic Messages; that conversion
+ * is asserted whole in transformers/anthropic-request-from-unified.test.ts.
  */
 
 import { describe, expect, test } from 'bun:test'

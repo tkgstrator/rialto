@@ -28,18 +28,35 @@
  * `tool_calls[].index`, and the accumulated envelope replayed on
  * `response.completed` so a client that ignores the deltas still sees
  * exactly what the buffered path used to hand it.
+ *
+ * A call into a tool that was lowered for a function-only upstream
+ * (`utils/tool-lowering.ts`) is raised back to the shape the caller
+ * declared as its item opens — its own name and namespace, and for a
+ * custom tool a `custom_tool_call`. A failure chunk becomes
+ * `response.failed`, the event the Codex CLI reads a failure from.
  */
 
 import { randomUUID } from 'node:crypto'
 import type { Logger } from 'pino'
 import { isObject } from '../../../utils/guards'
 import { nowSeconds } from '../../../utils/time'
+import { customInputOf, NO_TOOL_LOWERING, raisedCallOf, type ToolLowering } from '../../../utils/tool-lowering'
+import { namespaceOf } from './helpers'
 import { convertChatUsageToResponses } from './inbound'
 
 type ToolItem = {
   readonly id: string
   readonly outputIndex: number
   readonly kind: 'function' | 'custom'
+  // The namespace tool the call is in, stated on the call's first chunk
+  // only (see buildToolCallAddedChunk). The Codex CLI dispatches on it.
+  readonly namespace: string | undefined
+  // A raised call keeps the name the caller declared; the wire name the
+  // upstream repeats on later chunks is not the caller's.
+  readonly raised: boolean
+  // A raised custom call, whose payload is `{"input": …}` JSON that only
+  // becomes the caller's text once it is complete (see closeToolCalls).
+  readonly holdsInput: boolean
   callId: string
   name: string
   payload: string
@@ -68,12 +85,14 @@ const hexId = (prefix: string): string => `${prefix}_${randomUUID().replace(/-/g
 class ChatToResponsesSession {
   private readonly controller: ReadableStreamDefaultController<Uint8Array>
   private readonly logger: Logger | undefined
+  private readonly lowering: ToolLowering
   private readonly encoder = new TextEncoder()
   private readonly decoder = new TextDecoder()
   private readonly tools = new Map<number, ToolItem>()
   private readonly closed: ClosedItem[] = []
   private buffer = ''
   private opened = false
+  private failed = false
   private responseId = ''
   private createdAt = 0
   private model = ''
@@ -81,9 +100,14 @@ class ChatToResponsesSession {
   private message: MessageItem | null = null
   private nextOutputIndex = 0
 
-  constructor(controller: ReadableStreamDefaultController<Uint8Array>, logger?: Logger) {
+  constructor(
+    controller: ReadableStreamDefaultController<Uint8Array>,
+    logger: Logger | undefined,
+    lowering: ToolLowering
+  ) {
     this.controller = controller
     this.logger = logger
+    this.lowering = lowering
   }
 
   async run(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
@@ -136,8 +160,13 @@ class ChatToResponsesSession {
   }
 
   private handleChunk(chunk: Record<string, unknown>): void {
+    if (this.failed) return
     this.absorbIdentity(chunk)
     this.open()
+    if (isObject(chunk.error)) {
+      this.fail(chunk.error)
+      return
+    }
     const choices = chunk.choices
     if (!Array.isArray(choices)) return
     for (const raw of choices) {
@@ -220,10 +249,11 @@ class ChatToResponsesSession {
     if (typeof raw.id === 'string' && raw.id.length > 0) item.callId = raw.id
     const fn = raw.function
     if (!isObject(fn)) return
-    if (typeof fn.name === 'string') item.name = fn.name
+    if (typeof fn.name === 'string' && !item.raised) item.name = fn.name
     const args = fn.arguments
     if (typeof args !== 'string' || args.length === 0) return
     item.payload += args
+    if (item.holdsInput) return
     // The custom kind has its own pair of events, and the Codex CLI reads
     // the call's text off them — a function_call_arguments pair here
     // would leave it with an empty command to run.
@@ -232,20 +262,27 @@ class ChatToResponsesSession {
     this.emit(name, { type: name, item_id: item.id, output_index: item.outputIndex, delta: args })
   }
 
+  // Raising is decided on the call's first chunk, which is where every
+  // chat stream states the call's name.
   private openToolCall(index: number, raw: Record<string, unknown>): ToolItem {
     const existing = this.tools.get(index)
     if (existing !== undefined) return existing
     // A tool call ends the assistant's prose. Closing the message first
     // keeps items properly nested for a client that tracks open items.
     this.closeMessage()
-    const kind = raw.type === 'custom' ? 'custom' : 'function'
     const fn = isObject(raw.function) ? raw.function : {}
+    const wireName = typeof fn.name === 'string' ? fn.name : ''
+    const raised = raisedCallOf(this.lowering, { type: raw.type, namespace: raw.namespace, name: wireName })
+    const kind = raised === null ? (raw.type === 'custom' ? 'custom' : 'function') : raised.kind
     const fresh: ToolItem = {
       id: hexId(kind === 'custom' ? 'ctc' : 'fc'),
       outputIndex: this.nextOutputIndex++,
       kind,
+      namespace: raised === null ? namespaceOf(raw.namespace).namespace : raised.namespace,
+      raised: raised !== null,
+      holdsInput: raised?.kind === 'custom',
       callId: typeof raw.id === 'string' && raw.id.length > 0 ? raw.id : `call_${randomUUID().slice(0, 8)}`,
-      name: typeof fn.name === 'string' ? fn.name : '',
+      name: raised === null ? wireName : raised.name,
       payload: ''
     }
     this.tools.set(index, fresh)
@@ -257,17 +294,14 @@ class ChatToResponsesSession {
     return fresh
   }
 
+  // The same item on `output_item.added`, `output_item.done` and in the
+  // `response.completed` envelope, so the namespace is on all three.
   private toolItemShape(item: ToolItem, status: string): Record<string, unknown> {
+    const head = { id: item.id, status, call_id: item.callId, name: item.name }
+    const namespace = namespaceOf(item.namespace)
     return item.kind === 'custom'
-      ? { id: item.id, type: 'custom_tool_call', status, call_id: item.callId, name: item.name, input: item.payload }
-      : {
-          id: item.id,
-          type: 'function_call',
-          status,
-          call_id: item.callId,
-          name: item.name,
-          arguments: item.payload
-        }
+      ? { ...head, type: 'custom_tool_call', ...namespace, input: item.payload }
+      : { ...head, type: 'function_call', ...namespace, arguments: item.payload }
   }
 
   private closeMessage(): void {
@@ -296,8 +330,31 @@ class ChatToResponsesSession {
     this.closed.push({ outputIndex: item.outputIndex, item: shape })
   }
 
+  /**
+   * The text a raised custom call holds, sent as one delta now that it is
+   * complete.
+   *
+   * The model wrote `{"input": "<text>"}`, and the caller must see only
+   * the text — its deltas concatenated have to equal what `.done` states.
+   * Until the arguments end, it cannot be known whether they will parse to
+   * that shape at all (if not, the raw arguments are the input), so this
+   * one call's fragments are held and the rest of the response streams on
+   * around them. Holding them costs no time to first byte in practice:
+   * Anthropic delivers a tool's input in one burst at the end of the block
+   * unless eager input streaming is asked for, and Gemini sends whole
+   * calls; and the Codex CLI runs nothing before the call's `.done`.
+   */
+  private releaseHeldInput(item: ToolItem): void {
+    if (!item.holdsInput) return
+    item.payload = customInputOf(item.payload)
+    if (item.payload.length === 0) return
+    const name = 'response.custom_tool_call_input.delta'
+    this.emit(name, { type: name, item_id: item.id, output_index: item.outputIndex, delta: item.payload })
+  }
+
   private closeToolCalls(): void {
     for (const [, item] of [...this.tools.entries()].sort(([a], [b]) => a - b)) {
+      this.releaseHeldInput(item)
       const doneName =
         item.kind === 'custom' ? 'response.custom_tool_call_input.done' : 'response.function_call_arguments.done'
       const payload: Record<string, unknown> = {
@@ -320,11 +377,35 @@ class ChatToResponsesSession {
   }
 
   private finish(): void {
-    if (!this.opened) return
+    if (!this.opened || this.failed) return
     this.closeMessage()
     this.closeToolCalls()
-    const output = [...this.closed].sort((a, b) => a.outputIndex - b.outputIndex).map((entry) => entry.item)
-    this.emit('response.completed', { type: 'response.completed', response: this.envelope('completed', output) })
+    this.emit('response.completed', { type: 'response.completed', response: this.envelope('completed', this.output()) })
+  }
+
+  private output(): Record<string, unknown>[] {
+    return [...this.closed].sort((a, b) => a.outputIndex - b.outputIndex).map((entry) => entry.item)
+  }
+
+  /**
+   * An upstream failure on a stream that already answered 200 — the
+   * `{error:{message,type,code}}` chunk the Chat-shaped converters write
+   * for one — as the `response.failed` a Responses client reads it from,
+   * and nothing after it. Folded into `response.completed`, a failed turn
+   * reached the Codex CLI as a successful empty one.
+   *
+   * The CLI branches on `error.code`; a chunk that names only a type gets
+   * the code the Codex backend uses for the same condition, so an
+   * overloaded or rate-limited upstream is retried as it would be there.
+   */
+  private fail(error: Record<string, unknown>): void {
+    this.failed = true
+    const type = typeof error.type === 'string' ? error.type : undefined
+    const stated = typeof error.code === 'string' && error.code.length > 0 ? error.code : undefined
+    const code = stated !== undefined ? stated : codeForErrorType(type)
+    const message = typeof error.message === 'string' ? error.message : 'The upstream failed the response.'
+    const response = { ...this.envelope('failed', this.output()), error: { code, message } }
+    this.emit('response.failed', { type: 'response.failed', response })
   }
 
   private envelope(status: string, output: Record<string, unknown>[]): Record<string, unknown> {
@@ -346,6 +427,19 @@ class ChatToResponsesSession {
   }
 }
 
+// The Codex backend's code for an error type the chat chunk carries — the
+// inverse of the table `stream-chunks.ts` maps those codes through.
+const CODE_BY_ERROR_TYPE = new Map<string, string>([
+  ['rate_limit_error', 'rate_limit_exceeded'],
+  ['overloaded_error', 'server_is_overloaded']
+])
+
+function codeForErrorType(type: string | undefined): string {
+  if (type === undefined) return 'api_error'
+  const mapped = CODE_BY_ERROR_TYPE.get(type)
+  return mapped === undefined ? type : mapped
+}
+
 // The generated body no longer has the length or the encoding the
 // upstream declared for its own.
 function sseHeaders(source: Response): Headers {
@@ -363,13 +457,21 @@ function sseHeaders(source: Response): Headers {
  *
  * Returns null when there is no body to read — the caller then falls
  * back to folding whatever it can, which is all that is left to do.
+ *
+ * `lowering` is how the caller's tools were sent to a function-only
+ * upstream (`callerToolLowering` in `./inbound.ts`); without one, every
+ * call is handed back exactly as the upstream made it.
  */
-export function convertChatSseToResponsesSse(response: Response, logger?: Logger): Response | null {
+export function convertChatSseToResponsesSse(
+  response: Response,
+  logger?: Logger,
+  lowering: ToolLowering = NO_TOOL_LOWERING
+): Response | null {
   const body = response.body
   if (body === null) return null
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const session = new ChatToResponsesSession(controller, logger)
+      const session = new ChatToResponsesSession(controller, logger, lowering)
       await session.run(body.getReader())
     }
   })

@@ -18,11 +18,22 @@
  *   - Only the top-level fields the CLI sends. The backend allow-lists them:
  *     it answered `max_output_tokens` with 400 "Unsupported parameter" (#463).
  *
- * Not reproduced: the CLI sends its `gpt-5.6-*` / `gpt-6-*` models the
- * "Responses Lite" shape — no `instructions` or top-level `tools`, the tools
- * in an `additional_tools` input item. Rialto has sent those models the
- * classic shape all along; the Lite shape waits on a check against the real
- * backend.
+ * Accepted but not reproduced: the "Responses Lite" shape Codex CLI 0.160
+ * sends the models it knows (`gpt-5.6-*`, `gpt-6-*`) — no `instructions` or
+ * top-level `tools`, the tools in an `additional_tools` input item, and the
+ * `x-openai-internal-codex-responses-lite` header. A Responses client may
+ * send Rialto that shape, and it is lowered into this one on the way
+ * upstream. The inbound converter (`../responses/inbound.ts`) reads the
+ * `additional_tools` item's tools as it reads top-level ones, so they leave
+ * here as top-level `tools` — the `functions` / `clock` / `collaboration`
+ * namespaces verbatim, the code-mode `exec` custom tool inside its grammar
+ * intact — and a call into one keeps its `namespace` both ways. The base
+ * prompt the CLI sends as developer messages stays in `input`, and
+ * `instructions` is the neutral sentence, as for any Responses client that
+ * wrote none. The Lite header is never forwarded: this body is classic, and
+ * the provider chain sends only the headers codex-oauth writes. The backend
+ * takes the classic shape for these models — the CLI itself sends it to
+ * a model name it does not recognise, namespace tools at top level included.
  */
 
 import type { PipelineRequest } from '@/schemas/domain/pipeline'

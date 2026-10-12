@@ -7,24 +7,54 @@
  * back into Anthropic events on the way out so the Claude Code client
  * sees its native protocol.
  *
+ * It is also the provider step of an Anthropic API-key provider. A
+ * `/v1/messages` caller there takes the bypass path and only `auth()`
+ * runs; any other caller — an OpenAI or Gemini surface routed to Claude —
+ * runs `transformRequestIn` (unified → Anthropic Messages) and
+ * `transformResponseOut` (Anthropic → Chat), the same conversion the
+ * subscription step runs.
+ *
  * The conversion pieces live alongside this file:
- *   - `request.ts`            wire -> unified request conversion
- *   - `response-blocking.ts`  OpenAI ChatCompletion -> Anthropic message
- *   - `response-stream/`      OpenAI SSE -> Anthropic SSE (pump/dispatch/
- *                             tool-calls/state, see that folder's files)
- *   - `response-shared.ts`    helpers shared by both response directions
+ *   - `request.ts`               wire -> unified request conversion
+ *   - `request-from-unified.ts`  unified -> wire, for the provider step
+ *   - `response-blocking.ts`     OpenAI ChatCompletion -> Anthropic message
+ *   - `response-stream/`         OpenAI SSE -> Anthropic SSE (pump/dispatch/
+ *                                tool-calls/state, see that folder's files)
+ *   - `response-to-chat*.ts`     Anthropic -> OpenAI, for the provider step
+ *   - `response-shared.ts`       helpers shared by both response directions
  */
 
 import { HTTPException } from 'hono/http-exception'
-import type { RuntimeProvider, TransformerContext, UnifiedChatRequest, UnifiedMessage } from '@/schemas/domain'
+import type {
+  RuntimeProvider,
+  TransformerContext,
+  TransformerHookResult,
+  UnifiedChatRequest,
+  UnifiedMessage
+} from '@/schemas/domain'
+import { isProviderModelBlock } from '@/schemas/domain/pipeline'
 import { AnthropicIncomingRequestSchema } from '@/schemas/wire/anthropic/messages'
 import { hasSafeguards } from '../../pipeline/classifier-diagnostics'
 import { getThinkLevel } from '../../utils/thinking'
 import { Transformer, type TransformerAuthResult } from '../base'
 import { appendIncomingMessage, buildSystemMessage, buildToolChoice, convertAnthropicToolsToUnified } from './request'
+import { convertUnifiedToAnthropic } from './request-from-unified'
 import { convertOpenAIResponseToAnthropic } from './response-blocking'
 import { runStreamPump } from './response-stream/pump'
 import { createStreamState } from './response-stream/state'
+import { convertAnthropicReplyToChat } from './response-to-chat-stream'
+
+// The version header a native caller sends itself; on the conversion path
+// no client header is forwarded, so the step has to state it.
+const ANTHROPIC_VERSION = '2023-06-01'
+
+// A model whose `Model.apiStyle` differs from the provider's has its own
+// conversion step after this one (`modelTransformerChains`), and the body
+// has to reach that step still unified.
+function hasOwnModelChain(provider: RuntimeProvider, model: string): boolean {
+  const block: unknown = provider.transformer?.[model]
+  return isProviderModelBlock(block) && Array.isArray(block.use) && block.use.length > 0
+}
 
 type AnthropicTransformerOptions = {
   UseBearer?: boolean
@@ -70,6 +100,37 @@ export class AnthropicTransformer extends Transformer {
       body: request,
       config: { headers }
     }
+  }
+
+  /**
+   * Provider step on the conversion path: the unified body to Anthropic
+   * Messages, with the API key and version headers a native caller would
+   * have sent.
+   */
+  async transformRequestIn(
+    request: UnifiedChatRequest,
+    provider: RuntimeProvider,
+    context: TransformerContext
+  ): Promise<TransformerHookResult | UnifiedChatRequest> {
+    if (hasOwnModelChain(provider, request.model)) return request
+    const body = convertUnifiedToAnthropic(request, provider, context)
+    const auth = await this.auth(body, provider, context)
+    const headers = auth.config?.headers === undefined ? {} : auth.config.headers
+    // `sendToProvider` seeds every request with `Authorization: Bearer
+    // <api_key>`, and `auth()` unsets only the lowercase spelling — a
+    // different key until the headers are built. Unset the seeded one too,
+    // so the key goes as `x-api-key` alone (or as the bearer `auth()`
+    // writes when the provider asks for one).
+    return {
+      body,
+      config: { headers: { Authorization: undefined, ...headers, 'anthropic-version': ANTHROPIC_VERSION } }
+    }
+  }
+
+  // The reply to a converted request, back in Chat shape. A body that is
+  // not Anthropic's (a model with its own chain) is passed on untouched.
+  async transformResponseOut(response: Response, _context: TransformerContext): Promise<Response> {
+    return convertAnthropicReplyToChat(response, this.logger)
   }
 
   async transformRequestOut(request: unknown, _context: TransformerContext): Promise<UnifiedChatRequest> {
