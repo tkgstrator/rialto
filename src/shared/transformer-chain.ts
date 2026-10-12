@@ -29,11 +29,18 @@ export interface ChainProvider {
 /**
  * Wire-format conversion step for an apiStyle.
  *
- * `anthropic` has no outbound conversion step: the unified body is
- * Chat-shaped, not Anthropic-shaped. Native Anthropic traffic must instead
- * take the pipeline's passthrough path through a sole endpoint/auth step.
- * `transformerChain` selects `anthropic` for API keys or `claude-code-oauth`
- * for subscriptions; adding both would disable native passthrough.
+ * `anthropic` has no conversion step of its own. Native Anthropic traffic
+ * (`/v1/messages`) must take the pipeline's bypass path, which needs the
+ * chain to be one step that matches the endpoint transformer:
+ * `transformerChain` selects `anthropic` for API keys or
+ * `claude-code-oauth` for subscriptions, and adding a second step would
+ * disable the bypass. The conversion the other surfaces need — the
+ * unified body is Chat-shaped, not Anthropic-shaped — lives inside those
+ * two steps instead: on the conversion path each one's
+ * `transformRequestIn` turns unified into Anthropic Messages and its
+ * `transformResponseOut` turns the reply back into Chat
+ * (`llms/transformers/anthropic/request-from-unified.ts`,
+ * `response-to-chat*.ts`).
  */
 const CONVERSION_STEP: Record<ChainApiStyle, string | null> = {
   anthropic: null,
@@ -141,9 +148,10 @@ export const modelTransformerChains = (
 
 // The wire formats whose transformer carries Anthropic's `web_search`
 // server tool across: Responses remaps it to the hosted `web_search`
-// tool, Gemini to `googleSearch`, and Anthropic sends it as-is. Chat
-// Completions has no equivalent, so a request that needs the tool cannot
-// be served there.
+// tool, Gemini to `googleSearch`, and Anthropic sends it as-is — or, for
+// a request converted from another surface, as its own `web_search`
+// server tool. Chat Completions has no equivalent, so a request that
+// needs the tool cannot be served there.
 const WEB_SEARCH_STYLES: ReadonlySet<ChainApiStyle> = new Set(['anthropic', 'openai_responses', 'gemini'])
 
 /**

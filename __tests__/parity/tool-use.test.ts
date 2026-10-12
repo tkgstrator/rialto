@@ -17,7 +17,7 @@ import { describe, expect, test } from 'bun:test'
 import { AnthropicTransformer } from '../../src/llms/transformers/anthropic'
 import { GeminiTransformer } from '../../src/llms/transformers/gemini'
 import { OpenAIResponsesTransformer, OpenAITransformer } from '../../src/llms/transformers/openai'
-import type { TransformerContext } from '../../src/schemas/domain'
+import type { RuntimeProvider, TransformerContext, UnifiedChatRequest } from '../../src/schemas/domain'
 
 const ctx = {} as TransformerContext
 
@@ -123,6 +123,152 @@ describe('openai-responses — supported', () => {
     )
     expect(roles(unified.messages)).toEqual(['user', 'assistant', 'tool'])
     expect(Object(unified.messages[2])).toMatchObject({ tool_call_id: 'call_1', content: 'file body' })
+  })
+
+  // Codex CLI 0.160's "Responses Lite" shape, which it sends the models it
+  // knows: no top-level `tools`, every tool in a namespace, declared in an
+  // `additional_tools` input item. That item used to be skipped, so the
+  // declaration — and with it every later call — was lost.
+  test('(a) the Lite shape: tools declared in an additional_tools input item', async () => {
+    const exec = { type: 'custom', name: 'exec', format: { type: 'grammar', syntax: 'lark', definition: 'start: S' } }
+    const unified = await new OpenAIResponsesTransformer().transformRequestOut(
+      {
+        model: 'm',
+        input: [
+          {
+            type: 'additional_tools',
+            role: 'developer',
+            tools: [{ type: 'namespace', name: 'functions', tools: [exec] }]
+          },
+          { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'run ls' }] }
+        ],
+        tool_choice: 'auto'
+      },
+      ctx
+    )
+    expect(unified.tools).toEqual([{ type: 'namespace', name: 'functions', tools: [exec] }])
+    expect(roles(unified.messages)).toEqual(['user'])
+  })
+
+  test('(b)(c) a namespaced custom_tool_call and its content-part output survive as a call/result pair', async () => {
+    const unified = await new OpenAIResponsesTransformer().transformRequestOut(
+      {
+        model: 'm',
+        input: [
+          { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'run ls' }] },
+          { type: 'custom_tool_call', call_id: 'call_1', name: 'exec', namespace: 'functions', input: 'ls()' },
+          { type: 'custom_tool_call_output', call_id: 'call_1', output: [{ type: 'input_text', text: 'a.ts' }] }
+        ]
+      },
+      ctx
+    )
+    expect(roles(unified.messages)).toEqual(['user', 'assistant', 'tool'])
+    const assistant = Object(unified.messages[1])
+    expect(Reflect.get(Object(Reflect.get(assistant, 'tool_calls')), '0')).toMatchObject({
+      id: 'call_1',
+      type: 'custom',
+      namespace: 'functions',
+      function: { name: 'exec', arguments: 'ls()' }
+    })
+    expect(Object(unified.messages[2])).toMatchObject({
+      tool_call_id: 'call_1',
+      content: [{ type: 'text', text: 'a.ts' }]
+    })
+  })
+})
+
+// The surfaces above read tool use into unified. What a surface's caller
+// can do also depends on the provider step getting it out again: routed to
+// Claude, unified is converted to Anthropic Messages
+// (`anthropic/request-from-unified.ts`), and the namespace / custom tools
+// only a Responses caller has are lowered to functions for every
+// function-only upstream and raised back on the way out
+// (`utils/tool-lowering.ts`). Note (14) in inbound-parity.md.
+describe('openai-responses / openai-chat routed to Claude — supported', () => {
+  const claude: RuntimeProvider = {
+    name: 'anthropic',
+    api_base_url: 'https://api.anthropic.com/v1/messages',
+    api_key: 'k'
+  }
+  const anthropicBody = async (unified: UnifiedChatRequest): Promise<Record<string, unknown>> =>
+    Object(Object(await new AnthropicTransformer().transformRequestIn(unified, claude, ctx)).body)
+
+  test('(a)(b)(c) Responses: a function tool, call and result become tools, tool_use and tool_result', async () => {
+    const unified = await new OpenAIResponsesTransformer().transformRequestOut(
+      {
+        model: 'claude-opus-5-5',
+        input: [
+          { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'read a' }] },
+          { type: 'function_call', call_id: 'call_1', name: 'Read', arguments: '{"path":"a"}' },
+          { type: 'function_call_output', call_id: 'call_1', output: 'file body' }
+        ],
+        tools: [{ type: 'function', name: 'Read', parameters: { type: 'object', properties: {} } }]
+      },
+      ctx
+    )
+    const body = await anthropicBody(unified)
+    expect(body.tools).toEqual([
+      { name: 'Read', input_schema: { type: 'object', properties: {} }, cache_control: { type: 'ephemeral' } }
+    ])
+    expect(body.messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'read a' }] },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'call_1', name: 'Read', input: { path: 'a' } }] },
+      {
+        role: 'user',
+        content: [
+          { type: 'tool_result', tool_use_id: 'call_1', content: 'file body', cache_control: { type: 'ephemeral' } }
+        ]
+      }
+    ])
+  })
+
+  test('(a)(b)(c) Chat: the same, from the Chat shape', async () => {
+    const unified = await new OpenAITransformer().transformRequestOut(
+      {
+        model: 'claude-opus-5-5',
+        messages: [
+          { role: 'user', content: 'read a' },
+          {
+            role: 'assistant',
+            content: null,
+            tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'Read', arguments: '{"path":"a"}' } }]
+          },
+          { role: 'tool', tool_call_id: 'call_1', content: 'file body' }
+        ],
+        tools: [{ type: 'function', function: { name: 'Read', parameters: { type: 'object', properties: {} } } }]
+      },
+      ctx
+    )
+    const body = await anthropicBody(unified)
+    expect(roles(body.messages)).toEqual(['user', 'assistant', 'user'])
+    expect(Object(Object(body.messages)[2]).content).toEqual([
+      { type: 'tool_result', tool_use_id: 'call_1', content: 'file body', cache_control: { type: 'ephemeral' } }
+    ])
+  })
+
+  test('(a)(b) the Lite shape: its namespace and custom tools reach Claude as functions', async () => {
+    const exec = { type: 'custom', name: 'exec', format: { type: 'grammar', syntax: 'lark', definition: 'start: S' } }
+    const unified = await new OpenAIResponsesTransformer().transformRequestOut(
+      {
+        model: 'claude-opus-5-5',
+        input: [
+          {
+            type: 'additional_tools',
+            role: 'developer',
+            tools: [{ type: 'namespace', name: 'functions', tools: [exec] }]
+          },
+          { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'run ls' }] },
+          { type: 'custom_tool_call', call_id: 'call_1', name: 'exec', namespace: 'functions', input: 'ls()' },
+          { type: 'custom_tool_call_output', call_id: 'call_1', output: [{ type: 'input_text', text: 'a.ts' }] }
+        ]
+      },
+      ctx
+    )
+    const body = await anthropicBody(unified)
+    expect(Object(Object(body.tools)[0]).name).toBe('exec')
+    expect(Object(Object(body.messages)[1]).content).toEqual([
+      { type: 'tool_use', id: 'call_1', name: 'exec', input: { input: 'ls()' } }
+    ])
   })
 })
 

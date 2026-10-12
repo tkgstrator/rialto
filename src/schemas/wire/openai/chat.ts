@@ -22,6 +22,11 @@ export const ChatCompletionResponseToolCallSchema = z
   .object({
     id: z.string().nonempty().optional(),
     type: z.string().nonempty().optional(),
+    // Not OpenAI's: the unified tool call's namespace, which a chat
+    // completion assembled from a Responses upstream carries for the
+    // Responses inbound converter to hand back (see UnifiedToolCallSchema).
+    // Loose so that an empty one cannot fail the whole completion's parse.
+    namespace: z.string().min(0).nullish(),
     function: z
       .object({
         name: z.string().min(0).optional(),

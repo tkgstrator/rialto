@@ -481,7 +481,9 @@ chain は設定項目ではない。登録されている6つの transformer は
 | `openai_responses` | `openai-responses` | `openai-responses` → `codex-oauth` |
 | `gemini` | `gemini` | — 未対応（Phase 3-2） |
 
-`anthropic` / api_key が `anthropic` 1 段なのは、ネイティブ経路に乗せるためである。unified 形は Chat の形であって Anthropic のワイヤ形ではないので、`anthropic` には外向きの変換段が無い。chain を空にすると native passthrough にはならず、Anthropic → unified の変換をしたまま Chat 形の body を送ってしまう（Claude Code の classifier リクエストが壊れていた — [anthropic-native-classifier.md](./anthropic-native-classifier.md)）。`anthropic` 単独なら chain 長 1 が `/v1/messages` の endpoint transformer と一致して **bypass モード**に入り、リクエストをそのまま送る。`claude-code-oauth` の前に `anthropic` を積まないのも同じ理由による。「未対応」の組は chain が null になり、provider は登録されない — placeholder キーで upstream を叩かせないため。
+`anthropic` / api_key が `anthropic` 1 段なのは、ネイティブ経路に乗せるためである。chain を空にすると native passthrough にはならず、Anthropic → unified の変換をしたまま Chat 形の body を送ってしまう（Claude Code の classifier リクエストが壊れていた — [anthropic-native-classifier.md](./anthropic-native-classifier.md)）。`anthropic` 単独なら chain 長 1 が `/v1/messages` の endpoint transformer と一致して **bypass モード**に入り、リクエストをそのまま送る。`claude-code-oauth` の前に `anthropic` を積まないのも同じ理由による。「未対応」の組は chain が null になり、provider は登録されない — placeholder キーで upstream を叩かせないため。
+
+unified 形は Chat の形であって Anthropic のワイヤ形ではない。そのため `/v1/messages` 以外の面（`/v1/chat/completions` / `/v1/responses` / gemini 面）から Claude へ回したリクエストは変換経路を通り、Anthropic への変換は**この 1 段の中**で行う: `anthropic`（API キー）と `claude-code-oauth`（サブスク）の `transformRequestIn` が unified → Anthropic Messages（`src/llms/transformers/anthropic/request-from-unified.ts`。system の巻き上げ、`tool_use` / `tool_result`、画像、`tool_choice`、`max_tokens` の既定値、effort → `output_config`、cache breakpoint、OpenAI 専用項目の除去）を、`transformResponseOut` が Anthropic の応答を Chat 形へ（JSON は `response-to-chat.ts`、SSE はイベントごとに `response-to-chat-stream.ts`）戻す。その先は面の endpoint transformer がいつもどおり面の形式にする。変換を別の段として足さないのは、段を足すと chain 長が 1 でなくなり `/v1/messages` の bypass が壊れるからである。変換経路ではクライアントのヘッダを転送しないので、両段とも `anthropic-version`（サブスクは `anthropic-beta: oauth-2025-04-20` も）を自分で書く。Responses 専用のツール（namespace / custom）は、Chat・Gemini と同じく関数に下ろして送り（`src/llms/utils/tool-lowering.ts`）、戻りの呼び出しは `/v1/responses` の endpoint が呼び手の宣言どおりに引き上げる — [inbound-parity.md](./inbound-parity.md) の (14)。
 
 `Model.apiStyle` が provider と食い違うモデル（api_key openai provider 上の codex 系）は、その差分だけをモデル別 chain として provider chain の後段に足す。
 
@@ -646,7 +648,10 @@ base64 のままプロンプトのテキストとして上流に届き、Codex �
 今は unified の tool メッセージが画像を image part のまま持ち、Responses では
 `function_call_output.output` の `input_image` 配列として送る。tool メッセージに画像を
 載せられない Chat Completions と Gemini では、`liftToolResultImages` がそれを tool メッセージ群の
-直後の user メッセージへ移す。
+直後の user メッセージへ移す。Responses → unified の変換も同じで、Codex CLI が
+`function_call_output` / `custom_tool_call_output` の `output` を content part の配列で送ってきたら
+（コードモードの `exec` の結果がそう）、`JSON.stringify` せずに text / image part として持ち、
+Responses の上流へは同じ `input_text` / `input_image` の配列で返す。
 
 ### 先回りの failover は無い
 
@@ -766,11 +771,11 @@ flowchart TD
 
 | transformer | 主な仕事 |
 |-------------|----------|
-| `anthropic` (endpoint) | inbound `/v1/messages` を unified に reshape、SSE を Anthropic スキーマに揃え直す |
-| `openai` / `openai-responses` | `/v1/chat/completions` および Responses API のリシェイプ。出力上限は面ごとに名前が違うので、unified の `max_tokens` から `openai` が `max_completion_tokens` (gpt-5 系)、`openai-responses` が `max_output_tokens` に付け替える |
-| `gemini` | Google Gemini 形式変換 |
-| `claude-code-oauth` | Anthropic 直叩き subscription。`auth()` で `.credentials.json` の bearer token 注入 |
-| `codex-oauth` | ChatGPT backend (codex) — openai-responses chain と組合せ。`openai-responses` が作った Responses の本文を、Codex CLI 0.158.0（`codex exec`）が送るのと同じ classic 形に直す: 呼び手の system は `input` 先頭の developer メッセージ（`instructions` は Responses の呼び手が書いたときだけそれ、他は中立の一文）、CLI が送るトップレベルの項目だけ、`include: reasoning.encrypted_content`、ヘッダと `client_metadata` も CLI のもの。暗号化 reasoning は thinking の signature に封入して往復させ、生んだアカウントにだけ戻す（`src/llms/utils/codex-reasoning.ts`）。CLI が `gpt-5.6-*` / `gpt-6-*` に送る Responses Lite の形はまだ再現していない。詳細は `src/llms/transformers/openai/codex/request-shape.ts` の冒頭 |
+| `anthropic` (endpoint) | inbound `/v1/messages` を unified に reshape、SSE を Anthropic スキーマに揃え直す。API キーのプロバイダ段としては、変換経路で unified → Anthropic Messages と Anthropic → Chat（JSON / SSE）を行う |
+| `openai` / `openai-responses` | `/v1/chat/completions` および Responses API のリシェイプ。出力上限は面ごとに名前が違うので、unified の `max_tokens` から `openai` が `max_completion_tokens` (gpt-5 系)、`openai-responses` が `max_output_tokens` に付け替える。`openai` は Responses 専用のツールを関数に下ろす |
+| `gemini` | Google Gemini 形式変換（Responses 専用のツールは関数に下ろす） |
+| `claude-code-oauth` | Anthropic 直叩き subscription。bypass では `auth()` で bearer token と Claude Code の identity を注入。変換経路では `anthropic` 段と同じ unified ↔ Anthropic 変換に、identity・bearer・`oauth-2025-04-20` beta を加える |
+| `codex-oauth` | ChatGPT backend (codex) — openai-responses chain と組合せ。`openai-responses` が作った Responses の本文を、Codex CLI 0.158.0（`codex exec`）が送るのと同じ classic 形に直す: 呼び手の system は `input` 先頭の developer メッセージ（`instructions` は Responses の呼び手が書いたときだけそれ、他は中立の一文）、CLI が送るトップレベルの項目だけ、`include: reasoning.encrypted_content`、ヘッダと `client_metadata` も CLI のもの。暗号化 reasoning は thinking の signature に封入して往復させ、生んだアカウントにだけ戻す（`src/llms/utils/codex-reasoning.ts`）。CLI 0.160 が既知のモデル（`gpt-5.6-*` / `gpt-6-*`）に送る Responses Lite の形（トップレベルの `instructions` / `tools` が無く、ツールは入力先頭の `additional_tools` 項目に入る）は、上流へは送らないが呼び手からは受け付ける: `additional_tools` のツール（`functions` / `clock` / `collaboration` の namespace。コードモードの `exec` custom ツールも grammar ごと）はトップレベルの `tools` として classic 形に下ろし、namespace 内のツールの呼び出しは往復とも `namespace` を保つ。Lite のヘッダ（`x-openai-internal-codex-responses-lite`）は転送しない。詳細は `src/llms/transformers/openai/codex/request-shape.ts` の冒頭と [inbound-parity.md](./inbound-parity.md) の (13) |
 
 登録されているのは**この6つで全部**である。`maxtoken` / `tooluse` / `reasoning` / `enhancetool`
 といった旧ベンダーコード由来のユーティリティ系 transformer は存在しない（吸収時に消えた）。

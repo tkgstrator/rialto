@@ -30,6 +30,7 @@ import {
 import { buildGenerationConfig, buildToolConfig, buildTools, isToolChoiceFunctionObject } from './gemini/request-config'
 import { buildContents } from './gemini/request-content'
 import type { GeminiTool } from './gemini-schema'
+import { lowerResponsesTools } from './tool-lowering'
 
 // ─── Gemini wire shapes ─────────────────────────────────────────────────
 // All schemas live in `@/schemas/wire/gemini/content`; this file imports the
@@ -67,8 +68,16 @@ function normalizeToolChoice(value: unknown): UnifiedChatRequest['tool_choice'] 
 /**
  * Convert a unified chat request into the Gemini `generateContent`
  * request body shape.
+ *
+ * Responses-only tools are lowered to functions first
+ * (`./tool-lowering.ts`). Gemini declares functions only, so a Lite
+ * caller's namespace and custom tools would otherwise all be dropped —
+ * the model left with no way to run a command — and a custom call in
+ * history, whose payload is free text, would reach `parseToolArguments`
+ * as if it were a JSON argument object and throw.
  */
-export function buildRequestBody(request: UnifiedChatRequest): GeminiRequestBody {
+export function buildRequestBody(input: UnifiedChatRequest): GeminiRequestBody {
+  const request = lowerResponsesTools(input)
   const tools = buildTools(request.tools)
   const contents = buildContents(request.messages)
   const generationConfig = buildGenerationConfig(request)

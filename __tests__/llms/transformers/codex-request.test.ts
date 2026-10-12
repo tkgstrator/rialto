@@ -23,6 +23,9 @@ import { codexAccountTag, openCodexReasoning } from '../../../src/llms/utils/cod
 import { buildRequestBody } from '../../../src/llms/utils/gemini-request'
 import { aggregateAnthropicSseToJson } from '../../../src/llms/utils/sse-aggregate'
 import type { RuntimeProvider, TransformerContext, UnifiedChatRequest } from '../../../src/schemas/domain'
+import classicFixture from '../../fixtures/codex/cli-0.160-classic.json'
+import liteTurn1Fixture from '../../fixtures/codex/cli-0.160-lite-turn1.json'
+import liteTurn2Fixture from '../../fixtures/codex/cli-0.160-lite-turn2.json'
 
 type Bag = Record<string, unknown>
 
@@ -188,6 +191,13 @@ describe('an Anthropic caller', () => {
       role: 'assistant',
       content: [{ type: 'output_text', text: 'Let me look.' }]
     })
+    // An Anthropic tool has no namespace, and its call gets no key for one.
+    expect(input[call]).toEqual({
+      type: 'function_call',
+      arguments: '{"file_path":"a.ts"}',
+      name: 'Read',
+      call_id: 'call_1'
+    })
   })
 
   test("tools as the CLI states them, and tool_choice 'auto'", async () => {
@@ -242,6 +252,122 @@ describe('a Responses caller (the Codex CLI)', () => {
   test('a summary is sent only when the caller asked for one', async () => {
     const { body } = await send(responses({ effort: 'high' }))
     expect(body.reasoning).toEqual({ effort: 'high' })
+  })
+})
+
+// ─── The Responses Lite shape (Codex CLI 0.160) ───────────────────────
+
+// Codex CLI 0.160.0 sends a model it knows (`gpt-6-astra`) the "Responses
+// Lite" shape: no `instructions`, no top-level `tools`, its tools in an
+// `additional_tools` input item. That item used to be skipped as unknown,
+// so the backend was sent no tools and the model could not run a command.
+// The fixtures are the CLI's own requests, minimised; Rialto lowers them
+// into the classic shape, which the backend takes for these models (the CLI
+// itself sends the classic shape to a model name it does not recognise —
+// the third fixture).
+
+type Fixture = { body: Bag; headers?: Record<string, string> }
+
+async function responsesToCodex(fixture: Fixture): Promise<Sent> {
+  const context = contextFor('openai-responses', fixture.body, fixture.headers)
+  const unified = await new OpenAIResponsesTransformer().transformRequestOut(structuredClone(fixture.body), context)
+  return toCodex({ ...unified }, context)
+}
+
+const inputOf = (body: Bag): Bag[] => (Array.isArray(body.input) ? body.input.map((item) => Object(item)) : [])
+const toolsOf = (body: Bag): Bag[] => (Array.isArray(body.tools) ? body.tools.map((tool) => Object(tool)) : [])
+
+// The tools the Lite fixture declares, in the flat shape the CLI wrote them.
+const liteTools = (): Bag[] => {
+  const declared = inputOf(liteTurn1Fixture.body).find((item) => item.type === 'additional_tools')
+  return Array.isArray(declared?.tools) ? declared.tools : []
+}
+
+describe('a Responses Lite caller (Codex CLI 0.160, a model it knows)', () => {
+  test('its additional_tools reach the backend as top-level tools, verbatim', async () => {
+    const { body } = await responsesToCodex(liteTurn1Fixture)
+    const tools = toolsOf(body)
+    expect(tools.map((tool) => [tool.type, tool.name])).toEqual([
+      ['namespace', 'functions'],
+      ['namespace', 'clock'],
+      ['namespace', 'collaboration']
+    ])
+    expect(tools).toEqual(liteTools())
+    // The code-mode tool everything runs through, grammar intact.
+    const functions = Object(tools[0])
+    const exec = Object(functions.tools[0])
+    expect(exec).toMatchObject({ type: 'custom', name: 'exec' })
+    expect(exec.format).toEqual({ type: 'grammar', syntax: 'lark', definition: 'start: SOURCE\nSOURCE: /(.|\\n)+/' })
+    expect(body.tool_choice).toBe('auto')
+    expect(inputOf(body).some((item) => item.type === 'additional_tools')).toBe(false)
+  })
+
+  test('the base prompt stays developer messages in input, and instructions is the neutral sentence', async () => {
+    const { body } = await responsesToCodex(liteTurn1Fixture)
+    expect(body.instructions).toBe(NEUTRAL_INSTRUCTIONS)
+    const texts = (items: Bag[]): string[] =>
+      items.flatMap((item) =>
+        Array.isArray(item.content) ? item.content.map((part) => String(Object(part).text)) : []
+      )
+    const developer = inputOf(body).filter((item) => item.type === 'message' && item.role === 'developer')
+    const written = inputOf(liteTurn1Fixture.body).filter(
+      (item) => item.type === 'message' && item.role === 'developer'
+    )
+    expect(developer).toHaveLength(written.length)
+    const sent = texts(developer).join('')
+    for (const text of texts(written)) expect(sent).toContain(text)
+    expect(inputOf(body).filter((item) => item.role === 'user')).toHaveLength(2)
+  })
+
+  test('only the fields the CLI sends on the classic shape go upstream, with its values', async () => {
+    const { body } = await responsesToCodex(liteTurn1Fixture)
+    expect(Object.keys(body).filter((key) => !CLI_FIELDS.has(key))).toEqual([])
+    expect(body.parallel_tool_calls).toBe(false)
+    expect(body.reasoning).toEqual({ effort: 'low' })
+    expect(body.text).toEqual({ verbosity: 'low' })
+    expect(body.include).toEqual(['reasoning.encrypted_content'])
+  })
+
+  test('the Lite header is not forwarded: the body that goes up is classic', async () => {
+    expect(liteTurn1Fixture.headers['x-openai-internal-codex-responses-lite']).toBe('true')
+    const { headers } = await responsesToCodex(liteTurn1Fixture)
+    expect(Object.keys(headers).filter((name) => name.toLowerCase().includes('responses-lite'))).toEqual([])
+  })
+
+  test('turn 2 hands back the namespaced exec call and its output parts, not their JSON', async () => {
+    const written = inputOf(liteTurn2Fixture.body)
+    const call = Object(written.find((item) => item.type === 'custom_tool_call'))
+    const output = Object(written.find((item) => item.type === 'custom_tool_call_output'))
+    const { body } = await responsesToCodex(liteTurn2Fixture)
+    const input = inputOf(body)
+    const at = input.findIndex((item) => item.type === 'custom_tool_call')
+    expect(input[at]).toEqual({
+      type: 'custom_tool_call',
+      call_id: 'call_exec1',
+      name: 'exec',
+      namespace: 'functions',
+      input: call.input
+    })
+    expect(input[at + 1]).toEqual({ type: 'custom_tool_call_output', call_id: 'call_exec1', output: output.output })
+    expect(Array.isArray(input[at + 1].output)).toBe(true)
+    // The tools are still declared on the second turn.
+    expect(toolsOf(body).map((tool) => tool.name)).toEqual(['functions', 'clock', 'collaboration'])
+  })
+})
+
+describe('a classic Responses caller (Codex CLI 0.160, a model name it does not know)', () => {
+  test('its top-level tools go upstream as they always did', async () => {
+    const { body } = await responsesToCodex(classicFixture)
+    const tools = toolsOf(body)
+    expect(tools.map((tool) => [tool.type, tool.name])).toEqual(
+      classicFixture.body.tools.map((tool) => [tool.type, Reflect.get(tool, 'name')])
+    )
+    // The namespace tool, verbatim.
+    expect(tools.find((tool) => tool.type === 'namespace')).toEqual(
+      classicFixture.body.tools.find((tool) => tool.type === 'namespace')
+    )
+    expect(body.instructions).toBe(classicFixture.body.instructions)
+    expect(Object.keys(body).filter((key) => !CLI_FIELDS.has(key))).toEqual([])
   })
 })
 

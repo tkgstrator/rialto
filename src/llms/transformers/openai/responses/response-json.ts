@@ -12,7 +12,7 @@ import type {
   ResponsesAPIOutputItem,
   ResponsesAPIPayload
 } from '@/schemas/wire/openai/responses'
-import { firstDefined, newChatcmplId } from './helpers'
+import { firstDefined, namespaceOf, newChatcmplId } from './helpers'
 
 export function convertResponseToChat(responseData: ResponsesAPIPayload, logger?: Logger): Record<string, unknown> {
   const messageOutput = responseData.output?.find((item) => item.type === 'message')
@@ -42,7 +42,9 @@ export function convertResponseToChat(responseData: ResponsesAPIPayload, logger?
             // function kind's and is absent on one of these.
             arguments: isCustomCall ? toolCallOutput.input : toolCallOutput.arguments
           },
-          type: isCustomCall ? 'custom' : 'function'
+          type: isCustomCall ? 'custom' : 'function',
+          // The namespace tool the call is in (UnifiedToolCallSchema).
+          ...namespaceOf(toolCallOutput.namespace)
         }
       ]
     : null

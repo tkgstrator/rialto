@@ -12,11 +12,13 @@
  *                `wrapResponsesEnvelopeAsSse` below is the fallback for
  *                a response with no readable body.
  *
- * Kept minimal: text, tools, both tool-call kinds (function_call /
- * custom_tool_call and their outputs), and input images are supported.
- * Uncommon shapes (audio, refusal, custom annotations) round-trip through
- * the pipeline verbatim rather than throwing, so the upstream error
- * surfaces to the caller instead of a schema violation here.
+ * Kept minimal: text, tools (top-level, or in the Lite shape's
+ * `additional_tools` input item), both tool-call kinds (function_call /
+ * custom_tool_call, with their namespace, and their outputs), and input
+ * images are supported. Uncommon shapes (audio, refusal, custom
+ * annotations) round-trip through the pipeline verbatim rather than
+ * throwing, so the upstream error surfaces to the caller instead of a
+ * schema violation here.
  */
 
 import { randomUUID } from 'node:crypto'
@@ -24,6 +26,8 @@ import type { UnifiedChatRequest } from '@/schemas/domain/unified'
 import {
   type ChatCompletionResponse,
   type ChatCompletionResponseMessage,
+  type ChatCompletionResponseToolCall,
+  ResponsesInboundAdditionalToolsItemSchema,
   ResponsesInboundCustomToolCallItemSchema,
   ResponsesInboundCustomToolCallOutputItemSchema,
   ResponsesInboundFunctionCallItemSchema,
@@ -34,8 +38,18 @@ import {
 import { isObject } from '../../../utils/guards'
 import { flattenSystemToText } from '../../../utils/system-blocks'
 import { nowSeconds } from '../../../utils/time'
+import {
+  customInputOf,
+  NO_TOOL_LOWERING,
+  raisedCallOf,
+  type ToolLowering,
+  toolLoweringOf
+} from '../../../utils/tool-lowering'
+import { firstDefined, namespaceOf } from './helpers'
 
 // ─── Request: Responses → UnifiedChatRequest ───────────────────────────
+
+const TEXT_PART_TYPES: ReadonlySet<unknown> = new Set(['input_text', 'output_text', 'text'])
 
 function contentTextParts(content: unknown): string {
   if (typeof content === 'string') return content
@@ -47,8 +61,7 @@ function contentTextParts(content: unknown): string {
       continue
     }
     if (!isObject(item)) continue
-    const t = item.type
-    if ((t === 'input_text' || t === 'output_text' || t === 'text') && typeof item.text === 'string') {
+    if (TEXT_PART_TYPES.has(item.type) && typeof item.text === 'string') {
       parts.push(item.text)
     }
   }
@@ -86,71 +99,196 @@ function convertMessageItem(item: ResponsesInboundMessageItem): Record<string, u
   return { role, content: blocks }
 }
 
+type CallItem = { call_id?: string; id?: string; name?: string; namespace?: string | null }
+
 // An assistant turn that called a tool, in the one shape chat-completions
 // has for both kinds. `payload` is the call's arguments (JSON, for the
 // function kind) or its input (free text, for the custom kind); `kind` is
-// what lets the outbound side put it back under the right name.
-function toolCallMessage(
-  ids: { call_id?: string; id?: string },
-  kind: 'function' | 'custom',
-  name: string,
-  payload: string
-): Record<string, unknown> {
-  const id = ids.call_id ?? ids.id ?? `call_${randomUUID().slice(0, 8)}`
-  return {
-    role: 'assistant',
-    content: null,
-    tool_calls: [{ id, type: kind, function: { name, arguments: payload } }]
+// what lets the outbound side put it back under the right name, and
+// `namespace` under the right namespace tool (UnifiedToolCallSchema).
+function toolCallMessage(item: CallItem, kind: 'function' | 'custom', payload: string | undefined) {
+  const known = firstDefined([item.call_id, item.id])
+  const call = {
+    id: known === undefined ? `call_${randomUUID().slice(0, 8)}` : known,
+    type: kind,
+    ...namespaceOf(item.namespace),
+    function: {
+      name: typeof item.name === 'string' ? item.name : '',
+      arguments: typeof payload === 'string' ? payload : ''
+    }
   }
+  return { role: 'assistant', content: null, tool_calls: [call] }
+}
+
+// `data:image/png;base64,…` names its own media type, which Gemini's
+// `inlineData` needs to rebuild the image from its bytes. A plain URL does
+// not, and its part goes without one, as an image on a message does.
+function withMediaType(part: { type: 'image_url'; image_url: { url: string } }): Record<string, unknown> {
+  const declared = /^data:([^;,]+)[;,]/.exec(part.image_url.url)
+  return declared === null ? part : { ...part, media_type: declared[1] }
+}
+
+// One part of an array tool output, as unified content parts.
+function toolOutputParts(part: unknown): Array<Record<string, unknown>> {
+  if (typeof part === 'string') return part.length > 0 ? [{ type: 'text', text: part }] : []
+  if (isObject(part) && TEXT_PART_TYPES.has(part.type) && typeof part.text === 'string') {
+    return part.text.length > 0 ? [{ type: 'text', text: part.text }] : []
+  }
+  const images = contentImageParts([part])
+  if (images.length > 0) return images.map(withMediaType)
+  // `input_file` and anything newer: unified has no part for it, so it
+  // keeps the JSON the whole output used to be sent as.
+  return [{ type: 'text', text: JSON.stringify(part) }]
+}
+
+/**
+ * A tool's output, as the unified tool message carries it.
+ *
+ * An array is content parts — the Codex CLI answers its code-mode `exec`
+ * with `[{type:'input_text', text}, …]` — and stays parts, so each outbound
+ * conversion renders them in its own wire format: Responses as the same
+ * `input_text` / `input_image` output array (request.ts), Chat and Gemini,
+ * whose tool role takes no image, through `liftToolResultImages`. It used to be
+ * `JSON.stringify`'d, so the model read its tool's result as a JSON dump of
+ * part objects, and re-read it in every later turn. Any other non-string
+ * keeps that JSON, which is all there is to send for it.
+ */
+function toolResultContent(output: unknown): string | Array<Record<string, unknown>> {
+  if (typeof output === 'string') return output
+  if (output === undefined) return ''
+  if (!Array.isArray(output)) return JSON.stringify(output)
+  const parts = output.flatMap(toolOutputParts)
+  return parts.length > 0 ? parts : ''
 }
 
 // The result of having run one, likewise. `tool_call_type` rides along
 // only for the custom kind so that a function result stays byte-identical
 // to what every caller before custom tools produced.
 function toolResultMessage(callId: string | undefined, kind: 'function' | 'custom', output: unknown) {
-  const content = typeof output === 'string' ? output : output !== undefined ? JSON.stringify(output) : ''
-  const message: Record<string, unknown> = { role: 'tool', tool_call_id: callId ?? '', content }
+  const message: Record<string, unknown> = {
+    role: 'tool',
+    tool_call_id: typeof callId === 'string' ? callId : '',
+    content: toolResultContent(output)
+  }
   if (kind === 'custom') message.tool_call_type = kind
   return message
 }
 
-function convertToolsResponsesToChat(tools: unknown): unknown {
-  if (!Array.isArray(tools)) return undefined
-  const out: unknown[] = []
-  for (const raw of tools) {
-    if (!isObject(raw)) continue
-    if (raw.type === 'web_search') {
-      // The Chat wire form of a hosted web-search tool is a function
-      // whose name is literally "web_search"; remapTools on the other
-      // side collapses it back to `{type:'web_search'}`.
-      out.push({
+function convertToolResponsesToChat(raw: unknown): unknown[] {
+  if (!isObject(raw)) return []
+  if (raw.type === 'web_search') {
+    // The Chat wire form of a hosted web-search tool is a function
+    // whose name is literally "web_search"; remapTools on the other
+    // side collapses it back to `{type:'web_search'}`.
+    return [
+      {
         type: 'function',
         function: {
           name: 'web_search',
           description: 'Hosted web search',
           parameters: { type: 'object', properties: {} }
         }
-      })
-      continue
-    }
-    if (raw.type !== 'function') {
-      // A tool with no Chat-Completions equivalent — Codex's `namespace`,
-      // `custom` and `local_shell`. Carry it verbatim: the unified type has a
-      // member for exactly this (UnifiedPassthroughTool), so each
-      // outbound transformer decides what its own upstream can do with
-      // it rather than us dropping it here.
-      out.push(raw)
-      continue
-    }
-    const name = typeof raw.name === 'string' ? raw.name : undefined
-    if (name === undefined) continue
-    const parameters = isObject(raw.parameters) ? raw.parameters : { type: 'object', properties: {} }
-    const description = typeof raw.description === 'string' ? raw.description : undefined
-    const fn: Record<string, unknown> = { name, parameters }
-    if (description !== undefined) fn.description = description
-    out.push({ type: 'function', function: fn })
+      }
+    ]
   }
-  return out
+  if (raw.type !== 'function') {
+    // A tool with no Chat-Completions equivalent — Codex's `namespace`,
+    // `custom` and `local_shell`. Carry it verbatim: the unified type has a
+    // member for exactly this (UnifiedPassthroughTool), so each
+    // outbound transformer decides what its own upstream can do with
+    // it rather than us dropping it here.
+    return [raw]
+  }
+  if (typeof raw.name !== 'string') return []
+  const parameters = isObject(raw.parameters) ? raw.parameters : { type: 'object', properties: {} }
+  const fn: Record<string, unknown> = { name: raw.name, parameters }
+  if (typeof raw.description === 'string') fn.description = raw.description
+  return [{ type: 'function', function: fn }]
+}
+
+// What a tool is called: its name (under `function` once converted), or
+// its type for the nameless hosted tools (`web_search`, `local_shell`).
+function toolName(tool: unknown): string {
+  if (!isObject(tool)) return ''
+  const fn = tool.function
+  if (isObject(fn) && typeof fn.name === 'string') return fn.name
+  if (typeof tool.name === 'string') return tool.name
+  return typeof tool.type === 'string' ? `type:${tool.type}` : ''
+}
+
+/**
+ * One tool per name. Two declarations under one name — a tool, or a
+ * namespace — leave the upstream to pick between them or to refuse the
+ * request, so one is kept: the later. The top-level `tools` are read first,
+ * as the base, and then the input, which is history read in order, so a
+ * name declared again further down is the newer declaration. It takes the
+ * earlier one's place in the list rather than moving to the end: the tool
+ * list is part of the prompt prefix the upstream caches (and of
+ * codex-oauth's `prompt_cache_key`), and a redefinition should not reorder
+ * it.
+ */
+function oneToolPerName(tools: unknown[]): unknown[] {
+  const byName = new Map<string, unknown>()
+  for (const tool of tools) byName.set(toolName(tool), tool)
+  return [...byName.values()]
+}
+
+function additionalToolsOf(item: unknown): unknown[] {
+  const parsed = ResponsesInboundAdditionalToolsItemSchema.safeParse(item)
+  return parsed.success ? parsed.data.tools : []
+}
+
+/**
+ * Every tool the request declares, in unified form. The Lite shape (see
+ * ResponsesInboundAdditionalToolsItemSchema) declares them in an input item
+ * instead of at the top level, and that item used to be skipped as an
+ * unknown one — so the upstream was sent no tools at all, and the model
+ * could not run a command. Its tools are read exactly as top-level ones.
+ *
+ * Undefined when the request declares neither, so a request without tools
+ * still carries no `tools` key: an empty list would be sent upstream as one.
+ */
+function declaredTools(body: Record<string, unknown>): unknown[] | undefined {
+  const added = Array.isArray(body.input) ? body.input.flatMap(additionalToolsOf) : []
+  if (!Array.isArray(body.tools) && added.length === 0) return undefined
+  const topLevel: unknown[] = Array.isArray(body.tools) ? body.tools : []
+  return oneToolPerName([...topLevel, ...added].flatMap(convertToolResponsesToChat))
+}
+
+/**
+ * How a function-only upstream was sent this caller's tools
+ * (`tool-lowering.ts`), worked out again from the caller's own Responses
+ * body — the only thing the response side has. It runs the same
+ * `declaredTools` the request side did, so it arrives at the same names.
+ * A body that is not a Responses request declares nothing, and nothing is
+ * raised.
+ */
+export function callerToolLowering(body: unknown): ToolLowering {
+  return isObject(body) ? toolLoweringOf(declaredTools(body)) : NO_TOOL_LOWERING
+}
+
+// One input item, as the unified messages it stands for. An item with no
+// counterpart yields none — `additional_tools` among them, whose tools
+// `declaredTools` reads — and a request made only of such items reaches the
+// pipeline as "no messages" rather than as a schema violation here.
+function inputItemMessages(raw: unknown): Array<Record<string, unknown>> {
+  const fc = ResponsesInboundFunctionCallItemSchema.safeParse(raw)
+  if (fc.success) return [toolCallMessage(fc.data, 'function', fc.data.arguments)]
+  const fco = ResponsesInboundFunctionCallOutputItemSchema.safeParse(raw)
+  if (fco.success) return [toolResultMessage(fco.data.call_id, 'function', fco.data.output)]
+  const ctc = ResponsesInboundCustomToolCallItemSchema.safeParse(raw)
+  if (ctc.success) return [toolCallMessage(ctc.data, 'custom', ctc.data.input)]
+  const ctco = ResponsesInboundCustomToolCallOutputItemSchema.safeParse(raw)
+  if (ctco.success) return [toolResultMessage(ctco.data.call_id, 'custom', ctco.data.output)]
+  const msgItem = ResponsesInboundMessageItemSchema.safeParse(raw)
+  const msg = msgItem.success ? convertMessageItem(msgItem.data) : null
+  return msg === null ? [] : [msg]
+}
+
+function inputMessages(input: unknown): Array<Record<string, unknown>> {
+  if (typeof input === 'string') return input.length > 0 ? [{ role: 'user', content: input }] : []
+  if (!Array.isArray(input)) return []
+  return input.flatMap((raw) => (isObject(raw) ? inputItemMessages(raw) : []))
 }
 
 function convertToolChoiceResponsesToChat(choice: unknown): unknown {
@@ -176,47 +314,7 @@ export function convertResponsesRequestToUnified(body: Record<string, unknown>):
     messages.push({ role: 'system', content: body.instructions })
   }
 
-  const input = body.input
-  if (typeof input === 'string') {
-    if (input.length > 0) messages.push({ role: 'user', content: input })
-  } else if (Array.isArray(input)) {
-    for (const raw of input) {
-      if (!isObject(raw)) continue
-
-      const fc = ResponsesInboundFunctionCallItemSchema.safeParse(raw)
-      if (fc.success) {
-        messages.push(toolCallMessage(fc.data, 'function', fc.data.name ?? '', fc.data.arguments ?? ''))
-        continue
-      }
-
-      const fco = ResponsesInboundFunctionCallOutputItemSchema.safeParse(raw)
-      if (fco.success) {
-        messages.push(toolResultMessage(fco.data.call_id, 'function', fco.data.output))
-        continue
-      }
-
-      const ctc = ResponsesInboundCustomToolCallItemSchema.safeParse(raw)
-      if (ctc.success) {
-        messages.push(toolCallMessage(ctc.data, 'custom', ctc.data.name ?? '', ctc.data.input ?? ''))
-        continue
-      }
-
-      const ctco = ResponsesInboundCustomToolCallOutputItemSchema.safeParse(raw)
-      if (ctco.success) {
-        messages.push(toolResultMessage(ctco.data.call_id, 'custom', ctco.data.output))
-        continue
-      }
-
-      const msgItem = ResponsesInboundMessageItemSchema.safeParse(raw)
-      if (msgItem.success) {
-        const msg = convertMessageItem(msgItem.data)
-        if (msg) messages.push(msg)
-      }
-      // Unknown item type — skip; the caller will get an empty pipeline
-      // if the whole input was unknown, which surfaces as "no messages"
-      // rather than a schema violation.
-    }
-  }
+  messages.push(...inputMessages(body.input))
 
   // Absorb an Anthropic-style top-level `system` (Responses API doesn't
   // model it, but a persona-enriched pipeline could still leave one) as
@@ -226,7 +324,7 @@ export function convertResponsesRequestToUnified(body: Record<string, unknown>):
     messages.unshift({ role: 'system', content: systemText })
   }
 
-  const tools = convertToolsResponsesToChat(body.tools)
+  const tools = declaredTools(body)
   const toolChoice = convertToolChoiceResponsesToChat(body.tool_choice)
 
   const unified: Record<string, unknown> = { ...body, model, messages }
@@ -268,7 +366,52 @@ export function convertResponsesRequestToUnified(body: Record<string, unknown>):
 
 // ─── Response: chat.completion JSON → Responses envelope ───────────────
 
-function buildResponsesOutputItems(message: ChatCompletionResponseMessage | undefined): Array<Record<string, unknown>> {
+function toolCallOutputItem(tc: ChatCompletionResponseToolCall, lowering: ToolLowering): Record<string, unknown> {
+  const known = firstDefined([tc.id])
+  const callId = known === undefined ? `call_${randomUUID().slice(0, 8)}` : known
+  const wireName = typeof tc.function?.name === 'string' ? tc.function.name : ''
+  const wirePayload = typeof tc.function?.arguments === 'string' ? tc.function.arguments : ''
+  // A call a function-only upstream made into a lowered tool goes back as
+  // the caller declared it: its own name and namespace, and for a custom
+  // tool the text out of the `{"input": …}` arguments.
+  const raised = raisedCallOf(lowering, { type: tc.type, namespace: tc.namespace, name: wireName })
+  const name = raised === null ? wireName : raised.name
+  const payload = raised?.kind === 'custom' ? customInputOf(wirePayload) : wirePayload
+  // A call into a namespace tool says which one. The Codex CLI dispatches
+  // on namespace and name together, so `exec` without `functions` is a
+  // tool it does not have, and it replays the item as handed — namespace
+  // included — on the next turn.
+  const namespace = namespaceOf(raised === null ? tc.namespace : raised.namespace)
+  // A custom tool's call is a different output item, not a
+  // `function_call` with a different payload: the Codex CLI reads
+  // `input`, and the upstream expects the matching
+  // `custom_tool_call_output` on the next turn.
+  if ((raised === null ? tc.type : raised.kind) === 'custom') {
+    return {
+      id: `ctc_${randomUUID().replace(/-/g, '').slice(0, 24)}`,
+      type: 'custom_tool_call',
+      status: 'completed',
+      call_id: callId,
+      name,
+      ...namespace,
+      input: payload
+    }
+  }
+  return {
+    id: `fc_${randomUUID().replace(/-/g, '').slice(0, 24)}`,
+    type: 'function_call',
+    status: 'completed',
+    call_id: callId,
+    name,
+    ...namespace,
+    arguments: payload
+  }
+}
+
+function buildResponsesOutputItems(
+  message: ChatCompletionResponseMessage | undefined,
+  lowering: ToolLowering
+): Array<Record<string, unknown>> {
   const items: Array<Record<string, unknown>> = []
   const content = message?.content
   const text = typeof content === 'string' ? content : contentTextParts(content)
@@ -276,41 +419,13 @@ function buildResponsesOutputItems(message: ChatCompletionResponseMessage | unde
     items.push({
       id: `msg_${randomUUID().replace(/-/g, '').slice(0, 24)}`,
       type: 'message',
-      role: message?.role ?? 'assistant',
+      role: typeof message?.role === 'string' ? message.role : 'assistant',
       status: 'completed',
       content: [{ type: 'output_text', text, annotations: [] }]
     })
   }
-  if (Array.isArray(message?.tool_calls)) {
-    for (const tc of message.tool_calls) {
-      const callId = tc.id ?? `call_${randomUUID().slice(0, 8)}`
-      const name = tc.function?.name ?? ''
-      const payload = tc.function?.arguments ?? ''
-      // A custom tool's call is a different output item, not a
-      // `function_call` with a different payload: the Codex CLI reads
-      // `input`, and the upstream expects the matching
-      // `custom_tool_call_output` on the next turn.
-      if (tc.type === 'custom') {
-        items.push({
-          id: `ctc_${randomUUID().replace(/-/g, '').slice(0, 24)}`,
-          type: 'custom_tool_call',
-          status: 'completed',
-          call_id: callId,
-          name,
-          input: payload
-        })
-        continue
-      }
-      items.push({
-        id: `fc_${randomUUID().replace(/-/g, '').slice(0, 24)}`,
-        type: 'function_call',
-        status: 'completed',
-        call_id: callId,
-        name,
-        arguments: payload
-      })
-    }
-  }
+  if (Array.isArray(message?.tool_calls))
+    items.push(...message.tool_calls.map((tc) => toolCallOutputItem(tc, lowering)))
   return items
 }
 
@@ -328,9 +443,18 @@ export function convertChatUsageToResponses(usage: Record<string, unknown>): Rec
   }
 }
 
-export function convertChatCompletionToResponses(chat: ChatCompletionResponse): Record<string, unknown> {
+/**
+ * A chat completion as the Responses envelope. `lowering` is how the
+ * caller's tools were sent to a function-only upstream
+ * (`callerToolLowering`), so its calls can be handed back as declared;
+ * without one, every call goes back exactly as the upstream made it.
+ */
+export function convertChatCompletionToResponses(
+  chat: ChatCompletionResponse,
+  lowering: ToolLowering = NO_TOOL_LOWERING
+): Record<string, unknown> {
   const firstChoice = chat.choices?.[0]
-  const output = buildResponsesOutputItems(firstChoice?.message)
+  const output = buildResponsesOutputItems(firstChoice?.message, lowering)
   const usage = chat.usage ? convertChatUsageToResponses({ ...chat.usage }) : undefined
   const envelope: Record<string, unknown> = {
     id: chat.id ?? `resp_${randomUUID().replace(/-/g, '').slice(0, 24)}`,

@@ -63,7 +63,12 @@ describe('convertAnthropicResponseToChat', () => {
     const message = choices[0].message as Record<string, unknown>
     expect(message.role).toBe('assistant')
     expect(message.content).toBe('pong')
-    expect(chat.usage).toEqual({ prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 })
+    expect(chat.usage).toEqual({
+      prompt_tokens: 5,
+      completion_tokens: 1,
+      total_tokens: 6,
+      prompt_tokens_details: { cached_tokens: 0 }
+    })
   })
 
   test('multiple text blocks concatenate', () => {
@@ -129,7 +134,10 @@ describe('convertAnthropicResponseToChat', () => {
     }
   })
 
-  test('usage folds cache_read + cache_creation into prompt_tokens', () => {
+  // The cache read is restated as Chat's cached_tokens — "cached tokens
+  // present in the prompt", so already inside prompt_tokens — the same
+  // usage the streaming converter reports.
+  test('usage folds cache_read + cache_creation into prompt_tokens, and names the read as cached', () => {
     const chat = convertAnthropicResponseToChat({
       id: 'msg_cache',
       content: [{ type: 'text', text: 'ok' }],
@@ -143,8 +151,49 @@ describe('convertAnthropicResponseToChat', () => {
     expect(chat.usage).toEqual({
       prompt_tokens: 10 + 100 + 20,
       completion_tokens: 4,
-      total_tokens: 10 + 100 + 20 + 4
+      total_tokens: 10 + 100 + 20 + 4,
+      prompt_tokens_details: { cached_tokens: 100 }
     })
+  })
+
+  test('thinking blocks become message.thinking, signed by the last signature', () => {
+    const chat = convertAnthropicResponseToChat({
+      id: 'msg_think',
+      type: 'message',
+      content: [
+        { type: 'thinking', thinking: 'first', signature: 'sig_a' },
+        { type: 'thinking', thinking: ' then', signature: 'sig_b' },
+        { type: 'text', text: 'answer' }
+      ],
+      stop_reason: 'end_turn'
+    })
+    const message = Object(Object(chat.choices)[0]).message
+    expect(message.thinking).toEqual({ content: 'first then', signature: 'sig_b' })
+    expect(message.content).toBe('answer')
+  })
+
+  test('server tool blocks are not handed to the client as calls to run', () => {
+    const chat = convertAnthropicResponseToChat({
+      id: 'msg_search',
+      type: 'message',
+      content: [
+        { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: { query: 'x' } },
+        { type: 'web_search_tool_result', tool_use_id: 'srvtoolu_1', content: [] },
+        { type: 'text', text: 'found it' }
+      ],
+      stop_reason: 'end_turn'
+    })
+    const message = Object(Object(chat.choices)[0]).message
+    expect(message.tool_calls).toBeUndefined()
+    expect(message.content).toBe('found it')
+  })
+
+  test('a refusal is a content filter, and an exhausted context window a truncation', () => {
+    const finish = (stopReason: string): unknown =>
+      Object(Object(convertAnthropicResponseToChat({ id: 'x', content: [], stop_reason: stopReason }).choices)[0])
+        .finish_reason
+    expect(finish('refusal')).toBe('content_filter')
+    expect(finish('model_context_window_exceeded')).toBe('length')
   })
 
   test('missing usage omits the field rather than stamping zeros', () => {

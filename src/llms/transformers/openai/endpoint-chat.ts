@@ -10,6 +10,10 @@
  *   - gpt-5.x and o-series chat models reject `max_tokens` and require
  *     `max_completion_tokens` instead (HTTP 400 "Unsupported parameter").
  *     We rename the field in place, leaving older gpt-4.x models alone.
+ *   - The Responses-only parts of unified — namespace and custom tools, and
+ *     calls made into them — are lowered to function tools and calls
+ *     (`utils/tool-lowering.ts`), because Chat has no place for them and
+ *     a caller's Lite request declares nothing else.
  *
  * Codex-family models on the openai provider are routed through
  * `openai-responses` — their `Model.apiStyle` disagrees with the
@@ -20,6 +24,7 @@
 import type { RuntimeProvider, TransformerContext, UnifiedChatRequest } from '@/schemas/domain'
 import { REASONING_MODEL_RE } from '@/shared/reasoning-model'
 import { absorbTopLevelSystem } from '../../utils/system-blocks'
+import { lowerResponsesTools } from '../../utils/tool-lowering'
 import { liftToolResultImages } from '../../utils/tool-result-images'
 import { Transformer } from '../base'
 
@@ -114,8 +119,15 @@ export class OpenAITransformer extends Transformer {
     }
     // Chat rejects the unified Responses reasoning object.
     if ('reasoning' in req) delete req.reasoning
+    // Chat Completions has no namespace or Responses-style custom tool, so
+    // either sent verbatim is a 400 for the whole request — and dropped,
+    // a Lite caller's model runs with no tools at all. Lowered, they are
+    // functions the model can call; the Responses endpoint raises the
+    // calls back to the shape the caller declared. A request that spoke
+    // only in functions comes back as it went.
+    const lowered = lowerResponsesTools(req)
     // A tool message takes text only on this wire format.
-    if (Array.isArray(req.messages)) req.messages = liftToolResultImages(req.messages)
-    return req
+    if (!Array.isArray(lowered.messages)) return lowered
+    return { ...lowered, messages: liftToolResultImages(lowered.messages) }
   }
 }
