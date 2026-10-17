@@ -12,6 +12,15 @@ env:
   GH_TOKEN: ${{ secrets.GH_TOKEN }}
 
 jobs:
+  ci-change-scope:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci-change-scope.yaml
+    with:
+      doc-paths: '["AGENTS.md","CLAUDE.md","LICENSE","README.md","docs/architecture/adaptive-reasoning-effort.md","docs/architecture/anthropic-native-classifier.md","docs/architecture/claude-code-model-catalog.md","docs/architecture/decision-routing.md","docs/architecture/inbound-surfaces.md","docs/architecture/model-capabilities.md","docs/architecture/pipeline-overview.md","docs/architecture/request-flow.md","docs/architecture/response-model-identity.md","docs/architecture/routing.md","docs/architecture/testing-map.md","docs/development/ci-change-scope.md","docs/guides/agent-call-detection.md","docs/guides/codex-mcp.md","docs/guides/decisions.md","docs/guides/demo-data.md","docs/guides/migration-v3.md","docs/guides/model-provider-priority.md","docs/guides/permission-routing.md","docs/guides/persona-authoring.md","docs/guides/plans.md","docs/guides/public-deployment.md","docs/guides/pwa.md","docs/guides/tts-relay.md","docs/plan/develop-master-divergence.md","docs/plan/effort-translation.md","docs/plan/quota-and-tier-routing.md","docs/plan/quota-aware-preference-router.md","docs/plan/quota-aware-router-post-phase-4.md","docs/plan/refactor/README.md","docs/plan/refactor/master-plan.md","docs/plan/refactor/phase-1-foundation.md","docs/plan/refactor/phase-2-backend-architecture.md","docs/plan/refactor/phase-3-frontend-structure.md","docs/plan/refactor/phase-4-workspaces-and-quality.md","docs/plan/refactor/phase-5-multi-account-same-plan.md","docs/plan/refactor/phase-6-quota-aware-routing.md","docs/plan/rialto/gemini-code-assist-spike.md","docs/plan/rialto/master-plan.md","docs/plan/router-force-override.md","docs/plan/rules-only-router.md","docs/plan/scenario-tier-routing.md","docs/plan/subscription-utilization-tuning-implementation.md","docs/plan/subscription-utilization-tuning.md","docs/standards/local-secret-files.md","docs/standards/naming-conventions.md"]'
+      doc-prefixes: '[]'
+      runner: '"ubuntu-latest"'
+
   commitlint:
     name: Commit Lint
     if: github.event.action != 'closed' || github.event.pull_request.merged != true
@@ -75,11 +84,17 @@ jobs:
       - run: bunx tsc -b --noEmit
 
   test:
+    env:
+      GH_TOKEN: '${{ fromJSON((needs[''ci-change-scope''].result != ''success'' || needs[''ci-change-scope''].outputs.docs_only != ''true'') && toJSON(secrets.GH_TOKEN) || ''""'') }}'
+    if: ${{ !cancelled() && (true) }}
+    needs: ["ci-change-scope"]
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON((needs['ci-change-scope'].result == 'success' && needs['ci-change-scope'].outputs.docs_only == 'true') && '"ubuntu-latest"' || '"ubuntu-latest"') }}
     steps:
       - uses: actions/checkout@v7
+        if: ${{ (needs['ci-change-scope'].result != 'success' || needs['ci-change-scope'].outputs.docs_only != 'true') }}
       - uses: oven-sh/setup-bun@v2
+        if: ${{ (needs['ci-change-scope'].result != 'success' || needs['ci-change-scope'].outputs.docs_only != 'true') }}
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
@@ -89,15 +104,42 @@ jobs:
       # or ~/.claude / ~/.codex credentials happen to be present, so the
       # whole __tests__ tree runs deterministically: providers skip,
       # preset unit tests pass. This also guards the skipIf wiring itself.
+        if: ${{ (needs['ci-change-scope'].result != 'success' || needs['ci-change-scope'].outputs.docs_only != 'true') }}
       - run: RIALTO_SKIP_LIVE_TESTS=1 bun test __tests__/
 
+        if: ${{ (needs['ci-change-scope'].result != 'success' || needs['ci-change-scope'].outputs.docs_only != 'true') }}
+      - name: Docs-only exemption
+        if: ${{ needs['ci-change-scope'].result == 'success' && needs['ci-change-scope'].outputs.docs_only == 'true' }}
+        shell: bash
+        working-directory: .
+        env:
+          CI_CHANGE_REASON: ${{ needs['ci-change-scope'].outputs.reason }}
+        run: |
+          printf '%s\n' "$CI_CHANGE_REASON" >> "$GITHUB_STEP_SUMMARY"
   build:
+    env:
+      GH_TOKEN: '${{ fromJSON((needs[''ci-change-scope''].result != ''success'' || needs[''ci-change-scope''].outputs.docs_only != ''true'') && toJSON(secrets.GH_TOKEN) || ''""'') }}'
+    if: ${{ !cancelled() && (true) }}
+    needs: ["ci-change-scope"]
     name: Build
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON((needs['ci-change-scope'].result == 'success' && needs['ci-change-scope'].outputs.docs_only == 'true') && '"ubuntu-latest"' || '"ubuntu-latest"') }}
     steps:
       - uses: actions/checkout@v7
+        if: ${{ (needs['ci-change-scope'].result != 'success' || needs['ci-change-scope'].outputs.docs_only != 'true') }}
       - uses: oven-sh/setup-bun@v2
+        if: ${{ (needs['ci-change-scope'].result != 'success' || needs['ci-change-scope'].outputs.docs_only != 'true') }}
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
+        if: ${{ (needs['ci-change-scope'].result != 'success' || needs['ci-change-scope'].outputs.docs_only != 'true') }}
       - run: bun run build
+
+        if: ${{ (needs['ci-change-scope'].result != 'success' || needs['ci-change-scope'].outputs.docs_only != 'true') }}
+      - name: Docs-only exemption
+        if: ${{ needs['ci-change-scope'].result == 'success' && needs['ci-change-scope'].outputs.docs_only == 'true' }}
+        shell: bash
+        working-directory: .
+        env:
+          CI_CHANGE_REASON: ${{ needs['ci-change-scope'].outputs.reason }}
+        run: |
+          printf '%s\n' "$CI_CHANGE_REASON" >> "$GITHUB_STEP_SUMMARY"
