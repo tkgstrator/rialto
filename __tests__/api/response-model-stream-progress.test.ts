@@ -33,6 +33,36 @@ const relayChunks = async (chunks: Uint8Array[]): Promise<Uint8Array> => {
 
 const patchedStart = messageStart.replace('upstream', 'anthropic,claude-sonnet-5')
 
+const bufferedPrefixSource = () => {
+  const consumed = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  const state: {
+    pulls: number
+    reason: unknown
+    controller: ReadableStreamDefaultController<Uint8Array> | undefined
+  } = { pulls: 0, reason: undefined, controller: undefined }
+  const source = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        state.controller = controller
+        state.pulls += 1
+        if (state.pulls === 1) {
+          controller.enqueue(encoder.encode('data: {"type":"message_start"'))
+          return
+        }
+        consumed.resolve()
+        return release.promise
+      },
+      cancel(reason) {
+        state.reason = reason
+        release.resolve()
+      }
+    },
+    { highWaterMark: 0 }
+  )
+  return { source, state, consumed: consumed.promise, release: release.resolve }
+}
+
 const beforeRelease = async <Value>(operation: Promise<Value>): Promise<Value> => {
   const state: { timer: ReturnType<typeof setTimeout> | undefined } = { timer: undefined }
   try {
@@ -282,34 +312,26 @@ test('forwards each prelude while the initial envelope remains withheld', async 
 })
 
 test('propagates cancellation while an incomplete initial envelope is buffered', async () => {
-  const state: { reason: unknown } = { reason: undefined }
-  const source = new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(encoder.encode('data: {"type":"message_start"'))
-    },
-    cancel(reason) {
-      state.reason = reason
-    }
-  })
-  const response = await applyResponseModelIdentity(asSseResponse(source), selectedIdentity)
+  const fixture = bufferedPrefixSource()
+  const response = await applyResponseModelIdentity(asSseResponse(fixture.source), selectedIdentity)
   const reader = response.body?.getReader()
   if (!reader) throw new Error('Missing response stream')
-  const pendingRead = reader.read()
-  await reader.cancel('owned-prefix-cancel')
-  expect((await pendingRead).done).toBe(true)
-  await Promise.resolve()
-  expect(state.reason).toBe('owned-prefix-cancel')
+  try {
+    const pendingRead = reader.read()
+    await beforeRelease(fixture.consumed)
+    expect(fixture.state.pulls).toBe(2)
+    await reader.cancel('owned-prefix-cancel')
+    expect((await pendingRead).done).toBe(true)
+    expect(fixture.state.reason).toBe('owned-prefix-cancel')
+  } finally {
+    fixture.release()
+    await reader.cancel()
+  }
 })
 
 test('propagates errors while an incomplete initial envelope is buffered', async () => {
-  const state: { controller: ReadableStreamDefaultController<Uint8Array> | undefined } = { controller: undefined }
-  const source = new ReadableStream<Uint8Array>({
-    start(controller) {
-      state.controller = controller
-      controller.enqueue(encoder.encode('data: {"type":"message_start"'))
-    }
-  })
-  const response = await applyResponseModelIdentity(asSseResponse(source), selectedIdentity)
+  const fixture = bufferedPrefixSource()
+  const response = await applyResponseModelIdentity(asSseResponse(fixture.source), selectedIdentity)
   const reader = response.body?.getReader()
   if (!reader) throw new Error('Missing response stream')
   const progress = reader.read()
@@ -317,8 +339,15 @@ test('propagates errors while an incomplete initial envelope is buffered', async
     () => undefined,
     (error: unknown) => error
   )
-  state.controller?.error(new Error('synthetic-prefix-error'))
-  const failure = await beforeRelease(checked)
-  expect(failure).toBeInstanceOf(Error)
-  expect(failure instanceof Error ? failure.message : undefined).toBe('synthetic-prefix-error')
+  try {
+    await beforeRelease(fixture.consumed)
+    expect(fixture.state.pulls).toBe(2)
+    fixture.state.controller?.error(new Error('synthetic-prefix-error'))
+    const failure = await beforeRelease(checked)
+    expect(failure).toBeInstanceOf(Error)
+    expect(failure instanceof Error ? failure.message : undefined).toBe('synthetic-prefix-error')
+  } finally {
+    fixture.release()
+    await reader.cancel().catch(() => undefined)
+  }
 })
