@@ -3,8 +3,10 @@
  *
  * A route can select a concrete provider/model after a caller supplied an
  * alias, and a later candidate can replace it if an earlier attempt fails.
- * The client-visible model is always the target Rialto selected for the
- * successful invocation, rather than an upstream alias or version string.
+ * The client-visible model is the target Rialto selected for the successful
+ * invocation, rather than an upstream alias or version string. A stream can
+ * only honor that while its initial envelope is still recognizable; see
+ * applyResponseModelIdentity.
  */
 
 import { surfaceForPath } from '../../llms/inbound/surfaces'
@@ -112,12 +114,130 @@ function patchSseEvent(event: string, identity: SelectedModelIdentity): string {
   return `${lines.join('\n')}\n\n`
 }
 
+const ANTHROPIC_HEAD_LIMIT = 64 * 1024
+const ANTHROPIC_PRELUDE_LIMIT = 32
+
+function inspectAnthropicHead(
+  raw: Uint8Array,
+  identity: SelectedModelIdentity
+): { kind: 'prelude' } | { kind: 'bypass' } | { kind: 'message'; bytes: Uint8Array } {
+  try {
+    const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(raw)
+    const parts = text.split(/(\r?\n)/)
+    const dataParts = parts.filter((part, index) => index % 2 === 0 && part.startsWith('data:'))
+    if (dataParts.length === 0) return { kind: 'prelude' }
+    const payload: unknown = JSON.parse(dataParts.map((part) => part.slice(5).replace(/^ /, '')).join('\n'))
+    if (isRecord(payload) && payload.type === 'ping') return { kind: 'prelude' }
+    if (!isRecord(payload) || payload.type !== 'message_start' || !isRecord(payload.message)) return { kind: 'bypass' }
+    const firstDataIndex = parts.findIndex((part, index) => index % 2 === 0 && part.startsWith('data:'))
+    const patched = JSON.stringify(applySelectedSseModel(payload, identity))
+    const output = parts.flatMap((part, index) => {
+      if (index % 2 === 1) return []
+      const separator = index === 0 ? '' : parts[index - 1]
+      if (!part.startsWith('data:')) return [separator + part]
+      return index === firstDataIndex ? [`${separator}data: ${patched}`] : []
+    })
+    return { kind: 'message', bytes: new TextEncoder().encode(output.join('')) }
+  } catch {
+    return { kind: 'bypass' }
+  }
+}
+
+function headDelimiterLength(bytes: Uint8Array, length: number): number {
+  if (bytes[length - 1] !== 10) return 0
+  if (bytes[length - 2] === 10) return bytes[length - 3] === 13 ? 3 : 2
+  if (bytes[length - 2] === 13 && bytes[length - 3] === 10) return bytes[length - 4] === 13 ? 4 : 3
+  return 0
+}
+
+function pendingDelimiterLength(bytes: Uint8Array, length: number): number {
+  if (bytes[length - 1] === 10) return bytes[length - 2] === 13 ? 2 : 1
+  if (bytes[length - 1] === 13) {
+    if (bytes[length - 2] === 10) return bytes[length - 3] === 13 ? 3 : 2
+    return 1
+  }
+  return 0
+}
+
+function patchAnthropicSseResponse(response: Response, identity: SelectedModelIdentity): Response {
+  if (!response.body) return response
+  const state = { bytes: new Uint8Array(ANTHROPIC_HEAD_LIMIT + 4), length: 0, preludes: 0, raw: false }
+  const bypass = (chunk: Uint8Array, offset: number, controller: TransformStreamDefaultController<Uint8Array>) => {
+    const remaining = chunk.subarray(offset)
+    const output = new Uint8Array(state.length + remaining.length)
+    output.set(state.bytes.subarray(0, state.length))
+    output.set(remaining, state.length)
+    controller.enqueue(output)
+    state.length = 0
+    state.raw = true
+  }
+  const completeHead = (
+    delimiter: number,
+    chunk: Uint8Array,
+    offset: number,
+    controller: TransformStreamDefaultController<Uint8Array>
+  ): boolean => {
+    const headLength = state.length - delimiter
+    const head = inspectAnthropicHead(state.bytes.subarray(0, headLength), identity)
+    if (headLength > ANTHROPIC_HEAD_LIMIT || head.kind === 'bypass') {
+      bypass(chunk, offset, controller)
+      return true
+    }
+    if (head.kind === 'prelude') {
+      state.preludes += 1
+      if (state.preludes > ANTHROPIC_PRELUDE_LIMIT) {
+        bypass(chunk, offset, controller)
+        return true
+      }
+      controller.enqueue(state.bytes.slice(0, state.length))
+      state.length = 0
+      return false
+    }
+    const output = new Uint8Array(head.bytes.length + delimiter)
+    output.set(head.bytes)
+    output.set(state.bytes.subarray(headLength, state.length), head.bytes.length)
+    controller.enqueue(output)
+    state.length = 0
+    state.raw = true
+    if (offset < chunk.length) controller.enqueue(chunk.subarray(offset))
+    return true
+  }
+  const transform = new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      if (state.raw) {
+        controller.enqueue(chunk)
+        return
+      }
+      for (const [index, byte] of chunk.entries()) {
+        state.bytes[state.length++] = byte
+        const delimiter = headDelimiterLength(state.bytes, state.length)
+        if (delimiter > 0) {
+          if (completeHead(delimiter, chunk, index + 1, controller)) return
+          continue
+        }
+        if (state.length - pendingDelimiterLength(state.bytes, state.length) > ANTHROPIC_HEAD_LIMIT) {
+          bypass(chunk, index + 1, controller)
+          return
+        }
+      }
+    },
+    flush(controller) {
+      if (state.length > 0) controller.enqueue(state.bytes.slice(0, state.length))
+    }
+  })
+  return new Response(response.body.pipeThrough(transform), {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers
+  })
+}
+
 /**
  * Adds selected-target provenance and sets the wire model to that target.
  *
- * JSON needs one body read to replace the field. SSE stays incremental: complete
- * SSE records are transformed as they arrive and are never accumulated beyond
- * one event boundary.
+ * JSON needs one body read. Anthropic SSE rewrites a bounded initial envelope
+ * and forwards the tail unchanged; oversized, opaque or incomplete heads pass
+ * through without a body-model guarantee. Other SSE surfaces transform records.
  */
 export async function applyResponseModelIdentity(
   response: Response,
@@ -128,6 +248,11 @@ export async function applyResponseModelIdentity(
   const headers = new Headers(response.headers)
   if (selected !== undefined) headers.set('x-rialto-selected-model', selected)
   const withHeader = new Response(response.body, { status: response.status, statusText: response.statusText, headers })
-  if (isSseContentType(withHeader.headers.get('content-type'))) return patchSseResponse(withHeader, identity)
+  if (isSseContentType(withHeader.headers.get('content-type'))) {
+    if (selected !== undefined && surfaceForPath(identity.path)?.id === 'anthropic-messages') {
+      return patchAnthropicSseResponse(withHeader, identity)
+    }
+    return patchSseResponse(withHeader, identity)
+  }
   return patchBlockingJson(withHeader, identity)
 }
