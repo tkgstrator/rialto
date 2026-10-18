@@ -88,6 +88,30 @@ test('handles every byte split of the initial LF and CRLF delimiters', async () 
   }
 })
 
+test('rewrites a BOM-prefixed data-only initial envelope with split BOM bytes', async () => {
+  const initial = encoder.encode(`\ufeff${messageStart.slice('event: message_start\n'.length)}`)
+  const result = await relayChunks([initial.subarray(0, 1), initial.subarray(1, 2), initial.subarray(2)])
+  expect(result).toEqual(encoder.encode(`\ufeff${patchedStart.slice('event: message_start\n'.length)}`))
+})
+
+test('preserves mixed delimiters and a cap-sized head with a split pending delimiter', async () => {
+  const initial = messageStart.slice(0, -2)
+  for (const delimiter of ['\r\n\n', '\n\r\n']) {
+    const result = await relayChunks(Array.from(encoder.encode(initial + delimiter), (byte) => new Uint8Array([byte])))
+    expect(decoder.decode(result)).toBe(patchedStart.slice(0, -2) + delimiter)
+  }
+  const prefix = 'data: {"type":"message_start","message":{"model":"upstream","padding":"'
+  const suffix = '"}}'
+  const record = prefix + 'x'.repeat(64 * 1024 - prefix.length - suffix.length) + suffix
+  const result = await relayChunks([encoder.encode(`${record}\r\n\r`), encoder.encode('\n')])
+  expect(decoder.decode(result)).toBe(`${record.replace('upstream', 'anthropic,claude-sonnet-5')}\r\n\r\n`)
+})
+
+test('preserves no-data field records before rewriting the initial envelope', async () => {
+  const prelude = 'id: msg_1\nretry: 1000\nevent: keep-alive\n\n'
+  expect(decoder.decode(await relayChunks([encoder.encode(prelude + messageStart)]))).toBe(prelude + patchedStart)
+})
+
 test('preserves ping and comment preludes before rewriting the initial envelope', async () => {
   const prelude = ': keep-alive\r\n\r\nevent: ping\ndata: {"type":"ping"}\n\n'
   const tail = 'event: message_stop\ndata: {"type":"message_stop"}\n\n'

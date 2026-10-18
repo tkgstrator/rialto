@@ -119,11 +119,13 @@ const ANTHROPIC_PRELUDE_LIMIT = 32
 
 function inspectAnthropicHead(
   raw: Uint8Array,
-  identity: SelectedModelIdentity
+  identity: SelectedModelIdentity,
+  initialRecord: boolean
 ): { kind: 'prelude' } | { kind: 'bypass' } | { kind: 'message'; bytes: Uint8Array } {
   try {
     const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(raw)
-    const parts = text.split(/(\r?\n)/)
+    const bom = initialRecord && text.startsWith('\ufeff') ? '\ufeff' : ''
+    const parts = text.slice(bom.length).split(/(\r?\n)/)
     const dataParts = parts.filter((part, index) => index % 2 === 0 && part.startsWith('data:'))
     if (dataParts.length === 0) return { kind: 'prelude' }
     const payload: unknown = JSON.parse(dataParts.map((part) => part.slice(5).replace(/^ /, '')).join('\n'))
@@ -137,7 +139,7 @@ function inspectAnthropicHead(
       if (!part.startsWith('data:')) return [separator + part]
       return index === firstDataIndex ? [`${separator}data: ${patched}`] : []
     })
-    return { kind: 'message', bytes: new TextEncoder().encode(output.join('')) }
+    return { kind: 'message', bytes: new TextEncoder().encode(bom + output.join('')) }
   } catch {
     return { kind: 'bypass' }
   }
@@ -178,7 +180,7 @@ function patchAnthropicSseResponse(response: Response, identity: SelectedModelId
     controller: TransformStreamDefaultController<Uint8Array>
   ): boolean => {
     const headLength = state.length - delimiter
-    const head = inspectAnthropicHead(state.bytes.subarray(0, headLength), identity)
+    const head = inspectAnthropicHead(state.bytes.subarray(0, headLength), identity, state.preludes === 0)
     if (headLength > ANTHROPIC_HEAD_LIMIT || head.kind === 'bypass') {
       bypass(chunk, offset, controller)
       return true
