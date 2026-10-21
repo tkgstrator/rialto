@@ -3,9 +3,10 @@
  *
  * The four headline tiles as a two-by-two grid, and a session as the two
  * things it is opened for — which one, and what it cost — with where it
- * came in, the model it mostly ran on and how long ago it was last seen
- * on the line beneath. Turns, the token split and the cache column stay
- * on the desktop table and on the session's own screen.
+ * came in, the model it mostly ran on (and the effort, when one was
+ * recorded) and how long ago it was last seen on the line beneath. Turns,
+ * the token split and the cache column stay on the desktop table and on
+ * the session's own screen.
  */
 import { useTranslation } from 'react-i18next'
 import type { WindowTotals } from '@/components/rialto/activity/data'
@@ -71,6 +72,14 @@ export function SessionsPhoneList({ rows, now }: { rows: Enriched[]; now: number
                   {row.model === null ? t('activity.common.untracked') : row.model}
                   {row.otherModels === 0 ? null : <span className='text-muted-foreground/60'> +{row.otherModels}</span>}
                 </span>
+                {row.effort === null ? null : (
+                  <span className='shrink-0 font-mono'>
+                    · {row.effort}
+                    {row.otherEfforts === 0 ? null : (
+                      <span className='text-muted-foreground/60'> +{row.otherEfforts}</span>
+                    )}
+                  </span>
+                )}
                 <span className='ml-auto shrink-0 font-mono tabular-nums'>{fmtAgo(session.lastAt, now)}</span>
               </>
             }

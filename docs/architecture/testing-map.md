@@ -54,6 +54,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `thinking-signature-filter.test.ts` | `rialto_` プレフィクスの thinking signature 濾過 |
 | `update-check.test.ts` | 更新チェック: バージョン比較（`v` 付きタグ・prerelease・読めないタグ）と、取得失敗を「最新です」に畳まないこと、成功だけをキャッシュすること |
 | `rialto/format.test.ts` | 表示フォーマッタ（金額の有効数字など） |
+| `rialto/effort-sort.test.ts` | Activity の Effort 列の並び順。アルファベット順ではなく `SupportedEffortSchema` の段階（none < minimal < low < medium < high < xhigh < max < ultra）で並べ、記録の無い行と未知の文字列は順位を持たず末尾に回ること |
 | `rialto/provider-draft.test.ts` | プロバイダ詳細の Edit → Save が書くもの。手で元に戻した変更は何も書かないこと、プロバイダ・モデルのスイッチとキーは読み込んだ行を土台にした 1 回の upsert に載り、ティアエイリアスと effort は変わったものだけが個別の書き込みになること（upsert には載せない）。エイリアスを新しく向けたモデルは ON として描かれ（サーバ側の昇格がモデルを有効にするのと揃える）、スイッチの切れたモデルの昇格だけなら upsert を伴わないエイリアスの書き込み 1 回、解除はモデルを名指さない書き込みで、エイリアスの書き込みは帯の順に並ぶこと |
 | `rialto/provider-account-draft.test.ts` | アカウント単位の利用フラグのドラフト。認証情報を変えずに表示へ反映し、変更された既存 id だけを保存すること、手で戻した変更は no-op、モデルだけの保存は古いアカウント一覧を送り直さないこと、最後の有効アカウントも OFF にできること |
 | `rialto/provider-tier-aliases.test.ts` | プロバイダページのティア帯。名前がティアを示すモデルのうちオンの最新にティアが向き、オフの新しい版は動かさずに「newer」として数えて印を付けること、編集中に切り替えたスイッチがプレビューのティアをすぐ動かすこと、名前がティアを示さないティア（Codex・OpenAI）だけが手動のエイリアスで、そのピッカーは現在のモデル → それ以外の全モデルの順に出すこと、Tier 列が名前の示すティアを全モデルに出し、ルーティング先だけを routed にすること |
@@ -94,7 +95,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `google-surface-auth.test.ts` | Gemini 面の `x-goog-api-key` / `?key=` |
 | `request-log-events-auth.test.ts` | `/api/request-logs/events` がもう `?apikey=` を受けないこと — それを付けたリモートのリクエストは 401、ホスト上からのリクエストは通る |
 | `error-shape.test.ts` | 3 種のエラー封筒の出し分け |
-| `upstream-error.test.ts` | `PROVIDER_ERR_RE` の逆パースと verbatim 転送 |
+| `upstream-error.test.ts` | `PROVIDER_ERR_RE` の逆パースと verbatim 転送。effort 拒否の 400 の事後補正（`bestSupportedLevel` は `max` を除いた最高のレベルを選び、`max` しか挙がっていなければ null、`deepReplaceValue` は差し替えた箇所があるときだけ true） |
 | `route-plan.test.ts` | `buildRoutePlan`（body parse、面解決、transformer 引き当て、gemini はパスのモデルを `body.model` に畳み込むこと）。routed な面ではリストの primary / fallbacks が plan に載ること、quota・health で止まったリストは `exhaustedBehavior='429'` なら各面のエラー封筒で 429 + `Retry-After`（429 マークの期限があればそれ）を返して plan を作らず、`'passthrough'` なら呼び出し側の model で送ること、空のリストと全ルート OFF は `'429'` でも呼び出し側の model で送ること、エイリアス未設定・web_search を運べるルートが無い・プロンプトが入るルートが無いは 400（anthropic / chat / gemini それぞれの封筒）で `'passthrough'` でも緩まないこと、passthrough 面の `deniedTargets` と routed 面がそれを見ないこと |
 | `candidate-chain.test.ts` | `buildFailoverChain` — primary の後ろに selector が解決した fallbacks をその順で並べること（subscription primary が api_key fallback を保つ、同 provider も通る）、重複排除、exhausted 除外と全滅時の順序維持 |
 | `routing-profiles.test.ts` | `/api/routing/profiles{,/{key}}`、`/api/tier-aliases`、`PUT` / `DELETE /api/providers/{name}/tier-aliases/{tier}`。保存したルートが各ルートを解決して読み返せ（モデル・受け付け可否・Web 検索・context window。オフのモデルしかないティアはオフのまま解決される）、どのモデルにも解決できないティアは画面を落とさず null で読めること、予約キー `passthrough` の拒否、シナリオ × レーンの形でない body の検証エラー、モデルのスイッチを入れるとティアが移り quota snapshot にすぐ載ること、derived のティアへのエイリアスが 409 になること、手動のティアでスイッチの切れたモデルの昇格で ON になりティア一覧に出ること、未知の provider / model と未設定エイリアスの解除が 404、プロファイル一覧が既定を先頭に出すこと |
@@ -128,6 +129,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `tool-result-images.test.ts` | `tool_result` の画像が base64 テキストにならないこと。unified では image part のまま保ち、Responses（Codex）では `function_call_output.output` の `input_image` 配列、Chat Completions と Gemini では tool メッセージ群の直後の user メッセージへ移すこと。テキストだけの配列は JSON ではなくテキストそのものになること |
 | `bypass-header-strip.test.ts` | bypass 時の hop-by-hop ヘッダ除去 |
 | `session-id.test.ts` | `thread-id`（Codex CLI 0.158 の綴り）/ `thread_id` / `x-claude-code-session-id` / ランダム UUID の解決順 |
+| `reasoning-effort.test.ts` | `RequestLog.reasoningEffort` が上流へ実際に送った値であること。Anthropic の `output_config.effort`・Chat の `reasoning_effort`・Responses / Codex の `reasoning.effort` の 3 形から読み、無指定・空文字・文字列でない値・壊れた入れ物は null になること。Auto が挿入した段階と手動設定が呼び出し側の値を置き換えた結果が、書き換え後の本文から読めること |
 | `persona-inbound-gate.test.ts` | ペルソナ挿入が `/v1/messages` **だけ**で走ること（routed な面で `routeRequest` を直接呼び、OpenAI 形の面では `body.system` に触らないこと） |
 | `openai-bypass-routing.test.ts` | passthrough 面（`/v1/chat/completions` / `/v1/responses`）ではルーティングを通らず `body.model` がそのまま残ること、routed な `/v1/messages` と `inboundPath` の無い旧呼び出しはルーティングを通ること（トークン数が付き、model が書き換わる） |
 | `openai-responses-*.test.ts` / `anthropic-response-to-chat.test.ts` / `gemini-*.test.ts` / `response-format-converter.test.ts` | 各ワイヤ形式の双方向変換とストリーム。`openai-responses-lite.test.ts` は Lite の各区間に加えて、関数しか無いワイヤ（Chat / Gemini）へ namespace・custom ツールが関数として下ろされること（`exec` は文字列 1 つ `input` を取り grammar を説明に持つ、履歴の custom 呼び出しは `{"input": …}` の関数呼び出し、namespace と `tool_call_type` は出ない）と、戻りでその呼び出しが呼び手の宣言どおりの `custom_tool_call` / namespace 付きに引き上げられること（ストリームでは custom の入力をその呼び出しが閉じるまで保持し、delta の連結が `.done` の生テキストと一致する）、上流が自分で namespace や kind を言った呼び出しには触れないことも見る |
