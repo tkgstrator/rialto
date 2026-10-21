@@ -121,8 +121,11 @@ const EFFORT_LADDER = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 
 // Parse the "does not support effort level 'X'. Supported levels: a, b,
 // c" message Anthropic emits on a 400 and surface the highest supported
-// level. Returns null when the message doesn't match the expected
-// shape; the caller bails out and forwards the original error.
+// level other than `max`: a correction Rialto makes on its own must not
+// raise the caller's level to the costliest setting (xhigh refused on a
+// model that lists max would otherwise become max). Returns null when the
+// message doesn't match the expected shape or lists nothing but `max`;
+// the caller bails out and forwards the original error.
 export function bestSupportedLevel(message: string | undefined): { bad: string; level: string } | null {
   const m = message?.match(/does not support effort level '([^']+)'\.\s*Supported levels:\s*([^"}\n]+)/i)
   if (!m) return null
@@ -130,6 +133,7 @@ export function bestSupportedLevel(message: string | undefined): { bad: string; 
     .split(/[,\s]+/)
     .map((s) => s.trim())
     .filter(Boolean)
+    .filter((s) => s !== 'max')
   if (supported.length === 0) return null
   const level =
     [...supported].sort(
