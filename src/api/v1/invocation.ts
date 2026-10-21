@@ -28,6 +28,12 @@ import { prepareSubscriptionBetas } from './subscription-betas'
 // The effort to send in place of `requested`, given what the model's own
 // list reported: the highest supported level at or below it. Undefined
 // when the model takes no effort at all (Haiku 4.5 refuses the field).
+// The requested level is not listed here, so the pick is always strictly
+// below it: a conversion never spends more than the caller asked for and
+// never lands on `max`, the top of the ladder. A `max` the caller wrote
+// and the model lists is not a conversion; it passes through as listed.
+// With no lower level listed, the level stays as sent and the upstream's
+// 400 decides (route.ts).
 function clampedEffort(requested: string, supported: readonly string[]): string | undefined {
   if (supported.length === 0) return undefined
   if (supported.includes(requested)) return requested
