@@ -26,6 +26,9 @@ export interface RequestLogItem {
   // this; the type omitted it, so the Token column fell back to the
   // surface's client label and every /v1/messages row read "Claude Code".
   accessTokenId: string | null
+  // The reasoning effort the request carried to the upstream, after Auto /
+  // manual overrides. Null when none was set, and on pre-migration rows.
+  reasoningEffort: string | null
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number
@@ -53,6 +56,12 @@ export interface SessionModelUsage {
   requests: number
 }
 
+/** One reasoning effort's share of a session; same shape as the model split. */
+export interface SessionEffortUsage {
+  name: string
+  requests: number
+}
+
 export interface SessionSummary {
   sessionId: string
   // Wire format the session first came in on. Null on pre-migration
@@ -64,6 +73,8 @@ export interface SessionSummary {
   providers: string[]
   /** Every model the session used and how many requests each carried, busiest first. */
   models: SessionModelUsage[]
+  /** The reasoning efforts its requests carried, busiest first; empty when none recorded one. */
+  efforts: SessionEffortUsage[]
   totalInputTokens: number
   totalOutputTokens: number
   totalCacheReadTokens: number
