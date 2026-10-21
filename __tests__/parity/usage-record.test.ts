@@ -40,7 +40,12 @@ const provider = { name: 'p' } as ResolvedProvider
 
 // Run captureUsage once and return the row it wrote, or null if it
 // wrote none.
-const rowFor = async (upstream: Response, context: TransformerContext): Promise<UsageRecord | null> => {
+const rowFor = async (
+  upstream: Response,
+  context: TransformerContext,
+  // The outbound body captureUsage is handed — what was sent upstream.
+  body: unknown = { model: 'm' }
+): Promise<UsageRecord | null> => {
   const captured: { value: UsageRecord | null } = { value: null }
   const deps: PipelineDeps = {
     log,
@@ -48,7 +53,7 @@ const rowFor = async (upstream: Response, context: TransformerContext): Promise<
       captured.value = entry
     }
   }
-  await captureUsage(upstream, context, provider, { model: 'm' }, 200, 12, deps)
+  await captureUsage(upstream, context, provider, body, 200, 12, deps)
   return captured.value
 }
 
@@ -274,5 +279,44 @@ describe('the account that served, and 1-hour cache writes', () => {
   test('a vendor without a TTL split records no 1-hour writes', async () => {
     const row = await rowFor(json({ usage: { prompt_tokens: 20, completion_tokens: 7 } }), ctxWithSession())
     expect(row?.cacheWrite1hTokens).toBe(0)
+  })
+})
+
+// ─── (4) the reasoning effort the upstream was sent ─────────────────
+
+describe('reasoning effort, read from the outbound body', () => {
+  // A function, because a Response body can be read only once.
+  const usage = () => json({ usage: { input_tokens: 10, output_tokens: 4 } })
+
+  test('anthropic: output_config.effort reaches the row', async () => {
+    const row = await rowFor(usage(), ctxWithSession(), { model: 'm', output_config: { effort: 'xhigh' } })
+    expect(row?.reasoningEffort).toBe('xhigh')
+  })
+
+  test('openai-chat: reasoning_effort reaches the row', async () => {
+    const row = await rowFor(json({ usage: { prompt_tokens: 20, completion_tokens: 7 } }), ctxWithSession(), {
+      model: 'm',
+      reasoning_effort: 'medium'
+    })
+    expect(row?.reasoningEffort).toBe('medium')
+  })
+
+  test('openai-responses: reasoning.effort reaches the row', async () => {
+    const row = await rowFor(usage(), ctxWithSession(), { model: 'm', reasoning: { effort: 'high', summary: 'auto' } })
+    expect(row?.reasoningEffort).toBe('high')
+  })
+
+  test('a request that set none records null, never a default of our own', async () => {
+    const row = await rowFor(usage(), ctxWithSession())
+    expect(row?.reasoningEffort).toBeNull()
+  })
+
+  test('gemini is not read: the row stays null even when the body asks for thinking', async () => {
+    const row = await rowFor(
+      json({ candidates: [], usageMetadata: { promptTokenCount: 30, candidatesTokenCount: 9 } }),
+      ctxWithSession(),
+      { model: 'm', generationConfig: { thinkingConfig: { thinkingBudget: 1024 } } }
+    )
+    expect(row).toMatchObject({ inputTokens: 30, reasoningEffort: null })
   })
 })

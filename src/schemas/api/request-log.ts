@@ -18,6 +18,14 @@ export const SessionModelUsageSchema = z.object({
   requests: z.number().int().positive()
 })
 
+// How many of a session's requests carried each reasoning effort. Same
+// shape as the model split above; requests that recorded no effort are not
+// counted under any name.
+export const SessionEffortUsageSchema = z.object({
+  name: z.string().nonempty(),
+  requests: z.number().int().positive()
+})
+
 export const SessionSummarySchema = z.object({
   sessionId: z.string().nonempty(),
   // Which wire format the session first came in on. Null on
@@ -35,6 +43,11 @@ export const SessionSummarySchema = z.object({
   // between them turn by turn, and the list used to be an unordered set
   // whose first element the UI showed as "the" model.
   models: z.array(SessionModelUsageSchema),
+  // The reasoning efforts the session's requests carried upstream, busiest
+  // first. Like the models, not one value: Auto moves a session between
+  // levels with the quota pace. Empty when none of its requests recorded
+  // one — rows older than the column, or levels left to the vendor default.
+  efforts: z.array(SessionEffortUsageSchema),
   totalInputTokens: z.number().int().nonnegative(),
   totalOutputTokens: z.number().int().nonnegative(),
   totalCacheReadTokens: z.number().int().nonnegative(),
@@ -65,6 +78,11 @@ export const RequestLogItemSchema = z.object({
   // /v1/chat/completions from /v1/responses. Null on rows written before
   // the column landed — render those as untracked, never as a guess.
   surface: z.string().nonempty().nullable(),
+  // The reasoning effort the request carried to the upstream, after Auto /
+  // manual overrides ('high', 'xhigh', ...). Null when no effort was set,
+  // and on rows written before the column landed — "not recorded", which
+  // is not the same claim as "none".
+  reasoningEffort: z.string().nonempty().nullable(),
   inputTokens: z.number().int().nonnegative(),
   outputTokens: z.number().int().nonnegative(),
   cacheReadTokens: z.number().int().nonnegative(),

@@ -140,6 +140,12 @@ export const UsageRecordSchema = z.object({
   // tag was present). Always known at write — the route builder stamps
   // it before the pipeline runs, so this stays a plain boolean.
   isSubagent: z.boolean(),
+  // The reasoning effort the outbound body carried, as the vendor spelled
+  // it ('high', 'xhigh', ...). Free text rather than SupportedEffort so a
+  // level this build has not heard of is still recorded. Null when nothing
+  // set one, for an upstream whose effort field is not read (Gemini), and
+  // for image generation.
+  reasoningEffort: z.string().nonempty().nullable(),
   inputTokens: z.number().int().nonnegative(),
   outputTokens: z.number().int().nonnegative(),
   cacheReadTokens: z.number().int().nonnegative(),
