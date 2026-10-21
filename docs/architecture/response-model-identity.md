@@ -27,8 +27,13 @@ wire format のモデル値として常に返す。upstream が応答にモデ�
 `provider,model` が返る。
 
 この規則は Anthropic Messages、OpenAI Chat Completions、OpenAI Responses、Gemini GenerateContent の
-JSON と SSE に適用される。SSE の置換はイベント単位で行うため、ストリーム全体をバッファリングせず最初の
-トークンの到着を遅らせない。
+JSON と SSE に適用される。
+
+Anthropic SSE では最初の `message_start` だけを書き換え、以後のバイト列はそのまま中継する。
+大きな署名やツール入力のイベントが完成するまで、後続データを溜め込まない。
+先行するデータのないレコード（コメントなど）と `ping` はそのまま返す。初期レコードが 64 KiB を超える場合、先行レコードが
+32 件を超える場合、初期データを解釈できない場合、または途中で EOF になった場合は、元のバイト列を保持する。
+この場合、本文のモデル値は書き換えない。ほかの SSE 形式では従来どおりイベント単位で書き換える。
 
 `x-rialto-selected-model` ヘッダーも同じ `provider,model` を返す。これは wire format の `model` 値と
 同じルーティング結果を、HTTP ヘッダーからも取得できるようにする補助情報である。

@@ -49,8 +49,20 @@ The recorded levels reach the UI and the pipeline as
 - which manual or Auto level may be sent ([adaptive-reasoning-effort.md](./adaptive-reasoning-effort.md));
 - the clamp of a caller's `output_config.effort` on Claude Code (`api/v1/invocation.ts`).
 
-For the clamp, a model whose list reports no level (Haiku 4.5) has the field
-removed. A model that is not recorded yet is sent exactly as the caller wrote it.
+For the clamp, a level the list names is sent as written. One it does not name
+(`xhigh` on Sonnet 4.6) becomes the highest listed level below it. A model whose
+list reports no level (Haiku 4.5) has the field removed. A model that is not
+recorded yet is sent exactly as the caller wrote it.
+
+A conversion never lands on `max`, the costliest setting. The clamp can only
+move a level down, so it cannot reach `max`. If the upstream still refuses a
+level with a 400 ("does not support effort level 'X'. Supported levels: ..."),
+`api/v1/route.ts` rewrites it once from that message and resends to the same
+model. That rewrite takes the highest level the message lists other than `max`,
+and when `max` is all it lists the 400 is forwarded unchanged
+(`bestSupportedLevel` in `api/v1/upstream-error.ts`). A `max` the caller wrote
+and the model lists is not a conversion and is sent as written.
+
 api_key OpenAI models record nothing and keep the static table in
 `shared/model-reasoning-effort.ts`.
 

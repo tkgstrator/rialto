@@ -11,7 +11,13 @@
 
 import { describe, expect, test } from 'bun:test'
 import { HTTPException } from 'hono/http-exception'
-import { forwardUpstreamError, isInsufficientQuota, isRateLimited } from '../../src/api/v1/upstream-error'
+import {
+  bestSupportedLevel,
+  deepReplaceValue,
+  forwardUpstreamError,
+  isInsufficientQuota,
+  isRateLimited
+} from '../../src/api/v1/upstream-error'
 import { stripUrlSecrets, UPSTREAM_URL_SYMBOL } from '../../src/llms/pipeline/provider-send'
 
 // Reproduce the exception shape sendToProvider throws on upstream error:
@@ -130,5 +136,55 @@ describe('isInsufficientQuota', () => {
 
   test('rejects non-HTTPException errors', () => {
     expect(isInsufficientQuota(new Error('boom'))).toBe(false)
+  })
+})
+
+// The correction applied once to an effort level the upstream refuses. It
+// picks the highest level the message lists, but never `max`: a correction
+// Rialto makes on its own must not raise the caller's level to the costliest
+// setting.
+describe('bestSupportedLevel', () => {
+  test('reads the refused level and the highest listed level below max', () => {
+    const message = "This model does not support effort level 'xhigh'. Supported levels: low, medium, high, max"
+    expect(bestSupportedLevel(message)).toEqual({ bad: 'xhigh', level: 'high' })
+  })
+
+  test('still picks the highest of the rest when max is not listed', () => {
+    const message = "does not support effort level 'max'. Supported levels: low, medium, high, xhigh"
+    expect(bestSupportedLevel(message)).toEqual({ bad: 'max', level: 'xhigh' })
+  })
+
+  test('is order-independent about where max sits in the list', () => {
+    const message = "does not support effort level 'xhigh'. Supported levels: max, low, high, medium"
+    expect(bestSupportedLevel(message)).toEqual({ bad: 'xhigh', level: 'high' })
+  })
+
+  test('returns null when max is the only listed level, so the original error is forwarded', () => {
+    expect(bestSupportedLevel("does not support effort level 'xhigh'. Supported levels: max")).toBeNull()
+  })
+
+  test('reads the message out of the wrapped upstream error body', () => {
+    const wrapped =
+      'Error from provider(claude-code,claude-sonnet-4-6: 400): ' +
+      '{"type":"error","error":{"message":"does not support effort level \'xhigh\'. Supported levels: low, high"}}'
+    expect(bestSupportedLevel(wrapped)).toEqual({ bad: 'xhigh', level: 'high' })
+  })
+
+  test('returns null for any other message, leaving the original error to be forwarded', () => {
+    expect(bestSupportedLevel(undefined)).toBeNull()
+    expect(bestSupportedLevel('')).toBeNull()
+    expect(bestSupportedLevel('effort is not supported by this model')).toBeNull()
+  })
+})
+
+describe('deepReplaceValue', () => {
+  test('rewrites every slot holding the refused level, nested ones included', () => {
+    const body = { output_config: { effort: 'xhigh' }, extra: [{ effort: 'xhigh' }, { effort: 'low' }] }
+    expect(deepReplaceValue(body, 'xhigh', 'high')).toBe(true)
+    expect(body).toEqual({ output_config: { effort: 'high' }, extra: [{ effort: 'high' }, { effort: 'low' }] })
+  })
+
+  test('reports no change when the level is not in the body, so no retry is spent', () => {
+    expect(deepReplaceValue({ output_config: { effort: 'low' } }, 'xhigh', 'high')).toBe(false)
   })
 })

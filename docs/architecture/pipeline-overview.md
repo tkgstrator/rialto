@@ -724,7 +724,7 @@ flowchart TD
 
 `resolveInvocationForModel` は **per-attempt の新規 body / headers** を切り出して shaping する:
 
-- `output_config.effort` を `EFFORT_BY_MODEL` の範囲にクランプ。
+- Claude Code 購読では `output_config.effort` を、そのモデルの記録済み effort 一覧の範囲にクランプ（一覧にあるレベルはそのまま、ないものは一覧のうち下で最高のレベルへ。一覧が空のモデルは項目ごと削除）。変換の行き先に `max` は選ばない（[model-capabilities.md](./model-capabilities.md)）。
 - Rialto 内部拡張 (`context_management` / `output_config` / `diagnostics`) を削除。
 - subscription path (transformer 名が `-oauth` 終わり) なら `prepareSubscriptionBetas` で `anthropic-beta` を整形（`context-1m-*` を落とす + `oauth-2025-04-20` を足す）。
 

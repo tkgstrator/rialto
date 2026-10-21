@@ -95,7 +95,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `google-surface-auth.test.ts` | Gemini 面の `x-goog-api-key` / `?key=` |
 | `request-log-events-auth.test.ts` | `/api/request-logs/events` がもう `?apikey=` を受けないこと — それを付けたリモートのリクエストは 401、ホスト上からのリクエストは通る |
 | `error-shape.test.ts` | 3 種のエラー封筒の出し分け |
-| `upstream-error.test.ts` | `PROVIDER_ERR_RE` の逆パースと verbatim 転送 |
+| `upstream-error.test.ts` | `PROVIDER_ERR_RE` の逆パースと verbatim 転送。effort 拒否の 400 の事後補正（`bestSupportedLevel` は `max` を除いた最高のレベルを選び、`max` しか挙がっていなければ null、`deepReplaceValue` は差し替えた箇所があるときだけ true） |
 | `route-plan.test.ts` | `buildRoutePlan`（body parse、面解決、transformer 引き当て、gemini はパスのモデルを `body.model` に畳み込むこと）。routed な面ではリストの primary / fallbacks が plan に載ること、quota・health で止まったリストは `exhaustedBehavior='429'` なら各面のエラー封筒で 429 + `Retry-After`（429 マークの期限があればそれ）を返して plan を作らず、`'passthrough'` なら呼び出し側の model で送ること、空のリストと全ルート OFF は `'429'` でも呼び出し側の model で送ること、エイリアス未設定・web_search を運べるルートが無い・プロンプトが入るルートが無いは 400（anthropic / chat / gemini それぞれの封筒）で `'passthrough'` でも緩まないこと、passthrough 面の `deniedTargets` と routed 面がそれを見ないこと |
 | `candidate-chain.test.ts` | `buildFailoverChain` — primary の後ろに selector が解決した fallbacks をその順で並べること（subscription primary が api_key fallback を保つ、同 provider も通る）、重複排除、exhausted 除外と全滅時の順序維持 |
 | `routing-profiles.test.ts` | `/api/routing/profiles{,/{key}}`、`/api/tier-aliases`、`PUT` / `DELETE /api/providers/{name}/tier-aliases/{tier}`。保存したルートが各ルートを解決して読み返せ（モデル・受け付け可否・Web 検索・context window。オフのモデルしかないティアはオフのまま解決される）、どのモデルにも解決できないティアは画面を落とさず null で読めること、予約キー `passthrough` の拒否、シナリオ × レーンの形でない body の検証エラー、モデルのスイッチを入れるとティアが移り quota snapshot にすぐ載ること、derived のティアへのエイリアスが 409 になること、手動のティアでスイッチの切れたモデルの昇格で ON になりティア一覧に出ること、未知の provider / model と未設定エイリアスの解除が 404、プロファイル一覧が既定を先頭に出すこと |
