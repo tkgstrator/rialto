@@ -39,6 +39,9 @@ function CallRow({ call }: { call: ActivityRequestLog }) {
       <td className='truncate px-3 font-mono text-[12px]' title={`${call.provider},${call.model}`}>
         {`${call.provider},${call.model}`}
       </td>
+      <td className='truncate px-3 font-mono text-[12px] text-muted-foreground'>
+        {call.reasoningEffort === null ? DASH : call.reasoningEffort}
+      </td>
       <td className='px-3'>
         <div className='flex gap-1.5'>
           <Pill tone='mute'>{call.scenario === null ? t('activity.common.untracked') : call.scenario}</Pill>
@@ -85,6 +88,7 @@ function TraceTable({ calls }: { calls: ActivityRequestLog[] }) {
         <col className='w-20' />
         <col />
         <col />
+        <col className='w-20' />
         <col className='w-52' />
         <col className='w-20' />
         <col className='w-20' />
@@ -97,6 +101,7 @@ function TraceTable({ calls }: { calls: ActivityRequestLog[] }) {
           <th className='px-3 text-left'>{t('activity.requests.colStatus')}</th>
           <th className='px-3 text-left'>{t('activity.requests.colRequested')}</th>
           <th className='px-3 text-left'>{t('activity.requests.colSent')}</th>
+          <th className='px-3 text-left'>{t('activity.requests.colEffort')}</th>
           <th className='px-3 text-left'>{t('activity.requests.colRule')}</th>
           <th className='px-3 text-right'>{t('activity.requests.colInput')}</th>
           <th className='px-3 text-right'>{t('activity.requests.colOutput')}</th>

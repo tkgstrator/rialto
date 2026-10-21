@@ -3,8 +3,9 @@
  *
  * Four tiles rather than five — 2xx is what is left of the total once the
  * two failure counts are known, and an odd tile out left a hole in the
- * two-column grid. A call is the model that served it and what it cost,
- * with its status, time, caller and latency beneath. The requested model,
+ * two-column grid. A call is the model that served it (with the effort it
+ * was sent at, when one was set) and what it cost, with its status, time,
+ * caller and latency beneath. The requested model,
  * the rule and the token split stay on the desktop table: they explain a
  * routing decision, which is not something settled from a phone.
  */
@@ -48,9 +49,14 @@ export function RequestsPhoneList({ rows }: { rows: Row[] }) {
           key={row.log.id}
           href={`/activity/sessions/${encodeURIComponent(row.log.sessionId)}`}
           primary={
-            <span className='font-mono' title={`${row.log.provider},${row.log.model}`}>
-              {row.log.model}
-            </span>
+            <>
+              <span className='font-mono' title={`${row.log.provider},${row.log.model}`}>
+                {row.log.model}
+              </span>
+              {row.log.reasoningEffort === null ? null : (
+                <span className='font-mono text-muted-foreground'> · {row.log.reasoningEffort}</span>
+              )}
+            </>
           }
           trailing={fmtCost(row.log.totalCostUsd)}
           secondary={

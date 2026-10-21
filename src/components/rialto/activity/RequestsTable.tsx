@@ -78,7 +78,7 @@ export function RequestsTable({ rows, columns }: { rows: Row[]; columns: readonl
   // have no caret and no header to click to undo them.
   const visibleKeys = useMemo(() => columns.map((col) => col.id), [columns])
   const sort = useTableSort<Row, ColumnId>(rows, sortValue, visibleKeys)
-  // What the table refuses to go below. Eleven columns want 1360px and a
+  // What the table refuses to go below. Twelve columns want 1440px and a
   // 1440px window has 1184 left after the sidebar, so the last columns
   // scroll rather than every column paying for the gap in ellipses. It is
   // summed from the visible columns, so hiding one through the Columns
@@ -126,7 +126,7 @@ export function RequestsTable({ rows, columns }: { rows: Row[]; columns: readonl
 }
 
 /** Header control that hides columns. Useful on a narrow window where the
- *  eleven-column log wraps into unreadability. */
+ *  twelve-column log wraps into unreadability. */
 export function ColumnMenu({ hidden, onChange }: { hidden: Set<ColumnId>; onChange: (next: Set<ColumnId>) => void }) {
   const { t } = useTranslation()
   const toggle = (id: ColumnId) => {
