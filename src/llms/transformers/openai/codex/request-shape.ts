@@ -14,6 +14,7 @@
  *     (400 "Response input messages must contain the word 'json'").
  *   - Every input message is a typed `message` item with content parts.
  *   - Encrypted reasoning is asked for, and handed back on the next turn.
+ *   - A supported Cyber access-program selection is kept request-local.
  *   - `tool_choice: 'auto'`, parallel tool calls, `text.verbosity: 'low'`.
  *   - Only the top-level fields the CLI sends. The backend allow-lists them:
  *     it answered `max_output_tokens` with 400 "Unsupported parameter" (#463).
@@ -52,6 +53,17 @@ export type CodexCallerIntent = {
   parallelToolCalls: boolean
   // Set only when the caller asked for one; the CLI's default is none.
   reasoningSummary: string | undefined
+  // Provider-specific, so recover it before the unified conversion drops it.
+  accessPrograms?: Record<string, string>
+}
+
+const CYBER_ACCESS_PROGRAMS = new Set(['standard', 'daybreak_blue', 'daybreak_red'])
+
+function codexAccessPrograms(body: Record<string, unknown>): Record<string, string> | undefined {
+  const accessPrograms = body.access_programs
+  if (!isObject(accessPrograms)) return undefined
+  const cyber = accessPrograms.cyber
+  return typeof cyber === 'string' && CYBER_ACCESS_PROGRAMS.has(cyber) ? { cyber } : undefined
 }
 
 /**
@@ -67,7 +79,8 @@ export function codexCallerIntent(req: PipelineRequest | undefined): CodexCaller
   return {
     writesInstructions: responsesClient,
     parallelToolCalls: allowsParallelToolCalls(surface, body),
-    reasoningSummary: typeof summary === 'string' ? summary : undefined
+    reasoningSummary: typeof summary === 'string' ? summary : undefined,
+    accessPrograms: codexAccessPrograms(body)
   }
 }
 
@@ -196,6 +209,7 @@ export function shapeCodexBody(
     stream: true,
     include: codexInclude(body.include),
     service_tier: typeof body.service_tier === 'string' ? body.service_tier : undefined,
+    access_programs: intent.accessPrograms,
     text: codexText(body.text, body.verbosity)
   }
   for (const key of Object.keys(shaped)) {

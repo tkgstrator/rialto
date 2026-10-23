@@ -103,6 +103,7 @@ const CLI_FIELDS = new Set([
   'stream',
   'include',
   'service_tier',
+  'access_programs',
   'prompt_cache_key',
   'text',
   'client_metadata'
@@ -213,6 +214,51 @@ describe('an Anthropic caller', () => {
   })
 })
 
+describe('function tool schemas', () => {
+  test('does not force the Edit tool into strict mode', async () => {
+    const parameters = {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string' },
+        old_string: { type: 'string' },
+        new_string: { type: 'string' },
+        replace_all: { type: 'boolean' }
+      },
+      required: ['file_path', 'old_string', 'new_string']
+    }
+    const { body } = await toCodex(
+      {
+        model: 'gpt-6.1-sol',
+        messages: [{ role: 'user', content: 'edit a file' }],
+        tools: [
+          {
+            type: 'function',
+            function: { name: 'Edit', description: 'Edit a file', parameters }
+          }
+        ]
+      },
+      contextFor('openai-chat', {})
+    )
+
+    expect(toolsOf(body)[0]).toEqual({
+      type: 'function',
+      name: 'Edit',
+      description: 'Edit a file',
+      parameters: {
+        type: 'object',
+        properties: {
+          file_path: { type: 'string' },
+          old_string: { type: 'string' },
+          new_string: { type: 'string' },
+          replace_all: { type: 'boolean' }
+        },
+        required: ['file_path', 'old_string', 'new_string']
+      },
+      strict: false
+    })
+  })
+})
+
 describe('a Responses caller (the Codex CLI)', () => {
   const responses = (reasoning: Bag): Bag => ({
     model: 'gpt-5.5',
@@ -252,6 +298,27 @@ describe('a Responses caller (the Codex CLI)', () => {
   test('a summary is sent only when the caller asked for one', async () => {
     const { body } = await send(responses({ effort: 'high' }))
     expect(body.reasoning).toEqual({ effort: 'high' })
+  })
+
+  test('forwards supported Cyber access program selections', async () => {
+    for (const cyber of ['standard', 'daybreak_blue', 'daybreak_red']) {
+      const { body } = await send({ ...responses({ effort: 'high' }), access_programs: { cyber } })
+      expect(body.access_programs).toEqual({ cyber })
+    }
+  })
+
+  test('does not forward malformed or unsupported Cyber access program selections', async () => {
+    for (const accessPrograms of [
+      null,
+      [],
+      {},
+      { cyber: null },
+      { cyber: ['daybreak_blue'] },
+      { cyber: 'unsupported' }
+    ]) {
+      const { body } = await send({ ...responses({ effort: 'high' }), access_programs: accessPrograms })
+      expect(body).not.toHaveProperty('access_programs')
+    }
   })
 })
 
