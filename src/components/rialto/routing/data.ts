@@ -240,7 +240,19 @@ export function useScenarioProfile(profileKey: string | null): ScenarioProfileSt
     })
     if (outcome.success) await load(profileKey)
     return outcome
-  }, [draft, view, profileKey, load, blockedEscalationTiers])
+  }, [
+    draft,
+    view,
+    profileKey,
+    load,
+    blockedEscalationTiers,
+    decisionEnabled,
+    decisionApiBaseUrl,
+    decisionApiKeyEnv,
+    decisionModel,
+    decisionMinConfidence,
+    decisionTimeoutMs
+  ])
 
   const reset = useCallback(() => {
     setDraft(baseline)
