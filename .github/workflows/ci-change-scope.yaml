@@ -46,7 +46,7 @@ jobs:
       reason: ${{ steps.scope.outputs.reason }}
     steps:
       - id: scope
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           DOC_PATHS: ${{ inputs.doc-paths }}
           DOC_PREFIXES: ${{ inputs.doc-prefixes }}
