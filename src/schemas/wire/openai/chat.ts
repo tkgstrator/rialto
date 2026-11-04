@@ -42,7 +42,11 @@ export const ChatCompletionResponseMessageSchema = z
   .object({
     role: z.string().nonempty().optional(),
     content: z.unknown().optional(),
-    tool_calls: z.array(ChatCompletionResponseToolCallSchema).optional()
+    // Null as well as absent: the Responses reply converted to Chat
+    // (`convertResponseToChat`) and several Chat vendors send `null` for a
+    // text-only message, and a parse that rejected it dropped the whole
+    // reply on the `/v1/responses` surface.
+    tool_calls: z.array(ChatCompletionResponseToolCallSchema).nullish()
   })
   .loose()
 export type ChatCompletionResponseMessage = z.infer<typeof ChatCompletionResponseMessageSchema>

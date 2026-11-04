@@ -148,4 +148,46 @@ describe('per-model chains', () => {
   test('no overrides means no per-model chains', () => {
     expect(modelTransformerChains(openai, undefined)).toEqual({})
   })
+
+  test('an operator can serve any model of the provider over Responses', () => {
+    // Nothing about the name matters: gpt-6-astra answers on both
+    // endpoints, and the override alone decides which one it is sent to.
+    expect(
+      modelTransformerChains(openai, {
+        'gpt-6-astra': 'openai_responses',
+        'gpt-6-astra-mini': 'openai_chat',
+        'gpt-5-codex': 'openai_responses'
+      })
+    ).toEqual({
+      'gpt-6-astra': ['openai-responses'],
+      'gpt-5-codex': ['openai-responses']
+    })
+  })
+
+  test('the override is read against the provider style, whatever the Base URL names', () => {
+    // The URL is swapped at send time (llms/utils/openai-endpoint.ts); it
+    // plays no part in which chain a model runs.
+    const onResponsesUrl = provider({
+      name: 'openai',
+      api_style: 'openai_chat',
+      api_base_url: 'https://api.openai.com/v1/responses'
+    })
+    expect(modelTransformerChains(onResponsesUrl, { 'gpt-6-astra': 'openai_responses' })).toEqual({
+      'gpt-6-astra': ['openai-responses']
+    })
+    expect(modelTransformerChains(onResponsesUrl, { 'gpt-6-astra': 'openai_chat' })).toEqual({})
+  })
+
+  test('a Chat override on a Responses api_key provider converts through openai', () => {
+    const responsesKey = provider({ name: 'proxy', api_style: 'openai_responses' })
+    expect(modelTransformerChains(responsesKey, { legacy: 'openai_chat', current: 'openai_responses' })).toEqual({
+      legacy: ['openai']
+    })
+  })
+
+  test('an anthropic override has no conversion step to add', () => {
+    // Anthropic traffic has no step of its own (see CONVERSION_STEP): an
+    // api_key provider cannot move a model onto it with a chain.
+    expect(modelTransformerChains(openai, { 'claude-ish': 'anthropic' })).toEqual({})
+  })
 })

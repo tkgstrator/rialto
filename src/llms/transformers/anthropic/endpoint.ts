@@ -32,9 +32,9 @@ import type {
   UnifiedChatRequest,
   UnifiedMessage
 } from '@/schemas/domain'
-import { isProviderModelBlock } from '@/schemas/domain/pipeline'
 import { AnthropicIncomingRequestSchema } from '@/schemas/wire/anthropic/messages'
 import { hasSafeguards } from '../../pipeline/classifier-diagnostics'
+import { hasOwnModelChain } from '../../utils/model-chain'
 import { getThinkLevel } from '../../utils/thinking'
 import { Transformer, type TransformerAuthResult } from '../base'
 import { appendIncomingMessage, buildSystemMessage, buildToolChoice, convertAnthropicToolsToUnified } from './request'
@@ -47,14 +47,6 @@ import { convertAnthropicReplyToChat } from './response-to-chat-stream'
 // The version header a native caller sends itself; on the conversion path
 // no client header is forwarded, so the step has to state it.
 const ANTHROPIC_VERSION = '2023-06-01'
-
-// A model whose `Model.apiStyle` differs from the provider's has its own
-// conversion step after this one (`modelTransformerChains`), and the body
-// has to reach that step still unified.
-function hasOwnModelChain(provider: RuntimeProvider, model: string): boolean {
-  const block: unknown = provider.transformer?.[model]
-  return isProviderModelBlock(block) && Array.isArray(block.use) && block.use.length > 0
-}
 
 type AnthropicTransformerOptions = {
   UseBearer?: boolean

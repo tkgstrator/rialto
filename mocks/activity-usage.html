@@ -380,17 +380,274 @@ const tokenTable = `
     <tbody>${TOKENS.map(tokenRow).join('')}</tbody>
   </table>`
 
+// ─── API keys, over the same range ────────────────────────────────────
+// The other half of "what is it costing": the windows above are the
+// subscriptions, and say nothing about a request that went to a provider
+// paid by the token. Until this section, that traffic showed up nowhere on
+// the screen — only, summed into one dollar figure per access token, in the
+// table at the bottom, with no way to see which provider or model it was.
+//
+// Deliberately NOT here: meters, resets, pace. An API key has no window to
+// run out of, so a 5h/7d row for it would be drawn from nothing; the one
+// number that answers "is this getting out of hand" is spend, so spend is
+// what the bar shows (share of the total, the way "By access token" does).
+//
+// Data is GET /api/usage/cost?days=N as it answers — one entry per provider
+// that carried traffic in the window, each with its models — kept to the
+// rows whose `isSubscription` is false. `totalCostUsd` is null for a model
+// whose price has not been fetched, and a provider's total is the sum of the
+// models that DO have one, null only when none does. That last rule is why
+// the table has three kinds of cost cell:
+//   Anthropic  one model unpriced → the total is a floor, drawn "≥ $42.7"
+//   OpenAI     everything priced  → a plain figure
+//   Google     nothing priced     → "—", no share, and it stays out of the total
+// A bare "$42.7" over a model that cost more than that would be a number
+// that looks complete and is not.
+//
+// Rows are ordered by spend, unpriced last, so the first row is the one to
+// open. Input is the fresh (uncached) tokens, Cache is read + written; the
+// two add up to what the model was sent, which is how the totals above and
+// on Sessions are counted too. Splitting read from write would be a sixth
+// number column for a distinction the Requests screen already carries.
+const API_DAYS = 7
+const API_PROVIDERS = [
+  {
+    id: 'anthropic', name: 'Anthropic',
+    models: [
+      { model: 'claude-sonnet-5',  requestCount: 538,   inputTokens: 1950000, outputTokens: 640000,  cacheReadTokens: 22400000, cacheWriteTokens: 3100000, totalCostUsd: 33.8 },
+      { model: 'claude-haiku-4-5', requestCount: 1214,  inputTokens: 2400000, outputTokens: 880000,  cacheReadTokens: 9600000,  cacheWriteTokens: 900000,  totalCostUsd: 8.885 },
+      { model: 'claude-mythos-5',  requestCount: 41,    inputTokens: 188000,  outputTokens: 52000,   cacheReadTokens: 0,        cacheWriteTokens: 0,       totalCostUsd: null }
+    ]
+  },
+  {
+    id: 'openai', name: 'OpenAI',
+    models: [
+      { model: 'gpt-5.5',       requestCount: 412,  inputTokens: 3804220, outputTokens: 512340,  cacheReadTokens: 14210000, cacheWriteTokens: 0, totalCostUsd: 11.65 },
+      { model: 'gpt-5.4-mini',  requestCount: 1903, inputTokens: 6100000, outputTokens: 1210000, cacheReadTokens: 20100000, cacheWriteTokens: 0, totalCostUsd: 4.45 },
+      { model: 'gpt-5.3-codex', requestCount: 96,   inputTokens: 1120000, outputTokens: 301000,  cacheReadTokens: 4800000,  cacheWriteTokens: 0, totalCostUsd: 5.01 }
+    ]
+  },
+  {
+    id: 'google', name: 'Google',
+    models: [
+      { model: 'gemini-3-flash',      requestCount: 305, inputTokens: 1420000, outputTokens: 260000, cacheReadTokens: 0, cacheWriteTokens: 0, totalCostUsd: null },
+      { model: 'gemini-3-flash-lite', requestCount: 64,  inputTokens: 410000,  outputTokens: 88000,  cacheReadTokens: 0, cacheWriteTokens: 0, totalCostUsd: null }
+    ]
+  }
+]
+
+// The same formatters the app uses: fmtCount for token and request counts,
+// fmtCost's three significant figures for money. Written out here because
+// a static page has no import; the figures are computed from the rows above
+// rather than typed, so the totals and shares cannot disagree with them.
+const fmtN = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n))
+const USD = new Intl.NumberFormat('en-US', { minimumSignificantDigits: 3, maximumSignificantDigits: 3 })
+const fmtUsd = (usd) => `$${USD.format(usd)}`
+const sum = (rows, key) => rows.reduce((a, r) => a + r[key], 0)
+const pricedSum = (rows) => {
+  const priced = rows.filter((r) => r.totalCostUsd !== null)
+  return priced.length === 0 ? null : priced.reduce((a, r) => a + r.totalCostUsd, 0)
+}
+const rowOf = (name, rows, extra = {}) => ({
+  name,
+  requestCount: sum(rows, 'requestCount'),
+  inputTokens: sum(rows, 'inputTokens'),
+  outputTokens: sum(rows, 'outputTokens'),
+  cacheTokens: sum(rows, 'cacheReadTokens') + sum(rows, 'cacheWriteTokens'),
+  totalCostUsd: pricedSum(rows),
+  // Some models cost nothing we can see: the figure is a floor.
+  partial: rows.some((r) => r.totalCostUsd === null) && pricedSum(rows) !== null,
+  ...extra
+})
+const API_ROWS = API_PROVIDERS.map((p) =>
+  rowOf(p.name, p.models, {
+    id: p.id,
+    models: p.models.map((m) => rowOf(m.model, [m], { partial: false }))
+  })
+).sort((a, b) => (b.totalCostUsd ?? -1) - (a.totalCostUsd ?? -1))
+const API_TOTAL = rowOf('Total', API_PROVIDERS.flatMap((p) => p.models))
+const shareOf = (usd) => (usd === null ? null : Math.round((usd / API_TOTAL.totalCostUsd) * 100))
+
+const ukey = (cls = '') => `font-mono tabular-nums ${cls}`
+const apiCost = (r) =>
+  r.totalCostUsd === null
+    ? '<span class="text-muted-foreground/50" title="No price for this yet">—</span>'
+    : `${r.partial ? '<span class="mr-1 text-muted-foreground" title="At least this much: a model here has no price yet">≥</span>' : ''}${fmtUsd(r.totalCostUsd)}`
+const apiShare = (r) => {
+  const pct = shareOf(r.totalCostUsd)
+  return `
+    <div class="flex items-center gap-2">
+      ${meter(pct === null ? 0 : pct, 'mute')}
+      <span class="w-8 shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">${pct === null ? '–' : `${pct}%`}</span>
+    </div>`
+}
+
+// Open/closed is the only state a row has. The first row starts open so a
+// reader sees what is under it without having to guess it opens.
+const chevron = (open) =>
+  `<i data-api-chevron class="${open ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'} shrink-0 text-base leading-none text-muted-foreground/60"></i>`
+
+const apiProviderRow = (r, open) => `
+  <tr data-api-toggle="${r.id}" aria-expanded="${open}" class="cursor-pointer border-t border-border/60 transition-colors hover:bg-muted/50">
+    <td class="py-2.5 pl-6 pr-3">
+      <div class="flex items-center gap-2">
+        ${chevron(open)}
+        <div class="min-w-0">
+          <a href="provider-apikey.html" class="block truncate text-xs font-medium underline-offset-2 hover:underline">${r.name}</a>
+          <div class="text-[12px] text-muted-foreground">${r.models.length} model${r.models.length === 1 ? '' : 's'}</div>
+        </div>
+      </div>
+    </td>
+    <td class="px-3 text-right text-xs ${ukey()}">${r.requestCount.toLocaleString('en-US')}</td>
+    <td class="px-3 text-right text-xs ${ukey()}">${fmtN(r.inputTokens)}</td>
+    <td class="px-3 text-right text-xs ${ukey()}">${fmtN(r.outputTokens)}</td>
+    <td class="px-3 text-right text-xs ${ukey('text-muted-foreground')}">${fmtN(r.cacheTokens)}</td>
+    <td class="px-3 text-right text-xs ${ukey()}">${apiCost(r)}</td>
+    <td class="py-2.5 pl-3 pr-6">${apiShare(r)}</td>
+  </tr>`
+
+// A model row sits under its provider, on a faint ground so the nesting
+// reads without an indent guide, and lines its name up with the provider's.
+const apiModelRow = (m, parent, open) => `
+  <tr data-api-children="${parent}" class="${open ? '' : 'hidden'} border-t border-border/40 bg-muted/20 transition-colors hover:bg-muted/40">
+    <td class="py-2 pl-12 pr-3"><span class="block truncate font-mono text-[12px]">${m.name}</span></td>
+    <td class="px-3 text-right text-[12px] ${ukey()}">${m.requestCount.toLocaleString('en-US')}</td>
+    <td class="px-3 text-right text-[12px] ${ukey()}">${fmtN(m.inputTokens)}</td>
+    <td class="px-3 text-right text-[12px] ${ukey()}">${fmtN(m.outputTokens)}</td>
+    <td class="px-3 text-right text-[12px] ${ukey('text-muted-foreground')}">${fmtN(m.cacheTokens)}</td>
+    <td class="px-3 text-right text-[12px] ${ukey()}">${apiCost(m)}</td>
+    <td class="py-2 pl-3 pr-6">${apiShare(m)}</td>
+  </tr>`
+
+const apiTotalRow = `
+  <tr class="border-t border-border">
+    <td class="py-2.5 pl-6 pr-3 text-xs font-medium">Total</td>
+    <td class="px-3 text-right text-xs font-medium ${ukey()}">${API_TOTAL.requestCount.toLocaleString('en-US')}</td>
+    <td class="px-3 text-right text-xs font-medium ${ukey()}">${fmtN(API_TOTAL.inputTokens)}</td>
+    <td class="px-3 text-right text-xs font-medium ${ukey()}">${fmtN(API_TOTAL.outputTokens)}</td>
+    <td class="px-3 text-right text-xs font-medium ${ukey()}">${fmtN(API_TOTAL.cacheTokens)}</td>
+    <td class="px-3 text-right text-xs font-medium ${ukey()}">${apiCost(API_TOTAL)}</td>
+    <td class="py-2.5 pl-3 pr-6"></td>
+  </tr>`
+
+// The two layouts are measured on the section, not the viewport, for the
+// reason the subscription groups are: the sidebar's width is not the
+// screen's. Below 52rem the six number columns would leave the name less
+// than a model id, so a row becomes the phone list's two-line form — name
+// and cost on the first line, the counts on the second — which is also how
+// "By access token" reads on a phone.
+const apiTable = `
+  <table class="w-full table-fixed @max-[52rem]:hidden">
+    <colgroup><col><col class="w-20"><col class="w-24"><col class="w-24"><col class="w-24"><col class="w-24"><col class="w-36"></colgroup>
+    <thead>
+      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
+        <th class="pl-6 pr-3 text-left font-medium">Provider</th>
+        <th class="px-3 text-right font-medium">Requests</th>
+        <th class="px-3 text-right font-medium">Input</th>
+        <th class="px-3 text-right font-medium">Output</th>
+        <th class="px-3 text-right font-medium" title="Tokens read from or written to the provider's cache">Cache</th>
+        <th class="px-3 text-right font-medium">Cost ${API_DAYS}d</th>
+        <th class="px-3 text-left font-medium">Share of spend</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${API_ROWS.map((r, i) => apiProviderRow(r, i === 0) + r.models.map((m) => apiModelRow(m, r.id, i === 0)).join('')).join('')}
+      ${apiTotalRow}
+    </tbody>
+  </table>`
+
+const phoneCounts = (r, tail) => `
+  <div class="mt-1 flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-[12px] text-muted-foreground">
+    <span class="shrink-0 ${ukey()}">${r.requestCount.toLocaleString('en-US')} req</span>
+    <span class="shrink-0 ${ukey()}">${fmtN(r.inputTokens)} in</span>
+    <span class="shrink-0 ${ukey()}">${fmtN(r.outputTokens)} out</span>
+    <span class="shrink-0 ${ukey()}">${fmtN(r.cacheTokens)} cache</span>
+    ${tail}
+  </div>`
+const phonePct = (r) => {
+  const pct = shareOf(r.totalCostUsd)
+  return `<span class="ml-auto shrink-0 ${ukey()}">${pct === null ? '–' : `${pct}%`}</span>`
+}
+const apiPhoneRow = (r, open) => `
+  <div data-api-toggle="${r.id}" aria-expanded="${open}" class="cursor-pointer border-t border-border/60 px-4 py-3 transition-colors active:bg-muted/50">
+    <div class="flex items-center gap-2">
+      ${chevron(open)}
+      <a href="provider-apikey.html" class="min-w-0 flex-1 truncate text-xs font-medium">${r.name}</a>
+      <span class="shrink-0 text-xs ${ukey()}">${apiCost(r)}</span>
+    </div>
+    <div class="pl-6">${phoneCounts(r, phonePct(r))}</div>
+  </div>
+  ${r.models.map((m) => `
+  <div data-api-children="${r.id}" class="${open ? '' : 'hidden'} border-t border-border/40 bg-muted/20 py-2.5 pr-4 pl-10">
+    <div class="flex items-baseline gap-3">
+      <span class="min-w-0 flex-1 truncate font-mono text-[12px]">${m.name}</span>
+      <span class="shrink-0 text-[12px] ${ukey()}">${apiCost(m)}</span>
+    </div>
+    ${phoneCounts(m, phonePct(m))}
+  </div>`).join('')}`
+
+const apiPhone = `
+  <div class="hidden @max-[52rem]:block">
+    ${API_ROWS.map((r, i) => apiPhoneRow(r, i === 0)).join('')}
+    <div class="flex items-baseline gap-3 border-t border-border px-4 py-3">
+      <span class="flex-1 text-xs font-medium">Total</span>
+      <span class="shrink-0 text-xs font-medium ${ukey()}">${apiCost(API_TOTAL)}</span>
+    </div>
+    <div class="px-4 pb-3">${phoneCounts(API_TOTAL, '')}</div>
+  </div>`
+
+// Empty is a fact about the range, not an error: a week with no API-key
+// traffic is ordinary on an install that only routes to subscriptions.
+// Saying what IS counted (and where the rest went) is what stops it
+// reading as a broken query.
+const apiEmpty = `
+  <div class="px-6 py-6 text-xs text-muted-foreground @max-[52rem]:px-4">
+    No requests went to an API key provider in the last ${API_DAYS} days. Subscription traffic is counted in the windows above.
+  </div>`
+
+// Click a row to open or close it: the chevron, the aria state and every
+// model row under it. A click on the provider's name is a link, not a toggle.
+document.addEventListener('click', (event) => {
+  const toggle = event.target.closest('[data-api-toggle]')
+  if (!toggle || event.target.closest('a')) return
+  const id = toggle.getAttribute('data-api-toggle')
+  const open = toggle.getAttribute('aria-expanded') !== 'true'
+  document.querySelectorAll(`[data-api-toggle="${id}"]`).forEach((el) => {
+    el.setAttribute('aria-expanded', String(open))
+    el.querySelector('[data-api-chevron]').className = el.querySelector('[data-api-chevron]').className.replace(/ri-arrow-(down|right)-s-line/, open ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line')
+  })
+  document.querySelectorAll(`[data-api-children="${id}"]`).forEach((el) => el.classList.toggle('hidden', !open))
+})
+
 // ─── Page ─────────────────────────────────────────────────────────────
 // The meta beside a title is the range the section covers, and only
 // that. Where the numbers came from is not something the reader acts on.
-const sectionHead = (title, meta = '', action = '') => `
-  <div class="flex items-baseline gap-3 border-t border-border px-6 pt-6 pb-3">
+const sectionHead = (title, meta = '', action = '', pad = 'px-6') => `
+  <div class="flex items-baseline gap-3 border-t border-border ${pad} pt-6 pb-3">
     <h2 class="text-sm font-semibold">${title}</h2>
     ${meta ? `<span class="text-xs text-muted-foreground/70">${meta}</span>` : ''}
     ${action ? `<div class="ml-auto">${action}</div>` : ''}
   </div>`
 
-document.getElementById('root').innerHTML = `
+// ?api-keys   the same page, scrolled to the new section (it sits under the
+//             fold of a 1440x900 capture)
+// ?empty      that section with no API-key traffic in the range
+// ?phone      only that section, in a 390px column, so the narrow form can be
+//             reviewed without a phone-sized shell, which no mock draws
+const PARAMS = new URLSearchParams(location.search)
+const API_EMPTY = PARAMS.has('empty')
+const API_PHONE = PARAMS.has('phone')
+
+const apiSection = `
+  <div id="api-keys" class="@container">
+    ${sectionHead('API keys', `last ${API_DAYS} days`, btn('Manage keys', 'ghost', 'ri-key-2-line', 'providers-keys.html'), 'px-6 @max-[52rem]:px-4')}
+    ${API_EMPTY ? apiEmpty : `${apiTable}${apiPhone}`}
+  </div>`
+
+document.getElementById('root').innerHTML = API_PHONE ? `
+  <div class="flex min-h-screen justify-center bg-muted/40 px-4 py-8">
+    <div class="h-fit w-[390px] overflow-hidden rounded-xl border border-border bg-background pb-2">${apiSection}</div>
+  </div>` : `
 
   <div class="flex flex-wrap items-center gap-2 border-b border-border px-6 py-3">
     ${filter('Range', '7 days')}
@@ -409,6 +666,14 @@ document.getElementById('root').innerHTML = `
     ${PROVIDERS.map(providerGroup).join('')}
   </div>
 
+  <!-- Under the windows, because both answer "what is it costing" and this
+       is the half that is not a subscription. It goes between the windows
+       and the pace chart, not after the chart: the chart is a history of
+       the windows, so the two stay a scroll apart at most from what they
+       explain, and the per-token table that follows is the cross-cut of
+       both kinds. -->
+  ${apiSection}
+
   <!-- No Export CSV: the chart is read here, and the screens hand out no
        files. -->
   ${sectionHead('Projected quota pace', 'last 7 days')}
@@ -419,14 +684,24 @@ document.getElementById('root').innerHTML = `
   ${tokenTable}
   <div class="h-10"></div>`
 
-renderShell({
+if (!API_PHONE) renderShell({
   active: 'activity',
   navMode: 'cloudflare',
   sub: 'usage',
   crumbs: ['Usage'],
-  subtitle: '5 subscription accounts · last 7 days',
+  // The API-key count is providers that carried traffic in the range, which
+  // is all /api/usage/cost can say; a connected key that sat idle is not one.
+  subtitle: '5 subscription accounts · 3 API key providers · last 7 days',
   actions: btn('Refresh', 'outline', 'ri-refresh-line')
 })
+
+// Scroll the new section to the top of the page, once the fonts have set
+// the heights above it. Needed only because it sits below a 900px capture.
+if (!API_PHONE && (PARAMS.has('api-keys') || API_EMPTY)) {
+  const jump = () => document.getElementById('api-keys').scrollIntoView({ block: 'start' })
+  jump()
+  document.fonts.ready.then(jump)
+}
 </script>
 </body>
 </html>

@@ -15,14 +15,27 @@
  *     (`utils/tool-lowering.ts`), because Chat has no place for them and
  *     a caller's Lite request declares nothing else.
  *
- * Codex-family models on the openai provider are routed through
- * `openai-responses` — their `Model.apiStyle` disagrees with the
- * provider's, which earns them a per-model chain of their own (see
- * `shared/transformer-chain.ts`) — so they never reach this rewrite.
+ * Any model on the provider that is served over Responses instead — a
+ * codex-family model by default, or one the operator switched — has a
+ * per-model chain of its own, because its `Model.apiStyle` disagrees with the
+ * provider's (see `shared/transformer-chain.ts`). This step stands aside for
+ * it (`hasOwnModelChain`), so none of the rewrites above touch its body.
+ *
+ * The provider's Base URL may name `/chat/completions` or `/responses`
+ * (`utils/openai-endpoint.ts`); a request that stays on Chat goes to
+ * `/chat/completions` either way.
  */
 
-import type { RuntimeProvider, TransformerContext, UnifiedChatRequest } from '@/schemas/domain'
+import type {
+  RuntimeProvider,
+  TransformerAuthResult,
+  TransformerContext,
+  TransformerHookResult,
+  UnifiedChatRequest
+} from '@/schemas/domain'
 import { REASONING_MODEL_RE } from '@/shared/reasoning-model'
+import { hasOwnModelChain } from '../../utils/model-chain'
+import { redirectedOpenAIUrl } from '../../utils/openai-endpoint'
 import { absorbTopLevelSystem } from '../../utils/system-blocks'
 import { lowerResponsesTools } from '../../utils/tool-lowering'
 import { liftToolResultImages } from '../../utils/tool-result-images'
@@ -91,11 +104,24 @@ export class OpenAITransformer extends Transformer {
     return body as UnifiedChatRequest
   }
 
+  // Bypass path: a `/v1/chat/completions` caller whose provider is a plain
+  // Chat one skips the chain, and with it `transformRequestIn`. The body goes
+  // through as it came, so only the URL is left to correct.
+  async auth(request: unknown, provider: RuntimeProvider, _context: TransformerContext): Promise<unknown> {
+    const url = redirectedOpenAIUrl(provider.api_base_url, 'chat')
+    if (url === null) return request
+    const result: TransformerAuthResult = { body: request, config: { url } }
+    return result
+  }
+
   async transformRequestIn(
     request: UnifiedChatRequest,
     provider: RuntimeProvider,
     _context: TransformerContext
-  ): Promise<UnifiedChatRequest> {
+  ): Promise<TransformerHookResult | UnifiedChatRequest> {
+    // Served over Responses, by a step that runs after this one and expects
+    // the body still unified.
+    if (hasOwnModelChain(provider, request.model)) return request
     const req = request as UnifiedChatRequest & {
       max_completion_tokens?: number
       reasoning_effort?: string
@@ -127,7 +153,10 @@ export class OpenAITransformer extends Transformer {
     // only in functions comes back as it went.
     const lowered = lowerResponsesTools(req)
     // A tool message takes text only on this wire format.
-    if (!Array.isArray(lowered.messages)) return lowered
-    return { ...lowered, messages: liftToolResultImages(lowered.messages) }
+    const body = Array.isArray(lowered.messages)
+      ? { ...lowered, messages: liftToolResultImages(lowered.messages) }
+      : lowered
+    const url = redirectedOpenAIUrl(provider.api_base_url, 'chat')
+    return url === null ? body : { body, config: { url } }
   }
 }

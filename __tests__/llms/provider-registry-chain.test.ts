@@ -111,6 +111,25 @@ describe('ProviderRegistry chain derivation', () => {
     expect(registry.get('openai')?.transformer?.['gpt-5']).toBeUndefined()
   })
 
+  test('any model the operator switched to Responses gets the same per-model chain', () => {
+    // Not a codex name: the override on the row is the only reason.
+    const registry = registryWith([
+      {
+        ...base,
+        name: 'openai',
+        api_style: 'openai_chat',
+        api_base_url: 'https://api.openai.com/v1/responses',
+        models: ['gpt-6-astra', 'gpt-6-astra-mini'],
+        modelApiStyles: { 'gpt-6-astra': 'openai_responses' }
+      }
+    ])
+    expect(chainNames(registry, 'openai')).toEqual(['openai'])
+    expect(registry.get('openai')?.transformer?.['gpt-6-astra']).toEqual({
+      use: [expect.objectContaining({ name: 'openai-responses' })]
+    })
+    expect(registry.get('openai')?.transformer?.['gpt-6-astra-mini']).toBeUndefined()
+  })
+
   test('the subscription credential survives alongside the derived chain', () => {
     const registry = registryWith([
       {

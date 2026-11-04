@@ -7,15 +7,19 @@
  *   bun run scripts/scrape-openai-prices.ts --dry    # print + count only
  *
  * Tied to the current page layout (Astro `.content-switcher-root` with
- * `data-value="standard|batch|flex|priority"` panes, plus inline "All
+ * `data-value="standard|batch|fast|ultrafast"` panes, plus inline "All
  * models" toggle buttons that reveal legacy rows). If OpenAI redesigns
  * the page the parsers below stop matching — `--dry` will surface that
  * by reporting a much lower model count than expected.
  *
+ * The flagship text-token tables are read by column *name*, through the
+ * same module the runtime scraper uses (src/vendors/openai/pricing-table.ts).
+ * Reading them by position is how the committed seed once came to carry the
+ * 30m cache-write rate as `output` for every gpt-5.6-* row.
+ *
  * What we keep:
- *   - Flagship: short-context Standard tier (the four-column "Model |
- *     Input | Cached input | Output" expansion via the All models
- *     toggle is what carries gpt-5, gpt-4.1, o3, legacy chat, etc.)
+ *   - Flagship: Standard tier (the "All models" toggle unfolds the older
+ *     rows and a second table of legacy rows: gpt-5, gpt-4.1, o3, etc.)
  *   - Multimodal: realtime / image / transcription, *text* modality
  *   - Specialized: ChatGPT / Codex / Deep research / Computer use /
  *     Embedding / Moderation (Standard tier)
@@ -27,12 +31,13 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
+import { type Columns, columnsOf, readPriceRow } from '../src/vendors/openai/pricing-table'
 
 const SOURCE_URL = 'https://developers.openai.com/api/docs/pricing'
 const OUT = join(import.meta.dir, '../src/shared/data/providers/openai/prices.json')
 
 interface RawTable {
-  tier: 'standard' | 'batch' | 'flex' | 'priority' | null
+  tier: 'standard' | 'batch' | 'flex' | 'priority' | 'fast' | 'ultrafast' | null
   fromAllModels: boolean
   headerRows: string[][]
   bodyRows: string[][]
@@ -81,7 +86,14 @@ const tables = await page.evaluate((): RawTable[] => {
     let tier: RawTable['tier'] = null
     while (cur) {
       const v = cur.getAttribute('data-value')
-      if (v === 'standard' || v === 'batch' || v === 'flex' || v === 'priority') {
+      if (
+        v === 'standard' ||
+        v === 'batch' ||
+        v === 'flex' ||
+        v === 'priority' ||
+        v === 'fast' ||
+        v === 'ultrafast'
+      ) {
         tier = v
         break
       }
@@ -116,44 +128,18 @@ const parsePrice = (raw: string): number | null => {
 // some finetuning rows — we reject those by requiring start-to-end match.
 const isModelId = (s: string): boolean => /^[a-z0-9][a-z0-9.\-]*$/.test(s.trim())
 
-// Flagship's primary table: "Model | Input | Cached input | Output |
-// Input | Cached input | Output" (Short context | Long context). We
-// keep Short-context Input + Output.
-const parseFlagshipShortLong = (t: RawTable): PriceRow[] => {
-  const out: PriceRow[] = []
-  for (const row of t.bodyRows) {
-    if (row.length < 4) continue
-    const id = row[0]
-    if (!isModelId(id)) continue
-    const input = parsePrice(row[1])
-    const output = parsePrice(row[3])
-    if (input == null || output == null) continue
-    const cachedInput = parsePrice(row[2]) // "Cached input" column
-    const r: PriceRow = { id, input, output, legacy: t.fromAllModels }
-    if (cachedInput != null) r.cachedInput = cachedInput
-    out.push(r)
-  }
-  return out
-}
-
-// 4-column expansion table revealed by "All models": "Model | Input |
-// Cached input | Output". Used for legacy chat / reasoning rows.
-const parseSimplePrice = (t: RawTable): PriceRow[] => {
-  const out: PriceRow[] = []
-  for (const row of t.bodyRows) {
-    if (row.length < 4) continue
-    const id = row[0]
-    if (!isModelId(id)) continue
-    const input = parsePrice(row[1])
-    const output = parsePrice(row[3])
-    if (input == null || output == null) continue
-    const cachedInput = parsePrice(row[2]) // "Cached input" column
-    const r: PriceRow = { id, input, output, legacy: t.fromAllModels }
-    if (cachedInput != null) r.cachedInput = cachedInput
-    out.push(r)
-  }
-  return out
-}
+// Flagship text-token tables (the current-lineup table and the legacy
+// expansion the All models toggle adds): columns are found by header name,
+// so the order they come in does not matter and the cache-write columns
+// are never read.
+const parseFlagship = (t: RawTable, cols: Columns): PriceRow[] =>
+  t.bodyRows.flatMap((row) => {
+    const read = readPriceRow(row, cols)
+    if (read === null) return []
+    const r: PriceRow = { id: read.apiId, input: read.inputPer1M, output: read.outputPer1M, legacy: t.fromAllModels }
+    if (read.cachedInputPer1M != null) r.cachedInput = read.cachedInputPer1M
+    return [r]
+  })
 
 // Realtime / audio / image: "Model | Modality | Input | Cached | Output".
 // The model id is on a row where col 1 names the primary modality;
@@ -224,38 +210,33 @@ const parseTranscription = (t: RawTable): PriceRow[] => {
   return out
 }
 
-// Specialized: "Category | Model | Input | Cached | Output". Category
-// cells span rows; follow-up rows in the same category collapse the
-// leading column so we may see either 5 cells (with category) or 4
-// (without).
+// Specialized: "Category | Model | Input | Output | Cached input" (the
+// last two have traded places before, so columns are found by name). The
+// Category cell spans rows: follow-up rows in the same category collapse
+// the leading column and arrive one cell short, so every index slides left
+// by however many cells that row is missing.
 const parseSpecialized = (t: RawTable): PriceRow[] => {
+  const header = t.headerRows[t.headerRows.length - 1] ?? []
+  const at = (name: RegExp): number => header.findIndex((h) => name.test(h))
+  const modelIdx = at(/^model$/i)
+  const inputIdx = at(/^input$/i)
+  const outputIdx = at(/^output$/i)
+  const cachedIdx = at(/^cached input$/i)
+  if (modelIdx < 0 || inputIdx < 0 || outputIdx < 0) return []
   const out: PriceRow[] = []
   for (const row of t.bodyRows) {
-    let id: string
-    let inputCell: string
-    let cachedCell: string
-    let outputCell: string
-    if (row.length === 5 && isModelId(row[1])) {
-      id = row[1]
-      inputCell = row[2]
-      cachedCell = row[3]
-      outputCell = row[4]
-    } else if (row.length === 4 && isModelId(row[0])) {
-      id = row[0]
-      inputCell = row[1]
-      cachedCell = row[2]
-      outputCell = row[3]
-    } else {
-      continue
-    }
-    const input = parsePrice(inputCell)
+    const shift = header.length - row.length
+    if (shift < 0 || shift > modelIdx) continue
+    const id = row[modelIdx - shift] ?? ''
+    if (!isModelId(id)) continue
+    const input = parsePrice(row[inputIdx - shift] ?? '')
     if (input == null) continue
+    const outputCell = row[outputIdx - shift] ?? ''
     const output = parsePrice(outputCell)
     // Embedding / moderation: output is "-" or "Free" — emit 0 so the
     // UI can still display "$X / —" cleanly.
-    const isInputOnly =
-      output == null || /^free$/i.test(outputCell) || outputCell === '-' || outputCell === ''
-    const cachedInput = parsePrice(cachedCell)
+    const isInputOnly = output == null || /^free$/i.test(outputCell) || outputCell === '-' || outputCell === ''
+    const cachedInput = cachedIdx < 0 ? null : parsePrice(row[cachedIdx - shift] ?? '')
     const r: PriceRow = { id, input, output: isInputOnly ? 0 : (output ?? 0), legacy: t.fromAllModels }
     if (cachedInput != null) r.cachedInput = cachedInput
     out.push(r)
@@ -265,8 +246,9 @@ const parseSpecialized = (t: RawTable): PriceRow[] => {
 
 const parseTable = (t: RawTable): PriceRow[] => {
   if (t.tier && t.tier !== 'standard') return [] // Batch / Flex / Priority are different tiers
+  const flagshipColumns = columnsOf(t.headerRows[t.headerRows.length - 1] ?? [])
+  if (flagshipColumns !== null) return parseFlagship(t, flagshipColumns)
   const headerFlat = t.headerRows.flat().join(' | ').toLowerCase()
-  if (headerFlat.includes('short context') && headerFlat.includes('long context')) return parseFlagshipShortLong(t)
   if (headerFlat.includes('modality') && headerFlat.includes('cached input')) return parseModalityTable(t)
   if (headerFlat.includes('use case') && headerFlat.includes('input') && headerFlat.includes('output')) {
     return parseTranscription(t)
@@ -281,9 +263,6 @@ const parseTable = (t: RawTable): PriceRow[] => {
   if (headerFlat.includes('price per second') || headerFlat.includes('landscape')) return []
   // Tools: "Tool | Details | Pricing" — drop.
   if (/^tool\b/.test(headerFlat) && headerFlat.includes('pricing')) return []
-  // Plain 4-column: Model | Input | Cached input | Output (legacy
-  // expansion under "All models" toggle).
-  if (/^model \| input \| cached input \| output$/i.test(headerFlat)) return parseSimplePrice(t)
   return []
 }
 
@@ -355,7 +334,7 @@ const payload = {
   source: SOURCE_URL,
   lastChecked: new Date().toISOString().slice(0, 10),
   notes: [
-    'USD per 1M tokens, Standard tier (Batch / Flex / Priority dropped).',
+    'USD per 1M tokens, Standard tier (Batch / Flex / Priority / Fast / Ultrafast dropped).',
     'Realtime / audio rows resolve to the *text* modality; image-gen rows to the *image* modality.',
     'Per-second (sora) and per-minute (whisper, tts) priced models are intentionally omitted.',
     'Finetuning training rates, tool charges, and gpt-realtime-translate / -whisper minute pricing are dropped.',
