@@ -6,6 +6,7 @@
  */
 
 import { ApiStyle } from '../../generated/prisma/client'
+import { retargetOpenAIUrl } from '../../llms/utils/openai-endpoint'
 import { fetchWithTimeout, formatHttpError, type ProbeResult, reachable } from './http'
 
 const probeAnthropic = async (baseUrl: string, apiKey: string, model: string): Promise<ProbeResult> => {
@@ -44,18 +45,13 @@ const probeGemini = async (baseUrl: string, apiKey: string, model: string): Prom
   return { ok: false, error: formatHttpError(res.status, (await res.text()).slice(0, 300)) }
 }
 
-// OpenAI Responses API call. The provider's base URL may be the
-// chat-completions endpoint (codex models live under the regular
-// openai provider via a per-model apiStyle override), so normalise
-// it to /responses; if it's already /responses it's unchanged.
+// OpenAI Responses API call. The provider's Base URL may name either
+// endpoint — /chat/completions or /responses — because one provider hosts
+// models on both wire formats, so it is pointed at /responses here. A URL
+// naming neither gets /responses appended.
 const probeResponses = async (chatOrResponsesUrl: string, apiKey: string, model: string): Promise<ProbeResult> => {
-  // Normalise to the /responses endpoint: replace a trailing
-  // /chat/completions, otherwise append /responses if absent.
-  const responsesUrl = /\/responses\/?$/.test(chatOrResponsesUrl)
-    ? chatOrResponsesUrl
-    : /\/chat\/completions\/?$/.test(chatOrResponsesUrl)
-      ? chatOrResponsesUrl.replace(/\/chat\/completions(\/?)$/, '/responses$1')
-      : `${chatOrResponsesUrl.replace(/\/$/, '')}/responses`
+  const retargeted = retargetOpenAIUrl(chatOrResponsesUrl, 'responses')
+  const responsesUrl = retargeted === null ? `${chatOrResponsesUrl.replace(/\/$/, '')}/responses` : retargeted
   const res = await fetchWithTimeout(responsesUrl, {
     method: 'POST',
     headers: {
@@ -93,15 +89,19 @@ const probeResponses = async (chatOrResponsesUrl: string, apiKey: string, model:
   return { ok: false, error: formatHttpError(res.status, rbody) }
 }
 
-// ApiStyle.openai_chat — chat completions; baseUrl is the chat
-// endpoint. gpt-5 / o-series reject `max_tokens` and require
-// `max_completion_tokens`; older gpt-4 / OpenAI-compatible vendors
-// only know `max_tokens`. Send `max_tokens` first and retry once
-// with `max_completion_tokens` when the vendor explicitly rejects
-// the former, so both generations pass.
+// ApiStyle.openai_chat — chat completions. The Base URL may name /responses
+// instead (see probeResponses), so it is pointed at /chat/completions; a URL
+// naming neither is used as stored.
+//
+// gpt-5 / o-series reject `max_tokens` and require `max_completion_tokens`;
+// older gpt-4 / OpenAI-compatible vendors only know `max_tokens`. Send
+// `max_tokens` first and retry once with `max_completion_tokens` when the
+// vendor explicitly rejects the former, so both generations pass.
 const probeOpenAIChat = async (baseUrl: string, apiKey: string, model: string): Promise<ProbeResult> => {
+  const retargeted = retargetOpenAIUrl(baseUrl, 'chat')
+  const chatUrl = retargeted === null ? baseUrl : retargeted
   const callChat = (tokenField: 'max_tokens' | 'max_completion_tokens') =>
-    fetchWithTimeout(baseUrl, {
+    fetchWithTimeout(chatUrl, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -143,7 +143,6 @@ export const probeInference = async (
       return await probeGemini(baseUrl, apiKey, model)
     }
     if (style === ApiStyle.openai_responses) {
-      // baseUrl is already the /v1/responses endpoint.
       return await probeResponses(baseUrl, apiKey, model)
     }
     return await probeOpenAIChat(baseUrl, apiKey, model)

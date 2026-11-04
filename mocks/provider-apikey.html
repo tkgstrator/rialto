@@ -13,7 +13,7 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, btn, effortCell, sortTh, pager, dialog } = window.Shell
+const { renderShell, pill, btn, selectCell, effortCell, sortTh, pager, dialog, uiInput, uiSelectContent } = window.Shell
 
 // The api_key half of Providers. Differs from the subscription detail in
 // three ways that matter: a key field instead of accounts, real prices
@@ -31,6 +31,9 @@ const { renderShell, pill, btn, effortCell, sortTh, pager, dialog } = window.She
 const PARAMS = new URLSearchParams(location.search)
 const REMOVING = PARAMS.has('remove')
 const EDITING = REMOVING || PARAMS.has('edit')
+// `?edit&shape` draws a Shape picker open, since the closed cell only says
+// "—" and the option wording is what a reviewer has to approve.
+const SHAPE_OPEN = PARAMS.has('shape')
 
 // Controls that change the provider exist only while editing; they go
 // invisible rather than absent where their absence would move the layout.
@@ -46,6 +49,30 @@ const READ_TONE = { manual: 'bg-muted text-foreground', auto: 'text-muted-foregr
 const readCell = (label, source) =>
   `<span class="inline-flex items-center rounded px-1.5 py-0.5 text-[12px] ${READ_TONE[source]}">${label}</span>`
 const effortRead = (effort) => readCell(effort === null ? '—' : effort, effort === null ? 'unset' : 'manual')
+
+// Shape is which OpenAI API a model's requests go to: Chat Completions or
+// Responses. Unset follows the provider (its API style, openai_chat in the
+// panel on the right), which is why the first option names what "default"
+// currently means — a dash alone would not say.
+//
+// The cell is the effort picker's: value, chevron, the same three tones.
+// Implemented as a shadcn Select whose trigger is styled to this chip, not
+// as a bordered SelectTrigger — a bordered 130px control per row would turn
+// a table you scan into a column of form fields. Only the list it opens is
+// the component's own look (SelectContent).
+const SHAPE_LABEL = { '—': '—', chat: 'Chat Completions', responses: 'Responses' }
+const shapeCell = (style, open) => {
+  const chip = selectCell(SHAPE_LABEL[style], style === '—' ? 'unset' : 'manual')
+  if (!open) return chip
+  // item-aligned, as the wrapper's default: the list opens over the cell
+  // with the selected item on top of the trigger's text, so it is offset by
+  // the list's padding and half an item's height rather than hung below.
+  return `<span class="relative inline-block">${chip}<span class="absolute -top-[9px] -left-1.5 z-40 block w-max">${uiSelectContent([
+    { label: 'Default (Chat Completions)', selected: style === '—' },
+    { label: 'Chat Completions', selected: style === 'chat' },
+    { label: 'Responses', selected: style === 'responses' }
+  ])}</span></span>`
+}
 
 // The pill switch, a reading of the state until Edit is pressed.
 const toggle = (on) => `
@@ -89,7 +116,7 @@ const modelRow = (m) => `
     <td class="px-2 text-right font-mono text-xs tabular-nums">${m.inp}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${m.cache}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums">${m.out}</td>
-    <td class="px-2 font-mono text-[12px] text-muted-foreground">${m.style}</td>
+    <td class="px-2 ${EDITING ? '' : 'font-mono text-[12px] text-muted-foreground'}">${EDITING ? shapeCell(m.style, SHAPE_OPEN && m.name === 'gpt-5.4') : m.style}</td>
     <td class="px-2">${EDITING ? effortCell(m.effort) : effortRead(m.effort)}</td>
     <td class="px-2 text-center text-sm leading-none">${testIcon[m.test]}</td>
     <td class="py-2.5 pl-2 pr-6 text-right">${toggle(m.on)}</td>
@@ -97,7 +124,7 @@ const modelRow = (m) => `
 
 const models = `
   <table class="w-full table-fixed">
-    <colgroup><col><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-24"><col class="w-24"><col class="w-14"><col class="w-16"></colgroup>
+    <colgroup><col><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-40"><col class="w-24"><col class="w-14"><col class="w-16"></colgroup>
     <thead>
       <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         ${sortTh('Model', 'pl-6 pr-2', 'left', true, 'desc')}
@@ -145,8 +172,9 @@ document.getElementById('root').innerHTML = `
           <p class="mt-0.5 font-mono text-[12px] text-muted-foreground">https://api.openai.com/v1/chat/completions</p>
         </div>
         <!-- Edit, then Revert / Save, for everything on this page that
-             changes the provider: the switch Routing reads, the key, and
-             the tier aliases and each model's effort and switch. One Save writes them all.
+             changes the provider: the switch Routing reads, the key, the Base
+             URL, the tier aliases, and each model's shape, effort and switch.
+             One Save writes them all.
              Remove only exists while editing, red, and still asks first.
              Test all is locked meanwhile, like the page actions above: its
              results reload the page, and an unsaved edit would go with it. -->
@@ -175,9 +203,23 @@ document.getElementById('root').innerHTML = `
                 ${withClass(btn('Replace', 'outline', 'ri-refresh-line'), editOnly)}
               </div>
             </div>
+            <!-- Editable while the page is in Edit, like the key beside it,
+                 and saved with the rest by the one Save. The note is there
+                 in both states: it is also why a /responses URL is not a
+                 mistake, and drawing it only in Edit would move everything
+                 under it when Edit is pressed. -->
             <div>
               <div class="mb-1 text-[12px] text-muted-foreground">Base URL</div>
-              <div class="flex h-8 items-center rounded-md border border-border px-3 font-mono text-xs">https://api.openai.com/v1/chat/completions</div>
+              ${
+                EDITING
+                  ? uiInput('https://api.openai.com/v1/chat/completions')
+                  : '<div class="flex h-8 items-center rounded-md border border-border px-3 font-mono text-xs">https://api.openai.com/v1/chat/completions</div>'
+              }
+              <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
+                Either <span class="font-mono">…/chat/completions</span> or
+                <span class="font-mono">…/responses</span> works — each request goes to the one that
+                matches the model's API.
+              </p>
             </div>
             <p class="text-[12px] leading-relaxed text-muted-foreground">
               Supports <span class="font-mono">$VAR</span> interpolation — the key is read from the
@@ -210,8 +252,9 @@ document.getElementById('root').innerHTML = `
               <span class="ml-auto font-mono text-[12px]">openai</span>
             </div>
             <p class="mt-3 text-[12px] leading-relaxed text-muted-foreground">
-              Derived from the API style — not configurable. Codex-family models here override to
-              <span class="font-mono">openai_responses</span>; see the Shape column.
+              The provider's default, derived from its API style. Each model can override it in the
+              Shape column — Codex-family models here already use
+              <span class="font-mono">openai_responses</span>.
             </p>
           </div>
         </div>
@@ -266,6 +309,11 @@ document.getElementById('root').innerHTML = `
           <i class="ri-information-line mr-1 align-[-1px]"></i>
           Routing reaches these models only through the tiers above — a model no tier is set to
           serves nothing routed, however it is switched.
+          <span class="mt-1.5 block">
+            <span class="font-medium text-foreground">Shape</span> picks which API a model's requests
+            use, Chat Completions or Responses. A dash follows the provider's default; the Base URL may
+            end in either.
+          </span>
           <span class="mt-1.5 block">
             <span class="font-medium text-foreground">Effort</span> is the same kind of override, for
             OpenAI / Responses / Codex models only. A dash sends nothing and lets the vendor pick;

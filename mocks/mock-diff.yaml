@@ -249,6 +249,21 @@ screens:
           mock:
             type: url
             url: http://localhost:16175/mock-diff/api/workspace/mocks/provider-apikey.html?edit
+  - id: provider-apikey-shape
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/provider-apikey.html?edit&shape
   - id: provider-apikey-remove
     category: Providers
     devices:
@@ -300,6 +315,36 @@ screens:
         actual:
           type: url
           url: http://localhost:16175/providers/connect
+  - id: providers-connect-apikey
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/providers-connect.html?apikey
+  - id: providers-connect-apikey-phone
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/providers-connect.html?apikey&phone
   - id: providers-connect-device
     category: Providers
     devices:
@@ -858,6 +903,51 @@ screens:
         actual:
           type: url
           url: http://localhost:16175/activity/usage
+  - id: activity-usage-api-keys
+    category: Activity
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/activity-usage.html?api-keys
+  - id: activity-usage-api-keys-empty
+    category: Activity
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/activity-usage.html?api-keys&empty
+  - id: activity-usage-api-keys-phone
+    category: Activity
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/activity-usage.html?phone
   - id: activity-session
     category: Activity
     devices:

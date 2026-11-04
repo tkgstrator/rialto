@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Pill, RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { api } from '@/lib/api'
 import type { ModelProviderPrioritiesResponse, ModelProviderPriority } from '@/schemas/api/model-provider-priorities'
 
@@ -40,24 +41,29 @@ function PriorityRow({
         </div>
       </div>
       <div className='min-w-0 space-y-2'>
-        <select
-          aria-label={t('providers.priorities.primaryFor', { model: row.model })}
+        {/* Radix rejects an empty-string item, so "not configured" is the empty value, which shows the placeholder. */}
+        <Select
           value={configured ? row.preferredProviders[0] : ''}
           disabled={saving}
-          onChange={(event) => {
-            const primary = event.target.value
-            if (primary.length > 0)
-              onSave(row.model, [primary, ...row.providers.filter((provider) => provider !== primary)])
-          }}
-          className='h-8 w-full max-w-sm rounded-md border border-border bg-background px-2 font-mono text-xs disabled:opacity-50'
+          onValueChange={(primary) =>
+            onSave(row.model, [primary, ...row.providers.filter((provider) => provider !== primary)])
+          }
         >
-          <option value=''>{t('providers.priorities.choose')}</option>
-          {row.providers.map((provider) => (
-            <option key={provider} value={provider}>
-              {provider}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger
+            size='sm'
+            aria-label={t('providers.priorities.primaryFor', { model: row.model })}
+            className='w-full max-w-sm pr-3 font-mono text-xs'
+          >
+            <SelectValue placeholder={t('providers.priorities.choose')} />
+          </SelectTrigger>
+          <SelectContent>
+            {row.providers.map((provider) => (
+              <SelectItem key={provider} value={provider} className='font-mono text-xs'>
+                {provider}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {configured ? (
           <div className='space-y-1'>
             {order.map((provider, index) => (

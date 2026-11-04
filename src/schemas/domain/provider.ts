@@ -81,11 +81,19 @@ export const ProviderSchema = z
     // Claude Code: the efforts each thinking-off setting is accepted with,
     // for models whose thinking probe has run.
     modelThinkingOff: ModelThinkingOffSchema.optional(),
-    // Per-model apiStyle override (Model.apiStyle in the DB). Only
-    // populated for models whose column is non-null — a single api_key
-    // provider hosts both openai_chat and openai_responses models
-    // (codex-family), and the router's peer-fallback expander needs the
-    // per-model override to filter correctly.
+    // Per-model apiStyle override (Model.apiStyle in the DB). On a read only
+    // models whose column is non-null appear — a single api_key provider
+    // hosts both openai_chat and openai_responses models (codex-family, or
+    // one the operator switched), and the router's peer-fallback expander
+    // needs the per-model override to filter correctly.
+    //
+    // On a write the field's presence is what counts. Present, it is the
+    // operator's whole view of the overrides for an api_key provider: a
+    // listed model is stored as given (a style equal to the provider's is
+    // stored as null), a model that existed and is not listed goes back to
+    // the provider's style. Absent, every stored override is left as it is,
+    // so callers that never read the field (connect flow, config import)
+    // cannot disturb it. Subscription providers ignore it either way.
     modelApiStyles: z
       .record(z.string().nonempty(), z.enum(['openai_chat', 'openai_responses', 'anthropic', 'gemini']))
       .optional(),
