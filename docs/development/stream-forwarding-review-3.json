@@ -1,0 +1,9 @@
+{
+  "base": "18ad0fb1ab4313be1bbcb2c2b6b099f3994cc313",
+  "files": [
+    { "path": "src/api/v1/response-model-identity.ts", "sha256": "b1484ec0449243d7f54fa996bf92098898aca67cf8b76004717873aba5ce5d0d" },
+    { "path": "__tests__/api/response-model-stream-progress.test.ts", "sha256": "df29793516f3770a8dc8b60b4b2595ca02a08e0a182b2fb033f5279e43c9b2dc" },
+    { "path": "docs/architecture/response-model-identity.md", "sha256": "7def2873e8a0afca7709933f5861ef1a67c569d122be4e53aa075d043ef8a927" }
+  ],
+  "delta": "Production BOM recognition from v2 is unchanged. Test-only v3: highWaterMark0 source enqueues prefix on first pull; next pull resolves consumption barrier only after the piped transform accepted the previous write. Hold that second pull until cancel/error. Both lifecycle tests await barrier, assert2pulls, and clean up in finally. FocusedLinuxBun1.4 tests27pass."
+}
