@@ -1,0 +1,3 @@
+interface:
+  display_name: Git Commit Identity
+  short_description: Check opted-in human gh commit policy

@@ -517,6 +517,54 @@ const selectCell = (label, source) => `
 const tierCell = (tier, source) => selectCell(source === 'unset' ? '—' : tier, source)
 
 /**
+ * `components/ui/input.tsx`, drawn as the forms use it.
+ *
+ * The classes are the component's own, copied rather than approximated, so
+ * that what a reviewer approves is what `<Input>` renders: `border-input`
+ * (not the `border-border` of the read-only boxes beside it), `shadow-xs`,
+ * `dark:bg-input/30` and the focus ring a click on the mock shows.
+ *
+ * Only what the screen has to say is overridden, the way the call site
+ * would: `h-8` for `h-9`, `px-3` for `px-2.5` (so the text starts where the
+ * read-only key box beside it starts), and `font-mono text-xs` for the
+ * base's `text-base md:text-sm`. The `md:text-sm` is the catch —
+ * tailwind-merge will not drop it for a bare `text-xs`, so the real call
+ * needs `md:text-xs` as well or the field is 14px on a desktop.
+ */
+const UI_INPUT =
+  'h-8 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 font-mono text-xs shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30'
+
+const uiInput = (value, placeholder = '', cls = '') =>
+  `<input type="text" spellcheck="false" autocomplete="off" value="${value}" placeholder="${placeholder}" class="${UI_INPUT} ${cls}">`
+
+/**
+ * `components/ui/select.tsx` `SelectContent` + `SelectItem`, open.
+ *
+ * Copied from the component: `rounded-md bg-popover shadow-md ring-1
+ * ring-foreground/10`; items `py-1.5 pr-8 pl-2 text-sm` with the check in
+ * an `absolute right-2` slot; the item under the pointer (here, the one
+ * selected — Radix focuses it on open) takes `bg-accent`. The wrapper's
+ * Viewport adds no padding of its own, so the list sits in a
+ * `SelectGroup` (`p-1`) rather than touching the popover's edge.
+ *
+ * `items`: [{ label, selected }]
+ */
+const uiSelectContent = (items, cls = '') => `
+  <div class="relative z-50 min-w-36 overflow-hidden rounded-md bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 ${cls}">
+    <div class="p-1">
+      ${items
+        .map(
+          (item) => `
+      <div class="relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm select-none ${item.selected ? 'bg-accent text-accent-foreground' : ''}">
+        ${item.label}
+        ${item.selected ? '<span class="pointer-events-none absolute right-2 flex size-4 items-center justify-center"><i class="ri-check-line"></i></span>' : ''}
+      </div>`
+        )
+        .join('')}
+    </div>
+  </div>`
+
+/**
  * Per-model reasoning effort (`Model.reasoningEffort`).
  *
  * The same shape of hole as the tier was: the column exists, the PATCH
@@ -532,7 +580,10 @@ const effortCell = (effort) => selectCell(effort === null ? '—' : effort, effo
 /** Horizontal utilization meter. pct 0-100. */
 const meter = (pct, tone = 'auto') => {
   const resolved = tone === 'auto' ? (pct >= 90 ? 'bad' : pct >= 70 ? 'warn' : 'ok') : tone
-  const bar = { ok: 'bg-emerald-500', warn: 'bg-amber-500', bad: 'bg-destructive' }[resolved]
+  // `mute` is a share rather than a budget, so no threshold colour — and it
+  // was missing here: the By access token bars drew an empty class and no
+  // fill at all, where the implementation's Meter has had it all along.
+  const bar = { ok: 'bg-emerald-500', warn: 'bg-amber-500', bad: 'bg-destructive', mute: 'bg-muted-foreground/40' }[resolved]
   return `
     <div class="h-1 w-full overflow-hidden rounded-full bg-muted">
       <div class="h-full rounded-full ${bar}" style="width:${pct}%"></div>
@@ -1041,7 +1092,8 @@ const pager = ({ first, last, total, hasPrev = true, hasNext = true, compact = f
   global.Shell = {
     renderShell, ROW, section, dialog, pill, mono, meter, btn, pager,
     tabs, railItem, SETTINGS_RAIL,
-    navTo, activityTabs, providerTable, tierCell, effortCell, sortTh, toast,
+    navTo, activityTabs, providerTable, selectCell, tierCell, effortCell, sortTh, toast,
+    uiInput, uiSelectContent,
     SURFACES, surfacePill, surfaceChip, ACCESS_TOKENS, tokenTable,
     accessTabs, PLANS,
     toggleTheme, currentTheme

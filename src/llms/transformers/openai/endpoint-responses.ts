@@ -26,6 +26,7 @@ import {
   type ResponsesUnifiedChatRequest
 } from '@/schemas/wire'
 import { codexAccountTag, type ReasoningSealer, sealCodexReasoning } from '../../utils/codex-reasoning'
+import { redirectedOpenAIUrl } from '../../utils/openai-endpoint'
 import { cloneResponse } from '../../utils/response-clone'
 import { aggregateOpenAiChatSseToJson, isSseContentType } from '../../utils/sse-aggregate'
 import { Transformer } from '../base'
@@ -198,16 +199,13 @@ export class OpenAIResponsesTransformer extends Transformer {
 
     responsesReq.parallel_tool_calls = false
 
-    // Redirect to the Responses endpoint when the provider's
-    // api_base_url points at /chat/completions. The codex subscription
-    // provider's base URL is the ChatGPT backend root (no /chat/completions
-    // segment), so this is a no-op there and codex-oauth still appends
-    // /responses itself further down the chain.
-    const base = provider?.api_base_url ?? ''
-    if (base.includes('/chat/completions')) {
-      const url = base.replace('/chat/completions', '/responses')
-      return { body: responsesReq, config: { url } }
-    }
+    // Redirect to the Responses endpoint when the provider's api_base_url
+    // names /chat/completions; one already on /responses needs nothing. A
+    // Base URL that names neither is left as stored: the codex subscription
+    // provider's is the ChatGPT backend root, so this is a no-op there and
+    // codex-oauth still appends /responses itself further down the chain.
+    const url = provider === undefined ? null : redirectedOpenAIUrl(provider.api_base_url, 'responses')
+    if (url !== null) return { body: responsesReq, config: { url } }
 
     return responsesReq
   }

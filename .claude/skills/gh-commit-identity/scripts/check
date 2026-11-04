@@ -1,0 +1,2 @@
+#!/bin/sh
+exec '/home/vscode/app/.claude/skills/gh-commit-identity/bin/gh-commit-guard' "$@"
