@@ -6,6 +6,7 @@
  * the screen the old path was folded into turns a dead end into a
  * redirect the operator can follow.
  */
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { RButton } from '@/components/rialto/primitives'
@@ -33,9 +34,7 @@ const MERGED_INTO: Record<string, string> = {
   // plain not-a-page sentence instead.
 }
 
-type Translate = (key: string, options?: Record<string, unknown>) => string
-
-const explain = (pathname: string, t: Translate): string => {
+const explain = (pathname: string, t: TFunction): string => {
   // /login is not a merged screen, it is a deleted concept: Cloudflare
   // Access authenticates at the edge and the app renders no login form.
   if (pathname.startsWith('/login')) return t('system.notFound.loginGone')

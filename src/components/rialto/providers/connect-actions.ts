@@ -7,14 +7,11 @@
  * connection when none does — so signing in first and creating the
  * provider afterwards leaves the account nowhere to go.
  */
+import type { TFunction } from 'i18next'
 import { api } from '@/lib/api'
 import type { CodexDevicePollResponse, CodexDeviceStartResponse } from '@/schemas/api/oauth'
 import type { OAuthKind } from './ConnectAuthStep'
 import type { CatalogEntry, OAuthInitiateResponse, OAuthSubmitResponse, Provider } from './types'
-
-// react-i18next's t(), trimmed to the shape these fallbacks call. Taking it
-// as a parameter keeps this module free of React, the way form-logic.ts is.
-type Translate = (key: string, options?: Record<string, unknown>) => string
 
 /**
  * Which token exchange the server can run for a vendor.
@@ -70,8 +67,10 @@ export async function ensureProvider(entry: CatalogEntry): Promise<void> {
   await api.post('/providers', providerFromCatalog(entry))
 }
 
+// `t` comes in as a parameter, not from useTranslation(), so this module stays
+// free of React the way form-logic.ts does.
 /** Open the vendor's consent page in a new tab. Returns the flow's state token. */
-export async function startOAuth(kind: OAuthKind, t: Translate, targetAccountId?: string): Promise<string> {
+export async function startOAuth(kind: OAuthKind, t: TFunction, targetAccountId?: string): Promise<string> {
   const res = await api.post<OAuthInitiateResponse>(`/oauth/initiate/${kind}`, { targetAccountId })
   if (!res.success || res.authorizeUrl === undefined) {
     throw new Error(res.error === undefined ? t('providers.connect.errorStartOauth') : res.error)
@@ -81,7 +80,7 @@ export async function startOAuth(kind: OAuthKind, t: Translate, targetAccountId?
 }
 
 /** Relay a redirect URL the browser could not deliver to the loopback callback. */
-export async function submitManualCallback(url: string, t: Translate, state?: string): Promise<void> {
+export async function submitManualCallback(url: string, t: TFunction, state?: string): Promise<void> {
   const res = await api.post<OAuthSubmitResponse>('/oauth/manual-callback', {
     url: url.trim(),
     state,
@@ -122,7 +121,7 @@ async function parseJsonFile(file: File): Promise<unknown> {
 export async function importCredentials(
   kind: OAuthKind,
   file: File,
-  t: Translate,
+  t: TFunction,
   targetAccountId?: string
 ): Promise<void> {
   const parsed = await parseJsonFile(file)
