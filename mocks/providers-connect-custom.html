@@ -120,7 +120,7 @@ const choice = ({ icon, title, body, selected }) => `
 const MONO = (s) => `<span class="font-mono">${s}</span>`
 
 const nameValue = PROBLEM ? 'openai' : 'lm-studio'
-const baseValue = PROBLEM ? 'localhost:1234' : 'http://localhost:1234/v1'
+const baseValue = PROBLEM ? 'localhost:1234' : 'http://localhost:1234/v1/chat/completions'
 
 const customPane = `
     <div class="@container min-w-0 overflow-y-auto">
@@ -149,10 +149,10 @@ const customPane = `
         })}
         ${field({
           label: 'Base URL',
-          control: input({ value: baseValue, placeholder: 'http://localhost:1234/v1', invalid: PROBLEM }),
+          control: input({ value: baseValue, placeholder: 'http://localhost:1234/v1/chat/completions', invalid: PROBLEM }),
           note: PROBLEM
             ? `<p class="${PROBLEM_NOTE}">Start with http:// or https://, and leave out any username, query or fragment.</p>`
-            : `<p class="${NOTE}">An http(s) address, with or without ${MONO('/v1')}. Local and private addresses are allowed.</p>
+            : `<p class="${NOTE}">The full http(s) endpoint, used exactly as typed. Local and private addresses are allowed.</p>
           <p class="${NOTE} flex min-w-0 items-baseline gap-2">
             <span class="shrink-0">Requests go to</span>
             <span class="min-w-0 truncate font-mono text-foreground">http://localhost:1234/v1/chat/completions</span>

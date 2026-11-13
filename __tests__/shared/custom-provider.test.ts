@@ -171,47 +171,19 @@ describe('parseCustomBaseUrl', () => {
 })
 
 describe('customEndpointUrl', () => {
-  test('a bare origin gets /v1 and the chat tail', () => {
-    expect(customEndpointUrl('http://localhost:1234', 'openai_chat')).toBe('http://localhost:1234/v1/chat/completions')
+  test.each([
+    'http://localhost:1234',
+    'http://localhost:1234/v1',
+    'http://localhost:1234/v1/',
+    'https://gw.example.com/Anthropic',
+    'https://gw.example.com/v1/chat/completions'
+  ])('%s is stored exactly as typed', (url) => {
+    expect(customEndpointUrl(url, 'openai_chat')).toBe(url)
+    expect(customEndpointUrl(url, 'anthropic')).toBe(url)
   })
 
-  test('a base that already ends in /v1 is not doubled', () => {
-    expect(customEndpointUrl('http://localhost:1234/v1', 'openai_chat')).toBe(
-      'http://localhost:1234/v1/chat/completions'
-    )
-    expect(customEndpointUrl('http://localhost:1234/v1/', 'openai_responses')).toBe(
-      'http://localhost:1234/v1/responses'
-    )
-    expect(customEndpointUrl('http://localhost:1234/v1', 'anthropic')).toBe('http://localhost:1234/v1/messages')
-  })
-
-  test('the wire format picks the tail', () => {
-    expect(customEndpointUrl('https://gw.example.com', 'openai_responses')).toBe('https://gw.example.com/v1/responses')
-    expect(customEndpointUrl('https://gw.example.com', 'anthropic')).toBe('https://gw.example.com/v1/messages')
-  })
-
-  test('a gateway mounted under its own path keeps it for the OpenAI formats', () => {
-    expect(customEndpointUrl('https://gw.example.com/openai', 'openai_chat')).toBe(
-      'https://gw.example.com/openai/chat/completions'
-    )
-  })
-
-  test('an anthropic path without /v1 gets one, because Messages lives under it', () => {
-    expect(customEndpointUrl('https://gw.example.com/anthropic', 'anthropic')).toBe(
-      'https://gw.example.com/anthropic/v1/messages'
-    )
-  })
-
-  test('a typed endpoint is taken literally, not given /v1 again', () => {
-    expect(customEndpointUrl('https://gw.example.com/chat/completions', 'openai_chat')).toBe(
-      'https://gw.example.com/chat/completions'
-    )
-  })
-
-  test('a typed tail is replaced by the chosen format, so switching the card retargets it', () => {
-    expect(customEndpointUrl('https://gw.example.com/v1/chat/completions', 'openai_responses')).toBe(
-      'https://gw.example.com/v1/responses'
-    )
+  test('only surrounding whitespace is dropped', () => {
+    expect(customEndpointUrl('  http://localhost:1234/v1  ', 'openai_responses')).toBe('http://localhost:1234/v1')
   })
 
   test('a Base URL the parser refuses has no endpoint', () => {
