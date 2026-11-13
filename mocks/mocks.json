@@ -237,6 +237,76 @@
       "note": "Step 2 of issuing: the one-time reveal, in the same dialog. The panel swaps its contents rather than opening a second one — closing it is the last chance to copy the plaintext, so it happens where the operator is already looking. Route is null for the same reason as step 1."
     },
     {
+      "name": "access-token-form",
+      "mock": "access-token-form.html",
+      "route": null,
+      "group": "Access tokens",
+      "note": "v3 issue form, in the dialog over the list: name, endpoints (the five inbound surfaces plus /codex; none picked means all), the plan it spends under, and expiry. No routing profile, because routing is gone in v3. The plan select shows a read-only summary of that plan under it: its models with the default marked, its 5-hour and 7-day request and spend limits per token, and that a model outside the plan is rejected with 403. The dialog has a pinned header and footer around a scrolling body so Issue token stays reachable. Route is null: it is a state of /access-tokens."
+    },
+    {
+      "name": "access-token-form-plan-menu",
+      "mock": "access-token-form.html?plan-menu",
+      "route": null,
+      "group": "Access tokens",
+      "note": "The plan select open: No plan (unrestricted), each plan with its model count, a separator, then Create a plan... as an action rather than a value. Mock-only; the app moves from a native select to ui/select for this."
+    },
+    {
+      "name": "access-token-form-no-plan",
+      "mock": "access-token-form.html?no-plan",
+      "route": null,
+      "group": "Access tokens",
+      "note": "No plan (unrestricted): the summary is replaced by a dashed note that the token may use any model of any provider with no request or spend limit, and that picking a plan makes a model outside it fail with 403."
+    },
+    {
+      "name": "access-token-form-create-plan",
+      "mock": "access-token-form.html?create-plan",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Create a plan... chosen: the summary is replaced by an inline new-plan form, blank, with Create plan disabled. Same fields as the Plans editor (name, provider-first model picker with a default radio, four optional limits). Issue token is disabled until the plan is created or cancelled."
+    },
+    {
+      "name": "access-token-form-create-plan-filled",
+      "mock": "access-token-form.html?create-plan&filled",
+      "route": null,
+      "group": "Access tokens",
+      "note": "The new-plan form filled in (Team: two Codex models, default gpt-6-luna, limits 200 / $5 per 5 hours and 1,000 / $20 per 7 days); Create plan enabled. The plan is saved the moment it is created, so it stays in Plans even if the token dialog is cancelled."
+    },
+    {
+      "name": "access-token-form-plan-created",
+      "mock": "access-token-form.html?created",
+      "route": null,
+      "group": "Access tokens",
+      "note": "After Create plan: the new plan is selected, its summary is drawn like any other plan and a line confirms it was created and is shared. Issue token is enabled again."
+    },
+    {
+      "name": "access-token-form-edit",
+      "mock": "access-token-form.html?edit",
+      "route": null,
+      "group": "Access tokens",
+      "note": "v3 edit form on the token page (MacBook - Codex on Free): endpoints and plan are editable; name and expiry are drawn locked because PATCH /api/access-tokens/{id} takes endpoints, profile and plan only. The Profile row of access-token.html is gone. Save is disabled until something changes. Usage windows, Usage and Lifetime below the form are unchanged and not repeated. Route is null: the live page still has the Profile row."
+    },
+    {
+      "name": "access-token-form-edit-create-plan",
+      "mock": "access-token-form.html?edit&create-plan&filled",
+      "route": null,
+      "group": "Access tokens",
+      "note": "The inline new-plan form on the edit page, filled in. The page layout gives the picker and the limits more room than the dialog; Save is disabled while the plan is being created."
+    },
+    {
+      "name": "access-token-form-phone",
+      "mock": "access-token-form.html?phone",
+      "route": null,
+      "group": "Access tokens",
+      "note": "The issue form at phone width, drawn alone in a 390px column as the dialog a phone shows (viewport less 2rem each side, p-6): controls stack, the limits grid and chips wrap, buttons go full width. Mock-only."
+    },
+    {
+      "name": "access-token-form-phone-create-plan",
+      "mock": "access-token-form.html?phone&create-plan&filled",
+      "route": null,
+      "group": "Access tokens",
+      "note": "The inline new-plan form at phone width: provider chips wrap, the model list scrolls inside its box, the limits grid keeps its three columns. Mock-only."
+    },
+    {
       "name": "access-plans",
       "mock": "access-plans.html",
       "route": "/access-tokens/plans",
