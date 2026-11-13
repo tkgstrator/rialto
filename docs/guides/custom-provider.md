@@ -10,7 +10,7 @@ other API-key provider.
 
 | Field | Rule |
 |---|---|
-| Name | Lowercase letters, digits, `.`, `-` and `_`, at most 48 characters. It names the provider in routing and logs and cannot be changed later. Must not be a built-in vendor (`openai`, `anthropic`, `google`, `deepseek`, ..., `claude-code*`, `codex`, `gemini-cli`) or an SPA route segment, and must not already be a provider (compared case-insensitively). |
+| Name | Letters (either case), digits, `.`, `-` and `_`, at most 48 characters. It names the provider in routing and logs and cannot be changed later. Must not be a built-in vendor (`openai`, `anthropic`, `google`, `deepseek`, ..., `claude-code*`, `codex`, `gemini-cli`) or an SPA route segment, and must not already be a provider (compared case-insensitively). |
 | Base URL | An `http://` or `https://` address, with or without `/v1`. No username, password, query or fragment. Private and loopback addresses are allowed. |
 | Wire format | One of three: **Claude** (Anthropic Messages, `api_style = anthropic`), **OpenAI Chat Completions** (`openai_chat`), **OpenAI Responses** (`openai_responses`). `gemini` is not offered: its URL carries the model and its key travels as a query parameter, which a Base URL cannot describe. |
 | API key | Required. The request pipeline skips a provider with no key, so a keyless one could never be served. A local server that checks no key takes any placeholder. |

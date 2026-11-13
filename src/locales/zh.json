@@ -465,7 +465,7 @@
         "heading": "你的端点",
         "fieldName": "名称",
         "namePlaceholder": "my-gateway",
-        "nameHint": "小写字母、数字、点、短横线和下划线。它是路由和日志中该提供方的名字，之后无法更改。",
+        "nameHint": "字母、数字、点、短横线和下划线。它是路由和日志中该提供方的名字，之后无法更改。",
         "fieldBaseUrl": "基础 URL",
         "baseUrlPlaceholder": "http://localhost:1234/v1",
         "baseUrlHint": "http(s) 地址，带不带 <mono>/v1</mono> 均可。允许本地和内网地址。",
@@ -486,7 +486,7 @@
         "addedManual": "已添加 {{name}}：没有模型列表，请手动添加模型 ID",
         "problem": {
           "tooLong": "最多 {{max}} 个字符。",
-          "charset": "只能使用小写字母、数字、点、短横线和下划线，且必须以字母或数字开头和结尾。",
+          "charset": "只能使用字母、数字、点、短横线和下划线，且必须以字母或数字开头和结尾。",
           "reserved": "这个名称属于内置厂商。",
           "taken": "已存在同名的提供方。",
           "invalidBaseUrl": "请以 http:// 或 https:// 开头，且不要包含用户名、查询参数或片段。"
