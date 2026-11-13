@@ -24,7 +24,6 @@ export const NAV: readonly NavEntry[] = [
   // Routing has no children: the chain IS the screen, and it is the only
   // selector.
   { id: 'routing', labelKey: 'shell.navRouting', icon: 'ri-git-branch-line', href: '/routing', children: [] },
-  { id: 'decisions', labelKey: 'shell.navDecisions', icon: 'ri-code-box-line', href: '/decisions', children: [] },
   // Neither child is href '/providers' — the section root redirects to
   // the first instead. Activity and Settings can let their first child
   // hold the section's own path because `childOf` matches by prefix and
