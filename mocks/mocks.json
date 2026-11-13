@@ -297,14 +297,14 @@
       "mock": "access-token-form.html?phone",
       "route": null,
       "group": "Access tokens",
-      "note": "The issue form at phone width, drawn alone in a 390px column as the dialog a phone shows (viewport less 2rem each side, p-6): controls stack, the limits grid and chips wrap, buttons go full width. Mock-only."
+      "note": "The issue form at phone width, drawn alone in a 390x820 box standing in for the viewport, as the dialog a phone shows (width less 2rem each side, height less 4rem, p-6): the header and footer stay pinned and the body scrolls, the endpoint chips wrap, the buttons go full width. Mock-only."
     },
     {
       "name": "access-token-form-phone-create-plan",
       "mock": "access-token-form.html?phone&create-plan&filled",
       "route": null,
       "group": "Access tokens",
-      "note": "The inline new-plan form at phone width: provider chips wrap, the model list scrolls inside its box, the limits grid keeps its three columns. Mock-only."
+      "note": "The inline new-plan form at phone width, scrolled to its end: the provider chips wrap, the model list scrolls inside its box, the limits grid keeps its three columns, and the footer stays pinned with Issue token disabled until the plan is created. Mock-only."
     },
     {
       "name": "access-plans",

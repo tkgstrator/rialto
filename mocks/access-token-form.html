@@ -432,9 +432,10 @@ const formBody = () => `${nameField()}${endpointField()}${planField()}${expiryFi
 // Issue token out of reach exactly when the operator is mid-way through
 // creating a plan. Otherwise the shell's dialog(): same overlay, ring,
 // radius and close button.
-const issueDialog = () => `
-  <div class="fixed inset-0 isolate z-50 bg-black/10 supports-backdrop-filter:backdrop-blur-xs"></div>
-  <div role="dialog" aria-modal="true" aria-labelledby="form-title" class="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100vh-4rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl bg-popover text-sm text-popover-foreground ring-1 ring-foreground/10 sm:max-w-md">
+// The panel is the same on a desktop and on a phone; only where it sits
+// differs (`place`), so the pinned footer is drawn in both.
+const issuePanel = (place) => `
+  <div role="dialog" aria-modal="true" aria-labelledby="form-title" class="${place} flex flex-col overflow-hidden rounded-xl bg-popover text-sm text-popover-foreground ring-1 ring-foreground/10">
     <h2 id="form-title" class="shrink-0 px-6 pt-6 pb-4 font-heading text-sm font-medium leading-none">Issue access token</h2>
     <div id="form-scroll" class="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pb-4">
       ${formBody()}
@@ -445,6 +446,10 @@ const issueDialog = () => `
       <i class="ri-close-line text-base leading-none"></i>
     </a>
   </div>`
+
+const issueDialog = () => `
+  <div class="fixed inset-0 isolate z-50 bg-black/10 supports-backdrop-filter:backdrop-blur-xs"></div>
+  ${issuePanel('fixed top-1/2 left-1/2 z-50 max-h-[calc(100vh-4rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 sm:max-w-md')}`
 
 // What the dialog sits over: the list, unchanged. Only its explanatory note
 // is rewritten, because the old one describes routing profiles.
@@ -481,20 +486,15 @@ const editPage = () => `
     <div class="h-8"></div>
   </div>`
 
-// A phone shows the same dialog at the viewport width less 2rem on each side
-// (max-w-[calc(100%-2rem)]), so it is drawn alone in a 390px column, the way
-// providers-connect.html?apikey&phone does: nothing here is a phone-sized shell.
+// A phone shows the same dialog: the viewport width less 2rem on each side
+// (max-w-[calc(100%-2rem)]) and at most the viewport height less 4rem, so the
+// header and footer stay pinned and the body scrolls. There is no phone-sized
+// shell in the mocks, so it is drawn alone in a 390x820 box standing in for the
+// viewport, the way providers-connect.html?apikey&phone does.
 const phoneView = () => `
-  <div class="flex min-h-screen justify-center bg-muted/40 py-8">
-    <div class="h-fit w-[390px] rounded-xl border border-border bg-black/5 p-4 dark:bg-white/5">
-      <div class="grid gap-6 rounded-xl bg-popover p-6 text-sm text-popover-foreground ring-1 ring-foreground/10">
-        <h2 class="font-heading text-sm font-medium leading-none">Issue access token</h2>
-        <div class="space-y-3">
-          ${formBody()}
-          <p class="${LABEL} leading-relaxed"><i class="ri-information-line mr-1 align-[-1px]"></i>The token is shown once, immediately after issuing, and never again.</p>
-        </div>
-        ${issueActions()}
-      </div>
+  <div class="flex min-h-screen justify-center bg-muted/40 py-5">
+    <div class="flex h-[820px] w-[390px] items-center justify-center rounded-xl border border-border bg-black/5 dark:bg-white/5">
+      ${issuePanel('relative max-h-[calc(820px-4rem)] w-[calc(100%-2rem)]')}
     </div>
   </div>`
 
@@ -522,7 +522,11 @@ const positionMenu = () => {
   Object.assign(menu.style, { position: 'fixed', left: `${r.left}px`, top: `${r.bottom + 4}px`, width: `${r.width}px` })
 }
 
-const showPlan = () => document.getElementById('field-plan')?.scrollIntoView({ block: 'start' })
+// Where the plan opens: at its top, so a click on "Create a plan..." lands on the form's
+// first field. A phone shows the tail instead (limits and the Create plan button), because
+// the stacked chips and model list already fill the screen above it.
+const showPlan = (tail = false) =>
+  document.getElementById(tail ? 'new-plan-actions' : 'field-plan')?.scrollIntoView({ block: tail ? 'end' : 'start' })
 
 function paint({ reveal = false } = {}) {
   const app = document.getElementById('token-app')
@@ -534,7 +538,7 @@ function paint({ reveal = false } = {}) {
   if (next) next.scrollTop = top
   if (focusKey) document.querySelector(`[data-k="${CSS.escape(focusKey)}"]`)?.focus()
   positionMenu()
-  if (reveal) showPlan()
+  if (reveal) showPlan(reveal === 'tail')
 }
 
 // Typing updates state and only the parts that depend on it, so the caret
@@ -628,10 +632,10 @@ document.addEventListener('keydown', (event) => {
 })
 window.addEventListener('resize', positionMenu)
 
-paint({ reveal: S.creating && !S.menu })
+paint({ reveal: S.creating && !S.menu && (PHONE ? 'tail' : true) })
 // Webfonts change line heights, and with them where the menu and the plan
 // field sit; settle again once they land.
-document.fonts.ready.then(() => { positionMenu(); if (S.creating) showPlan() })
+document.fonts.ready.then(() => { positionMenu(); if (S.creating) showPlan(PHONE) })
 </script>
 </body>
 </html>
