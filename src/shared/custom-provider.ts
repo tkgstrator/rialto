@@ -123,22 +123,18 @@ const apiPrefix = (base: CustomBaseUrl, style: CustomApiStyle): string => {
 }
 
 /**
- * The full endpoint a request is posted to, which is what
- * `Provider.api_base_url` holds for every built-in vendor too. Null for a
- * Base URL `parseCustomBaseUrl` rejects.
+ * The endpoint a request is posted to, which is what `Provider.api_base_url`
+ * holds for every built-in vendor too. It is exactly what the operator
+ * typed (trimmed): nothing is appended, stripped or normalised, because a
+ * gateway's path is theirs to spell and a silent rewrite sends requests
+ * somewhere they did not choose. Null for a Base URL `parseCustomBaseUrl`
+ * rejects.
  *
- * The OpenAI tail chosen here is only the provider's default: the send path
- * retargets `/chat/completions` <-> `/responses` per model
- * (`llms/utils/openai-endpoint.ts`), so a per-model override keeps working
- * on a custom provider.
+ * The send path still retargets `/chat/completions` <-> `/responses` per
+ * model (`llms/utils/openai-endpoint.ts`) when the stored URL ends in one.
  */
-export const customEndpointUrl = (raw: string, style: CustomApiStyle): string | null => {
-  const base = parseCustomBaseUrl(raw)
-  if (base === null) return null
-  const prefix = apiPrefix(base, style)
-  const tail = style === 'anthropic' ? '/messages' : OPENAI_TAIL[style]
-  return `${base.origin}${prefix}${tail}`
-}
+export const customEndpointUrl = (raw: string, _style: CustomApiStyle): string | null =>
+  parseCustomBaseUrl(raw) === null ? null : raw.trim()
 
 /**
  * Where the model list is looked for, in the order to try. The typed path

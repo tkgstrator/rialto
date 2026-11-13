@@ -138,16 +138,12 @@ describe('isCustomDraftReady', () => {
 })
 
 describe('customEndpointPreview', () => {
-  test('shows the address a request will go to for the chosen format', () => {
-    expect(customEndpointPreview(draft({ baseUrl: 'http://localhost:1234', style: 'openai_chat' }))).toBe(
-      'http://localhost:1234/v1/chat/completions'
-    )
-    expect(customEndpointPreview(draft({ baseUrl: 'http://localhost:1234/v1', style: 'openai_responses' }))).toBe(
-      'http://localhost:1234/v1/responses'
-    )
-    expect(customEndpointPreview(draft({ baseUrl: 'http://localhost:1234', style: 'anthropic' }))).toBe(
-      'http://localhost:1234/v1/messages'
-    )
+  test('shows the Base URL exactly as it will be stored, whatever the format', () => {
+    for (const style of ['openai_chat', 'openai_responses', 'anthropic'] as const) {
+      expect(customEndpointPreview(draft({ baseUrl: 'http://localhost:1234/v1', style }))).toBe(
+        'http://localhost:1234/v1'
+      )
+    }
   })
 
   test('is nothing while the Base URL is empty or not an address', () => {

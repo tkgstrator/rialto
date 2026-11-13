@@ -11,7 +11,7 @@ other API-key provider.
 | Field | Rule |
 |---|---|
 | Name | Letters (either case), digits, `.`, `-` and `_`, at most 48 characters. It names the provider in routing and logs and cannot be changed later. Must not be a built-in vendor (`openai`, `anthropic`, `google`, `deepseek`, ..., `claude-code*`, `codex`, `gemini-cli`) or an SPA route segment, and must not already be a provider (compared case-insensitively). |
-| Base URL | An `http://` or `https://` address, with or without `/v1`. No username, password, query or fragment. Private and loopback addresses are allowed. |
+| Base URL | An `http://` or `https://` address, the full endpoint, used as typed. No username, password, query or fragment. Private and loopback addresses are allowed. |
 | Wire format | One of three: **Claude** (Anthropic Messages, `api_style = anthropic`), **OpenAI Chat Completions** (`openai_chat`), **OpenAI Responses** (`openai_responses`). `gemini` is not offered: its URL carries the model and its key travels as a query parameter, which a Base URL cannot describe. |
 | API key | Required. The request pipeline skips a provider with no key, so a keyless one could never be served. A local server that checks no key takes any placeholder. |
 
@@ -30,14 +30,12 @@ mechanism:
 - The provider lands **switched off**, with every model off. What it may serve is decided in the last
   step of the Connect flow, not guessed.
 
-| Base URL typed | Wire format | Stored endpoint |
-|---|---|---|
-| `http://localhost:1234` | Chat Completions | `http://localhost:1234/v1/chat/completions` |
-| `http://localhost:1234/v1` | Responses | `http://localhost:1234/v1/responses` |
-| `https://gw.example.com/anthropic` | Claude | `https://gw.example.com/anthropic/v1/messages` |
-| `https://gw.example.com/chat/completions` | Chat Completions | `https://gw.example.com/chat/completions` (an endpoint typed in full is taken literally) |
+The Base URL is stored **exactly as typed** (surrounding whitespace aside). Rialto appends, strips and
+normalises nothing, so type the full endpoint the requests should be posted to, for example
+`http://localhost:1234/v1/chat/completions`. Only the model-list lookup tries sibling paths
+(`/models`, `/v1/models`), and it never writes anything back.
 
-The OpenAI tail chosen here is only the provider's default. The send path retargets
+The send path retargets
 `/chat/completions` <-> `/responses` per model (`src/llms/utils/openai-endpoint.ts`), so the
 per-model API style override on the provider page (Request shape) keeps working on a Custom
 provider. A model named like a Codex model is **not** forced onto Responses here, and the
