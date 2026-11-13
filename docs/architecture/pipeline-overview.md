@@ -485,7 +485,31 @@ chain は設定項目ではない。登録されている6つの transformer は
 
 unified 形は Chat の形であって Anthropic のワイヤ形ではない。そのため `/v1/messages` 以外の面（`/v1/chat/completions` / `/v1/responses` / gemini 面）から Claude へ回したリクエストは変換経路を通り、Anthropic への変換は**この 1 段の中**で行う: `anthropic`（API キー）と `claude-code-oauth`（サブスク）の `transformRequestIn` が unified → Anthropic Messages（`src/llms/transformers/anthropic/request-from-unified.ts`。system の巻き上げ、`tool_use` / `tool_result`、画像、`tool_choice`、`max_tokens` の既定値、effort → `output_config`、cache breakpoint、OpenAI 専用項目の除去）を、`transformResponseOut` が Anthropic の応答を Chat 形へ（JSON は `response-to-chat.ts`、SSE はイベントごとに `response-to-chat-stream.ts`）戻す。その先は面の endpoint transformer がいつもどおり面の形式にする。変換を別の段として足さないのは、段を足すと chain 長が 1 でなくなり `/v1/messages` の bypass が壊れるからである。変換経路ではクライアントのヘッダを転送しないので、両段とも `anthropic-version`（サブスクは `anthropic-beta: oauth-2025-04-20` も）を自分で書く。Responses 専用のツール（namespace / custom）は、Chat・Gemini と同じく関数に下ろして送り（`src/llms/utils/tool-lowering.ts`）、戻りの呼び出しは `/v1/responses` の endpoint が呼び手の宣言どおりに引き上げる — [inbound-parity.md](./inbound-parity.md) の (14)。
 
-`Model.apiStyle` が provider と食い違うモデル（api_key openai provider 上の codex 系）は、その差分だけをモデル別 chain として provider chain の後段に足す。
+`Model.apiStyle` が provider と食い違うモデル（api_key openai provider 上の codex 系、または運用者が Responses に切り替えたモデル）は、その差分だけをモデル別 chain として provider chain の後段に足す。詳細は次節。
+
+### OpenAI API Key: Chat と Responses
+
+1 つの api_key OpenAI provider は、Chat Completions と Responses の両方でモデルを持てる（`gpt-6-astra` のように両対応のモデルがある）。Responses を必須にするのではなく、**モデルごとに選べる**ようにしてある。
+
+**Base URL は 2 つの形を受け付ける。** `.../chat/completions` でも `.../responses` でもよい（`api_base_url` は `z.url()` 検証だけで、形は問わない）。リクエストは、そのモデルが解決した apiStyle のエンドポイントへ送る — Chat なら `/chat/completions`、Responses なら `/responses`。末尾の付け替えは `src/llms/utils/openai-endpoint.ts` の 1 箇所が持ち、Chat 段（`OpenAITransformer`）・Responses 段（`OpenAIResponsesTransformer`）・モデルテストのプローブ（`src/services/model-test/probes.ts`）が同じ関数を読む。
+
+- 末尾スラッシュとクエリは保たれ、すでに目的の形の URL はそのまま送る。
+- どちらの形でもない URL（`https://proxy.example/v1/foo`、Codex の backend root）は、Chat 段・Responses 段とも触らず保存値のまま送る。モデルテストの Responses プローブだけは、従来どおり末尾に `/responses` を足す。
+- bypass 経路（`/v1/chat/completions` の呼び手 × 素の Chat モデル）は chain の `transformRequestIn` を通らない。URL は endpoint transformer の `auth()`（`OpenAITransformer.auth`）が直す。
+
+**モデルごとの API スタイル**は `Model.apiStyle` に持ち、`POST /api/providers` の `modelApiStyles`（`{ "<model>": "openai_responses" | "openai_chat" | ... }`）で書く。意味づけは**フィールドの有無**で決まる。
+
+| ペイロード | api_key provider のモデル行 |
+|---|---|
+| `modelApiStyles` あり | 運用者が上書きの全体を見て送ったものとして**権威的**。載せたモデルはその値を保存し、既存の行で載っていないものは上書きを解除して null（provider 既定を継承）に戻す。provider 自身の apiStyle と同じ値は冗長なので null で保存する。値が変わった行は、直近のテスト結果を `unknown` に戻す |
+| `modelApiStyles` なし | 既存の値を**一切変えない**（接続フロー、設定インポート、キーのローテーションなど、このフィールドを読まない呼び出し元が上書きを消さないため） |
+| subscription provider | フィールドは無視する（モデル行はベンダー固有の 1 つの style を持つだけで、選ぶものがない） |
+
+名前由来の既定（`/codex/i` なら `openai_responses`、`modelApiStyleOverride`）は行の**作成時にだけ**効く。同じ保存で作られた行は、ペイロードがまだ見ていない行なので、`modelApiStyles` が載せない限り既定を保つ。実装は `applyModelApiStyles`（`src/services/config/apply/model-rows.ts`）。
+
+**chain。** 上書きのあるモデルは、provider chain（`openai`）の後ろにモデル別 chain（`openai-responses`）を持つ。Chat 段は `hasOwnModelChain` でそのモデルに限り何もせず通す。先に Chat 段が走ると、`reasoning` を消して `reasoning_effort` というスカラに直し、`max_tokens` と tool を Chat の形にしてしまい、後ろの Responses 段が effort を失ったまま Chat 用の項目を上流へ送るからである。Anthropic 段も同じ理由で同じ判定を使う（`src/llms/utils/model-chain.ts`）。保存すると `resetLlmsContext()` が走り、次のリクエストが DB から registry を作り直す（再起動は要らない）。
+
+**Codex サブスクリプションは別経路。** base は `https://chatgpt.com/backend-api/codex`、chain は `openai-responses` → `codex-oauth` で、`/responses` は `codex-oauth` が自分で付ける。subscription provider はモデル別 chain を持たず、`modelApiStyles` も効かない。
 
 ### Subscription overlay
 
