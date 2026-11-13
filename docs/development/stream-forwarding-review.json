@@ -1,0 +1,10 @@
+{
+  "base": "9569e7b5bf1f2b970efc8506ac1e5c08d5acb27e",
+  "files": [
+    { "path": "src/api/v1/response-model-identity.ts", "sha256": "cf9925edc2d88430b320c3a842b97591ed6285807aaf58a75c066080ea3fda71" },
+    { "path": "__tests__/api/response-model-stream-progress.test.ts", "sha256": "f17521a7d3d86ea5d100cd3cc51b030e49f526542edf77a3332e7140af0dc3d4" },
+    { "path": "docs/architecture/response-model-identity.md", "sha256": "184a0fe3a7e1a3f8d33225c0b46cbcb2e774d6c194d1354149587f55b5edffdd" },
+    { "path": "docs/development/stream-forwarding-plan.md", "sha256": "bf38021a6025bae320f107cb3427cbaef623301a10007868909ae0a48236bf52" }
+  ],
+  "evidence": "24 focused tests pass in native Bun 1.3.6 and Linux Bun 1.4.0. Original liveness guard failed before implementation. HTTP-paced Bun 1.4 probe had 1 downstream chunk before event completion, now 9; no deadline or retry change. Historical first-stream cause remains unproven."
+}

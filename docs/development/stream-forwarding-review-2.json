@@ -1,0 +1,10 @@
+{
+  "base": "9569e7b5bf1f2b970efc8506ac1e5c08d5acb27e",
+  "previous_review_source": "cf9925edc2d88430b320c3a842b97591ed6285807aaf58a75c066080ea3fda71",
+  "files": [
+    { "path": "src/api/v1/response-model-identity.ts", "sha256": "b1484ec0449243d7f54fa996bf92098898aca67cf8b76004717873aba5ce5d0d" },
+    { "path": "__tests__/api/response-model-stream-progress.test.ts", "sha256": "d9db9a7c2200c094a9930aee122ea7899c2de1e9e905e21197bd8a0c1b060358" },
+    { "path": "docs/architecture/response-model-identity.md", "sha256": "7def2873e8a0afca7709933f5861ef1a67c569d122be4e53aa075d043ef8a927" }
+  ],
+  "delta": "Recognize only the first-record UTF-8 BOM separately, preserving its bytes while rewriting a data-only message_start. New split-BOM RED/GREEN regression; additional mixed delimiter, pending CRLF-at-cap, and no-data prelude tests. Documentation now names no-data records. No other stream behavior changed."
+}
