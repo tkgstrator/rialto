@@ -13,7 +13,12 @@ import { Hono } from 'hono'
 import { requestLogsRoute } from '../../src/api/request-logs/route'
 import { getPrismaClient } from '../../src/db/client'
 import dayjs from '../../src/lib/dayjs'
-import { SessionLogsResponseSchema, SessionMessagesResponseSchema } from '../../src/schemas/api/request-log'
+import {
+  SessionLogsResponseSchema,
+  SessionMessagesResponseSchema,
+  SessionSummarySchema,
+  SessionsResponseSchema
+} from '../../src/schemas/api/request-log'
 import { HAS_DB, resetDbTables, teardownPrisma } from './helpers'
 
 const SESSION = 'sess-trace'
@@ -98,6 +103,97 @@ describe.if(HAS_DB)('session request-log pages', () => {
     const ids = pages.flatMap((p) => p.items.map((r) => r.id))
     expect(ids).toHaveLength(6)
     expect(new Set(ids).size).toBe(6)
+  })
+})
+
+/**
+ * The reasoning effort a call was sent with is written by `captureUsage`,
+ * stored in a nullable TEXT column and read back on three endpoints: the
+ * session's trace, and the session list and summary that fold it into a
+ * split. A row with none recorded must stay "none" through all of them.
+ */
+describe.if(HAS_DB)('reasoning effort round trip', () => {
+  const callAt = (minutesAgo: number, reasoningEffort: string | null) => ({
+    sessionId: SESSION,
+    provider: 'anthropic',
+    model: 'claude-sonnet-5',
+    status: 200,
+    durationMs: 100,
+    reasoningEffort,
+    createdAt: dayjs().subtract(minutesAgo, 'minute').toDate()
+  })
+
+  // Newest first: xhigh, high, high, then two with nothing recorded.
+  const seedEfforts = async (): Promise<void> => {
+    const prisma = getPrismaClient()
+    await prisma.session.create({ data: { id: SESSION } })
+    await prisma.requestLog.createMany({
+      data: [callAt(1, 'xhigh'), callAt(2, 'high'), callAt(3, 'high'), callAt(4, null), callAt(5, null)]
+    })
+  }
+
+  const get = async (path: string): Promise<unknown> => {
+    const app = new Hono()
+    app.route('/', requestLogsRoute)
+    const res = await app.fetch(new Request(`http://local${path}`))
+    expect(res.status).toBe(200)
+    return res.json()
+  }
+
+  beforeEach(async () => {
+    await resetDbTables()
+    await seedEfforts()
+  })
+
+  afterAll(async () => {
+    await resetDbTables()
+    await teardownPrisma()
+  })
+
+  test('the trace returns each call with the effort it was sent at, null where none was', async () => {
+    const calls = await page(SESSION, 'limit=25&offset=0')
+    expect(calls.items.map((r) => r.reasoningEffort)).toEqual(['xhigh', 'high', 'high', null, null])
+  })
+
+  test('the flat request log carries it too', async () => {
+    const parsed = SessionLogsResponseSchema.safeParse(await get('/api/request-logs?limit=10'))
+    if (!parsed.success) throw parsed.error
+    expect(parsed.data.items.map((r) => r.reasoningEffort)).toEqual(['xhigh', 'high', 'high', null, null])
+  })
+
+  test('the session list splits its calls by effort, busiest first, without counting the unrecorded', async () => {
+    const parsed = SessionsResponseSchema.safeParse(await get('/api/request-logs/sessions?sinceHours=0'))
+    if (!parsed.success) throw parsed.error
+    expect(parsed.data.sessions).toHaveLength(1)
+    expect(parsed.data.sessions[0].requestCount).toBe(5)
+    expect(parsed.data.sessions[0].efforts).toEqual([
+      { name: 'high', requests: 2 },
+      { name: 'xhigh', requests: 1 }
+    ])
+  })
+
+  test('the summary the live list patches in from carries the same split', async () => {
+    const parsed = SessionSummarySchema.safeParse(await get(`/api/request-logs/sessions/${SESSION}/summary`))
+    if (!parsed.success) throw parsed.error
+    expect(parsed.data.efforts).toEqual([
+      { name: 'high', requests: 2 },
+      { name: 'xhigh', requests: 1 }
+    ])
+  })
+
+  test('a session none of whose calls recorded an effort has an empty split', async () => {
+    await resetDbTables()
+    const prisma = getPrismaClient()
+    await prisma.session.create({ data: { id: OTHER } })
+    await prisma.requestLog.createMany({
+      data: [
+        { ...callAt(1, null), sessionId: OTHER },
+        { ...callAt(2, null), sessionId: OTHER }
+      ]
+    })
+    const parsed = SessionSummarySchema.safeParse(await get(`/api/request-logs/sessions/${OTHER}/summary`))
+    if (!parsed.success) throw parsed.error
+    expect(parsed.data.efforts).toEqual([])
   })
 })
 

@@ -20,6 +20,7 @@ import {
   viewPipelineBody
 } from '@/schemas/domain'
 import type { ResolvedProvider } from '../registry/provider'
+import { sentReasoningEffort } from './reasoning-effort'
 import { resolveSessionId } from './session-id'
 import type { PipelineDeps } from './types'
 
@@ -65,6 +66,9 @@ export async function captureUsage(
     accessTokenId: accessTokenId !== undefined ? accessTokenId : null,
     subAccountId: subAccountId !== undefined ? subAccountId : null,
     isSubagent,
+    // `body` is the outbound one, so this is the level the vendor was told
+    // after Auto / manual overrides, and null when nothing set one.
+    reasoningEffort: sentReasoningEffort(body),
     inputTokens: tokens.rawInput,
     outputTokens: tokens.outputTokens,
     cacheReadTokens: tokens.cachedTokens,

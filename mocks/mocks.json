@@ -114,7 +114,14 @@
       "mock": "provider-apikey.html?edit",
       "route": null,
       "group": "Providers",
-      "note": "The api_key provider after Edit: tier and effort overrides, the switches and Replace only work in this state, Remove appears red beside Revert / Save, and the page actions and Test all are locked. Mock-only because the state sits behind a click."
+      "note": "The api_key provider after Edit: tier, shape and effort overrides, the Base URL field, the switches and Replace only work in this state, Remove appears red beside Revert / Save, and the page actions and Test all are locked. Mock-only because the state sits behind a click."
+    },
+    {
+      "name": "provider-apikey-shape",
+      "mock": "provider-apikey.html?edit&shape",
+      "route": null,
+      "group": "Providers",
+      "note": "A model's Shape picker open: Default (Chat Completions) / Chat Completions / Responses, the list drawn as shadcn's SelectContent. The cell in the table is the Effort picker's chip (a shadcn Select whose trigger is styled to it); only the open list is the component's own look. Mock-only because the state sits behind a click."
     },
     {
       "name": "provider-apikey-remove",
@@ -136,6 +143,20 @@
       "route": "/providers/connect",
       "group": "Providers",
       "note": "Add-provider flow. Absorbs ConnectChoiceDialog + ProviderConnectFlow + ImportCredentialsDialog + ManualCallbackDialog. KNOWN DIFF ~15% dark: the mock draws step 2 of three, mid-authentication; the route opens on step 1. Capture limitation, not an implementation gap."
+    },
+    {
+      "name": "providers-connect-apikey",
+      "mock": "providers-connect.html?apikey",
+      "route": null,
+      "group": "Providers",
+      "note": "Step 2 for an API-key vendor (OpenAI): the key and the Base URL, both fields (shadcn Input). The Base URL may end in /chat/completions or /responses; each request goes to the one that matches the model's API. The mock set drew only subscription vendors on this step. Route null because /providers/connect opens on step 1 and the step is a state of it."
+    },
+    {
+      "name": "providers-connect-apikey-phone",
+      "mock": "providers-connect.html?apikey&phone",
+      "route": null,
+      "group": "Providers",
+      "note": "The same form at phone width, drawn alone in a 390px column: gutters drop to 1rem and both fields keep the whole width. A Base URL longer than the field scrolls inside it. Mock-only."
     },
     {
       "name": "providers-connect-device",
@@ -388,7 +409,28 @@
       "mock": "activity-usage.html",
       "route": "/activity/usage",
       "group": "Activity",
-      "note": "Usage tab. Subscription windows grouped by provider, each account's plan with its multiplier (Max 5x / Max 20x, Codex Pro 5x / Pro 20x), including the per-model weekly windows Overview drops, and under each account the same API-equivalent block (this week's tokens and cost, 30 days against the plan fee) a subscription provider's page draws; utilization over time; per-token spend. No export. Reads /api/usage, /api/usage/history, /api/subscriptions (provider grouping and rate_limit_tier) and /api/overview (the API-equivalent figures, which only its quota rows carry). KNOWN DIFF: the mock draws two providers and five accounts; an install with fewer renders fewer rows, and the missing rows shift every section below them. Data, not design — the section order, heads and column layout line up."
+      "note": "Usage tab. Subscription windows grouped by provider, each account's plan with its multiplier (Max 5x / Max 20x, Codex Pro 5x / Pro 20x), including the per-model weekly windows Overview drops, and under each account the same API-equivalent block (this week's tokens and cost, 30 days against the plan fee) a subscription provider's page draws; an API keys section under the windows (per provider: requests, input / output / cache tokens, estimated cost, share of spend; a row opens to its models); utilization over time; per-token spend. No export. Reads /api/usage, /api/usage/history, /api/subscriptions (provider grouping and rate_limit_tier) /api/overview (the API-equivalent figures, which only its quota rows carry) and /api/usage/cost (the API keys section, the rows whose isSubscription is false). KNOWN DIFF: the API keys section starts below the 900px capture, so it is checked on the activity-usage-api-keys screens instead. The mock draws two providers and five accounts; an install with fewer renders fewer rows, and the missing rows shift every section below them. Data, not design — the section order, heads and column layout line up."
+    },
+    {
+      "name": "activity-usage-api-keys",
+      "mock": "activity-usage.html?api-keys",
+      "route": null,
+      "group": "Activity",
+      "note": "The API keys section on Activity > Usage, scrolled into view because it sits under the fold of a 1440x900 capture. One row per API-key provider that carried traffic in the range (GET /api/usage/cost, isSubscription false), ordered by spend with unpriced last: requests, input, output and cache tokens, cost, share of spend. The first row is open to its models. A cost with a model unpriced is a floor (≥ $42.7), a provider with nothing priced is a dash and has no share. No meters, resets or pace: an API key has no window. Mock-only because the capture scrolls and a row opens on a click."
+    },
+    {
+      "name": "activity-usage-api-keys-empty",
+      "mock": "activity-usage.html?api-keys&empty",
+      "route": null,
+      "group": "Activity",
+      "note": "The same section when no request in the range went to an API-key provider. A fact about the range, not an error, so it is one line of copy that also says where the subscription traffic is counted. Mock-only: it needs an install with no API-key traffic."
+    },
+    {
+      "name": "activity-usage-api-keys-phone",
+      "mock": "activity-usage.html?phone",
+      "route": null,
+      "group": "Activity",
+      "note": "The API keys section at phone width, drawn alone in a 390px column because no mock draws a phone-sized shell. A row is two lines (name and cost, then requests, tokens and share), the way the access-token list reads on a phone; it opens to the same model rows. The switch is a container query on the section, not the viewport. Mock-only."
     },
     {
       "name": "activity-session",

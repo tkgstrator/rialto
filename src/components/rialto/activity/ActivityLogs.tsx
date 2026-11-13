@@ -92,23 +92,27 @@ function LevelChipButton({ level, on, onToggle }: { level: LevelChip; on: boolea
   )
 }
 
-/** The toolbar and the lines. Owns the reading state (file, level, search, page). */
-function LogPane({
+/**
+ * The toolbar and the lines. Owns the search and the page, which belong to
+ * one file; the level filter is handed in, because this pane is remounted
+ * on every file switch and would take it along.
+ */
+export function LogPane({
   files,
   file,
   onSelectFile,
+  levels,
+  onLevelsChange,
   lines
 }: {
   files: LogFile[]
   file: LogFile
   onSelectFile: (next: LogFile) => void
+  levels: ReadonlySet<LevelChip>
+  onLevelsChange: (next: Set<LevelChip>) => void
   lines: LogLine[]
 }) {
   const { t } = useTranslation()
-  // debug is on: with the rails gone there is nothing else competing for
-  // the space, and `final request` is the only line that says which
-  // upstream a request actually reached.
-  const [levels, setLevels] = useState<Set<LevelChip>>(new Set(LEVEL_CHIPS))
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(0)
 
@@ -132,7 +136,7 @@ function LogPane({
     const next = new Set(levels)
     if (next.has(level)) next.delete(level)
     else next.add(level)
-    setLevels(next)
+    onLevelsChange(next)
     setPage(0)
   }
 
@@ -195,6 +199,11 @@ export function ActivityLogs() {
   const { t } = useTranslation()
   const { files, file, setFile, rawLines, error, loadLines } = useLogFiles()
   const [follow, setFollow] = useState(false)
+  // Held here, above the per-file remount below, so a file switch keeps it.
+  // debug is on: with the rails gone there is nothing else competing for
+  // the space, and `final request` is the only line that says which
+  // upstream a request actually reached.
+  const [levels, setLevels] = useState<Set<LevelChip>>(new Set(LEVEL_CHIPS))
   const _counts = useActivityCounts()
   // Whether the file this screen reads is being written at all. Off is the
   // shipped default, and an empty or frozen tail with nothing saying so
@@ -251,8 +260,22 @@ export function ActivityLogs() {
       ) : (
         <>
           {offNotice}
-          {/* Remount per file so the level filter, search and page reset with it. */}
-          <LogPane key={file.path} files={files} file={file} onSelectFile={setFile} lines={lines} />
+          {/* Remount per file, but only for what belongs to the file. The
+              search needle and the page index describe one file's contents
+              (a needle typed against a.log says nothing about b.log, and
+              page 3 of one may not exist in the next), so they reset with
+              the key. The level filter is the operator's intent ("show me
+              errors"), not a property of any file, so it lives in the
+              screen above the key and survives the switch. */}
+          <LogPane
+            key={file.path}
+            files={files}
+            file={file}
+            onSelectFile={setFile}
+            levels={levels}
+            onLevelsChange={setLevels}
+            lines={lines}
+          />
         </>
       )}
     </Screen>

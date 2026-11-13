@@ -290,20 +290,6 @@ export function remapTools(tools: UnifiedChatRequest['tools']): unknown[] {
         delete properties.allowed_domains
       }
     }
-    if (tool.function.name === 'Edit') {
-      return [
-        {
-          type: tool.type,
-          name: tool.function.name,
-          description: tool.function.description,
-          parameters: {
-            ...tool.function.parameters,
-            required: ['file_path', 'old_string', 'new_string', 'replace_all']
-          },
-          strict: true
-        }
-      ]
-    }
     return [
       {
         type: tool.type,

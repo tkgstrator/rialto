@@ -207,6 +207,7 @@ async function recordImageUsage(input: {
       surface: input.caller.surface,
       accessTokenId: input.caller.accessTokenId,
       subAccountId: input.subAccountId,
+      reasoningEffort: null,
       inputTokens: input.usage.input,
       totalInputTokens: input.usage.input,
       outputTokens: input.usage.output,

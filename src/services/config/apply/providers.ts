@@ -9,7 +9,7 @@ import { AuthMode, type Model as DbModel, type Provider as DbProvider } from '..
 import { apiStyleForVendor } from '../api-style'
 import type { Tx } from '../apply'
 import { apiKeyForStorage } from './fields'
-import { applyModelEnabledFlips, reconcileModelRows } from './model-rows'
+import { applyModelApiStyles, applyModelEnabledFlips, reconcileModelRows } from './model-rows'
 import { applySubscriptionAccountToggles } from './subscription-toggles'
 import { routeCascadeWarning } from './tier-route-cascade'
 
@@ -88,6 +88,11 @@ export async function applyProviderRow(
   await applySubscriptionAccountToggles(tx, provider, inc, warnings)
 
   await reconcileModelRows(tx, provider, inc, warnings)
+
+  // Per-model wire format (Chat vs Responses). After reconcileModelRows so
+  // the rows it just created exist to be written, and with `provider` still
+  // the pre-reconcile snapshot so "created in this save" stays knowable.
+  await applyModelApiStyles(tx, provider, inc, warnings)
 
   // Write the authoritative Model.enabled column from the UI's
   // _disabledModels selection (must run after reconcileModelRows so

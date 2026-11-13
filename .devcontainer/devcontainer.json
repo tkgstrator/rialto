@@ -52,9 +52,13 @@
       "configureZshAsDefaultShell": true
     },
     "ghcr.io/devcontainers/features/github-cli:1": {},
+    // The hooks in the shared .git are macOS binaries that cannot run in this
+    // container, so this supplies a guarded git instead. It needs a human
+    // github.com login from the ~/.config/gh mount, and a rebuild to take effect.
+    "ghcr.io/tkgstrator/commitguard:1": {},
     "ghcr.io/shyim/devcontainers-features/bun:0": {},
     "ghcr.io/devcontainers/features/node:1.5.0": {
-      "version": "25.4.0"
+      "version": "26.12.1"
     },
     "ghcr.io/devcontainers/features/aws-cli:1": {},
     "ghcr.io/schlich/devcontainer-features/playwright:0": {},

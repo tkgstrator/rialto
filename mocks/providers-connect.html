@@ -13,7 +13,7 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, btn, navTo } = window.Shell
+const { renderShell, pill, btn, navTo, uiInput } = window.Shell
 
 // Absorbs ConnectChoiceDialog + ProviderConnectFlow + ImportCredentialsDialog
 // + ManualCallbackDialog + ManageProvidersDialog — four dialogs that chained
@@ -34,7 +34,16 @@ const DEVICE = PARAMS.has('device')
 // placement where it has to bring its own top gap (see failureCard).
 const CODEX_FAILED = PARAMS.has('codex-failed')
 const CODEX = DEVICE || CODEX_FAILED
-const SELECTED = CODEX ? 'codex' : 'gemini-cli'
+// ?apikey — an API-key vendor on step 2: nothing to sign in to, so the step
+// is a key and the address it is sent to. Both are fields here and stay
+// fields: the flow is the one moment the Base URL is chosen, and a detail
+// page that opened read-only would make the first value (the catalog's) the
+// only one a new provider could ever have.
+// ?apikey&phone — the same pane alone in a 390px column. No mock draws a
+// phone-sized shell, so this is how the narrow form is reviewed.
+const APIKEY = PARAMS.has('apikey')
+const PHONE = APIKEY && PARAMS.has('phone')
+const SELECTED = APIKEY ? 'openai' : CODEX ? 'codex' : 'gemini-cli'
 
 const step = (n, label, state) => {
   const tone = { done: 'bg-foreground text-background', active: 'bg-foreground text-background', todo: 'bg-muted text-muted-foreground' }[state]
@@ -178,7 +187,63 @@ const codexPane = ({ waiting, failed }) => `
       <div class="h-6"></div>
     </div>`
 
-document.getElementById('root').innerHTML = `
+// A vendor that is paid by the token. Mirrors ConnectAuthStep's ApiKeyForm:
+// the intro is the same VendorIntro, the heading is the same "How to
+// authenticate", and the key box and Save sit on one line. Fields are the
+// shadcn Input (`uiInput`); Save is disabled until a key is typed, which is
+// why it is drawn faint here with the box empty.
+//
+// Measured on the pane (container query), not the viewport, so the 390px
+// preview below and a real phone agree: gutters drop to 1rem and the
+// fields keep the whole width.
+const apiKeyPane = `
+    <div class="@container min-w-0 overflow-y-auto">
+      <div class="border-b border-border px-6 py-4 @max-[40rem]:px-4">
+        <div class="flex items-center gap-2">
+          <h2 class="text-sm font-semibold">OpenAI</h2>
+          ${pill('api key', 'mute')}
+        </div>
+        <p class="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+          Calls https://api.openai.com/v1/chat/completions with a key you provide. The key is stored
+          on this Rialto install and sent only to OpenAI.
+        </p>
+      </div>
+
+      <div class="px-6 pt-5 pb-2 @max-[40rem]:px-4">
+        <h3 class="text-sm font-semibold">How to authenticate</h3>
+      </div>
+      <div class="space-y-3 px-6 pb-5 @max-[40rem]:px-4">
+        <div>
+          <div class="mb-1 text-[12px] text-muted-foreground">API key</div>
+          <div class="flex items-center gap-2">
+            ${uiInput('', 'Key for OpenAI')}
+            <span class="shrink-0 opacity-50">${btn('Save key', 'primary', 'ri-check-line')}</span>
+          </div>
+        </div>
+        <div>
+          <div class="mb-1 text-[12px] text-muted-foreground">Base URL</div>
+          <!-- 12px on a narrow pane so the catalog's own URL fits at 390px
+               (13px cut its last letter); a longer one scrolls inside the
+               field, as any input's text does. -->
+          ${uiInput('https://api.openai.com/v1/chat/completions', '', '@max-[40rem]:text-[12px]')}
+          <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
+            Either <span class="font-mono">…/chat/completions</span> or
+            <span class="font-mono">…/responses</span> works — each request goes to the one that
+            matches the model's API.
+          </p>
+        </div>
+        <p class="text-[12px] leading-relaxed text-muted-foreground">
+          Supports <span class="font-mono">$VAR</span> interpolation — the key is read from the
+          environment at boot rather than stored, if you prefer.
+        </p>
+      </div>
+      <div class="h-6"></div>
+    </div>`
+
+document.getElementById('root').innerHTML = PHONE ? `
+  <div class="flex min-h-screen justify-center bg-muted/40 px-4 py-8">
+    <div class="h-fit w-[390px] overflow-hidden rounded-xl border border-border bg-background">${apiKeyPane}</div>
+  </div>` : `
   <div class="flex items-center gap-6 border-b border-border px-6 py-3">
     ${step(1, 'Pick a vendor', 'done')}
     <i class="ri-arrow-right-s-line text-sm text-muted-foreground/50"></i>
@@ -197,7 +262,7 @@ document.getElementById('root').innerHTML = `
       ${VENDORS.map((v) => vendorCard(v, v.id === SELECTED)).join('')}
     </aside>
 
-    ${CODEX ? codexPane({ waiting: DEVICE, failed: CODEX_FAILED }) : `
+    ${APIKEY ? apiKeyPane : CODEX ? codexPane({ waiting: DEVICE, failed: CODEX_FAILED }) : `
     <div class="min-w-0 overflow-y-auto">
       <div class="border-b border-border px-6 py-4">
         <div class="flex items-center gap-2">
@@ -272,11 +337,11 @@ document.getElementById('root').innerHTML = `
 
   </div>`
 
-renderShell({
+if (!PHONE) renderShell({
   active: 'providers',
   navMode: 'cloudflare',
   crumbs: ['Add provider'],
-  subtitle: CODEX ? 'Step 2 of 3 · Codex' : 'Step 2 of 3 · Gemini CLI',
+  subtitle: APIKEY ? 'Step 2 of 3 · OpenAI' : CODEX ? 'Step 2 of 3 · Codex' : 'Step 2 of 3 · Gemini CLI',
   actions:
     btn('Back', 'ghost', 'ri-arrow-left-line', 'providers.html') +
     btn('Continue', 'primary', 'ri-arrow-right-line', 'providers-connect-models.html')

@@ -765,6 +765,16 @@ model RequestLog {
   // foreign key, for the same reason as accessTokenId: an account can be
   // removed, and its history is still worth attributing to one account.
   subAccountId       String?
+  // The reasoning effort the request actually carried to the upstream, read
+  // from the outbound body after Auto / manual overrides were applied, so
+  // it is what the vendor was told rather than what the client asked for.
+  // Null when neither the client nor Rialto set one (the vendor's own
+  // default applied), when the upstream's wire format has no effort field
+  // Rialto reads (Gemini), and for rows written before this landed — the
+  // outbound body is gone, so backfill is not possible. Nullable TEXT
+  // rather than an enum, for the reason on `inboundType` above: a vendor
+  // adding a new level (`ultra` was one) should not be a DDL migration.
+  reasoningEffort    String?
   inputTokens        Int      @default(0)
   outputTokens       Int      @default(0)
   cacheReadTokens    Int      @default(0)

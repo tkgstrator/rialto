@@ -6,6 +6,7 @@ import { attemptChainEntry, type ChainCtx } from '../../src/api/v1/chain-failove
 import { resolveInvocationForModel } from '../../src/api/v1/invocation'
 import { exhaustedChainResponse } from '../../src/api/v1/route'
 import type { RoutePlan } from '../../src/api/v1/route-plan'
+import { bestSupportedLevel, deepReplaceValue } from '../../src/api/v1/upstream-error'
 import type { LlmsContext } from '../../src/llms'
 import { sendToProvider } from '../../src/llms/pipeline/provider-send'
 import { ConfigStore } from '../../src/llms/registry/config'
@@ -19,9 +20,11 @@ import type { SupportedEffort } from '../../src/schemas/domain/model-capability'
 const log = pino({ level: 'silent' })
 const model = 'claude-sonnet-4-6'
 // What each model's own list reported, as ModelCapability records it:
-// Sonnet 4.6 has no xhigh, Haiku 4.5 takes no effort, and the third model
-// has not been recorded yet.
+// Sonnet 4.6 has no xhigh, Haiku 4.5 takes no effort, a third model lists
+// everything but max, a fourth lists max alone, and the last has not been
+// recorded yet.
 const sonnet46: SupportedEffort[] = ['low', 'medium', 'high', 'max']
+const withoutMax: SupportedEffort[] = ['low', 'medium', 'high', 'xhigh']
 const providersConfig = [
   {
     name: 'claude-code',
@@ -29,8 +32,13 @@ const providersConfig = [
     api_style: 'anthropic' as const,
     api_key: 'fixture-placeholder',
     api_base_url: 'https://api.anthropic.com/v1/messages',
-    models: [model, 'claude-haiku-4-5', 'claude-unrecorded'],
-    modelSupportedEfforts: { [model]: sonnet46, 'claude-haiku-4-5': [] }
+    models: [model, 'claude-haiku-4-5', 'claude-unrecorded', 'claude-without-max', 'claude-max-only'],
+    modelSupportedEfforts: {
+      [model]: sonnet46,
+      'claude-haiku-4-5': [],
+      'claude-without-max': withoutMax,
+      'claude-max-only': ['max']
+    }
   },
   {
     name: 'api-key',
@@ -351,5 +359,53 @@ describe('Claude Code per-attempt invocation', () => {
       expect(resolveInvocationForModel(input, `claude-code,${model}`, ctx)?.body.output_config).toEqual({ effort })
       expect(input.routedBody.output_config).toEqual({ effort })
     }
+  })
+
+  test('converts an unlisted level to the highest listed one below it, never to max', () => {
+    const toSonnet = resolveInvocationForModel(plan({ effort: 'xhigh' }), `claude-code,${model}`, ctx)
+    expect(toSonnet?.body.output_config).toEqual({ effort: 'high' })
+    const toWithoutMax = resolveInvocationForModel(plan({ effort: 'max' }), 'claude-code,claude-without-max', ctx)
+    expect(toWithoutMax?.body.output_config).toEqual({ effort: 'xhigh' })
+  })
+
+  test('passes a max the caller wrote through when the model lists it', () => {
+    const input = plan({ effort: 'max' })
+    expect(resolveInvocationForModel(input, `claude-code,${model}`, ctx)?.body.output_config).toEqual({ effort: 'max' })
+  })
+
+  test('leaves a level as sent when max is the only listed level, rather than converting up to it', () => {
+    const input = plan({ effort: 'xhigh' })
+    expect(resolveInvocationForModel(input, 'claude-code,claude-max-only', ctx)?.body.output_config).toEqual({
+      effort: 'xhigh'
+    })
+  })
+
+  test('gives every attempt its own output_config, so a correction on one never reaches the plan or another', () => {
+    const input = plan({ effort: 'xhigh', format: { type: 'json_schema' } })
+    const first = resolveInvocationForModel(input, `claude-code,${model}`, ctx)
+    const second = resolveInvocationForModel(input, 'claude-code,claude-unrecorded', ctx)
+    if (first === null || second === null) throw new Error('fixture must resolve')
+    expect(first.body.output_config).not.toBe(input.routedBody.output_config)
+    expect(second.body.output_config).not.toBe(input.routedBody.output_config)
+    // route.ts rewrites a refused level in place on the attempt's body.
+    expect(deepReplaceValue(second.body, 'xhigh', 'high')).toBe(true)
+    expect(second.body.output_config).toEqual({ effort: 'high', format: { type: 'json_schema' } })
+    expect(input.routedBody.output_config).toEqual({ effort: 'xhigh', format: { type: 'json_schema' } })
+    expect(first.body.output_config).toEqual({ effort: 'high', format: { type: 'json_schema' } })
+  })
+
+  test('the correction after an upstream 400 does not raise the level to max either', () => {
+    const input = plan({ effort: 'xhigh' })
+    const invocation = resolveInvocationForModel(input, 'claude-code,claude-unrecorded', ctx)
+    if (invocation === null) throw new Error('fixture must resolve')
+    const refusal =
+      'Error from provider(claude-code,claude-unrecorded: 400): ' +
+      '{"type":"error","error":{"type":"invalid_request_error","message":' +
+      '"This model does not support effort level \'xhigh\'. Supported levels: low, medium, high, max"}}'
+    const fix = bestSupportedLevel(refusal)
+    if (fix === null) throw new Error('refusal must be readable')
+    expect(deepReplaceValue(invocation.body, fix.bad, fix.level)).toBe(true)
+    expect(invocation.body.output_config).toEqual({ effort: 'high' })
+    expect(input.routedBody.output_config).toEqual({ effort: 'xhigh' })
   })
 })

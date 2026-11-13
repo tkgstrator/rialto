@@ -1,7 +1,7 @@
 /**
  * The Sessions table.
  *
- * Ten columns whose widths are declared once in the colgroup and never
+ * Nine columns whose widths are declared once in the colgroup and never
  * again — the row builds cells in the same order and relies on it. That
  * coupling is the reason the two components sit in one file and the
  * screen sees neither.
@@ -9,8 +9,9 @@
 import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
+import { effortSortValue } from '@/components/rialto/activity/effort'
 import type { Enriched } from '@/components/rialto/activity/sessions-derive'
-import { SurfaceCell } from '@/components/rialto/activity/shared'
+import { DASH, SurfaceCell } from '@/components/rialto/activity/shared'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
 import type { SessionSummary } from '@/lib/api'
 import { shortId } from '@/lib/rialto/format'
@@ -34,13 +35,16 @@ const titleOf = (session: SessionSummary): string => shortId(session.sessionId)
 // what the default ordering already says, since the list arrives newest
 // first. Both are still on the session's own screen, where there is room
 // to mean something.
-type SessionSortKey = 'session' | 'endpoint' | 'model' | 'turns' | 'input' | 'output' | 'cache' | 'cost'
+type SessionSortKey = 'session' | 'endpoint' | 'model' | 'effort' | 'turns' | 'input' | 'output' | 'cache' | 'cost'
 
 const sessionSortValue = (row: Enriched, key: SessionSortKey): SortValue => {
   const { session } = row
   if (key === 'session') return titleOf(session)
   if (key === 'endpoint') return row.surfacePath
   if (key === 'model') return row.model
+  // The busiest effort's rung, so the column orders sessions by the level
+  // most of their requests ran at.
+  if (key === 'effort') return effortSortValue(row.effort)
   if (key === 'turns') return session.requestCount
   if (key === 'input') return session.totalInputTokens
   if (key === 'output') return session.totalOutputTokens
@@ -83,6 +87,29 @@ function ModelCell({ row }: { row: Enriched }) {
   )
 }
 
+/**
+ * The session's reasoning effort, the way ModelCell shows its model: the
+ * busiest one, a `+N` for the rest and the split in the tooltip. Auto
+ * moves a session between levels as the quota pace changes, so a lone
+ * value would claim more than the session did. A session none of whose
+ * requests recorded an effort has nothing to show, and says so with a
+ * dash.
+ */
+function EffortCell({ row }: { row: Enriched }) {
+  if (row.effort === null) return <span className='text-muted-foreground/50'>{DASH}</span>
+  const breakdown = row.session.efforts.map((e) => `${e.name} × ${e.requests}`).join('\n')
+  return (
+    <span className='flex items-baseline gap-1.5' title={breakdown}>
+      <span className='truncate font-mono text-[12px] text-muted-foreground'>{row.effort}</span>
+      {row.otherEfforts === 0 ? null : (
+        <span className='shrink-0 font-mono text-[12px] tabular-nums text-muted-foreground/60'>
+          +{row.otherEfforts}
+        </span>
+      )}
+    </span>
+  )
+}
+
 function SessionRow({ row }: { row: Enriched }) {
   const { session } = row
   const title = titleOf(session)
@@ -98,6 +125,9 @@ function SessionRow({ row }: { row: Enriched }) {
       </td>
       <td className='min-w-0 px-3'>
         <ModelCell row={row} />
+      </td>
+      <td className='min-w-0 px-3'>
+        <EffortCell row={row} />
       </td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{session.requestCount}</td>
       <td className='px-3 text-right font-mono text-xs tabular-nums'>{fmtTokens(session.totalInputTokens)}</td>
@@ -120,6 +150,7 @@ export function SessionsTable({ rows }: { rows: Enriched[] }) {
         <col className='w-44' />
         <col className='w-40' />
         <col />
+        <col className='w-24' />
         <col className='w-16' />
         <col className='w-20' />
         <col className='w-20' />
@@ -136,6 +167,9 @@ export function SessionsTable({ rows }: { rows: Enriched[] }) {
           </SortTh>
           <SortTh sortKey='model' sort={sort} className='px-3 text-left font-medium'>
             {t('activity.sessions.colModel')}
+          </SortTh>
+          <SortTh sortKey='effort' sort={sort} className='px-3 text-left font-medium'>
+            {t('activity.sessions.colEffort')}
           </SortTh>
           <SortTh sortKey='turns' sort={sort} className='px-3 text-right font-medium' align='right'>
             {t('activity.sessions.colTurns')}

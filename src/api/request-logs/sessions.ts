@@ -49,11 +49,31 @@ function latestSurface(logs: Array<{ surface: string | null; createdAt: Date }>)
  * between two loads of the same page. Ties break on the name so the
  * order is total.
  */
-export const modelUsage = (logs: ReadonlyArray<{ model: string }>): Array<{ name: string; requests: number }> => {
+export const modelUsage = (logs: ReadonlyArray<{ model: string }>): Array<{ name: string; requests: number }> =>
+  tally(logs.map((l) => l.model))
+
+/**
+ * Which reasoning efforts a session's requests carried, busiest first.
+ *
+ * A session is not one effort either: Auto picks a level from the quota
+ * pace on every attempt, so a long session crosses levels as the pace
+ * moves. Same ordering as `modelUsage`, with the same name tie-break.
+ *
+ * A request with no recorded effort (null: the vendor default applied, or
+ * the row predates the column) is not counted under any name — "no data" is
+ * not a level, and a count of it would sit at the top of every session that
+ * mostly left the effort alone.
+ */
+export const effortUsage = (
+  logs: ReadonlyArray<{ reasoningEffort: string | null }>
+): Array<{ name: string; requests: number }> =>
+  tally(logs.flatMap((l) => (l.reasoningEffort === null ? [] : [l.reasoningEffort])))
+
+function tally(names: readonly string[]): Array<{ name: string; requests: number }> {
   const counts = new Map<string, number>()
-  for (const log of logs) {
-    const prev = counts.get(log.model)
-    counts.set(log.model, prev === undefined ? 1 : prev + 1)
+  for (const name of names) {
+    const prev = counts.get(name)
+    counts.set(name, prev === undefined ? 1 : prev + 1)
   }
   return [...counts]
     .map(([name, requests]) => ({ name, requests }))
@@ -125,6 +145,7 @@ requestLogsRoute.openapi(getSessionsRoute, async (c) => {
           select: {
             provider: true,
             model: true,
+            reasoningEffort: true,
             surface: true,
             inputTokens: true,
             outputTokens: true,
@@ -152,6 +173,7 @@ requestLogsRoute.openapi(getSessionsRoute, async (c) => {
     const logs = s.logs
     const providers = [...new Set(logs.map((l) => l.provider))]
     const models = modelUsage(logs)
+    const efforts = effortUsage(logs)
     const totalInputTokens = logs.reduce((a, l) => a + l.totalInputTokens, 0)
     const totalOutputTokens = logs.reduce((a, l) => a + l.outputTokens, 0)
     const totalCacheReadTokens = logs.reduce((a, l) => a + l.cacheReadTokens, 0)
@@ -176,6 +198,7 @@ requestLogsRoute.openapi(getSessionsRoute, async (c) => {
       requestCount: logs.length,
       providers,
       models,
+      efforts,
       totalInputTokens,
       totalOutputTokens,
       totalCacheReadTokens,
@@ -203,6 +226,7 @@ requestLogsRoute.openapi(getSessionSummaryRoute, async (c) => {
         select: {
           provider: true,
           model: true,
+          reasoningEffort: true,
           surface: true,
           inputTokens: true,
           outputTokens: true,
@@ -226,6 +250,7 @@ requestLogsRoute.openapi(getSessionSummaryRoute, async (c) => {
 
   const providers = [...new Set(logs.map((l) => l.provider))]
   const models = modelUsage(logs)
+  const efforts = effortUsage(logs)
   const totalInputTokens = logs.reduce((a, l) => a + l.totalInputTokens, 0)
   const totalOutputTokens = logs.reduce((a, l) => a + l.outputTokens, 0)
   const totalCacheReadTokens = logs.reduce((a, l) => a + l.cacheReadTokens, 0)
@@ -250,6 +275,7 @@ requestLogsRoute.openapi(getSessionSummaryRoute, async (c) => {
       requestCount: logs.length,
       providers,
       models,
+      efforts,
       totalInputTokens,
       totalOutputTokens,
       totalCacheReadTokens,

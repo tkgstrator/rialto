@@ -11,19 +11,23 @@
  * against the whole set.
  */
 import { describe, expect, test } from 'bun:test'
-import { modelUsage } from '../../../src/api/request-logs/sessions'
+import { effortUsage, modelUsage } from '../../../src/api/request-logs/sessions'
 import { ALL, applyFilters, type Enriched, enrich } from '../../../src/components/rialto/activity/sessions-derive'
 import type { SessionSummary } from '../../../src/lib/api'
 
 const logs = (...models: string[]) => models.map((model) => ({ model }))
 
-const session = (models: Array<{ name: string; requests: number }>): SessionSummary => ({
+const session = (
+  models: Array<{ name: string; requests: number }>,
+  efforts: Array<{ name: string; requests: number }> = []
+): SessionSummary => ({
   sessionId: 's1',
   inboundType: 'anthropic',
   surface: 'anthropic-messages',
   requestCount: models.reduce((sum, m) => sum + m.requests, 0),
   providers: ['claude-code'],
   models,
+  efforts,
   totalInputTokens: 0,
   totalOutputTokens: 0,
   totalCacheReadTokens: 0,
@@ -36,7 +40,12 @@ const session = (models: Array<{ name: string; requests: number }>): SessionSumm
   preview: null
 })
 
-const rowsOf = (models: Array<{ name: string; requests: number }>): Enriched[] => enrich([session(models)], () => null)
+const rowsOf = (
+  models: Array<{ name: string; requests: number }>,
+  efforts: Array<{ name: string; requests: number }> = []
+): Enriched[] => enrich([session(models, efforts)], () => null)
+
+const efforted = (...efforts: Array<string | null>) => efforts.map((reasoningEffort) => ({ reasoningEffort }))
 
 describe('modelUsage', () => {
   test('counts each model and puts the busiest first', () => {
@@ -56,6 +65,36 @@ describe('modelUsage', () => {
 
   test('a session with no logs has no models', () => {
     expect(modelUsage([])).toEqual([])
+  })
+})
+
+describe('effortUsage', () => {
+  test('counts each effort and puts the busiest first', () => {
+    expect(effortUsage(efforted('low', 'high', 'high', 'medium', 'high', 'medium'))).toEqual([
+      { name: 'high', requests: 3 },
+      { name: 'medium', requests: 2 },
+      { name: 'low', requests: 1 }
+    ])
+  })
+
+  test('breaks a tie on the name, so two loads of a page agree', () => {
+    expect(effortUsage(efforted('medium', 'high')).map((e) => e.name)).toEqual(['high', 'medium'])
+    expect(effortUsage(efforted('high', 'medium')).map((e) => e.name)).toEqual(['high', 'medium'])
+  })
+
+  test('a request that recorded no effort is not counted under any name', () => {
+    // Three of the four left the effort alone. If null were a bucket it
+    // would outrank the one real level the session actually used.
+    expect(effortUsage(efforted(null, 'high', null, null))).toEqual([{ name: 'high', requests: 1 }])
+  })
+
+  test('a session that recorded none at all has no efforts', () => {
+    expect(effortUsage(efforted(null, null))).toEqual([])
+    expect(effortUsage([])).toEqual([])
+  })
+
+  test('keeps a level this build has no name for', () => {
+    expect(effortUsage(efforted('ludicrous'))).toEqual([{ name: 'ludicrous', requests: 1 }])
   })
 })
 
@@ -79,6 +118,33 @@ describe('enrich', () => {
     const [row] = rowsOf([])
     expect(row.model).toBeNull()
     expect(row.otherModels).toBe(0)
+  })
+})
+
+describe('enrich, the effort column', () => {
+  test('names the busiest effort and counts the rest', () => {
+    const [row] = rowsOf(
+      [{ name: 'claude-opus-5', requests: 6 }],
+      [
+        { name: 'high', requests: 4 },
+        { name: 'medium', requests: 1 },
+        { name: 'low', requests: 1 }
+      ]
+    )
+    expect(row.effort).toBe('high')
+    expect(row.otherEfforts).toBe(2)
+  })
+
+  test('a single-effort session has nothing to add', () => {
+    const [row] = rowsOf([{ name: 'claude-opus-5', requests: 3 }], [{ name: 'xhigh', requests: 3 }])
+    expect(row.effort).toBe('xhigh')
+    expect(row.otherEfforts).toBe(0)
+  })
+
+  test('a session that recorded no effort shows none', () => {
+    const [row] = rowsOf([{ name: 'claude-opus-5', requests: 3 }])
+    expect(row.effort).toBeNull()
+    expect(row.otherEfforts).toBe(0)
   })
 })
 

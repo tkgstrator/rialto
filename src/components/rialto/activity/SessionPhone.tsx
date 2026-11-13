@@ -5,8 +5,9 @@
  * The token split (input, output, cache read) stays on the desktop strip;
  * the cache hit rate already says what those three add up to. A traced
  * call keeps the story the trace exists to tell — what was asked for and
- * what answered — with its status, time and cost, and drops the rule
- * pills and token columns that pushed the table to 720px.
+ * what answered (and at what effort, when one was sent) — with its
+ * status, time and cost, and drops the rule pills and token columns that
+ * pushed the table to 720px.
  */
 import { useTranslation } from 'react-i18next'
 import type { ActivityRequestLog } from '@/components/rialto/activity/data'
@@ -56,9 +57,14 @@ export function TraceListPhone({ calls }: { calls: ActivityRequestLog[] }) {
           <PhoneRow
             key={call.id}
             primary={
-              <span className='font-mono' title={`${call.provider},${call.model}`}>
-                {call.model}
-              </span>
+              <>
+                <span className='font-mono' title={`${call.provider},${call.model}`}>
+                  {call.model}
+                </span>
+                {call.reasoningEffort === null ? null : (
+                  <span className='font-mono text-muted-foreground'> · {call.reasoningEffort}</span>
+                )}
+              </>
             }
             trailing={fmtCost(call.totalCostUsd)}
             secondary={

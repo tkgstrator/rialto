@@ -2,6 +2,7 @@
 import { cn } from 'cn'
 import type { TFunction } from 'i18next'
 import type { ReactNode } from 'react'
+import { effortSortValue } from '@/components/rialto/activity/effort'
 import { LANE_KEYS, type Row } from '@/components/rialto/activity/requests-rows'
 import { DASH, StatusPill, SurfaceCell } from '@/components/rialto/activity/shared'
 import type { SortValue } from '@/components/rialto/table-sort'
@@ -14,6 +15,7 @@ export type ColumnId =
   | 'endpoint'
   | 'requested'
   | 'sent'
+  | 'effort'
   | 'rule'
   | 'token'
   | 'input'
@@ -29,7 +31,7 @@ export interface ColumnDef {
    * Column width in px; `0` is the auto column that takes what is left.
    *
    * A number rather than a Tailwind class because the table's own minimum
-   * width is their sum: eleven columns need more than a 1440px window has
+   * width is their sum: twelve columns need more than a 1440px window has
    * left over after the sidebar, so the table keeps its width and scrolls
    * instead of paying for the gap in ellipses. Hiding a column through the
    * Columns menu has to shrink that minimum with it, which a fixed class
@@ -174,6 +176,20 @@ export const COLUMNS: readonly ColumnDef[] = [
     // that served it on a screen with no model filter.
     render: (row) => <ModelCell value={row.log.model} title={`${row.log.provider},${row.log.model}`} />,
     sortValue: (row) => `${row.log.provider},${row.log.model}`
+  },
+  {
+    // Beside the model it qualifies: what the vendor was told for this
+    // call, after Auto or a manual override, not what the client asked
+    // for. A dash is a call that set none (the vendor's default applied)
+    // or one logged before the column existed.
+    id: 'effort',
+    labelKey: 'activity.requests.colEffort',
+    width: 80,
+    align: 'left',
+    cellClass: 'truncate font-mono text-[12px] text-muted-foreground',
+    render: (row) => (row.log.reasoningEffort === null ? DASH : row.log.reasoningEffort),
+    // Up the ladder, not through the alphabet.
+    sortValue: (row) => effortSortValue(row.log.reasoningEffort)
   },
   {
     // The lane rides with the rule rather than holding a column of its

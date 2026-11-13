@@ -6,7 +6,13 @@
 
 import type { Provider } from '@/schemas/domain/provider'
 import { isDeprecatedModel } from '@/shared/data'
-import { type Model as DbModel, type Provider as DbProvider, ModelTestStatus } from '../../../generated/prisma/client'
+import {
+  type ApiStyle,
+  AuthMode,
+  type Model as DbModel,
+  type Provider as DbProvider,
+  ModelTestStatus
+} from '../../../generated/prisma/client'
 import { modelApiStyleOverride } from '../api-style'
 import type { Tx } from '../apply'
 import { disabledSet } from '../transformer'
@@ -78,6 +84,85 @@ export async function reconcileModelRows(
     provider.id,
     [...desired].filter((n) => existingNames.has(n))
   )
+}
+
+// Write the per-model apiStyle override (Model.apiStyle) from the payload's
+// `modelApiStyles`: which wire format one model of an api_key provider is
+// sent in. One OpenAI provider can serve a model over Chat Completions or
+// over Responses, and the operator chooses per model.
+//
+// The field being present is what makes the map authoritative. A payload
+// that carries it is the operator's whole view of the overrides, so a model
+// it does not list is lifted back to the provider's own style. A payload
+// without it — the connect flow, a config import, any caller that never read
+// the overrides — says nothing about them, and every stored value stays.
+//
+// Rows created in this same save are the exception to "unlisted means
+// lifted". Creation seeds the name-derived default (`modelApiStyleOverride`:
+// codex-family is Responses-only), and a payload that has never seen the row
+// could not have meant to cancel it; listing the model is how it does.
+//
+// A style equal to the provider's is stored as null: the override would add
+// nothing (`modelTransformerChains` skips it), and null is what keeps the
+// model following the provider if that ever changes.
+//
+// Subscription providers are left alone. Their chain ends in an auth step
+// and their rows all carry the vendor's one style, so there is nothing to
+// choose — the field comes back on every read and a round trip must not
+// disturb it.
+export async function applyModelApiStyles(
+  tx: Tx,
+  provider: DbProvider & { models: DbModel[] },
+  incoming: Provider,
+  warnings: string[]
+): Promise<void> {
+  const requested = incoming.modelApiStyles
+  if (requested === undefined) return
+  if (provider.authMode === AuthMode.subscription) return
+
+  const desired = new Set(incoming.models)
+  const existing = new Set(provider.models.map((m) => m.name))
+  // A name with no row to write to is most likely a typo or a stale client.
+  const strays = Object.keys(requested).filter((name) => !desired.has(name))
+  if (strays.length > 0) {
+    warnings.push(
+      `modelApiStyles names model(s) that are not in "${provider.name}" models, ignored: ${strays.join(', ')}`
+    )
+  }
+
+  const targets = [...desired].flatMap((name): [string, ApiStyle | null][] => {
+    if (Object.hasOwn(requested, name)) {
+      const style = requested[name]
+      return [[name, style === provider.apiStyle ? null : style]]
+    }
+    return existing.has(name) ? [[name, null]] : []
+  })
+
+  const namesByStyle = new Map<ApiStyle | null, string[]>()
+  for (const [name, style] of targets) {
+    const names = namesByStyle.get(style)
+    namesByStyle.set(style, names === undefined ? [name] : [...names, name])
+  }
+
+  // Only rows whose value actually changes are written, and their last test
+  // is cleared: a result recorded against the other endpoint says nothing
+  // about this one.
+  for (const [style, names] of namesByStyle) {
+    await tx.model.updateMany({
+      where: {
+        providerId: provider.id,
+        name: { in: names },
+        ...(style === null ? { apiStyle: { not: null } } : { OR: [{ apiStyle: null }, { apiStyle: { not: style } }] })
+      },
+      data: {
+        apiStyle: style,
+        testStatus: ModelTestStatus.unknown,
+        testCheckedAt: null,
+        testPassedAt: null,
+        testError: null
+      }
+    })
+  }
 }
 
 // Flip Model.enabled based on the UI's _disabledModels selection and

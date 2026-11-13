@@ -191,7 +191,7 @@ flowchart TD
 | 8 | `anthropic` provider が **api_key 未設定** | registry がこの provider を warn 付きでスキップ → そのルートの候補は `resolveInvocationForModel` が null → 次へ |
 | 9 | inbound `body.model` に `provider,model` 形式（コンマ）が来た | `routed` な面ではモデル名は読まれない。シナリオとレーンのリストにルートがあれば書き換えられ、default も空なら `provider,model` のまま送られる。`passthrough` な面では `provider,model` がそのまま宛先として使われる — OpenAI 互換面が `/v1/models` の id をそのまま投げ返せるのはこの経路。※ `provider,model` は router 出力〜下流の内部表現としても引き続き使用 |
 | 10 | upstream が 401/403 (subscription) | `handleProviderError` が「OAuth 期限切れ → CLI 再ログイン」と warn、HTTPException として上に伝播 → 429 ではないので verbatim 返却（rotate なし）|
-| 11 | upstream が 400 で `effort` 不一致 | `attempt` 内で `bestSupportedLevel` を読んで effort 差し替え → 同 model に 1 回だけ retry |
+| 11 | upstream が 400 で `effort` 不一致 | `attempt` 内で `bestSupportedLevel` を読んで effort 差し替え → 同 model に 1 回だけ retry。差し替え先はメッセージに挙がった対応レベルのうち `max` を除いた最高のもので、`max` しか挙がっていなければ補正せず 400 をそのまま返す（Rialto が勝手に最も高いレベルへ上げない） |
 | 12 | 全 fallback exhaust | `lastForwarded` (最後の 429 body) を verbatim 返却 |
 | 13 | ルートのエイリアスの先、または passthrough の `provider,model` が Providers 画面で無効化した model / provider を指す | ルートはセレクタが `disabled` で落とす（think / longContext のリストの全ルートがそうなら default へ落ち、default の全ルートがそうなら passthrough）。passthrough の pair は registry に無いので `resolveInvocationForModel` が null → skip。全 entry が該当すれば 400 `No usable model`。手で名指ししても転送されない |
 | 14 | `web_search` ツール付きのリクエストで、リストのルートが Chat Completions のプロバイダだけ | web 検索ゲートで全ルートが落ち、refused → 400。Anthropic / Responses / Gemini の形式で送るルートがあればそちらが選ばれる。Web 検索はシナリオではないので、別のリストへは移らない |

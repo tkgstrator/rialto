@@ -51,6 +51,14 @@ export interface Enriched {
   model: string | null
   /** How many further models the session also used. */
   otherModels: number
+  /**
+   * The reasoning effort most of the session's recorded requests were sent
+   * with. Null when none of them recorded one — which is not a level, so
+   * it is never counted into the majority.
+   */
+  effort: string | null
+  /** How many further efforts the session also used. */
+  otherEfforts: number
 }
 
 export function enrich(sessions: SessionSummary[], pathOf: (id: string | null) => string | null): Enriched[] {
@@ -59,7 +67,10 @@ export function enrich(sessions: SessionSummary[], pathOf: (id: string | null) =
     surfacePath: pathOf(session.surface),
     // The server orders these busiest first.
     model: session.models.length === 0 ? null : session.models[0].name,
-    otherModels: Math.max(0, session.models.length - 1)
+    otherModels: Math.max(0, session.models.length - 1),
+    // Busiest first, like the models.
+    effort: session.efforts.length === 0 ? null : session.efforts[0].name,
+    otherEfforts: Math.max(0, session.efforts.length - 1)
   }))
 }
 

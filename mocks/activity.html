@@ -27,13 +27,17 @@ const filter = (label, value) => `
     <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i>
   </button>`
 
+// `effort` is the reasoning effort most of the session's requests were sent
+// with, `moreEfforts` how many further levels it also used. A session none
+// of whose requests recorded one (Gemini has no field Rialto reads) shows
+// a dash, like any column with nothing to say.
 const SESSIONS = [
-  { id: 'ses_9fa2…c41', surface: '/v1/messages',  model: 'claude-opus-4-8',   turns: 42, inTok: '284k', outTok: '34.1k', cache: '78%', cost: '$1.24' },
-  { id: 'ses_71bd…08e', surface: '/v1/responses', model: 'gpt-5.5',           turns: 17, inTok: '88.4k', outTok: '7.80k', cache: '41%', cost: '$0.412' },
-  { id: 'ses_04c7…9aa', surface: '/v1beta/models/*',    model: 'gemini-3.1-pro',    turns: 8,  inTok: '38.2k', outTok: '3.50k', cache: '0%',  cost: '$0.0930' },
-  { id: 'ses_ba51…2f0', surface: '/v1/messages',  model: 'claude-sonnet-4-6', turns: 91, inTok: '641k', outTok: '61.4k', cache: '85%', cost: '$2.06' },
-  { id: 'ses_3d90…7bc', surface: '/v1/chat/completions',      model: 'gpt-5.4-mini',      turns: 4,  inTok: '9.10k', outTok: '1.20k', cache: '0%',  cost: '$0.00610' },
-  { id: 'ses_c18e…44d', surface: '/v1/messages',  model: 'claude-fable-5',    turns: 63, inTok: '412k', outTok: '48.9k', cache: '81%', cost: '$1.71' }
+  { id: 'ses_9fa2…c41', surface: '/v1/messages',  model: 'claude-opus-4-8',   effort: 'xhigh',  moreEfforts: 1, turns: 42, inTok: '284k', outTok: '34.1k', cache: '78%', cost: '$1.24' },
+  { id: 'ses_71bd…08e', surface: '/v1/responses', model: 'gpt-5.5',           effort: 'medium', moreEfforts: 0, turns: 17, inTok: '88.4k', outTok: '7.80k', cache: '41%', cost: '$0.412' },
+  { id: 'ses_04c7…9aa', surface: '/v1beta/models/*',    model: 'gemini-3.1-pro',    effort: null, moreEfforts: 0, turns: 8,  inTok: '38.2k', outTok: '3.50k', cache: '0%',  cost: '$0.0930' },
+  { id: 'ses_ba51…2f0', surface: '/v1/messages',  model: 'claude-sonnet-4-6', effort: 'high',   moreEfforts: 2, turns: 91, inTok: '641k', outTok: '61.4k', cache: '85%', cost: '$2.06' },
+  { id: 'ses_3d90…7bc', surface: '/v1/chat/completions',      model: 'gpt-5.4-mini',      effort: 'low', moreEfforts: 0, turns: 4,  inTok: '9.10k', outTok: '1.20k', cache: '0%',  cost: '$0.00610' },
+  { id: 'ses_c18e…44d', surface: '/v1/messages',  model: 'claude-fable-5',    effort: 'max',    moreEfforts: 0, turns: 63, inTok: '412k', outTok: '48.9k', cache: '81%', cost: '$1.71' }
 ]
 
 const sessionRow = (s) => `
@@ -49,6 +53,16 @@ const sessionRow = (s) => `
     </td>
     <td class="px-3">${surfacePill(s.surface)}</td>
     <td class="px-3 font-mono text-[12px] text-muted-foreground">${s.model}</td>
+    <!-- The busiest effort, a +N for the rest, the split on hover — the
+         way a session's model is read, because Auto moves a session
+         between levels as the quota pace changes. -->
+    <td class="px-3">${
+      s.effort === null
+        ? '<span class="text-muted-foreground/50">—</span>'
+        : `<span class="flex items-baseline gap-1.5"><span class="truncate font-mono text-[12px] text-muted-foreground">${s.effort}</span>${
+            s.moreEfforts === 0 ? '' : `<span class="shrink-0 font-mono text-[12px] tabular-nums text-muted-foreground/60">+${s.moreEfforts}</span>`
+          }</span>`
+    }</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${s.turns}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${s.inTok}</td>
     <td class="px-3 text-right font-mono text-xs tabular-nums">${s.outTok}</td>
@@ -59,12 +73,13 @@ const sessionRow = (s) => `
 
 const table = `
   <table class="w-full table-fixed">
-    <colgroup><col class="w-44"><col class="w-40"><col><col class="w-16"><col class="w-20"><col class="w-20"><col class="w-16"><col class="w-24"></colgroup>
+    <colgroup><col class="w-44"><col class="w-40"><col><col class="w-24"><col class="w-16"><col class="w-20"><col class="w-20"><col class="w-16"><col class="w-24"></colgroup>
     <thead>
       <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         ${sortTh('Session', 'pl-6 pr-3')}
         ${sortTh('Endpoint', 'px-3')}
         ${sortTh('Model', 'px-3')}
+        ${sortTh('Effort', 'px-3')}
         ${sortTh('Turns', 'px-3', 'right')}
         ${sortTh('Input', 'px-3', 'right')}
         ${sortTh('Output', 'px-3', 'right')}

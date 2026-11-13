@@ -54,6 +54,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `thinking-signature-filter.test.ts` | `rialto_` プレフィクスの thinking signature 濾過 |
 | `update-check.test.ts` | 更新チェック: バージョン比較（`v` 付きタグ・prerelease・読めないタグ）と、取得失敗を「最新です」に畳まないこと、成功だけをキャッシュすること |
 | `rialto/format.test.ts` | 表示フォーマッタ（金額の有効数字など） |
+| `rialto/effort-sort.test.ts` | Activity の Effort 列の並び順。アルファベット順ではなく `SupportedEffortSchema` の段階（none < minimal < low < medium < high < xhigh < max < ultra）で並べ、記録の無い行と未知の文字列は順位を持たず末尾に回ること |
 | `rialto/provider-draft.test.ts` | プロバイダ詳細の Edit → Save が書くもの。手で元に戻した変更は何も書かないこと、プロバイダ・モデルのスイッチとキーは読み込んだ行を土台にした 1 回の upsert に載り、ティアエイリアスと effort は変わったものだけが個別の書き込みになること（upsert には載せない）。エイリアスを新しく向けたモデルは ON として描かれ（サーバ側の昇格がモデルを有効にするのと揃える）、スイッチの切れたモデルの昇格だけなら upsert を伴わないエイリアスの書き込み 1 回、解除はモデルを名指さない書き込みで、エイリアスの書き込みは帯の順に並ぶこと |
 | `rialto/provider-account-draft.test.ts` | アカウント単位の利用フラグのドラフト。認証情報を変えずに表示へ反映し、変更された既存 id だけを保存すること、手で戻した変更は no-op、モデルだけの保存は古いアカウント一覧を送り直さないこと、最後の有効アカウントも OFF にできること |
 | `rialto/provider-tier-aliases.test.ts` | プロバイダページのティア帯。名前がティアを示すモデルのうちオンの最新にティアが向き、オフの新しい版は動かさずに「newer」として数えて印を付けること、編集中に切り替えたスイッチがプレビューのティアをすぐ動かすこと、名前がティアを示さないティア（Codex・OpenAI）だけが手動のエイリアスで、そのピッカーは現在のモデル → それ以外の全モデルの順に出すこと、Tier 列が名前の示すティアを全モデルに出し、ルーティング先だけを routed にすること |
@@ -70,6 +71,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 |---|---|
 | `config-service.test.ts` | `applyUiConfig` / `composeUiConfig` の往復整合、モデル削除が外すティアエイリアスの警告（ルート自体は残り、エイリアスが再設定されるまで飛ばされる）とプロバイダ削除で cascade するルートの profile / シナリオ / レーン単位の警告、Providers だけの保存がルートに触らないこと、退役キー（`APIKEY` / `Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK`）を警告付きで捨て・ディスクから剥がし、`GET /api/config` にも出さないこと、トップレベル `ActivePersona` の往復、永続化 |
 | `upsert-provider.test.ts` | Provider の upsert（重複名・モデル差分）。1 プロバイダの編集が他のプロバイダの SubAccount やそれを名指すルートを消さないこと、CRUD 経路のモデル削除が外すティアエイリアスを報告し、プロバイダ削除が一緒に消えたルートを profile / シナリオ / レーン単位で報告すること（名指すルートが無ければ何も報告しない） |
+| `model-api-styles.test.ts` | `POST /api/providers` の `modelApiStyles`（`Model.apiStyle`）。載せたモデルはその値を保存し、provider 自身の style と同じ値は null、フィールドが**無い**保存（キーのローテーション、設定インポート）は既存の上書きを一切変えず、**ある**保存は既存の行で載っていないものを provider の style に戻す（空のマップも全部戻す）。同じ保存で作った行は名前由来の既定（codex 系）を保ち、マップが名指せば上書きできる。provider に無い名前は警告つきで無視、値が変わった行だけテスト結果を `unknown` に戻す、subscription provider は無視する。保存の後に `getLlmsContext()` がモデル別 chain を持つこと・次の保存で消えること（再起動不要）、Base URL が `/responses` でも保存され同じ chain になること |
 | `disabled-targets.test.ts` | 無効な Provider / Model がどの経路からも送られないこと — ルートの解決がルート自身のスイッチとターゲットのスイッチ（`targetEnabled`）を分けて返し、セレクタがターゲットの切れたルートを飛ばすこと、スイッチの切れたモデルをエイリアスで昇格すると ON になること、registry が有効なものだけを持つので passthrough の `provider,model` も `resolveInvocationForModel` が拒否すること、bare 名の解決、サブスクリプションのアカウントプール |
 | `tier-route-service.test.ts` | 保存されるシナリオ × レーンのルート。保存はプロファイル全体の置き換えで、順序どおり・全シナリオと全レーンが揃って読み返せること、存在しないプロバイダと同じリスト内の重複は警告付きで捨て（警告はリストを名指す）、エイリアス未設定のルートは警告付きで残すこと、同じ provider · tier は 1 つのリストに 1 本だが別のリストには置けること、予約キー `passthrough` はルートを持てないこと、制約はブロブへマージされ置き換えではないこと、**保存は Long context の tuner の状態を DB から引き継ぎ、編集画面が読み込んだ古い値で上書きしないこと**、プロファイル一覧が既定を先頭・予約キーを末尾に出すこと。読み出し側では、各ルートがどのリストでも解決され、名前がティアを示すモデルのうちオンの最新に向くので、スイッチを入れるだけでエイリアスを書かずにルートが移ること、しきい値の基準値が default / agent の先頭の使えるルートのモデルのコンテキスト長の 70 %（無ければ 128k）で、調整値は基準値以下に収めて返ること |
 | `tier-alias-service.test.ts` | プロバイダのティア。名前がティアを示すティア（derived）はオンの最新に向き、オフの新しい版は `isNew` の候補になること、スイッチを入れるとエイリアスを書かずにティアが移ること、全部オフなら最新をオフのまま返すこと、全プロバイダの 4 tier が並ぶこと、derived のティアへのエイリアスは拒否され保存済みのものは無視されて起動時のずれとして報告されること、Codex のティアは手動のエイリアスで、昇格がスイッチの切れたモデルを ON にすること、未知のプロバイダ / モデルの拒否と解除の結果 |
@@ -94,7 +96,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `google-surface-auth.test.ts` | Gemini 面の `x-goog-api-key` / `?key=` |
 | `request-log-events-auth.test.ts` | `/api/request-logs/events` がもう `?apikey=` を受けないこと — それを付けたリモートのリクエストは 401、ホスト上からのリクエストは通る |
 | `error-shape.test.ts` | 3 種のエラー封筒の出し分け |
-| `upstream-error.test.ts` | `PROVIDER_ERR_RE` の逆パースと verbatim 転送 |
+| `upstream-error.test.ts` | `PROVIDER_ERR_RE` の逆パースと verbatim 転送。effort 拒否の 400 の事後補正（`bestSupportedLevel` は `max` を除いた最高のレベルを選び、`max` しか挙がっていなければ null、`deepReplaceValue` は差し替えた箇所があるときだけ true） |
 | `route-plan.test.ts` | `buildRoutePlan`（body parse、面解決、transformer 引き当て、gemini はパスのモデルを `body.model` に畳み込むこと）。routed な面ではリストの primary / fallbacks が plan に載ること、quota・health で止まったリストは `exhaustedBehavior='429'` なら各面のエラー封筒で 429 + `Retry-After`（429 マークの期限があればそれ）を返して plan を作らず、`'passthrough'` なら呼び出し側の model で送ること、空のリストと全ルート OFF は `'429'` でも呼び出し側の model で送ること、エイリアス未設定・web_search を運べるルートが無い・プロンプトが入るルートが無いは 400（anthropic / chat / gemini それぞれの封筒）で `'passthrough'` でも緩まないこと、passthrough 面の `deniedTargets` と routed 面がそれを見ないこと |
 | `candidate-chain.test.ts` | `buildFailoverChain` — primary の後ろに selector が解決した fallbacks をその順で並べること（subscription primary が api_key fallback を保つ、同 provider も通る）、重複排除、exhausted 除外と全滅時の順序維持 |
 | `routing-profiles.test.ts` | `/api/routing/profiles{,/{key}}`、`/api/tier-aliases`、`PUT` / `DELETE /api/providers/{name}/tier-aliases/{tier}`。保存したルートが各ルートを解決して読み返せ（モデル・受け付け可否・Web 検索・context window。オフのモデルしかないティアはオフのまま解決される）、どのモデルにも解決できないティアは画面を落とさず null で読めること、予約キー `passthrough` の拒否、シナリオ × レーンの形でない body の検証エラー、モデルのスイッチを入れるとティアが移り quota snapshot にすぐ載ること、derived のティアへのエイリアスが 409 になること、手動のティアでスイッチの切れたモデルの昇格で ON になりティア一覧に出ること、未知の provider / model と未設定エイリアスの解除が 404、プロファイル一覧が既定を先頭に出すこと |
@@ -123,11 +125,15 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `subagent-tag.test.ts` | `stripSubagentTag` がタグの**有無**を返すこと（値は読まない）、閉じたタグを in-place で除去すること、閉じていないタグは存在扱いで残すこと、旧綴り `<CCR-SUBAGENT-MODEL>` も受理すること。有無がレーンを選ぶことは `router.test.ts` と `route-request.test.ts` が見る |
 | `tokenizers/tool-result-image.test.ts` | `tool_result` に入れ子になった image が base64 長ではなくテキスト分として数えられること（tiktoken / huggingface 両方） |
 | `provider-registry-chain.test.ts` | `apiStyle` + `authMode` からの chain 導出と、chain 無しプロバイダの登録拒否 |
+| `openai-endpoint.test.ts` | OpenAI の Base URL の付け替え（`retargetOpenAIUrl` / `redirectedOpenAIUrl`）。`/chat/completions` ⇄ `/responses`、末尾スラッシュ・クエリ・フラグメントの保持、すでに目的の形の URL はそのまま、どちらの形でもない URL（proxy の別パス、Codex の backend root、MiniMax の独自パス）は null、パスの途中や接頭辞だけの一致は拾わないこと |
+| `openai-base-url-pipeline.test.ts` | 実レジストリと `runPipeline` を通し、ループバックの上流で、1 つの OpenAI provider の Base URL がどちらの形でも、Chat のモデルは `/chat/completions`（bypass 経路は `auth()` が URL を直す。`/v1/responses` 経由の変換経路も同じ）、Responses に切り替えたモデルは `/responses` へ Responses の body（`reasoning` オブジェクトと `max_output_tokens`、`reasoning_effort` / `messages` は無い）で届き、呼び手の形式で返ること |
+| `transformers/openai-base-url.test.ts` | Chat 段・Responses 段が出す URL（形が合っていれば何も足さない、付け替え、クエリ保持、どちらの形でもなければ保存値のまま、Codex の backend root は触らない）、bypass の `auth()`、モデル別 chain を持つモデルでは Chat 段が body に触れないこと（`reasoning` が残る）と、そのあとの Responses 段が effort を `reasoning` オブジェクトで送ること |
 | `sse-aggregate.test.ts` | 4 つのワイヤ語彙それぞれの SSE→JSON 畳み込みと、その手前のガード（`findSseStreamDefect`）— 使えるイベントが 0 のストリームと上流エラーイベントを畳まず拒否し、単に途中で切れただけのストリームは従来どおり畳むこと |
 | `codex-stream-failure.test.ts` | 200 を返した後の Codex ストリームで `response.failed` / `error` / `response.incomplete` が来たとき、`/v1/messages` には上流のメッセージを持つ Anthropic の `error` イベントが 1 つだけ届き（後ろに `message_stop` を付けない）、非ストリームの再試行ではエラーコードに応じた 400 / 429 / 529 / 502 になること。`max_output_tokens` での incomplete は `max_tokens` で終わる通常のメッセージになること。`message_start` の無いストリームは `message_delta` + `message_stop` の 2 イベントではなく 0 イベントで閉じること |
 | `tool-result-images.test.ts` | `tool_result` の画像が base64 テキストにならないこと。unified では image part のまま保ち、Responses（Codex）では `function_call_output.output` の `input_image` 配列、Chat Completions と Gemini では tool メッセージ群の直後の user メッセージへ移すこと。テキストだけの配列は JSON ではなくテキストそのものになること |
 | `bypass-header-strip.test.ts` | bypass 時の hop-by-hop ヘッダ除去 |
 | `session-id.test.ts` | `thread-id`（Codex CLI 0.158 の綴り）/ `thread_id` / `x-claude-code-session-id` / ランダム UUID の解決順 |
+| `reasoning-effort.test.ts` | `RequestLog.reasoningEffort` が上流へ実際に送った値であること。Anthropic の `output_config.effort`・Chat の `reasoning_effort`・Responses / Codex の `reasoning.effort` の 3 形から読み、無指定・空文字・文字列でない値・壊れた入れ物は null になること。Auto が挿入した段階と手動設定が呼び出し側の値を置き換えた結果が、書き換え後の本文から読めること |
 | `persona-inbound-gate.test.ts` | ペルソナ挿入が `/v1/messages` **だけ**で走ること（routed な面で `routeRequest` を直接呼び、OpenAI 形の面では `body.system` に触らないこと） |
 | `openai-bypass-routing.test.ts` | passthrough 面（`/v1/chat/completions` / `/v1/responses`）ではルーティングを通らず `body.model` がそのまま残ること、routed な `/v1/messages` と `inboundPath` の無い旧呼び出しはルーティングを通ること（トークン数が付き、model が書き換わる） |
 | `openai-responses-*.test.ts` / `anthropic-response-to-chat.test.ts` / `gemini-*.test.ts` / `response-format-converter.test.ts` | 各ワイヤ形式の双方向変換とストリーム。`openai-responses-lite.test.ts` は Lite の各区間に加えて、関数しか無いワイヤ（Chat / Gemini）へ namespace・custom ツールが関数として下ろされること（`exec` は文字列 1 つ `input` を取り grammar を説明に持つ、履歴の custom 呼び出しは `{"input": …}` の関数呼び出し、namespace と `tool_call_type` は出ない）と、戻りでその呼び出しが呼び手の宣言どおりの `custom_tool_call` / namespace 付きに引き上げられること（ストリームでは custom の入力をその呼び出しが閉じるまで保持し、delta の連結が `.done` の生テキストと一致する）、上流が自分で namespace や kind を言った呼び出しには触れないことも見る |
@@ -152,7 +158,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `jeff-client-queue.test.ts` | Jeff への評価が到着順に1件ずつ送られ、同時に届かないこと。失敗・タイムアウトでも順番が解放されること。5秒のタイムアウトが順番待ちを含まないこと。待ち時間の上限と8件の上限で諦めて列を詰まらせないこと。529 は `Retry-After` に従って1回だけ再試行し、2回目や待つ上限を超える場合は失敗にすること。health は評価を待たないこと。fetch は stub で実際の Jeff は呼ばない |
 | `usage-fetch-force.test.ts` | usage 取得の `forceRefresh`（TTL 内のキャッシュを迂回して上流を呼び、再キャッシュする）と `enabledProvidersOnly`。既定の経路が変わらずキャッシュを返し、失敗時は直前の値を残してアカウントを `failed` に名指しすること。5h が 100 % でも 7d / Fable は上流の値とリセットのまま返すこと（100 % 扱いはスケジューラだけの話） |
 | `model-test/subscription-probe.test.ts` | Codex サブスクの Test が、プロキシと同じ `openai-responses` → `codex-oauth` で request を組むこと。ChatGPT バックエンドが拒否する `max_output_tokens` を送らない、`messages` を残さない、`/responses` へ account id と `originator` 付きで送る |
-| `model-test/probes.test.ts` | api_key の Responses 疎通確認は `max_output_tokens: 16` を送り続けること（公開 Responses API は 16 未満を 400 にする）。Codex 側と取り違えて「直さない」ための対 |
+| `model-test/probes.test.ts` | api_key の Responses 疎通確認は `max_output_tokens: 16` を送り続けること（公開 Responses API は 16 未満を 400 にする）。Codex 側と取り違えて「直さない」ための対。Base URL がどちらの形でも、Chat の疎通確認は `/chat/completions`、Responses のそれは `/responses` へ行き（どちらの形でもなければ Chat は保存値のまま、Responses は末尾に足す）、クエリは保たれること |
 | `subscription-account-sync-service.test.ts` / `subscription-account-sync/crypto.test.ts` | サブアカウント同期と `RIALTO_ACCOUNT_ENCRYPTION_KEY` による暗号化 |
 | `codex-auth.test.ts` | Codex のトークンリフレッシュ |
 | `plan-tier-routes.test.ts` | 旧チェーン → シナリオ × レーンのルートの planner（純関数、DB 無し）を決定ごとに。リストごとに元の順で、各エントリがそのプロバイダ · モデルの tier（手動 tier があればそれ）のルートになり、priority はリストごとに 1 から振り直すこと、OFF のエントリは OFF のルートになること。エイリアスは空いていればチェーンが名指したモデルが取り、default / agent のリストが先・リスト内は priority 順・配信できるモデルが OFF のものより先に取ること、既存のエイリアスは上書きせずモデルの変化をメモに残すこと。名前が tier を示さないモデルは、tier を示すモデルの後で空いたスロット（sonnet → opus → haiku → fable の順）を 1 つだけ取り、既にエイリアスが指していればそれを使い、空きが無ければ sonnet を通してその旨をメモに残すこと。同じリスト内の同じ provider · tier は 1 本にまとまり（後から来た ON の重複は先の OFF を救って後ろの位置に置く）、別のリストならそれぞれに置かれること。変換しないリスト（webSearch / image）は件数だけメモに残すこと |
@@ -171,7 +177,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 
 | ファイル | 担保しているもの |
 |---|---|
-| `transformer-chain.test.ts` | `apiStyle` × `authMode` → chain の写像。サーバとフロントが**同じ関数**を読むので、この 1 本が両方を守る |
+| `transformer-chain.test.ts` | `apiStyle` × `authMode` → chain の写像。サーバとフロントが**同じ関数**を読むので、この 1 本が両方を守る。モデル別 chain は、運用者が切り替えた任意のモデル（名前によらない）に付き、Base URL の形には左右されず、provider と同じ style や anthropic（足す段が無い）には付かないこと |
 | `constants.test.ts` | `HOME_DIR` の解決（`RIALTO_HOME_DIR` の優先） |
 | `model-version.test.ts` | モデル id から読むリリースの新旧（`newestFirst`）。バージョンの数字が先に効き、8 桁の日付は同じバージョン同士でしか効かず、日付なしが先、最後は名前で全順序になること |
 | `tier-resolution.test.ts` | `resolveTier`。名前がティアを示すモデルのうちオンの最新に向く、全部オフなら最新をオフで返す、保存済みのエイリアスはそのティアを上書きしない、名前で示されないティアはエイリアスか未設定、画像モデルと `claude-mythos-5` はどのティアにも数えないこと。サーバとプロバイダ画面が同じ関数を読む |

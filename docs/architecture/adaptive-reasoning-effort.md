@@ -33,3 +33,11 @@ Auto injects `output_config.effort` just before dispatch, after account selectio
 ## Codex subscription accounts
 
 The public API contract above is **not** evidence for the ChatGPT Codex backend. For a Codex subscription, each visible model's `supported_reasoning_levels[].effort` from `backend-api/codex/models` is read once and recorded per model ([model-capabilities.md](./model-capabilities.md)). This includes `ultra`, a level above `max` that some Codex models offer. Levels this build cannot name, hidden models and failed reads grant no Auto permission. A model not recorded yet leaves the request's effort untouched rather than failing dispatch.
+
+## What the request log records
+
+Each `RequestLog` row carries `reasoningEffort`: the level the request **actually sent upstream**, not the one the client asked for. `captureUsage` reads it from the body `sendToProvider` dispatches, which is the body after a manual override, Auto and the `thinking` fit have all rewritten it. A level Auto inserted is therefore recorded, a manual setting that replaced the caller's shows as the replacement, and a level removed before dispatch (Haiku 4.5, which takes none) leaves the row empty. Reading the inbound body instead would log nothing for exactly the requests Auto changed.
+
+The level is read from the one field the outbound wire format uses: `output_config.effort` (Anthropic), `reasoning_effort` (Chat Completions) or `reasoning.effort` (Responses, Codex). It is stored as the vendor spelled it, in a free-text column rather than an enum, so a new level such as `ultra` is recorded without a migration. `null` means the request named no effort and the vendor's default applied; it also covers Gemini, whose thinking controls are not read, image generation, and every row written before the column existed, which cannot be backfilled because the outbound body is not kept.
+
+Activity shows the value as recorded. Requests and the session's routing trace print it per call, and Sessions prints the level most of a session's requests ran at, with `+N` for the other levels it used and the split in the tooltip (requests that recorded none are not counted). Those columns sort along the ladder (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`) rather than alphabetically, with missing and unrecognised values last.
