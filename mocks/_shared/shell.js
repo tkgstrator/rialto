@@ -92,7 +92,6 @@ const navTo = (href) => `data-nav="${href}"`
 
 const NAV = [
   { id: 'overview', label: 'Overview', icon: 'ri-dashboard-3-line', href: 'overview.html' },
-  { id: 'routing', label: 'Routing', icon: 'ri-git-branch-line', href: 'routing.html' },
   { id: 'providers', label: 'Providers', icon: 'ri-plug-line', href: 'providers.html' },
   // Next to Providers because it is the same question pointed the other
   // way: Providers is outbound (who Rialto sends to), this is inbound

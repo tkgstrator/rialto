@@ -12,33 +12,25 @@
  *      `body.model` / `body.stream`.
  *
  * The other three surfaces must be untouched by both, so they are
- * asserted alongside.
- *
- * On a routed surface the plan is the scenario routes' answer, and the
- * two outcomes they hand back as fields — a quota-held list and a refusal
- * — are answered here without dispatching.
+ * asserted alongside. A token on a plan may only name the models its plan
+ * lists: that check, and its 403, is asserted for every surface that
+ * carries a model.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import pino from 'pino'
-import { buildRoutePlan, planModel, type RoutePlan } from '../../src/api/v1/route-plan'
-import dayjs from '../../src/lib/dayjs'
+import { buildRoutePlan, type RoutePlan } from '../../src/api/v1/route-plan'
 import type { LlmsContext } from '../../src/llms'
 import { ConfigStore } from '../../src/llms/registry/config'
 import { ProviderRegistry } from '../../src/llms/registry/provider'
 import { TokenizerRegistry } from '../../src/llms/registry/tokenizer'
 import { TransformerRegistry } from '../../src/llms/registry/transformer'
-import { __setTierProfilesForTests } from '../../src/llms/tier-router/runtime'
 import { AnthropicTransformer } from '../../src/llms/transformers/anthropic'
 import { GeminiTransformer } from '../../src/llms/transformers/gemini'
-import { OpenAITransformer } from '../../src/llms/transformers/openai'
+import { OpenAIResponsesTransformer, OpenAITransformer } from '../../src/llms/transformers/openai'
 import type { TokenPlan } from '../../src/services/access-token-service'
-import { clearModelExhaustion, markModelExhausted } from '../../src/services/failover-state'
 import { __setSurfacesForTests, invalidateSurfaceCache } from '../../src/services/inbound-surface-service'
-import { __resetModelHealthForTest, recordModelFailure } from '../../src/services/routing-scheduler/model-health'
-import { __resetSchedulerStateForTest } from '../../src/services/routing-scheduler/state'
-import { mapWith, route } from '../llms/tier-fixture'
 
 const log = pino({ level: 'silent' })
 
@@ -63,7 +55,12 @@ const PROVIDERS = [
 
 async function buildContext(): Promise<LlmsContext> {
   const transformers = new TransformerRegistry(log)
-  transformers.registerMany([new AnthropicTransformer(), new OpenAITransformer(), new GeminiTransformer()])
+  transformers.registerMany([
+    new AnthropicTransformer(),
+    new OpenAITransformer(),
+    new OpenAIResponsesTransformer(),
+    new GeminiTransformer()
+  ])
   const providers = new ProviderRegistry(transformers, log)
   providers.registerFromConfig(PROVIDERS)
   const tokenizers = new TokenizerRegistry(log)
@@ -90,7 +87,6 @@ async function plan(
         id: inbound.tokenId,
         name: 'test',
         surfaces: [],
-        profileKey: null,
         plan: inbound.plan === undefined ? null : inbound.plan
       })
     captured.value = await buildRoutePlan(c, ctx)
@@ -122,162 +118,15 @@ const asResponse = (result: RoutePlan | Response): Response => {
 
 const SONNET = 'anthropic,claude-sonnet-5'
 const OPUS = 'anthropic,claude-opus-4-7'
-const sonnetRoute = (over: Parameters<typeof route>[3] = {}) => route('anthropic', 'sonnet', 'claude-sonnet-5', over)
-const opusRoute = (over: Parameters<typeof route>[3] = {}) => route('anthropic', 'opus', 'claude-opus-4-7', over)
+const LIMITS = { '5h': { requests: null, spendUsd: null }, '7d': { requests: null, spendUsd: null } }
 
-// Routes in the Default list of the agent lane: where an ordinary request goes.
-const onDefault = (routes: ReturnType<typeof route>[], constraints: Parameters<typeof mapWith>[1] = {}) =>
-  mapWith({ default: { agent: routes } }, constraints)
-
-// The health gate needs `minHealthSamples` (5 by default) failures
-// before it holds a route.
-const failRepeatedly = (target: string): void => {
-  for (const _ of Array.from({ length: 5 })) recordModelFailure(target)
-}
-
-const resetLiveState = (): void => {
-  __resetSchedulerStateForTest()
-  __resetModelHealthForTest()
-  clearModelExhaustion('anthropic', 'claude-sonnet-5')
-  clearModelExhaustion('anthropic', 'claude-opus-4-7')
-}
-
-// Every surface passthrough unless a test says otherwise: the router then
-// returns before it can consult the routes, and body.model reaches the
-// plan verbatim. The empty seed keeps a routed test that forgets its map
-// off Postgres.
+// No surface denies a target unless a test says otherwise.
 beforeEach(() => {
   __setSurfacesForTests({})
-  __setTierProfilesForTests({})
-  resetLiveState()
 })
 
 afterEach(() => {
   __setSurfacesForTests({})
-  __setTierProfilesForTests(null)
-  resetLiveState()
-})
-
-/**
- * On a routed surface the plan is the scenario list's answer. Three
- * outcomes reach the /v1 handler in their own shape: a primary with the
- * rest of the list behind it; no primary and the caller's own model going
- * out alone; or no primary and a 429 that never dispatches at all.
- */
-describe('a routed surface walks the scenario routes', () => {
-  const body = () => ({ model: 'claude-sonnet-4-5', messages: [{ role: 'user', content: 'hi' }] })
-
-  beforeEach(() => {
-    __setSurfacesForTests({ 'anthropic-messages': 'routed', 'openai-chat': 'routed' })
-  })
-
-  test('the plan carries the primary and the rest of the list as fallbacks', async () => {
-    __setTierProfilesForTests({ live: onDefault([sonnetRoute(), opusRoute()]) })
-    const result = asPlan(await plan('/v1/messages', body()))
-    expect(result.primaryModel).toBe(SONNET)
-    expect(result.fallbacks).toEqual([OPUS])
-    expect(result.routedBody.model).toBe(SONNET)
-    expect(result.route).toBe('default')
-    expect(result.isSubagent).toBe(false)
-    // What the client asked for is still recorded next to what was sent.
-    expect(result.requestedModel).toBe('claude-sonnet-4-5')
-  })
-
-  test('a token on a plan keeps an allowed model and skips the routes', async () => {
-    // A plan pays for its listed models; a routed chain must not be able
-    // to swap in a costlier one.
-    __setTierProfilesForTests({ live: onDefault([opusRoute()]) })
-    const plan: TokenPlan = {
-      models: [SONNET, 'openai,gpt-cheap'],
-      defaultModel: 'openai,gpt-cheap',
-      limits: { '5h': { requests: null, spendUsd: null }, '7d': { requests: null, spendUsd: null } }
-    }
-    const result = asPlan(await plan_('/v1/chat/completions', { ...body(), model: SONNET }, plan))
-    expect(result.primaryModel).toBe(SONNET)
-    expect(result.fallbacks).toEqual([])
-    expect(result.route).toBe('passthrough')
-  })
-
-  test('a token on a plan sends any other model to the plan’s default', async () => {
-    __setTierProfilesForTests({ live: onDefault([opusRoute()]) })
-    const plan: TokenPlan = {
-      models: [SONNET],
-      defaultModel: SONNET,
-      limits: { '5h': { requests: null, spendUsd: null }, '7d': { requests: null, spendUsd: null } }
-    }
-    const result = asPlan(await plan_('/v1/chat/completions', body(), plan))
-    expect(result.primaryModel).toBe(SONNET)
-    expect(result.routedBody.model).toBe(SONNET)
-    // The log still records what the client asked for.
-    expect(result.requestedModel).toBe('claude-sonnet-4-5')
-  })
-
-  test('the plan records the scenario and the lane the request was routed by', async () => {
-    __setTierProfilesForTests({
-      live: mapWith({ default: { agent: [sonnetRoute()] }, think: { subagent: [opusRoute()] } })
-    })
-    const result = asPlan(
-      await plan('/v1/messages', {
-        ...body(),
-        thinking: { type: 'enabled', budget_tokens: 2048 },
-        system: [
-          { type: 'text', text: 'preamble' },
-          { type: 'text', text: '<RIALTO-SUBAGENT-MODEL>x</RIALTO-SUBAGENT-MODEL>' }
-        ]
-      })
-    )
-    expect(result.primaryModel).toBe(OPUS)
-    expect(result.route).toBe('think')
-    expect(result.isSubagent).toBe(true)
-  })
-
-  test('no primary under exhaustedBehavior passthrough sends the caller’s own model with no fallbacks', async () => {
-    __setTierProfilesForTests({ live: onDefault([sonnetRoute()], { exhaustedBehavior: 'passthrough' }) })
-    failRepeatedly(SONNET)
-    const result = asPlan(await plan('/v1/messages', body()))
-    expect(result.primaryModel).toBe('claude-sonnet-4-5')
-    expect(result.fallbacks).toEqual([])
-    expect(result.route).toBe('passthrough')
-  })
-
-  test('no primary under exhaustedBehavior 429 answers 429 with Retry-After and no plan', async () => {
-    __setTierProfilesForTests({ live: onDefault([sonnetRoute()], { exhaustedBehavior: '429' }) })
-    failRepeatedly(SONNET)
-    const response = asResponse(await plan('/v1/messages', body()))
-    expect(response.status).toBe(429)
-    // Held on health alone, nothing says when the route comes back, so
-    // the hint is the default 30 s.
-    expect(response.headers.get('Retry-After')).toBe('30')
-    const envelope: unknown = await response.json()
-    expect(envelope).toMatchObject({ type: 'error', error: { type: 'rate_limit_error' } })
-  })
-
-  test('the Retry-After is the held route’s own deadline when a 429 set one', async () => {
-    __setTierProfilesForTests({ live: onDefault([sonnetRoute()], { exhaustedBehavior: '429' }) })
-    markModelExhausted('anthropic', 'claude-sonnet-5', dayjs().add(90, 'second').valueOf())
-    const response = asResponse(await plan('/v1/messages', body()))
-    expect(response.status).toBe(429)
-    expect(Number(response.headers.get('Retry-After'))).toBeGreaterThanOrEqual(89)
-    expect(Number(response.headers.get('Retry-After'))).toBeLessThanOrEqual(90)
-  })
-
-  test('the 429 answers in the surface’s own envelope', async () => {
-    __setTierProfilesForTests({ live: onDefault([sonnetRoute()], { exhaustedBehavior: '429' }) })
-    failRepeatedly(SONNET)
-    const response = asResponse(await plan('/v1/chat/completions', body()))
-    expect(response.status).toBe(429)
-    const envelope: unknown = await response.json()
-    expect(envelope).toMatchObject({ error: { type: 'rate_limit_error' } })
-    expect(envelope).not.toHaveProperty('type')
-  })
-
-  test('an empty Default sends the caller’s own model even under exhaustedBehavior 429', async () => {
-    __setTierProfilesForTests({ live: mapWith({ think: { agent: [opusRoute()] } }, { exhaustedBehavior: '429' }) })
-    const result = asPlan(await plan('/v1/messages', body()))
-    expect(result.primaryModel).toBe('claude-sonnet-4-5')
-    expect(result.fallbacks).toEqual([])
-    expect(result.route).toBe('passthrough')
-  })
 })
 
 describe('the gemini surface', () => {
@@ -315,15 +164,6 @@ describe('the gemini surface', () => {
       await plan('/v1beta/models/gemini-3-pro:generateContent', { model: 'something-else', contents: [] })
     )
     expect(result.primaryModel).toBe('google,gemini-3-pro')
-  })
-
-  test('on a routed gemini surface the path model is recorded, and the list picks the target', async () => {
-    __setSurfacesForTests({ 'gemini-generate': 'routed' })
-    __setTierProfilesForTests({ live: onDefault([route('google', 'sonnet', 'gemini-3-flash')]) })
-    const result = asPlan(await plan('/v1beta/models/gemini-3-pro:generateContent', { contents: [] }))
-    expect(result.primaryModel).toBe('google,gemini-3-flash')
-    expect(result.requestedModel).toBe('gemini-3-pro')
-    expect(result.route).toBe('default')
   })
 })
 
@@ -410,94 +250,10 @@ describe('accountSessionKey', () => {
 })
 
 /**
- * A list with routes that yields no primary is not always exhaustion.
- * Only quota or health earns a 429: a list that is configured but cannot
- * take this request is answered 400, and a list whose routes are all
- * switched off passes through like an empty one.
+ * A surface may refuse a target the operator switched off for it. The
+ * check runs after the plan check, in the surface's own envelope.
  */
-describe('a list that yields no primary answers by why', () => {
-  // Claude Code's background work arrives as Haiku; the name picks nothing.
-  const haiku = () => ({ model: 'claude-haiku-4-5', messages: [{ role: 'user', content: 'hi' }] })
-
-  beforeEach(() => {
-    __setSurfacesForTests({ 'anthropic-messages': 'routed', 'openai-chat': 'routed', 'gemini-generate': 'routed' })
-  })
-
-  test('a haiku request is served by the Default route like any other', async () => {
-    __setTierProfilesForTests({ live: onDefault([sonnetRoute()]) })
-    const result = asPlan(await plan('/v1/messages', haiku()))
-    expect(result.primaryModel).toBe(SONNET)
-    expect(result.requestedModel).toBe('claude-haiku-4-5')
-    expect(result.route).toBe('default')
-  })
-
-  test('a route with no alias answers 400, not a 429 with Retry-After', async () => {
-    __setTierProfilesForTests({ live: onDefault([route('anthropic', 'haiku', null)], { exhaustedBehavior: '429' }) })
-    const response = asResponse(await plan('/v1/messages', haiku()))
-    expect(response.status).toBe(400)
-    expect(response.headers.get('Retry-After')).toBeNull()
-    const envelope: unknown = await response.json()
-    expect(envelope).toMatchObject({ type: 'error', error: { type: 'invalid_request_error' } })
-    expect(JSON.stringify(envelope)).toContain('no model aliased')
-  })
-
-  test('exhaustedBehavior passthrough does not turn a refusal into a pass', async () => {
-    // Passthrough is what to do while quota comes back; nothing comes
-    // back for a route that has no model behind it.
-    __setTierProfilesForTests({
-      live: onDefault([route('anthropic', 'haiku', null)], { exhaustedBehavior: 'passthrough' })
-    })
-    expect(asResponse(await plan('/v1/messages', haiku())).status).toBe(400)
-  })
-
-  test('a web_search request no route can run is a 400 in the OpenAI envelope on chat', async () => {
-    __setTierProfilesForTests({ live: onDefault([sonnetRoute({ hostsWebSearch: false })]) })
-    const response = asResponse(
-      await plan('/v1/chat/completions', {
-        ...haiku(),
-        tools: [{ type: 'function', function: { name: 'web_search' } }]
-      })
-    )
-    expect(response.status).toBe(400)
-    const envelope: unknown = await response.json()
-    expect(envelope).toMatchObject({ error: { type: 'invalid_request_error' } })
-    expect(envelope).not.toHaveProperty('type')
-    expect(JSON.stringify(envelope)).toContain('web_search')
-  })
-
-  test('a prompt no route can hold is a 400 in google.rpc.Status shape on gemini', async () => {
-    __setTierProfilesForTests({ live: onDefault([route('google', 'sonnet', 'gemini-3-pro', { contextWindow: 20 })]) })
-    const long = 'lorem ipsum dolor sit amet '.repeat(50)
-    const response = asResponse(
-      await plan('/v1beta/models/gemini-3-pro:generateContent', {
-        contents: [{ role: 'user', parts: [{ text: long }] }]
-      })
-    )
-    expect(response.status).toBe(400)
-    const envelope: unknown = await response.json()
-    expect(envelope).toMatchObject({ error: { status: 'INVALID_ARGUMENT', code: 400 } })
-  })
-
-  test('a list whose routes are all switched off passes through like an empty one', async () => {
-    __setTierProfilesForTests({ live: onDefault([sonnetRoute({ enabled: false })], { exhaustedBehavior: '429' }) })
-    const result = asPlan(await plan('/v1/messages', haiku()))
-    expect(result.primaryModel).toBe('claude-haiku-4-5')
-    expect(result.route).toBe('passthrough')
-  })
-
-  test('a route that is itself failing still answers 429', async () => {
-    __setTierProfilesForTests({ live: onDefault([sonnetRoute()], { exhaustedBehavior: '429' }) })
-    failRepeatedly(SONNET)
-    expect(asResponse(await plan('/v1/messages', haiku())).status).toBe(429)
-  })
-})
-
-/**
- * A passthrough surface may refuse a target the operator switched off for
- * it. The check runs after routing, in the surface's own envelope, and
- * only judges the caller's own model — a routed surface never sends it.
- */
-describe('passthrough denial', () => {
+describe('denied targets', () => {
   test('bare and legacy qualified IDs keep the same tool-bearing request shape', async () => {
     const tools = [{ type: 'function', name: 'apply_patch', parameters: { type: 'object' } }]
     const body = { messages: [{ role: 'user', content: 'Edit this file' }], tools }
@@ -509,8 +265,8 @@ describe('passthrough denial', () => {
     expect(bare.routedBody.messages).toEqual(qualified.routedBody.messages)
   })
 
-  test('a denied target on a passthrough surface is a 400 that names it', async () => {
-    __setSurfacesForTests({}, { 'anthropic-messages': [OPUS] })
+  test('a denied target is a 400 that names it', async () => {
+    __setSurfacesForTests({ 'anthropic-messages': [OPUS] })
     const response = asResponse(await plan('/v1/messages', { model: OPUS, messages: [] }))
     expect(response.status).toBe(400)
     const envelope: unknown = await response.json()
@@ -519,42 +275,101 @@ describe('passthrough denial', () => {
   })
 
   test('a target the list does not name goes through', async () => {
-    __setSurfacesForTests({}, { 'anthropic-messages': [OPUS] })
+    __setSurfacesForTests({ 'anthropic-messages': [OPUS] })
     const result = asPlan(await plan('/v1/messages', { model: SONNET, messages: [] }))
     expect(result.primaryModel).toBe(SONNET)
   })
 
   test('the list is per surface: another surface may still name the target', async () => {
-    __setSurfacesForTests({}, { 'anthropic-messages': [OPUS] })
+    __setSurfacesForTests({ 'anthropic-messages': [OPUS] })
     const result = asPlan(await plan('/v1/chat/completions', { model: OPUS, messages: [] }))
     expect(result.primaryModel).toBe(OPUS)
   })
-
-  test('a routed surface ignores the list, even when the routes land on a listed target', async () => {
-    __setSurfacesForTests({ 'anthropic-messages': 'routed' }, { 'anthropic-messages': [SONNET] })
-    __setTierProfilesForTests({ live: onDefault([sonnetRoute()]) })
-    const result = asPlan(await plan('/v1/messages', { model: 'claude-sonnet-4-5', messages: [] }))
-    expect(result.primaryModel).toBe(SONNET)
-  })
 })
 
-describe('planModel', () => {
-  const plan: TokenPlan = {
-    models: ['a,one', 'b,two'],
-    defaultModel: 'a,one',
-    limits: { '5h': { requests: 5, spendUsd: null }, '7d': { requests: null, spendUsd: null } }
-  }
+/**
+ * A token on a plan may only spend the plan's models. A listed model goes
+ * through, naming none uses the plan's default, and naming any other model
+ * is refused with 403 in the surface's own error shape rather than served
+ * by a model the caller never asked for.
+ */
+describe('a token on a plan', () => {
+  const tokenPlan: TokenPlan = { models: [SONNET, 'google,gemini-3-pro'], defaultModel: SONNET, limits: LIMITS }
+  const prompt = [{ role: 'user', content: 'hi' }]
 
-  test('leaves a token with no plan to the caller and the router', () => {
-    expect(planModel(null, 'x,y')).toBeUndefined()
-    expect(planModel(undefined, undefined)).toBeUndefined()
+  test('keeps a listed model', async () => {
+    const result = asPlan(await plan_('/v1/chat/completions', { model: SONNET, messages: prompt }, tokenPlan))
+    expect(result.primaryModel).toBe(SONNET)
+    expect(result.route).toBe('passthrough')
+    expect(result.fallbacks).toEqual([])
   })
 
-  test('keeps allowed qualified or unique bare models and defaults everything else', () => {
-    expect(planModel(plan, 'b,two')).toBe('b,two')
-    expect(planModel(plan, 'two')).toBe('b,two')
-    expect(planModel(plan, 'c,three')).toBe('a,one')
-    expect(planModel(plan, undefined)).toBe('a,one')
-    expect(planModel({ ...plan, models: ['a,one', 'b,one', 'c,three'], defaultModel: 'c,three' }, 'one')).toBe('one')
+  test('a bare name that exactly one listed model carries resolves to it', async () => {
+    const result = asPlan(await plan_('/v1/messages', { model: 'claude-sonnet-5', messages: prompt }, tokenPlan))
+    expect(result.primaryModel).toBe(SONNET)
+    expect(result.requestedModel).toBe('claude-sonnet-5')
+  })
+
+  test('a request naming no model goes to the plan’s default', async () => {
+    const result = asPlan(await plan_('/v1/chat/completions', { messages: prompt }, tokenPlan))
+    expect(result.primaryModel).toBe(SONNET)
+    expect(result.routedBody.model).toBe(SONNET)
+    expect(result.requestedModel).toBeUndefined()
+  })
+
+  test('/v1/messages refuses an unlisted model with 403 in the Anthropic envelope', async () => {
+    const response = asResponse(await plan_('/v1/messages', { model: OPUS, messages: prompt }, tokenPlan))
+    expect(response.status).toBe(403)
+    const envelope: unknown = await response.json()
+    expect(envelope).toMatchObject({ type: 'error', error: { type: 'permission_error' } })
+    expect(envelope).toMatchObject({
+      error: {
+        message: `Model "${OPUS}" is not allowed for this token. Allowed models: ${SONNET}, google,gemini-3-pro.`
+      }
+    })
+  })
+
+  test('/v1/chat/completions refuses an unlisted model with 403 in the OpenAI envelope', async () => {
+    const response = asResponse(await plan_('/v1/chat/completions', { model: OPUS, messages: prompt }, tokenPlan))
+    expect(response.status).toBe(403)
+    const envelope: unknown = await response.json()
+    expect(envelope).toMatchObject({ error: { type: 'permission_error' } })
+    expect(envelope).not.toHaveProperty('type')
+    expect(JSON.stringify(envelope)).toContain(OPUS)
+  })
+
+  test('/v1/responses refuses an unlisted model with 403 in the OpenAI envelope', async () => {
+    const response = asResponse(await plan_('/v1/responses', { model: OPUS, input: 'hi' }, tokenPlan))
+    expect(response.status).toBe(403)
+    const envelope: unknown = await response.json()
+    expect(envelope).toMatchObject({ error: { type: 'permission_error' } })
+    expect(JSON.stringify(envelope)).toContain(OPUS)
+  })
+
+  test('gemini refuses an unlisted model named in the URL with 403 in google.rpc.Status shape', async () => {
+    const response = asResponse(
+      await plan_('/v1beta/models/gemini-3-flash:generateContent', { contents: [] }, tokenPlan)
+    )
+    expect(response.status).toBe(403)
+    const envelope: unknown = await response.json()
+    expect(envelope).toMatchObject({ error: { status: 'PERMISSION_DENIED', code: 403 } })
+    expect(JSON.stringify(envelope)).toContain('gemini-3-flash')
+  })
+
+  test('gemini keeps a listed model named in the URL', async () => {
+    const result = asPlan(await plan_('/v1beta/models/gemini-3-pro:generateContent', { contents: [] }, tokenPlan))
+    expect(result.primaryModel).toBe('google,gemini-3-pro')
+  })
+
+  test('a wrong provider prefix on a listed name is refused, not rewritten', async () => {
+    const response = asResponse(
+      await plan_('/v1/chat/completions', { model: 'google,claude-sonnet-5', messages: prompt }, tokenPlan)
+    )
+    expect(response.status).toBe(403)
+  })
+
+  test('a token with no plan is not checked', async () => {
+    const result = asPlan(await plan('/v1/messages', { model: OPUS, messages: prompt }, { tokenId: 'tok-open' }))
+    expect(result.primaryModel).toBe(OPUS)
   })
 })

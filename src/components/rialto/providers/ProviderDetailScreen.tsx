@@ -1,6 +1,6 @@
 /**
- * One provider's own page — accounts or credentials, request shape, the
- * tier aliases, and the model list.
+ * One provider's own page — accounts or credentials, request shape, and
+ * the model list.
  *
  * Was the right-hand pane of a master-detail screen, 896px wide behind a
  * 256px sidebar and a 288px rail. The rail's two groups are sidebar
@@ -41,7 +41,6 @@ import {
   type ProviderDraft,
   savePlan
 } from './provider-draft'
-import { aliasMapOf, aliasRowsOf, applyAliasPicks, tierViewsOf } from './tier-aliases'
 import type { Provider, SubAccountWire } from './types'
 import { useProvidersAutoRefresh } from './useProvidersAutoRefresh'
 import { type ProvidersData, useProvidersData } from './useProvidersData'
@@ -50,8 +49,6 @@ import { vendorBrand, vendorLabel } from './vendor-labels'
 
 const SAVE_FAILURE_KEYS: Record<SaveFailure['write'], string> = {
   provider: 'providers.detail.saveFailedProvider',
-  alias: 'providers.detail.saveFailedAlias',
-  unalias: 'providers.detail.saveFailedUnalias',
   effort: 'providers.detail.saveFailedEffort'
 }
 
@@ -92,9 +89,9 @@ const subscriptionAccountCountOf = (data: ProvidersData): number =>
  *
  * An api_key provider's page reports itself — the vendor and its own model
  * count — because each one is billed on its own. A subscription provider's
- * quota pools across the whole fleet through the tier a model carries, so
- * its page reports the same install-wide numbers Overview does instead of
- * a figure specific to the one account list below it; `data.counts` is the
+ * quota pools across the whole fleet, so its page reports the same
+ * install-wide numbers Overview does instead of a figure specific to the
+ * one account list below it; `data.counts` is the
  * server's own tally so the two screens never disagree, falling back to a
  * client-side count only when the overview call it rode in on failed.
  */
@@ -184,16 +181,11 @@ export function ProviderDetailScreen() {
   const subscription = data.subscriptions.get(provider.name)
   const draft = edit !== null && edit.provider === provider.name ? edit.draft : null
   const editing = draft !== null
-  // The manual aliases as stored. A derived tier has none: it follows the
-  // model switches, resolved below the same way the server routes.
-  const storedAliases = aliasMapOf(aliasRowsOf(data.aliases, provider.name))
-  // What the page renders: the provider and its tiers as Save would
-  // leave them, so a switch staged in the table already moves its tier.
-  const shown = draft === null ? provider : applyDraft(provider, draft, storedAliases)
+  // What the page renders: the provider as Save would leave it, so a
+  // switch staged in the table already shows as flipped.
+  const shown = draft === null ? provider : applyDraft(provider, draft)
   const shownSubscription = applySubscriptionDraft(subscription, draft)
-  const shownAliases = draft === null ? storedAliases : applyAliasPicks(storedAliases, draft.aliases)
-  const tiers = tierViewsOf(shown, shownAliases)
-  const plan = draft === null ? null : savePlan(provider, draft, storedAliases)
+  const plan = draft === null ? null : savePlan(provider, draft)
   const stage = (change: (current: ProviderDraft) => ProviderDraft) =>
     setEdit((prev) => (prev === null ? prev : { ...prev, draft: change(prev.draft) }))
   const locked = busy || pending !== null
@@ -214,8 +206,7 @@ export function ProviderDetailScreen() {
           return
         }
         const model = failure.model === null ? '' : failure.model
-        const tier = failure.tier === null ? '' : failure.tier
-        toast.error(t(SAVE_FAILURE_KEYS[failure.write], { model, tier, message: failure.message }))
+        toast.error(t(SAVE_FAILURE_KEYS[failure.write], { model, message: failure.message }))
       })
       .catch((err: unknown) => toast.error(messageOf(err)))
       .finally(() => setBusy(false))
@@ -252,10 +243,8 @@ export function ProviderDetailScreen() {
       )
     })
 
-  // Removal cascades to every model, the stored key and any chain entry
-  // naming one of those models, and the server reports the dropped
-  // entries only as an after-the-fact warning — so the cost is stated
-  // before the click, not after it.
+  // Removal cascades to every model and the stored key, so the cost is
+  // stated before the click, not after it.
   const remove = async () => {
     const confirmed = await confirm({
       title: t('providers.detail.removeTitle', { name: label }),
@@ -303,8 +292,6 @@ export function ProviderDetailScreen() {
           quota={data.quota}
           accounts={data.accounts}
           now={now}
-          tiers={tiers}
-          storedAliases={storedAliases}
           busy={locked}
           editing={editing}
           canSave={plan !== null && hasChanges(plan)}
@@ -320,7 +307,6 @@ export function ProviderDetailScreen() {
           onToggleProvider={(next) => stage((d) => ({ ...d, enabled: next }))}
           onToggleAccount={(id, next) => stage((d) => ({ ...d, accounts: { ...d.accounts, [id]: next } }))}
           onToggleModel={(model, next) => stage((d) => ({ ...d, models: { ...d.models, [model]: next } }))}
-          onAlias={(tier, model) => stage((d) => ({ ...d, aliases: { ...d.aliases, [tier]: model } }))}
           onModelEffort={(model, next) => stage((d) => ({ ...d, efforts: { ...d.efforts, [model]: next } }))}
           onReplaceKey={(key) => stage((d) => ({ ...d, apiKey: key }))}
           onUseReset={spendReset}

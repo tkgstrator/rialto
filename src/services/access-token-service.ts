@@ -4,7 +4,7 @@
  * Replaces the single envelope APIKEY for machine traffic. Three things
  * the single key could not do, which are the reasons this exists:
  * revoke one client without cutting off the rest, attribute a request to
- * a client, and route one client differently from another.
+ * a client, and give one client different limits from another.
  *
  * The plaintext is generated, returned once, and never stored — only its
  * sha256. A database read therefore cannot hand out working credentials,
@@ -36,7 +36,6 @@ export interface AccessTokenRow {
   prefix: string
   /** Surfaces this token may call. Empty means every surface. */
   surfaces: string[]
-  profileKey: string | null
   lastUsedAt: string | null
   requestCount: number
   // USD spent by this token's traffic over SPEND_WINDOW_DAYS, priced
@@ -88,7 +87,6 @@ const toWire = (
     name: string
     prefix: string
     surfaces: string[]
-    profileKey: string | null
     lastUsedAt: Date | null
     requestCount: number
     expiresAt: Date | null
@@ -102,7 +100,6 @@ const toWire = (
   name: row.name,
   prefix: row.prefix,
   surfaces: row.surfaces,
-  profileKey: row.profileKey,
   lastUsedAt: row.lastUsedAt === null ? null : row.lastUsedAt.toISOString(),
   requestCount: row.requestCount,
   costUsd: totals === undefined ? null : totals.costUsd,
@@ -167,7 +164,6 @@ export interface IssueInput {
   name: string
   /** Omitted or empty scopes the token to every surface. */
   surfaces?: string[]
-  profileKey?: string | null
   expiresAt?: string | null
   /** The plan the token spends under. Omitted or null = unrestricted. */
   planId?: string | null
@@ -181,7 +177,6 @@ export async function issueAccessToken(input: IssueInput): Promise<IssuedToken> 
       tokenHash,
       prefix,
       surfaces: input.surfaces === undefined ? [] : input.surfaces,
-      profileKey: input.profileKey === undefined ? null : input.profileKey,
       expiresAt: input.expiresAt === undefined || input.expiresAt === null ? null : new Date(input.expiresAt),
       planId: input.planId === undefined ? null : input.planId
     },
@@ -194,7 +189,6 @@ export async function issueAccessToken(input: IssueInput): Promise<IssuedToken> 
 export interface UpdateInput {
   /** Replaces the scope wholesale. Empty means every surface. */
   surfaces?: string[]
-  profileKey?: string | null
   /** Moves the token onto a plan, or off every plan with null. */
   planId?: string | null
 }
@@ -202,10 +196,10 @@ export interface UpdateInput {
 /**
  * Change what an existing token is allowed to do.
  *
- * Scope and routing profile are the two things about a token that
- * legitimately change after it is issued — a client picks up a second
- * endpoint, or its traffic should start following a different chain —
- * and neither is a reason to hand the machine a new secret. The name,
+ * Scope and plan are the two things about a token that legitimately
+ * change after it is issued — a client picks up a second endpoint, or
+ * moves onto a different plan — and neither is a reason to hand the
+ * machine a new secret. The name,
  * the secret and the expiry are deliberately not editable here: the
  * first is cosmetic, and the other two have their own operations
  * (`rotateAccessToken`, re-issue) whose consequences differ.
@@ -220,7 +214,6 @@ export async function updateAccessToken(id: string, input: UpdateInput): Promise
       where: { id },
       data: {
         ...(input.surfaces === undefined ? {} : { surfaces: input.surfaces }),
-        ...(input.profileKey === undefined ? {} : { profileKey: input.profileKey }),
         ...(input.planId === undefined ? {} : { planId: input.planId })
       },
       include: WIRE_INCLUDE

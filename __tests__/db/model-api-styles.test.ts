@@ -18,7 +18,7 @@ import { ApiStyle, ModelTestStatus } from '../../src/generated/prisma/client'
 import dayjs from '../../src/lib/dayjs'
 import { getLlmsContext, resetLlmsContext } from '../../src/llms'
 import type { Provider } from '../../src/schemas/domain/provider'
-import { applyUiConfig, ensurePreferenceProfile, upsertProvider } from '../../src/services/config'
+import { applyUiConfig, upsertProvider } from '../../src/services/config'
 import { HAS_DB, resetDbTables, teardownPrisma } from './helpers'
 
 const openai = (models: string[], extra: Partial<Provider> = {}): Provider => ({
@@ -39,7 +39,6 @@ const storedStyles = async (providerName: string): Promise<Record<string, ApiSty
 describe.skipIf(!HAS_DB)('modelApiStyles on POST /providers (apply layer)', () => {
   beforeEach(async () => {
     await resetDbTables()
-    await ensurePreferenceProfile()
     resetLlmsContext()
   })
 
@@ -184,7 +183,6 @@ describe.skipIf(!HAS_DB)('modelApiStyles on POST /providers (apply layer)', () =
 describe.skipIf(!HAS_DB)('modelApiStyles reaches the runtime registry on save', () => {
   beforeEach(async () => {
     await resetDbTables()
-    await ensurePreferenceProfile()
     resetLlmsContext()
   })
 

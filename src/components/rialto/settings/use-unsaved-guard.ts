@@ -2,11 +2,10 @@
  * Stop a half-finished edit from vanishing when the operator navigates.
  *
  * Every Settings screen already tracks a `dirty` flag to enable its
- * Discard/Save pair, and nothing acted on it: clicking "Routing" in the
- * sidebar threw the draft away without a word. That is worst on
- * Personas, whose own copy tells the operator to go and check Routing
- * mid-edit, and on the Access team-domain field, which is only worth
- * typing once the dry run has passed.
+ * Discard/Save pair, and nothing acted on it: clicking another entry in
+ * the sidebar threw the draft away without a word. That is worst on the
+ * Access team-domain field, which is only worth typing once the dry run
+ * has passed.
  *
  * Two exits need covering and they are not the same mechanism. In-app
  * navigation goes through the data router, so `useBlocker` can stop it

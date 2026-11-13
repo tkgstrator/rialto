@@ -24,15 +24,14 @@ export interface ResolvedToken {
   name: string
   /** Empty means the token is not pinned to any surface in particular. */
   surfaces: string[]
-  profileKey: string | null
   /** What this token may spend, read from its plan. Null = unrestricted. */
   plan: TokenPlan | null
 }
 
 export interface TokenPlan {
-  /** `provider,model` ids a request may name. */
+  /** `provider,model` ids a request may name; any other model is refused with 403. */
   models: string[]
-  /** Where a request naming anything else, or nothing, is sent. */
+  /** Where a request naming no model at all is sent. */
   defaultModel: string
   /** Requests and USD allowed per 5-hour and 7-day window. Each null = no limit. */
   limits: PlanLimits
@@ -100,7 +99,6 @@ export async function resolveAccessToken(presented: string): Promise<ResolvedTok
         id: row.id,
         name: row.name,
         surfaces: row.surfaces,
-        profileKey: row.profileKey,
         plan:
           row.plan === null
             ? null

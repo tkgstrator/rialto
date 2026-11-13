@@ -94,8 +94,6 @@ export type ProviderConfigShape = z.input<typeof ProviderConfigShapeSchema>
 
 export const PipelineRequestSchema = z.object({
   reqId: z.string().nonempty().optional(),
-  selectedTier: z.enum(['fable', 'opus', 'sonnet', 'haiku']).optional(),
-  selectedRoute: z.string().nonempty().optional(),
   // HTTP header values are legitimately allowed to be empty per RFC; .min(0) keeps
   // the schema explicit about that while satisfying the no-bare-z-string plugin.
   headers: z.record(z.string().nonempty(), z.string().min(0)),

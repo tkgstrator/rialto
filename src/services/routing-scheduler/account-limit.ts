@@ -11,7 +11,7 @@
  * been used before the account ran dry. The Fable budget and reset in
  * `quota-math.ts` read only the scoped window, so taken as reported an
  * account that cannot serve a single request kept a Fable budget in the
- * snapshot, and the router's Retry-After pointed at a reset that frees
+ * snapshot, and a Retry-After built from it would point at a reset that frees
  * nothing.
  *
  * A spent per-model window is not a source: it refuses its own model only,

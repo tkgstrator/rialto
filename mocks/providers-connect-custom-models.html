@@ -104,8 +104,7 @@ const modelRow = (m) => `
   </tr>`
 
 // Same columns as an API-key vendor's table, less the ones that have
-// nothing to show here: no Tier (the add-provider flow resolves none), no
-// Cached (no price at all), no Shape (no per-model override is set yet).
+// nothing to show here: no Cached (no price at all), no Shape (no per-model override is set yet).
 const table = MODELS.length === 0
   ? `<div class="px-6 pb-6 text-xs text-muted-foreground">No models on this provider yet.</div>`
   : `

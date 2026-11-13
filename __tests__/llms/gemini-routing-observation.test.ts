@@ -28,8 +28,6 @@ const context = (): TransformerContext => ({
     url: '/v1/messages',
     model: 'stale-inbound-model',
     reqId: 'gemini-request',
-    selectedTier: 'opus',
-    selectedRoute: 'google · opus',
     isSubagent: false
   }
 })
@@ -70,9 +68,7 @@ describe('Gemini routing upstream observations', () => {
         expect(observation).toMatchObject({
           reqId: 'gemini-request',
           provider: 'google',
-          model: 'gemini-transformed-model',
-          selectedTier: 'opus',
-          selectedRoute: 'google · opus'
+          model: 'gemini-transformed-model'
         })
       }
       expect(observations[1]?.status).toBe(200)

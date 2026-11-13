@@ -10,7 +10,7 @@
  *
  * The sidebar is the app's ONLY navigation. Sub-views live in it as a
  * second level rather than in a section rail (Settings) or a tab strip
- * (Routing, Activity): two vertical menus side by side spent 27rem on
+ * (Activity): two vertical menus side by side spent 27rem on
  * navigation before any content began, and a horizontal strip meant the
  * same list existed in two shapes depending on which screen you were on.
  * With one tree the rule has no exceptions — sidebar navigates, the
@@ -73,7 +73,7 @@ export function RialtoShell() {
    * The sections standing open.
    *
    * Nothing closes on its own. Arriving in a section opens it and it stays
-   * open after you leave, so walking Routing → Providers → Activity builds
+   * open after you leave, so walking Overview → Providers → Activity builds
    * up the tree you have been working in rather than collapsing each one
    * behind you. Only the chevron closes a section, and a closed one stays
    * closed until you open it or navigate back into it.

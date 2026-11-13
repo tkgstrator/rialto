@@ -1,16 +1,17 @@
 /**
- * Routing scheduler tick loop: the quota snapshot the router reads.
+ * Routing scheduler tick loop: the quota snapshot the failover path reads.
  *
  * Each tick collects fresh quota, holds spent accounts, and publishes one
  * reading per target — every enabled model of every enabled subscription
  * provider: is it out, how much is left, where its pace lands it at the
- * reset, when does it come back. On timer ticks it then tunes each
- * profile's Long context threshold (`threshold-tuner.ts`).
+ * reset, when does it come back. Nothing reorders routes by it any more;
+ * the failover path asks it whether a provider's accounts are all spent,
+ * and adaptive reasoning effort reads the pace.
  *
  * In-process `setTimeout` chain — not BullMQ — because:
  *   1. the snapshot lives in process memory; there's no reason to run
  *      the tick anywhere else,
- *   2. Redis-death must not block routing decisions,
+ *   2. Redis-death must not block failover decisions,
  *   3. 5min–1h cadence is well inside a single Node/Bun process's
  *      reliability budget.
  *
@@ -19,7 +20,7 @@
  * flag makes the start idempotent under Vite HMR / SSR re-evaluation.
  *
  * The tick body is fully try/caught. On failure `consecutiveFailures`
- * increments and the previous snapshot stays published — routing never
+ * increments and the previous snapshot stays published — requests never
  * blocks because a tick threw. `runSchedulerTick()` runs one tick
  * without arming the timer; `republishRoutingSnapshot()` runs one after
  * fresh quota has been written. Neither overlaps a tick already running.
@@ -36,7 +37,6 @@ import { holdSpentAccount } from './account-limit'
 import { refreshQuotaSnapshots } from './collector'
 import { publishSnapshot, __resetSchedulerStateForTest as resetStateForTest } from './state'
 import { soonestResetOf, targetQuotaOf } from './targets'
-import { tuneLongContextThresholds } from './threshold-tuner'
 import type {
   AccountQuotaState,
   AccountQuotaView,
@@ -111,10 +111,8 @@ interface LoadedState {
 }
 
 // Build the per-target state map: every enabled model of every enabled
-// subscription provider, each with its provider's accounts. It used to be
-// the targets of the `live` profile's chain only, which left every other
-// profile's routes unguarded on quota; a tier route can name any of these,
-// so all of them are read.
+// subscription provider, each with its provider's accounts. A caller can
+// name any of these, so all of them are read.
 async function loadCandidateState(prisma: PrismaClient): Promise<LoadedState> {
   const providers = await prisma.provider.findMany({
     where: { authMode: 'subscription' },
@@ -249,9 +247,6 @@ async function tickBody(collect: boolean, prismaOverride?: PrismaClient): Promis
       soonestResetAt: soonestResetOf(targets.values())
     }
     publishSnapshot(snapshot)
-    // Timer ticks only: a republish after a Refresh is about fresh quota,
-    // and the tuner acts at most once a day anyway.
-    if (collect) await tuneLongContextThresholds(prisma, snapshot, now)
     counters.consecutiveFailures = 0
     return snapshot
   } catch (err) {

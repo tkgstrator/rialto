@@ -11,8 +11,8 @@
  * serving, what are the accounts doing, who is calling, what did it cost
  * — and More carries everything, those four included, so the sheet alone
  * is a complete map and nothing is reachable only by knowing the bar.
- * Routing and Settings are configuration: the kind of change made at a
- * desk, and the phone layout draws them read-mostly anyway.
+ * Settings is configuration: the kind of change made at a desk, and the
+ * phone layout draws it read-mostly anyway.
  */
 
 import { cn } from 'cn'

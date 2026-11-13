@@ -4,23 +4,14 @@ import type {
   IdentityResponse,
   InboundSurfaceWire,
   InboundType,
-  ModelTier,
   OverviewResponse,
   PlanInputWire,
   PlanWire,
   RequestLogItem,
   ResetCreditsResponse,
   RevokedTokensWire,
-  RoutingMode,
-  RoutingSchedulerStateResponse,
   SessionMessageItem,
   SessionSummary,
-  SurfaceId,
-  TierAliasWire,
-  TierProfileSaveOutcome,
-  TierProfileSummaryWire,
-  TierProfileViewWire,
-  TierProfileWriteWire,
   TokenScopeId,
   TokenUsageWindowsWire,
   UpdateCheckResponse,
@@ -212,41 +203,6 @@ class ApiClient {
     return this.post<{ archived: number }>('/request-logs/sessions/archive', {})
   }
 
-  // ─── Scenario routes ─────────────────────────────────────────────────
-  // A profile's routes per scenario and lane, each resolved through its
-  // provider's alias on read. PUT replaces the whole profile.
-  async getTierProfiles(): Promise<TierProfileSummaryWire[]> {
-    return this.get<TierProfileSummaryWire[]>('/routing/profiles')
-  }
-
-  async getTierProfile(key: string): Promise<TierProfileViewWire> {
-    return this.get<TierProfileViewWire>(`/routing/profiles/${encodeURIComponent(key)}`)
-  }
-
-  async putTierProfile(key: string, profile: TierProfileWriteWire): Promise<TierProfileSaveOutcome> {
-    return this.put<TierProfileSaveOutcome>(`/routing/profiles/${encodeURIComponent(key)}`, profile)
-  }
-
-  // ─── Provider tier aliases ───────────────────────────────────────────
-  async getTierAliases(): Promise<TierAliasWire[]> {
-    return this.get<TierAliasWire[]>('/tier-aliases')
-  }
-
-  // Point the provider's tier at a model — "promote". Switches the model
-  // on as well.
-  async setTierAlias(provider: string, tier: ModelTier, model: string): Promise<{ enabledModel: boolean }> {
-    return this.put<{ enabledModel: boolean }>(`/providers/${encodeURIComponent(provider)}/tier-aliases/${tier}`, {
-      model
-    })
-  }
-
-  async clearTierAlias(provider: string, tier: ModelTier): Promise<void> {
-    await this.apiFetch<void>(`/providers/${encodeURIComponent(provider)}/tier-aliases/${tier}`, { method: 'DELETE' })
-  }
-
-  // Router scheduler snapshot (Phase 5). Read-only. Cold-boot returns
-  // an empty snapshot with tickAt=null so the UI renders "no data yet"
-  // without a special path.
   // The account's spendable banked resets, read from OpenAI now, soonest
   // to lapse first, and how many apply right now.
   async getResetCredits(subAccountId: string): Promise<ResetCreditsResponse> {
@@ -257,10 +213,6 @@ class ApiClient {
   // the caller asks first.
   async spendResetCredit(subAccountId: string): Promise<UseResetResponse> {
     return this.post<UseResetResponse>(`/subscriptions/accounts/${encodeURIComponent(subAccountId)}/reset-usage`, {})
-  }
-
-  async getRoutingSchedulerState(): Promise<RoutingSchedulerStateResponse> {
-    return this.get<RoutingSchedulerStateResponse>('/routing-scheduler-state')
   }
 
   // Set a per-model reasoning-effort override. Send null to clear and
@@ -286,20 +238,9 @@ class ApiClient {
     return this.get<OverviewResponse>(`/overview${qs ? `?${qs}` : ''}`)
   }
 
-  // Inbound surfaces + their effective routing mode.
+  // Inbound surfaces and the targets each one refuses.
   async getInboundSurfaces(): Promise<{ surfaces: InboundSurfaceWire[] }> {
     return this.get<{ surfaces: InboundSurfaceWire[] }>('/inbound-surfaces')
-  }
-
-  async updateInboundSurface(body: {
-    surface: SurfaceId
-    routingMode: RoutingMode
-    profileKey?: string | null
-    // Omit to leave the stored list alone — the mode and profile writers
-    // do, and must not blank it by saying nothing.
-    deniedTargets?: string[]
-  }): Promise<{ surfaces: InboundSurfaceWire[] }> {
-    return this.post<{ surfaces: InboundSurfaceWire[] }>('/inbound-surfaces', body)
   }
 
   // Access tokens (Phase 3.5). Issue returns the plaintext once; there is
@@ -315,7 +256,6 @@ class ApiClient {
      * but not /codex, which only a list naming 'codex-mcp' grants.
      */
     surfaces?: TokenScopeId[]
-    profileKey?: string | null
     expiresAt?: string | null
     /** The plan the token spends under. Null or omitted = unrestricted. */
     planId?: string | null
@@ -330,12 +270,12 @@ class ApiClient {
   /**
    * Change what an existing token may do.
    *
-   * Scope, profile and plan — the things about a token that
+   * Scope and plan — the things about a token that
    * legitimately change while the client keeps the same credential.
    */
   async updateAccessToken(
     id: string,
-    body: { surfaces?: TokenScopeId[]; profileKey?: string | null; planId?: string | null }
+    body: { surfaces?: TokenScopeId[]; planId?: string | null }
   ): Promise<AccessTokenWire> {
     return this.patch<AccessTokenWire>(`/access-tokens/${encodeURIComponent(id)}`, body)
   }

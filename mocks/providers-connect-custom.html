@@ -24,7 +24,7 @@ const { renderShell, pill, btn, navTo, uiInput } = window.Shell
 //
 // What is new against the api-key pane:
 //   - the name: a Custom provider has none from a catalog, so the operator
-//     types the one it will carry in routing and in logs;
+//     types the one it will carry in model names and in logs;
 //   - the wire format, three choices and no more: Claude (Anthropic
 //     Messages), OpenAI Chat Completions, OpenAI Responses. They are the
 //     three shapes the request pipeline can already convert between;
@@ -145,7 +145,7 @@ const customPane = `
           control: input({ value: nameValue, placeholder: 'my-gateway', invalid: PROBLEM }),
           note: PROBLEM
             ? `<p class="${PROBLEM_NOTE}">This name belongs to a built-in vendor.</p>`
-            : `<p class="${NOTE}">Letters, digits, dots, dashes and underscores. It names the provider in routing and logs and cannot be changed later.</p>`
+            : `<p class="${NOTE}">Letters, digits, dots, dashes and underscores. It names the provider in model names and logs and cannot be changed later.</p>`
         })}
         ${field({
           label: 'Base URL',

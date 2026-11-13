@@ -44,8 +44,8 @@ providerByNameRoute.openapi(patchProviderRoute, async (c) => {
   const { name } = c.req.valid('param')
   const body = c.req.valid('json')
   const { provider, warnings } = await upsertProvider({ ...body, name })
-  // A switch can move a tier route (it follows the newest switched-on
-  // model), so the quota snapshot is rebuilt now rather than at the next tick.
+  // A switch changes which models the quota snapshot covers, so it is
+  // rebuilt now rather than at the next tick.
   await republishRoutingSnapshot()
   return c.json(
     {
@@ -76,9 +76,9 @@ const deleteProviderRoute = createRoute({
 providerByNameRoute.openapi(deleteProviderRoute, async (c) => {
   const { name } = c.req.valid('param')
   try {
-    const { warnings } = await deleteProviderByName(name)
+    await deleteProviderByName(name)
     await republishRoutingSnapshot()
-    return c.json({ success: true as const, ...(warnings.length > 0 ? { warnings } : {}) }, 200)
+    return c.json({ success: true as const }, 200)
   } catch (err) {
     return c.json({ success: false as const, error: err instanceof Error ? err.message : String(err) }, 404)
   }

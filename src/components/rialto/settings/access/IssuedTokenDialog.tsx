@@ -30,7 +30,6 @@ export function IssuedTokenDialog({
   plaintext,
   name,
   scope,
-  profile,
   expiry,
   titleKey = 'settings.access.issuedTitle',
   bodyKey = 'settings.access.issuedBody',
@@ -39,7 +38,6 @@ export function IssuedTokenDialog({
   plaintext: string
   name: string
   scope: string
-  profile: string
   expiry: string
   /**
    * Rotation reveals a secret under exactly these rules, so it reuses
@@ -118,7 +116,6 @@ export function IssuedTokenDialog({
               {[
                 ['settings.access.issuedName', name],
                 ['settings.access.issuedEndpoint', scope],
-                ['settings.access.issuedProfile', profile],
                 ['settings.access.issuedExpires', expiry]
               ].map(([label, value]) => (
                 <div key={label} className='flex items-baseline gap-3'>

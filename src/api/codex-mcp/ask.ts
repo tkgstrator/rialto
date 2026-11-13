@@ -7,12 +7,11 @@
  * one JSON answer, and a request-log row. Three things are set on the way
  * in that a client could not set for itself:
  *
- * - The token's routing profile is forced to passthrough. Routed mode on
- *   /v1/responses may send a request to another provider; an answer that
- *   says it is Codex's must be Codex's.
- * - The token's plan is dropped for the same reason: a plan swaps a model
- *   it does not list for its default. The plan is checked before the call
- *   instead, and refuses (targets.ts `planAllows`).
+ * - The token's plan is dropped from the in-process call: the handler
+ *   would send a request that names no model to the plan's default, which
+ *   may not be a Codex model, and an answer that says it is Codex's must
+ *   be Codex's. The plan is checked before the call instead, and refuses
+ *   (targets.ts `planAllows`).
  * - The request is recorded under the `codex-mcp` surface, not
  *   `openai-responses`, so Activity can tell it from Codex CLI traffic.
  */
@@ -22,7 +21,6 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { ResolvedToken } from '../../services/access-token-service'
-import { PASSTHROUGH_PROFILE_KEY } from '../../services/tier-route-service'
 import { CODEX_MCP_SCOPE } from '../../shared/codex-mcp'
 import { REASONING_EFFORTS } from '../../shared/model-reasoning-effort'
 import { v1Route } from '../v1/route'
@@ -78,7 +76,7 @@ async function callResponses(token: ResolvedToken, threadId: string, body: Recor
   const app = new Hono()
   app.use('*', async (c, next) => {
     // A copy: the token resolver caches the original object.
-    c.set('accessToken', { ...token, profileKey: PASSTHROUGH_PROFILE_KEY, plan: null })
+    c.set('accessToken', { ...token, plan: null })
     c.set('surfaceOverride', CODEX_MCP_SCOPE)
     await next()
   })
