@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "version": { "source": "package.json", "derivedFiles": [], "bumpCommand": null },
+  "branches": { "source": "develop", "target": "master" },
+  "pullRequest": { "titleTemplate": "chore: release v{version}", "mergeMethod": "merge" },
+  "tag": { "template": "v{version}", "annotated": true },
+  "checks": { "required": ["Biome Check", "Build", "Commit Lint", "Test", "Type Check"] },
+  "workflows": { "releaseFiles": [], "triggerFingerprint": "" },
+  "notes": { "mode": "github-generated", "file": null },
+  "artifacts": { "buildCommands": [], "paths": [] }
+}
