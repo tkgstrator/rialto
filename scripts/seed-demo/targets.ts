@@ -11,29 +11,15 @@
 
 import { ApiStyle, AuthMode, type PrismaClient } from '../../src/generated/prisma/client'
 
-export type Tier = 'fable' | 'opus' | 'sonnet' | 'haiku'
-
 export interface DemoTarget {
   modelId: string
   providerName: string
   modelName: string
-  /** The "providerName,modelName" reference every routing store speaks. */
+  /** The "providerName,modelName" reference a plan's model list speaks. */
   ref: string
   subscription: boolean
-  tier: Tier | null
   contextWindow: number | null
   inputPer1M: number | null
-}
-
-// Same substring rule the router uses (router/request-signals.ts's
-// tierOf), duplicated here so the seed does not import the request path.
-const inferTier = (modelName: string): Tier | null => {
-  const lower = modelName.toLowerCase()
-  if (lower.includes('fable')) return 'fable'
-  if (lower.includes('opus')) return 'opus'
-  if (lower.includes('sonnet')) return 'sonnet'
-  if (lower.includes('haiku')) return 'haiku'
-  return null
 }
 
 interface FallbackModel {
@@ -146,7 +132,6 @@ async function loadTargets(prisma: PrismaClient): Promise<DemoTarget[]> {
     modelName: row.name,
     ref: `${row.provider.name},${row.name}`,
     subscription: row.provider.authMode === AuthMode.subscription,
-    tier: inferTier(row.name),
     contextWindow: row.contextWindow,
     inputPer1M: row.inputPer1M
   }))

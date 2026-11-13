@@ -13,7 +13,7 @@
 <body>
 <div id="root"></div>
 <script>
-const { renderShell, pill, btn, navTo, tierCell, sortTh } = window.Shell
+const { renderShell, pill, btn, navTo, sortTh } = window.Shell
 
 // Step 3 of the add-provider flow, which the mock set never drew — it
 // stopped at step 2 and mocks.json carried the gap as a known diff.
@@ -62,9 +62,7 @@ const vendorCard = (v, selected) => `
     </div>
   </button>`
 
-// Straight off the vendor's catalog, seconds after the token landed. No
-// Gemini name says a Claude family, so every tier is unset — the operator
-// classifies them here or Routing's tier floor cannot see them later.
+// Straight off the vendor's catalog, seconds after the token landed.
 const MODELS = [
   { name: 'gemini-3.1-pro',            ctx: '2M',   test: 'ok',      on: true },
   { name: 'gemini-3.1-flash',          ctx: '1M',   test: 'ok',      on: true },
@@ -82,7 +80,6 @@ const testIcon = {
 const modelRow = (m) => `
   <tr class="border-t border-border/60 transition-colors hover:bg-muted/50 ${m.on ? '' : 'opacity-45'}">
     <td class="py-2.5 pl-6 pr-2 font-mono text-xs">${m.name}</td>
-    <td class="px-2">${tierCell(null, 'unset')}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${m.ctx}</td>
     <td class="px-2 text-center text-sm leading-none">${testIcon[m.test]}</td>
     <td class="py-2.5 pl-2 pr-6 text-right">
@@ -94,11 +91,10 @@ const modelRow = (m) => `
 
 const models = `
   <table class="w-full table-fixed">
-    <colgroup><col><col class="w-24"><col class="w-24"><col class="w-16"><col class="w-16"></colgroup>
+    <colgroup><col><col class="w-24"><col class="w-16"><col class="w-16"></colgroup>
     <thead>
       <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         ${sortTh('Model', 'pl-6 pr-2', 'left', true, 'desc')}
-        ${sortTh('Tier', 'px-2')}
         ${sortTh('Context', 'px-2', 'right')}
         ${sortTh('Test', 'px-2', 'center')}
         ${sortTh('On', 'pl-2 pr-6', 'right')}
@@ -152,11 +148,9 @@ document.getElementById('root').innerHTML = `
       <div class="px-6 py-4">
         <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
           <i class="ri-information-line mr-1 align-[-1px]"></i>
-          A model registered here is <span class="font-medium text-foreground">not</span> routable
+          A model registered here is <span class="font-medium text-foreground">not</span> offered
           until it is on: <span class="font-mono">Model.enabled</span> defaults to false so a catalog
-          refresh can never quietly widen what a provider serves. Tiers are all
-          <span class="font-mono">—</span> because no Gemini name says a Claude family — set them
-          here or Routing's tier floor cannot see these targets.
+          refresh can never quietly widen what a provider serves.
         </div>
       </div>
 

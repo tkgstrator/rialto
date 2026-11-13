@@ -12,6 +12,7 @@ import { ensureFreshCodexAccessToken } from '../../services/codex-auth/token'
 import { clearAccountExhaustion, markAccountExhausted } from '../../services/failover-state'
 import { passthroughDenial } from '../../services/inbound-surface-service'
 import { resolvePreferredProvider } from '../../services/model-provider-preference'
+import { decidePlanModel } from '../../services/plan-model'
 import { releaseAccountForSession, resolveAccountForSession } from '../../services/session-account-router'
 import { getSubAccountTokensForProvider } from '../../services/subscription-account-sync-service'
 import { recordCallSpend } from '../../services/usage-window-service'
@@ -356,6 +357,11 @@ async function dispatchImage(
  * denials, the rotation and the request log are the same for both.
  */
 export async function generateImage(body: ImageInput, caller: ImageCaller): Promise<ImageOutcome> {
+  // The same plan check the completion surfaces apply: a model the plan does
+  // not list is refused, not swapped for one it does. `model` is required by
+  // the body schema, so a plan never falls back to its default here.
+  const decision = decidePlanModel(caller.plan, body.model)
+  if (decision.kind === 'denied') return failure(403, decision.message)
   const target = await resolveImageTarget(body.model, caller.plan)
   if (target === null) return failure(400, 'Image model is unavailable, disabled, or ambiguous.')
   const denied = await passthroughDenial(IMAGE_PATH, `${target.provider.name},${target.model}`)

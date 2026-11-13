@@ -19,7 +19,7 @@ export function disabledModelsOf(p: Provider): string[] {
   return raw.filter((m): m is string => typeof m === 'string')
 }
 
-/** Deprecated models never reach the table — they cannot be routed to. */
+/** Deprecated models never reach the table — nothing offers them. */
 export function listedModelsOf(p: Provider): string[] {
   const dropped = new Set(p.deprecatedModels === undefined ? [] : p.deprecatedModels)
   return p.models.filter((m) => !dropped.has(m))
@@ -82,9 +82,9 @@ export function hasCredential(p: Provider, sub: SubscriptionWire | undefined): b
  *
  * `off` wins over the health answer because it is the operative one. A
  * switched-off provider is dropped by `enabledTargets` and by
- * `getEnabledModels`, so however live its credential is, nothing routes
- * to it — and reporting `live` there is what let a signed-in Claude Code
- * sit invisible to Routing while this screen called it healthy. The
+ * `getEnabledModels`, so however live its credential is, no plan can name
+ * it — and reporting `live` there is what let a signed-in Claude Code
+ * sit invisible to every plan while this screen called it healthy. The
  * per-account auth status is still on the detail screen, so nothing is
  * lost by leading with the switch.
  *

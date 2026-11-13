@@ -1,9 +1,9 @@
 /**
- * GET/POST /api/inbound-surfaces — per-surface routing mode.
+ * GET/POST /api/inbound-surfaces — per-surface denied targets.
  *
- * The read returns every surface in the registry with the mode it is
- * set to. There is no notion of a value being more default than another:
- * every surface has an explicit stored mode, seeded at boot.
+ * The read returns every surface in the registry with the targets turned
+ * off for it. A surface with nothing turned off serves anything the
+ * providers serve.
  */
 
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
@@ -27,8 +27,6 @@ const SurfaceSchema = z
     operation: z.enum(['completion', 'image']),
     auth: z.enum(['x-api-key', 'bearer', 'google']),
     errorShape: z.enum(['anthropic', 'openai', 'google']),
-    routingMode: z.enum(['routed', 'passthrough']),
-    profileKey: z.string().nonempty(),
     deniedTargets: z.array(z.string().nonempty())
   })
   .openapi('InboundSurface')
@@ -38,11 +36,8 @@ const ListResponseSchema = z.object({ surfaces: z.array(SurfaceSchema) }).openap
 const UpdateBodySchema = z
   .object({
     surface: SurfaceIdSchema,
-    routingMode: z.enum(['routed', 'passthrough']),
-    profileKey: z.string().nonempty().nullable().optional(),
-    // Omitted leaves the stored list alone. The mode and profile writers
-    // send neither, and must not blank it by saying nothing.
-    deniedTargets: z.array(z.string().nonempty()).optional()
+    // Replaces the stored list wholesale.
+    deniedTargets: z.array(z.string().nonempty())
   })
   .openapi('InboundSurfaceUpdate')
 
@@ -54,7 +49,7 @@ inboundSurfacesRoute.openapi(
     path: '/api/inbound-surfaces',
     responses: {
       200: {
-        description: 'Every inbound surface with its effective routing mode',
+        description: 'Every inbound surface with the targets turned off for it',
         content: { 'application/json': { schema: ListResponseSchema } }
       }
     }

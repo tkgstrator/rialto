@@ -3,8 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { openAiEffortsFor } from '@/shared/model-reasoning-effort'
 import { effortLadder, type ThinkingOffReading, thinkingOffReadings } from './capability-reading'
 import type { ModelRow } from './derive'
-import { TIERS, type TierView } from './tier-aliases'
-import type { ReasoningEffort, TestStatus, Tier } from './types'
+import type { ReasoningEffort, TestStatus } from './types'
 
 const TEST_ICON: Record<TestStatus, string> = {
   ok: 'ri-check-line text-emerald-600 dark:text-emerald-400',
@@ -105,77 +104,6 @@ const toEffort = (value: string): ReasoningEffort | null => {
   return found === undefined ? null : found
 }
 
-/**
- * The tier column: every tier this model belongs to on its provider,
- * filled where the tier reaches it today and outlined where it does not
- * (an older or switched-off model its name still says).
- *
- * A derived tier follows model switches and remains a reading. A manual
- * tier is assignable while editing: the same staged alias state that feeds
- * the strip above feeds these buttons, so both controls always agree.
- */
-export function TierCell({
-  row,
-  editable,
-  tiers,
-  onAlias
-}: {
-  row: ModelRow
-  editable?: boolean
-  tiers?: readonly TierView[]
-  onAlias?: (tier: Tier, model: string | null) => void
-}) {
-  const canEdit = editable === true
-  const resolvedTiers = tiers === undefined ? [] : tiers
-  const changeAlias = onAlias === undefined ? () => {} : onAlias
-  const { t } = useTranslation()
-  const manual = resolvedTiers.filter((view) => view.mode === 'manual')
-  if (!canEdit || manual.length === 0) {
-    if (row.tiers.length === 0) return <span className='text-[12px] text-muted-foreground/50'>{DASH}</span>
-    return (
-      <span className='inline-flex items-center gap-1 whitespace-nowrap'>
-        {row.tiers.map(({ tier, routed }) => (
-          <span
-            key={tier}
-            className={cn(
-              'inline-flex items-center rounded px-1.5 text-[12px]',
-              routed ? 'bg-muted py-0.5' : 'border border-border py-px text-muted-foreground/70'
-            )}
-          >
-            {tier}
-          </span>
-        ))}
-      </span>
-    )
-  }
-  return (
-    <span className='inline-flex flex-wrap items-center gap-1'>
-      {TIERS.map((tier) => {
-        const view = manual.find((candidate) => candidate.tier === tier)
-        if (view === undefined) return null
-        const selected = view.model === row.name
-        return (
-          <button
-            key={tier}
-            type='button'
-            aria-pressed={selected}
-            aria-label={t('providers.models.setTier', { model: row.name, tier })}
-            onClick={() => changeAlias(tier, selected ? null : row.name)}
-            className={cn(
-              'inline-flex items-center rounded px-1.5 text-[12px] transition-colors',
-              selected
-                ? 'bg-muted py-0.5 text-foreground'
-                : 'border border-border py-px text-muted-foreground/70 hover:bg-muted/60 hover:text-foreground'
-            )}
-          >
-            {tier}
-          </button>
-        )
-      })}
-    </span>
-  )
-}
-
 /** The effort column: a picker while editing, the reading otherwise. */
 export function EffortCell({
   row,
@@ -225,7 +153,7 @@ export function EffortCell({
   )
 }
 
-/** A value that holds, filled; one that says "nothing here", outlined — the tier column's two treatments. */
+/** A value that holds, filled; one that says "nothing here", outlined — the two treatments a badge takes. */
 function Badge({ children, filled = true }: { children: string; filled?: boolean }) {
   return (
     <span

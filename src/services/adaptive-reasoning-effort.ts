@@ -1,6 +1,11 @@
-import { PACE_OVER_PCT, PACE_SURPLUS_PCT } from '../llms/tier-router/select'
 import { REASONING_EFFORTS, type ReasoningEffort } from '../shared/model-reasoning-effort'
 import { getRoutingSnapshot, readRoutingSchedulerIntervalMs } from './routing-scheduler'
+
+// Projected end-of-window usage, as a percentage of the quota. Under the
+// surplus line there is headroom to spend on a higher effort; over the
+// over-pace line the window will run out before it resets, so effort drops.
+const PACE_SURPLUS_PCT = 60
+const PACE_OVER_PCT = 100
 
 const POSITIVE = REASONING_EFFORTS.filter((level) => level !== 'none')
 

@@ -25,8 +25,8 @@ configRoute.post('/api/config', async (c) => {
   // The /v1 proxy caches the llms services (providers, persona) built
   // from this config — drop it so edits take effect without a restart.
   resetLlmsContext()
-  // A switch can move a tier route (it follows the newest switched-on
-  // model), so the quota snapshot is rebuilt now rather than at the next tick.
+  // A switch changes which models the quota snapshot covers, so it is
+  // rebuilt now rather than at the next tick.
   await republishRoutingSnapshot()
   return c.json({
     success: true,

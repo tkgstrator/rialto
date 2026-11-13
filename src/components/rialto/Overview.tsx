@@ -2,10 +2,8 @@
  * Overview — the one-page answer to "is Rialto doing what I set it up to
  * do right now".
  *
- * The headline is the four inbound surfaces, because that is Rialto's
- * identity (four wire formats in, many vendors out) and because the old
- * build gave the operator no way to see that only one of them was
- * actually routed.
+ * The headline is the inbound surfaces, because that is Rialto's
+ * identity (several wire formats in, many vendors out).
  */
 
 import { cn } from 'cn'

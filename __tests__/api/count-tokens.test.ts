@@ -6,9 +6,8 @@
  * context management degraded silently: the client keeps sending until
  * the upstream refuses.
  *
- * Two things are pinned here above all. **It must return the same number
- * the router does**, and **it must not 400 on a tool shape Rialto does
- * not model**. The second is hit in practice: Claude Code's server tools
+ * Pinned above all: **it must not 400 on a tool shape Rialto does not
+ * model**. This is hit in practice: Claude Code's server tools
  * (`web_search_*`) carry no `input_schema`, so validating naively rejects
  * them.
  */
@@ -61,6 +60,22 @@ describe('POST /v1/messages/count_tokens', () => {
     expect(withSystem).toBeGreaterThan(withoutSystem)
   })
 
+  test('tools count toward the total', async () => {
+    const withoutTools = await countOf({ model: 'm', messages: [{ role: 'user', content: 'hi' }] })
+    const withTools = await countOf({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      tools: [
+        {
+          name: 'read_file',
+          description: 'Read a file from the workspace and return its contents.',
+          input_schema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] }
+        }
+      ]
+    })
+    expect(withTools).toBeGreaterThan(withoutTools)
+  })
+
   test('does not 400 on a server tool with no input_schema', async () => {
     // The shape Claude Code actually sends. Rejecting it here would mean
     // the proxy breaking a request the upstream would have accepted.
@@ -100,27 +115,5 @@ describe('registration in the surface registry', () => {
     expect(entry).toBeDefined()
     expect(entry?.auth).toBe('x-api-key')
     expect(entry?.errorShape).toBe('anthropic')
-  })
-
-  test('returns the same number the router does, so counting cannot fork', async () => {
-    // Half the reason this endpoint exists. The router's context-window
-    // gate counts the same request through the same registry to route it,
-    // so a different number here means a caller who believes it has
-    // headroom is in fact being held off the routes too small for it.
-    const { readSignals } = await import('../../src/llms/router/surface-signals')
-    const { TokenizerRegistry } = await import('../../src/llms/registry/tokenizer')
-    const pino = (await import('pino')).default
-
-    const body = {
-      model: 'claude-sonnet-5',
-      system: 'be terse',
-      messages: [{ role: 'user', content: 'lorem ipsum dolor sit amet '.repeat(50) }]
-    }
-    const tokenizers = new TokenizerRegistry(pino({ level: 'silent' }))
-    await tokenizers.initialize()
-    // The same path `countRequestTokens` takes in router.ts.
-    const viaRouter = await tokenizers.countTokens(readSignals(body, '/v1/messages').tokenize)
-
-    expect(await countOf(body)).toBe(viaRouter.tokenCount)
   })
 })

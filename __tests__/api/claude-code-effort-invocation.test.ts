@@ -225,21 +225,11 @@ describe('Messages format and safeguards invocation', () => {
 })
 
 describe('Claude Code per-attempt invocation', () => {
-  test('keeps selector identity and request correlation through failover sends', async () => {
-    const input: RoutePlan = {
-      ...plan({}),
-      reqId: 'inbound-request',
-      selectedRoutes: [
-        { target: `claude-code,${model}`, targetTier: 'opus', route: 'claude-code · opus' },
-        { target: `claude-code,${model}`, targetTier: 'sonnet', route: 'claude-code · sonnet' },
-        { target: `api-key,${model}`, targetTier: 'haiku', route: 'api-key · haiku' }
-      ]
-    }
+  test('keeps request correlation through failover sends', async () => {
+    const input: RoutePlan = { ...plan({}), reqId: 'inbound-request' }
     const primary = resolveInvocationForModel(input, `claude-code,${model}`, ctx)
     const fallback = resolveInvocationForModel(input, `api-key,${model}`, ctx)
     if (primary === null || fallback === null) throw new Error('fixture must resolve')
-    expect(primary.request.selectedTier).toBe('opus')
-    expect(fallback.request.selectedTier).toBe('haiku')
     const entries: Record<string, unknown>[] = []
     const capture = pino({}, { write: (line: string) => entries.push(JSON.parse(line)) })
     const originalFetch = globalThis.fetch
@@ -275,16 +265,12 @@ describe('Claude Code per-attempt invocation', () => {
       expect(observations[1]).toMatchObject({
         provider: 'claude-code',
         model: 'transformed-model',
-        selectedTier: 'opus',
         status: 429
       })
       expect(observations[3]).toMatchObject({
         provider: 'api-key',
         model,
-        selectedTier: 'haiku',
-        status: 200,
-        expectedTier: null,
-        evaluationStatus: 'unrated'
+        status: 200
       })
       expect(JSON.stringify(observations)).not.toContain('private-error')
       expect(JSON.stringify(observations)).not.toContain('fixture-key')
@@ -293,7 +279,7 @@ describe('Claude Code per-attempt invocation', () => {
       globalThis.fetch = originalFetch
     }
   })
-  test('reports network failure without error details or inventing a passthrough tier', async () => {
+  test('reports network failure without error details', async () => {
     const invocation = resolveInvocationForModel({ ...plan({}), reqId: 'network-request' }, `api-key,${model}`, ctx)
     if (invocation === null) throw new Error('fixture must resolve')
     const entries: Record<string, unknown>[] = []
@@ -319,9 +305,7 @@ describe('Claude Code per-attempt invocation', () => {
       expect(observations[1]).toMatchObject({
         reqId: 'network-request',
         reason: 'network_error',
-        status: null,
-        selectedTier: null,
-        selectedRoute: null
+        status: null
       })
       expect(observations[0]?.attemptId).toBe(observations[1]?.attemptId)
       expect(JSON.stringify(observations)).not.toContain('private-network-error')

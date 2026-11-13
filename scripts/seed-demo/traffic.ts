@@ -2,27 +2,22 @@
  * The traffic archive: Session / Message / RequestLog rows.
  *
  * This is what Activity, Overview's spend and recent-session blocks, and
- * the per-token cost column all read. Rows are generated against the same
- * scenario routes the routing seed wrote, so what Activity says was used and
- * what Routing says is configured tell the same story — a demo where the
- * two disagree is worse than no demo at all.
+ * the per-token cost column all read. Every request goes upstream as sent,
+ * as the gateway does now that it no longer reroutes: the target is the
+ * model the client named when the demo catalog has it.
  */
 
 import type { PrismaClient } from '../../src/generated/prisma/client'
-import type { RoutingLane, RoutingScenario } from '../../src/schemas/domain/tier-route'
 import { CURATED_CONVERSATIONS, FILLER_TURNS } from './conversations'
-import { DEMO_PROFILE_KEY, demoId, demoSessionId } from './demo-rows'
+import { demoId, demoSessionId } from './demo-rows'
 import type { Random } from './random'
-import type { ResolvedRoutes } from './routing'
 import type { DemoTarget } from './targets'
 
 interface SurfaceSpec {
   id: string
   inboundType: 'anthropic' | 'openai' | 'gemini'
-  /** What the client puts in body.model before routing rewrites it. */
+  /** What the client puts in body.model. */
   requestedModels: string[]
-  /** The profile the surface routes through; null = passthrough. Mirrors seedSurfaceModes. */
-  profile: string | null
   weight: number
 }
 
@@ -34,27 +29,24 @@ const SURFACES: SurfaceSpec[] = [
     id: 'anthropic-messages',
     inboundType: 'anthropic',
     requestedModels: ['claude-sonnet-5', 'claude-sonnet-5', 'claude-opus-5', 'claude-haiku-4-5'],
-    profile: 'live',
     weight: 55
   },
   {
     id: 'openai-chat',
     inboundType: 'openai',
     requestedModels: ['claude-sonnet-5', 'gpt-5.6-terra', 'gpt-5.6-luna'],
-    profile: DEMO_PROFILE_KEY,
     weight: 20
   },
   {
     id: 'openai-responses',
     inboundType: 'openai',
     requestedModels: ['gpt-5.6-sol', 'gpt-5.6-terra'],
-    profile: null,
     weight: 15
   },
-  { id: 'gemini-generate', inboundType: 'gemini', requestedModels: ['gemini-3.7-flash'], profile: null, weight: 10 }
+  { id: 'gemini-generate', inboundType: 'gemini', requestedModels: ['gemini-3.7-flash'], weight: 10 }
 ]
 
-// The route a passthrough request is recorded under, as the router does.
+// The route every request is recorded under, as the router does.
 const PASSTHROUGH_ROUTE = 'passthrough'
 
 // Mostly 200s. The failures are here because every screen that shows an
@@ -100,7 +92,6 @@ const uuidish = (random: Random): string =>
   `${hex(random, 8)}-${hex(random, 4)}-4${hex(random, 3)}-a${hex(random, 3)}-${hex(random, 12)}`
 
 interface TurnPlan {
-  route: RoutingScenario | typeof PASSTHROUGH_ROUTE
   isSubagent: boolean
   target: DemoTarget
   requestedModel: string
@@ -113,54 +104,16 @@ interface TurnPlan {
   at: Date
 }
 
-// Walk the routes the way the router does: the first answers most
-// requests, and the rest only see traffic when something upstream is
-// unavailable — which is exactly what makes a fallback row interesting
-// when it does show up in Activity.
-const pickFromRoutes = (routes: DemoTarget[], random: Random): DemoTarget => {
-  if (routes.length === 1) return routes[0]
-  if (random.chance(0.78)) return routes[0]
-  return random.pick(routes.slice(1))
-}
-
-// Where a request goes: through its surface's map when the tier has a
-// route, else upstream as sent — to the model it named when the demo
-// catalog has it.
-// How a Claude Code session's requests split, roughly: most ordinary,
-// a good share with thinking on, a few over the Long context threshold.
-const SCENARIO_WEIGHTS: ReadonlyArray<readonly [RoutingScenario, number]> = [
-  ['default', 70],
-  ['think', 20],
-  ['longContext', 10]
-]
-
-// Where a request goes: its scenario's list for its lane, else the Default
-// list for that lane, else upstream as sent — to the model it named when
-// the demo catalog has it.
-function destinationOf(
-  surface: SurfaceSpec,
-  requestedModel: string,
-  scenario: RoutingScenario,
-  lane: RoutingLane,
-  resolved: Record<string, ResolvedRoutes>,
-  targets: DemoTarget[],
-  random: Random
-): { route: TurnPlan['route']; target: DemoTarget } | null {
-  const lists = surface.profile === null ? undefined : resolved[surface.profile]
-  if (lists !== undefined) {
-    const own = lists[scenario][lane]
-    if (own.length > 0) return { route: scenario, target: pickFromRoutes(own, random) }
-    const fallback = lists.default[lane]
-    if (fallback.length > 0) return { route: 'default', target: pickFromRoutes(fallback, random) }
-  }
+// Where a request goes: upstream as sent — to the model it named when the
+// demo catalog has it, else any catalog model.
+function destinationOf(requestedModel: string, targets: DemoTarget[], random: Random): DemoTarget | null {
   const named = targets.find((t) => t.modelName === requestedModel)
-  if (named !== undefined) return { route: PASSTHROUGH_ROUTE, target: named }
-  return targets.length === 0 ? null : { route: PASSTHROUGH_ROUTE, target: random.pick(targets) }
+  if (named !== undefined) return named
+  return targets.length === 0 ? null : random.pick(targets)
 }
 
 function planTurn(
   surface: SurfaceSpec,
-  resolved: Record<string, ResolvedRoutes>,
   targets: DemoTarget[],
   random: Random,
   at: Date,
@@ -168,17 +121,15 @@ function planTurn(
 ): TurnPlan | null {
   const requestedModel = random.pick(surface.requestedModels)
   const isSubagent = random.chance(0.15)
-  const scenario = random.weighted(SCENARIO_WEIGHTS)
-  const destination = destinationOf(surface, requestedModel, scenario, isSubagent ? 'subagent' : 'agent', resolved, targets, random)
-  if (destination === null) return null
-  const { route, target } = destination
+  const target = destinationOf(requestedModel, targets, random)
+  if (target === null) return null
   const status = random.weighted(STATUS_WEIGHTS)
-  // The larger tiers answer longer and slower.
-  const heavy = route === 'think' || route === 'longContext'
+  // A few requests are heavy: long thinking, long answers.
+  const heavy = random.chance(0.2)
 
   // Context grows with the turn index; a few requests start where the
   // others end up, the way a long agent session does.
-  const base = scenario === 'longContext' ? random.int(420_000, 820_000) : random.int(1_800, 26_000)
+  const base = random.chance(0.1) ? random.int(420_000, 820_000) : random.int(1_800, 26_000)
   const growth = Math.round(base * (1 + turnIndex * 0.12))
   // A resumed conversation reads most of its context from cache. The
   // first turn writes it instead — that asymmetry is the whole reason
@@ -189,7 +140,6 @@ function planTurn(
   const failed = status !== 200
 
   return {
-    route,
     isSubagent,
     target,
     requestedModel,
@@ -213,8 +163,7 @@ type LogRow = {
   provider: string
   model: string
   requestedModel: string
-  // The scenario whose list served the request, or "passthrough".
-  // The column keeps its pre-tier-map name.
+  // Always "passthrough" now; the column outlived scenario routing.
   scenario: string
   isSubagent: boolean
   inboundType: string
@@ -258,7 +207,6 @@ export interface TrafficReport {
 
 export async function seedTraffic(
   prisma: PrismaClient,
-  resolved: Record<string, ResolvedRoutes>,
   targets: DemoTarget[],
   random: Random,
   now: number,
@@ -317,7 +265,7 @@ export async function seedTraffic(
     }>(
       (state, turnIndex) => {
         const at = new Date(state.at)
-        const plan = planTurn(surface, resolved, targets, random, at, turnIndex)
+        const plan = planTurn(surface, targets, random, at, turnIndex)
         if (plan === null) return state
         const curatedTurn = curated === null ? null : curated.turns[turnIndex]
         const merged =
@@ -382,7 +330,7 @@ export async function seedTraffic(
         provider: plan.target.providerName,
         model: plan.target.modelName,
         requestedModel: plan.requestedModel,
-        scenario: plan.route,
+        scenario: PASSTHROUGH_ROUTE,
         isSubagent: plan.isSubagent,
         inboundType: surface.inboundType,
         surface: surface.id,

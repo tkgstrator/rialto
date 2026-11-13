@@ -13,7 +13,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from '
 import { getPrismaClient } from '../../src/db/client'
 import { ApiStyle } from '../../src/generated/prisma/client'
 import { getLlmsContext, resetLlmsContext } from '../../src/llms'
-import { ensurePreferenceProfile, upsertProvider } from '../../src/services/config'
+import { upsertProvider } from '../../src/services/config'
 import { createCustomProvider } from '../../src/services/custom-provider-service'
 import { refreshModelsForAllProviders } from '../../src/services/model-sync-service'
 import { testProvider } from '../../src/services/provider-test-service'
@@ -60,7 +60,6 @@ const restoreFetch = (): void => {
 describe.skipIf(!HAS_DB)('createCustomProvider', () => {
   beforeEach(async () => {
     await resetDbTables()
-    await ensurePreferenceProfile()
     resetLlmsContext()
   })
 
@@ -178,7 +177,6 @@ describe.skipIf(!HAS_DB)('createCustomProvider', () => {
 describe.skipIf(!HAS_DB)('a custom provider after it exists', () => {
   beforeEach(async () => {
     await resetDbTables()
-    await ensurePreferenceProfile()
     resetLlmsContext()
     requests.length = 0
   })

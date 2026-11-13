@@ -49,7 +49,6 @@ const TokenSchema = z
     // meaning the nullable single-surface field carried before it
     // became a list.
     surfaces: z.array(z.string().nonempty()),
-    profileKey: z.string().nonempty().nullable(),
     lastUsedAt: z.string().nonempty().nullable(),
     requestCount: z.number().int().nonnegative(),
     // Spend over the service's trailing window (SPEND_WINDOW_DAYS), not
@@ -80,7 +79,6 @@ const IssueBodySchema = z
   .object({
     name: z.string().nonempty(),
     surfaces: z.array(SurfaceIdSchema).optional(),
-    profileKey: z.string().nonempty().nullable().optional(),
     expiresAt: z.iso.datetime().nullable().optional(),
     planId: z.string().nonempty().nullable().optional()
   })
@@ -142,14 +140,13 @@ accessTokensRoute.openapi(
 /**
  * What a token is allowed to do, after the fact.
  *
- * Scope, profile and plan. Renaming is cosmetic, the secret has its own
+ * Scope and plan. Renaming is cosmetic, the secret has its own
  * operation, and an expiry that could be pushed out indefinitely is not
  * an expiry — so none of them are here.
  */
 const UpdateBodySchema = z
   .object({
     surfaces: z.array(SurfaceIdSchema).optional(),
-    profileKey: z.string().nonempty().nullable().optional(),
     planId: z.string().nonempty().nullable().optional()
   })
   .openapi('AccessTokenUpdateRequest')

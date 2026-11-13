@@ -11,23 +11,19 @@
  * routine save.
  *
  * These tests pin the fix: upsertProvider must upsert only the target
- * row and leave every other Provider / route / SubAccount intact.
- * The one deletion that does cascade — deleting a provider outright —
- * has to say how many routes went with it, and from which lists.
+ * row and leave every other Provider / SubAccount intact. The one
+ * deletion that does cascade — deleting a provider outright — takes
+ * its models and subscription accounts with it and nothing else.
  */
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import { getPrismaClient } from '../../src/db/client'
-import { applyUiConfig, deleteProviderByName, ensurePreferenceProfile, upsertProvider } from '../../src/services/config'
-import { setTierAlias } from '../../src/services/tier-alias-service'
-import { loadTierProfile, saveTierProfile } from '../../src/services/tier-route-service'
-import { profileWith } from '../llms/tier-fixture'
+import { applyUiConfig, deleteProviderByName, upsertProvider } from '../../src/services/config'
 import { HAS_DB, resetDbTables, teardownPrisma } from './helpers'
 
 describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', () => {
   beforeEach(async () => {
     await resetDbTables()
-    await ensurePreferenceProfile()
   })
 
   afterAll(async () => {
@@ -153,7 +149,7 @@ describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', (
     expect(after?.subscriptionAccounts[0].sourcePath).toBe('oauth:claude:test-user')
   })
 
-  const seedTwoProvidersWithRoutes = async () => {
+  const seedTwoProviders = async () => {
     await applyUiConfig({
       Providers: [
         {
@@ -172,103 +168,34 @@ describe.skipIf(!HAS_DB)('upsertProvider — no cascade to sibling providers', (
         }
       ]
     })
-    // anthropic · sonnet follows claude-sonnet-5 by name; openai names no
-    // Claude family, so its tier takes an alias.
-    await setTierAlias('openai', 'haiku', 'gpt-5-nano')
-    const outcome = await saveTierProfile(
-      'live',
-      profileWith({
-        default: {
-          agent: [
-            { provider: 'anthropic', targetTier: 'sonnet', enabled: true },
-            { provider: 'openai', targetTier: 'haiku', enabled: true }
-          ],
-          subagent: [{ provider: 'anthropic', targetTier: 'sonnet', enabled: true }]
-        },
-        think: { agent: [{ provider: 'anthropic', targetTier: 'sonnet', enabled: true }] }
-      })
-    )
-    expect(outcome.warnings).toEqual([])
   }
 
-  const defaultRoutes = async (): Promise<string[]> =>
-    (await loadTierProfile('live')).routes.default.agent.map((r) => `${r.provider} · ${r.targetTier}`)
-
-  test('editing a provider does not remove routes naming another provider', async () => {
-    await seedTwoProvidersWithRoutes()
-
-    // Edit openai — the Default primary is anthropic and must survive
-    // because the CRUD path never touches sibling providers.
-    const { warnings } = await upsertProvider({
-      name: 'openai',
-      api_base_url: 'https://api.openai.com/v1/chat/completions',
-      api_key: 'sk-openai-ROTATED',
-      auth_mode: 'api_key',
-      models: ['gpt-5-nano']
-    })
-    expect(warnings).toEqual([])
-
-    expect(await defaultRoutes()).toEqual(['anthropic · sonnet', 'openai · haiku'])
-  })
-
-  test('removing a model through the CRUD path reports the tier alias it unsets', async () => {
-    await seedTwoProvidersWithRoutes()
-    const { warnings } = await upsertProvider({
-      name: 'openai',
-      api_base_url: 'https://api.openai.com/v1/chat/completions',
-      api_key: 'sk-openai',
-      auth_mode: 'api_key',
-      models: []
-    })
-    expect(warnings).toHaveLength(1)
-    expect(warnings[0]).toContain('Unset 1 tier alias')
-    expect(warnings[0]).toContain('openai · haiku')
-    // The route stays, skipped until the alias is set again.
-    expect(await defaultRoutes()).toEqual(['anthropic · sonnet', 'openai · haiku'])
-  })
-
-  test('removing the model a named tier follows reports where the tier moved', async () => {
-    await upsertProvider({
-      name: 'anthropic',
-      api_base_url: 'https://api.anthropic.com/v1/messages',
-      api_key: 'sk-ant',
-      auth_mode: 'api_key',
-      models: ['claude-sonnet-5', 'claude-sonnet-4-6']
-    })
-    const { warnings } = await upsertProvider({
+  test('removing a model through the CRUD path leaves the provider with the models that remain', async () => {
+    await seedTwoProviders()
+    const { provider, warnings } = await upsertProvider({
       name: 'anthropic',
       api_base_url: 'https://api.anthropic.com/v1/messages',
       api_key: 'sk-ant',
       auth_mode: 'api_key',
       models: ['claude-sonnet-4-6']
     })
-    expect(warnings).toHaveLength(1)
-    expect(warnings[0]).toContain('Moved 1 tier off')
-    expect(warnings[0]).toContain('anthropic · sonnet → claude-sonnet-4-6')
-  })
-
-  test('deleting a provider reports every route that went with it, by profile, scenario and lane', async () => {
-    await seedTwoProvidersWithRoutes()
-    const { warnings } = await deleteProviderByName('anthropic')
-    expect(warnings).toHaveLength(1)
-    expect(warnings[0]).toContain('Removed 3 tier routes')
-    expect(warnings[0]).toContain('live/default/agent')
-    expect(warnings[0]).toContain('live/default/subagent')
-    expect(warnings[0]).toContain('live/think/agent')
-    expect(await defaultRoutes()).toEqual(['openai · haiku'])
-    const after = await loadTierProfile('live')
-    expect(after.routes.default.subagent).toEqual([])
-    expect(after.routes.think.agent).toEqual([])
-  })
-
-  test('deleting a provider no route names reports nothing', async () => {
-    await seedTwoProvidersWithRoutes()
-    await saveTierProfile(
-      'live',
-      profileWith({ default: { agent: [{ provider: 'anthropic', targetTier: 'sonnet', enabled: true }] } })
-    )
-    const { warnings } = await deleteProviderByName('openai')
     expect(warnings).toEqual([])
+    expect(provider.models).toEqual(['claude-sonnet-4-6'])
+  })
+
+  test('deleting a provider removes its models and leaves its siblings alone', async () => {
+    await seedTwoProviders()
+    await deleteProviderByName('anthropic')
+
+    const prisma = getPrismaClient()
+    const providers = await prisma.provider.findMany({ include: { models: true } })
+    expect(providers.map((p) => p.name)).toEqual(['openai'])
+    expect(providers[0].models.map((m) => m.name)).toEqual(['gpt-5-nano'])
+    expect(await prisma.model.count({ where: { name: 'claude-sonnet-5' } })).toBe(0)
+  })
+
+  test('deleting a provider that does not exist is refused', async () => {
+    await expect(deleteProviderByName('nope')).rejects.toThrow('Provider "nope" not found')
   })
 
   test('a fresh provider name via upsertProvider still creates the row (create path)', async () => {

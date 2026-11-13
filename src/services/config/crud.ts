@@ -9,10 +9,8 @@ import { type Provider, ProviderSchema } from '@/schemas/domain/provider'
 import { getPrismaClient } from '../../db/client'
 import { ModelTestStatus, type PrismaClient } from '../../generated/prisma/client'
 import { resetLlmsContext } from '../../llms'
-import { logger } from '../../logger'
 import { captureModelCapabilities } from '../model-capability-service'
 import { applyProviderRow } from './apply'
-import { routeCascadeWarning } from './apply/tier-route-cascade'
 import { toProvider } from './compose'
 import { syncToConfigFile } from './sync-to-disk'
 
@@ -65,25 +63,17 @@ export async function upsertProvider(incoming: Provider): Promise<{ provider: Pr
   return { provider: toProvider(p), warnings }
 }
 
-// Deleting a provider cascades to its models and from there to every
-// chain entry naming one. The entries cannot be kept — their target is
-// gone — so the count is returned as a warning and logged, rather than
-// the chains quietly getting shorter.
-export async function deleteProviderByName(name: string): Promise<{ warnings: string[] }> {
+// Deleting a provider cascades to its models, capabilities and
+// subscription accounts through the schema's onDelete rules.
+export async function deleteProviderByName(name: string): Promise<void> {
   const prisma = getPrismaClient()
-  const warnings: string[] = []
   await prisma.$transaction(async (tx) => {
     const p = await tx.provider.findUnique({ where: { name } })
     if (!p) throw new Error(`Provider "${name}" not found`)
-    const cascade = await routeCascadeWarning(tx, p.id, `deleted provider "${name}"`)
-    if (cascade !== null) warnings.push(cascade)
     await tx.provider.delete({ where: { id: p.id } })
   })
-  if (warnings.length > 0)
-    logger.warn({ provider: name, warnings }, '[config] provider delete cascaded to the scenario routes')
   await syncToConfigFile()
   resetLlmsContext()
-  return { warnings }
 }
 
 export async function setModelEnabled(providerName: string, modelName: string, enabled: boolean): Promise<void> {

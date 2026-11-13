@@ -65,13 +65,6 @@ node_modules/remixicon/
 |---|---|---|
 | `overview.html` | Overview | 新規 |
 
-### Routing
-
-| ファイル | ビュー | 統合元 |
-|---|---|---|
-| `routing.html` | Tier map | RouterPreferences / TierEditor / RouterUtilization |
-| `routing-passthrough.html` | Tier map (passthrough) | — |
-
 ### Providers
 
 | ファイル | ビュー | 統合元 |
@@ -108,14 +101,14 @@ node_modules/remixicon/
 `shell.js` の `navMode` を切り替えているだけで、中身は既存画面と同じもの。比較用なので
 `mocks.json` の `route` は `null`。
 
-> **D を全画面に採用済み**。Settings の13remレールと、Routing / Activity のタブ列は
+> **D を全画面に採用済み**。Settings の13remレールと、Activity のタブ列は
 > 撤去され、サブビューはサイドバーのツリーに入った。`navMode: 'cloudflare'` と
 > `sub` を渡すだけで、シェルの形はどの画面でも同じ。A / B / C のモックは
 > 比較用に残してある（採用案が固まったら消してよい）。
 
 | ファイル | 案 | サイドバー | 何が変わるか |
 |---|---|---|---|
-| `nav-accordion.html` | A | アクティブなセクションが中で開く | Settings のレールが消える。Routing / Activity のタブは残す |
+| `nav-accordion.html` | A | アクティブなセクションが中で開く | Settings のレールが消える。Activity のタブは残す |
 | `nav-drilldown.html` | B | セクションの項目に差し替わる | 本文が最も広い。他4セクションは画面から消える |
 | `nav-tree.html` | C | Aを全セクションに適用 | タブ列も無くなり、ナビはサイドバー1本になる |
 | `nav-cloudflare.html` | D | Cloudflare ダッシュボードの形 | C + 上部の検索 + 複数グループ同時展開。幅16rem |
@@ -137,10 +130,8 @@ Activity › Requests なのは、Settings 画面では A と絵が同じにな�
 | `setup.html` | First run | SetupDialog |
 | `system-states.html` | System states | OauthResultPage / ErrorPage / Login |
 
-`routing.html` と `routing-passthrough.html` が今回のリファクタの核心。最上位の軸が
-**inbound面**（`/v1/messages` / `/v1/chat/completions` / `/v1/responses` / `/v1beta/models/*`）
-になっていて、面ごとに routed / passthrough を切り替えられる。現状のコードはこの切り替えが
-`scenario-router.ts:117-128` にハードコードされていて、UIからは見えない。
+Routing 画面（`routing.html` / `routing-passthrough.html`）は v3 で削除した。全ての inbound 面は
+呼び出し側が指定したモデル名をそのまま上流へ送る。
 
 ## 構成
 
@@ -203,9 +194,7 @@ IAのレビューは「画面がどう見えるか」だけでは足りず、**�
 `mocks:diff` の数字を1ピクセルも動かさない。
 
 グループ内のタブ（Activity の4本）と Providers のレールは `shell.js` に1箇所だけ定義がある。
-Routing にタブは無い: チェーンがその画面そのもので、面・シナリオ・レーンは画面内のセレクタ
-であってサブビューではない。画面ごとにインラインで持っていたときは、Usage タブが1画面にしか
-無いといった食い違いが起きていた。
+画面ごとにインラインで持っていたときは、Usage タブが1画面にしか無いといった食い違いが起きていた。
 
 ## 実装フェーズでの使い方
 
@@ -229,7 +218,7 @@ bun run mocks:diff      # ピクセル差分 + report.json
   `bun run mocks:config` を実行し、両方をコミットする（ずれるとテストが落ちる）
 - 各画面で選んだデザインは `mock-diff.adopted.yaml` に記録される。ビューアが書き込む。
   初期値はすべて `mock`
-- クエリ文字列で状態を選ぶモック（`routing.html?edit` など）は中継経由で読み込むため、
+- クエリ文字列で状態を選ぶモック（`provider-subscription.html?edit` など）は中継経由で読み込むため、
   dev サーバーが動いているときだけ撮影できる。止まっていた間に失敗したものは、ビューアで撮り直す
 - イメージは private。devcontainer をビルドする前に、ホストで `docker login ghcr.io`
   （`read:packages` のあるトークン）が必要

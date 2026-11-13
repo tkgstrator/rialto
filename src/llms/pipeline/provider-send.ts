@@ -114,13 +114,9 @@ export async function sendToProvider(
   const observation = {
     event: 'routing_upstream',
     provider: provider.name,
-    model: actualModel !== undefined ? actualModel : null,
-    selectedTier: context.req?.selectedTier !== undefined ? context.req.selectedTier : null,
-    selectedRoute: context.req?.selectedRoute !== undefined ? context.req.selectedRoute : null,
-    expectedTier: null,
-    evaluationStatus: 'unrated'
+    model: actualModel !== undefined ? actualModel : null
   }
-  reqLog.info({ ...observation, outcome: 'send' }, '[routing] upstream send')
+  reqLog.info({ ...observation, outcome: 'send' }, 'upstream send')
   const response = await fetchProvider(
     url,
     outboundBody,
@@ -130,7 +126,7 @@ export async function sendToProvider(
   ).catch((error: unknown) => {
     reqLog.warn(
       { ...observation, outcome: 'failure', reason: 'network_error', status: null, durationMs: Date.now() - startedAt },
-      '[routing] upstream failed'
+      'upstream failed'
     )
     throw error
   })
@@ -152,15 +148,12 @@ export async function sendToProvider(
   if (!response.ok) {
     reqLog.warn(
       { ...observation, outcome: 'failure', reason: 'http_error', status: response.status, durationMs },
-      '[routing] upstream failed'
+      'upstream failed'
     )
     await handleProviderError(response, provider, transformer, outboundBody, durationMs, url, reqLog)
   }
 
-  reqLog.info(
-    { ...observation, outcome: 'success', status: response.status, durationMs },
-    '[routing] upstream accepted'
-  )
+  reqLog.info({ ...observation, outcome: 'success', status: response.status, durationMs }, 'upstream accepted')
   logResponse(reqLog, provider, outboundBody, response.status, durationMs)
 
   // Best-effort usage capture from a cloned stream so the completion

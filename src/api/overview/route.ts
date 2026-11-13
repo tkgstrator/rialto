@@ -15,7 +15,6 @@ const SurfaceTrafficSchema = z
     id: z.string().nonempty(),
     path: z.string().nonempty(),
     client: z.string().nonempty(),
-    routingMode: z.enum(['routed', 'passthrough']),
     requests: z.number().int().nonnegative(),
     p50Ms: z.number().int().nonnegative().nullable(),
     errorRate: z.number().min(0).max(1).nullable()

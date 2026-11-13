@@ -3,8 +3,8 @@
  *
  * What a phone is for here is the check and the emergency: is this client
  * still inside its plan, what has it been doing, and — if the secret has
- * leaked — rotate or revoke it now. Those stay, in that order. The scope,
- * profile and plan editors do not: each is a picker laid out beside a
+ * leaked — rotate or revoke it now. Those stay, in that order. The scope
+ * and plan editors do not: each is a picker laid out beside a
  * paragraph of explanation, and a scope change reaches a live client as a
  * 401 nobody can trace from that end, which is not a change to make on a
  * 390px screen. They are read out as plain facts instead, and edited on
@@ -14,7 +14,7 @@
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { scopePaths } from '@/components/rialto/activity/use-surfaces'
-import { Mono, PhoneStats, Pill, RButton, Section, SurfacePill } from '@/components/rialto/primitives'
+import { PhoneStats, Pill, RButton, Section, SurfacePill } from '@/components/rialto/primitives'
 import { TokenUsageWindowsBody } from '@/components/rialto/settings/access/TokenUsageWindows'
 import type { AccessTokenWire, InboundSurfaceWire, TokenUsageWindowsWire } from '@/lib/api'
 import { fmtAgo, fmtCount } from '@/lib/rialto/format'
@@ -126,13 +126,6 @@ export function TokenDetailPhone({
             <span className='text-muted-foreground'>{t('settings.access.allEndpoints')}</span>
           ) : (
             paths.map((path) => <SurfacePill key={path} path={path} />)
-          )}
-        </Fact>
-        <Fact label={t('settings.access.colProfile')}>
-          {token.profileKey === null ? (
-            <span className='text-muted-foreground'>{t('settings.access.followEndpoint')}</span>
-          ) : (
-            <Mono className='text-foreground'>{token.profileKey}</Mono>
           )}
         </Fact>
         <Fact label={t('access.token.plan')}>

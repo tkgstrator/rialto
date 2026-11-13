@@ -47,7 +47,6 @@ const body = `
     <div class="space-y-2">
       ${summaryRow('Name', 'MacBook — Claude Code')}
       ${summaryRow('Endpoint', '/v1/messages')}
-      ${summaryRow('Routing profile', 'live')}
       ${summaryRow('Expires', '2026-12-07')}
     </div>
   </div>`
@@ -67,9 +66,7 @@ document.getElementById('root').innerHTML = `
         <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
           <i class="ri-information-line mr-1 align-[-1px]"></i>
           Only a SHA-256 digest is stored — the plaintext is shown once, when the token is issued.
-          Scoping a token to endpoints and a routing profile is how a client gets its own routing:
-          the CI token below is pinned to <span class="font-mono">cost-first</span> without touching
-          anyone else's chain.
+          Scoping a token to endpoints and a plan is how a client gets its own limits.
           <span class="font-medium text-foreground">Open a row</span> to rotate it — a new secret on
           the same row, keeping its name, scope and history — or to revoke it.
         </div>

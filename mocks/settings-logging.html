@@ -91,7 +91,7 @@ document.getElementById('root').innerHTML = `
         <h2 class="text-sm font-semibold">Request capture</h2>
         <span class="text-[12px] text-muted-foreground">what lands in Activity</span>
       </div>
-      ${field('Record requests', true, 'Tokens, cost, latency and routing for every upstream call.', 'toggle')}
+      ${field('Record requests', true, 'Tokens, cost and latency for every upstream call.', 'toggle')}
       ${field('Record messages', true, "What was said, readable on a session's Conversation tab. Never includes the system prompt or tool definitions.", 'toggle')}
       ${field('Redact tool args', false, 'Save tool calls and their results without the contents.', 'toggle')}
 

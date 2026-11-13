@@ -9,9 +9,9 @@
  * Rialto chooses the provider from its configured priority when needed.
  * A duplicate name with no preference is not listed as callable.
  *
- * The list only includes models the router can actually reach right now
- * (auth resolved + provider enabled), mirroring what the Router selects
- * see — so a listed id is guaranteed routable at that moment.
+ * The list only includes models a request can actually reach right now
+ * (auth resolved + provider enabled), so a listed id is guaranteed callable
+ * at that moment.
  *
  * Beyond OpenAI's four fields, each entry carries what an app that bills
  * its own users needs to price a call without a second source: the
@@ -48,8 +48,7 @@ function pricingOf(price: PriceEntry | undefined) {
 v1ModelsRoute.get('/v1/models', async (c) => {
   const [chatModels, imageModels] = await Promise.all([getEnabledModels(), getEnabledModels(undefined, 'image')])
   // A token on a plan sees only the models its plan allows: listing one it
-  // cannot spend would invite a request the plan then quietly reroutes to
-  // its default.
+  // cannot spend would invite a request the plan then refuses (403).
   const plan = c.get('accessToken')?.plan
   const eligible = [...chatModels, ...imageModels].filter(
     (m) => plan === null || plan === undefined || plan.models.includes(qualifiedModelId(m))

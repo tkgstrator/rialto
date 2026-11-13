@@ -1,17 +1,15 @@
 /**
- * The routing-mode override is the one place where a stored row changes
- * how every /v1 request is dispatched, so these tests pin the two things
- * that must not drift: the shipped defaults reproduce the pre-Rialto
- * hardcoded behaviour, and an override actually takes effect on the hot
- * path (which reads through a cache).
+ * The denied-targets list is the one stored setting that changes which
+ * models a surface will dispatch, so these tests pin the things that must
+ * not drift: a surface with no row denies nothing, and a write takes effect
+ * on the hot path, which reads through a cache.
  */
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import { getPrismaClient } from '../../src/db/client'
 import {
-  ensureInboundSurfaces,
   invalidateSurfaceCache,
-  isRoutedPath,
   listSurfaces,
+  passthroughDenial,
   resolveSurfaceForPath,
   updateSurface
 } from '../../src/services/inbound-surface-service'
@@ -27,29 +25,11 @@ describeDb('inbound-surface-service', () => {
 
   afterAll(teardownPrisma)
 
-  test('seeding gives every surface an explicit stored mode', async () => {
-    await ensureInboundSurfaces()
-    const rows = await getPrismaClient().inboundSurfaceConfig.findMany()
-    expect(rows).toHaveLength(5)
-    // No surface is more default than another: they all start the same.
-    expect(rows.every((r) => r.routingMode === 'passthrough')).toBe(true)
-  })
-
-  test('seeding is idempotent and never rewrites a chosen mode', async () => {
-    await ensureInboundSurfaces()
-    await updateSurface({ surface: 'anthropic-messages', routingMode: 'routed' })
-    await ensureInboundSurfaces()
-    expect(await isRoutedPath('/v1/messages')).toBe(true)
-  })
-
-  test('an unseeded surface reads as passthrough rather than inventing a default', async () => {
-    const byId = new Map((await listSurfaces()).map((s) => [s.id, s]))
-    expect([...byId.values()].every((s) => s.routingMode === 'passthrough')).toBe(true)
-  })
-
-  test('an unknown path stays routed rather than silently bypassing the router', async () => {
-    expect(await isRoutedPath('/v1/something-new')).toBe(true)
-    expect(await isRoutedPath(undefined)).toBe(true)
+  test('a surface with no stored row denies nothing', async () => {
+    const surfaces = await listSurfaces()
+    expect(surfaces.length).toBeGreaterThan(0)
+    expect(surfaces.every((s) => s.deniedTargets.length === 0)).toBe(true)
+    expect(await getPrismaClient().inboundSurfaceConfig.count()).toBe(0)
   })
 
   test('the gemini surface resolves from a model-and-action path', async () => {
@@ -57,28 +37,26 @@ describeDb('inbound-surface-service', () => {
     expect(surface?.id).toBe('gemini-generate')
   })
 
-  test('a mode change takes effect on the hot path, which reads through a cache', async () => {
-    await updateSurface({ surface: 'openai-chat', routingMode: 'routed' })
+  test('an unknown path resolves to no surface', async () => {
+    expect(await resolveSurfaceForPath('/v1/something-new')).toBeUndefined()
+    expect(await resolveSurfaceForPath(undefined)).toBeUndefined()
+  })
 
-    expect(await isRoutedPath('/v1/chat/completions')).toBe(true)
-    expect((await resolveSurfaceForPath('/v1/chat/completions'))?.routingMode).toBe('routed')
+  test('a write takes effect on the hot path, which reads through a cache', async () => {
+    await listSurfaces()
+    await updateSurface({ surface: 'openai-chat', deniedTargets: ['codex,gpt-5.5'] })
+
+    expect((await resolveSurfaceForPath('/v1/chat/completions'))?.deniedTargets).toEqual(['codex,gpt-5.5'])
+    expect(await passthroughDenial('/v1/chat/completions', 'codex,gpt-5.5')).toContain('codex,gpt-5.5')
     // Sibling surfaces are untouched — the row is per-surface.
-    expect(await isRoutedPath('/v1/responses')).toBe(false)
+    expect((await resolveSurfaceForPath('/v1/responses'))?.deniedTargets).toEqual([])
+    expect(await passthroughDenial('/v1/responses', 'codex,gpt-5.5')).toBeUndefined()
   })
 
-  test('a mode change is reversible', async () => {
-    await updateSurface({ surface: 'openai-chat', routingMode: 'routed' })
-    await updateSurface({ surface: 'openai-chat', routingMode: 'passthrough' })
-    expect((await resolveSurfaceForPath('/v1/chat/completions'))?.routingMode).toBe('passthrough')
-  })
-
-  test('a surface carries the default profile key until one is chosen', async () => {
-    const before = await resolveSurfaceForPath('/v1/messages')
-    expect(before?.profileKey).toBe('live')
-
-    await updateSurface({ surface: 'anthropic-messages', routingMode: 'routed', profileKey: 'cost-first' })
-    const after = await resolveSurfaceForPath('/v1/messages')
-    expect(after?.profileKey).toBe('cost-first')
+  test('a write is reversible', async () => {
+    await updateSurface({ surface: 'openai-chat', deniedTargets: ['codex,gpt-5.5'] })
+    await updateSurface({ surface: 'openai-chat', deniedTargets: [] })
+    expect((await resolveSurfaceForPath('/v1/chat/completions'))?.deniedTargets).toEqual([])
   })
 
   test('an unknown surface id is refused rather than written', async () => {
@@ -86,9 +64,7 @@ describeDb('inbound-surface-service', () => {
     // reachable from code the schema does not guard, so the runtime
     // check has to hold on its own. The cast is what bypasses the
     // compile-time enum to reach it.
-    const unknown = { surface: 'not-a-surface', routingMode: 'routed' } as unknown as Parameters<
-      typeof updateSurface
-    >[0]
+    const unknown = { surface: 'not-a-surface', deniedTargets: [] } as unknown as Parameters<typeof updateSurface>[0]
     await expect(updateSurface(unknown)).rejects.toThrow('Unknown inbound surface')
     expect(await getPrismaClient().inboundSurfaceConfig.count()).toBe(0)
   })

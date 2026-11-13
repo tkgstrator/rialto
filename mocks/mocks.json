@@ -19,41 +19,6 @@
       "note": "New. Summary of the four inbound surfaces, quota, spend, failover."
     },
     {
-      "name": "routing",
-      "mock": "routing.html",
-      "route": "/routing",
-      "group": "Routing",
-      "note": "Routing for one surface's profile: a table of scenarios (Default, Think — extended thinking on, Long context — input over the threshold) by caller (Agent, Subagent — the subagent tag), each cell one or more provider · tier combinations tried top first; a combination switched off keeps its place and is skipped. An empty Think or Long context cell falls back to Default for the same caller; an empty Default passes the requested model through. Only the provider and the tier are shown; the provider's tier alias, set on its page, says which model the tier is, so a model release moves one alias instead of this table."
-    },
-    {
-      "name": "routing-passthrough",
-      "mock": "routing-passthrough.html",
-      "route": "/routing?surface=openai-responses",
-      "group": "Routing",
-      "note": "The passthrough half — today's hardcoded behaviour for chat/completions and responses, made visible and reversible."
-    },
-    {
-      "name": "routing-edit",
-      "mock": "routing.html?edit",
-      "route": null,
-      "group": "Routing",
-      "note": "The same table after Edit: each combination line can be dragged, switched on or off, removed, or clicked to change it; Add opens the two-step dialog. One Revert / Save covers the whole table. While editing, the surface tabs, the mode switch and the profile picker are disabled. Mock-only because the state sits behind a click."
-    },
-    {
-      "name": "routing-add-provider",
-      "mock": "routing.html?edit&add",
-      "route": null,
-      "group": "Routing",
-      "note": "Adding a combination, nothing chosen yet: a Provider select, and under it a Tier select that stays disabled until a provider is chosen; Add is disabled. Mock-only: the dialog sits behind a click."
-    },
-    {
-      "name": "routing-add-tier",
-      "mock": "routing.html?edit&add=tier",
-      "route": null,
-      "group": "Routing",
-      "note": "Adding a combination, provider chosen: the Tier select offers that provider's tiers, one it has no model for (or the cell already holds) listed disabled with the reason; with both chosen, Add is enabled. Mock-only."
-    },
-    {
       "name": "providers",
       "mock": "providers.html",
       "route": "/providers/subscriptions",
@@ -79,14 +44,14 @@
       "mock": "provider-subscription.html",
       "route": "/providers/claude-code",
       "group": "Providers",
-      "note": "One subscription provider: accounts, request shape, models. Full width now that the rail is gone — reached from the Subscriptions list, back via the breadcrumb, the same way a token detail works. Adds the tier-alias strip (the one pointer a new model release moves). What an account carried at API prices is not drawn here — the Usage tab shows it. On a table 84rem or wider (not at the 1440 capture) two more columns follow Model: Effort levels, the levels the model's own list reported, and Thinking off, how thinking is switched off on it — both as badges. Effort levels is as wide as the longest ladder needs (16rem holds any four levels, each one past that adds 2.5rem), so a Codex list up to ultra stays clear of Tier."
+      "note": "One subscription provider: accounts, request shape, models. Full width now that the rail is gone — reached from the Subscriptions list, back via the breadcrumb, the same way a token detail works. What an account carried at API prices is not drawn here — the Usage tab shows it. On a table 84rem or wider (not at the 1440 capture) two more columns follow Model: Effort levels, the levels the model's own list reported, and Thinking off, how thinking is switched off on it — both as badges. Effort levels is as wide as the longest ladder needs (16rem holds any four levels, each one past that adds 2.5rem), so a Codex list up to ultra stays clear of Context."
     },
     {
       "name": "provider-subscription-codex",
       "mock": "provider-subscription.html?codex",
       "route": null,
       "group": "Providers",
-      "note": "The same page for a Codex provider: aliases the operator chose (Codex names no Claude family), and per account the banked resets the usage poll reports with a Use reset action. On a wide table gpt-5.5 lists six effort levels, low to ultra, which widen the Effort levels column to 20rem; there is no Thinking off column, as Codex has no thinking probe. Mock-only until P1-3 lands."
+      "note": "The same page for a Codex provider: per account the banked resets the usage poll reports with a Use reset action. On a wide table gpt-5.5 lists six effort levels, low to ultra, which widen the Effort levels column to 20rem; there is no Thinking off column, as Codex has no thinking probe. Mock-only until P1-3 lands."
     },
     {
       "name": "provider-subscription-codex-reset",
@@ -100,14 +65,14 @@
       "mock": "provider-subscription.html?edit",
       "route": null,
       "group": "Providers",
-      "note": "The subscription provider after Edit: tier overrides and the model and provider switches only work in this state, one Revert / Save covers them, and Refresh / Add subscription / Test all are locked until one is pressed. Mock-only because the state sits behind a click."
+      "note": "The subscription provider after Edit: the model and provider switches only work in this state, one Revert / Save covers them, and Refresh / Add subscription / Test all are locked until one is pressed. Mock-only because the state sits behind a click."
     },
     {
       "name": "provider-apikey-edit",
       "mock": "provider-apikey.html?edit",
       "route": null,
       "group": "Providers",
-      "note": "The api_key provider after Edit: tier, shape and effort overrides, the Base URL field, the switches and Replace only work in this state, Remove appears red beside Revert / Save, and the page actions and Test all are locked. Mock-only because the state sits behind a click."
+      "note": "The api_key provider after Edit: shape and effort overrides, the Base URL field, the switches and Replace only work in this state, Remove appears red beside Revert / Save, and the page actions and Test all are locked. Mock-only because the state sits behind a click."
     },
     {
       "name": "provider-apikey-shape",
@@ -542,7 +507,7 @@
       "mock": "nav-accordion.html",
       "route": null,
       "group": "Navigation",
-      "note": "Proposal A for the two-vertical-menus problem: the active section expands in the sidebar and Settings loses its 13rem rail; Routing and Activity keep their tab strips. Drawn on Settings -> Server so A and B can be compared on the same screen. Mock-only until one proposal is picked."
+      "note": "Proposal A for the two-vertical-menus problem: the active section expands in the sidebar and Settings loses its 13rem rail; Activity keeps its tab strip. Drawn on Settings -> Server so A and B can be compared on the same screen. Mock-only until one proposal is picked."
     },
     {
       "name": "nav-drilldown",

@@ -13,13 +13,8 @@
  * `route-plan.ts` resolves the endpoint transformer and the model from
  * it.
  *
- * Whether the router applies is NOT part of the descriptor. It was
- * hardcoded in `router.ts` — /v1/messages routed, the
- * OpenAI-compat surfaces bypassed — which is why every routing screen in
- * the old UI was silently a `/v1/messages`-only screen. It now lives per
- * surface in `InboundSurfaceConfig` as an explicit stored mode, so the
- * question "does routing apply here" has one answer, in one place, that
- * an operator can see and change.
+ * What an operator can change per surface is not part of the descriptor
+ * either: the targets turned off for it live in `InboundSurfaceConfig`.
  */
 
 import {
@@ -30,8 +25,6 @@ import {
 } from '../utils/sse-aggregate'
 
 export type SurfaceId = 'anthropic-messages' | 'openai-chat' | 'openai-responses' | 'gemini-generate' | 'openai-images'
-
-export type RoutingMode = 'routed' | 'passthrough'
 
 // Re-exported from the schema rather than restated. Three hand-written
 // copies of this union had drifted into the tree, so adding a surface
@@ -84,7 +77,7 @@ export interface InboundSurface {
   aggregateSse?: SseAggregator
   /**
    * The model, for a surface that carries it in the URL instead of
-   * `body.model`. Everything downstream — the tier router, the
+   * `body.model`. Everything downstream — the plan check, the
    * failover chain, the pipeline — reads `body.model`, so the route
    * folds this in before any of them run.
    *
@@ -114,22 +107,6 @@ function geminiPathParts(path: string): { model: string; action: string } | unde
   if (colon <= 0) return undefined
   return { model: segment.slice(0, colon), action: segment.slice(colon + 1) }
 }
-
-/**
- * What a surface's mode is set to when it has none yet.
- *
- * There is deliberately no per-surface default. The previous build
- * carried one — routed for /v1/messages, passthrough for the rest —
- * which reproduced a hardcoded bypass rather than expressing anything,
- * and it forced the UI to explain which of two identical-looking values
- * was "the shipped one". A surface now simply has a mode.
- *
- * Passthrough is the seed because routing an unconfigured install does
- * nothing useful: with no preference chain and no rules, the selector
- * falls straight through to the caller's own model. Routing is
- * something you turn on once there is something to route to.
- */
-export const INITIAL_ROUTING_MODE: RoutingMode = 'passthrough'
 
 export const INBOUND_SURFACES: readonly InboundSurface[] = [
   {
@@ -195,9 +172,8 @@ export const INBOUND_SURFACES: readonly InboundSurface[] = [
 /**
  * Paths that answer to one of the client SDKs without being a surface.
  *
- * `GET /v1/models` is a catalog read: nothing about it can be routed,
- * there is no wire type to record on RequestLog, and no routing mode
- * would mean anything. It is still an OpenAI SDK talking, though, so it
+ * `GET /v1/models` is a catalog read: there is no model to send anywhere
+ * and no wire type to record on RequestLog. It is still an OpenAI SDK talking, though, so it
  * has to speak that SDK's auth convention and error envelope — which is
  * the only reason it appears here at all.
  */
@@ -269,7 +245,7 @@ export function catalogPathFor(path: string | undefined): CatalogPath | undefine
 /**
  * Wire-type slug persisted on RequestLog / Session.
  *
- * Returns undefined for paths that are not a routed surface (`/v1/models`
+ * Returns undefined for paths that are not a surface (`/v1/models`
  * is a catalog read, not a completion), so those rows stay null rather
  * than being falsely bucketed.
  */

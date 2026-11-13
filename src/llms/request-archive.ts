@@ -36,7 +36,6 @@ export type ArchivedRequest = {
   routedModel: unknown
   route: string | undefined
   isSubagent: boolean | undefined
-  tokenCount: number | undefined
 }
 
 export const requestArchiveEnabled = (env: Record<string, string | undefined> = process.env): boolean =>
