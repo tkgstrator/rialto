@@ -440,6 +440,32 @@ describe.skipIf(!HAS_DB)('Codex MCP server at /codex', () => {
     expect(report.imageModels).toEqual([])
   })
 
+  test('generate_image refuses an image model the plan does not list, and never reaches upstream', async () => {
+    await seedCodex()
+    const plan = await getPrismaClient().plan.create({
+      data: { name: 'chat-only', models: ['codex,gpt-5.5'], defaultModel: 'codex,gpt-5.5' }
+    })
+    const token = (await issue(['codex-mcp'], plan.id)).plaintext
+    const result = await callTool(token, 'generate_image', { prompt: 'A paper lantern' })
+    expect(result.isError).toBe(true)
+    expect(upstream).toHaveLength(0)
+  })
+
+  test('generate_image draws with an image model the plan lists', async () => {
+    await seedCodex()
+    const plan = await getPrismaClient().plan.create({
+      data: {
+        name: 'with-image',
+        models: ['codex,gpt-5.5', 'codex,gpt-image-2.5-flare'],
+        defaultModel: 'codex,gpt-5.5'
+      }
+    })
+    const token = (await issue(['codex-mcp'], plan.id)).plaintext
+    const result = await callTool(token, 'generate_image', { prompt: 'A paper lantern' })
+    expect(result.isError).toBeUndefined()
+    expect(result.content[0]).toEqual({ type: 'image', data: PNG_B64, mimeType: 'image/png' })
+  })
+
   test('generate_image returns the image and a link that downloads it', async () => {
     await seedCodex()
     const issued = await issue(['codex-mcp'])
