@@ -459,7 +459,49 @@
       "errorStartOauth": "OAuth フローを開始できませんでした。",
       "errorRedirect": "リダイレクト URL が拒否されました。",
       "errorCredentials": "認証情報が拒否されました。",
-      "errorNotJson": "{{name}} は正しい JSON ではありません。"
+      "errorNotJson": "{{name}} は正しい JSON ではありません。",
+      "custom": {
+        "intro": "3 種類のワイヤーフォーマットのいずれかに対応した任意のエンドポイントです。自前のゲートウェイ、LM Studio や Ollama のようなローカルサーバー、Rialto に項目のないベンダーなどに使えます。キーはこの Rialto にのみ保存され、このアドレスにだけ送られます。",
+        "heading": "エンドポイント",
+        "fieldName": "名前",
+        "namePlaceholder": "my-gateway",
+        "nameHint": "小文字の英数字、ドット、ハイフン、アンダースコア。ルーティングやログでのプロバイダー名になり、後から変更できません。",
+        "fieldBaseUrl": "ベース URL",
+        "baseUrlPlaceholder": "http://localhost:1234/v1",
+        "baseUrlHint": "http(s) のアドレスです。<mono>/v1</mono> の有無は問いません。ローカルやプライベートのアドレスも使えます。",
+        "sendsTo": "リクエストの送信先",
+        "fieldFormat": "ワイヤーフォーマット",
+        "formatAnthropic": "Claude",
+        "formatAnthropicBody": "Anthropic Messages API、<mono>/v1/messages</mono>。",
+        "formatChat": "OpenAI Chat Completions",
+        "formatChatBody": "<mono>/v1/chat/completions</mono>。互換サーバーの多くが対応しています。",
+        "formatResponses": "OpenAI Responses",
+        "formatResponsesBody": "<mono>/v1/responses</mono>。",
+        "fieldApiKey": "API キー",
+        "apiKeyPlaceholder": "このエンドポイント用のキー",
+        "apiKeyHint": "必須です。キーのないプロバイダーは呼び出されません。キーを検証しないローカルサーバーでは任意の文字列で構いません。",
+        "connect": "接続",
+        "locked": "<mono>{{name}}</mono> として追加しました。アドレスやキーは後からプロバイダーのページで変更できます。",
+        "addedFound": "{{name}} を追加しました: モデルを {{count}} 件取得",
+        "addedManual": "{{name}} を追加しました: モデル一覧を取得できないため、モデル ID を手動で追加してください",
+        "problem": {
+          "tooLong": "{{max}} 文字以内にしてください。",
+          "charset": "小文字の英数字、ドット、ハイフン、アンダースコアのみ使えます。先頭と末尾は英数字にしてください。",
+          "reserved": "この名前は組み込みのベンダー名です。",
+          "taken": "この名前のプロバイダーは既に存在します。",
+          "invalidBaseUrl": "http:// または https:// で始め、ユーザー名・クエリ・フラグメントは含めないでください。"
+        },
+        "models": {
+          "found": "このエンドポイントからモデルを {{count}} 件取得しました。すべて無効の状態で始まります。使うものを有効にしてください。",
+          "unavailable": "このエンドポイントはモデル一覧を返しませんでした。下からモデル ID を手動で追加してください。",
+          "manualTitle": "モデル ID を指定して追加",
+          "manualPlaceholder": "モデル ID（例: gpt-4o-mini）",
+          "manualAdd": "モデルを追加",
+          "manualHint": "ID は入力したとおりにエンドポイントへ送られます。ここで追加したモデルは有効の状態で始まります。価格は「—」のままです。カスタムエンドポイントは価格を公開していません。",
+          "problemSpace": "モデル ID に空白は含められません。",
+          "problemDuplicate": "このモデルは既に一覧にあります。"
+        }
+      }
     },
     "vendorHint": {
       "claudeCode": "Claude CLI の OAuth 経由で Pro / Max",
@@ -468,7 +510,7 @@
       "aiStudio": "AI Studio の API キー",
       "openaiCompatible": "OpenAI 互換",
       "aggregator": "OpenAI 互換のアグリゲーター",
-      "custom": "OpenAI / Anthropic / Gemini 形式の任意のエンドポイント",
+      "custom": "OpenAI / Anthropic 互換の任意のエンドポイント",
       "browserOauth": "ブラウザー OAuth によるサブスクリプション",
       "cliOauth": "{{cli}} の OAuth によるサブスクリプション"
     },

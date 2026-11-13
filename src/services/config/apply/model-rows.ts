@@ -5,6 +5,7 @@
  */
 
 import type { Provider } from '@/schemas/domain/provider'
+import { isCustomProvider } from '@/shared/custom-provider'
 import { isDeprecatedModel } from '@/shared/data'
 import {
   type ApiStyle,
@@ -48,6 +49,11 @@ export async function reconcileModelRows(
 ): Promise<void> {
   const desired = new Set(incoming.models)
   const existingNames = new Set(provider.models.map((m) => m.name))
+  // The deprecation registry and the codex-family override describe the
+  // vendors in the catalog. A custom endpoint serves whatever its operator
+  // put behind it, so a model that shares a deprecated vendor's name is not
+  // deprecated there, and one that says "codex" is not Responses-only.
+  const custom = isCustomProvider(provider.name, provider.authMode)
   const toDelete = [...existingNames].filter((n) => !desired.has(n))
   const toCreate = [...desired].filter((n) => !existingNames.has(n))
 
@@ -70,8 +76,8 @@ export async function reconcileModelRows(
       data: toCreate.map((name) => ({
         providerId: provider.id,
         name,
-        deprecated: isDeprecatedModel(name),
-        apiStyle: modelApiStyleOverride(name)
+        deprecated: !custom && isDeprecatedModel(name),
+        apiStyle: modelApiStyleOverride(name, custom)
       }))
     })
   }
@@ -79,6 +85,7 @@ export async function reconcileModelRows(
   // Resync the deprecation flag on rows we kept — the registry may
   // have flipped a model between releases, and we don't want a model
   // first seeded as active to silently stay that way.
+  if (custom) return
   await syncDeprecationFlags(
     tx,
     provider.id,

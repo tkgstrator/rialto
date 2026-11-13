@@ -8,13 +8,15 @@
  * /subscriptions until an unfamiliar one shows up. That is what lets the
  * step advance "on its own" rather than asking the operator to refresh.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import dayjs from '@/lib/dayjs'
 import type { CodexDeviceStartResponse } from '@/schemas/api/oauth'
+import type { CustomModelsLookup } from '@/schemas/api/providers'
 import type { AuthFailure } from './ConnectAuthStep'
 import {
+  createCustomProvider,
   ensureProvider,
   importCredentials,
   oauthKindOf,
@@ -24,6 +26,7 @@ import {
   startOAuth,
   submitManualCallback
 } from './connect-actions'
+import { type CustomDraft, EMPTY_CUSTOM_DRAFT, isCustomDraftReady, isCustomEntry, withCustomEntry } from './custom-form'
 import type { CatalogEntry } from './types'
 import type { ProvidersData } from './useProvidersData'
 import { vendorBrand } from './vendor-labels'
@@ -45,10 +48,22 @@ export function useConnectFlow(data: ProvidersData | null, reload: () => Promise
   const [device, setDevice] = useState<CodexDeviceStartResponse | null>(null)
   const [busy, setBusy] = useState(false)
   const [sessionError, setSessionError] = useState<string | null>(null)
+  const [customDraft, setCustomDraft] = useState<CustomDraft>(EMPTY_CUSTOM_DRAFT)
+  // The Custom card is one entry but the provider it makes is named by the
+  // operator, so `selectedName` ('custom') cannot find it. Set once the
+  // server has created the row; null until then.
+  const [createdName, setCreatedName] = useState<string | null>(null)
+  const [lookup, setLookup] = useState<CustomModelsLookup | null>(null)
 
-  const entry = data === null || selectedName === null ? undefined : data.catalog.find((e) => e.name === selectedName)
+  // The catalog is built from vendors Rialto knows; a hand-added endpoint has
+  // no row in it, so the rail gets a card of its own appended here.
+  const entries = useMemo(() => (data === null ? [] : withCustomEntry(data.catalog)), [data])
+  const entry = selectedName === null ? undefined : entries.find((e) => e.name === selectedName)
+  const providerName = isCustomEntry(entry) ? createdName : selectedName
   const provider =
-    data === null || selectedName === null ? undefined : data.providers.find((p) => p.name === selectedName)
+    data === null || providerName === null ? undefined : data.providers.find((p) => p.name === providerName)
+  const existingNames = useMemo(() => (data === null ? [] : data.providers.map((p) => p.name)), [data])
+  const customReady = isCustomDraftReady(customDraft, existingNames)
   const subscription = data === null || selectedName === null ? undefined : data.subscriptions.get(selectedName)
   const oauthKind = entry === undefined ? null : oauthKindOf(entry)
   // Brand name for the success notices. Falls back to the catalog name so
@@ -158,6 +173,11 @@ export function useConnectFlow(data: ProvidersData | null, reload: () => Promise
     setApiKeyDraft('')
     setDevice(null)
     setSessionError(null)
+    // Picking the card again starts a fresh endpoint, so a second Custom
+    // provider can follow the first without leaving the page.
+    setCustomDraft(EMPTY_CUSTOM_DRAFT)
+    setCreatedName(null)
+    setLookup(null)
   }, [])
 
   const signIn = useCallback(() => {
@@ -227,6 +247,24 @@ export function useConnectFlow(data: ProvidersData | null, reload: () => Promise
     })
   }, [entry, apiKeyDraft, guard, reload, brand, t])
 
+  // The one write the Custom card makes before step 3: the row, its key and
+  // the model lookup are a single request, so the step either lands with a
+  // provider on screen or fails with the reason inline.
+  const saveCustom = useCallback(() => {
+    guard(async () => {
+      const created = await createCustomProvider(customDraft)
+      setCreatedName(created.provider.name)
+      setLookup(created.models)
+      await reload()
+      setStep(3)
+      toast.success(
+        created.models.status === 'found'
+          ? t('providers.connect.custom.addedFound', { name: created.provider.name, count: created.models.count })
+          : t('providers.connect.custom.addedManual', { name: created.provider.name })
+      )
+    })
+  }, [customDraft, guard, reload, t])
+
   // An error raised in this session outranks the stored one: it describes
   // the attempt the operator just made.
   const storedFailure = ((): AuthFailure | null => {
@@ -241,6 +279,7 @@ export function useConnectFlow(data: ProvidersData | null, reload: () => Promise
   const failure = sessionError === null ? storedFailure : { message: sessionError, at: null }
 
   return {
+    entries,
     entry,
     provider,
     subscription,
@@ -260,6 +299,13 @@ export function useConnectFlow(data: ProvidersData | null, reload: () => Promise
     startDevice,
     importFile,
     submitManual,
-    saveApiKey
+    saveApiKey,
+    customDraft,
+    setCustomDraft,
+    customReady,
+    existingNames,
+    createdName,
+    lookup,
+    saveCustom
   }
 }

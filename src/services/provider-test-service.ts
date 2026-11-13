@@ -1,12 +1,27 @@
 import type { z } from '@hono/zod-openapi'
 import { VENDOR_DEFAULTS } from '@/shared'
+import { isCustomApiStyle, isCustomProvider } from '@/shared/custom-provider'
 import { hasAuthenticableAccount, hasUnexpiredAccount } from '@/shared/subscription-credential'
 import { getPrismaClient } from '../db/client'
 import dayjs from '../lib/dayjs'
 import type { ProviderTestResponseSchema } from '../schemas/api/providers'
+import { fetchCustomModels } from '../vendors/custom'
 import { getSubscriptionsInfo } from './subscription-info-service'
 
 export type ProviderTestResult = z.infer<typeof ProviderTestResponseSchema>
+
+// A custom provider has no catalog entry to look its models endpoint up in;
+// its own stored URL is the only address there is. The probe is the same
+// models lookup the Connect flow runs, so "reachable and the key is accepted"
+// means the same thing in both places.
+const probeCustom = async (
+  provider: { apiBaseUrl: string; apiStyle: string },
+  apiKey: string
+): Promise<{ ok: boolean; error?: string }> => {
+  const style = isCustomApiStyle(provider.apiStyle) ? provider.apiStyle : 'openai_chat'
+  const result = await fetchCustomModels({ baseUrl: provider.apiBaseUrl, apiKey, style })
+  return result.ok ? { ok: true } : { ok: false, error: result.error }
+}
 
 const probeApiKey = async (vendor: string, apiKey: string): Promise<{ ok: boolean; error?: string }> => {
   const defaults = VENDOR_DEFAULTS[vendor]
@@ -71,6 +86,8 @@ export async function testProvider(name: string): Promise<ProviderTestResult> {
   if (!provider.apiKey || provider.apiKey.trim() === '') {
     return { success: false, latencyMs: dayjs().diff(start), error: 'no api key on file' }
   }
-  const probe = await probeApiKey(provider.name, provider.apiKey)
+  const probe = isCustomProvider(provider.name, provider.authMode)
+    ? await probeCustom(provider, provider.apiKey)
+    : await probeApiKey(provider.name, provider.apiKey)
   return { success: probe.ok, latencyMs: dayjs().diff(start), error: probe.error }
 }

@@ -15,6 +15,11 @@
  * from the subscription's own model list by model-capability-service,
  * and nothing here overwrites them.
  *
+ * Custom providers (hand-added endpoints, `shared/custom-provider.ts`) take
+ * no part in any of this. They have no vendor adapter, no price sheet and no
+ * catalog page; their model ids come from the one-shot lookup at connect
+ * time or from the operator. They are reported as skipped, not as failed.
+ *
  * All vendor-specific plumbing lives under providers/<vendor>/; this
  * service just orchestrates. Subscription providers (claude-code,
  * codex) resolve to the same VendorProvider instance as their api_key
@@ -23,6 +28,7 @@
  */
 
 import type { z } from '@hono/zod-openapi'
+import { isCustomProvider } from '@/shared/custom-provider'
 import { isDeprecatedModel, LLM_PRICES_SEED } from '@/shared/data'
 import { getPrismaClient } from '../db/client'
 import { AuthMode, type Prisma } from '../generated/prisma/client'
@@ -282,6 +288,10 @@ export async function refreshModelsForAllProviders(): Promise<RefreshOutcome[]> 
 
   const results: RefreshOutcome[] = []
   for (const p of providers) {
+    if (isCustomProvider(p.name, p.authMode)) {
+      results.push({ provider: p.name, added: [], skipped: 'custom provider: models are managed by hand' })
+      continue
+    }
     const scrapeVendor = scrapeVendorFor(p.name)
     const fetched = scrapeVendor === null ? undefined : catalogs.get(scrapeVendor)
     const catalog: VendorCatalog = fetched === undefined ? emptyCatalog : fetched
@@ -299,11 +309,21 @@ export async function refreshModelsForAllProviders(): Promise<RefreshOutcome[]> 
 // scraped / already-set prices win. This makes the DB the single source
 // of truth the UI reads (via provider.modelPrices), so the frontend needs
 // no static-pricing fallback of its own.
+//
+// The snapshot is keyed by model name alone, so an unscoped match would hand
+// a custom provider's `gpt-4o` OpenAI's list price. A custom endpoint's price
+// is unknown — null legs, the "vendor doesn't publish" reading — not whatever
+// a catalog vendor charges for the same name.
 async function backfillStaticPrices(): Promise<void> {
   const prisma = getPrismaClient()
+  const customNames = (
+    await prisma.provider.findMany({ where: { authMode: AuthMode.api_key }, select: { name: true } })
+  )
+    .map((row) => row.name)
+    .filter((name) => isCustomProvider(name, 'api_key'))
   for (const p of LLM_PRICES_SEED.prices) {
     await prisma.model.updateMany({
-      where: { name: p.id, inputPer1M: null },
+      where: { name: p.id, inputPer1M: null, provider: { name: { notIn: customNames } } },
       data: { inputPer1M: p.input, outputPer1M: p.output, cachedInputPer1M: p.input_cached }
     })
   }

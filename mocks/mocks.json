@@ -174,6 +174,41 @@
       "$comment": "Reuses the provider detail model table on purpose: same decision, made before the provider takes traffic."
     },
     {
+      "name": "providers-connect-custom",
+      "mock": "providers-connect-custom.html",
+      "route": null,
+      "group": "Providers",
+      "note": "AGENT-AUTHORED, NOT HUMAN-APPROVED. Step 2 for the Custom vendor: provider name, Base URL, the wire format (Claude, OpenAI Chat Completions or OpenAI Responses, the only three offered) and an API key, with the address a request will go to shown under the Base URL. Built from the API-key pane of providers-connect.html. Route null because /providers/connect opens on step 1 and the step is a state of it."
+    },
+    {
+      "name": "providers-connect-custom-problem",
+      "mock": "providers-connect-custom.html?problem",
+      "route": null,
+      "group": "Providers",
+      "note": "AGENT-AUTHORED, NOT HUMAN-APPROVED. The Custom form refusing what the server would refuse: a name that belongs to a built-in vendor and a Base URL that is not an http(s) address. A field that is still empty reports nothing."
+    },
+    {
+      "name": "providers-connect-custom-locked",
+      "mock": "providers-connect-custom.html?locked",
+      "route": null,
+      "group": "Providers",
+      "note": "AGENT-AUTHORED, NOT HUMAN-APPROVED. The Custom form after the provider was created and the operator came back with Back: read-only, because the address and key are changed on the provider's page."
+    },
+    {
+      "name": "providers-connect-custom-models",
+      "mock": "providers-connect-custom-models.html",
+      "route": null,
+      "group": "Providers",
+      "note": "AGENT-AUTHORED, NOT HUMAN-APPROVED. Step 3 for the Custom vendor when the endpoint gave no model list: the table is empty, the reason is on screen and the hand-entry row under it is the whole job. Prices, contexts and efforts are dashes because a custom endpoint publishes none."
+    },
+    {
+      "name": "providers-connect-custom-models-found",
+      "mock": "providers-connect-custom-models.html?found",
+      "route": null,
+      "group": "Providers",
+      "note": "AGENT-AUTHORED, NOT HUMAN-APPROVED. Step 3 for the Custom vendor when the endpoint listed its models: all of them start switched off, and the hand-entry row stays for any the lookup missed."
+    },
+    {
       "name": "access-tokens",
       "mock": "access-tokens.html",
       "route": "/access-tokens",

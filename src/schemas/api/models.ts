@@ -6,7 +6,11 @@ export const RefreshOutcomeSchema = z
   .object({
     provider: z.string().nonempty(),
     added: z.array(z.string().nonempty()),
-    error: z.string().optional()
+    error: z.string().optional(),
+    // Set when the provider was deliberately left out of the sweep (a
+    // custom provider has no vendor catalog to sweep). Not a failure: the
+    // UI must not report it as one, which is why it is not `error`.
+    skipped: z.string().nonempty().optional()
   })
   .openapi('RefreshOutcome')
 
