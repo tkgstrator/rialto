@@ -7,7 +7,6 @@ import { ActivityRequests } from '@/components/rialto/activity/ActivityRequests'
 import { ActivitySessionDetail } from '@/components/rialto/activity/ActivitySessionDetail'
 import { ActivitySessions } from '@/components/rialto/activity/ActivitySessions'
 import { ActivityUsage } from '@/components/rialto/activity/ActivityUsage'
-import { DecisionsScreen } from '@/components/rialto/decisions/DecisionsScreen'
 import { Overview } from '@/components/rialto/Overview'
 import { AddProviderScreen } from '@/components/rialto/providers/AddProviderScreen'
 import { ProviderDetailScreen } from '@/components/rialto/providers/ProviderDetailScreen'
@@ -76,7 +75,6 @@ export const router = createBrowserRouter([
           // scenario per row and a lane per column, each cell a list of
           // provider · tier combinations.
           { path: '/routing', element: <RoutingScenarios /> },
-          { path: '/decisions', element: <DecisionsScreen /> },
           // Top level, beside Providers: outbound and inbound at the same
           // depth. These were /settings/access and
           // /settings/access/tokens/:id.
