@@ -25,11 +25,12 @@ export const isCustomApiStyle = (value: unknown): value is CustomApiStyle =>
 
 export const CUSTOM_NAME_MAX_LENGTH = 48
 
-// Lowercase slug. The name is a URL segment (`/providers/<name>`), half of
-// the `provider,model` id the router parses on the first comma, and the key
-// the config file and the credential store use, so nothing that needs
-// escaping in any of those is allowed.
-const NAME_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/
+// ASCII slug, either case. The name is a URL segment (`/providers/<name>`),
+// half of the `provider,model` id the router parses on the first comma, and
+// the key the config file and the credential store use, so nothing that
+// needs escaping in any of those is allowed. Case is kept as typed; the
+// reserved and uniqueness checks compare case-insensitively instead.
+const NAME_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/
 
 // Path segments under /providers that the SPA router owns. A provider
 // named like one would be unreachable from its own detail screen.
@@ -55,11 +56,13 @@ export const customNameProblem = (raw: string): CustomNameProblem | null => {
   if (name === '') return 'empty'
   if (name.length > CUSTOM_NAME_MAX_LENGTH) return 'too_long'
   if (!NAME_PATTERN.test(name)) return 'charset'
+  // Lowered so `OpenAI` cannot pose as free beside the built-in `openai`.
+  const lowered = name.toLowerCase()
   // `claude-code*` is matched by prefix in the style derivation
   // (`apiStyleForVendor`), so a custom `claude-code-proxy` would silently
   // be treated as a subscription vendor.
-  if (isBuiltInVendorName(name) || name.startsWith('claude-code')) return 'reserved'
-  if (RESERVED_WORDS.includes(name) || ROUTE_SEGMENTS.includes(name)) return 'reserved'
+  if (isBuiltInVendorName(lowered) || lowered.startsWith('claude-code')) return 'reserved'
+  if (RESERVED_WORDS.includes(lowered) || ROUTE_SEGMENTS.includes(lowered)) return 'reserved'
   return null
 }
 

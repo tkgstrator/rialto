@@ -57,7 +57,6 @@ describe('customNameProblem', () => {
   })
 
   test.each([
-    ['capitals', 'MyGateway'],
     ['a space', 'my gateway'],
     ['a slash', 'my/gateway'],
     ['a comma, which would split the provider,model id', 'my,gateway'],
@@ -88,8 +87,14 @@ describe('customNameProblem', () => {
     }
   })
 
-  test('a built-in name in capitals is a charset problem first, so it never slips through as free', () => {
-    expect(customNameProblem('OpenAI')).not.toBeNull()
+  test('capitals are allowed and kept as typed', () => {
+    expect(customNameProblem('MyGateway')).toBeNull()
+  })
+
+  test('a built-in or reserved name in capitals is still reserved', () => {
+    expect(customNameProblem('OpenAI')).toBe('reserved')
+    expect(customNameProblem('Claude-Code-Proxy')).toBe('reserved')
+    expect(customNameProblem('Models')).toBe('reserved')
   })
 })
 

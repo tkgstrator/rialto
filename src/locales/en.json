@@ -465,7 +465,7 @@
         "heading": "Your endpoint",
         "fieldName": "Name",
         "namePlaceholder": "my-gateway",
-        "nameHint": "Lowercase letters, digits, dots, dashes and underscores. It names the provider in routing and logs and cannot be changed later.",
+        "nameHint": "Letters, digits, dots, dashes and underscores. It names the provider in routing and logs and cannot be changed later.",
         "fieldBaseUrl": "Base URL",
         "baseUrlPlaceholder": "http://localhost:1234/v1",
         "baseUrlHint": "An http(s) address, with or without <mono>/v1</mono>. Local and private addresses are allowed.",
@@ -486,7 +486,7 @@
         "addedManual": "Added {{name}}: no model list, add model IDs by hand",
         "problem": {
           "tooLong": "At most {{max}} characters.",
-          "charset": "Use lowercase letters, digits, dots, dashes and underscores, starting and ending with a letter or digit.",
+          "charset": "Use letters, digits, dots, dashes and underscores, starting and ending with a letter or digit.",
           "reserved": "This name belongs to a built-in vendor.",
           "taken": "A provider with this name already exists.",
           "invalidBaseUrl": "Start with http:// or https://, and leave out any username, query or fragment."
