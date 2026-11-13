@@ -9,7 +9,9 @@
  */
 import { api } from '@/lib/api'
 import type { CodexDevicePollResponse, CodexDeviceStartResponse } from '@/schemas/api/oauth'
+import type { CustomProviderCreateResponse } from '@/schemas/api/providers'
 import type { OAuthKind } from './ConnectAuthStep'
+import type { CustomDraft } from './custom-form'
 import type { CatalogEntry, OAuthInitiateResponse, OAuthSubmitResponse, Provider } from './types'
 
 // react-i18next's t(), trimmed to the shape these fallbacks call. Taking it
@@ -143,4 +145,31 @@ export async function saveNewApiKey(entry: CatalogEntry, apiKey: string): Promis
 /** Finish the flow: the provider has a credential, so it may take traffic. */
 export async function enableProvider(provider: Provider): Promise<void> {
   await api.post('/providers', { ...provider, enabled: true })
+}
+
+/**
+ * Create the Custom provider. One call does the three things only the server
+ * can: derive the stored endpoint from the typed Base URL, ask that endpoint
+ * for its model list with the key, and write the row switched off. The model
+ * lookup failing is a normal answer (`models.status === 'unavailable'`), not
+ * a thrown error, so the caller can hand over to manual entry.
+ */
+export async function createCustomProvider(draft: CustomDraft): Promise<CustomProviderCreateResponse> {
+  return api.post<CustomProviderCreateResponse>('/providers/custom', {
+    name: draft.name.trim(),
+    base_url: draft.baseUrl.trim(),
+    api_key: draft.apiKey.trim(),
+    api_style: draft.style
+  })
+}
+
+/**
+ * Add one hand-typed model to a provider. The upsert reconciles the model
+ * list against the payload, so the whole list travels with it; the new ID is
+ * left out of `_disabledModels`, which is how a row is switched on. It is
+ * on because the operator typed it deliberately, unlike a looked-up list
+ * where nothing is known to be wanted.
+ */
+export async function addModelById(provider: Provider, model: string): Promise<void> {
+  await api.post('/providers', { ...provider, models: [...provider.models, model.trim()] })
 }

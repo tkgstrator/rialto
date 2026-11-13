@@ -459,7 +459,49 @@
       "errorStartOauth": "无法启动 OAuth 流程。",
       "errorRedirect": "重定向 URL 被拒绝。",
       "errorCredentials": "凭据被拒绝。",
-      "errorNotJson": "{{name}} 不是有效的 JSON。"
+      "errorNotJson": "{{name}} 不是有效的 JSON。",
+      "custom": {
+        "intro": "任何支持三种线路格式之一的端点：自托管网关、LM Studio 或 Ollama 之类的本地服务，或 Rialto 没有收录的厂商。密钥只保存在这个 Rialto 实例中，并且只会发送到这个地址。",
+        "heading": "你的端点",
+        "fieldName": "名称",
+        "namePlaceholder": "my-gateway",
+        "nameHint": "小写字母、数字、点、短横线和下划线。它是路由和日志中该提供方的名字，之后无法更改。",
+        "fieldBaseUrl": "基础 URL",
+        "baseUrlPlaceholder": "http://localhost:1234/v1",
+        "baseUrlHint": "http(s) 地址，带不带 <mono>/v1</mono> 均可。允许本地和内网地址。",
+        "sendsTo": "请求发送到",
+        "fieldFormat": "线路格式",
+        "formatAnthropic": "Claude",
+        "formatAnthropicBody": "Anthropic Messages API，<mono>/v1/messages</mono>。",
+        "formatChat": "OpenAI Chat Completions",
+        "formatChatBody": "<mono>/v1/chat/completions</mono>。大多数兼容服务使用的格式。",
+        "formatResponses": "OpenAI Responses",
+        "formatResponsesBody": "<mono>/v1/responses</mono>。",
+        "fieldApiKey": "API key",
+        "apiKeyPlaceholder": "此端点的密钥",
+        "apiKeyHint": "必填：没有密钥的提供方不会被调用。不校验密钥的本地服务可以填任意占位符。",
+        "connect": "连接",
+        "locked": "已添加为 <mono>{{name}}</mono>。之后可在该提供方的页面修改地址或密钥。",
+        "addedFound": "已添加 {{name}}：找到 {{count}} 个模型",
+        "addedManual": "已添加 {{name}}：没有模型列表，请手动添加模型 ID",
+        "problem": {
+          "tooLong": "最多 {{max}} 个字符。",
+          "charset": "只能使用小写字母、数字、点、短横线和下划线，且必须以字母或数字开头和结尾。",
+          "reserved": "这个名称属于内置厂商。",
+          "taken": "已存在同名的提供方。",
+          "invalidBaseUrl": "请以 http:// 或 https:// 开头，且不要包含用户名、查询参数或片段。"
+        },
+        "models": {
+          "found": "已从该端点读取 {{count}} 个模型。它们默认关闭：请打开需要它提供服务的模型。",
+          "unavailable": "该端点没有返回模型列表。请在下方手动添加模型 ID。",
+          "manualTitle": "按 ID 添加模型",
+          "manualPlaceholder": "模型 ID，例如 gpt-4o-mini",
+          "manualAdd": "添加模型",
+          "manualHint": "ID 会按输入原样发送给该端点。在这里添加的模型默认开启。价格保持为“—”：自定义端点不公布价格。",
+          "problemSpace": "模型 ID 不能包含空格。",
+          "problemDuplicate": "该模型已在列表中。"
+        }
+      }
     },
     "vendorHint": {
       "claudeCode": "通过 Claude CLI OAuth 使用 Pro / Max",
@@ -468,7 +510,7 @@
       "aiStudio": "AI Studio 的 API key",
       "openaiCompatible": "OpenAI 兼容",
       "aggregator": "OpenAI 兼容的聚合服务",
-      "custom": "任意 OpenAI / Anthropic / Gemini 形态的端点",
+      "custom": "任意 OpenAI / Anthropic 兼容的端点",
       "browserOauth": "通过浏览器 OAuth 的订阅",
       "cliOauth": "通过 {{cli}} OAuth 的订阅"
     },

@@ -459,7 +459,49 @@
       "errorStartOauth": "Failed to start the OAuth flow.",
       "errorRedirect": "The redirect URL was rejected.",
       "errorCredentials": "The credentials were rejected.",
-      "errorNotJson": "{{name}} is not valid JSON."
+      "errorNotJson": "{{name}} is not valid JSON.",
+      "custom": {
+        "intro": "Any endpoint that speaks one of three wire formats: a self-hosted gateway, a local server such as LM Studio or Ollama, or a vendor Rialto has no entry for. The key is stored on this Rialto install and sent only to this address.",
+        "heading": "Your endpoint",
+        "fieldName": "Name",
+        "namePlaceholder": "my-gateway",
+        "nameHint": "Lowercase letters, digits, dots, dashes and underscores. It names the provider in routing and logs and cannot be changed later.",
+        "fieldBaseUrl": "Base URL",
+        "baseUrlPlaceholder": "http://localhost:1234/v1",
+        "baseUrlHint": "An http(s) address, with or without <mono>/v1</mono>. Local and private addresses are allowed.",
+        "sendsTo": "Requests go to",
+        "fieldFormat": "Wire format",
+        "formatAnthropic": "Claude",
+        "formatAnthropicBody": "Anthropic Messages API, <mono>/v1/messages</mono>.",
+        "formatChat": "OpenAI Chat Completions",
+        "formatChatBody": "<mono>/v1/chat/completions</mono>. What most compatible servers speak.",
+        "formatResponses": "OpenAI Responses",
+        "formatResponsesBody": "<mono>/v1/responses</mono>.",
+        "fieldApiKey": "API key",
+        "apiKeyPlaceholder": "Key for this endpoint",
+        "apiKeyHint": "Required: a provider with no key is never called. A local server that checks no key takes any placeholder.",
+        "connect": "Connect",
+        "locked": "Added as <mono>{{name}}</mono>. Change its address or key later on the provider's page.",
+        "addedFound": "Added {{name}}: {{count}} models found",
+        "addedManual": "Added {{name}}: no model list, add model IDs by hand",
+        "problem": {
+          "tooLong": "At most {{max}} characters.",
+          "charset": "Use lowercase letters, digits, dots, dashes and underscores, starting and ending with a letter or digit.",
+          "reserved": "This name belongs to a built-in vendor.",
+          "taken": "A provider with this name already exists.",
+          "invalidBaseUrl": "Start with http:// or https://, and leave out any username, query or fragment."
+        },
+        "models": {
+          "found": "Read {{count}} models from this endpoint. They start switched off: turn on the ones it should serve.",
+          "unavailable": "This endpoint did not give a model list. Add model IDs by hand below.",
+          "manualTitle": "Add a model by ID",
+          "manualPlaceholder": "Model ID, e.g. gpt-4o-mini",
+          "manualAdd": "Add model",
+          "manualHint": "The ID is sent to the endpoint exactly as typed. A model added here starts switched on. Prices stay a dash: a custom endpoint publishes none.",
+          "problemSpace": "A model ID has no spaces in it.",
+          "problemDuplicate": "This model is already listed."
+        }
+      }
     },
     "vendorHint": {
       "claudeCode": "Pro / Max via Claude CLI OAuth",
@@ -468,7 +510,7 @@
       "aiStudio": "AI Studio API key",
       "openaiCompatible": "OpenAI-compatible",
       "aggregator": "OpenAI-compatible aggregator",
-      "custom": "Any OpenAI / Anthropic / Gemini-shaped endpoint",
+      "custom": "Any OpenAI / Anthropic-compatible endpoint",
       "browserOauth": "Subscription via browser OAuth",
       "cliOauth": "Subscription via {{cli}} OAuth"
     },
