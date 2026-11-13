@@ -23,6 +23,7 @@ import { plansRoute } from './api/plans/route'
 import { providerModelRoute } from './api/providers/[name]/models/[model]/route'
 import { providerByNameRoute } from './api/providers/[name]/route'
 import { providerTierAliasRoute } from './api/providers/[name]/tier-aliases/[tier]/route'
+import { customProviderRoute } from './api/providers/custom/route'
 import { providersRoute } from './api/providers/route'
 import { providersTestRoute } from './api/providers/test/route'
 import { refreshModelsRoute } from './api/refresh-models/route'
@@ -192,6 +193,7 @@ app.route('/', updatePerformRoute)
 app.route('/', catalogRoute)
 app.route('/', refreshModelsRoute)
 app.route('/', providersRoute)
+app.route('/', customProviderRoute)
 app.route('/', providerByNameRoute)
 app.route('/', providerModelRoute)
 app.route('/', providerTierAliasRoute)

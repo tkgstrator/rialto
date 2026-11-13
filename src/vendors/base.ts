@@ -61,7 +61,7 @@ const extractContextWindows = (data: VendorModelsResponse): Map<string, number> 
   return out
 }
 
-const extractModelIds = (data: VendorModelsResponse): string[] | null => {
+export const extractModelIds = (data: VendorModelsResponse): string[] | null => {
   if (Array.isArray(data.data)) {
     return data.data.flatMap((m) => (typeof m.id === 'string' && m.id.length > 0 ? [m.id] : []))
   }
@@ -82,7 +82,7 @@ const extractModelIds = (data: VendorModelsResponse): string[] | null => {
  */
 export type ModelsCredential = { kind: 'api_key'; key: string }
 
-const buildAuthedRequest = (
+export const buildAuthedRequest = (
   auth: ModelsAuth,
   credential: ModelsCredential,
   url: string
