@@ -47,7 +47,6 @@ import { mapWith, route } from './tier-fixture'
 
 describe('routeRequest: classification', () => {
   const {
-    logged,
     CALLER_MODEL,
     SONNET,
     CODEX,
@@ -206,59 +205,6 @@ describe('routeRequest: classification', () => {
       expect(req.body.model).toBe('codex,gpt-5.5-pro')
       expect(req.route).toBe('think')
       expect(req.isSubagent).toBe(true)
-    })
-
-    test('shadow model and effort estimates never replace the routed target or explicit request fields', async () => {
-      const previousEnabled = process.env.JEFF_SHADOW_ENABLED
-      const previousUrl = process.env.JEFF_URL
-      const previousFetch = globalThis.fetch
-      const calls: string[] = []
-      process.env.JEFF_SHADOW_ENABLED = 'true'
-      process.env.JEFF_URL = 'http://127.0.0.1:8000'
-      globalThis.fetch = async (_url, options) => {
-        calls.push(String(options?.body))
-        return Response.json({
-          model: 'jeff-latest',
-          answers: {
-            complexity: {
-              type: 'score',
-              score: 0.6,
-              confidence: 0.7,
-              probabilities: { '0': 0.4, '1': 0.6 },
-              legend: { '0': 'Simple', '1': 'Complex' }
-            },
-            modelEffort: {
-              type: 'choice',
-              choice: '3',
-              confidence: 0.8,
-              probabilities: { '1': 0.1, '2': 0.1, '3': 0.8 }
-            }
-          },
-          usage: { input_tokens: 25, output_tokens: 0 }
-        })
-      }
-      try {
-        __setTierProfilesForTests({
-          live: mapWith({ default: { subagent: [sonnetRoute({ efforts: ['low', 'high'] }), codexRoute()] } })
-        })
-        const messages = [{ role: 'user', content: 'Please review this implementation' }]
-        const req = await run({ body: { system: subagentSystem(), messages, output_config: { effort: 'high' } } })
-        await new Promise((resolve) => setTimeout(resolve, 0))
-        expect(req.body.model).toBe(SONNET)
-        expect(req.resolvedFallbacks).toEqual([CODEX])
-        expect(req.body.messages).toEqual(messages)
-        expect(req.body.output_config).toEqual({ effort: 'high' })
-        expect(calls).toHaveLength(1)
-        expect(Object.keys(JSON.parse(calls[0]).questions)).toEqual(['complexity', 'modelEffort'])
-        expect(logged.lines.join(' ')).toContain('"estimatedEffort":"vendor_default"')
-        expect(logged.lines.join(' ')).not.toContain('Please review this implementation')
-      } finally {
-        globalThis.fetch = previousFetch
-        if (previousEnabled === undefined) delete process.env.JEFF_SHADOW_ENABLED
-        else process.env.JEFF_SHADOW_ENABLED = previousEnabled
-        if (previousUrl === undefined) delete process.env.JEFF_URL
-        else process.env.JEFF_URL = previousUrl
-      }
     })
 
     test('an untagged request never reads the subagent list', async () => {

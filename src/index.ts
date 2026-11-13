@@ -9,7 +9,6 @@ import { adminAuth, inboundProxyAuth } from './api/api-key-auth'
 import { catalogRoute } from './api/catalog/route'
 import { codexMcpRoute } from './api/codex-mcp/route'
 import { configRoute } from './api/config/route'
-import { decisionsRoute } from './api/decisions/route'
 import { healthRoute } from './api/health/route'
 import { identityRoute } from './api/identity/route'
 import { inboundSurfacesRoute } from './api/inbound-surfaces/route'
@@ -181,7 +180,6 @@ app.onError((err, c) => {
 // Each sub-app declares its own absolute /api/... paths, so mount them
 // at root. OpenAPIHono.route() also merges their OpenAPI registries.
 app.route('/', configRoute)
-app.route('/', decisionsRoute)
 app.route('/', logsRoute)
 app.route('/', transformersRoute)
 app.route('/', subscriptionsRoute)

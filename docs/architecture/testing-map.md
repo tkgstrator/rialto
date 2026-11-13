@@ -155,7 +155,6 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `failover-state.test.ts` | 枯渇マークとその失効。モデル単位のマークは同 provider の他モデルを塞がず、provider 単位のマークは全モデルを塞ぐこと、`clear*` が即座に外すこと（モデルのマークを外しても provider のマークは残る）、`modelMarksFor` が 1 provider の生きたモデルマークだけを列挙すること |
 | `session-account-router.test.ts` | ハードリミット除外 → sticky → balancingScore の 4 段 |
 | `usage-headroom.test.ts` | `drainTarget` / `getKindWindowHeadroom` の算術。**src に呼び出し元の無い関数のテスト**（`usage-service.ts` が再 export しているだけで、ルーティング経路からは呼ばれない） |
-| `jeff-client-queue.test.ts` | Jeff への評価が到着順に1件ずつ送られ、同時に届かないこと。失敗・タイムアウトでも順番が解放されること。5秒のタイムアウトが順番待ちを含まないこと。待ち時間の上限と8件の上限で諦めて列を詰まらせないこと。529 は `Retry-After` に従って1回だけ再試行し、2回目や待つ上限を超える場合は失敗にすること。health は評価を待たないこと。fetch は stub で実際の Jeff は呼ばない |
 | `usage-fetch-force.test.ts` | usage 取得の `forceRefresh`（TTL 内のキャッシュを迂回して上流を呼び、再キャッシュする）と `enabledProvidersOnly`。既定の経路が変わらずキャッシュを返し、失敗時は直前の値を残してアカウントを `failed` に名指しすること。5h が 100 % でも 7d / Fable は上流の値とリセットのまま返すこと（100 % 扱いはスケジューラだけの話） |
 | `model-test/subscription-probe.test.ts` | Codex サブスクの Test が、プロキシと同じ `openai-responses` → `codex-oauth` で request を組むこと。ChatGPT バックエンドが拒否する `max_output_tokens` を送らない、`messages` を残さない、`/responses` へ account id と `originator` 付きで送る |
 | `model-test/probes.test.ts` | api_key の Responses 疎通確認は `max_output_tokens: 16` を送り続けること（公開 Responses API は 16 未満を 400 にする）。Codex 側と取り違えて「直さない」ための対。Base URL がどちらの形でも、Chat の疎通確認は `/chat/completions`、Responses のそれは `/responses` へ行き（どちらの形でもなければ Chat は保存値のまま、Responses は末尾に足す）、クエリは保たれること |
@@ -224,7 +223,6 @@ context ゲートが効くことも見る — seed しなければ「プロフ�
 | ファイル | 担保しているもの |
 |---|---|
 | `capture-fixtures.test.ts` | 分割前と同じリクエスト行列・順序・本文と replay hash、資格情報の redaction、記録／skip／force、HTTP エラーと通信失敗の区別、subscription の有効モデルの列挙、一時 API キーの注入／復元が全プロバイダの設定を保つこと。fetch はローカル応答に差し替え、上流や開発 DB は触らない |
-| `compose-decisions.test.ts` | Jeff CPUサイドカーが任意profileだけで起動し、ホスト公開・認証・Rialtoからの依存を持たないこと、JEFF_URLの空既定、モデルvolume、Readyを待つhealthcheck、上流commit固定と公式CPU導入／起動コマンド。Dockerやネットワークは使わずファイルを読み取る |
 
 ### `__tests__/e2e` — Providers のブラウザ契約
 
