@@ -99,7 +99,7 @@ export interface AuthFailure {
   at: string | null
 }
 
-function FailureCard({ failure, now, flush }: { failure: AuthFailure; now: number; flush: boolean }) {
+export function FailureCard({ failure, now, flush }: { failure: AuthFailure; now: number; flush: boolean }) {
   const { t } = useTranslation()
   return (
     // The mock only draws this card under the waiting card, whose py-5 is

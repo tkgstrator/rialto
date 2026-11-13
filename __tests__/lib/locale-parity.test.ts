@@ -61,8 +61,6 @@ const tags = (value: string): string[] =>
  * UI disagree with the thing it is describing.
  */
 const SHARED_VOCABULARY = new Set([
-  // Decisions is the operator-facing feature name, not a translated sentence.
-  'shell.navDecisions',
   'activity.requests.laneAgent',
   'activity.requests.laneSubagent',
   // Codex names its own quota windows `primary` / `secondary`. The
@@ -72,6 +70,15 @@ const SHARED_VOCABULARY = new Set([
   'activity.usage.windowPrimary',
   'activity.usage.windowSecondary',
   'providers.connect.connectedPill',
+  // Custom provider form: two sample values a user overtypes, and the names
+  // of the wire formats. "Claude" and the two OpenAI API names are the
+  // vendors' own product names, the same spelling every other screen and
+  // the docs use for them.
+  'providers.connect.custom.baseUrlPlaceholder',
+  'providers.connect.custom.formatAnthropic',
+  'providers.connect.custom.formatChat',
+  'providers.connect.custom.formatResponses',
+  'providers.connect.custom.namePlaceholder',
   'providers.connect.pillSubscription',
   'providers.connect.redirectPlaceholder',
   'providers.rail.oauth',

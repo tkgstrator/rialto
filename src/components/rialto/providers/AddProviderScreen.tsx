@@ -15,10 +15,12 @@ import { Screen } from '@/components/rialto/Screen'
 import { usePhone } from '@/hooks/use-phone'
 import { enableAllModels, setModelEffort, testModels, toggleModel } from './actions'
 import { ConnectAuthStep } from './ConnectAuthStep'
+import { ConnectCustomStep } from './ConnectCustomStep'
 import { ConnectModelsStep } from './ConnectModelsStep'
 import { ConnectStepBar } from './ConnectStepBar'
 import { ConnectVendorRail } from './ConnectVendorRail'
-import { enableProvider } from './connect-actions'
+import { addModelById, enableProvider } from './connect-actions'
+import { isCustomEntry } from './custom-form'
 import { accountLabel, disabledModelsOf, listedModelsOf } from './derive'
 import { type ConnectFlow, type ConnectStep, useConnectFlow } from './useConnectFlow'
 import { type ProvidersData, useProvidersData } from './useProvidersData'
@@ -63,6 +65,24 @@ function ConnectPane({ flow, now, reload }: { flow: ConnectFlow; now: number; re
         provider={provider}
         connectedAccount={connectedAccount}
         busy={bulkBusy}
+        custom={
+          isCustomEntry(entry)
+            ? {
+                lookup: flow.lookup,
+                onAddModel: async (id) => {
+                  if (provider === undefined) return
+                  try {
+                    await addModelById(provider, id)
+                    await reload()
+                  } catch (err: unknown) {
+                    fail(err)
+                    // Rethrown so the form keeps what was typed.
+                    throw err
+                  }
+                }
+              }
+            : undefined
+        }
         onToggle={(model, next) => {
           if (provider === undefined) return
           toggleModel(provider, model, next).then(reload).catch(fail)
@@ -89,6 +109,23 @@ function ConnectPane({ flow, now, reload }: { flow: ConnectFlow; now: number; re
             .catch(fail)
             .finally(() => setBulkBusy(false))
         }}
+      />
+    )
+  }
+  // The Custom card has no credential to prove and no vendor to describe: its
+  // step 2 is the form that makes the provider, so it replaces the auth step.
+  if (isCustomEntry(entry)) {
+    return (
+      <ConnectCustomStep
+        draft={flow.customDraft}
+        existingNames={flow.existingNames}
+        createdName={flow.createdName}
+        ready={flow.customReady}
+        busy={flow.busy}
+        failure={flow.failure}
+        now={now}
+        onChange={flow.setCustomDraft}
+        onConnect={flow.saveCustom}
       />
     )
   }
@@ -133,7 +170,7 @@ function ConnectBody({
 }) {
   const rail = (
     <ConnectVendorRail
-      entries={data.catalog}
+      entries={flow.entries}
       selectedName={flow.entry === undefined ? null : flow.entry.name}
       onSelect={flow.selectVendor}
     />
@@ -153,9 +190,14 @@ function ConnectBody({
   )
 }
 
-/** Step 1 needs a vendor; step 3 needs the row the earlier steps created. */
+/**
+ * Step 1 needs a vendor; step 3 needs the row the earlier steps created.
+ * Custom's step 2 has to make that row itself, so Continue is the Connect
+ * button's twin: ready once the form is valid, or once it has been sent.
+ */
 const canAdvance = (flow: ConnectFlow): boolean => {
   if (flow.step === 1) return flow.entry !== undefined
+  if (flow.step === 2 && isCustomEntry(flow.entry)) return flow.createdName !== null || flow.customReady
   if (flow.step === 3) return flow.provider !== undefined
   return true
 }
@@ -165,7 +207,7 @@ export function AddProviderScreen() {
   const navigate = useNavigate()
   const { data, error, reload } = useProvidersData()
   const flow = useConnectFlow(data, reload)
-  const { step, setStep, provider } = flow
+  const { step, setStep, provider, entry } = flow
   const phone = usePhone()
 
   const cancel = useCallback(() => navigate('/providers'), [navigate])
@@ -179,6 +221,13 @@ export function AddProviderScreen() {
   // existed since step 2 (the OAuth callback needs it) but stays switched
   // off until the operator has said which models it may serve.
   const advance = useCallback(async () => {
+    // Custom's first Continue is the write itself: the provider does not
+    // exist until it is sent. Back-then-Continue finds it created and just
+    // moves on, rather than creating a second one.
+    if (step === 2 && isCustomEntry(entry) && flow.createdName === null) {
+      flow.saveCustom()
+      return
+    }
     if (step !== 3) {
       setStep(NEXT_STEP[step])
       return
@@ -191,7 +240,7 @@ export function AddProviderScreen() {
       return
     }
     navigate(`/providers/${encodeURIComponent(provider.name)}`)
-  }, [step, setStep, provider, navigate])
+  }, [step, setStep, provider, navigate, entry, flow])
 
   const subtitle =
     flow.entry === undefined

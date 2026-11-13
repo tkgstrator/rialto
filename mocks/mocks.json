@@ -26,13 +26,6 @@
       "note": "Routing for one surface's profile: a table of scenarios (Default, Think — extended thinking on, Long context — input over the threshold) by caller (Agent, Subagent — the subagent tag), each cell one or more provider · tier combinations tried top first; a combination switched off keeps its place and is skipped. An empty Think or Long context cell falls back to Default for the same caller; an empty Default passes the requested model through. Only the provider and the tier are shown; the provider's tier alias, set on its page, says which model the tier is, so a model release moves one alias instead of this table."
     },
     {
-      "name": "decisions",
-      "mock": "decisions.html",
-      "route": "/decisions",
-      "group": "Top level",
-      "note": "Decisions playground with Jeff not configured; the live screen's initial connection state, editable question and empty result."
-    },
-    {
       "name": "routing-passthrough",
       "mock": "routing-passthrough.html",
       "route": "/routing?surface=openai-responses",
@@ -179,6 +172,41 @@
       "group": "Providers",
       "note": "Step 3 of the add-provider flow (ConnectModelsStep), which the mock set stopped short of. Route is null because the step is a state of /providers/connect rather than its own path, so a capture would land on step 1.",
       "$comment": "Reuses the provider detail model table on purpose: same decision, made before the provider takes traffic."
+    },
+    {
+      "name": "providers-connect-custom",
+      "mock": "providers-connect-custom.html",
+      "route": null,
+      "group": "Providers",
+      "note": "AGENT-AUTHORED, NOT HUMAN-APPROVED. Step 2 for the Custom vendor: provider name, Base URL, the wire format (Claude, OpenAI Chat Completions or OpenAI Responses, the only three offered) and an API key, with the address a request will go to shown under the Base URL. Built from the API-key pane of providers-connect.html. Route null because /providers/connect opens on step 1 and the step is a state of it."
+    },
+    {
+      "name": "providers-connect-custom-problem",
+      "mock": "providers-connect-custom.html?problem",
+      "route": null,
+      "group": "Providers",
+      "note": "AGENT-AUTHORED, NOT HUMAN-APPROVED. The Custom form refusing what the server would refuse: a name that belongs to a built-in vendor and a Base URL that is not an http(s) address. A field that is still empty reports nothing."
+    },
+    {
+      "name": "providers-connect-custom-locked",
+      "mock": "providers-connect-custom.html?locked",
+      "route": null,
+      "group": "Providers",
+      "note": "AGENT-AUTHORED, NOT HUMAN-APPROVED. The Custom form after the provider was created and the operator came back with Back: read-only, because the address and key are changed on the provider's page."
+    },
+    {
+      "name": "providers-connect-custom-models",
+      "mock": "providers-connect-custom-models.html",
+      "route": null,
+      "group": "Providers",
+      "note": "AGENT-AUTHORED, NOT HUMAN-APPROVED. Step 3 for the Custom vendor when the endpoint gave no model list: the table is empty, the reason is on screen and the hand-entry row under it is the whole job. Prices, contexts and efforts are dashes because a custom endpoint publishes none."
+    },
+    {
+      "name": "providers-connect-custom-models-found",
+      "mock": "providers-connect-custom-models.html?found",
+      "route": null,
+      "group": "Providers",
+      "note": "AGENT-AUTHORED, NOT HUMAN-APPROVED. Step 3 for the Custom vendor when the endpoint listed its models: all of them start switched off, and the hand-entry row stays for any the lookup missed."
     },
     {
       "name": "access-tokens",

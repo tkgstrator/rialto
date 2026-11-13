@@ -23,10 +23,9 @@
  */
 
 import { isRoutedPath, resolveSurfaceForPath } from '../services/inbound-surface-service'
-import { shadowEvaluateSubagent } from '../services/subagent-shadow-evaluation'
 import { DEFAULT_PROFILE_KEY, PASSTHROUGH_PROFILE_KEY } from '../services/tier-route-service'
 import { applyGlobalSystemPrompt, resolveActivePersonaPrompt } from './router/persona'
-import { latestUserText, stripSubagentTag } from './router/request-signals'
+import { stripSubagentTag } from './router/request-signals'
 import { signalsOf } from './router/surface-signals'
 import type { RouterContext, RouterRequest } from './router/types'
 import { routeByScenario } from './tier-router/runtime'
@@ -77,7 +76,6 @@ export async function routeRequest(req: RouterRequest, ctx: RouterContext): Prom
   // passthrough profile to opt one client out.
   const forcedPassthrough = req.profileKeyOverride === PASSTHROUGH_PROFILE_KEY
   if (forcedPassthrough || !(await isRoutedPath(req.inboundPath))) {
-    if (isSubagent) shadowEvaluateSubagent({ messages: req.body.messages, log: req.log })
     stamp(req, { route: PASSTHROUGH_ROUTE, isSubagent, fallbacks: [] })
     return
   }
@@ -89,7 +87,6 @@ export async function routeRequest(req: RouterRequest, ctx: RouterContext): Prom
     // either can be away. Neither is a reason to invent a target: the
     // caller's model is the only one we know it can use, so it stays.
     req.log.error({ err }, "[routing] tier routing failed; keeping the caller's own model")
-    if (isSubagent) shadowEvaluateSubagent({ messages: req.body.messages, log: req.log })
     stamp(req, { route: PASSTHROUGH_ROUTE, isSubagent, fallbacks: [] })
   }
 
@@ -118,31 +115,16 @@ async function routeThroughScenarios(req: RouterRequest, ctx: RouterContext, isS
   const profileKey = req.profileKeyOverride !== undefined ? req.profileKeyOverride : surfaceProfile
 
   const requestedModel = typeof req.body.model === 'string' ? req.body.model : undefined
-  const routing = await routeByScenario(
-    {
-      profileKey,
-      requestedModel,
-      requestTokenCount: tokenCount,
-      thinking: signals.thinking,
-      isSubagent,
-      needsWebSearch: signals.webSearch,
-      hasTools: Array.isArray(req.body.tools) && req.body.tools.length > 0,
-      taskText: latestUserText(req.body.messages)
-    },
-    req.log,
-    req.reqId
-  )
+  const routing = await routeByScenario({
+    profileKey,
+    requestedModel,
+    requestTokenCount: tokenCount,
+    thinking: signals.thinking,
+    isSubagent,
+    needsWebSearch: signals.webSearch
+  })
   const { selection, classification } = routing
   req.selectedRoutes = selection.selectedRoutes
-  // Shadow only: the decision sees the routes that already passed the live
-  // gates, while the request still follows the selector's original answer.
-  if (isSubagent) {
-    shadowEvaluateSubagent({
-      messages: req.body.messages,
-      log: req.log,
-      candidates: selection.outcome === 'routed' ? routing.shadowCandidates : []
-    })
-  }
   const { scenario, lane } = classification
   const paced = selection.paced.promoted.length > 0 || selection.paced.steppedDown.length > 0
 

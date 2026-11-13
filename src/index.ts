@@ -9,7 +9,6 @@ import { adminAuth, inboundProxyAuth } from './api/api-key-auth'
 import { catalogRoute } from './api/catalog/route'
 import { codexMcpRoute } from './api/codex-mcp/route'
 import { configRoute } from './api/config/route'
-import { decisionsRoute } from './api/decisions/route'
 import { healthRoute } from './api/health/route'
 import { identityRoute } from './api/identity/route'
 import { inboundSurfacesRoute } from './api/inbound-surfaces/route'
@@ -24,6 +23,7 @@ import { plansRoute } from './api/plans/route'
 import { providerModelRoute } from './api/providers/[name]/models/[model]/route'
 import { providerByNameRoute } from './api/providers/[name]/route'
 import { providerTierAliasRoute } from './api/providers/[name]/tier-aliases/[tier]/route'
+import { customProviderRoute } from './api/providers/custom/route'
 import { providersRoute } from './api/providers/route'
 import { providersTestRoute } from './api/providers/test/route'
 import { refreshModelsRoute } from './api/refresh-models/route'
@@ -181,7 +181,6 @@ app.onError((err, c) => {
 // Each sub-app declares its own absolute /api/... paths, so mount them
 // at root. OpenAPIHono.route() also merges their OpenAPI registries.
 app.route('/', configRoute)
-app.route('/', decisionsRoute)
 app.route('/', logsRoute)
 app.route('/', transformersRoute)
 app.route('/', subscriptionsRoute)
@@ -194,6 +193,7 @@ app.route('/', updatePerformRoute)
 app.route('/', catalogRoute)
 app.route('/', refreshModelsRoute)
 app.route('/', providersRoute)
+app.route('/', customProviderRoute)
 app.route('/', providerByNameRoute)
 app.route('/', providerModelRoute)
 app.route('/', providerTierAliasRoute)

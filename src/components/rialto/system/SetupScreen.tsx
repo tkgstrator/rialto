@@ -12,6 +12,7 @@
  */
 
 import { cn } from 'cn'
+import type { TFunction } from 'i18next'
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
@@ -52,9 +53,7 @@ const CONNECT_OPTIONS: Array<{ label: string; icon: string; hintKey: string }> =
 const isLive = (token: AccessTokenWire, now: number): boolean =>
   token.expiresAt === null ? true : Date.parse(token.expiresAt) > now
 
-type Translate = (key: string, options?: Record<string, unknown>) => string
-
-const nextTokenName = (live: number, t: Translate): string =>
+const nextTokenName = (live: number, t: TFunction): string =>
   live === 0 ? t('system.setup.firstClient') : t('system.setup.nthClient', { n: live + 1 })
 
 function Step({

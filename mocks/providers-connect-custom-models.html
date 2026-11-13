@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rialto — Add provider · Custom · Choose models</title>
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/inter/index.css">
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/geist-mono/index.css">
+<link rel="stylesheet" href="../node_modules/remixicon/fonts/remixicon.css">
+<link rel="stylesheet" href="_shared/mock.build.css">
+<script src="_shared/shell.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const { renderShell, pill, btn, sortTh, uiInput, effortCell } = window.Shell
+
+// Step 3 for the Custom vendor.
+//
+// AGENT-AUTHORED. No human approved this screen; it extends
+// providers-connect-models.html with the two things a hand-added endpoint
+// has that a catalog vendor does not, and needs a human's approval before
+// the React screen is treated as matching a contract.
+//
+// What is new against the catalog vendors' step 3:
+//   - the model list is whatever the endpoint itself answered at connect
+//     time, or nothing: a server with no /models, a wrong key and a timeout
+//     all read the same to the operator, who is told what came back and
+//     then adds model IDs by hand;
+//   - the hand-entry row under the table, always there. It is the fallback
+//     when the lookup found nothing and the way to add a model it missed;
+//   - every price, context window and effort is a dash: a custom endpoint
+//     publishes none, so nothing here pretends to know them.
+//
+// Default state: the lookup failed, so the table is empty and the manual row
+// is the whole job. ?found — the lookup listed three models, all switched
+// off until the operator turns on the ones this endpoint should serve.
+const PARAMS = new URLSearchParams(location.search)
+const FOUND = PARAMS.has('found')
+
+const step = (n, label, state) => {
+  const tone = { done: 'bg-foreground text-background', active: 'bg-foreground text-background', todo: 'bg-muted text-muted-foreground' }[state]
+  return `
+    <div class="flex items-center gap-2">
+      <span class="flex size-5 items-center justify-center rounded-full text-[12px] font-medium ${tone}">
+        ${state === 'done' ? '<i class="ri-check-line text-xs"></i>' : n}
+      </span>
+      <span class="text-xs ${state === 'todo' ? 'text-muted-foreground' : 'font-medium'}">${label}</span>
+    </div>`
+}
+
+const VENDORS = [
+  { id: 'claude-code', label: 'Claude Code',  hint: 'Pro / Max via Claude CLI OAuth', kind: 'subscription', icon: 'ri-sparkling-line', added: true },
+  { id: 'codex',       label: 'Codex',        hint: 'ChatGPT plan via Codex CLI OAuth', kind: 'subscription', icon: 'ri-terminal-line', added: true },
+  { id: 'gemini-cli',  label: 'Gemini CLI',   hint: 'AI Pro / Ultra via Gemini CLI OAuth', kind: 'subscription', icon: 'ri-gemini-line', added: true },
+  { id: 'anthropic',   label: 'Anthropic',    hint: 'Pay-as-you-go API key', kind: 'api_key', icon: 'ri-key-2-line', added: true },
+  { id: 'openai',      label: 'OpenAI',       hint: 'Pay-as-you-go API key', kind: 'api_key', icon: 'ri-key-2-line', added: true },
+  { id: 'google',      label: 'Google AI',    hint: 'AI Studio API key', kind: 'api_key', icon: 'ri-key-2-line', added: true },
+  { id: 'deepseek',    label: 'DeepSeek',     hint: 'Pay-as-you-go API key', kind: 'api_key', icon: 'ri-key-2-line', added: true },
+  { id: 'groq',        label: 'Groq',         hint: 'OpenAI-compatible', kind: 'api_key', icon: 'ri-flashlight-line', added: false },
+  { id: 'openrouter',  label: 'OpenRouter',   hint: 'OpenAI-compatible aggregator', kind: 'api_key', icon: 'ri-shuffle-line', added: false },
+  { id: 'custom',      label: 'Custom',       hint: 'Any OpenAI / Anthropic-compatible endpoint', kind: 'api_key', icon: 'ri-add-box-line', added: false }
+]
+
+const vendorCard = (v, selected) => `
+  <button class="flex items-start gap-3 border-l-2 px-4 py-3 text-left transition-colors ${
+    selected ? 'border-l-foreground bg-muted/60' : 'border-l-transparent hover:border-l-border hover:bg-muted/50'
+  }">
+    <i class="${v.icon} mt-0.5 text-base leading-none text-muted-foreground"></i>
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-2">
+        <span class="text-xs font-medium">${v.label}</span>
+        ${v.kind === 'subscription' ? pill('OAuth', 'info') : pill('API key', 'mute')}
+        ${v.added ? '<span class="ml-auto text-[12px] text-muted-foreground">added</span>' : ''}
+      </div>
+      <div class="mt-0.5 text-[12px] text-muted-foreground">${v.hint}</div>
+    </div>
+  </button>`
+
+const MODELS = FOUND
+  ? [
+      { name: 'qwen2.5-coder-32b-instruct', on: false },
+      { name: 'llama-3.3-70b-instruct', on: false },
+      { name: 'text-embedding-nomic-embed-text-v1.5', on: false }
+    ]
+  : []
+
+const testIcon = '<i class="ri-subtract-line text-muted-foreground/50"></i>'
+const DASH = '<span class="text-muted-foreground/50">—</span>'
+
+const modelRow = (m) => `
+  <tr class="border-t border-border/60 transition-colors hover:bg-muted/50 ${m.on ? '' : 'opacity-45'}">
+    <td class="py-2.5 pl-6 pr-2 font-mono text-xs">${m.name}</td>
+    <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${DASH}</td>
+    <td class="px-2 text-right font-mono text-xs tabular-nums">${DASH}</td>
+    <td class="px-2 text-right font-mono text-xs tabular-nums">${DASH}</td>
+    <td class="px-2">${effortCell(null)}</td>
+    <td class="px-2 text-center text-sm leading-none">${testIcon}</td>
+    <td class="py-2.5 pl-2 pr-6 text-right">
+      <span class="inline-flex h-4 w-7 items-center rounded-full ${m.on ? 'bg-foreground' : 'bg-muted-foreground/30'} px-0.5 align-middle">
+        <span class="size-3 rounded-full bg-background ${m.on ? 'translate-x-3' : ''}"></span>
+      </span>
+    </td>
+  </tr>`
+
+// Same columns as an API-key vendor's table, less the ones that have
+// nothing to show here: no Tier (the add-provider flow resolves none), no
+// Cached (no price at all), no Shape (no per-model override is set yet).
+const table = MODELS.length === 0
+  ? `<div class="px-6 pb-6 text-xs text-muted-foreground">No models on this provider yet.</div>`
+  : `
+  <table class="w-full table-fixed">
+    <colgroup><col><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-24"><col class="w-14"><col class="w-16"></colgroup>
+    <thead>
+      <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
+        ${sortTh('Model', 'pl-6 pr-2', 'left', true, 'desc')}
+        ${sortTh('Context', 'px-2', 'right')}
+        ${sortTh('In /1M', 'px-2', 'right')}
+        ${sortTh('Out /1M', 'px-2', 'right')}
+        <th class="px-2 text-left font-medium">Effort</th>
+        ${sortTh('Test', 'px-2', 'center')}
+        ${sortTh('On', 'pl-2 pr-6', 'right')}
+      </tr>
+    </thead>
+    <tbody>${MODELS.map(modelRow).join('')}</tbody>
+  </table>`
+
+const lookupNote = FOUND
+  ? `Read 3 models from this endpoint. They start switched off: turn on the ones it should serve.`
+  : `This endpoint did not give a model list. Add model IDs by hand below.
+          <span class="mt-1 block font-mono">http://localhost:1234/v1/models returned HTTP 404</span>`
+
+document.getElementById('root').innerHTML = `
+  <div class="flex items-center gap-6 border-b border-border px-6 py-3">
+    ${step(1, 'Pick a vendor', 'done')}
+    <i class="ri-arrow-right-s-line text-sm text-muted-foreground/50"></i>
+    ${step(2, 'Authenticate', 'done')}
+    <i class="ri-arrow-right-s-line text-sm text-muted-foreground/50"></i>
+    ${step(3, 'Choose models', 'active')}
+    <div class="ml-auto">${btn('Cancel', 'ghost', '', 'providers.html')}</div>
+  </div>
+
+  <div class="grid h-full grid-cols-[22rem_1fr]">
+
+    <aside class="min-w-0 overflow-y-auto border-r border-border">
+      <div class="px-4 pt-5 pb-2">
+        <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Vendor</h2>
+      </div>
+      ${VENDORS.map((v) => vendorCard(v, v.id === 'custom')).join('')}
+    </aside>
+
+    <div class="min-w-0 overflow-y-auto">
+      <div class="border-b border-border px-6 py-4">
+        <div class="flex items-center gap-2">
+          <h2 class="text-sm font-semibold">Custom</h2>
+          ${pill('api key', 'mute')}
+        </div>
+        <p class="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+          ${lookupNote}
+        </p>
+      </div>
+
+      <div class="flex items-center gap-3 px-6 pt-5 pb-3">
+        <h3 class="text-sm font-semibold">Models</h3>
+        <span class="text-[12px] text-muted-foreground">0 of ${MODELS.length} enabled</span>
+        <div class="ml-auto flex items-center gap-2">
+          ${btn('Enable all', 'ghost', 'ri-checkbox-multiple-line')}
+          ${btn('Test all', 'outline', 'ri-pulse-line')}
+        </div>
+      </div>
+      ${table}
+
+      <div class="border-t border-border px-6 py-4">
+        <label class="mb-1 block text-[12px] text-muted-foreground">Add a model by ID</label>
+        <div class="flex items-center gap-2">
+          ${uiInput('', 'Model ID, e.g. gpt-4o-mini')}
+          <span class="shrink-0">${btn('Add model', 'outline', 'ri-add-line')}</span>
+        </div>
+        <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
+          The ID is sent to the endpoint exactly as typed. A model added here starts switched on.
+          Prices stay a dash: a custom endpoint publishes none.
+        </p>
+      </div>
+      <div class="h-6"></div>
+    </div>
+
+  </div>`
+
+renderShell({
+  active: 'providers',
+  navMode: 'cloudflare',
+  crumbs: ['Add provider'],
+  subtitle: 'Step 3 of 3 · Custom',
+  actions:
+    btn('Back', 'ghost', 'ri-arrow-left-line', 'providers-connect-custom.html') +
+    btn('Finish', 'primary', 'ri-check-line', 'provider-apikey.html')
+})
+</script>
+</body>
+</html>

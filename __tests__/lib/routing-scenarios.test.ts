@@ -40,13 +40,7 @@ const constraints: RoutingConstraintsWire = {
   longContextThreshold: null,
   previousLongContextThreshold: null,
   longContextTunedAt: null,
-  autoTuneLongContext: true,
-  decisionApiBaseUrl: null,
-  decisionApiKeyEnv: null,
-  decisionEnabled: false,
-  decisionMinConfidence: 0.9,
-  decisionModel: null,
-  decisionTimeoutMs: 1_500
+  autoTuneLongContext: true
 }
 
 const resolved = { model: 'claude-sonnet-5', targetEnabled: true, hostsWebSearch: true, contextWindow: 1_000_000 }

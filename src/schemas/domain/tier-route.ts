@@ -92,16 +92,7 @@ export const RoutingConstraintsSchema = z.object({
   // ISO time of the tuner's last change; it moves at most once a day.
   longContextTunedAt: z.string().nonempty().nullable().default(null),
   // Kill switch for the tuner. Not on the screen.
-  autoTuneLongContext: z.boolean().default(true),
-  // Optional SystemOne-compatible classifier. It can only prefer a tier
-  // already present in the profile's eligible route list; the normal gates
-  // and fallback chain still make the final upstream decision.
-  decisionApiBaseUrl: z.url().nullable().default(null),
-  decisionApiKeyEnv: z.string().nonempty().nullable().default(null),
-  decisionEnabled: z.boolean().default(false),
-  decisionMinConfidence: z.number().min(0).max(1).default(0.9),
-  decisionModel: z.string().nonempty().nullable().default(null),
-  decisionTimeoutMs: z.number().int().positive().max(10_000).default(1_500)
+  autoTuneLongContext: z.boolean().default(true)
 })
 export type RoutingConstraints = z.infer<typeof RoutingConstraintsSchema>
 
@@ -122,13 +113,7 @@ export const RoutingConstraintsWriteSchema = z.object({
   quotaSkipPct: z.number().min(0).max(100).nullable().default(null),
   errorRateSkipPct: z.number().min(0).max(1).nullable().default(null),
   minHealthSamples: z.number().int().min(0).nullable().default(null),
-  autoTuneLongContext: z.boolean().nullable().default(null),
-  decisionApiBaseUrl: z.url().nullable().default(null),
-  decisionApiKeyEnv: z.string().nonempty().nullable().default(null),
-  decisionEnabled: z.boolean().nullable().default(null),
-  decisionMinConfidence: z.number().min(0).max(1).nullable().default(null),
-  decisionModel: z.string().nonempty().nullable().default(null),
-  decisionTimeoutMs: z.number().int().positive().max(10_000).nullable().default(null)
+  autoTuneLongContext: z.boolean().nullable().default(null)
 })
 
 export const TierProfileWriteSchema = z.object({
@@ -139,13 +124,7 @@ export const TierProfileWriteSchema = z.object({
     quotaSkipPct: null,
     errorRateSkipPct: null,
     minHealthSamples: null,
-    autoTuneLongContext: null,
-    decisionApiBaseUrl: null,
-    decisionApiKeyEnv: null,
-    decisionEnabled: null,
-    decisionMinConfidence: null,
-    decisionModel: null,
-    decisionTimeoutMs: null
+    autoTuneLongContext: null
   })
 })
 export type TierProfileWrite = z.infer<typeof TierProfileWriteSchema>

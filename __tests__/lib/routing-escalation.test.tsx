@@ -45,4 +45,13 @@ describe('escalation restriction editor', () => {
     const cleared = TierProfileWriteSchema.safeParse({ routes: {}, constraints: { blockedEscalationTiers: [] } })
     expect(cleared.success && cleared.data.constraints.blockedEscalationTiers).toEqual([])
   })
+
+  test('a client still sending the removed decision settings is not refused', () => {
+    const legacy = TierProfileWriteSchema.safeParse({
+      routes: {},
+      constraints: { quotaSkipPct: 80, decisionModel: 'some-model', decisionTimeoutMs: 1500 }
+    })
+    expect(legacy.success && legacy.data.constraints.quotaSkipPct).toBe(80)
+    expect(legacy.success && 'decisionModel' in legacy.data.constraints).toBe(false)
+  })
 })

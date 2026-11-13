@@ -8,6 +8,7 @@
 import { Trans, useTranslation } from 'react-i18next'
 import { Pill, RButton } from '@/components/rialto/primitives'
 import { usePhone } from '@/hooks/use-phone'
+import { CustomLookupNote, type CustomModelsProps, ManualModelAdd } from './ConnectCustomModels'
 import { buildModelRows, enabledCountOf, listedModelsOf } from './derive'
 import { ModelsTable } from './ModelsTable'
 import { PhoneModelList } from './ProviderDetailPhone'
@@ -27,7 +28,8 @@ export function ConnectModelsStep({
   onToggle,
   onEffort,
   onEnableAll,
-  onTestAll
+  onTestAll,
+  custom
 }: {
   entry: CatalogEntry
   provider: Provider | undefined
@@ -37,6 +39,8 @@ export function ConnectModelsStep({
   onEffort: (model: string, next: ReasoningEffort | null) => void
   onEnableAll: () => void
   onTestAll: () => void
+  /** Present only for a Custom provider: its lookup note and the manual-ID row. */
+  custom?: Pick<CustomModelsProps, 'lookup' | 'onAddModel'>
 }) {
   const { t } = useTranslation()
   const phone = usePhone()
@@ -63,7 +67,9 @@ export function ConnectModelsStep({
           {connectedAccount === null ? null : <Pill tone='ok'>{t('providers.connect.connectedPill')}</Pill>}
         </div>
         <p className='mt-1 text-[12px] leading-relaxed text-muted-foreground'>
-          {connectedAccount === null ? (
+          {custom !== undefined ? (
+            <CustomLookupNote lookup={custom.lookup} />
+          ) : connectedAccount === null ? (
             t('providers.connect.modelsExplainer')
           ) : (
             <Trans
@@ -104,6 +110,9 @@ export function ConnectModelsStep({
           onToggle={onToggle}
           onEffort={onEffort}
         />
+      )}
+      {custom === undefined ? null : (
+        <ManualModelAdd listed={listedModelsOf(provider)} onAddModel={custom.onAddModel} />
       )}
       <div className='h-6' />
     </div>

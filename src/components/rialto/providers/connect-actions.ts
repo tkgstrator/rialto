@@ -7,14 +7,13 @@
  * connection when none does — so signing in first and creating the
  * provider afterwards leaves the account nowhere to go.
  */
+import type { TFunction } from 'i18next'
 import { api } from '@/lib/api'
 import type { CodexDevicePollResponse, CodexDeviceStartResponse } from '@/schemas/api/oauth'
+import type { CustomProviderCreateResponse } from '@/schemas/api/providers'
 import type { OAuthKind } from './ConnectAuthStep'
+import type { CustomDraft } from './custom-form'
 import type { CatalogEntry, OAuthInitiateResponse, OAuthSubmitResponse, Provider } from './types'
-
-// react-i18next's t(), trimmed to the shape these fallbacks call. Taking it
-// as a parameter keeps this module free of React, the way form-logic.ts is.
-type Translate = (key: string, options?: Record<string, unknown>) => string
 
 /**
  * Which token exchange the server can run for a vendor.
@@ -70,8 +69,10 @@ export async function ensureProvider(entry: CatalogEntry): Promise<void> {
   await api.post('/providers', providerFromCatalog(entry))
 }
 
+// `t` comes in as a parameter, not from useTranslation(), so this module stays
+// free of React the way form-logic.ts does.
 /** Open the vendor's consent page in a new tab. Returns the flow's state token. */
-export async function startOAuth(kind: OAuthKind, t: Translate, targetAccountId?: string): Promise<string> {
+export async function startOAuth(kind: OAuthKind, t: TFunction, targetAccountId?: string): Promise<string> {
   const res = await api.post<OAuthInitiateResponse>(`/oauth/initiate/${kind}`, { targetAccountId })
   if (!res.success || res.authorizeUrl === undefined) {
     throw new Error(res.error === undefined ? t('providers.connect.errorStartOauth') : res.error)
@@ -81,7 +82,7 @@ export async function startOAuth(kind: OAuthKind, t: Translate, targetAccountId?
 }
 
 /** Relay a redirect URL the browser could not deliver to the loopback callback. */
-export async function submitManualCallback(url: string, t: Translate, state?: string): Promise<void> {
+export async function submitManualCallback(url: string, t: TFunction, state?: string): Promise<void> {
   const res = await api.post<OAuthSubmitResponse>('/oauth/manual-callback', {
     url: url.trim(),
     state,
@@ -122,7 +123,7 @@ async function parseJsonFile(file: File): Promise<unknown> {
 export async function importCredentials(
   kind: OAuthKind,
   file: File,
-  t: Translate,
+  t: TFunction,
   targetAccountId?: string
 ): Promise<void> {
   const parsed = await parseJsonFile(file)
@@ -143,4 +144,31 @@ export async function saveNewApiKey(entry: CatalogEntry, apiKey: string): Promis
 /** Finish the flow: the provider has a credential, so it may take traffic. */
 export async function enableProvider(provider: Provider): Promise<void> {
   await api.post('/providers', { ...provider, enabled: true })
+}
+
+/**
+ * Create the Custom provider. One call does the three things only the server
+ * can: derive the stored endpoint from the typed Base URL, ask that endpoint
+ * for its model list with the key, and write the row switched off. The model
+ * lookup failing is a normal answer (`models.status === 'unavailable'`), not
+ * a thrown error, so the caller can hand over to manual entry.
+ */
+export async function createCustomProvider(draft: CustomDraft): Promise<CustomProviderCreateResponse> {
+  return api.post<CustomProviderCreateResponse>('/providers/custom', {
+    name: draft.name.trim(),
+    base_url: draft.baseUrl.trim(),
+    api_key: draft.apiKey.trim(),
+    api_style: draft.style
+  })
+}
+
+/**
+ * Add one hand-typed model to a provider. The upsert reconciles the model
+ * list against the payload, so the whole list travels with it; the new ID is
+ * left out of `_disabledModels`, which is how a row is switched on. It is
+ * on because the operator typed it deliberately, unlike a looked-up list
+ * where nothing is known to be wanted.
+ */
+export async function addModelById(provider: Provider, model: string): Promise<void> {
+  await api.post('/providers', { ...provider, models: [...provider.models, model.trim()] })
 }

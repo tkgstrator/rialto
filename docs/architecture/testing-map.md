@@ -62,6 +62,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `rialto/redact-tool-arguments.test.ts` | `REDACT_TOOL_ARGUMENTS` の除去処理 |
 | `rialto/settings/access-config.test.ts`<br/>`rialto/settings/access-tokens.test.ts`<br/>`rialto/settings/envelope.test.ts` | Settings 画面の各フォームのロジック |
 | `rialto/settings-content/persona.test.ts` | Settings のサブ画面のロジック |
+| `rialto/custom-form.test.ts` | Custom プロバイダのフォームが送る前に決めること。触っていない欄は間違い扱いにしない（空のフォームは問題なし・ボタンだけ無効）、名前は共有ルールどおり（長さ・文字種・予約語）で既存名とは大文字小文字を無視して `taken`、Base URL は http(s) 以外・認証情報つき・クエリつきを refuse、プレビューのアドレスは保存されるものと同じ、手入力のモデル ID は空・空白入り・重複を refuse（大文字小文字は別 ID）。レールの Custom カードはカタログに 1 回だけ足されること |
 
 ### `__tests__/db` — DB を張った統合テスト
 
@@ -72,6 +73,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `config-service.test.ts` | `applyUiConfig` / `composeUiConfig` の往復整合、モデル削除が外すティアエイリアスの警告（ルート自体は残り、エイリアスが再設定されるまで飛ばされる）とプロバイダ削除で cascade するルートの profile / シナリオ / レーン単位の警告、Providers だけの保存がルートに触らないこと、退役キー（`APIKEY` / `Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK`）を警告付きで捨て・ディスクから剥がし、`GET /api/config` にも出さないこと、トップレベル `ActivePersona` の往復、永続化 |
 | `upsert-provider.test.ts` | Provider の upsert（重複名・モデル差分）。1 プロバイダの編集が他のプロバイダの SubAccount やそれを名指すルートを消さないこと、CRUD 経路のモデル削除が外すティアエイリアスを報告し、プロバイダ削除が一緒に消えたルートを profile / シナリオ / レーン単位で報告すること（名指すルートが無ければ何も報告しない） |
 | `model-api-styles.test.ts` | `POST /api/providers` の `modelApiStyles`（`Model.apiStyle`）。載せたモデルはその値を保存し、provider 自身の style と同じ値は null、フィールドが**無い**保存（キーのローテーション、設定インポート）は既存の上書きを一切変えず、**ある**保存は既存の行で載っていないものを provider の style に戻す（空のマップも全部戻す）。同じ保存で作った行は名前由来の既定（codex 系）を保ち、マップが名指せば上書きできる。provider に無い名前は警告つきで無視、値が変わった行だけテスト結果を `unknown` に戻す、subscription provider は無視する。保存の後に `getLlmsContext()` がモデル別 chain を持つこと・次の保存で消えること（再起動不要）、Base URL が `/responses` でも保存され同じ chain になること |
+| `custom-provider.test.ts` | Custom プロバイダ（[custom-provider.md](../guides/custom-provider.md)）。`createCustomProvider` が入力した Base URL と形式から endpoint を導き（3 形式 × tail）、api_key・無効・モデルは全部 OFF・価格と context window は null で保存すること。一覧が取れれば `found`、取れなくても provider は作られ `unavailable` と理由が返る。名前の重複は大文字小文字を無視して拒否し、拒否の前に相手の endpoint を叩かない（ビルトインの行と同名も同じ）。作成後は、形式が鍵の差し替えなど形式に触れない保存を越えて残り、運用者が 3 形式の間で動かせて、`gemini` は保存できないこと。手入力のモデルは ON で入り、一覧が空でも使えること。ON にすると形式に応じた chain で registry に載る。モデル同期は custom を `skipped` として報告し、誰にも問い合わせず行を変えないこと。同名のビルトイン vendor 行は同梱の価格表で値付けされたまま、custom 側の同名モデル（`gpt-4o`）は null のままであること。provider の Test は同じ一覧取得で（Claude 形式は `x-api-key`、OpenAI 形式は Bearer）、拒否されれば理由つきで失敗すること |
 | `disabled-targets.test.ts` | 無効な Provider / Model がどの経路からも送られないこと — ルートの解決がルート自身のスイッチとターゲットのスイッチ（`targetEnabled`）を分けて返し、セレクタがターゲットの切れたルートを飛ばすこと、スイッチの切れたモデルをエイリアスで昇格すると ON になること、registry が有効なものだけを持つので passthrough の `provider,model` も `resolveInvocationForModel` が拒否すること、bare 名の解決、サブスクリプションのアカウントプール |
 | `tier-route-service.test.ts` | 保存されるシナリオ × レーンのルート。保存はプロファイル全体の置き換えで、順序どおり・全シナリオと全レーンが揃って読み返せること、存在しないプロバイダと同じリスト内の重複は警告付きで捨て（警告はリストを名指す）、エイリアス未設定のルートは警告付きで残すこと、同じ provider · tier は 1 つのリストに 1 本だが別のリストには置けること、予約キー `passthrough` はルートを持てないこと、制約はブロブへマージされ置き換えではないこと、**保存は Long context の tuner の状態を DB から引き継ぎ、編集画面が読み込んだ古い値で上書きしないこと**、プロファイル一覧が既定を先頭・予約キーを末尾に出すこと。読み出し側では、各ルートがどのリストでも解決され、名前がティアを示すモデルのうちオンの最新に向くので、スイッチを入れるだけでエイリアスを書かずにルートが移ること、しきい値の基準値が default / agent の先頭の使えるルートのモデルのコンテキスト長の 70 %（無ければ 128k）で、調整値は基準値以下に収めて返ること |
 | `tier-alias-service.test.ts` | プロバイダのティア。名前がティアを示すティア（derived）はオンの最新に向き、オフの新しい版は `isNew` の候補になること、スイッチを入れるとエイリアスを書かずにティアが移ること、全部オフなら最新をオフのまま返すこと、全プロバイダの 4 tier が並ぶこと、derived のティアへのエイリアスは拒否され保存済みのものは無視されて起動時のずれとして報告されること、Codex のティアは手動のエイリアスで、昇格がスイッチの切れたモデルを ON にすること、未知のプロバイダ / モデルの拒否と解除の結果 |
@@ -89,6 +91,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 
 | ファイル | 担保しているもの |
 |---|---|
+| `custom-provider-schema.test.ts` | `POST /api/providers/custom` の request / response スキーマ。形式は `anthropic` / `openai_chat` / `openai_responses` の 3 つだけで `gemini` は拒否、auth mode は指定できず常に api_key。名前と Base URL の問題は issue の `message` に問題コード（`empty` / `too_long` / `charset` / `reserved` / `invalid_base_url`）で載り、フォームがそれを自分の文言に写す。API キーは必須、プライベート / ループバックのアドレスは許可。`warnings` は常にあり、空でもその配列を返す |
 | `health.test.ts` | `/health` が管理ゲート（`adminAuth`）の外にあること、db / redis の両チェックを報告すること、`summarizeHealth` の切り分け（必須依存の失敗だけが 503。redis 落ちは degraded だが 200）、Redis プローブが未設定なら `skip`・到達不能なら hang せず `fail` |
 | `local-access.test.ts` | ローカルブラウザ免除の判定（トンネル背後で常に loopback に見える問題込み） |
 | `openai-bearer-auth.test.ts` | OpenAI 面が Bearer のみを受けること |
@@ -151,11 +154,11 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 |---|---|
 | `config/envelope.test.ts` | `config.json` の JSON/JSON5 読込、環境変数展開、`process.env` 反映 |
 | `config/migrate-home-dir.test.ts` | 旧 HOME_DIR からのコピー → 検証 → 旧削除。冪等性と、検証失敗時に原本を残すこと |
+| `config/api-style.test.ts` | 行に保存する request shape。catalog vendor は名前で決まりペイロードは動かせない。Custom は運用者が選んだ 3 形式を保ち、形式を含まない保存は行の値を残し、`gemini` は採らず、行がまだ無ければ名前由来の既定。モデル別の上書き（codex 系は Responses 専用）は catalog vendor だけで、Custom は名前から導かない |
 | `config/log-dir-lazy.test.ts` | ログディレクトリの遅延作成（`migrateHomeDir` より先に作らせない） |
 | `failover-state.test.ts` | 枯渇マークとその失効。モデル単位のマークは同 provider の他モデルを塞がず、provider 単位のマークは全モデルを塞ぐこと、`clear*` が即座に外すこと（モデルのマークを外しても provider のマークは残る）、`modelMarksFor` が 1 provider の生きたモデルマークだけを列挙すること |
 | `session-account-router.test.ts` | ハードリミット除外 → sticky → balancingScore の 4 段 |
 | `usage-headroom.test.ts` | `drainTarget` / `getKindWindowHeadroom` の算術。**src に呼び出し元の無い関数のテスト**（`usage-service.ts` が再 export しているだけで、ルーティング経路からは呼ばれない） |
-| `jeff-client-queue.test.ts` | Jeff への評価が到着順に1件ずつ送られ、同時に届かないこと。失敗・タイムアウトでも順番が解放されること。5秒のタイムアウトが順番待ちを含まないこと。待ち時間の上限と8件の上限で諦めて列を詰まらせないこと。529 は `Retry-After` に従って1回だけ再試行し、2回目や待つ上限を超える場合は失敗にすること。health は評価を待たないこと。fetch は stub で実際の Jeff は呼ばない |
 | `usage-fetch-force.test.ts` | usage 取得の `forceRefresh`（TTL 内のキャッシュを迂回して上流を呼び、再キャッシュする）と `enabledProvidersOnly`。既定の経路が変わらずキャッシュを返し、失敗時は直前の値を残してアカウントを `failed` に名指しすること。5h が 100 % でも 7d / Fable は上流の値とリセットのまま返すこと（100 % 扱いはスケジューラだけの話） |
 | `model-test/subscription-probe.test.ts` | Codex サブスクの Test が、プロキシと同じ `openai-responses` → `codex-oauth` で request を組むこと。ChatGPT バックエンドが拒否する `max_output_tokens` を送らない、`messages` を残さない、`/responses` へ account id と `originator` 付きで送る |
 | `model-test/probes.test.ts` | api_key の Responses 疎通確認は `max_output_tokens: 16` を送り続けること（公開 Responses API は 16 未満を 400 にする）。Codex 側と取り違えて「直さない」ための対。Base URL がどちらの形でも、Chat の疎通確認は `/chat/completions`、Responses のそれは `/responses` へ行き（どちらの形でもなければ Chat は保存値のまま、Responses は末尾に足す）、クエリは保たれること |
@@ -177,12 +180,21 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 
 | ファイル | 担保しているもの |
 |---|---|
+| `custom-provider.test.ts` | Custom プロバイダの純粋な規則。形式は 3 つで `gemini` は含まない。名前は slug（長さ上限は含む、大文字・空白・カンマ・先頭の `-` は charset）、全ビルトイン vendor・subscription preset・`claude-code*` 接頭・`custom` / `gemini-cli` / SPA のルート片は `reserved`。Base URL は http(s) のみで、認証情報・クエリ・フラグメントつきを拒否し、末尾の `/chat/completions` / `/responses` / `/messages` は「endpoint を直接入力した」と読み、プライベートアドレスは許可。保存する endpoint は `/v1` を足さず二重にもせず、入力した tail は選んだ形式に付け替える。モデル一覧の候補 URL は重複せず `/v1/v1` にならない。フォームとサーバが同じ答えを読む |
 | `transformer-chain.test.ts` | `apiStyle` × `authMode` → chain の写像。サーバとフロントが**同じ関数**を読むので、この 1 本が両方を守る。モデル別 chain は、運用者が切り替えた任意のモデル（名前によらない）に付き、Base URL の形には左右されず、provider と同じ style や anthropic（足す段が無い）には付かないこと |
 | `constants.test.ts` | `HOME_DIR` の解決（`RIALTO_HOME_DIR` の優先） |
 | `model-version.test.ts` | モデル id から読むリリースの新旧（`newestFirst`）。バージョンの数字が先に効き、8 桁の日付は同じバージョン同士でしか効かず、日付なしが先、最後は名前で全順序になること |
 | `tier-resolution.test.ts` | `resolveTier`。名前がティアを示すモデルのうちオンの最新に向く、全部オフなら最新をオフで返す、保存済みのエイリアスはそのティアを上書きしない、名前で示されないティアはエイリアスか未設定、画像モデルと `claude-mythos-5` はどのティアにも数えないこと。サーバとプロバイダ画面が同じ関数を読む |
 | `plan-capacity.test.ts` | `planCapacityWeight` の席の重み。Claude は `rate_limit_tier` から Max 5x / 20x を読み、Codex は `plan_type` の `prolite` を 5・`pro` を 20 と数える。Providers 画面の Quota 列とスケジューラのプール予算が同じ関数を読むので、この 1 本が両方を守る |
 | `plan-label.test.ts` | プランの表示名。Claude は `rate_limit_tier` から「Max 5x」/「Max 20x」、基本プランは「Pro」。Codex は `plan_type` の `prolite` を「Pro 5x」、`pro` を「Pro 20x」、基本プランは「Plus」。Activity → Usage がアカウントごとに出す名前 |
+
+### `__tests__/vendors` — ベンダー adapter（`src/vendors/`）
+
+fetch はスタブで、ネットワークには出ない。fixture を再生する `__tests__/providers` とは別。
+
+| ファイル | 担保しているもの |
+|---|---|
+| `custom.test.ts` | Custom プロバイダの接続時のモデル一覧取得 `fetchCustomModels`。OpenAI 形式は `/v1/models` に Bearer、Claude 形式は `x-api-key` + `anthropic-version`、`/v1` で終わる Base URL を `/v1/v1/models` にせず、入力した endpoint の tail は外す。リダイレクトは辿らず（鍵を別 origin へ渡さない）行き先を理由に載せ、最初の候補が空・404 なら次の候補を試して、その ids を採る。ids は重複を畳み順序を保ち、Google 形も読む。失敗は例外にせず `{ ok: false }` で、理由は最初の候補（運用者が入力したアドレス）の 401 / 空 / 形が違う / JSON でない / 接続エラー / タイムアウト。http(s) でない Base URL は fetch に届かない。失敗が手入力へのフォールバックの入口になる |
 
 ### `__tests__/parity` — 面ごとの挙動パリティ
 
@@ -224,7 +236,6 @@ context ゲートが効くことも見る — seed しなければ「プロフ�
 | ファイル | 担保しているもの |
 |---|---|
 | `capture-fixtures.test.ts` | 分割前と同じリクエスト行列・順序・本文と replay hash、資格情報の redaction、記録／skip／force、HTTP エラーと通信失敗の区別、subscription の有効モデルの列挙、一時 API キーの注入／復元が全プロバイダの設定を保つこと。fetch はローカル応答に差し替え、上流や開発 DB は触らない |
-| `compose-decisions.test.ts` | Jeff CPUサイドカーが任意profileだけで起動し、ホスト公開・認証・Rialtoからの依存を持たないこと、JEFF_URLの空既定、モデルvolume、Readyを待つhealthcheck、上流commit固定と公式CPU導入／起動コマンド。Dockerやネットワークは使わずファイルを読み取る |
 
 ### `__tests__/e2e` — Providers のブラウザ契約
 

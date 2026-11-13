@@ -36,24 +36,6 @@ screens:
         actual:
           type: url
           url: http://localhost:16175/routing
-  - id: decisions
-    category: Top level
-    devices:
-      - id: desktop
-        viewport:
-          width: 1440
-          height: 900
-          deviceScaleFactor: 2
-        colorSchemes:
-          - light
-          - dark
-        versions:
-          mock:
-            type: html
-            path: mocks/decisions.html
-        actual:
-          type: url
-          url: http://localhost:16175/decisions
   - id: routing-passthrough
     category: Routing
     devices:
@@ -390,6 +372,81 @@ screens:
           mock:
             type: html
             path: mocks/providers-connect-models.html
+  - id: providers-connect-custom
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/providers-connect-custom.html
+  - id: providers-connect-custom-problem
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/providers-connect-custom.html?problem
+  - id: providers-connect-custom-locked
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/providers-connect-custom.html?locked
+  - id: providers-connect-custom-models
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: html
+            path: mocks/providers-connect-custom-models.html
+  - id: providers-connect-custom-models-found
+    category: Providers
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/providers-connect-custom-models.html?found
   - id: access-tokens
     category: Access tokens
     devices:

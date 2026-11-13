@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rialto — Add provider · Custom</title>
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/inter/index.css">
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/geist-mono/index.css">
+<link rel="stylesheet" href="../node_modules/remixicon/fonts/remixicon.css">
+<link rel="stylesheet" href="_shared/mock.build.css">
+<script src="_shared/shell.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const { renderShell, pill, btn, navTo, uiInput } = window.Shell
+
+// Step 2 for the Custom vendor: an endpoint Rialto has no catalog entry for.
+//
+// AGENT-AUTHORED. No human approved this screen; it was drawn from the
+// api-key pane of providers-connect.html (same intro, same gutters, same
+// shadcn Input) and from that mock's choice cards. It needs a human's
+// approval before the React screen is treated as matching a contract.
+//
+// What is new against the api-key pane:
+//   - the name: a Custom provider has none from a catalog, so the operator
+//     types the one it will carry in routing and in logs;
+//   - the wire format, three choices and no more: Claude (Anthropic
+//     Messages), OpenAI Chat Completions, OpenAI Responses. They are the
+//     three shapes the request pipeline can already convert between;
+//   - the address a request will go to, derived from the Base URL and the
+//     format, so the operator sees what the form will store before saving.
+//
+// ?problem — the form refused: a name that collides with a built-in vendor
+// and a Base URL that is not an http(s) address. Problems appear only for a
+// field that has been typed in, never on an empty form.
+// ?locked — the provider was created and the operator came back with Back:
+// the fields are read-only, because changing them is the provider page's
+// job, and the header's Continue goes straight to step 3.
+const PARAMS = new URLSearchParams(location.search)
+const PROBLEM = PARAMS.has('problem')
+const LOCKED = PARAMS.has('locked')
+
+const step = (n, label, state) => {
+  const tone = { done: 'bg-foreground text-background', active: 'bg-foreground text-background', todo: 'bg-muted text-muted-foreground' }[state]
+  return `
+    <div class="flex items-center gap-2">
+      <span class="flex size-5 items-center justify-center rounded-full text-[12px] font-medium ${tone}">
+        ${state === 'done' ? '<i class="ri-check-line text-xs"></i>' : n}
+      </span>
+      <span class="text-xs ${state === 'todo' ? 'text-muted-foreground' : 'font-medium'}">${label}</span>
+    </div>`
+}
+
+const VENDORS = [
+  { id: 'claude-code', label: 'Claude Code',  hint: 'Pro / Max via Claude CLI OAuth', kind: 'subscription', icon: 'ri-sparkling-line', added: true },
+  { id: 'codex',       label: 'Codex',        hint: 'ChatGPT plan via Codex CLI OAuth', kind: 'subscription', icon: 'ri-terminal-line', added: true },
+  { id: 'gemini-cli',  label: 'Gemini CLI',   hint: 'AI Pro / Ultra via Gemini CLI OAuth', kind: 'subscription', icon: 'ri-gemini-line', added: true },
+  { id: 'anthropic',   label: 'Anthropic',    hint: 'Pay-as-you-go API key', kind: 'api_key', icon: 'ri-key-2-line', added: true },
+  { id: 'openai',      label: 'OpenAI',       hint: 'Pay-as-you-go API key', kind: 'api_key', icon: 'ri-key-2-line', added: true },
+  { id: 'google',      label: 'Google AI',    hint: 'AI Studio API key', kind: 'api_key', icon: 'ri-key-2-line', added: true },
+  { id: 'deepseek',    label: 'DeepSeek',     hint: 'Pay-as-you-go API key', kind: 'api_key', icon: 'ri-key-2-line', added: true },
+  { id: 'groq',        label: 'Groq',         hint: 'OpenAI-compatible', kind: 'api_key', icon: 'ri-flashlight-line', added: false },
+  { id: 'openrouter',  label: 'OpenRouter',   hint: 'OpenAI-compatible aggregator', kind: 'api_key', icon: 'ri-shuffle-line', added: false },
+  { id: 'custom',      label: 'Custom',       hint: 'Any OpenAI / Anthropic-compatible endpoint', kind: 'api_key', icon: 'ri-add-box-line', added: false }
+]
+
+const vendorCard = (v, selected) => `
+  <button class="flex items-start gap-3 border-l-2 px-4 py-3 text-left transition-colors ${
+    selected ? 'border-l-foreground bg-muted/60' : 'border-l-transparent hover:border-l-border hover:bg-muted/50'
+  }">
+    <i class="${v.icon} mt-0.5 text-base leading-none text-muted-foreground"></i>
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-2">
+        <span class="text-xs font-medium">${v.label}</span>
+        ${v.kind === 'subscription' ? pill('OAuth', 'info') : pill('API key', 'mute')}
+        ${v.added ? '<span class="ml-auto text-[12px] text-muted-foreground">added</span>' : ''}
+      </div>
+      <div class="mt-0.5 text-[12px] text-muted-foreground">${v.hint}</div>
+    </div>
+  </button>`
+
+// The Input's own aria-invalid classes (components/ui/input.tsx), spelled out
+// because the mock's UI_INPUT copy leaves them off.
+const INVALID_CLS =
+  'aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40'
+
+const input = ({ value, placeholder = '', invalid = false, cls = '' }) => {
+  const el = uiInput(value, placeholder, `${INVALID_CLS} ${cls}`)
+  const withState = invalid ? el.replace('<input ', '<input aria-invalid="true" ') : el
+  return LOCKED ? withState.replace('<input ', '<input disabled ') : withState
+}
+
+const NOTE = 'mt-1.5 text-[12px] leading-relaxed text-muted-foreground'
+const PROBLEM_NOTE = 'mt-1.5 text-[12px] leading-relaxed text-destructive'
+
+const field = ({ label, control, note }) => `
+        <div>
+          <label class="mb-1 block text-[12px] text-muted-foreground">${label}</label>
+          ${control}
+          ${note}
+        </div>`
+
+// Radios in a label: the card is the click target and the keyboard works
+// natively, so nothing here needs a script. `selected` is the border and the
+// wash the other mocks' choice cards use. The radio itself is visually
+// hidden; the card takes the focus ring when it has the keyboard.
+const choice = ({ icon, title, body, selected }) => `
+          <label class="cursor-pointer rounded-md px-4 py-3 text-left has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50 ${
+            selected ? 'border-2 border-foreground/40 bg-muted/40' : 'border border-border transition-colors hover:bg-muted/50'
+          } ${LOCKED ? 'cursor-default opacity-45' : ''}">
+            <input type="radio" name="style" class="sr-only" ${selected ? 'checked' : ''} ${LOCKED ? 'disabled' : ''}>
+            <div class="flex items-center gap-2">
+              <i class="${icon} text-sm ${selected ? '' : 'text-muted-foreground'}"></i>
+              <span class="text-xs font-medium">${title}</span>
+            </div>
+            <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">${body}</p>
+          </label>`
+
+const MONO = (s) => `<span class="font-mono">${s}</span>`
+
+const nameValue = PROBLEM ? 'openai' : 'lm-studio'
+const baseValue = PROBLEM ? 'localhost:1234' : 'http://localhost:1234/v1'
+
+const customPane = `
+    <div class="@container min-w-0 overflow-y-auto">
+      <div class="border-b border-border px-6 py-4 @max-[40rem]:px-4">
+        <div class="flex items-center gap-2">
+          <h2 class="text-sm font-semibold">Custom</h2>
+          ${pill('api key', 'mute')}
+        </div>
+        <p class="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+          Any endpoint that speaks one of three wire formats: a self-hosted gateway, a local server
+          such as LM Studio or Ollama, or a vendor Rialto has no entry for. The key is stored on this
+          Rialto install and sent only to this address.
+        </p>
+      </div>
+
+      <div class="px-6 pt-5 pb-2 @max-[40rem]:px-4">
+        <h3 class="text-sm font-semibold">Your endpoint</h3>
+      </div>
+      <div class="space-y-4 px-6 pb-5 @max-[40rem]:px-4">
+        ${field({
+          label: 'Name',
+          control: input({ value: nameValue, placeholder: 'my-gateway', invalid: PROBLEM }),
+          note: PROBLEM
+            ? `<p class="${PROBLEM_NOTE}">This name belongs to a built-in vendor.</p>`
+            : `<p class="${NOTE}">Lowercase letters, digits, dots, dashes and underscores. It names the provider in routing and logs and cannot be changed later.</p>`
+        })}
+        ${field({
+          label: 'Base URL',
+          control: input({ value: baseValue, placeholder: 'http://localhost:1234/v1', invalid: PROBLEM }),
+          note: PROBLEM
+            ? `<p class="${PROBLEM_NOTE}">Start with http:// or https://, and leave out any username, query or fragment.</p>`
+            : `<p class="${NOTE}">An http(s) address, with or without ${MONO('/v1')}. Local and private addresses are allowed.</p>
+          <p class="${NOTE} flex min-w-0 items-baseline gap-2">
+            <span class="shrink-0">Requests go to</span>
+            <span class="min-w-0 truncate font-mono text-foreground">http://localhost:1234/v1/chat/completions</span>
+          </p>`
+        })}
+
+        <fieldset class="min-w-0">
+          <legend class="mb-1 text-[12px] text-muted-foreground">Wire format</legend>
+          <div class="grid grid-cols-3 gap-3 @max-[40rem]:grid-cols-1">
+            ${choice({
+              icon: 'ri-message-3-line',
+              title: 'Claude',
+              body: `Anthropic Messages API, ${MONO('/v1/messages')}.`,
+              selected: false
+            })}
+            ${choice({
+              icon: 'ri-chat-1-line',
+              title: 'OpenAI Chat Completions',
+              body: `${MONO('/v1/chat/completions')}. What most compatible servers speak.`,
+              selected: true
+            })}
+            ${choice({
+              icon: 'ri-loop-right-line',
+              title: 'OpenAI Responses',
+              body: `${MONO('/v1/responses')}.`,
+              selected: false
+            })}
+          </div>
+        </fieldset>
+
+        ${field({
+          label: 'API key',
+          control: input({ value: 'lm-studio', placeholder: 'Key for this endpoint' }),
+          note: `<p class="${NOTE}">Required: a provider with no key is never called. A local server that checks no key takes any placeholder.</p>`
+        })}
+
+        ${LOCKED ? `
+        <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
+          <i class="ri-information-line mr-1 align-[-1px]"></i>
+          Added as ${MONO('lm-studio')}. Change its address or key later on the provider's page.
+        </div>` : `
+        <div>
+          ${btn('Connect', 'primary', 'ri-check-line')}
+        </div>`}
+      </div>
+      <div class="h-6"></div>
+    </div>`
+
+document.getElementById('root').innerHTML = `
+  <div class="flex items-center gap-6 border-b border-border px-6 py-3">
+    ${step(1, 'Pick a vendor', 'done')}
+    <i class="ri-arrow-right-s-line text-sm text-muted-foreground/50"></i>
+    ${step(2, 'Authenticate', 'active')}
+    <i class="ri-arrow-right-s-line text-sm text-muted-foreground/50"></i>
+    ${step(3, 'Choose models', 'todo')}
+    <div class="ml-auto">${btn('Cancel', 'ghost', '', 'providers.html')}</div>
+  </div>
+
+  <div class="grid h-full grid-cols-[22rem_1fr]">
+
+    <aside class="min-w-0 overflow-y-auto border-r border-border">
+      <div class="px-4 pt-5 pb-2">
+        <h2 class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Vendor</h2>
+      </div>
+      ${VENDORS.map((v) => vendorCard(v, v.id === 'custom')).join('')}
+    </aside>
+
+    ${customPane}
+
+  </div>`
+
+renderShell({
+  active: 'providers',
+  navMode: 'cloudflare',
+  crumbs: ['Add provider'],
+  subtitle: 'Step 2 of 3 · Custom',
+  actions:
+    btn('Back', 'ghost', 'ri-arrow-left-line', 'providers.html') +
+    btn('Continue', 'primary', 'ri-arrow-right-line', 'providers-connect-custom-models.html')
+})
+</script>
+</body>
+</html>
