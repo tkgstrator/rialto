@@ -40,9 +40,9 @@ interface ConfigProviderProps {
 }
 
 // Coerce the raw /api/config wire shape (which carries explicit nulls
-// for unset api_key / path scalars / the active persona) into the typed
-// Config the app's controlled inputs expect (non-null strings, arrays).
-// Centralized so both the mount fetch and reloadConfig stay in sync.
+// for unset api_key / path scalars) into the typed Config the app's
+// controlled inputs expect (non-null strings, arrays). Centralized so
+// both the mount fetch and reloadConfig stay in sync.
 function normalizeConfig(data: Config): Config {
   return {
     LOG: typeof data.LOG === 'boolean' ? data.LOG : false,
@@ -52,22 +52,7 @@ function normalizeConfig(data: Config): Config {
     PORT: typeof data.PORT === 'number' ? data.PORT : 3456,
     API_TIMEOUT_MS: typeof data.API_TIMEOUT_MS === 'number' ? data.API_TIMEOUT_MS : 600000,
     PROXY_URL: typeof data.PROXY_URL === 'string' ? data.PROXY_URL : '',
-    Providers: Array.isArray(data.Providers) ? data.Providers : [],
-    // The active persona's id. Null is the wire's "none"; an empty string
-    // collapses to the same so the Personas screen's Active switch never
-    // has to tell the two apart.
-    ActivePersona: typeof data.ActivePersona === 'string' && data.ActivePersona !== '' ? data.ActivePersona : null,
-    // Guarantee every persona carries a stable uuid `id` (the key the URL
-    // and ActivePersona reference). The server's boot migration backfills
-    // ids on disk; this is the defensive UI mirror for any persona that
-    // still arrives without one.
-    Personas: Array.isArray(data.Personas)
-      ? data.Personas.map((persona) => ({
-          id: typeof persona.id === 'string' && persona.id !== '' ? persona.id : crypto.randomUUID(),
-          name: persona.name,
-          prompt: persona.prompt
-        }))
-      : []
+    Providers: Array.isArray(data.Providers) ? data.Providers : []
   }
 }
 
@@ -79,9 +64,7 @@ const emptyConfig = (): Config => ({
   PORT: 3456,
   API_TIMEOUT_MS: 600000,
   PROXY_URL: '',
-  Providers: [],
-  ActivePersona: null,
-  Personas: []
+  Providers: []
 })
 
 export function ConfigProvider({ children }: ConfigProviderProps) {

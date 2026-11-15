@@ -1,6 +1,5 @@
 /**
- * The persona library and the disk envelope — the two config objects
- * the app owns rather than serves.
+ * The disk envelope — the config object the app owns rather than serves.
  *
  * ConfigEnvelopeSchema is the whitelist of what may stay in
  * ~/.rialto/config.json now that Providers live in the DB, so it is read
@@ -11,22 +10,6 @@
 import { z } from '@hono/zod-openapi'
 import { LogLevelSchema } from '@/schemas/primitives/env'
 import { JsonValueSchema } from './preset'
-
-// A single persona in the library. `id` is the stable uuid key every
-// reference points at — the URL (/personas/view|edit/:id), the active
-// selection (`ActivePersona`), and the server-side prompt lookup — so the
-// `name` is a free-form display label and need not be unique. `id` is
-// optional in the schema only for back-compat: configs written before
-// the uuid migration have personas without one; the boot migration
-// (migratePersonaKeys) and the UI both backfill a uuid on load.
-export const PersonaSchema = z
-  .object({
-    id: z.string().optional(),
-    name: z.string().nonempty(),
-    prompt: z.string()
-  })
-  .openapi('Persona')
-export type Persona = z.infer<typeof PersonaSchema>
 
 // Whitelist of what is allowed to stay on disk in
 // ~/.rialto/config.json once Providers have been moved into the DB.
@@ -64,17 +47,6 @@ export const ConfigEnvelopeSchema = z
     ACCESS_TEAM_DOMAIN: z.string().default(''),
     ACCESS_AUD: z.string().default(''),
 
-    // The active persona's id. Absent / empty means "no persona". It is
-    // a top-level key on the wire too (/api/config `ActivePersona`), and
-    // round-trips through the disk envelope like the other optional
-    // scalars.
-    ActivePersona: z.string().optional(),
-
-    // Object-shaped envelope member: it stays on disk rather than moving
-    // to the DB, and is never mirrored onto process.env. Personas is the
-    // named persona library.
-    Personas: z.array(PersonaSchema).default([]),
-
     // Scheduler tick interval. Default 5 min matches the usage-cache
     // TTL; faster ticks just spin the weight recompute since upstream
     // /usage endpoints are cached. Lower bound 60s is for staging;
@@ -83,8 +55,8 @@ export const ConfigEnvelopeSchema = z
   })
   // Any other keys we don't know about — keep them, don't drop them. A
   // key a retired feature wrote (`Router`, `CROSS_PROVIDER_FALLBACK`,
-  // `CUSTOM_ROUTER_PATH`, `LiveRoutingName`, `ROUTER_MODE`, the `APIKEY`
-  // bootstrap token) survives a read this way and is read by nothing; the
-  // next save prunes it.
+  // `CUSTOM_ROUTER_PATH`, `LiveRoutingName`, `ROUTER_MODE`, `Personas`,
+  // `ActivePersona`, the `APIKEY` bootstrap token) survives a read this
+  // way and is read by nothing; the next save prunes it.
   .catchall(JsonValueSchema)
 export type ConfigEnvelope = z.infer<typeof ConfigEnvelopeSchema>

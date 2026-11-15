@@ -14,7 +14,6 @@
 - **Scenario routing** — each request is classified into a scenario (Default; Think when it asks for thinking; Long context over an automatic, self-tuning threshold) and a lane (the agent, or a subagent), and each profile holds an ordered list of routes per scenario and lane, each naming a provider and a tier on it. Which model that is comes from the provider's *tier* — the newest switched-on model whose name says it — so switching on a new release moves every route at once, and nothing moves until you do. The first route that can take the request serves it — with routes on track to leave quota unused pulled to the front, and ones on track to run out stepped down — and the rest are the failover list.
 - **Passthrough** — or let the caller pick: a surface (or a single access token) in passthrough mode sends the caller's own `body.model` upstream untouched.
 - **Failover with account rotation** — a 429 rotates to a peer subscription account first, then walks the rest of the list's routes. The list's order is honoured as written, a subscription route falling back to an api_key route included.
-- **Personas** — append a named system prompt to every routed `/v1/messages` request without touching Claude Code. Manage the library and pick the active one under Settings → Personas.
 - **Multi-provider support** — connect API-key providers (Anthropic, OpenAI, DeepSeek, Gemini, Groq, OpenRouter, …) or subscription-based providers (Claude Code OAuth, OpenAI Codex), with several accounts per subscription provider.
 - **Subscription monitoring** — each account's rate-limit windows, refreshed on demand from the Subscriptions list, and the exhaustion state the router reads. A refresh reaches routing at once, and a Codex account's banked rate-limit resets can be spent from its provider page.
 - **Usage & cost** — spend for today, this week and this month on Overview; per-provider cost by day or week, and per-account subscription usage, under Activity → Usage. Overview and each subscription provider's page also show, per account, what its traffic would have cost at API prices — this week and over 30 days.
@@ -35,7 +34,7 @@ The web UI (served on port **3456** by default) gives you full control over ever
 | **Providers** | `/providers` | Two lists — `/providers/subscriptions` and `/providers/api-keys` — plus `/providers/connect` to add one and `/providers/<name>` for tiers, models, prices, context windows, connectivity tests and the read-only derived request shape |
 | **Access tokens** | `/access-tokens` | Issue, scope, rotate and revoke the tokens clients use on `/v1/*` |
 | **Activity** | `/activity` | Sessions, per-request logs (`/activity/requests`), subscription usage (`/activity/usage`), and server logs (`/activity/logs`) |
-| **Settings** | `/settings` | Server, Access (admin access: Cloudflare Access, and how to get back in if it breaks), Logging, Personas, Advanced (config document, health) |
+| **Settings** | `/settings` | Server, Access (admin access: Cloudflare Access, and how to get back in if it breaks), Logging, Advanced (config document, health) |
 
 First run lands on `/setup`.
 
@@ -178,10 +177,8 @@ Boot-time scalars and disk-resident objects live here. Environment-variable inte
 | `CAPTURE_MESSAGES` | Archive conversation transcripts (default `true`) |
 | `REDACT_TOOL_ARGUMENTS` | Strip tool-call arguments from the archive (default `false` — turning it on loses information that cannot be recovered later) |
 | `ROUTING_SCHEDULER_INTERVAL_MS` | Scheduler tick, 60 000–3 600 000 (default `300000`) |
-| `Personas` | The persona library (array) |
-| `ActivePersona` | The active persona's uuid id; `null` / absent / empty means none. Also a top-level key on the `/api/config` wire |
 
-The scalar keys above (everything but `Personas` and `ActivePersona`) can also be supplied as process environment variables — a Docker `environment:` entry, for instance — and a set environment value wins over the file.
+The scalar keys above can also be supplied as process environment variables — a Docker `environment:` entry, for instance — and a set environment value wins over the file.
 
 Keys an older build wrote for mechanisms that no longer exist are ignored. `Router`, `CUSTOM_ROUTER_PATH`, `LiveRoutingName`, `CROSS_PROVIDER_FALLBACK` and the retired admin key `APIKEY` are stripped on every read; `POST /api/config` drops them with a warning, and the next save removes them from the file. An `APIKEY` environment variable is not read either. `ROUTER_MODE` merely survives as an unknown key and is read by nothing.
 
@@ -252,20 +249,6 @@ The list's routes are the failover list; within one route, a subscription provid
 Decisions are logged structurally. When a list has no usable route, the log lists each skipped route with its reason — `disabled` / `alias_unset` / `no_web_search` / `context_too_small` / `exhausted` / `error_rate` — at `warn` when the answer is a 429 or a 400, and at `info` when the caller's own model goes out. A reorder by pace is logged at `info`, and so is every change to the Long context threshold.
 
 > **There is no weekly drain guard.** Earlier builds pre-empted a subscription provider once its weekly window crossed a linear drain target. That is gone: a subscription target is held back only when the scheduler's snapshot says it is spent — or used at or past `quotaSkipPct`, which defaults to 100. Pace only reorders the routes that are still open; otherwise a subscription runs to its upstream limit and is rotated on the 429 that actually happens.
-
-### Personas
-
-A *persona* is a named system-prompt fragment appended to every routed `/v1/messages` request after routing. Use them to give Claude Code a consistent voice / role / set of working rules without editing Claude Code itself.
-
-- **Library** — `Personas` is a top-level array on the disk envelope. Each entry has a stable uuid `id`, a free-form `name` (display label, need not be unique), and the `prompt` text. New installs ship with a small starter library; existing installs keep what they have on disk.
-- **Active selection** — at most one persona is active per install. Its uuid id is the top-level `ActivePersona` key, on the disk envelope and on the `/api/config` wire alike. `null` / absent / empty string means "no persona". There are no per-project or per-session override files.
-- **Injection** — the active persona's `prompt` is appended to the LAST system block carrying `cache_control` (falling back to the last string text block). This keeps the persona *inside* the cached prefix, so it consumes no extra cache breakpoint and stays byte-stable across requests (preserving Anthropic's prompt cache). String and undefined `system` values are concatenated; multi-block array systems are mutated in place.
-- **Surface restriction** — persona injection runs on **`/v1/messages` only**, and only on routed traffic: a passthrough surface, or a token pinned to the `passthrough` profile, skips routing and the persona with it. The OpenAI-compat and Gemini surfaces reject an enriched `system` field outright (Codex answers `Unsupported parameter: system`), so the enrichment is skipped there rather than breaking the request. Every routed request on `/v1/messages` inherits the active persona, whichever route served it — including one with no route, which goes out on the caller's own model.
-- **Subagent interaction** — persona injection runs *after* the subagent tag is stripped, so a subagent's per-call system content composes with — rather than clobbers — the persona.
-
-Both the library and the active selection live under **Settings → Personas** (`/settings/personas`). "No persona" is the no-op default.
-
-For authoring high-fidelity personas (structural patterns, anti-pattern cataloguing, thought-process control), see [docs/guides/persona-authoring.md](docs/guides/persona-authoring.md).
 
 ### Transformers
 
@@ -367,7 +350,7 @@ for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.
 
 Any client that supports overriding `base_url` / `baseURL` works the same way.
 
-**What applies on these surfaces.** Failover, account rotation, and model addressing by bare name always apply. Scenario routing applies only once you switch the surface from `passthrough` to `routed` — and then the model name the client sends (`gpt-5.5`, `gemini-2.5-pro`) picks nothing: a request that asks for reasoning (`reasoning_effort`, `reasoning`, `thinkingConfig`) walks the Think list, a long one the Long context list, the rest Default, on the Agent lane. A profile shared between surfaces shares its lists, so point a surface at its own profile when it should route differently. Persona injection does **not** apply — it is `/v1/messages` only (see Personas above).
+**What applies on these surfaces.** Failover, account rotation, and model addressing by bare name always apply. Scenario routing applies only once you switch the surface from `passthrough` to `routed` — and then the model name the client sends (`gpt-5.5`, `gemini-2.5-pro`) picks nothing: a request that asks for reasoning (`reasoning_effort`, `reasoning`, `thinkingConfig`) walks the Think list, a long one the Long context list, the rest Default, on the Agent lane. A profile shared between surfaces shares its lists, so point a surface at its own profile when it should route differently.
 
 ## 🧩 Codex MCP server
 

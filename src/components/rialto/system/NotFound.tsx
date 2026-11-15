@@ -21,7 +21,6 @@ const MERGED_INTO: Record<string, string> = {
   '/usage': 'shell.navActivity',
   '/cost': 'shell.navActivity',
   '/logs': 'shell.navActivity',
-  '/personas': 'shell.navSettings',
   '/json': 'shell.navSettings'
   // `/presets`, `/debug` and `/routing` (with the old routing paths) are
   // deliberately absent. All were removed rather than merged (the presets

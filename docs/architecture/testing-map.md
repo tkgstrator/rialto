@@ -41,13 +41,12 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | ファイル | 担保しているもの |
 |---|---|
 | `configEnvelopeSchema.test.ts` | `ConfigEnvelopeSchema` の受理／拒否（特に `API_TIMEOUT_MS` の coercion） |
-| `config-salvage.test.ts` | 壊れた `config.json` から `Personas` を救い出す経路（`APIKEY` はもう救わない）と、資格情報を決して生成しないこと |
+| `config-salvage.test.ts` | 壊れた `config.json` に遭遇したとき資格情報を決して新規生成しないこと（`APIKEY` はもう救わない） |
 | `cloudflare-access.test.ts` | Access assertion の検証（署名 + audience） |
 | `long-context-beta.test.ts` | `context-1m-*` beta ヘッダの取り回し |
 | `message-content.test.ts` | メッセージ本文の正規化 |
 | `models-build-rows.test.ts` | Providers 画面のモデル行の組み立て |
 | `passthrough-denial.test.ts` | 面の `deniedTargets`（`passthroughDenial`）。一覧にある target は拒否し、一覧に無い target・空の一覧・面レジストリ外のパス・空の target は拒否しないこと |
-| `persona-clear.test.ts` | 「ペルソナ無し」への戻し方（トップレベル `ActivePersona` の null / 空文字 / 欠落） |
 | `provider-routable.test.ts` | `Provider.enabled` を Plan のモデルピッカー（`enabledTargets`）が絞る集合と Providers 画面の表示が一致すること |
 | `thinking-signature-filter.test.ts` | `rialto_` プレフィクスの thinking signature 濾過 |
 | `update-check.test.ts` | 更新チェック: バージョン比較（`v` 付きタグ・prerelease・読めないタグ）と、取得失敗を「最新です」に畳まないこと、成功だけをキャッシュすること |
@@ -58,7 +57,6 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `rialto/account-extras.test.ts` | アカウント行の付帯情報（API 換算の使用量と Codex のバンク済みリセット）をアカウント id で引けること、欠けた読み取りを null のまま残すこと、割安度と失効日のフォーマッタ |
 | `rialto/redact-tool-arguments.test.ts` | `REDACT_TOOL_ARGUMENTS` の除去処理 |
 | `rialto/settings/access-config.test.ts`<br/>`rialto/settings/access-tokens.test.ts`<br/>`rialto/settings/envelope.test.ts` | Settings 画面の各フォームのロジック |
-| `rialto/settings-content/persona.test.ts` | Settings のサブ画面のロジック |
 | `rialto/custom-form.test.ts` | Custom プロバイダのフォームが送る前に決めること。触っていない欄は間違い扱いにしない（空のフォームは問題なし・ボタンだけ無効）、名前は共有ルールどおり（長さ・文字種・予約語）で既存名とは大文字小文字を無視して `taken`、Base URL は http(s) 以外・認証情報つき・クエリつきを refuse、プレビューのアドレスは保存されるものと同じ、手入力のモデル ID は空・空白入り・重複を refuse（大文字小文字は別 ID）。レールの Custom カードはカタログに 1 回だけ足されること |
 
 ### `__tests__/db` — DB を張った統合テスト
@@ -67,7 +65,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 
 | ファイル | 担保しているもの |
 |---|---|
-| `config-service.test.ts` | `applyUiConfig` / `composeUiConfig` の往復整合、モデル削除が警告なしで外れること、Providers だけの保存が他に触らないこと、退役キー（`APIKEY` / `Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK`）を警告付きで捨て・ディスクから剥がし、`GET /api/config` にも出さないこと、トップレベル `ActivePersona` の往復、永続化、無効なプロバイダのモデルがルーティングの候補（registry）に入らないこと |
+| `config-service.test.ts` | `applyUiConfig` / `composeUiConfig` の往復整合、モデル削除が警告なしで外れること、Providers だけの保存が他に触らないこと、退役キー（`APIKEY` / `Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK`）を警告付きで捨て・ディスクから剥がし、`GET /api/config` にも出さないこと、永続化、無効なプロバイダのモデルがルーティングの候補（registry）に入らないこと |
 | `upsert-provider.test.ts` | Provider の upsert（重複名・モデル差分）。1 プロバイダの編集が他のプロバイダの SubAccount を消さないこと、CRUD 経路のモデル削除が残りのモデルを保つこと、プロバイダ削除がそのモデルを一緒に消して兄弟に触れないこと、存在しないプロバイダの削除は拒否 |
 | `model-api-styles.test.ts` | `POST /api/providers` の `modelApiStyles`（`Model.apiStyle`）。載せたモデルはその値を保存し、provider 自身の style と同じ値は null、フィールドが**無い**保存（キーのローテーション、設定インポート）は既存の上書きを一切変えず、**ある**保存は既存の行で載っていないものを provider の style に戻す（空のマップも全部戻す）。同じ保存で作った行は名前由来の既定（codex 系）を保ち、マップが名指せば上書きできる。provider に無い名前は警告つきで無視、値が変わった行だけテスト結果を `unknown` に戻す、subscription provider は無視する。保存の後に `getLlmsContext()` がモデル別 chain を持つこと・次の保存で消えること（再起動不要）、Base URL が `/responses` でも保存され同じ chain になること |
 | `custom-provider.test.ts` | Custom プロバイダ（[custom-provider.md](../guides/custom-provider.md)）。`createCustomProvider` が入力した Base URL と形式から endpoint を導き（3 形式 × tail）、api_key・無効・モデルは全部 OFF・価格と context window は null で保存すること。一覧が取れれば `found`、取れなくても provider は作られ `unavailable` と理由が返る。名前の重複は大文字小文字を無視して拒否し、拒否の前に相手の endpoint を叩かない（ビルトインの行と同名も同じ）。作成後は、形式が鍵の差し替えなど形式に触れない保存を越えて残り、運用者が 3 形式の間で動かせて、`gemini` は保存できないこと。手入力のモデルは ON で入り、一覧が空でも使えること。ON にすると形式に応じた chain で registry に載る。モデル同期は custom を `skipped` として報告し、誰にも問い合わせず行を変えないこと。同名のビルトイン vendor 行は同梱の価格表で値付けされたまま、custom 側の同名モデル（`gpt-4o`）は null のままであること。provider の Test は同じ一覧取得で（Claude 形式は `x-api-key`、OpenAI 形式は Bearer）、拒否されれば理由つきで失敗すること |
@@ -122,7 +120,6 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `bypass-header-strip.test.ts` | bypass 時の hop-by-hop ヘッダ除去 |
 | `session-id.test.ts` | `thread-id`（Codex CLI 0.158 の綴り）/ `thread_id` / `x-claude-code-session-id` / ランダム UUID の解決順 |
 | `reasoning-effort.test.ts` | `RequestLog.reasoningEffort` が上流へ実際に送った値であること。Anthropic の `output_config.effort`・Chat の `reasoning_effort`・Responses / Codex の `reasoning.effort` の 3 形から読み、無指定・空文字・文字列でない値・壊れた入れ物は null になること。Auto が挿入した段階と手動設定が呼び出し側の値を置き換えた結果が、書き換え後の本文から読めること |
-| `persona-inbound-gate.test.ts` | ペルソナ挿入が `/v1/messages` **だけ**で走ること（`routeRequest` を直接呼び、OpenAI 形の面では `body.system` に触らないこと）。`inboundPath` の無い旧呼び出しは `/v1/messages` 扱いで、呼び手の system と合成し、ライブラリに無い id は何もしない |
 | `openai-responses-*.test.ts` / `anthropic-response-to-chat.test.ts` / `gemini-*.test.ts` / `response-format-converter.test.ts` | 各ワイヤ形式の双方向変換とストリーム。`openai-responses-lite.test.ts` は Lite の各区間に加えて、関数しか無いワイヤ（Chat / Gemini）へ namespace・custom ツールが関数として下ろされること（`exec` は文字列 1 つ `input` を取り grammar を説明に持つ、履歴の custom 呼び出しは `{"input": …}` の関数呼び出し、namespace と `tool_call_type` は出ない）と、戻りでその呼び出しが呼び手の宣言どおりの `custom_tool_call` / namespace 付きに引き上げられること（ストリームでは custom の入力をその呼び出しが閉じるまで保持し、delta の連結が `.done` の生テキストと一致する）、上流が自分で namespace や kind を言った呼び出しには触れないことも見る |
 | `anthropic-response-to-chat-stream.test.ts` | Anthropic の SSE が Chat の chunk へイベントごとに変換されること（thinking → `delta.thinking`、text、`input_json_delta` が分割された tool_use → index 付き `tool_calls`、入力の無い tool は `{}`、server tool のブロックは渡さない、`message_delta` で finish_reason と cache を含む usage、`message_stop` で `[DONE]`、`error` イベントは上流失敗用の `{error:{…}}` chunk で後ろに何も付けない）。その先の Responses SSE でも item・usage が正しく、エラーは `response.failed` になること。Lite の呼び手には Claude の `exec` 呼び出しが namespace 付き `custom_tool_call` として、入力が生の JavaScript で届くこと（ストリーム・非ストリーム両方） |
 | `claude-conversion-pipeline.test.ts` | 実レジストリと `runPipeline` を通し、ループバックの上流で、`/v1/responses` → Anthropic API キーと `/v1/chat/completions` → Claude サブスクが Anthropic Messages（キー / bearer・OAuth beta・identity）で送られ、それぞれの形式で返ること、RequestLog の usage が生の Anthropic から読まれること。同じサブスクの `/v1/messages` は bypass のまま `auth()` の形で送られ、ストリームがバイト単位でそのまま返ること |

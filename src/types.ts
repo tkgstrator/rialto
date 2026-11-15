@@ -4,7 +4,6 @@
 // imports keep working without churn.
 export { type Config, ConfigSchema } from '@/schemas/api/config'
 export {
-  type Persona,
   type Provider,
   type ProviderAuthMode,
   ProviderAuthModeSchema,

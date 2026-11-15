@@ -2,9 +2,8 @@
  * Round-trip tests for the DB-backed config service. Cover the diff
  * behaviour we'd otherwise only learn about in production: provider /
  * model deletion cascades from the provider, partial saves preserve what
- * they did not send, the active persona
- * round-trips as a top-level key, and the keys a retired feature used to
- * accept are dropped rather than stored.
+ * they did not send, and the keys a retired feature used to accept are
+ * dropped rather than stored.
  */
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
@@ -127,46 +126,6 @@ describe.skipIf(!HAS_DB)('configService', () => {
     expect(ui.LOG_LEVEL).toBe('debug')
   })
 
-  test('Personas and the top-level ActivePersona round-trip through apply then compose', async () => {
-    await applyUiConfig({
-      Providers: [],
-      ActivePersona: 'pirate',
-      Personas: [
-        { name: 'pirate', prompt: 'Talk like a pirate.' },
-        { name: 'lawyer', prompt: 'Be precise and cite statutes.' }
-      ]
-    })
-    const ui = await composeUiConfig()
-    expect(ui.Personas).toEqual([
-      { name: 'pirate', prompt: 'Talk like a pirate.' },
-      { name: 'lawyer', prompt: 'Be precise and cite statutes.' }
-    ])
-    expect(ui.ActivePersona).toBe('pirate')
-  })
-
-  test('an empty ActivePersona clears the active persona (composed as null), and null does too', async () => {
-    const personas = [{ name: 'pirate', prompt: 'Talk like a pirate.' }]
-    await applyUiConfig({ Providers: [], ActivePersona: 'pirate', Personas: personas })
-    await applyUiConfig({ Providers: [], ActivePersona: '', Personas: personas })
-    expect((await composeUiConfig()).ActivePersona).toBeNull()
-
-    await applyUiConfig({ ActivePersona: 'pirate' })
-    expect((await composeUiConfig()).ActivePersona).toBe('pirate')
-    await applyUiConfig({ ActivePersona: null })
-    expect((await composeUiConfig()).ActivePersona).toBeNull()
-  })
-
-  test('a save that omits ActivePersona leaves the selection alone', async () => {
-    await applyUiConfig({ ActivePersona: 'pirate', Personas: [{ name: 'pirate', prompt: 'Arr.' }] })
-    await applyUiConfig({ Providers: [openai(['gpt-5'])] })
-    expect((await composeUiConfig()).ActivePersona).toBe('pirate')
-  })
-
-  test('a fresh install composes ActivePersona as null, never undefined', async () => {
-    const ui = await composeUiConfig()
-    expect(ui.ActivePersona).toBeNull()
-  })
-
   test('retired keys are dropped with a warning and never written', async () => {
     const result = await applyUiConfig({
       LOG_LEVEL: 'debug',
@@ -196,8 +155,6 @@ describe.skipIf(!HAS_DB)('configService', () => {
     for (const key of retired) {
       expect(key in raw).toBe(false)
     }
-    // The persona nested under the retired key is not lifted either.
-    expect('ActivePersona' in raw).toBe(false)
 
     const ui = await composeUiConfig()
     for (const key of retired) {

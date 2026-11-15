@@ -47,14 +47,6 @@ beforeEach(() => {
 })
 
 describe('readConfigFile — unusable config', () => {
-  test('keeps the persona library, which is stored nowhere else', async () => {
-    // PORT must be a positive int; a non-numeric string fails the schema.
-    const personas = [{ id: 'p1', name: 'Mine', prompt: 'hello' }]
-    writeFileSync(CONFIG_FILE, JSON.stringify({ PORT: 'not-a-port', Personas: personas }))
-    const envelope = await readWithoutEnv()
-    expect(envelope.Personas).toEqual(personas)
-  })
-
   test('moves the unusable file aside instead of deleting it', async () => {
     writeFileSync(CONFIG_FILE, JSON.stringify({ PORT: 'bad', LOG_LEVEL: 'debug' }))
     await readWithoutEnv()

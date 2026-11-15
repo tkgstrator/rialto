@@ -1206,24 +1206,6 @@ screens:
         actual:
           type: url
           url: http://localhost:16175/settings/logging
-  - id: settings-personas
-    category: Settings
-    devices:
-      - id: desktop
-        viewport:
-          width: 1440
-          height: 900
-          deviceScaleFactor: 2
-        colorSchemes:
-          - light
-          - dark
-        versions:
-          mock:
-            type: html
-            path: mocks/settings-personas.html
-        actual:
-          type: url
-          url: http://localhost:16175/settings/personas
   - id: settings-advanced
     category: Settings
     devices:

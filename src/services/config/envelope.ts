@@ -1,4 +1,3 @@
-import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import readline from 'node:readline'
@@ -6,7 +5,6 @@ import JSON5 from 'json5'
 import { type ConfigEnvelope, ConfigEnvelopeSchema } from '@/schemas/domain/config'
 import { ENVELOPE_ENV_KEYS, type EnvelopeEnvKey } from '@/shared'
 import { CONFIG_FILE, HOME_DIR } from '@/shared/constants'
-import { SEED_PERSONAS } from '@/shared/data'
 import { logger } from '../../logger'
 
 // Function to interpolate environment variables in config values
@@ -130,19 +128,6 @@ const quarantineConfigFile = async (): Promise<void> => {
 }
 
 /**
- * Values worth carrying out of a config that failed to load.
- *
- * Personas are the one envelope-only object with no copy anywhere else —
- * Providers live in the database — so they survive the rebuild. Nothing
- * else is carried: the rest is recoverable from the file moved aside.
- */
-const salvageFromRaw = (raw: unknown): Partial<{ Personas: unknown[] }> => {
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return {}
-  const obj: Record<string, unknown> = { ...raw }
-  return Array.isArray(obj.Personas) && obj.Personas.length > 0 ? { Personas: obj.Personas } : {}
-}
-
-/**
  * The config a fresh install — or a quarantined one — boots with.
  *
  * It carries no credential, because there is no admin secret to mint: a
@@ -152,14 +137,11 @@ const salvageFromRaw = (raw: unknown): Partial<{ Personas: unknown[] }> => {
  * that got past Access for anyone who read it out of config.json, a backup
  * or shell history.
  */
-const createDefaultConfig = async (salvaged: ReturnType<typeof salvageFromRaw> = {}): Promise<ConfigEnvelope> => {
+const createDefaultConfig = async (): Promise<ConfigEnvelope> => {
   await initDir()
   const raw = {
     PORT: 3456,
-    Providers: [],
-    // Ship a few ready-made personas in the default config so a fresh
-    // install has something to pick under Settings → Personas out of the box.
-    Personas: salvaged.Personas === undefined ? SEED_PERSONAS : salvaged.Personas
+    Providers: []
   }
   await writeConfigFile(raw)
   logger.info({ path: CONFIG_FILE }, 'Created default configuration file')
@@ -213,9 +195,10 @@ export const readConfigFile = async (): Promise<ConfigEnvelope> => {
     if (!result.success) {
       logger.error({ err: result.error }, 'Config file failed schema validation')
       await quarantineConfigFile()
-      // The file parsed as JSON — one key failing validation is no
-      // reason to drop the persona library, which is stored nowhere else.
-      return createDefaultConfig(salvageFromRaw(parsed))
+      // The envelope is derived — Providers live in the DB, every other
+      // scalar is recoverable from the file moved aside — so nothing is
+      // salvaged from the rejected file into the fresh one.
+      return createDefaultConfig()
     }
 
     // Return the schema-parsed envelope (defaults applied, API_TIMEOUT_MS
@@ -276,57 +259,7 @@ export const applyEnvelopeToEnv = (config: Record<string, unknown>) => {
   }
 }
 
-/**
- * One-time, idempotent migration to the uuid-keyed persona model.
- *
- * Older configs stored personas as { name, prompt } and referenced the
- * active one by name (ActivePersona). The library is now keyed by a
- * stable uuid `id`: this backfills an `id` onto every persona that lacks
- * one and rewrites a name-based ActivePersona to the matching persona's
- * id. Operates on the raw on-disk JSON (not the schema-parsed envelope)
- * so it only rewrites Personas/ActivePersona and leaves the rest of the
- * file shape untouched. No-ops once every persona already has an id, so
- * it is safe to run on every boot. Stays silent on a missing/unparsable
- * file — readConfigFile owns those paths (create-default / wipe).
- */
-const migratePersonaKeys = async (): Promise<void> => {
-  let raw: string
-  try {
-    raw = await fs.readFile(CONFIG_FILE, 'utf-8')
-  } catch {
-    return
-  }
-  let parsed: any
-  try {
-    parsed = JSON5.parse(raw)
-  } catch {
-    return
-  }
-  const personas = Array.isArray(parsed?.Personas) ? parsed.Personas : []
-  let changed = false
-  for (const persona of personas) {
-    if (persona !== null && typeof persona === 'object' && typeof persona.id !== 'string') {
-      persona.id = crypto.randomUUID()
-      changed = true
-    }
-  }
-  // Rewrite a name-based active selection to the matching persona's id.
-  const active = parsed?.ActivePersona
-  if (typeof active === 'string' && active !== '' && !personas.some((p: any) => p?.id === active)) {
-    const match = personas.find((p: any) => p?.name === active)
-    if (match !== undefined) {
-      parsed.ActivePersona = match.id
-      changed = true
-    }
-  }
-  if (changed) {
-    await writeConfigFile(parsed)
-    logger.info({ path: CONFIG_FILE }, 'Migrated personas to uuid keys')
-  }
-}
-
 export const initConfig = async (): Promise<ConfigEnvelope> => {
-  await migratePersonaKeys()
   const envelope = await readConfigFile()
   applyEnvelopeToEnv(envelope)
   return envelope

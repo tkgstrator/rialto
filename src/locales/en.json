@@ -469,7 +469,6 @@
       "server": "Server",
       "access": "Access",
       "logging": "Logging",
-      "personas": "Personas",
       "advanced": "Advanced"
     },
     "server": {
@@ -731,37 +730,6 @@
       "tokenSubtitle": "Rotate, re-scope or revoke one client’s credential",
       "tokensScope": "all <mono>/v1/*</mono>",
       "tokensSubtitle": "Per-client credentials for /v1/*"
-    },
-    "personas": {
-      "subtitle": "{{count}} personas · {{active}}",
-      "noneActive": "none active",
-      "oneActive": "1 active",
-      "newName": "New persona",
-      "newPersona": "New persona",
-      "saved": "Personas saved",
-      "empty": "No personas yet. A persona is prepended to the system prompt of every request on the Anthropic Messages surface.",
-      "off": "off",
-      "wordCount": "{{n}}w",
-      "allRequests": "all /v1/messages requests",
-      "libraryNote": "A persona is prepended to the system prompt of every request on the surfaces it applies to. It costs input tokens on each turn — cached after the first, so keep it stable.",
-      "nameLabel": "Persona name",
-      "wordsTokens": "{{words}} words ≈ {{tokens}} tokens",
-      "activeTitle": "Active — applied to every /v1/messages request",
-      "makeActiveTitle": "Make this the active persona",
-      "appliesTo": "Applies to",
-      "surfaceAppliedHint": "{{path}} is the Anthropic Messages surface, so the active persona is injected into its requests.",
-      "surfaceNotAppliedHint": "{{path}} forwards requests unmodified; the persona is only injected on {{applied}}.",
-      "prompt": "Prompt",
-      "markdown": "Markdown",
-      "preview": "Preview",
-      "asSent": "as sent",
-      "promptPlaceholder": "Write the persona as you would write it in a system prompt.",
-      "previewPersona": "persona: {{name}}",
-      "previewEmpty": "This persona is empty — nothing is prepended.",
-      "previewClientPrompt": "client system prompt",
-      "previewClientBody": "…whatever Claude Code sends, appended unchanged.",
-      "previewNote": "The persona goes first so the client's own prompt can still override it. Both blocks are marked cacheable, so the cost is paid once per session.",
-      "duplicate": "Duplicate"
     }
   },
   "shell": {

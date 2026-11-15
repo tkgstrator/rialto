@@ -263,10 +263,6 @@ curl -s -X POST http://localhost:3456/api/access-tokens \
 どの受け口も、呼び出し側が `body.model`（Gemini は URL のモデル）に書いたモデルをそのまま上流へ送る。
 `routed` / `passthrough` の切り替え、シナリオ、レーン、ティアは廃止された（§9）。
 
-ペルソナはアクティブなものが **`/v1/messages` のリクエストに常に**挿入される（以前は `routed` な
-トラフィックだけで、`passthrough` の受け口には挿入されなかった）。`/v1/messages` 以外の受け口には
-挿入されない。
-
 ### 8-4. weekly drain guard が無い
 
 サブスクリプションの週次ウィンドウが線形ドレイン目標を超えたら先回りでフェイルオーバーする
@@ -328,7 +324,6 @@ products" である。Rialto はゲートウェイなので**通るのは自分�
 | `config.json` の `Router` / `CUSTOM_ROUTER_PATH` / `LiveRoutingName` / `CROSS_PROVIDER_FALLBACK` | 読まれない。`POST /api/config` はこれらを警告付きで捨て、次の保存でディスクからも剥がす。`ROUTER_MODE` 系も同様 |
 | `config.json` の `StatusLine`（Settings → Status line のレイアウト） | 画面ごと削除された。`POST /api/config` は警告付きで捨て、次の保存でディスクからも剥がす |
 | `~/.rialto/<project>/` のプロジェクト単位・セッション単位の Router 上書きファイル | 読まれない。`rialto.json` も `claude-code-router.json` も無視される |
-| アクティブなペルソナ | `Router.persona` ではなく、トップレベルの `ActivePersona` キー（ディスクと `/api/config` の両方）。ディスク上の値はもともと `ActivePersona` だったので、設定の書き換えは要らない |
 | 無効化した Provider / Model | どの経路からも送られない。`provider,model` を手で指定しても拒否され、無効化したサブスクリプションプロバイダのアカウントは候補にならない |
 
 ### 8-9. `APIKEY`（管理キー）は削除された

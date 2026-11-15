@@ -19,7 +19,6 @@ import { TokenDetail } from '@/components/rialto/settings/access/TokenDetail'
 import { SettingsAccess } from '@/components/rialto/settings/SettingsAccess'
 import { SettingsAdvanced } from '@/components/rialto/settings/SettingsAdvanced'
 import { SettingsLogging } from '@/components/rialto/settings/SettingsLogging'
-import { SettingsPersonas } from '@/components/rialto/settings/SettingsPersonas'
 import { SettingsServer } from '@/components/rialto/settings/SettingsServer'
 import { AccessRejectedScreen } from '@/components/rialto/system/AccessRejected'
 import { NotFoundScreen } from '@/components/rialto/system/NotFound'
@@ -86,7 +85,6 @@ export const router = createBrowserRouter([
           { path: '/settings', element: <SettingsServer /> },
           { path: '/settings/access', element: <SettingsAccess /> },
           { path: '/settings/logging', element: <SettingsLogging /> },
-          { path: '/settings/personas', element: <SettingsPersonas /> },
           { path: '/settings/advanced', element: <SettingsAdvanced /> }
         ]
       },

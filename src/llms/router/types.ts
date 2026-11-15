@@ -25,12 +25,9 @@ export type RouterRequest = {
   reqId?: string
   log: Logger
   // Inbound wire endpoint the request arrived on (e.g. `/v1/messages`,
-  // `/v1/chat/completions`, `/v1/responses`). Rialto-idiom mutations that
-  // only make sense for the Anthropic client (persona injection notably)
-  // gate on this: OpenAI-shape callers get the exact request they sent,
-  // Anthropic-shape callers still get the enrichments Claude Code
-  // expects. Absent for pre-existing test callers that predate this
-  // hook — treated as "unknown, apply everything" for backward-compat.
+  // `/v1/chat/completions`, `/v1/responses`). Recorded for logs, and
+  // kept on the request so any future idiom gating can read it without
+  // the caller having to thread it through again.
   inboundPath?: string
   // Set by routeRequest: always 'passthrough' — the request goes upstream
   // as the caller named its model. Recorded on the RequestLog row.

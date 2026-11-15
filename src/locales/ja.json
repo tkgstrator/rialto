@@ -469,7 +469,6 @@
       "server": "サーバー",
       "access": "アクセス",
       "logging": "ログ",
-      "personas": "ペルソナ",
       "advanced": "詳細設定"
     },
     "server": {
@@ -731,37 +730,6 @@
       "tokenSubtitle": "1 つのクライアントの資格情報をローテート・再スコープ・失効させます",
       "tokensScope": "すべて <mono>/v1/*</mono>",
       "tokensSubtitle": "/v1/* を叩くクライアントごとの資格情報"
-    },
-    "personas": {
-      "subtitle": "ペルソナ {{count}} 件 · {{active}}",
-      "noneActive": "有効なものなし",
-      "oneActive": "1 件が有効",
-      "newName": "新しいペルソナ",
-      "newPersona": "ペルソナを追加",
-      "saved": "ペルソナを保存しました",
-      "empty": "ペルソナがまだありません。ペルソナは Anthropic Messages サーフェスのリクエストすべてのシステムプロンプト先頭に差し込まれます。",
-      "off": "無効",
-      "wordCount": "{{n}} 語",
-      "allRequests": "/v1/messages のリクエストすべて",
-      "libraryNote": "ペルソナは、適用対象のサーフェス上のすべてのリクエストで、システムプロンプトの先頭に差し込まれます。毎ターン入力トークンを消費しますが、初回以降はキャッシュされるため、内容は安定させておくのが得策です。",
-      "nameLabel": "ペルソナ名",
-      "wordsTokens": "{{words}} 語 ≈ {{tokens}} トークン",
-      "activeTitle": "有効 — /v1/messages のリクエストすべてに適用されます",
-      "makeActiveTitle": "このペルソナを有効にする",
-      "appliesTo": "適用先",
-      "surfaceAppliedHint": "{{path}} は Anthropic Messages サーフェスなので、有効なペルソナがリクエストに差し込まれます。",
-      "surfaceNotAppliedHint": "{{path}} はリクエストを無加工で転送します。ペルソナが差し込まれるのは {{applied}} のみです。",
-      "prompt": "プロンプト",
-      "markdown": "Markdown",
-      "preview": "プレビュー",
-      "asSent": "送信時の形",
-      "promptPlaceholder": "システムプロンプトに書くつもりでペルソナを記述してください。",
-      "previewPersona": "ペルソナ: {{name}}",
-      "previewEmpty": "このペルソナは空です。何も差し込まれません。",
-      "previewClientPrompt": "クライアントのシステムプロンプト",
-      "previewClientBody": "…Claude Code が送ってきた内容が、そのまま後ろに追加されます。",
-      "previewNote": "ペルソナを先頭に置くことで、クライアント自身のプロンプトで上書きできるようにしています。両ブロックともキャッシュ対象なので、コストはセッションごとに一度だけです。",
-      "duplicate": "複製"
     }
   },
   "shell": {
