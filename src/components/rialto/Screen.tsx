@@ -99,7 +99,11 @@ export function Screen({
         </div>
         <div className='ml-auto flex items-center gap-2'>{actions}</div>
       </header>
-      <main className='min-h-0 flex-1 overflow-y-auto'>{children}</main>
+      {/* `scrollbar-gutter: stable` reserves the vertical scrollbar's track
+          whether or not it is showing, so switching between a tab whose
+          content overflows and one that doesn't (Access tokens → Plans) no
+          longer shifts the content box by the scrollbar's width. */}
+      <main className='min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]'>{children}</main>
     </>
   )
 }
@@ -169,7 +173,7 @@ function PhoneScreen({
         </div>
       </header>
       {strip === undefined ? null : <SectionStrip section={strip} />}
-      <main className='min-h-0 flex-1 overflow-y-auto'>{children}</main>
+      <main className='min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]'>{children}</main>
     </>
   )
 }
