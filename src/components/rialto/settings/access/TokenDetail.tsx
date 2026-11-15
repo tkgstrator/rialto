@@ -22,16 +22,18 @@
  * what a live client can reach, with the failure landing on the client
  * as a 401 nobody can trace from that end.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
+import { useConfig } from '@/components/ConfigProvider'
 import { scopePaths, useSurfaces } from '@/components/rialto/activity/use-surfaces'
 import { useConfirm } from '@/components/rialto/ConfirmDialog'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import { IssuedTokenDialog } from '@/components/rialto/settings/access/IssuedTokenDialog'
-import { ANY, Picker, SurfacePicker, sameScope, scopeForWire } from '@/components/rialto/settings/access/pickers'
+import { PlanSelector } from '@/components/rialto/settings/access/PlanSelector'
+import { ANY, SurfacePicker, sameScope, scopeForWire } from '@/components/rialto/settings/access/pickers'
 import { TokenDetailHeader } from '@/components/rialto/settings/access/TokenDetailHeader'
 import { TokenDetailPhone } from '@/components/rialto/settings/access/TokenDetailPhone'
 import { TokenReadings } from '@/components/rialto/settings/access/TokenReadings'
@@ -39,12 +41,36 @@ import { TokenUsageWindows, useTokenUsageWindows } from '@/components/rialto/set
 import { SettingsField } from '@/components/rialto/settings/SettingsLayout'
 import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
 import { usePhone } from '@/hooks/use-phone'
-import { type AccessTokenWire, api, type PlanWire } from '@/lib/api'
+import { type AccessTokenWire, api, type InboundSurfaceWire, type PlanWire } from '@/lib/api'
+import { enabledTargets } from '@/lib/models/enabled-targets'
 import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
 import { tokenState } from '@/lib/rialto/settings/access-tokens'
 import { usageBlocked, usageWindowsView } from '@/lib/rialto/settings/usage-windows'
 
 const BACK = '/access-tokens'
+
+/**
+ * Locked input: a read-only box carrying a value the operator can see
+ * but not change, with a lock suffix. Used for the issue-time fields
+ * (name, expiry) on this page.
+ */
+function LockedField({ value, aria }: { value: string; aria: string }) {
+  return (
+    <div className='relative w-full max-w-md'>
+      <input
+        readOnly
+        aria-readonly
+        aria-label={aria}
+        value={value}
+        className='h-8 w-full min-w-0 cursor-not-allowed rounded-md border border-border bg-muted/40 px-3 pr-9 font-mono text-xs text-muted-foreground outline-none'
+      />
+      <i
+        aria-hidden
+        className='ri-lock-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground/60'
+      />
+    </div>
+  )
+}
 
 /**
  * The server answers a refused rotation with the reason as its error
@@ -78,11 +104,152 @@ interface Revealed {
   expiry: string
 }
 
+/**
+ * The editable + locked fields of a token's page. Lifted out of
+ * `TokenDetail` so the page function stays readable; the orchestrator
+ * owns all state, this one only draws.
+ */
+function TokenScopeForm({
+  token,
+  draft,
+  plans,
+  surfaces,
+  available,
+  editable,
+  busy,
+  creating,
+  createdNote,
+  onDraftChange,
+  onPlanCreated,
+  onCreatingChange,
+  onDismissCreatedNote
+}: {
+  token: AccessTokenWire
+  draft: ScopeDraft
+  plans: readonly PlanWire[]
+  surfaces: readonly InboundSurfaceWire[]
+  available: readonly string[]
+  editable: boolean
+  busy: boolean
+  creating: boolean
+  createdNote: string | null
+  onDraftChange: (next: ScopeDraft) => void
+  onPlanCreated: (plan: PlanWire) => void
+  onCreatingChange: (next: boolean) => void
+  onDismissCreatedNote: () => void
+}) {
+  const { t } = useTranslation()
+  const expiresLabel = token.expiresAt === null ? t('settings.access.never') : token.expiresAt.slice(0, 10)
+  const planValue = draft.planId === ANY ? '' : draft.planId
+  const onPlanChange = (next: string) => {
+    if (next !== draft.planId) onDismissCreatedNote()
+    onDraftChange({ ...draft, planId: next === '' ? ANY : next })
+  }
+  return (
+    <>
+      {/* Name is fixed at issue — the list labels this credential, and
+          re-labelling it without a new secret would drift what every
+          audit entry says from what this screen says. Drawn locked so
+          the operator can see what the row is and read the hint. */}
+      <SettingsField label={t('settings.access.issueName')} hint={t('access.token.nameLockedHint')}>
+        <LockedField value={token.name} aria={t('settings.access.issueName')} />
+      </SettingsField>
+
+      {/* Editable only while the token can actually be used: changing
+          the scope of an expired row alters nothing about
+          what reaches the proxy, so the controls would be theatre. */}
+      <SettingsField label={t('settings.access.colEndpoint')} hint={t('settings.access.issueEndpointHint')}>
+        <SurfacePicker
+          surfaces={surfaces}
+          selected={draft.surfaces}
+          onChange={(next) => onDraftChange({ ...draft, surfaces: next })}
+          allLabel={t('settings.access.allEndpoints')}
+          disabled={!editable || busy}
+        />
+      </SettingsField>
+
+      {/* A plan limits the models and the usage windows; no plan leaves
+          the token unrestricted, as hand-issued ones always were. */}
+      <SettingsField label={t('access.token.plan')} hint={t('access.token.planFormHint')}>
+        <PlanSelector
+          showLabel={false}
+          value={planValue}
+          plans={plans}
+          available={available}
+          onChange={onPlanChange}
+          onPlanCreated={onPlanCreated}
+          creating={creating}
+          onCreatingChange={onCreatingChange}
+          createdNote={createdNote}
+          onDismissCreatedNote={onDismissCreatedNote}
+          disabled={!editable || busy}
+        />
+      </SettingsField>
+
+      {/* Expiry is set at issue and only shrinks on its own after that —
+          a token whose stop date can be pushed out has no stop date. */}
+      <SettingsField label={t('settings.access.issueExpires')} hint={t('access.token.expiresLockedHint')}>
+        <LockedField value={expiresLabel} aria={t('settings.access.issueExpires')} />
+      </SettingsField>
+    </>
+  )
+}
+
+/** The hint-and-buttons footer. Lifted out so the page keeps a flat shape. */
+function SaveBar({
+  tokenName,
+  dirty,
+  creating,
+  busy,
+  onDiscard,
+  onSave
+}: {
+  tokenName: string
+  dirty: boolean
+  creating: boolean
+  busy: boolean
+  onDiscard: () => void
+  onSave: () => void
+}) {
+  const { t } = useTranslation()
+  const canDiscard = (dirty || creating) && !busy
+  const canSave = dirty && !busy && !creating
+  return (
+    <div className='flex items-center gap-2 border-t border-border/60 px-6 py-4'>
+      {/* Names the token. The page can be reached from a table of
+          several, and a bare "Save" in a bar says which controls it
+          applies to but not which row — the one thing an operator
+          about to change what a live client may reach needs to be
+          sure of. */}
+      <span className='text-[12px] text-muted-foreground'>
+        {creating ? (
+          t('access.token.creatingPlanFirst')
+        ) : (
+          <Trans
+            i18nKey='settings.access.scopeEditNote'
+            values={{ name: tokenName }}
+            components={{ strong: <span className='font-medium text-foreground' /> }}
+          />
+        )}
+      </span>
+      <div className='ml-auto flex gap-2'>
+        <RButton variant='ghost' onClick={onDiscard} disabled={!canDiscard}>
+          {t('common.discard')}
+        </RButton>
+        <RButton variant='primary' icon='ri-check-line' onClick={onSave} disabled={!canSave}>
+          {t('common.save')}
+        </RButton>
+      </div>
+    </div>
+  )
+}
+
 export function TokenDetail() {
   const { t } = useTranslation()
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const { surfaces } = useSurfaces()
+  const { config } = useConfig()
   const { confirm, dialog: confirmDialog } = useConfirm()
   const [token, setToken] = useState<AccessTokenWire | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -90,9 +257,18 @@ export function TokenDetail() {
   const [revealed, setRevealed] = useState<Revealed | null>(null)
   const [draft, setDraft] = useState<ScopeDraft | null>(null)
   const [plans, setPlans] = useState<PlanWire[]>([])
+  // Inline new-plan form state for the plan field.
+  const [creating, setCreating] = useState(false)
+  const [createdNote, setCreatedNote] = useState<string | null>(null)
   // Every relative label measures from the same instant.
   const [now, setNow] = useState(Date.now())
   const phone = usePhone()
+
+  // What the operator has left switched on: the models an inline new plan may name.
+  const available = useMemo(
+    () => (config === null ? [] : enabledTargets(config.Providers).map((target) => target.target)),
+    [config]
+  )
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 30_000)
@@ -107,6 +283,8 @@ export function TokenDetail() {
         // Reset the draft from the server's answer after every load, so a
         // rotation or a save cannot leave a stale edit on screen.
         setDraft(draftOf(res))
+        setCreating(false)
+        setCreatedNote(null)
         setNow(Date.now())
       })
       .catch((e: Error) => setError(e.message))
@@ -203,6 +381,20 @@ export function TokenDetail() {
   const discard = () => {
     if (token === null) return
     setDraft(draftOf(token))
+    setCreating(false)
+    setCreatedNote(null)
+  }
+
+  const onPlanCreated = (plan: PlanWire) => {
+    setPlans((prev) => [...prev, plan])
+    setDraft((prev) => (prev === null ? prev : { ...prev, planId: plan.id }))
+    setCreatedNote(plan.name)
+    api
+      .getPlans()
+      .then((res) => setPlans(res.plans))
+      .catch(() => {
+        // The local merge above already kept the field usable.
+      })
   }
 
   if (error !== null) {
@@ -227,9 +419,6 @@ export function TokenDetail() {
   // gate applies now, and an unsaved plan choice applies nothing yet.
   const windows = usageWindowsView(token.plan === null ? null : token.plan.name, usage)
   const editable = state === 'active'
-  // The token's own plan stays selectable even if the plans list failed to load.
-  const own = token.plan
-  const planOptions = own === null || plans.some((plan) => plan.id === own.id) ? plans : [own, ...plans]
 
   // A modal over this page, not a panel inserted into it: the rotated
   // secret is shown once, and a panel that pushes the page down can be
@@ -282,36 +471,21 @@ export function TokenDetail() {
           onRevoke={revoke}
         />
 
-        {/* Editable only while the token can actually be used: changing
-            the scope of an expired row alters nothing about
-            what reaches the proxy, so the controls would be theatre. */}
-        <SettingsField label={t('settings.access.colEndpoint')} hint={t('settings.access.issueEndpointHint')}>
-          <SurfacePicker
-            surfaces={surfaces}
-            selected={draft.surfaces}
-            onChange={(next) => setDraft({ ...draft, surfaces: next })}
-            allLabel={t('settings.access.allEndpoints')}
-            disabled={!editable || busy}
-          />
-        </SettingsField>
-
-        {/* A plan limits the models and the usage windows; no plan leaves
-            the token unrestricted, as hand-issued ones always were. */}
-        <SettingsField label={t('access.token.plan')} hint={t('access.token.planHint')}>
-          <Picker
-            label={t('access.token.plan')}
-            value={draft.planId}
-            onChange={(next) => setDraft({ ...draft, planId: next })}
-            disabled={!editable || busy}
-          >
-            <option value={ANY}>{t('access.token.noPlan')}</option>
-            {planOptions.map((plan) => (
-              <option key={plan.id} value={plan.id}>
-                {plan.name}
-              </option>
-            ))}
-          </Picker>
-        </SettingsField>
+        <TokenScopeForm
+          token={token}
+          draft={draft}
+          plans={plans}
+          surfaces={surfaces}
+          available={available}
+          editable={editable}
+          busy={busy}
+          creating={creating}
+          createdNote={createdNote}
+          onDraftChange={setDraft}
+          onPlanCreated={onPlanCreated}
+          onCreatingChange={setCreating}
+          onDismissCreatedNote={() => setCreatedNote(null)}
+        />
 
         <TokenUsageWindows token={token} view={windows} now={now} onReset={setUsage} />
 
@@ -337,28 +511,14 @@ export function TokenDetail() {
             that materialises moves everything around it, and the
             disabled pair states the rule (there is a Save, and nothing
             to save yet) before the operator touches anything. */}
-        <div className='flex items-center gap-2 border-t border-border/60 px-6 py-4'>
-          {/* Names the token. The page can be reached from a table of
-              several, and a bare "Save" in a bar says which controls it
-              applies to but not which row — the one thing an operator
-              about to change what a live client may reach needs to be
-              sure of. */}
-          <span className='text-[12px] text-muted-foreground'>
-            <Trans
-              i18nKey='settings.access.scopeEditNote'
-              values={{ name: token.name }}
-              components={{ strong: <span className='font-medium text-foreground' /> }}
-            />
-          </span>
-          <div className='ml-auto flex gap-2'>
-            <RButton variant='ghost' onClick={discard} disabled={!dirty || busy}>
-              {t('common.discard')}
-            </RButton>
-            <RButton variant='primary' icon='ri-check-line' onClick={save} disabled={!dirty || busy}>
-              {t('common.save')}
-            </RButton>
-          </div>
-        </div>
+        <SaveBar
+          tokenName={token.name}
+          dirty={dirty}
+          creating={creating}
+          busy={busy}
+          onDiscard={discard}
+          onSave={save}
+        />
         <div className='h-8' />
 
         {rotatedDialog}
