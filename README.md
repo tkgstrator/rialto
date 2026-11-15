@@ -391,7 +391,7 @@ The token must carry the **`/codex` scope explicitly** — an unscoped ("all end
 One logger (pino) writes everything — HTTP requests, routing decisions, upstream calls, server events:
 
 - **Console** — always, prettified.
-- **Files** — `~/.rialto/logs/rialto-YYYY-MM-DD.log`, only while `LOG` is `true` (it defaults to `false`). A file that outgrows `LOG_MAX_MB` (default 10) continues in `rialto-YYYY-MM-DD-N.log`. Level is controlled by `LOG_LEVEL`; secrets (`authorization`, `x-api-key`, tokens, cookies) are redacted before writing.
+- **Files** — `~/.rialto/logs/YYYY-MM-DD.log`, only while `LOG` is `true` (it defaults to `false`). A file that outgrows `LOG_MAX_MB` (default 10) continues in `YYYY-MM-DD-N.log`. Level is controlled by `LOG_LEVEL`; secrets (`authorization`, `x-api-key`, tokens, cookies) are redacted before writing.
 
 The files are readable from **Activity → Logs** in the UI. There is no separate application log.
 
