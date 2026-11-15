@@ -78,7 +78,6 @@ export const NAV: readonly NavEntry[] = [
       { id: 'server', labelKey: 'settings.rail.server', icon: 'ri-server-line', href: '/settings' },
       { id: 'access', labelKey: 'settings.rail.access', icon: 'ri-key-2-line', href: '/settings/access' },
       { id: 'logging', labelKey: 'settings.rail.logging', icon: 'ri-file-list-2-line', href: '/settings/logging' },
-      { id: 'personas', labelKey: 'settings.rail.personas', icon: 'ri-user-voice-line', href: '/settings/personas' },
       { id: 'advanced', labelKey: 'settings.rail.advanced', icon: 'ri-terminal-box-line', href: '/settings/advanced' }
     ]
   }

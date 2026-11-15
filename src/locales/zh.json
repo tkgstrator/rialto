@@ -464,7 +464,6 @@
       "server": "服务器",
       "access": "访问控制",
       "logging": "日志",
-      "personas": "人格",
       "advanced": "高级"
     },
     "server": {
@@ -726,37 +725,6 @@
       "tokenSubtitle": "轮换、重设范围或吊销某个客户端的凭据",
       "tokensScope": "全部 <mono>/v1/*</mono>",
       "tokensSubtitle": "面向各客户端的 /v1/* 凭据"
-    },
-    "personas": {
-      "subtitle": "{{count}} 个人格 · {{active}}",
-      "noneActive": "没有启用的",
-      "oneActive": "1 个启用",
-      "newName": "新人格",
-      "newPersona": "新建人格",
-      "saved": "已保存人格",
-      "empty": "还没有人格。人格会被添加到 Anthropic Messages 入口上每个请求的系统提示词最前面。",
-      "off": "关闭",
-      "wordCount": "{{n}} 词",
-      "allRequests": "所有 /v1/messages 请求",
-      "libraryNote": "在它作用的入口上，人格会被添加到每个请求的系统提示词最前面。它每轮都会消耗输入 token——首轮之后会被缓存，所以尽量保持它稳定。",
-      "nameLabel": "人格名称",
-      "wordsTokens": "{{words}} 词 ≈ {{tokens}} token",
-      "activeTitle": "已启用——应用于每个 /v1/messages 请求",
-      "makeActiveTitle": "将此人格设为启用",
-      "appliesTo": "适用于",
-      "surfaceAppliedHint": "{{path}} 是 Anthropic Messages 入口，因此启用的人格会注入到它的请求中。",
-      "surfaceNotAppliedHint": "{{path}} 会原样转发请求；人格只会注入到 {{applied}}。",
-      "prompt": "提示词",
-      "markdown": "Markdown",
-      "preview": "预览",
-      "asSent": "实际发送的形式",
-      "promptPlaceholder": "像写系统提示词那样书写这个人格。",
-      "previewPersona": "人格：{{name}}",
-      "previewEmpty": "该人格为空——不会添加任何内容。",
-      "previewClientPrompt": "客户端系统提示词",
-      "previewClientBody": "…Claude Code 发送的内容会原样追加在后面。",
-      "previewNote": "人格放在最前面，这样客户端自己的提示词仍然可以覆盖它。两个块都标记为可缓存，因此每个会话只需付一次成本。",
-      "duplicate": "复制"
     }
   },
   "shell": {

@@ -134,8 +134,8 @@ export type SurfaceId = 'anthropic-messages' | 'openai-chat' | 'openai-responses
  *
  * Kept apart from SurfaceId on purpose. /codex is not an inbound surface —
  * `/api/inbound-surfaces` never lists it and nothing routes it — so every
- * picker that asks "which surface" (personas) must keep taking
- * SurfaceId and cannot be handed this one by mistake.
+ * picker that asks "which surface" must keep taking SurfaceId and cannot
+ * be handed this one by mistake.
  */
 export type TokenScopeId = SurfaceId | 'codex-mcp'
 

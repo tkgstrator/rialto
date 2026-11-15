@@ -543,11 +543,8 @@ flag, which the gemini surface carries in the URL and folds into `body.model` / 
 before anything else looks (`applyPathParams`). A plan's 403 is rendered in the surface's own error
 shape and pinned per surface in `__tests__/api/route-plan.test.ts`.
 
-Two asymmetries remain:
+One asymmetry remains:
 
-- **Persona injection is `/v1/messages` only** (deliberate). Adding a top-level `system` on an
-  OpenAI-compatible surface makes the upstream — codex being the standing example — answer 400 for
-  an unknown parameter.
 - **The subagent tag is read from `/v1/messages` only.** The tag sits in the second block of an
   Anthropic `system` array, which is Claude Code's convention (`stripSubagentTag`). The OpenAI and
   Gemini shapes carry their system prompt elsewhere (`messages[0]`, `instructions`,

@@ -552,13 +552,6 @@
       "note": "Log level, request/message capture, retention per store."
     },
     {
-      "name": "settings-personas",
-      "mock": "settings-personas.html",
-      "route": "/settings/personas",
-      "group": "Settings",
-      "note": "Absorbs Personas + PersonaView + PersonaEdit — three routes for one object."
-    },
-    {
       "name": "settings-advanced",
       "mock": "settings-advanced.html",
       "route": "/settings/advanced",

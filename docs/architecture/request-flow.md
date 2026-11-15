@@ -13,7 +13,7 @@
 - `src/api/v1/candidate-chain.ts` — `buildFailoverChain`（試す候補の順序）
 - `src/api/v1/invocation.ts` — `resolveInvocationForModel`（候補1件 → 実行可能な invocation）
 - `src/api/v1/chain-failover.ts` — `attemptChainEntry` / `tryRotateAccount`
-- `src/llms/router.ts` — `routeRequest`（サブエージェントタグの除去と persona の append）
+- `src/llms/router.ts` — `routeRequest`（サブエージェントタグの除去）
 - `src/services/plan-model.ts` — `decidePlanModel`（Plan のモデル判定）
 - `src/llms/pipeline.ts` — `runPipeline` / `handleProviderError`
 
@@ -34,7 +34,7 @@ flowchart TD
 
   BR2 --> PLAN{token に Plan?<br/>decidePlanModel}
   PLAN -- 許可リストに無い --> R403[403 面のエラー封筒<br/>upstream へ出さない]
-  PLAN -- 許可 / モデル無し→defaultModel / Plan 無し --> TAG[routeRequest<br/>サブエージェントタグを除去し isSubagent を記録<br/>/v1/messages のみ persona を append]
+  PLAN -- 許可 / モデル無し→defaultModel / Plan 無し --> TAG[routeRequest<br/>サブエージェントタグを除去し isSubagent を記録]
   TAG --> BARE[素のモデル名は provider 解決<br/>優先度順 / 曖昧なら 400]
   BARE --> DENY{面の deniedTargets に該当?}
   DENY -- Yes --> R400P[400 面のエラー封筒<br/>upstream へ出さない]

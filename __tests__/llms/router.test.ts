@@ -3,9 +3,8 @@
  * vendor's windows a 429 is charged to.
  *
  * Rialto sends the model the caller names, so the router never rewrites
- * `body.model`: it strips the Rialto subagent tag, stamps the facts the
- * failover path and the usage record read, and (on /v1/messages) appends
- * the active persona. The persona gate has its own file.
+ * `body.model`: it strips the Rialto subagent tag and stamps the facts
+ * the failover path and the usage record read.
  */
 
 import { describe, expect, test } from 'bun:test'

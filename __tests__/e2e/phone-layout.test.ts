@@ -54,7 +54,6 @@ const ROUTES = [
   '/settings',
   '/settings/access',
   '/settings/logging',
-  '/settings/personas',
   '/settings/advanced'
 ] as const
 

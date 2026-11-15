@@ -33,7 +33,6 @@ adopted:
   settings-access-edit: mock
   settings-access-turnoff: mock
   settings-logging: mock
-  settings-personas: mock
   settings-advanced: mock
   settings-advanced-health: mock
   nav-accordion: mock

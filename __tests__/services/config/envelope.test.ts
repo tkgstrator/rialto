@@ -16,7 +16,6 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { applyEnvelopeToEnv, readConfigFile } from '../../../src/services/config/envelope'
 import { CONFIG_FILE } from '../../../src/shared/constants'
-import { SEED_PERSONAS } from '../../../src/shared/data'
 import { ENVELOPE_ENV_KEYS } from '../../../src/shared/db/types'
 
 async function writeConfig(content: string): Promise<void> {
@@ -118,8 +117,6 @@ describe('readConfigFile', () => {
   test('returns default config when file does not exist', async () => {
     const cfg = await readConfigFile()
     expect(cfg).toMatchObject({ PORT: expect.any(Number), Providers: [] })
-    // Fresh installs ship with the seed persona library.
-    expect(cfg.Personas).toEqual(SEED_PERSONAS)
   })
 
   test('a fresh config carries no credential', async () => {
@@ -162,29 +159,6 @@ describe('readConfigFile — API_TIMEOUT_MS handling', () => {
     expect(cfg.API_TIMEOUT_MS).toBeUndefined()
     // Config was NOT recreated — original settings are preserved.
     expect(cfg.LOG_LEVEL).toBe('debug')
-  })
-
-  // These two used to assert that a rejected config "is lost, but a new
-  // one is generated". The file is moved aside rather than deleted now,
-  // and the persona library — stored nowhere else — is carried into the
-  // rebuilt one.
-  test('a negative API_TIMEOUT_MS is dropped without taking the persona library with it', async () => {
-    const personas = [{ id: 'p1', name: 'Mine', prompt: 'hello' }]
-    await writeConfig(
-      JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info', API_TIMEOUT_MS: -1, Personas: personas })
-    )
-    const cfg = await readConfigFile()
-    expect(cfg.API_TIMEOUT_MS).toBeUndefined()
-    expect(cfg.Personas).toEqual(personas)
-  })
-
-  test('a non-numeric API_TIMEOUT_MS is dropped without taking the persona library with it', async () => {
-    const personas = [{ id: 'p1', name: 'Mine', prompt: 'hello' }]
-    await writeConfig(
-      JSON.stringify({ PORT: 3456, LOG: false, LOG_LEVEL: 'info', API_TIMEOUT_MS: 'fast', Personas: personas })
-    )
-    const cfg = await readConfigFile()
-    expect(cfg.Personas).toEqual(personas)
   })
 
   test('"600000" (old UI default value as string) does not destroy config', async () => {

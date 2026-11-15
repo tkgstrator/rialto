@@ -64,11 +64,10 @@ async function buildLlmsContext(): Promise<LlmsContext> {
   //    it from api_style + auth_mode in step 5.
   const providersWithAuth = applySubscriptionAuth(servable)
 
-  // 3. ConfigStore — the pipeline reads the persona library and the
-  //    active persona, HTTPS_PROXY, etc. The router uses
-  //    configService.get('providers') for "provider,model" resolution;
-  //    keep that key (lowercase) populated alongside the schema-canonical
-  //    capital Providers.
+  // 3. ConfigStore — the pipeline reads HTTPS_PROXY, etc. The router
+  //    uses configService.get('providers') for "provider,model"
+  //    resolution; keep that key (lowercase) populated alongside the
+  //    schema-canonical capital Providers.
   const config = new ConfigStore({
     ...cfg,
     Providers: providersWithAuth,

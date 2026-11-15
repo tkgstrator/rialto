@@ -97,7 +97,6 @@ const SHARED_VOCABULARY = new Set([
   'settings.advanced.subtitleConfig',
   'settings.advanced.subtitleHealth',
   'settings.logging.levelHint',
-  'settings.personas.markdown',
   'settings.server.redis',
   'shell.identityAccess'
 ])

@@ -82,7 +82,7 @@ flowchart TB
 | | usage-service | 5h / weekly ウィンドウのキャッシュ。背景 polling で更新。**候補の選択には使われない**（Overview / Subscriptions の表示とアカウント選択の材料） | DB → mem | `src/services/usage-service.ts` |
 | | Postgres | `Provider`/`Model`/`AccessToken`/`Plan`/`InboundSurfaceConfig`/`Session`/`RequestLog`/`SubAccountUsage` ほか（`RoutingWeightChange` は読み手の無い残骸としてスキーマに残してある） | – | `src/prisma/schema.prisma` |
 | ③ Per-Request | HTTP | エンドポイント (`/v1/messages` 等) → 面記述子 → endpoint transformer 解決 | HTTP → ctx | `src/api/v1/route.ts` |
-| | RoutePlan | body parse + Plan のモデル判定 + サブエージェントタグの除去 + persona append + 素のモデル名の解決。許可されないモデルの 403 と `deniedTargets` の 400 はここで返す | body → RoutePlan | `src/api/v1/route-plan.ts`<br/>`src/llms/router.ts`<br/>`src/services/plan-model.ts` |
+| | RoutePlan | body parse + Plan のモデル判定 + サブエージェントタグの除去 + 素のモデル名の解決。許可されないモデルの 403 と `deniedTargets` の 400 はここで返す | body → RoutePlan | `src/api/v1/route-plan.ts`<br/>`src/llms/router.ts`<br/>`src/services/plan-model.ts` |
 | | FailoverChain | primary + 素のモデル名を持つ他のプロバイダを exhausted マークで絞る（auth_mode では絞らない） | RoutePlan → string[] | `src/api/v1/candidate-chain.ts` |
 | | ChainEntry loop | 各 entry を試し、429 ならアカウントを回し、それでも駄目なら次へ | string → Response | `src/api/v1/chain-failover.ts` |
 | | runPipeline | request transformers → fetch → response transformers の本処理 | invocation → Response | `src/llms/pipeline.ts` |
@@ -431,7 +431,7 @@ lift する一回限りの移行は削除済みで、流れは逆向きになっ
 
 | メンバ | 中身 | 読まれる場所 |
 |--------|------|--------------|
-| `config: ConfigStore` | Providers（有効な provider の有効な model だけ）/ Personas / ActivePersona / 各種スカラを key で引ける薄いラッパ。`Router` は載らない | routeRequest（persona）, chain-failover |
+| `config: ConfigStore` | Providers（有効な provider の有効な model だけ）/ 各種スカラを key で引ける薄いラッパ。`Router` は載らない | chain-failover |
 | `transformers: TransformerRegistry` | endpoint transformer 群 (`anthropic`, `openai`, `openai-responses`, `gemini`, `claude-code-oauth`, `codex-oauth`) | endpointTransformerMap |
 | `providers: ProviderRegistry` | name → ResolvedProvider Map。`api_base_url` / `api_key` 揃ったものだけ登録 | resolveInvocationForModel |
 | `tokenizers: TokenizerRegistry` | 既定は tiktoken (cl100k_base)。`@huggingface/tokenizers` を使うモデル精確なバックエンドと、API 集計バックエンドも登録できる（`src/llms/tokenizers/`） | いまリクエスト経路に読み手は無い（トークン数を数えていたのはルーティングだけ）。`/v1/messages/count_tokens` は自前のレジストリを持つ |
@@ -526,7 +526,7 @@ flowchart TD
   DEC -- 許可リストにある --> KEEP
   DEC -- モデルを書いていない --> DEF[body.model = defaultModel]
   DEC -- 許可リストに無い --> R403[403 面のエラー封筒<br/>upstream へ出さない]
-  KEEP --> STAMP[routeRequest<br/>タグを除去し isSubagent を記録<br/>※ /v1/messages のみ ActivePersona を append]
+  KEEP --> STAMP[routeRequest<br/>タグを除去し isSubagent を記録]
   DEF --> STAMP
   STAMP --> BARE{素のモデル名?}
   BARE -- Yes --> RES[provider 解決<br/>優先度順 / 曖昧なら 400]
@@ -550,9 +550,7 @@ Google `PERMISSION_DENIED`）で拒否したモデルと許可リストを名指
 **段階 2 — スタンプ**（`routeRequest`、`src/llms/router.ts`）
 `stripSubagentTag(body.system)` が system[1] のタグの**有無**を返し、閉じたタグを in-place で除去する。
 `RIALTO-SUBAGENT-MODEL` / `CCR-SUBAGENT-MODEL` のどちらでもよい。タグの中身は読まない。`RequestLog.isSubagent` に
-記録するだけで、行き先には効かない。続けて `/v1/messages` に限り、`applyGlobalSystemPrompt` が ActivePersona を
-cache-safe に append する。OpenAI 形・Gemini 形の面には付けない（top-level の未知パラメータを拒否する upstream
-がある — codex がその例）。`body.model` は書き換えない。route は常に `passthrough`。
+記録するだけで、行き先には効かない。`body.model` は書き換えない。route は常に `passthrough`。
 
 **段階 3 — 素のモデル名の provider 解決**
 `body.model` に `,` が無ければ、そのモデルを持つ有効なプロバイダを優先度順に並べる（Plan があれば Plan が載せる

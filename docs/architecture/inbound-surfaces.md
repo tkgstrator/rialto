@@ -164,8 +164,7 @@ OpenAI の公開 Images API の契約ではない。予告なく形が変わり�
 
 1. アクセストークンの **Plan** のモデル判定。Plan に載っていないモデルは、その面自身のエラー形の
    **403** で拒否する（リダイレクトはしない）。モデルを書かないリクエストだけが `defaultModel` になる
-2. サブエージェントのタグの除去と `RequestLog.isSubagent` の記録（`/v1/messages` のみ）、
-   アクティブなペルソナの挿入（`/v1/messages` のみ）
+2. サブエージェントのタグの除去と `RequestLog.isSubagent` の記録（`/v1/messages` のみ）
 3. 素のモデル名の provider 解決
 4. 面ごとの **deniedTargets**（400）
 
@@ -254,7 +253,6 @@ DBマイグレーションは不要（`InboundSurfaceConfig` は行が無けれ�
 | Settings — Server | `/settings` | 1.54% / 1.63% |
 | Settings — Access | `/settings/access` | 12.3% / 12.6% ※2 |
 | Settings — Logging | `/settings/logging` | 2.28% / 2.29% |
-| Settings — Personas | `/settings/personas` | 4.73% / 5.63% |
 | Settings — Advanced | `/settings/advanced` | 4.23% / 4.36% |
 | First run | `/setup` | 2.85% / 3.01% |
 | System states | `/access-denied` ほか | 3.22% / 9.53% |

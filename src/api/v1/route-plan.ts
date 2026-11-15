@@ -219,16 +219,13 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   // Before routeRequest strips the subagent tag in place.
   const archivedBody = requestArchiveEnabled() ? structuredClone(body) : undefined
 
-  // Stamps the subagent flag, strips its tag and injects the persona; the
-  // request object is kept so the flag and the fallbacks can be read back.
+  // Stamps the subagent flag and strips its tag; the request object is
+  // kept so the flag and the fallbacks can be read back.
   const routeReq: RouterRequest = {
     body: body as PipelineRequest['body'] & { model: string },
     log: requestLog,
     reqId,
-    // The router uses this to gate Anthropic-idiom mutations
-    // (persona injection etc.) so OpenAI-compat callers on
-    // /v1/chat/completions and /v1/responses get the exact request
-    // they sent rather than one enriched for Claude Code.
+    // The inbound wire endpoint the request arrived on, recorded for logs.
     inboundPath: path
   }
   routeRequest(routeReq, { config: ctx.config })

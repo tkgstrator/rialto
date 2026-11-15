@@ -15,9 +15,9 @@
 <script>
 const { renderShell, pill, btn } = window.Shell
 
-// SettingsPage / Presets / Personas / StatusLine / Debug were five
-// entries in the nav. They are all "configure the installation", so
-// they become one screen with a section rail.
+// SettingsPage / Presets / StatusLine / Debug were separate entries in
+// the nav. They are all "configure the installation", so they become
+// one screen with a section rail.
 
 const field = (label, value, hint, kind = 'text') => `
   <div class="grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4">

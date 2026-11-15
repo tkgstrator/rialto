@@ -17,9 +17,9 @@ export type { ConfigEnvelope }
 // --- Config envelope --------------------------------------------------------
 
 // Scalar envelope keys that may be mirrored onto process.env at boot.
-// Object/array fields (Personas) are envelope-resident but never
-// copied onto process.env, so they live in the schema
-// (`@/schemas/domain/config`) but not in this list.
+// Object/array fields are envelope-resident but never copied onto
+// process.env, so they live in the schema (`@/schemas/domain/config`)
+// but not in this list.
 export const ENVELOPE_ENV_KEYS = [
   'HOST',
   'PORT',

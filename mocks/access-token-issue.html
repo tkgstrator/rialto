@@ -40,9 +40,9 @@ const dlgField = (label, value, kind, hint = '') => `
   </div>`
 
 // Chips, not a select: the question is "which of these four", not "which
-// one", and the same control already asks it in Personas. "All endpoints"
-// is an explicit chip rather than the absence of a choice, because leaving
-// a row blank to mean the broadest possible scope is the kind of default
+// one", and the same control asks it elsewhere. "All endpoints" is an
+// explicit chip rather than the absence of a choice, because leaving a
+// row blank to mean the broadest possible scope is the kind of default
 // nobody reads.
 const endpointField = `
   <div>

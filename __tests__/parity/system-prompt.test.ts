@@ -74,9 +74,10 @@ describe('openai-chat — supported', () => {
     expect(systemContentOf(unified.messages)).toBe('You are terse.')
   })
 
-  // Absorbing an Anthropic-style top-level `system` — the guard for a
-  // persona injection that leaked through — is covered by "system
-  // absorption" in __tests__/llms/openai-transformer-request-out.test.ts.
+  // Absorbing an Anthropic-style top-level `system` — defensive absorption
+  // of an Anthropic-shape body that reached this transformer via passthrough
+  // — is covered by "system absorption" in
+  // __tests__/llms/openai-transformer-request-out.test.ts.
 })
 
 describe('openai-responses — supported', () => {

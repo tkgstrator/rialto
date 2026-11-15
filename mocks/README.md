@@ -91,7 +91,6 @@ node_modules/remixicon/
 | `settings.html` | Server | SettingsPage |
 | `settings-access.html` | Access | 新規（Phase 3.5） |
 | `settings-logging.html` | Logging | SettingsPage の一部 |
-| `settings-personas.html` | Personas | Personas / PersonaView / PersonaEdit |
 | `settings-advanced.html` | Advanced | DebugPage / JsonEditor |
 | `settings-advanced-health.html` | Advanced — Health | HealthPanel |
 

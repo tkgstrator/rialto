@@ -31,8 +31,7 @@ candidate).
    (`src/api/codex-mcp/targets.ts`); they never fall back to a default.
 3. **Stamp the request** (`src/llms/router.ts`, `routeRequest`). It strips the subagent tag from the
    second system block and records whether it was present (`RequestLog.isSubagent`; the tag's value
-   is not read), and on `/v1/messages` it appends the active persona's prompt. It never rewrites
-   `body.model`. The recorded scenario is always `passthrough`.
+   is not read). It never rewrites `body.model`. The recorded scenario is always `passthrough`.
 4. **Resolve a bare model name** to its provider: the providers that are enabled and host it, ordered
    by provider priority (`src/services/model-provider-preference.ts`), restricted to the providers
    the plan lists. Several hosts with no priority set is a 400.
@@ -100,6 +99,6 @@ lifting on Refresh is `releaseRecoveredMarks` in `src/services/subscription-refr
 | 403 and the default on each plan-applying surface, bare-name resolution, the deny list | `__tests__/api/route-plan.test.ts` |
 | Image generation applies the plan | `__tests__/api/openai-images.test.ts` |
 | `/codex` refuses a target the plan does not list | `__tests__/api/codex-mcp.test.ts` |
-| Subagent tag, persona | `__tests__/llms/router.test.ts` |
+| Subagent tag | `__tests__/llms/router.test.ts` |
 | Usage-window 429 | `__tests__/api/usage-windows.test.ts` |
 | Quota snapshot, pace, account holds | `__tests__/services/routing-scheduler/` |

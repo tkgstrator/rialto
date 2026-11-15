@@ -14,7 +14,6 @@
 - **Passthrough-only dispatch** — the caller's `body.model` wins. A bare model name resolves to its upstream by provider priority, a `provider,model` pair picks one directly, and Rialto never rewrites the model on the caller's behalf.
 - **Plans on access tokens** — a token may carry a Plan, and a Plan names the models that token may use (`provider,model` list, with an optional default when none is sent), plus 5-hour and 7-day request / money limits. A model the Plan does not list is refused **403**, not redirected.
 - **Failover with account rotation** — a 429 rotates to a peer subscription account first, then to the next provider that hosts the same bare name. The `provider,model` form opts out of fallback by pinning a single upstream.
-- **Personas** — append a named system prompt to every `/v1/messages` request without touching Claude Code. Manage the library and pick the active one under Settings → Personas.
 - **Multi-provider support** — connect API-key providers (Anthropic, OpenAI, DeepSeek, Gemini, Groq, OpenRouter, …) or subscription-based providers (Claude Code OAuth, OpenAI Codex), with several accounts per subscription provider.
 - **Subscription monitoring** — each account's rate-limit windows, refreshed on demand from the Subscriptions list, and the exhaustion state the router reads. A refresh reaches routing at once, and a Codex account's banked rate-limit resets can be spent from its provider page.
 - **Usage & cost** — spend for today, this week and this month on Overview; per-provider cost by day or week, and per-account subscription usage, under Activity → Usage. Overview and each subscription provider's page also show, per account, what its traffic would have cost at API prices — this week and over 30 days.
@@ -34,7 +33,7 @@ The web UI (served on port **3456** by default) gives you full control over ever
 | **Providers** | `/providers` | Two lists — `/providers/subscriptions` and `/providers/api-keys` — plus `/providers/connect` to add one and `/providers/<name>` for models, prices, context windows, connectivity tests and the read-only derived request shape |
 | **Access tokens** | `/access-tokens` | Issue, scope, rotate and revoke the tokens clients use on `/v1/*`. Each token picks its inbound surfaces and attaches to a Plan — the Plan is what grants its models and rate limits |
 | **Activity** | `/activity` | Sessions, per-request logs (`/activity/requests`), subscription usage (`/activity/usage`), and server logs (`/activity/logs`) |
-| **Settings** | `/settings` | Server, Access (admin access: Cloudflare Access, and how to get back in if it breaks), Logging, Personas, Advanced (config document, health) |
+| **Settings** | `/settings` | Server, Access (admin access: Cloudflare Access, and how to get back in if it breaks), Logging, Advanced (config document, health) |
 
 First run lands on `/setup`.
 
@@ -162,10 +161,8 @@ Boot-time scalars and disk-resident objects live here. Environment-variable inte
 | `CAPTURE_MESSAGES` | Archive conversation transcripts (default `true`) |
 | `REDACT_TOOL_ARGUMENTS` | Strip tool-call arguments from the archive (default `false` — turning it on loses information that cannot be recovered later) |
 | `ROUTING_SCHEDULER_INTERVAL_MS` | Scheduler tick, 60 000–3 600 000 (default `300000`) |
-| `Personas` | The persona library (array) |
-| `ActivePersona` | The active persona's uuid id; `null` / absent / empty means none. Also a top-level key on the `/api/config` wire |
 
-The scalar keys above (everything but `Personas` and `ActivePersona`) can also be supplied as process environment variables — a Docker `environment:` entry, for instance — and a set environment value wins over the file.
+The scalar keys above can also be supplied as process environment variables — a Docker `environment:` entry, for instance — and a set environment value wins over the file.
 
 Keys an older build wrote for mechanisms that no longer exist are ignored. `Router`, `CUSTOM_ROUTER_PATH`, `LiveRoutingName`, `CROSS_PROVIDER_FALLBACK` and the retired admin key `APIKEY` are stripped on every read; `POST /api/config` drops them with a warning, and the next save removes them from the file. An `APIKEY` environment variable is not read either. `ROUTER_MODE` merely survives as an unknown key and is read by nothing.
 
@@ -194,20 +191,6 @@ A bare model name's chain is the first-priority provider that hosts it followed 
 - **Multi-account balancing** — with several enabled accounts on the same provider, the account picker drops accounts whose recorded binding windows are already at 99 %, reuses the sticky session→account mapping when it still points at a survivor, and otherwise picks the account with the highest required burn rate — `remaining % ÷ hours until reset`, taken over its tightest binding weekly window — i.e. the one most at risk of leaving quota unspent. Ties go to the least recently picked account.
 
 Decisions are logged structurally — the skipped upstream and the reason, at `warn` when the answer is a 429 or a 400, and at `info` otherwise.
-
-### Personas
-
-A *persona* is a named system-prompt fragment appended to every `/v1/messages` request. Use them to give Claude Code a consistent voice / role / set of working rules without editing Claude Code itself.
-
-- **Library** — `Personas` is a top-level array on the disk envelope. Each entry has a stable uuid `id`, a free-form `name` (display label, need not be unique), and the `prompt` text. New installs ship with a small starter library; existing installs keep what they have on disk.
-- **Active selection** — at most one persona is active per install. Its uuid id is the top-level `ActivePersona` key, on the disk envelope and on the `/api/config` wire alike. `null` / absent / empty string means "no persona". There are no per-project or per-session override files.
-- **Injection** — the active persona's `prompt` is appended to the LAST system block carrying `cache_control` (falling back to the last string text block). This keeps the persona *inside* the cached prefix, so it consumes no extra cache breakpoint and stays byte-stable across requests (preserving Anthropic's prompt cache). String and undefined `system` values are concatenated; multi-block array systems are mutated in place.
-- **Surface restriction** — persona injection runs on **`/v1/messages` only**. The OpenAI-compat and Gemini surfaces reject an enriched `system` field outright (Codex answers `Unsupported parameter: system`), so the enrichment is skipped there rather than breaking the request. Every `/v1/messages` request inherits the active persona, including one on a token with no Plan.
-- **Subagent interaction** — persona injection runs *after* the subagent tag is stripped, so a subagent's per-call system content composes with — rather than clobbers — the persona.
-
-Both the library and the active selection live under **Settings → Personas** (`/settings/personas`). "No persona" is the no-op default.
-
-For authoring high-fidelity personas (structural patterns, anti-pattern cataloguing, thought-process control), see [docs/guides/persona-authoring.md](docs/guides/persona-authoring.md).
 
 ### Transformers
 
@@ -309,7 +292,7 @@ for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.
 
 Any client that supports overriding `base_url` / `baseURL` works the same way.
 
-**What applies on these surfaces.** Failover, account rotation, model addressing by bare name, and Plan-gated model access all apply. The caller's `body.model` wins — Rialto does not reclassify a request to a different model. Persona injection does **not** apply — it is `/v1/messages` only (see Personas above).
+**What applies on these surfaces.** Failover, account rotation, model addressing by bare name, and Plan-gated model access all apply. The caller's `body.model` wins — Rialto does not reclassify a request to a different model.
 
 ## 🧩 Codex MCP server
 

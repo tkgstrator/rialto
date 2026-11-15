@@ -242,11 +242,11 @@ describe('convertResponsesRequestToUnified', () => {
     expect(bag.store).toBeUndefined()
   })
 
-  test('absorbs an Anthropic-style top-level `system` (persona-leaked defence)', () => {
-    // Persona injection sets `body.system` — the router now gates it on
-    // Anthropic inbound only, but the endpoint transformer keeps the
-    // absorption as belt-and-braces so any future injection can't slip
-    // through as a stray top-level field.
+  test('defensive absorption of a stray Anthropic-style top-level system', () => {
+    // A Responses caller never emits `body.system`, but an
+    // Anthropic-shape body reaching this transformer via passthrough
+    // could leave one — the endpoint transformer absorbs it so no
+    // stray top-level field reaches downstream.
     const unified = convertResponsesRequestToUnified({
       model: 'gpt-5-mini',
       input: 'hi',
