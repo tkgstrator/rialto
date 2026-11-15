@@ -41,9 +41,12 @@ interface Revealed {
   expiry: string
 }
 
-/** "4 active · 1 expired · all /v1/*". */
+/** "4 active · 1 expired · all /v1/*". Empty with no tokens — the list's
+ *  own empty state already stands alone, and "0 active · all /v1/*" was
+ *  an empty counter stacked on an empty scope line. */
 function Summary({ counts }: { counts: TokenCounts }) {
   const { t } = useTranslation()
+  if (counts.active === 0 && counts.expired === 0) return null
   return (
     <>
       {t('settings.access.countActive', { n: counts.active })}
