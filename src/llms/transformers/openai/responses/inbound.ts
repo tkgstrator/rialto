@@ -317,8 +317,9 @@ export function convertResponsesRequestToUnified(body: Record<string, unknown>):
   messages.push(...inputMessages(body.input))
 
   // Absorb an Anthropic-style top-level `system` (Responses API doesn't
-  // model it, but a persona-enriched pipeline could still leave one) as
-  // a leading system message. Matches OpenAITransformer.transformRequestOut.
+  // model it, but an Anthropic-shape body reaching this transformer via
+  // passthrough could still leave one) as a leading system message.
+  // Matches OpenAITransformer.transformRequestOut.
   const systemText = body.system !== undefined && body.system !== null ? flattenSystemToText(body.system) : ''
   if (systemText.length > 0 && (messages.length === 0 || messages[0]?.role !== 'system')) {
     messages.unshift({ role: 'system', content: systemText })

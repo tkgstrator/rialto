@@ -22,9 +22,9 @@ const { renderShell, pill, btn, selectCell, effortCell, sortTh, pager, dialog, u
 // Same shape as provider-subscription.html — the two are one
 // screen with two kinds of detail, and the rail is what says so.
 
-// The page reads until Edit is pressed: alias and effort pickers, the
+// The page reads until Edit is pressed: effort pickers, the
 // switches and Replace were live all the time, one stray click from
-// changing what Routing sends where. `?edit` draws the state after Edit and
+// changing which models callers can reach. `?edit` draws the state after Edit and
 // `?remove` the confirmation Remove opens from there, so a reviewer sees all
 // three without copies of the page. Declared first because the model table
 // is rendered the moment it is defined.
@@ -81,21 +81,15 @@ const toggle = (on) => `
   </span>`
 
 // Prices are per 1M tokens, each in its own right-aligned column.
-//
-// No name here says a Claude family, so what a route calls "sonnet" on
-// this provider is whatever the tier strip below was set to by hand. The
-// Tier column reads it back per model; there is no per-model tier to type
-// — routes hold a provider and a tier, and a tier some model names (on a
-// Claude provider) follows the newest switched-on one by itself.
 const MODELS = [
-  { name: 'gpt-5.5',        alias: 'opus',   effort: null,   ctx: '400k', inp: '$1.25', cache: '$0.125', out: '$10.0', style: '—',        test: 'ok',      on: true },
-  { name: 'gpt-5.4',        alias: 'sonnet', effort: null,   ctx: '400k', inp: '$1.25', cache: '$0.125', out: '$10.0', style: '—',        test: 'ok',      on: true },
-  { name: 'gpt-5.4-mini',   alias: 'haiku',  effort: 'low',  ctx: '400k', inp: '$0.250', cache: '$0.0250', out: '$2.00', style: '—',      test: 'ok',      on: true },
-  { name: 'gpt-5.3-codex',  alias: null,     effort: 'high', ctx: '400k', inp: '$1.25', cache: '$0.125', out: '$10.0', style: 'responses', test: 'ok',     on: true },
-  { name: 'gpt-5.2',        alias: null,     effort: null,   ctx: '272k', inp: '$1.25', cache: '$0.125', out: '$10.0', style: '—',        test: 'ok',      on: true },
-  { name: 'gpt-4.1',        alias: null,     effort: null,   ctx: '1M',   inp: '$2.00', cache: '$0.500', out: '$8.00', style: '—',        test: 'unknown', on: false, legacy: true },
-  { name: 'gpt-4.1-mini',   alias: null,     effort: null,   ctx: '1M',   inp: '$0.400', cache: '$0.100', out: '$1.60', style: '—',       test: 'unknown', on: false, legacy: true },
-  { name: 'o3-deep-research', alias: null,   effort: 'high', ctx: '200k', inp: '$10.0', cache: '$2.50',  out: '$40.0', style: 'responses', test: 'fail',   on: false }
+  { name: 'gpt-5.5',        effort: null,   ctx: '400k', inp: '$1.25', cache: '$0.125', out: '$10.0', style: '—',        test: 'ok',      on: true },
+  { name: 'gpt-5.4',        effort: null,   ctx: '400k', inp: '$1.25', cache: '$0.125', out: '$10.0', style: '—',        test: 'ok',      on: true },
+  { name: 'gpt-5.4-mini',   effort: 'low',  ctx: '400k', inp: '$0.250', cache: '$0.0250', out: '$2.00', style: '—',      test: 'ok',      on: true },
+  { name: 'gpt-5.3-codex',  effort: 'high', ctx: '400k', inp: '$1.25', cache: '$0.125', out: '$10.0', style: 'responses', test: 'ok',     on: true },
+  { name: 'gpt-5.2',        effort: null,   ctx: '272k', inp: '$1.25', cache: '$0.125', out: '$10.0', style: '—',        test: 'ok',      on: true },
+  { name: 'gpt-4.1',        effort: null,   ctx: '1M',   inp: '$2.00', cache: '$0.500', out: '$8.00', style: '—',        test: 'unknown', on: false, legacy: true },
+  { name: 'gpt-4.1-mini',   effort: null,   ctx: '1M',   inp: '$0.400', cache: '$0.100', out: '$1.60', style: '—',       test: 'unknown', on: false, legacy: true },
+  { name: 'o3-deep-research', effort: 'high', ctx: '200k', inp: '$10.0', cache: '$2.50',  out: '$40.0', style: 'responses', test: 'fail',   on: false }
 ]
 const testIcon = {
   ok: '<i class="ri-check-line text-emerald-600 dark:text-emerald-400"></i>',
@@ -111,7 +105,6 @@ const modelRow = (m) => `
         ${m.legacy ? pill('legacy', 'mute') : ''}
       </div>
     </td>
-    <td class="px-2">${m.alias === null ? '<span class="text-[12px] text-muted-foreground/50">—</span>' : `<span class="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[12px]">${m.alias}</span>`}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${m.ctx}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums">${m.inp}</td>
     <td class="px-2 text-right font-mono text-xs tabular-nums text-muted-foreground">${m.cache}</td>
@@ -124,11 +117,10 @@ const modelRow = (m) => `
 
 const models = `
   <table class="w-full table-fixed">
-    <colgroup><col><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-40"><col class="w-24"><col class="w-14"><col class="w-16"></colgroup>
+    <colgroup><col><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-20"><col class="w-40"><col class="w-24"><col class="w-14"><col class="w-16"></colgroup>
     <thead>
       <tr class="text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2">
         ${sortTh('Model', 'pl-6 pr-2', 'left', true, 'desc')}
-        ${sortTh('Tier', 'px-2')}
         ${sortTh('Context', 'px-2', 'right')}
         ${sortTh('In /1M', 'px-2', 'right')}
         ${sortTh('Cached', 'px-2', 'right')}
@@ -144,9 +136,8 @@ const models = `
          — priced-but-off models, and the legacy rows that are still
          priced and so rode along under "Enabled + priced" — is one click
          away under the wider slices. A legacy model that is switched ON
-         still shows, because that is a live routing target and a list
-         that hides one cannot be trusted to say what this provider
-         serves. -->
+         still shows, because that is a live target and a list that hides
+         one cannot be trusted to say what this provider serves. -->
     <tbody>${MODELS.filter((m) => m.on).map(modelRow).join('')}</tbody>
   </table>`
 
@@ -155,7 +146,7 @@ const models = `
 const removeDialog = REMOVING
   ? dialog(
       'Remove OpenAI?',
-      '<p class="text-xs leading-relaxed text-muted-foreground">This deletes its 18 models and the stored credential, and drops it from every routing chain that names it. There is no undo.</p>',
+      '<p class="text-xs leading-relaxed text-muted-foreground">This deletes its 18 models and the stored credential, There is no undo.</p>',
       `${btn('Cancel', 'ghost')}${btn('Remove', 'danger', 'ri-delete-bin-line')}`
     )
   : ''
@@ -172,8 +163,8 @@ document.getElementById('root').innerHTML = `
           <p class="mt-0.5 font-mono text-[12px] text-muted-foreground">https://api.openai.com/v1/chat/completions</p>
         </div>
         <!-- Edit, then Revert / Save, for everything on this page that
-             changes the provider: the switch Routing reads, the key, the Base
-             URL, the tier aliases, and each model's shape, effort and switch.
+             changes the provider: the provider switch, the key, the Base
+             URL, and each model's shape, effort and switch.
              One Save writes them all.
              Remove only exists while editing, red, and still asks first.
              Test all is locked meanwhile, like the page actions above: its
@@ -260,36 +251,6 @@ document.getElementById('root').innerHTML = `
         </div>
       </div>
 
-      <!-- Tiers: what a route naming this provider and a tier reaches.
-           Same strip as the subscription page; see its comment. No model
-           here names a tier, so every cell is set by hand. -->
-      <div class="flex items-center gap-3 px-6 pt-5 pb-3">
-        <h3 class="text-sm font-semibold">Tiers</h3>
-        <span class="text-[12px] text-muted-foreground">what Routing reaches when a route names this provider and a tier</span>
-      </div>
-      <div class="grid grid-cols-4 gap-px border-y border-border bg-border/60">
-        ${[
-          ['fable', null],
-          ['opus', 'gpt-5.5'],
-          ['sonnet', 'gpt-5.4'],
-          ['haiku', 'gpt-5.4-mini']
-        ]
-          .map(
-            ([tier, model]) => `
-          <div class="border-l-2 border-l-transparent bg-background px-4 py-3 transition-colors hover:border-l-border hover:bg-muted/50">
-            <div class="flex h-5 items-center"><span class="text-[12px] uppercase tracking-wider text-muted-foreground/70">${tier}</span></div>
-            <div class="mt-1.5 flex min-h-8 items-center">${
-              EDITING
-                ? `<button class="inline-flex h-8 w-full items-center justify-between gap-1.5 rounded-md border border-border px-2.5 font-mono text-xs hover:bg-muted/60">${model === null ? '<span class="text-muted-foreground/60">unset</span>' : model} <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i></button>`
-                : model === null
-                  ? '<span class="text-[12px] text-muted-foreground/60">unset — routes to this tier are refused</span>'
-                  : `<span class="font-mono text-xs">${model}</span>`
-            }</div>
-          </div>`
-          )
-          .join('')}
-      </div>
-
       <div class="flex items-center gap-3 px-6 pt-5 pb-3">
         <h3 class="text-sm font-semibold">Models</h3>
         <span class="text-[12px] text-muted-foreground">5 of 18 enabled</span>
@@ -307,8 +268,8 @@ document.getElementById('root').innerHTML = `
       <div class="px-6 pt-4">
         <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
           <i class="ri-information-line mr-1 align-[-1px]"></i>
-          Routing reaches these models only through the tiers above — a model no tier is set to
-          serves nothing routed, however it is switched.
+          A model that is switched off is left out of <span class="font-mono">/v1/models</span> and cannot
+          be added to a plan.
           <span class="mt-1.5 block">
             <span class="font-medium text-foreground">Shape</span> picks which API a model's requests
             use, Chat Completions or Responses. A dash follows the provider's default; the Base URL may

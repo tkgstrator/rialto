@@ -66,9 +66,10 @@ export class OpenAITransformer extends Transformer {
   //     silently dropped without this rewrite, or 400'd by strict
   //     upstreams (codex) that reject unknown top-level params.
   //   - `system` (top-level string / block array, Anthropic idiom).
-  //     OpenAI callers never send this, but a persona-enriched pipeline
-  //     could — absorb it into `messages[0]` defensively so nothing
-  //     downstream sees a stray top-level field.
+  //     OpenAI callers never send this, but an Anthropic-shape body
+  //     could land here through the pipeline — absorb it into
+  //     `messages[0]` defensively so nothing downstream sees a stray
+  //     top-level field.
   //
   // Both mutations are idempotent (checks presence first) so a request
   // that already matches unified shape passes through untouched.
@@ -86,7 +87,7 @@ export class OpenAITransformer extends Transformer {
     // block-array form (concatenate all text blocks). Idempotent —
     // a body whose messages[0] is already a system message is left
     // with only the top-level field stripped so retries don't
-    // double-prepend the persona text.
+    // double-prepend the system text.
     absorbTopLevelSystem(body)
 
     // Translate top-level `reasoning_effort` scalar into the nested

@@ -6,8 +6,8 @@
  * top-level params:
  *
  *   - Anthropic-style top-level `system` gets absorbed into a leading
- *     `messages[0]` with role='system', so persona-injected pipelines
- *     don't leak a stray field.
+ *     `messages[0]` with role='system', so a stray top-level field
+ *     does not leak downstream.
  *   - Top-level `reasoning_effort` scalar becomes nested
  *     `reasoning.effort`, matching the unified shape every downstream
  *     transformer reads.
@@ -54,7 +54,7 @@ describe('OpenAITransformer.transformRequestOut — system absorption', () => {
     const out = (await t.transformRequestOut(
       {
         model: 'gpt-4.1',
-        system: 'ignored persona',
+        system: 'ignored system',
         messages: [
           { role: 'system', content: 'caller-supplied' },
           { role: 'user', content: 'hi' }

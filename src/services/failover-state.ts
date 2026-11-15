@@ -135,8 +135,8 @@ export const clearModelExhaustion = (providerName: string, modelName: string): v
   modelMap.clear(modelKey(providerName, modelName))
 
 // When a (provider, model) comes back: the later of its own mark and its
-// provider's, since either keeps it out. Null when neither is set. What
-// the tier router's Retry-After reads when every route of a tier is out.
+// provider's, since either keeps it out. Null when neither is set.
+// Read by the reactive-path tests to pin the mark's deadline.
 export const exhaustedUntil = (providerName: string, modelName: string): number | null => {
   const deadlines = [modelMap.until(modelKey(providerName, modelName)), providerMap.until(providerName)].filter(
     (d): d is number => d !== null

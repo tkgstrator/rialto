@@ -1,10 +1,7 @@
-import type { RoutingMode } from '@/lib/api-types'
-
 export interface OverviewSurfaceTraffic {
   id: string
   path: string
   client: string
-  routingMode: RoutingMode
   requests: number
   p50Ms: number | null
   errorRate: number | null

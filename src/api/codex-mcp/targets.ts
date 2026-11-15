@@ -111,10 +111,9 @@ export async function resolveCodexTarget(
  * Whether a plan lets its token spend this target. A token without a plan
  * may spend anything the server offers.
  *
- * A plan on the /v1 surfaces swaps a model it does not list for its
- * default. That is right for a client with a stale setting, and wrong
- * here: a caller who asked Codex for a second opinion must not be
- * answered by whatever the plan defaults to.
+ * The /v1 surfaces refuse a model the plan does not list with a 403, and
+ * this does the same: a caller who asked Codex for a second opinion must
+ * not be answered by whatever else the plan lists.
  */
 export function planAllows(plan: TokenPlan | null, target: CodexTarget): boolean {
   return plan === null || plan.models.includes(targetId(target))

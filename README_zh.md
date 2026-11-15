@@ -14,7 +14,6 @@
 - **按场景路由** — 每个请求被归入一个场景（Default；要求思考时为 Think；输入超过自动调整的阈值时为 Long context）和一个通道（主代理或子代理），路由配置为每个场景和通道各持有一组有序的路线，每条路线点名一个提供商及其上的一个层级。它对应哪个模型由提供商的*层级*决定（名称表明该层级的模型中已开启的最新一个），因此开启新模型时所有路线会一起移过去，在你开启之前什么都不会变。第一条能接下请求的路线负责处理——预计会剩下配额的路线被提到前面，预计会用尽的路线被放到后面——其余构成兜底列表。
 - **直通（passthrough）** — 或者让调用方自己选：处于 passthrough 模式的入口面（或单个访问令牌）会把调用方自己的 `body.model` 原样送往上游。
 - **带账户轮换的故障切换** — 收到 429 时先轮换到对等的订阅账户，账户耗尽后再继续遍历该列表其余的路线。列表的顺序按你写的执行，包括订阅型路线落到 api_key 路线。
-- **人格** — 在不修改 Claude Code 的前提下，为每个走路由的 `/v1/messages` 请求追加一段命名的系统提示。人格库的管理和当前人格的选择都在 Settings → Personas。
 - **多提供商支持** — 连接 API Key 型提供商（Anthropic、OpenAI、DeepSeek、Gemini、Groq、OpenRouter 等）或订阅型提供商（Claude Code OAuth、OpenAI Codex），一个订阅型提供商可挂多个账户。
 - **订阅监控** — 每个账户的速率限制窗口，可在 Subscriptions 列表随时刷新，路由器读取的耗尽状态也来自这里。刷新会立即作用于路由；Codex 账户积攒的速率限制重置可在其提供商页面上使用。
 - **用量与成本** — Overview 显示今天、本周、本月的支出；Activity → Usage 显示按日或按周的各提供商费用，以及各账户的订阅用量。Overview 与各订阅型提供商页面还会按账户显示其流量若按 API 价格计算的金额（本周与最近 30 天）。
@@ -35,7 +34,7 @@ Web 界面（默认在端口 **3456** 提供服务）让你全面掌控网关的
 | **Providers** | `/providers` | 两个列表——`/providers/subscriptions` 与 `/providers/api-keys`——外加用于添加的 `/providers/connect`，以及查看层级、模型、价格、上下文窗口、连接测试和只读推导请求形状的 `/providers/<name>` |
 | **Access tokens** | `/access-tokens` | 签发、限定范围、轮换和吊销客户端在 `/v1/*` 上使用的令牌 |
 | **Activity** | `/activity` | 会话、逐请求日志（`/activity/requests`）、订阅用量（`/activity/usage`）与服务器日志（`/activity/logs`）|
-| **Settings** | `/settings` | Server、Access（管理访问：Cloudflare Access，以及它出故障时如何重新进入）、Logging、Personas、Advanced（配置文档、健康状态）|
+| **Settings** | `/settings` | Server、Access（管理访问：Cloudflare Access，以及它出故障时如何重新进入）、Logging、Advanced（配置文档、健康状态）|
 
 首次启动会落到 `/setup`。
 
@@ -178,10 +177,8 @@ Rialto 不只是 Claude Code 的代理。入口处接收四种线路格式，每
 | `CAPTURE_MESSAGES` | 归档对话记录（默认 `true`）|
 | `REDACT_TOOL_ARGUMENTS` | 从归档中剔除工具调用参数（默认 `false`——开启后丢失的信息无法恢复）|
 | `ROUTING_SCHEDULER_INTERVAL_MS` | 调度器 tick 间隔，60 000–3 600 000（默认 `300000`）|
-| `Personas` | 人格库（数组）|
-| `ActivePersona` | 当前人格的 uuid id；`null` / 缺失 / 空字符串表示无。在 `/api/config` 的线路上同样是顶层键 |
 
-上表中的标量键（除 `Personas`、`ActivePersona` 之外）也可以作为进程环境变量提供——例如 Docker 的 `environment:` 条目——已设置的环境变量优先于文件。
+上表中的标量键也可以作为进程环境变量提供——例如 Docker 的 `environment:` 条目——已设置的环境变量优先于文件。
 
 旧版本为已不存在的机制写下的键一律忽略。`Router`、`CUSTOM_ROUTER_PATH`、`LiveRoutingName`、`CROSS_PROVIDER_FALLBACK` 以及已废弃的管理密钥 `APIKEY` 会在每次读取时被剔除；`POST /api/config` 会带着警告丢弃它们，下一次保存时把它们从文件中清掉。`APIKEY` 环境变量同样不会被读取。`ROUTER_MODE` 只是作为未知键留在文件里，没有任何代码读取它。
 
@@ -252,20 +249,6 @@ Rialto 不只是 Claude Code 的代理。入口处接收四种线路格式，每
 决策会以结构化日志记录。某个列表没有可用路线时，日志会列出每条被跳过的路线及其原因——`disabled` / `alias_unset` / `no_web_search` / `context_too_small` / `exhausted` / `error_rate`——应答为 429 或 400 时以 `warn` 输出，送出调用方自己的模型时以 `info` 输出。按节奏调整了顺序、以及 Long context 阈值发生变化时，也会以 `info` 输出。
 
 > **不存在周维度排空守卫。** 早期版本会在订阅型提供商的周窗口越过线性排空目标时提前切换。这已经删除：只有当调度器的快照报告订阅型目标已用尽——或已用量达到默认为 100 的 `quotaSkipPct`——时才会拦下它。节奏只改变仍然开放的路线的顺序；除此之外，它会一直跑到上游上限，并根据真实发生的 429 做轮换。
-
-### 人格
-
-*人格*是一段命名的系统提示片段，在路由之后，会被追加到每一个走路由的 `/v1/messages` 请求里。借助它可以在不修改 Claude Code 本体的前提下，让 Claude Code 始终保持某种口吻、角色或工作守则。
-
-- **人格库** — `Personas` 是磁盘 envelope 上的顶层数组。每个条目都带有一个稳定的 uuid `id`、显示用的 `name`（无需唯一）和正文 `prompt`。新装环境会附带一个小型的初始人格库；既有环境则保留磁盘上已经存在的内容。
-- **当前激活** — 每个部署最多只能有一个激活的人格。它的 uuid id 就是顶层的 `ActivePersona` 键，在磁盘 envelope 和 `/api/config` 的线路上位置相同。`null` / 缺失 / 空字符串表示「无人格」。不存在项目级或会话级的覆盖文件。
-- **注入方式** — 把当前人格的 `prompt` 追加到带有 `cache_control` 的最后一个 system 块上（若没有则退回到最后一个字符串文本块）。这样人格就被收纳进缓存前缀的*内部*，既不会消耗额外的 cache 断点，又能在多次请求之间保持字节级稳定（保留 Anthropic 的 prompt cache）。当 `system` 为字符串 / 未定义时进行拼接；多块数组形式则原地修改。
-- **入口面限制** — 人格注入**只在 `/v1/messages` 上运行**，而且只对 routed 流量生效：passthrough 入口面，或固定到 `passthrough` 路由配置的令牌，会跳过路由，人格也随之跳过。OpenAI 兼容面与 Gemini 面根本不接受被撑大的 `system` 字段（Codex 会返回 `Unsupported parameter: system`），因此宁可跳过注入也不让请求失败。在 `/v1/messages` 上，每个走路由的请求都会继承当前人格，无论由哪条路线处理——包括没有路线、按调用方自己的模型送出的请求。
-- **与子代理交互** — 人格注入在子代理标签被剥离*之后*执行，所以子代理的逐次系统内容不会被覆盖，而是与人格合成。
-
-人格库的管理和当前激活人格的切换都在 **Settings → Personas**（`/settings/personas`）。「无人格」是默认的 no-op。
-
-关于如何撰写高还原度的人格（结构模板、反模式列举、思考过程控制），请参见 [docs/guides/persona-authoring.md](docs/guides/persona-authoring.md)。
 
 ### 转换器
 
@@ -367,7 +350,7 @@ for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.
 
 任何支持覆盖 `base_url` / `baseURL` 的客户端都同理。
 
-**这些入口面上哪些能力生效。** 故障切换、账户轮换以及按裸模型名寻址始终生效。按场景路由只有在把该入口面从 `passthrough` 切换为 `routed` 之后才生效——而且此时客户端发送的模型名（`gpt-5.5`、`gemini-2.5-pro`）不决定任何事：要求推理的请求（`reasoning_effort`、`reasoning`、`thinkingConfig`）走 Think 列表，长请求走 Long context 列表，其余走 Default 列表，都在 Agent 通道上。多个入口面共用一个路由配置时也共用其列表，想让某个面走不同的路线，就给它指向专用的路由配置。人格注入**不**生效——它只作用于 `/v1/messages`（见上文「人格」）。
+**这些入口面上哪些能力生效。** 故障切换、账户轮换以及按裸模型名寻址始终生效。按场景路由只有在把该入口面从 `passthrough` 切换为 `routed` 之后才生效——而且此时客户端发送的模型名（`gpt-5.5`、`gemini-2.5-pro`）不决定任何事：要求推理的请求（`reasoning_effort`、`reasoning`、`thinkingConfig`）走 Think 列表，长请求走 Long context 列表，其余走 Default 列表，都在 Agent 通道上。多个入口面共用一个路由配置时也共用其列表，想让某个面走不同的路线，就给它指向专用的路由配置。
 
 ## 🧩 Codex MCP 服务器
 
@@ -391,7 +374,7 @@ claude mcp add --transport http --scope user codex https://rialto.example.com/co
 只有一个日志器（pino），它记录全部内容——HTTP 请求、路由决策、上游调用、服务器事件：
 
 - **控制台** — 始终输出，经过美化。
-- **文件** — `~/.rialto/logs/rialto-YYYY-MM-DD.log`，仅当 `LOG` 为 `true` 时写入（默认为 `false`）。超过 `LOG_MAX_MB`（默认 10）的文件会续写到 `rialto-YYYY-MM-DD-N.log`。级别由 `LOG_LEVEL` 控制；密钥（`authorization`、`x-api-key`、令牌、cookie）在写入前会被脱敏。
+- **文件** — `~/.rialto/logs/YYYY-MM-DD.log`，仅当 `LOG` 为 `true` 时写入（默认为 `false`）。超过 `LOG_MAX_MB`（默认 10）的文件会续写到 `YYYY-MM-DD-N.log`。级别由 `LOG_LEVEL` 控制；密钥（`authorization`、`x-api-key`、令牌、cookie）在写入前会被脱敏。
 
 这些文件可以在界面的 **Activity → Logs** 中查看。不存在单独的应用日志。
 

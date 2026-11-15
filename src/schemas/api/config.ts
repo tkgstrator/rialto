@@ -8,7 +8,7 @@
  */
 
 import { z } from '@hono/zod-openapi'
-import { ConfigEnvelopeSchema, PersonaSchema } from '@/schemas/domain/config'
+import { ConfigEnvelopeSchema } from '@/schemas/domain/config'
 import { JsonValueSchema } from '@/schemas/domain/preset'
 import { ProviderSchema } from '@/schemas/domain/provider'
 import { EmptyStringToNullSchema } from '@/schemas/primitives/common'
@@ -21,11 +21,7 @@ import { EmptyStringToNullSchema } from '@/schemas/primitives/common'
 export const AppConfigSchema = ConfigEnvelopeSchema.extend({
   Providers: z.array(ProviderSchema),
   PROXY_URL: z.string().nullable(),
-  CLAUDE_PATH: z.string().nullable(),
-  // The active persona's id, null when none is active.
-  ActivePersona: z.string().nullable(),
-  // The persona library is always a plain array (default []).
-  Personas: z.array(PersonaSchema).default([])
+  CLAUDE_PATH: z.string().nullable()
 }).openapi('Config')
 export type AppConfig = z.infer<typeof AppConfigSchema>
 
@@ -52,13 +48,7 @@ export const ConfigSchema = z.object({
   REDACT_TOOL_ARGUMENTS: z.boolean().optional(),
   // Cloudflare Access. Both must be set for /api/* to verify assertions.
   ACCESS_TEAM_DOMAIN: z.string().optional(),
-  ACCESS_AUD: z.string().optional(),
-  // The active persona's id. Nullable, not just optional: composeUiConfig
-  // emits null when nothing is active, and the UI sends null back to
-  // clear it — an `undefined` is dropped by JSON.stringify and would
-  // read as "leave the selection alone".
-  ActivePersona: z.string().nullable().optional(),
-  Personas: z.array(PersonaSchema).default([])
+  ACCESS_AUD: z.string().optional()
 })
 export type Config = z.infer<typeof ConfigSchema>
 
@@ -73,11 +63,7 @@ export const ApplyConfigPayloadSchema = z
   .object({
     Providers: z.array(ProviderSchema).optional(),
     CLAUDE_PATH: EmptyStringToNullSchema.optional(),
-    PROXY_URL: EmptyStringToNullSchema.optional(),
-    // '' and null both clear the active persona; an absent key leaves
-    // the current selection alone.
-    ActivePersona: EmptyStringToNullSchema.optional(),
-    Personas: z.array(PersonaSchema).optional()
+    PROXY_URL: EmptyStringToNullSchema.optional()
   })
   .catchall(JsonValueSchema)
   .openapi('ApplyConfigPayload')

@@ -68,7 +68,7 @@ const REDACT_PATHS = [
 ]
 
 // Size-based rotation on top of the daily cadence. When the active file
-// grows past LOG_MAX_MB, subsequent writes go to `rialto-YYYY-MM-DD-N.log`
+// grows past LOG_MAX_MB, subsequent writes go to `YYYY-MM-DD-N.log`
 // with an incrementing suffix, so a single busy day produces a series
 // of digestible files instead of one multi-hundred-MB blob. A restart
 // mid-day resumes at the highest existing suffix. The cap itself lives
@@ -83,7 +83,9 @@ const rotationState = {
 
 const rotationPath = (date: string, seq: number): string => {
   const suffix = seq === 0 ? '' : `-${seq}`
-  return path.join(LOG_DIR, `rialto-${date}${suffix}.log`)
+  // The directory (~/.rialto/logs) already scopes these files to Rialto,
+  // so the name itself only needs the date.
+  return path.join(LOG_DIR, `${date}${suffix}.log`)
 }
 
 // The log directory is created on the first line actually written to

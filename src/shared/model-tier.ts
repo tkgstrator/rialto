@@ -1,10 +1,8 @@
 /**
  * The Claude family a model name says, which is the tier it serves.
  *
- * Read in exactly one place so the tier router, the per-tier sticky
- * sessions and the tier resolution beside the provider page cannot drift
- * on which tier a model belongs to. Browser-safe: the provider page
- * resolves tiers from a draft with the same rule the server routes by.
+ * Read in exactly one place so the per-family usage windows cannot drift
+ * on which family a model belongs to.
  */
 
 import type { RequestedModelTier } from '@/schemas/domain/router'

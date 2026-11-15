@@ -34,9 +34,8 @@ export function oauthKindOf(entry: CatalogEntry): OAuthKind | null {
  * A fresh Provider row seeded from the catalog.
  *
  * Subscription vendors get every model the vendor offers, all switched
- * off: which of them the plan serves, and which one a tier should route
- * to, is the operator's call, made in the next step — nothing here knows
- * what the next release will be. api_key vendors get the offered models
+ * off: which of them the plan serves is the operator's call, made in the
+ * next step — nothing here knows what the next release will be. api_key vendors get the offered models
  * switched on for the operator to trim in that same step. Lands disabled:
  * the vendor must not be called before the credential is in place.
  */

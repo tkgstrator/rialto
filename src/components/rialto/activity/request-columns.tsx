@@ -3,7 +3,7 @@ import { cn } from 'cn'
 import type { TFunction } from 'i18next'
 import type { ReactNode } from 'react'
 import { effortSortValue } from '@/components/rialto/activity/effort'
-import { LANE_KEYS, type Row } from '@/components/rialto/activity/requests-rows'
+import type { Row } from '@/components/rialto/activity/requests-rows'
 import { DASH, StatusPill, SurfaceCell } from '@/components/rialto/activity/shared'
 import type { SortValue } from '@/components/rialto/table-sort'
 import dayjs from '@/lib/dayjs'
@@ -16,7 +16,6 @@ export type ColumnId =
   | 'requested'
   | 'sent'
   | 'effort'
-  | 'rule'
   | 'token'
   | 'input'
   | 'output'
@@ -190,25 +189,6 @@ export const COLUMNS: readonly ColumnDef[] = [
     render: (row) => (row.log.reasoningEffort === null ? DASH : row.log.reasoningEffort),
     // Up the ladder, not through the alphabet.
     sortValue: (row) => effortSortValue(row.log.reasoningEffort)
-  },
-  {
-    // The lane rides with the rule rather than holding a column of its
-    // own. It qualifies the routing decision (there is no lane without
-    // one), it reads `agent` on almost every row, and the column it cost
-    // belonged to the model pair — which was truncating both halves of
-    // the one thing this screen exists to show.
-    id: 'rule',
-    labelKey: 'activity.requests.colRule',
-    width: 144,
-    align: 'left',
-    cellClass: 'text-[12px]',
-    render: (row, t) => (
-      <span className='flex items-baseline gap-1.5'>
-        {row.rule === null ? <span className='text-muted-foreground/50'>{DASH}</span> : <span>{row.rule}</span>}
-        {row.lane === 'agent' ? null : <span className='text-muted-foreground'>· {t(LANE_KEYS[row.lane])}</span>}
-      </span>
-    ),
-    sortValue: (row) => row.rule
   },
   {
     id: 'token',

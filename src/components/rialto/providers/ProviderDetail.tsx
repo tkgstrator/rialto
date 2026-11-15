@@ -7,36 +7,25 @@
  * the api_key one has a model list long enough to need filtering.
  *
  * The pane reads until Edit is pressed. Everything on it that changes the
- * provider — the switch Routing reads, the key, the tier aliases, each
- * model's effort and switch — used to write on touch, one stray click
- * from changing what Routing sends where. Those controls now only work
- * while editing, and the screen holds what they change until Save (see
+ * provider — the provider switch, the key, each model's effort and
+ * switch — used to write on touch, one stray click from changing which
+ * models callers can reach. Those controls now only work while editing, and the screen holds what they change until Save (see
  * provider-draft).
  */
 import { useTranslation } from 'react-i18next'
 import { Pill, RButton, Toggle } from '@/components/rialto/primitives'
 import { AccountsPanel } from './AccountsPanel'
 import { CredentialsPanel } from './CredentialsPanel'
-import {
-  type AccountExtrasIndex,
-  buildModelRows,
-  hasCredential,
-  listedModelsOf,
-  type ProviderState,
-  type QuotaIndex
-} from './derive'
+import { type AccountExtrasIndex, buildModelRows, hasCredential, type ProviderState, type QuotaIndex } from './derive'
 import { ProviderModelsSection } from './ProviderModelsSection'
 import { ApiKeyRequestShape, SubscriptionRequestShape } from './RequestShape'
 import { SwitchReading } from './SwitchReading'
-import { TierAliases } from './TierAliases'
-import type { AliasMap, TierView } from './tier-aliases'
 import type {
   CatalogEntry,
   Provider,
   ReasoningEffort,
   SubAccountWire,
   SubscriptionWire,
-  Tier,
   TransformerWire
 } from './types'
 
@@ -103,10 +92,10 @@ function DetailHeader({
           editing, red, and still asks first. Test all is locked meanwhile:
           its results reload the page, and an unsaved edit would go with it. */}
       <div className='ml-auto flex items-center gap-2'>
-        {/* The switch that Routing actually reads. It sits with the
-            actions rather than in the model table, because it gates the
-            whole provider: off, every model below it is unroutable no
-            matter what its own row says.
+        {/* The provider switch. It sits with the actions rather than in
+            the model table, because it gates the whole provider: off,
+            every model below it is unavailable to plans no matter what
+            its own row says.
 
             Locked with no credential, because `getEnabledModels` drops
             such a provider regardless of the flag — an operator turning
@@ -166,10 +155,6 @@ export interface ProviderDetailProps {
   quota: QuotaIndex
   accounts: AccountExtrasIndex
   now: number
-  /** The tiers as Save would leave them, like `provider` (`tierViewsOf`). */
-  tiers: TierView[]
-  /** The manual aliases as loaded, which a manual tier's picker offers as current. */
-  storedAliases: AliasMap
   busy: boolean
   editing: boolean
   /** Whether the staged edit differs from what is stored. */
@@ -181,10 +166,8 @@ export interface ProviderDetailProps {
   onTestAll: () => void
   onToggleProvider: (next: boolean) => void
   onToggleModel: (model: string, next: boolean) => void
-  /** Stage whether this account participates in routing; credentials stay intact. */
+  /** Stage whether this account takes part in rotation; credentials stay intact. */
   onToggleAccount: (id: string, next: boolean) => void
-  /** Point a manual tier's alias at a model; null unsets it. */
-  onAlias: (tier: Tier, model: string | null) => void
   /** Per-model reasoning effort; null clears it back to the vendor default. */
   onModelEffort: (model: string, next: ReasoningEffort | null) => void
   onReplaceKey: (key: string) => void
@@ -196,7 +179,7 @@ export interface ProviderDetailProps {
 export function ProviderDetail(props: ProviderDetailProps) {
   const { provider, subscription, catalogEntry, transformers, quota, now } = props
   const subscriptionMode = provider.auth_mode === 'subscription'
-  const rows = buildModelRows(provider, catalogEntry, props.tiers)
+  const rows = buildModelRows(provider, catalogEntry)
   return (
     <div className='min-w-0 overflow-y-auto'>
       <DetailHeader
@@ -242,24 +225,15 @@ export function ProviderDetail(props: ProviderDetailProps) {
           <ApiKeyRequestShape provider={provider} />
         )}
       </div>
-      <TierAliases
-        views={props.tiers}
-        stored={props.storedAliases}
-        listed={listedModelsOf(provider)}
-        editing={props.editing}
-        onPick={props.onAlias}
-      />
       {/* Keyed on the provider: the filter, the Show mode and how far the
           list has been expanded are all about THIS provider's models. */}
       <ProviderModelsSection
         key={provider.name}
         provider={provider}
         rows={rows}
-        tiers={props.tiers}
         editing={props.editing}
         onToggle={props.onToggleModel}
         onEffort={props.onModelEffort}
-        onAlias={props.onAlias}
       />
     </div>
   )

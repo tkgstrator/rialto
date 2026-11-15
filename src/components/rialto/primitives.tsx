@@ -173,7 +173,7 @@ export function RButton({
 
 /**
  * Underlined tab strip. Used by every screen that has sub-views, so the
- * treatment stays identical across Routing / Providers / Activity /
+ * treatment stays identical across Providers / Activity /
  * Settings instead of each page inventing its own.
  */
 export interface TabItem {
@@ -257,11 +257,10 @@ export function SurfaceScope({ paths, allLabel }: { paths: readonly string[]; al
  * Chip for "which surfaces does this apply to".
  *
  * Renders as a button only when it does something. Several screens show
- * this as a derived read-out — a persona reaches whichever surfaces are
- * in routed mode, and that is not a per-persona setting — and a chip
- * that looks pressable but is inert reads as a broken control rather
- * than as information. Without `onClick` it becomes a span, keeps the
- * same weight, and explains itself on hover instead.
+ * this as a derived read-out, and a chip that looks pressable but is
+ * inert reads as a broken control rather than as information. Without
+ * `onClick` it becomes a span, keeps the same weight, and explains
+ * itself on hover instead.
  */
 export function SurfaceChip({
   path,

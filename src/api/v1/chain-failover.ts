@@ -27,7 +27,6 @@ import {
   markProviderExhausted
 } from '../../services/failover-state'
 import { getRoutingSnapshot } from '../../services/routing-scheduler'
-import { recordModelFailure, recordModelSuccess } from '../../services/routing-scheduler/model-health'
 import { providerExhaustionOf } from '../../services/routing-scheduler/provider-exhaustion'
 import { getActiveAccountForSession, releaseAccountForSession } from '../../services/session-account-router'
 import { type AccountUsageMap, getPerAccountUsage, windowBinds } from '../../services/subaccount-usage-store'
@@ -106,15 +105,6 @@ export async function attemptChainEntry(chain: ChainCtx, model: string): Promise
     let err: unknown
     try {
       const response = await attempt(inv)
-      // Success feeds the Phase 2e model-health tracker so the
-      // quota-aware selector can down-weight targets showing high
-      // error rates. Fire-and-forget: recording is a pure in-memory
-      // update, but wrap in try/catch defensively.
-      try {
-        recordModelSuccess(`${inv.provider.name},${model}`)
-      } catch {
-        // Never let telemetry break the request path.
-      }
       // A success proves the account serves right now, whatever an
       // earlier 429 concluded about it, so its exhaustion mark goes and
       // peers stop being preferred over it. Only the per-attempt stamp is
@@ -201,14 +191,6 @@ export async function attemptChainEntry(chain: ChainCtx, model: string): Promise
     // it); when absent we can't mark a specific model, so skip.
     if (inv.request.model !== undefined) {
       markModelExhausted(inv.provider.name, inv.request.model)
-      // Track the 429 in the Phase 2e model-health ring so the
-      // quota-aware selector sees the failure at the same target
-      // string it evaluates on.
-      try {
-        recordModelFailure(`${inv.provider.name},${inv.request.model}`)
-      } catch {
-        // Never let telemetry break the request path.
-      }
     }
     ctx.log.warn(
       { provider: inv.provider.name, model: inv.request.model, route: plan.route },

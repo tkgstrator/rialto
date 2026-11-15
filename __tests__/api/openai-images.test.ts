@@ -214,6 +214,34 @@ describe.skipIf(!HAS_DB)('POST /v1/images/generations', () => {
     expect(calls).toHaveLength(0)
   })
 
+  describe('a token on a plan', () => {
+    const issueOnPlan = async (models: string[], defaultModel = models[0]) => {
+      const plan = await getPrismaClient().plan.create({ data: { name: `p-${Math.random()}`, models, defaultModel } })
+      return (await issueAccessToken({ name: 'image', surfaces: ['openai-images'], planId: plan.id })).plaintext
+    }
+
+    test('generates with a model the plan lists', async () => {
+      const provider = await createProvider()
+      await createAccount(provider.id, 'a')
+      const token = await issueOnPlan([`codex,${MODEL}`])
+      expect((await send({ model: `codex,${MODEL}`, prompt: 'x' }, token)).status).toBe(200)
+      expect((await send({ model: MODEL, prompt: 'x' }, token)).status).toBe(200)
+      expect(calls).toHaveLength(2)
+    })
+
+    test('refuses a model the plan does not list with 403 and never dispatches', async () => {
+      const provider = await createProvider()
+      await createAccount(provider.id, 'a')
+      const token = await issueOnPlan(['anthropic,claude-sonnet-5'])
+      const result = await send({ model: `codex,${MODEL}`, prompt: 'x' }, token)
+      expect(result.status).toBe(403)
+      const envelope = await result.json()
+      expect(envelope.error.type).toBe('permission_error')
+      expect(envelope.error.message).toContain(`Model "codex,${MODEL}" is not allowed for this token`)
+      expect(calls).toHaveLength(0)
+    })
+  })
+
   test('rotates an account after a 429 and returns the next image', async () => {
     const provider = await createProvider()
     const first = await createAccount(provider.id, 'a')

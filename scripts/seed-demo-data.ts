@@ -1,12 +1,11 @@
 #!/usr/bin/env bun
 /**
- * Dev-only: fill an install with demo data so all six screens have
- * something to render — providers and models, tier aliases and scenario routes,
- * subscription quota, access tokens, and a month of traffic behind
+ * Dev-only: fill an install with demo data so every screen has
+ * something to render — providers and models, subscription quota, access tokens, and a month of traffic behind
  * Activity and Overview.
  *
- * NOT wired into `prisma db seed`: running that in production must stay
- * side-effect free. Invoke explicitly:
+ * Never runs on its own — it is not part of migrations or container start-up,
+ * so production stays side-effect free. Invoke explicitly:
  *
  *   bun run db:seed:demo                  # seed (replaces previous demo rows)
  *   bun run db:seed:demo -- --clean       # remove demo rows and stop
@@ -16,9 +15,8 @@
  *
  *   - Rows in tables that also hold real data carry a `demo-` id, so a
  *     re-run replaces exactly its own output and `--clean` removes it.
- *   - Live configuration that cannot carry a marker (tier aliases, the
- *     `live` routes, surface routing modes, an account's quota) is
- *     written ONLY while still unset. Running this against a configured
+ *   - Live configuration that cannot carry a marker (an account's quota)
+ *     is written ONLY while still unset. Running this against a configured
  *     install adds traffic without re-pointing anything.
  */
 
@@ -27,7 +25,6 @@ import { getPrismaClient } from '../src/db/client'
 import { seedAccounts } from './seed-demo/accounts'
 import { cleanDemoRows } from './seed-demo/demo-rows'
 import { createRandom } from './seed-demo/random'
-import { seedSurfaceModes, seedTierMap } from './seed-demo/routing'
 import { resolveTargets } from './seed-demo/targets'
 import { DEMO_TOKEN_COUNT, seedAccessTokens } from './seed-demo/tokens'
 import { seedTraffic } from './seed-demo/traffic'
@@ -73,8 +70,8 @@ async function main(): Promise<void> {
     for (const [table, count] of Object.entries(removed)) {
       if (count > 0) line(table, count)
     }
-    console.error('\nTier aliases, the `live` routes and surface modes are left as they are —')
-    console.error('the seed only ever writes those while unset, so it has nothing of its own to take back.')
+    console.error("\nAn account's quota is left as it is — the seed only ever writes it while unset,")
+    console.error('so it has nothing of its own to take back.')
     await prisma.$disconnect()
     return
   }
@@ -87,11 +84,9 @@ async function main(): Promise<void> {
     return
   }
 
-  const tierMap = await seedTierMap(prisma, targets)
-  const surfaces = await seedSurfaceModes(prisma)
   const accounts = await seedAccounts(prisma, random, now)
   const accessTokenIds = await seedAccessTokens(prisma, random, now)
-  const traffic = await seedTraffic(prisma, tierMap.resolved, targets, random, now, {
+  const traffic = await seedTraffic(prisma, targets, random, now, {
     days: options.days,
     sessions: options.sessions,
     accessTokenIds
@@ -99,9 +94,6 @@ async function main(): Promise<void> {
 
   console.error(`demo data seeded (replaced ${removedTotal} rows from a previous run)\n`)
   line('routable targets', `${targets.length}${registeredVendors ? ' (fallback catalog registered)' : ''}`)
-  line('tier aliases', `${tierMap.aliasesWritten} set`)
-  line('scenario routes', `live: ${tierMap.live}, ${tierMap.demoProfile}: written`)
-  line('surface modes', `${surfaces.updated.length} set, ${surfaces.skipped.length} left as configured`)
   line('subscription accounts', `${accounts.createdAccounts} created`)
   line('quota rows', `${accounts.createdQuotas} quota, ${accounts.createdUsageRows} per-metric`)
   line('usage history', `${accounts.usageSnapshots} samples`)
@@ -110,8 +102,7 @@ async function main(): Promise<void> {
   line('request logs', traffic.requestLogs)
   line('chat messages', traffic.messages)
 
-  for (const warning of tierMap.warnings) console.error(`  warning: ${warning}`)
-  console.error('\nOpen http://localhost:16175/ — Overview, Routing, Providers, Access tokens, Activity and Settings are populated.')
+  console.error('\nOpen http://localhost:16175/ — Overview, Providers, Access tokens, Activity and Settings are populated.')
 
   await prisma.$disconnect()
 }

@@ -1,9 +1,9 @@
 /**
  * Settings frame: the pane its sections render into.
  *
- * SettingsPage / Presets / Personas / StatusLine / Debug were five
- * separate top-level nav entries. They all answer "configure this
- * installation", so they collapse into one screen.
+ * SettingsPage / Presets / StatusLine / Debug were separate top-level
+ * nav entries. They all answer "configure this installation", so they
+ * collapse into one screen.
  *
  * The 13rem section rail that used to sit here is gone: it was a second
  * vertical menu beside the sidebar's, so Settings spent 27rem on
@@ -20,7 +20,6 @@ const SECTION_LABEL_KEYS: Readonly<Record<string, string>> = {
   server: 'settings.rail.server',
   access: 'settings.rail.access',
   logging: 'settings.rail.logging',
-  personas: 'settings.rail.personas',
   advanced: 'settings.rail.advanced'
 }
 

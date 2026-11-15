@@ -24,10 +24,9 @@ const { renderShell, btn, accessTabs, PLANS, sortTh, mono, dialog, pill, navTo }
 //
 // Two things a plan decides, and only two for now: which models its
 // requests may use, and how much a token may use in each fixed window.
-// A request naming a model on the list goes to that model; any other name,
-// or none, goes to the plan's default rather than being refused, so a client
-// with a stale model setting keeps talking. Either way there is no routing:
-// a chain cannot pick a costlier target than the plan lists. /v1/models
+// A request naming a model on the list goes to that model; a request
+// naming none uses the plan's default; any other name is refused (403), so
+// a client cannot reach a costlier model than the plan lists. /v1/models
 // shows a plan's token only its own list. Listing models is never counted.
 //
 // A token is put on a plan when it is issued, or later from its own page.
@@ -108,7 +107,7 @@ const editDialog = () => {
       </div>
       <p id="model-status" aria-live="polite" class="mt-1 text-[12px] leading-snug text-muted-foreground">${allowedModels.size} allowed · ${defaultModel ? `default <span class="font-mono">${defaultModel}</span>.` : 'No default. Allow at least one model and choose its default radio to save.'}</p>
       ${hint('Select all keeps the current default. If none is set, choose one explicitly.')}
-      ${hint('A request naming another model, or none, goes to the default — never refused, and never routed.')}`
+      ${hint('A request naming no model uses the default. A request naming any other model is refused (403).')}`
   }
   return dialog(
     creating ? 'New plan' : 'Edit plan',

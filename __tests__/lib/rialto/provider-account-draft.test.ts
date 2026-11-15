@@ -65,10 +65,9 @@ describe('subscription account drafts', () => {
   })
 
   test('saves only changed account ids, without overwriting a peer', () => {
-    const plan = savePlan(provider, { ...EMPTY_DRAFT, accounts: { first: false } }, {})
+    const plan = savePlan(provider, { ...EMPTY_DRAFT, accounts: { first: false } })
     expect(plan.upsert?.subscription_accounts).toEqual([{ id: 'first', enabled: false }])
     expect(plan.upsert?.models).toEqual(provider.models)
-    expect(plan.aliases).toEqual([])
     expect(plan.efforts).toEqual([])
   })
 
@@ -108,7 +107,7 @@ describe('subscription account drafts', () => {
   })
 
   test('the last enabled account may be disabled and a disabled account may be restored', () => {
-    const disabled = savePlan(provider, { ...EMPTY_DRAFT, accounts: { first: false } }, {})
+    const disabled = savePlan(provider, { ...EMPTY_DRAFT, accounts: { first: false } })
     expect(disabled.upsert?.subscription_accounts).toEqual([{ id: 'first', enabled: false }])
     const reenabled = savePlan(provider, { ...EMPTY_DRAFT, accounts: { spare: true } }, {})
     expect(reenabled.upsert?.subscription_accounts).toEqual([{ id: 'spare', enabled: true }])

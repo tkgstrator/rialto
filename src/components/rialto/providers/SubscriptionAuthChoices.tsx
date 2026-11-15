@@ -8,8 +8,7 @@ import type { CatalogEntry } from './types'
 import { vendorBrand } from './vendor-labels'
 
 // Permission-gated and absent over plain http; a refused copy should leave
-// the screen alone rather than throw into the render tree. Mirrors the
-// same one-liner in routing/PassthroughPanel.tsx.
+// the screen alone rather than throw into the render tree.
 const copyText = (text: string): void => {
   navigator.clipboard?.writeText(text).catch(() => {})
 }

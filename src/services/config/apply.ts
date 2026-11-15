@@ -54,11 +54,6 @@ export type SplitPayload = {
 // `Router` there, where it would surface again on the next GET. The
 // retired keys are therefore filtered out here by name rather than
 // left to the catchall.
-//
-// `ActivePersona` is an ordinary envelope key: an empty string / null
-// clears it (pruneUnsetEnvelopePaths drops it off disk); an absent key
-// leaves the current selection alone, so a save from another screen
-// does not wipe it.
 export const splitPayload = (payload: Record<string, unknown>): SplitPayload => {
   const parsed = ApplyConfigPayloadSchema.parse(payload)
   const { Providers, ...rest } = parsed
@@ -136,7 +131,7 @@ export async function applyUiConfig(payload: Record<string, unknown>): Promise<A
   syncLoggerFromEnv()
 
   // Force the llms context to rebuild on the next request so provider
-  // and persona changes take effect immediately without a server restart.
+  // changes take effect immediately without a server restart.
   resetLlmsContext()
   // A save can switch models on; record what they accept if still unknown.
   if (incomingProviders !== undefined) void captureModelCapabilities()

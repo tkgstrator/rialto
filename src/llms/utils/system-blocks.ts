@@ -2,12 +2,12 @@
  * Anthropic-style top-level `system` normalisation shared across
  * transformer inbound hooks.
  *
- * OpenAI-flavoured callers don't emit `system` at the top level, but a
- * persona-enriched pipeline (or an Anthropic-shape body reaching an
- * OpenAI-endpoint transformer via passthrough) can leave one behind.
- * `flattenSystemToText` reduces the string-or-block-array form to a
- * plain string; `absorbTopLevelSystem` folds it into a leading
- * `role:'system'` message and strips the top-level field.
+ * OpenAI-flavoured callers don't emit `system` at the top level, but an
+ * Anthropic-shape body reaching an OpenAI-endpoint transformer via
+ * passthrough can leave one behind. `flattenSystemToText` reduces the
+ * string-or-block-array form to a plain string; `absorbTopLevelSystem`
+ * folds it into a leading `role:'system'` message and strips the
+ * top-level field so it does not leak downstream.
  */
 
 type MutableMessage = Record<string, unknown>
@@ -47,7 +47,7 @@ export function absorbTopLevelSystem(body: BodyWithSystem): void {
   if (systemText.length > 0) {
     const messages = Array.isArray(body.messages) ? body.messages : []
     // Only prepend if the caller didn't already put a system message
-    // at index 0 — avoids duplicating persona text on retries.
+    // at index 0 — avoids duplicating system text on retries.
     if (messages.length === 0 || messages[0]?.role !== 'system') {
       body.messages = [{ role: 'system', content: systemText }, ...messages]
     }

@@ -5,9 +5,9 @@
  * two failure counts are known, and an odd tile out left a hole in the
  * two-column grid. A call is the model that served it (with the effort it
  * was sent at, when one was set) and what it cost, with its status, time,
- * caller and latency beneath. The requested model,
- * the rule and the token split stay on the desktop table: they explain a
- * routing decision, which is not something settled from a phone.
+ * caller and latency beneath. The requested model and the token split
+ * stay on the desktop table: a narrow screen gets only what a scan asks
+ * for.
  */
 import { useTranslation } from 'react-i18next'
 import type { RequestLogStats } from '@/components/rialto/activity/data'

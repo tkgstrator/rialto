@@ -14,7 +14,6 @@ import { toast } from 'sonner'
 import { useConfig } from '@/components/ConfigProvider'
 import { useConfirm } from '@/components/rialto/ConfirmDialog'
 import { Mono, Pill, RButton } from '@/components/rialto/primitives'
-import { enabledTargets } from '@/components/rialto/routing/derive'
 import { Screen } from '@/components/rialto/Screen'
 import { AccessTabs } from '@/components/rialto/settings/access/AccessTabs'
 import { PlanDialog } from '@/components/rialto/settings/access/PlanDialog'
@@ -22,6 +21,7 @@ import { SectionHead } from '@/components/rialto/settings/fields'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
 import { usePhone } from '@/hooks/use-phone'
 import { api, type PlanWire } from '@/lib/api'
+import { enabledTargets } from '@/lib/models/enabled-targets'
 import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
 import { fmtCount } from '@/lib/rialto/format'
 import { emptyPlanDraft, type PlanDraft, planDraftOf, planInputOf } from '@/lib/rialto/settings/plans'
@@ -230,7 +230,7 @@ export function AccessPlans() {
 
   useEffect(load, [load])
 
-  // What the operator has left routable, the same list Routing offers.
+  // What the operator has left switched on: the models a plan may name.
   const available = useMemo(
     () => (config === null ? [] : enabledTargets(config.Providers).map((target) => target.target)),
     [config]
@@ -276,11 +276,18 @@ export function AccessPlans() {
   }
 
   const onPlan = plans.reduce((sum, plan) => sum + plan.tokenCount, 0)
-  const summary = t(onPlan === 1 ? 'access.plans.summaryOneToken' : 'access.plans.summary', {
-    n: plans.length,
-    onPlan: fmtCount(onPlan),
-    without: withoutPlan === null ? '–' : fmtCount(withoutPlan)
-  })
+  // With no plan defined yet, "0 plans · 0 tokens on a plan · 0 without"
+  // reads as three empty counters stacked next to each other and says
+  // nothing the empty table doesn't already. Hide the meta until there
+  // is a plan to count.
+  const summary =
+    plans.length === 0
+      ? ''
+      : t(onPlan === 1 ? 'access.plans.summaryOneToken' : 'access.plans.summary', {
+          n: plans.length,
+          onPlan: fmtCount(onPlan),
+          without: withoutPlan === null ? '–' : fmtCount(withoutPlan)
+        })
   const newPlan = (
     <RButton variant='primary' icon='ri-add-line' onClick={() => setEditing({ plan: null, draft: emptyPlanDraft() })}>
       {t('access.plans.new')}
@@ -297,14 +304,14 @@ export function AccessPlans() {
         // where it applies.
         <>
           <div className='flex items-center gap-3 px-4 pt-4 pb-3'>
-            <span className='min-w-0 text-[12px] text-muted-foreground'>{summary}</span>
+            {summary === '' ? null : <span className='min-w-0 text-[12px] text-muted-foreground'>{summary}</span>}
             <span className='ml-auto shrink-0'>{newPlan}</span>
           </div>
           <PlanListPhone plans={plans} onOpen={open} />
         </>
       ) : (
         <>
-          <SectionHead meta={summary} actions={newPlan} />
+          <SectionHead meta={summary === '' ? undefined : summary} actions={newPlan} />
           <div className='px-6 pb-4'>
             <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
               <i className='ri-information-line mr-1 align-[-1px]' />

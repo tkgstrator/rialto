@@ -283,13 +283,11 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
   test('a freshly issued token resolves with its scope', async () => {
     const { plaintext } = await issueAccessToken({
       name: 'ci',
-      surfaces: ['openai-chat'],
-      profileKey: 'cost-first'
+      surfaces: ['openai-chat']
     })
     const resolved = await resolveAccessToken(plaintext)
     expect(resolved?.name).toBe('ci')
     expect(resolved?.surfaces).toEqual(['openai-chat'])
-    expect(resolved?.profileKey).toBe('cost-first')
   })
 
   test('a token may be scoped to several surfaces at once', async () => {
@@ -308,7 +306,6 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
     const { plaintext } = await issueAccessToken({ name: 'anything' })
     const resolved = await resolveAccessToken(plaintext)
     expect(resolved?.surfaces).toEqual([])
-    expect(resolved?.profileKey).toBeNull()
   })
 
   test('a revoked token stops resolving and is no longer listed', async () => {
@@ -378,8 +375,7 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
   test('rotation swaps the secret and keeps everything else about the row', async () => {
     const { token, plaintext } = await issueAccessToken({
       name: 'ci',
-      surfaces: ['anthropic-messages'],
-      profileKey: 'cost-first'
+      surfaces: ['anthropic-messages']
     })
     // A request against the original, so the row carries history worth
     // preserving across the rotation.
@@ -398,7 +394,6 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
     expect(result.issued.token.id).toBe(token.id)
     expect(result.issued.token.name).toBe('ci')
     expect(result.issued.token.surfaces).toEqual(['anthropic-messages'])
-    expect(result.issued.token.profileKey).toBe('cost-first')
     expect(result.issued.token.requestCount).toBe(41)
     expect(result.issued.token.createdAt).toBe(token.createdAt)
     expect(result.issued.token.rotatedAt).not.toBeNull()
@@ -444,16 +439,14 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
     expect((await updated.json()).surfaces).toEqual(['openai-chat', 'openai-images'])
   })
 
-  test('scope and profile can be changed without touching the secret', async () => {
+  test('scope can be changed without touching the secret', async () => {
     const { token, plaintext } = await issueAccessToken({ name: 'codex', surfaces: ['openai-responses'] })
     expect(await resolveAccessToken(plaintext)).not.toBeNull()
 
     const updated = await updateAccessToken(token.id, {
-      surfaces: ['openai-responses', 'openai-chat'],
-      profileKey: 'cost-first'
+      surfaces: ['openai-responses', 'openai-chat']
     })
     expect(updated?.surfaces).toEqual(['openai-responses', 'openai-chat'])
-    expect(updated?.profileKey).toBe('cost-first')
     expect(updated?.prefix).toBe(token.prefix)
 
     // The client keeps the credential it already has — widening the
@@ -461,25 +454,17 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
     // scope immediately rather than after the cache TTL.
     const resolved = await resolveAccessToken(plaintext)
     expect(resolved?.surfaces).toEqual(['openai-responses', 'openai-chat'])
-    expect(resolved?.profileKey).toBe('cost-first')
   })
 
-  test('an omitted field is left alone, and a null profile clears it', async () => {
-    const { token } = await issueAccessToken({
-      name: 'ci',
-      surfaces: ['openai-chat'],
-      profileKey: 'cost-first'
-    })
+  test('an omitted field is left alone', async () => {
+    const { token } = await issueAccessToken({ name: 'ci', surfaces: ['openai-chat'] })
 
-    // Scope only: the profile must survive.
-    const scopeOnly = await updateAccessToken(token.id, { surfaces: [] })
-    expect(scopeOnly?.surfaces).toEqual([])
-    expect(scopeOnly?.profileKey).toBe('cost-first')
+    // Nothing named: the scope must survive.
+    const untouched = await updateAccessToken(token.id, {})
+    expect(untouched?.surfaces).toEqual(['openai-chat'])
 
-    // Null is a value here, not "unchanged" — it puts the token back on
-    // the endpoint's own routing.
-    const cleared = await updateAccessToken(token.id, { profileKey: null })
-    expect(cleared?.profileKey).toBeNull()
+    const cleared = await updateAccessToken(token.id, { surfaces: [] })
+    expect(cleared?.surfaces).toEqual([])
 
     expect(await updateAccessToken('no-such-id', { surfaces: [] })).toBeNull()
   })

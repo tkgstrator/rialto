@@ -23,9 +23,9 @@ const { renderShell, pill, btn, tabs } = window.Shell
 // where "here" is a 404 — is worse than no tab.
 // (original note kept below for the record)
 // live here: the raw config document, and a request scratchpad for
-// reproducing a routing decision without a client.
+// reproducing a request without a client.
 const CONFIG = `{
-  // Boot scalars. Everything else — providers, models, routing — is
+  // Boot scalars. Everything else — providers, models — is
   // in Postgres and edited from the screens above.
   HOST: "0.0.0.0",
   PORT: 3456,
@@ -91,7 +91,7 @@ document.getElementById('root').innerHTML = `
         <div class="rounded-md border border-dashed border-border px-4 py-4">
           <div class="flex items-center gap-2">
             <i class="ri-tools-line text-sm text-muted-foreground"></i>
-            <span class="text-xs font-medium">Reset routing · re-seed catalog · purge captured data</span>
+            <span class="text-xs font-medium">Re-seed catalog · purge captured data</span>
             ${pill('not yet available', 'mute')}
           </div>
           <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">

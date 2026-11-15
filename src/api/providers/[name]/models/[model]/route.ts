@@ -50,8 +50,8 @@ providerModelRoute.openapi(updateModelRoute, async (c) => {
   try {
     if (body.enabled !== undefined) {
       await setModelEnabled(name, model, body.enabled)
-      // The switch can move a tier route (it follows the newest
-      // switched-on model): rebuild the quota snapshot now.
+      // The switch changes which models the quota snapshot covers:
+      // rebuild it now.
       await republishRoutingSnapshot()
     }
     if (body.reasoningEffort !== undefined) {

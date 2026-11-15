@@ -1,21 +1,21 @@
 /**
  * The two screens that disagreed about what "enabled" means.
  *
- * `Provider.enabled` is the flag Routing filters on. The Providers screen
- * reports a provider's state from `providerState`, and that function used
- * to answer from the credential alone — so a signed-in Claude Code with
- * `enabled: false` read as `live` on one screen while Routing dropped
- * every one of its models on the other, with no control anywhere to
- * reconcile them.
+ * `Provider.enabled` is the flag the plan model picker filters on. The
+ * Providers screen reports a provider's state from `providerState`, and
+ * that function used to answer from the credential alone — so a signed-in
+ * Claude Code with `enabled: false` read as `live` on one screen while the
+ * picker dropped every one of its models on the other, with no control
+ * anywhere to reconcile them.
  *
  * These tests pin the two halves against each other: whatever
- * `enabledTargets` refuses to route to must not be called live.
+ * `enabledTargets` refuses to offer must not be called live.
  */
 
 import { describe, expect, test } from 'bun:test'
 import { hasCredential, providerState } from '../../src/components/rialto/providers/derive'
 import type { Provider, SubscriptionWire } from '../../src/components/rialto/providers/types'
-import { enabledTargets } from '../../src/components/rialto/routing/derive'
+import { enabledTargets } from '../../src/lib/models/enabled-targets'
 
 const subProvider = (over: Partial<Provider> = {}): Provider => ({
   name: 'claude-code',
@@ -70,8 +70,8 @@ describe('providerState', () => {
   })
 })
 
-describe('the Providers screen and Routing agree', () => {
-  test('a provider Routing will not offer is never shown as live', () => {
+describe('the Providers screen and the plan model picker agree', () => {
+  test('a provider the picker will not offer is never shown as live', () => {
     const off = subProvider({ enabled: false })
     expect(enabledTargets([off])).toHaveLength(0)
     expect(providerState(off, liveSub)).not.toBe('live')

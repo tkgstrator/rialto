@@ -4,16 +4,14 @@
  * All of them go through `POST /api/providers`, which upserts by name —
  * the PATCH and DELETE verbs on the CRUD routes are not reachable from
  * the browser client, and the full-config round trip is the sanctioned
- * path for a delete (its diff drops the chain entries that named the
- * provider's models and reports them as warnings).
+ * path for a delete.
  */
 import { api } from '@/lib/api'
 import type { ResetCreditsResponse, UseResetResponse } from '@/lib/api-types'
 import { setModelDisabled } from '@/lib/providers/provider-edits'
 import type { SubscriptionRefreshResponse } from '@/schemas/api/subscriptions'
 import type { SavePlan } from './provider-draft'
-import type { AliasChange } from './tier-aliases'
-import type { ModelTestResponse, Provider, ReasoningEffort, Tier } from './types'
+import type { ModelTestResponse, Provider, ReasoningEffort } from './types'
 
 /**
  * Set or clear the per-model reasoning effort. Null sends nothing and
@@ -44,48 +42,24 @@ export async function enableAllModels(provider: Provider): Promise<void> {
   await api.post('/providers', { ...provider, transformer })
 }
 
-/**
- * Point a provider's tier at a model — promote it — or unset the tier.
- * Pointing also switches the model on, server-side, in the same write.
- */
-export async function setTierAlias(provider: Provider, { tier, model }: AliasChange): Promise<void> {
-  if (model === null) await api.clearTierAlias(provider.name, tier)
-  else await api.setTierAlias(provider.name, tier, model)
-}
-
 /** Which write of a staged edit failed, and what the server said about it. */
 export interface SaveFailure {
-  /** `unalias` is an alias write that unset its tier rather than pointing it. */
-  write: 'provider' | 'alias' | 'unalias' | 'effort'
-  /** The model an alias or effort write was for; null for the provider's own and for an unset. */
+  write: 'provider' | 'effort'
+  /** The model an effort write was for; null for the provider's own. */
   model: string | null
-  /** The tier an alias write was for; null for every other write. */
-  tier: Tier | null
   message: string
 }
 
 type SaveStep = Omit<SaveFailure, 'message'> & { run: () => Promise<unknown> }
 
-const aliasStep = (provider: Provider, change: AliasChange): SaveStep => ({
-  write: change.model === null ? 'unalias' : 'alias',
-  model: change.model,
-  tier: change.tier,
-  run: () => setTierAlias(provider, change)
-})
-
 /**
  * Write a provider page's staged edit.
  *
- * The provider upsert goes first: the switch Routing reads (the flag
+ * The provider upsert goes first: the provider switch (the flag
  * `enabledTargets` and `getEnabledModels` filter on), the model switches
  * and the key all travel in the one body `POST /api/providers` takes.
- * Aliases and efforts are not part of that body, so each one that changed
- * is its own write after it.
- *
- * The aliases follow the upsert rather than precede it because an alias
- * write switches its model on, and the upsert carries every model switch
- * as loaded: run the other way round, the upsert would switch a just
- * promoted model straight back off.
+ * Efforts are not part of that body, so each one that changed is its own
+ * write after it.
  *
  * Stops at the first write that fails and names it. The writes before it
  * have landed and the ones after it have not, which the screen shows by
@@ -96,12 +70,10 @@ export async function saveProviderEdits(provider: Provider, plan: SavePlan): Pro
   const steps: SaveStep[] = [
     ...(upsert === null
       ? []
-      : [{ write: 'provider' as const, model: null, tier: null, run: () => api.post('/providers', upsert) }]),
-    ...plan.aliases.map((change) => aliasStep(provider, change)),
+      : [{ write: 'provider' as const, model: null, run: () => api.post('/providers', upsert) }]),
     ...plan.efforts.map(({ model, effort }) => ({
       write: 'effort' as const,
       model,
-      tier: null,
       run: () => setModelEffort(provider, model, effort)
     }))
   ]

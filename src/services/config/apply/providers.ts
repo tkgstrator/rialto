@@ -12,21 +12,16 @@ import type { Tx } from '../apply'
 import { apiKeyForStorage } from './fields'
 import { applyModelApiStyles, applyModelEnabledFlips, reconcileModelRows } from './model-rows'
 import { applySubscriptionAccountToggles } from './subscription-toggles'
-import { routeCascadeWarning } from './tier-route-cascade'
 
-// Delete providers the UI no longer lists. Their models cascade, and so
-// do the tier aliases and routes naming them — counted first so the
-// operator is told which chains just got shorter.
+// Delete providers the UI no longer lists. Their models, capabilities and
+// subscription accounts go with them through the schema's onDelete rules.
 export async function deleteRemovedProviders(
   tx: Tx,
   existing: ReadonlyArray<DbProvider & { models: DbModel[] }>,
-  incomingByName: ReadonlyMap<string, Provider>,
-  warnings: string[]
+  incomingByName: ReadonlyMap<string, Provider>
 ): Promise<void> {
   for (const ex of existing) {
     if (incomingByName.has(ex.name)) continue
-    const cascade = await routeCascadeWarning(tx, ex.id, `deleted provider "${ex.name}"`)
-    if (cascade !== null) warnings.push(cascade)
     await tx.provider.delete({ where: { id: ex.id } })
   }
 }
@@ -39,11 +34,10 @@ export async function deleteRemovedProviders(
  *
  * The distinction matters: this helper writes ONLY the incoming
  * provider row. It never looks at other providers, never deletes any
- * row, and never touches another provider's chain entries. That is the cascade
- * that `applyProviders`'s `deleteRemovedProviders` used to eat when the
- * CRUD path passed a single-element array — every other provider (and
- * their subscription accounts via onDelete: Cascade) got wiped on a
- * routine PATCH.
+ * row. `applyProviders`'s `deleteRemovedProviders` would delete every
+ * other provider (and their subscription accounts via onDelete: Cascade)
+ * if the CRUD path passed it a single-element array, which wiped them on
+ * a routine PATCH.
  */
 export async function applyProviderRow(
   tx: Tx,
@@ -94,7 +88,7 @@ export async function applyProviderRow(
   // provider's account.
   await applySubscriptionAccountToggles(tx, provider, inc, warnings)
 
-  await reconcileModelRows(tx, provider, inc, warnings)
+  await reconcileModelRows(tx, provider, inc)
 
   // Per-model wire format (Chat vs Responses). After reconcileModelRows so
   // the rows it just created exist to be written, and with `provider` still
@@ -111,7 +105,7 @@ export async function applyProviders(tx: Tx, incoming: Provider[], warnings: str
   const existing = await tx.provider.findMany({ include: { models: true } })
   const incomingByName = new Map(incoming.map((p) => [p.name, p]))
 
-  await deleteRemovedProviders(tx, existing, incomingByName, warnings)
+  await deleteRemovedProviders(tx, existing, incomingByName)
 
   // Upsert what remains.
   for (const inc of incoming) {

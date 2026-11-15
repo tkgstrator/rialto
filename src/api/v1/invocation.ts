@@ -72,8 +72,8 @@ function safeguardsCompatible(
   provider: ResolvedProvider,
   transformer: Transformer
 ): boolean {
-  // The tier router has no safeguards capability gate. Only the native
-  // Messages bypass is known to preserve this Anthropic-only contract;
+  // Only the native Messages bypass is known to preserve this
+  // Anthropic-only contract;
   // conversion must not turn a permission check into ordinary generation.
   if (path !== '/v1/messages' || !hasSafeguards(body)) return true
   const nativeMessages = transformer.name === 'anthropic' || transformer.name === 'claude-code-oauth'
@@ -214,13 +214,8 @@ export function resolveInvocationForModel(
     prepareSubscriptionBetas(headers, longContextDeniedFor(plan.accountSessionKey, providerName))
   }
 
-  // The first selector candidate wins when several tier aliases share a target,
-  // matching the chain's target deduplication rather than guessing from a model id.
-  const selected = plan.selectedRoutes?.find((entry) => entry.target === `${providerName},${model}`)
   const request: PipelineRequest = {
     reqId: plan.reqId,
-    selectedTier: selected?.targetTier,
-    selectedRoute: selected?.route,
     body,
     headers,
     url: plan.path + plan.search,

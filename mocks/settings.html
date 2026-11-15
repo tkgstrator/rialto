@@ -15,9 +15,9 @@
 <script>
 const { renderShell, pill, btn } = window.Shell
 
-// SettingsPage / Presets / Personas / StatusLine / Debug were five
-// entries in the nav. They are all "configure the installation", so
-// they become one screen with a section rail.
+// SettingsPage / Presets / StatusLine / Debug were separate entries in
+// the nav. They are all "configure the installation", so they become
+// one screen with a section rail.
 
 const field = (label, value, hint, kind = 'text') => `
   <div class="grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4">
@@ -64,7 +64,7 @@ document.getElementById('root').innerHTML = `
         <h2 class="text-sm font-semibold">Data</h2>
       </div>
       ${field('Home directory', '~/.rialto', 'Config envelope, plugins, tokenizer cache.')}
-      ${field('Database', 'postgres://…/rialto', 'Providers, models, routing, sessions, usage.')}
+      ${field('Database', 'postgres://…/rialto', 'Providers, models, sessions, usage.')}
       ${field('Redis', 'redis://…:6379', 'Usage capture + auth-health job queue.')}
 
       <div class="border-t border-border px-6 py-5">

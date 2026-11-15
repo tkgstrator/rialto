@@ -205,15 +205,11 @@ export async function composeUiConfig(): Promise<AppConfig> {
   })
 
   // Optional scalars: emit null when absent / '' on disk so the JSON
-  // editor / wire shows "no value" consistently. The active persona is
-  // one of them — a top-level key on the wire, backed by the same key
-  // on disk.
+  // editor / wire shows "no value" consistently.
   return {
     ...envelopeOnly,
     CLAUDE_PATH: optionalScalarOrNull(envelopeOnly.CLAUDE_PATH),
     PROXY_URL: optionalScalarOrNull(envelopeOnly.PROXY_URL),
-    ActivePersona: optionalScalarOrNull(envelopeOnly.ActivePersona),
-    Personas: envelopeOnly.Personas,
     Providers: providers.map(toProvider)
   }
 }

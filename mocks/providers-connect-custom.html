@@ -24,7 +24,7 @@ const { renderShell, pill, btn, navTo, uiInput } = window.Shell
 //
 // What is new against the api-key pane:
 //   - the name: a Custom provider has none from a catalog, so the operator
-//     types the one it will carry in routing and in logs;
+//     types the one it will carry in model names and in logs;
 //   - the wire format, three choices and no more: Claude (Anthropic
 //     Messages), OpenAI Chat Completions, OpenAI Responses. They are the
 //     three shapes the request pipeline can already convert between;
@@ -120,7 +120,7 @@ const choice = ({ icon, title, body, selected }) => `
 const MONO = (s) => `<span class="font-mono">${s}</span>`
 
 const nameValue = PROBLEM ? 'openai' : 'lm-studio'
-const baseValue = PROBLEM ? 'localhost:1234' : 'http://localhost:1234/v1/chat/completions'
+const baseValue = PROBLEM ? 'localhost:1234' : 'http://localhost:1234/v1'
 
 const customPane = `
     <div class="@container min-w-0 overflow-y-auto">
@@ -145,14 +145,14 @@ const customPane = `
           control: input({ value: nameValue, placeholder: 'my-gateway', invalid: PROBLEM }),
           note: PROBLEM
             ? `<p class="${PROBLEM_NOTE}">This name belongs to a built-in vendor.</p>`
-            : `<p class="${NOTE}">Letters, digits, dots, dashes and underscores. It names the provider in routing and logs and cannot be changed later.</p>`
+            : `<p class="${NOTE}">Letters, digits, dots, dashes and underscores. It names the provider in model names and logs and cannot be changed later.</p>`
         })}
         ${field({
           label: 'Base URL',
-          control: input({ value: baseValue, placeholder: 'http://localhost:1234/v1/chat/completions', invalid: PROBLEM }),
+          control: input({ value: baseValue, placeholder: 'http://localhost:1234/v1', invalid: PROBLEM }),
           note: PROBLEM
             ? `<p class="${PROBLEM_NOTE}">Start with http:// or https://, and leave out any username, query or fragment.</p>`
-            : `<p class="${NOTE}">The full http(s) endpoint, used exactly as typed. Local and private addresses are allowed.</p>
+            : `<p class="${NOTE}">An http(s) address, with or without ${MONO('/v1')}. Local and private addresses are allowed.</p>
           <p class="${NOTE} flex min-w-0 items-baseline gap-2">
             <span class="shrink-0">Requests go to</span>
             <span class="min-w-0 truncate font-mono text-foreground">http://localhost:1234/v1/chat/completions</span>

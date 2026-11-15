@@ -25,7 +25,7 @@
  *
  * Not every table belongs here. `ChainTable` renders a preference chain
  * where the order *is* the configuration — offering to sort it would let
- * an operator scramble routing by clicking a header.
+ * an operator scramble the order by clicking a header.
  */
 
 import { cn } from 'cn'

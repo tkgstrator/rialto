@@ -1,26 +1,7 @@
-/**
- * Access tokens — issue and list.
- *
- * Owns the one-time plaintext: it is held in component state only for as
- * long as the reveal dialog is open, and is never written anywhere it
- * could be read back. The list refreshes after issuing rather than being
- * patched locally, so `lastUsedAt` and `requestCount` cannot drift from
- * what the gate actually recorded.
- *
- * Issuing happens in a dialog over this list, in two steps — the form,
- * then the reveal. The table never moves for either.
- *
- * Rotate and revoke are not here. They live on a token's own page
- * (TokenDetail), reached by clicking its row — a destructive action
- * repeated once per row is an action aimed at the wrong row eventually.
- *
- * A revoked token is not listed at all: revoking deletes it. This table
- * answers "what can reach the proxy right now", and a revoked row never
- * could.
- */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { useConfig } from '@/components/ConfigProvider'
 import { scopePaths } from '@/components/rialto/activity/use-surfaces'
 import { useConfirm } from '@/components/rialto/ConfirmDialog'
 import { RButton } from '@/components/rialto/primitives'
@@ -32,19 +13,19 @@ import { TokenTable } from '@/components/rialto/settings/access/TokenTable'
 import { SectionHead } from '@/components/rialto/settings/fields'
 import { usePhone } from '@/hooks/use-phone'
 import { type AccessTokenWire, api, type InboundSurfaceWire, type PlanWire } from '@/lib/api'
+import { enabledTargets } from '@/lib/models/enabled-targets'
 import { countTokens, expiryToIso, type TokenCounts } from '@/lib/rialto/settings/access-tokens'
 
 interface Revealed {
   plaintext: string
   name: string
   scope: string
-  profile: string
   expiry: string
 }
 
-/** "4 active · 1 expired · all /v1/*". */
 function Summary({ counts }: { counts: TokenCounts }) {
   const { t } = useTranslation()
+  if (counts.active === 0 && counts.expired === 0) return null
   return (
     <>
       {t('settings.access.countActive', { n: counts.active })}
@@ -57,19 +38,40 @@ function Summary({ counts }: { counts: TokenCounts }) {
 
 export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire[] }) {
   const { t } = useTranslation()
+  const { config } = useConfig()
   const [tokens, setTokens] = useState<AccessTokenWire[]>([])
-  const [profiles, setProfiles] = useState<{ key: string }[]>([])
   const [plans, setPlans] = useState<PlanWire[]>([])
   const [draft, setDraft] = useState<IssueDraft | null>(null)
   const [revealed, setRevealed] = useState<Revealed | null>(null)
   const [issuing, setIssuing] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [allReset, setAllReset] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [createdNote, setCreatedNote] = useState<string | null>(null)
   const { confirm, dialog: confirmDialog } = useConfirm()
-  // Pinned per load so every relative label on the page measures from
-  // the same instant, and so an expiry cannot flip mid-render.
   const [now, setNow] = useState(Date.now())
   const phone = usePhone()
+
+  const available = useMemo(
+    () => (config === null ? [] : enabledTargets(config.Providers).map((target) => target.target)),
+    [config]
+  )
+
+  const closeDialog = () => {
+    setDraft(null)
+    setCreating(false)
+    setCreatedNote(null)
+  }
+
+  const onPlanCreated = (plan: PlanWire) => {
+    setPlans((prev) => [...prev, plan])
+    setDraft((prev) => (prev === null ? prev : { ...prev, planId: plan.id }))
+    setCreatedNote(plan.name)
+    api
+      .getPlans()
+      .then((res) => setPlans(res.plans))
+      .catch(() => {})
+  }
 
   const load = useCallback(() => {
     api
@@ -84,18 +86,9 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
   useEffect(() => {
     load()
     api
-      .getTierProfiles()
-      .then(setProfiles)
-      .catch(() => {
-        // The picker falls back to "follow the endpoint", which is the
-        // server's own default when profileKey is null.
-      })
-    api
       .getPlans()
       .then((res) => setPlans(res.plans))
-      .catch(() => {
-        // The plan picker then offers only "no plan", the old behaviour.
-      })
+      .catch(() => {})
   }, [load])
 
   const issue = () => {
@@ -105,7 +98,6 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
       .issueAccessToken({
         name: draft.name.trim(),
         surfaces: scopeForWire(surfaces, draft.surfaces),
-        profileKey: draft.profileKey === ANY ? null : draft.profileKey,
         expiresAt: expiryToIso(draft.expiry, Date.now()),
         planId: draft.planId === ANY ? null : draft.planId
       })
@@ -115,24 +107,15 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
           plaintext: res.plaintext,
           name: res.token.name,
           scope: paths.length === 0 ? t('settings.access.allEndpoints') : paths.join(', '),
-          profile: res.token.profileKey === null ? t('settings.access.followEndpoint') : res.token.profileKey,
-          // The resolved date the server actually stored, not the form's
-          // relative choice — the same reading rotate's reveal gives, so
-          // the two summaries agree on what "Expires" means.
           expiry: res.token.expiresAt === null ? t('settings.access.never') : res.token.expiresAt.slice(0, 10)
         })
-        setDraft(null)
+        closeDialog()
         load()
       })
       .catch((e: Error) => toast.error(t('settings.access.issueFailed', { message: e.message })))
       .finally(() => setIssuing(false))
   }
 
-  // Every token's usage windows at once. Asked first, because it hands
-  // every limited client its full allowance back in one click. The answer
-  // stays on the page as the line under the table rather than a toast:
-  // nothing in the table changes (its totals are history), so the line is
-  // the only place the reset shows at all.
   const resetAll = async () => {
     const confirmed = await confirm({
       title: t('access.token.resetAllTitle'),
@@ -155,28 +138,28 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
 
   const counts = countTokens(tokens, now)
 
-  // The dialogs are shared by both layouts: issuing is one of the things
-  // the phone list keeps.
   const dialogs = (
     <>
-      {/* Both steps of issuing are modals over that table, and nothing
-          above moves to make room for them. Naming a token is decided
-          against the ones that already exist, and after issuing, the new
-          row is the answer to "where did it go" — a panel that replaced
-          the list took both away, and one that pushed it down asked the
-          question with the answer scrolled off the page. */}
       {revealed !== null ? (
         <IssuedTokenDialog {...revealed} onDone={() => setRevealed(null)} />
       ) : draft !== null ? (
         <IssueTokenDialog
           draft={draft}
           surfaces={surfaces}
-          profiles={profiles}
           plans={plans}
+          available={available}
+          creating={creating}
+          createdNote={createdNote}
           issuing={issuing}
-          onChange={setDraft}
+          onChange={(next) => {
+            if (draft !== null && next.planId !== draft.planId) setCreatedNote(null)
+            setDraft(next)
+          }}
           onSubmit={issue}
-          onCancel={() => setDraft(null)}
+          onCancel={closeDialog}
+          onCreatingChange={setCreating}
+          onDismissCreatedNote={() => setCreatedNote(null)}
+          onPlanCreated={onPlanCreated}
         />
       ) : null}
       {confirmDialog}
@@ -199,9 +182,6 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
 
   return (
     <>
-      {/* No title: the breadcrumb and the sidebar both say "Access
-          tokens" already, and this is the whole screen rather than a
-          section of one. */}
       <SectionHead
         meta={<Summary counts={counts} />}
         actions={
@@ -223,10 +203,6 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
 
       <TokenTable tokens={tokens} surfaces={surfaces} now={now} />
 
-      {/* Quiet and below the table, away from Issue token: it acts on every
-          token and plan at once, and the page's primary action should not
-          sit beside it. The table keeps its
-          historical columns; the current windows are on each token's page. */}
       <div className='flex items-center gap-3 border-t border-border/60 px-6 py-4'>
         <span className='text-[12px] text-muted-foreground'>
           {t(allReset ? 'access.token.allResetNote' : 'access.token.listWindowsNote')}

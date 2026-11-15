@@ -1,19 +1,15 @@
 /**
  * Round-trip tests for the DB-backed config service. Cover the diff
  * behaviour we'd otherwise only learn about in production: provider /
- * model deletion cascades to the tier aliases and routes naming them
- * (and says so), partial saves preserve what they did not send, the active persona
- * round-trips as a top-level key, and the keys a retired feature used to
- * accept are dropped rather than stored.
+ * model deletion cascades from the provider, partial saves preserve what
+ * they did not send, and the keys a retired feature used to accept are
+ * dropped rather than stored.
  */
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import { getPrismaClient } from '../../src/db/client'
-import { applyUiConfig, composeUiConfig, ensurePreferenceProfile } from '../../src/services/config'
+import { applyUiConfig, composeUiConfig } from '../../src/services/config'
 import { readRawConfigFile, writeConfigFile } from '../../src/services/config/envelope'
-import { setTierAlias } from '../../src/services/tier-alias-service'
-import { loadTierProfile, saveTierProfile } from '../../src/services/tier-route-service'
-import { profileWith } from '../llms/tier-fixture'
 import { HAS_DB, resetDbTables, teardownPrisma } from './helpers'
 
 // HOME and DATABASE_URL are redirected by __tests__/setup.ts (preload),
@@ -27,13 +23,6 @@ const openai = (models: string[]) => ({
   models
 })
 
-// Store the live map from a sparse description of its lists.
-const saveLive = (routes: Parameters<typeof profileWith>[0]) => saveTierProfile('live', profileWith(routes))
-
-// Every route switched on.
-const on = (...routes: Array<{ provider: string; targetTier: 'fable' | 'opus' | 'sonnet' | 'haiku' }>) =>
-  routes.map((r) => ({ ...r, enabled: true }))
-
 const anthropic = (models: string[]) => ({
   name: 'anthropic',
   api_base_url: 'https://api.anthropic.com',
@@ -45,7 +34,6 @@ const anthropic = (models: string[]) => ({
 describe.skipIf(!HAS_DB)('configService', () => {
   beforeEach(async () => {
     await resetDbTables()
-    await ensurePreferenceProfile()
     // The envelope lives on disk (a tmp home shared by every test in the
     // process) and is not reset by the table truncate; start each case
     // from a bare file so no case reads what a neighbour wrote.
@@ -64,63 +52,27 @@ describe.skipIf(!HAS_DB)('configService', () => {
     expect(ui.Providers[0].models.sort()).toEqual(['gpt-5', 'gpt-5-nano'])
   })
 
-  test('removing a model warns about the tier aliases it unsets, and the routes stay', async () => {
-    await applyUiConfig({ Providers: [openai(['gpt-5', 'gpt-5-nano'])] })
-    await setTierAlias('openai', 'haiku', 'gpt-5-nano')
-    await setTierAlias('openai', 'sonnet', 'gpt-5')
-    await saveLive({
-      default: { agent: on({ provider: 'openai', targetTier: 'sonnet' }) },
-      think: { subagent: on({ provider: 'openai', targetTier: 'haiku' }) }
-    })
-
-    const result = await applyUiConfig({ Providers: [openai(['gpt-5'])] })
-    expect(result.warnings).toHaveLength(1)
-    expect(result.warnings[0]).toContain('Unset 1 tier alias')
-    expect(result.warnings[0]).toContain('gpt-5-nano')
-    expect(result.warnings[0]).toContain('openai · haiku')
-
-    // The route names the provider's tier, not the model, so it survives:
-    // it is skipped until an alias is set again, and the operator's order
-    // is still there when one is.
-    const after = await loadTierProfile('live')
-    expect(after.routes.think.subagent.map((r) => `${r.provider} · ${r.targetTier}`)).toEqual(['openai · haiku'])
-  })
-
-  test('deleting a provider cascades models and routes and warns per profile, scenario and lane', async () => {
+  test('deleting a provider cascades its models', async () => {
     await applyUiConfig({ Providers: [openai(['gpt-5']), anthropic(['claude-sonnet-4-6'])] })
-    await saveLive({
-      default: {
-        agent: on({ provider: 'openai', targetTier: 'sonnet' }, { provider: 'anthropic', targetTier: 'sonnet' }),
-        subagent: on({ provider: 'anthropic', targetTier: 'sonnet' })
-      },
-      longContext: { agent: on({ provider: 'anthropic', targetTier: 'sonnet' }) }
-    })
 
     // anthropic removed
     const result = await applyUiConfig({ Providers: [openai(['gpt-5'])] })
-    expect(result.warnings).toHaveLength(1)
-    expect(result.warnings[0]).toContain('Removed 3 tier routes')
-    expect(result.warnings[0]).toContain('deleted provider "anthropic"')
-    expect(result.warnings[0]).toContain('live/default/agent')
-    expect(result.warnings[0]).toContain('live/default/subagent')
-    expect(result.warnings[0]).toContain('live/longContext/agent')
+    expect(result.warnings).toEqual([])
 
     const ui = await composeUiConfig()
     expect(ui.Providers.map((p) => p.name)).toEqual(['openai'])
-    const after = await loadTierProfile('live')
-    expect(after.routes.default.agent.map((r) => r.provider)).toEqual(['openai'])
-    expect(after.routes.default.subagent).toEqual([])
-    expect(after.routes.longContext.agent).toEqual([])
 
     const prisma = getPrismaClient()
     const allModels = await prisma.model.findMany({ include: { provider: true } })
     expect(allModels.map((m) => m.provider.name)).toEqual(['openai'])
   })
 
-  test('a model removal no alias names produces no warning', async () => {
+  test('removing a model drops it without a warning', async () => {
     await applyUiConfig({ Providers: [openai(['gpt-5', 'gpt-5-nano'])] })
     const result = await applyUiConfig({ Providers: [openai(['gpt-5'])] })
     expect(result.warnings).toEqual([])
+    const ui = await composeUiConfig()
+    expect(ui.Providers[0].models).toEqual(['gpt-5'])
   })
 
   test('API_TIMEOUT_MS number is written to disk and read back via composeUiConfig', async () => {
@@ -174,46 +126,6 @@ describe.skipIf(!HAS_DB)('configService', () => {
     expect(ui.LOG_LEVEL).toBe('debug')
   })
 
-  test('Personas and the top-level ActivePersona round-trip through apply then compose', async () => {
-    await applyUiConfig({
-      Providers: [],
-      ActivePersona: 'pirate',
-      Personas: [
-        { name: 'pirate', prompt: 'Talk like a pirate.' },
-        { name: 'lawyer', prompt: 'Be precise and cite statutes.' }
-      ]
-    })
-    const ui = await composeUiConfig()
-    expect(ui.Personas).toEqual([
-      { name: 'pirate', prompt: 'Talk like a pirate.' },
-      { name: 'lawyer', prompt: 'Be precise and cite statutes.' }
-    ])
-    expect(ui.ActivePersona).toBe('pirate')
-  })
-
-  test('an empty ActivePersona clears the active persona (composed as null), and null does too', async () => {
-    const personas = [{ name: 'pirate', prompt: 'Talk like a pirate.' }]
-    await applyUiConfig({ Providers: [], ActivePersona: 'pirate', Personas: personas })
-    await applyUiConfig({ Providers: [], ActivePersona: '', Personas: personas })
-    expect((await composeUiConfig()).ActivePersona).toBeNull()
-
-    await applyUiConfig({ ActivePersona: 'pirate' })
-    expect((await composeUiConfig()).ActivePersona).toBe('pirate')
-    await applyUiConfig({ ActivePersona: null })
-    expect((await composeUiConfig()).ActivePersona).toBeNull()
-  })
-
-  test('a save that omits ActivePersona leaves the selection alone', async () => {
-    await applyUiConfig({ ActivePersona: 'pirate', Personas: [{ name: 'pirate', prompt: 'Arr.' }] })
-    await applyUiConfig({ Providers: [openai(['gpt-5'])] })
-    expect((await composeUiConfig()).ActivePersona).toBe('pirate')
-  })
-
-  test('a fresh install composes ActivePersona as null, never undefined', async () => {
-    const ui = await composeUiConfig()
-    expect(ui.ActivePersona).toBeNull()
-  })
-
   test('retired keys are dropped with a warning and never written', async () => {
     const result = await applyUiConfig({
       LOG_LEVEL: 'debug',
@@ -243,8 +155,6 @@ describe.skipIf(!HAS_DB)('configService', () => {
     for (const key of retired) {
       expect(key in raw).toBe(false)
     }
-    // The persona nested under the retired key is not lifted either.
-    expect('ActivePersona' in raw).toBe(false)
 
     const ui = await composeUiConfig()
     for (const key of retired) {
@@ -385,16 +295,6 @@ describe.skipIf(!HAS_DB)('configService', () => {
     await applyUiConfig({ LOG_LEVEL: 'debug' })
     const ui = await composeUiConfig()
     expect(ui.Providers.map((p) => p.name)).toEqual(['openai'])
-  })
-
-  test('a Providers-only save leaves the routes alone', async () => {
-    await applyUiConfig({ Providers: [openai(['gpt-5'])] })
-    await saveLive({ default: { agent: on({ provider: 'openai', targetTier: 'sonnet' }) } })
-    await applyUiConfig({ Providers: [openai(['gpt-5', 'gpt-5-nano'])] })
-    const after = await loadTierProfile('live')
-    expect(after.routes.default.agent.map((r) => r.provider)).toEqual(['openai'])
-    const ui = await composeUiConfig()
-    expect(ui.Providers[0].models.sort()).toEqual(['gpt-5', 'gpt-5-nano'])
   })
 
   test('provider enabled round-trips through the Provider.enabled column', async () => {

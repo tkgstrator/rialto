@@ -92,7 +92,6 @@ const navTo = (href) => `data-nav="${href}"`
 
 const NAV = [
   { id: 'overview', label: 'Overview', icon: 'ri-dashboard-3-line', href: 'overview.html' },
-  { id: 'routing', label: 'Routing', icon: 'ri-git-branch-line', href: 'routing.html' },
   { id: 'providers', label: 'Providers', icon: 'ri-plug-line', href: 'providers.html' },
   // Next to Providers because it is the same question pointed the other
   // way: Providers is outbound (who Rialto sends to), this is inbound
@@ -173,10 +172,10 @@ const subNavGroup = (kids, sub) => `
  *
  * Every screen but Overview sits under one of the five sections, and three
  * of them nest a level further — a provider, a settings section, one
- * session. A bare title could not say which: "Access", "Requests" and
- * "Personas" all read as top-level screens when they are not, and the
- * titles had already drifted into saying different things at different
- * depths ("Activity" on one Activity screen, "Logs" on the next).
+ * session. A bare title could not say which: "Access" and "Requests"
+ * read as top-level screens when they are not, and the titles had
+ * already drifted into saying different things at different depths
+ * ("Activity" on one Activity screen, "Logs" on the next).
  *
  * The section crumb is DERIVED from `active` rather than passed. It is the
  * same fact as the highlighted sidebar item, so deriving it means the two
@@ -648,7 +647,6 @@ const SETTINGS_RAIL = [
   { id: 'server', label: 'Server', icon: 'ri-server-line', href: 'settings.html' },
   { id: 'auth', label: 'Access', icon: 'ri-key-2-line', href: 'settings-access.html' },
   { id: 'logging', label: 'Logging', icon: 'ri-file-list-2-line', href: 'settings-logging.html' },
-  { id: 'personas', label: 'Personas', icon: 'ri-user-voice-line', href: 'settings-personas.html' },
   { id: 'advanced', label: 'Advanced', icon: 'ri-terminal-box-line', href: 'settings-advanced.html' }
 ]
 

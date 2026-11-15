@@ -17,14 +17,13 @@ import { z } from 'zod'
 import '../../src/api/context'
 import { v1ModelsRoute } from '../../src/api/v1/models-list'
 import { getPrismaClient } from '../../src/db/client'
-import { applyUiConfig, ensurePreferenceProfile } from '../../src/services/config'
+import { applyUiConfig } from '../../src/services/config'
 import { setModelProviderPriorities } from '../../src/services/model-provider-preference'
 import { HAS_DB, resetDbTables, teardownPrisma } from '../db/helpers'
 
 describe.skipIf(!HAS_DB)('GET /v1/models', () => {
   beforeEach(async () => {
     await resetDbTables()
-    await ensurePreferenceProfile()
   })
 
   afterAll(async () => {

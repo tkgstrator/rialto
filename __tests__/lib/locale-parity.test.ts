@@ -61,8 +61,6 @@ const tags = (value: string): string[] =>
  * UI disagree with the thing it is describing.
  */
 const SHARED_VOCABULARY = new Set([
-  'activity.requests.laneAgent',
-  'activity.requests.laneSubagent',
   // Codex names its own quota windows `primary` / `secondary`. The
   // collector's metric keys (`codex.primary`) and Overview's quota rows
   // print them verbatim, so a translated label here would disagree with
@@ -99,7 +97,6 @@ const SHARED_VOCABULARY = new Set([
   'settings.advanced.subtitleConfig',
   'settings.advanced.subtitleHealth',
   'settings.logging.levelHint',
-  'settings.personas.markdown',
   'settings.server.redis',
   'shell.identityAccess'
 ])

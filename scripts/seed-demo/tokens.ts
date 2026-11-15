@@ -10,7 +10,7 @@
 
 import { createHash, randomBytes } from 'node:crypto'
 import type { PrismaClient } from '../../src/generated/prisma/client'
-import { DEMO_PROFILE_KEY, demoId } from './demo-rows'
+import { demoId } from './demo-rows'
 import type { Random } from './random'
 
 const PREFIX = 'rialto_'
@@ -20,27 +20,23 @@ const DAY_MS = 24 * 60 * MINUTE_MS
 interface TokenSpec {
   name: string
   surfaces: string[]
-  profileKey: string | null
   requestCount: number
   expiresInDays: number | null
 }
 
 // Between them these cover every column the Access screen renders: an
-// unscoped long-lived token, one pinned to a single surface AND a
-// profile, one pinned to two (the overflow count in the Endpoint cell
+// unscoped long-lived token, one pinned to a single surface, one pinned to two (the overflow count in the Endpoint cell
 // has nothing to draw otherwise), and one with an expiry.
 const TOKENS: TokenSpec[] = [
   {
     name: 'laptop (Claude Code)',
     surfaces: [],
-    profileKey: null,
     requestCount: 1_284,
     expiresInDays: null
   },
   {
     name: 'ci-pipeline',
     surfaces: ['openai-chat'],
-    profileKey: DEMO_PROFILE_KEY,
     requestCount: 412,
     expiresInDays: 30
   },
@@ -49,11 +45,10 @@ const TOKENS: TokenSpec[] = [
   {
     name: 'codex-cli',
     surfaces: ['openai-responses', 'openai-chat'],
-    profileKey: null,
     requestCount: 738,
     expiresInDays: null
   },
-  { name: 'scratch script', surfaces: [], profileKey: null, requestCount: 27, expiresInDays: 7 }
+  { name: 'scratch script', surfaces: [], requestCount: 27, expiresInDays: 7 }
 ]
 
 export const DEMO_TOKEN_COUNT = TOKENS.length
@@ -76,7 +71,6 @@ export async function seedAccessTokens(prisma: PrismaClient, random: Random, now
         tokenHash: createHash('sha256').update(plaintext).digest('hex'),
         prefix: plaintext.slice(0, PREFIX.length + 6),
         surfaces: spec.surfaces,
-        profileKey: spec.profileKey,
         lastUsedAt: new Date(now - random.int(2, 240) * MINUTE_MS),
         requestCount: spec.requestCount,
         expiresAt: spec.expiresInDays === null ? null : new Date(now + spec.expiresInDays * DAY_MS),

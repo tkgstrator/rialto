@@ -22,19 +22,14 @@ import { overviewRoute } from './api/overview/route'
 import { plansRoute } from './api/plans/route'
 import { providerModelRoute } from './api/providers/[name]/models/[model]/route'
 import { providerByNameRoute } from './api/providers/[name]/route'
-import { providerTierAliasRoute } from './api/providers/[name]/tier-aliases/[tier]/route'
 import { customProviderRoute } from './api/providers/custom/route'
 import { providersRoute } from './api/providers/route'
 import { providersTestRoute } from './api/providers/test/route'
 import { refreshModelsRoute } from './api/refresh-models/route'
 import { requestLogsRoute } from './api/request-logs/route'
-import { routingProfileRoute } from './api/routing/profiles/[key]/route'
-import { routingProfilesRoute } from './api/routing/profiles/route'
-import { routingSchedulerStateRoute } from './api/routing-scheduler-state/route'
 import { scrapePricesRoute } from './api/scrape-prices/[vendor]/route'
 import { storageRoute } from './api/storage/route'
 import { subscriptionsRoute } from './api/subscriptions/route'
-import { tierAliasesRoute } from './api/tier-aliases/route'
 import { transformersRoute } from './api/transformers/route'
 import { updateCheckRoute } from './api/update/check/route'
 import { updatePerformRoute } from './api/update/perform/route'
@@ -52,7 +47,6 @@ import { startAuthHealthCheck } from './services/auth-health-job'
 import { readAccessConfig } from './services/cloudflare-access'
 import { initConfig, initDir } from './services/config/envelope'
 import { migrateHomeDir } from './services/config/migrate-home-dir'
-import { ensureInboundSurfaces } from './services/inbound-surface-service'
 import { captureModelCapabilities } from './services/model-capability-service'
 import { startRoutingScheduler } from './services/routing-scheduler'
 import { startUsageCapture } from './services/usage-job'
@@ -102,9 +96,6 @@ if (process.env.RIALTO_TRUST_LOCAL === 'false' && readAccessConfig() === null) {
     'RIALTO_TRUST_LOCAL=false and Cloudflare Access is not configured — nothing can reach /api/*. Set ACCESS_TEAM_DOMAIN and ACCESS_AUD, or unset RIALTO_TRUST_LOCAL.'
   )
 }
-// Give every inbound surface an explicit stored routing mode, so no
-// read has to fall back to a per-surface default.
-await ensureInboundSurfaces()
 // Fire-and-forget: never block server boot on Redis. The job setup
 // is resilient and registers the BullMQ schedule once Redis is reachable;
 // it has its own per-process guard so HMR re-evaluation is a no-op.
@@ -118,9 +109,10 @@ void startAuthHealthCheck()
 // nothing is missing; the first boot after an upgrade fills in the models
 // already switched on, which no toggle or refresh would otherwise revisit.
 void captureModelCapabilities()
-// Routing scheduler. It publishes the quota snapshot the tier router
-// reads — per subscription model, whether it is out and when it comes
-// back. Every routed request consults it, so it always runs.
+// Routing scheduler. It publishes the quota snapshot the failover path
+// reads — whether a provider's subscription accounts are all spent and
+// when they come back — and the pace adaptive reasoning effort follows.
+// Every subscription request consults it, so it always runs.
 startRoutingScheduler()
 
 const app = new OpenAPIHono()
@@ -196,7 +188,6 @@ app.route('/', providersRoute)
 app.route('/', customProviderRoute)
 app.route('/', providerByNameRoute)
 app.route('/', providerModelRoute)
-app.route('/', providerTierAliasRoute)
 app.route('/', providersTestRoute)
 app.route('/', modelsRoute)
 app.route('/', modelProviderPrioritiesRoute)
@@ -204,10 +195,6 @@ app.route('/', modelTestRoute)
 app.route('/', modelTestAllRoute)
 app.route('/', scrapePricesRoute)
 app.route('/', requestLogsRoute)
-app.route('/', routingSchedulerStateRoute)
-app.route('/', routingProfilesRoute)
-app.route('/', routingProfileRoute)
-app.route('/', tierAliasesRoute)
 app.route('/', overviewRoute)
 app.route('/', inboundSurfacesRoute)
 app.route('/', identityRoute)

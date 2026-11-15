@@ -1,38 +1,15 @@
-/**
- * One access token, and the two actions that change what it can do.
- *
- * Revoke lives here and nowhere else. As a row action it sat one
- * mis-aimed click from every other row, on a table whose rows are the
- * only thing letting clients into the proxy — and the cost of the
- * mis-click is a CLI that stops working with a 401 the operator then has
- * to trace back to this screen. Reaching a token's own page first makes
- * the destructive action deliberate and gives it the context (what this
- * token has been doing, when it was last used) that the decision
- * actually needs.
- *
- * Rotate is the ordinary answer to a leak. It keeps the row — the id,
- * the name, the scope, the request count and every RequestLog pointing
- * at it — and replaces only the secret, so the client's history stays
- * one story instead of splitting across "CI" and "CI (old)".
- *
- * Scope and profile are editable here, because neither is an issue-time
- * decision: a client picks up a second endpoint, or its traffic should
- * start following a different chain, and neither is a reason to hand the
- * machine a new secret. Edited through a draft with an explicit Save
- * rather than applied on click — a stray chip would otherwise change
- * what a live client can reach, with the failure landing on the client
- * as a 401 nobody can trace from that end.
- */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
+import { useConfig } from '@/components/ConfigProvider'
 import { scopePaths, useSurfaces } from '@/components/rialto/activity/use-surfaces'
 import { useConfirm } from '@/components/rialto/ConfirmDialog'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import { IssuedTokenDialog } from '@/components/rialto/settings/access/IssuedTokenDialog'
-import { ANY, Picker, SurfacePicker, sameScope, scopeForWire } from '@/components/rialto/settings/access/pickers'
+import { PlanSelector } from '@/components/rialto/settings/access/PlanSelector'
+import { ANY, SurfacePicker, sameScope, scopeForWire } from '@/components/rialto/settings/access/pickers'
 import { TokenDetailHeader } from '@/components/rialto/settings/access/TokenDetailHeader'
 import { TokenDetailPhone } from '@/components/rialto/settings/access/TokenDetailPhone'
 import { TokenReadings } from '@/components/rialto/settings/access/TokenReadings'
@@ -40,48 +17,183 @@ import { TokenUsageWindows, useTokenUsageWindows } from '@/components/rialto/set
 import { SettingsField } from '@/components/rialto/settings/SettingsLayout'
 import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
 import { usePhone } from '@/hooks/use-phone'
-import { type AccessTokenWire, api, type PlanWire } from '@/lib/api'
+import { type AccessTokenWire, api, type InboundSurfaceWire, type PlanWire } from '@/lib/api'
+import { enabledTargets } from '@/lib/models/enabled-targets'
 import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
 import { tokenState } from '@/lib/rialto/settings/access-tokens'
+import { targetMatchesSurfaces } from '@/lib/rialto/settings/surface-model-compat'
 import { usageBlocked, usageWindowsView } from '@/lib/rialto/settings/usage-windows'
+import type { Provider } from '@/schemas/domain/provider'
 
 const BACK = '/access-tokens'
 
-/**
- * The server answers a refused rotation with the reason as its error
- * text. Mapped to a sentence that says what to do instead, because
- * "expired" alone on a toast explains nothing an operator can act on.
- */
+function LockedField({ value, aria }: { value: string; aria: string }) {
+  return (
+    <div className='relative w-full max-w-md'>
+      <input
+        readOnly
+        aria-readonly
+        aria-label={aria}
+        value={value}
+        className='h-8 w-full min-w-0 cursor-not-allowed rounded-md border border-border bg-muted/40 px-3 pr-9 font-mono text-xs text-muted-foreground outline-none'
+      />
+      <i
+        aria-hidden
+        className='ri-lock-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground/60'
+      />
+    </div>
+  )
+}
+
 const ROTATE_REFUSAL: Readonly<Record<string, string>> = {
   expired: 'settings.access.rotateRefusedExpired'
 }
 
-/** The fields this page can change. */
 interface ScopeDraft {
   surfaces: string[]
-  profileKey: string
-  /** ANY for no plan, which the wire sends as null. */
   planId: string
 }
 
 const draftOf = (token: AccessTokenWire): ScopeDraft => ({
   surfaces: token.surfaces,
-  profileKey: token.profileKey === null ? ANY : token.profileKey,
   planId: token.plan === null ? ANY : token.plan.id
 })
 
 const draftChanged = (draft: ScopeDraft, token: AccessTokenWire): boolean => {
   const saved = draftOf(token)
-  return (
-    !sameScope(draft.surfaces, saved.surfaces) || draft.profileKey !== saved.profileKey || draft.planId !== saved.planId
-  )
+  return !sameScope(draft.surfaces, saved.surfaces) || draft.planId !== saved.planId
 }
 
 interface Revealed {
   plaintext: string
   scope: string
-  profile: string
   expiry: string
+}
+
+function TokenScopeForm({
+  token,
+  draft,
+  plans,
+  surfaces,
+  available,
+  providers,
+  editable,
+  busy,
+  creating,
+  createdNote,
+  onDraftChange,
+  onPlanCreated,
+  onCreatingChange,
+  onDismissCreatedNote
+}: {
+  token: AccessTokenWire
+  draft: ScopeDraft
+  plans: readonly PlanWire[]
+  surfaces: readonly InboundSurfaceWire[]
+  available: readonly string[]
+  providers: readonly Provider[]
+  editable: boolean
+  busy: boolean
+  creating: boolean
+  createdNote: string | null
+  onDraftChange: (next: ScopeDraft) => void
+  onPlanCreated: (plan: PlanWire) => void
+  onCreatingChange: (next: boolean) => void
+  onDismissCreatedNote: () => void
+}) {
+  const { t } = useTranslation()
+  const expiresLabel = token.expiresAt === null ? t('settings.access.never') : token.expiresAt.slice(0, 10)
+  const planValue = draft.planId === ANY ? '' : draft.planId
+  const onPlanChange = (next: string) => {
+    if (next !== draft.planId) onDismissCreatedNote()
+    onDraftChange({ ...draft, planId: next === '' ? ANY : next })
+  }
+  const disabledTargets = new Set(
+    available.filter((target) => !targetMatchesSurfaces(target, providers, surfaces, draft.surfaces))
+  )
+  const disabledHint = t('settings.access.incompatibleWithEndpoint')
+  return (
+    <>
+      <SettingsField label={t('settings.access.issueName')} hint={t('access.token.nameLockedHint')}>
+        <LockedField value={token.name} aria={t('settings.access.issueName')} />
+      </SettingsField>
+
+      <SettingsField label={t('settings.access.colEndpoint')} hint={t('settings.access.issueEndpointHint')}>
+        <SurfacePicker
+          surfaces={surfaces}
+          selected={draft.surfaces}
+          onChange={(next) => onDraftChange({ ...draft, surfaces: next })}
+          allLabel={t('settings.access.allEndpoints')}
+          disabled={!editable || busy}
+        />
+      </SettingsField>
+
+      <SettingsField label={t('access.token.plan')} hint={t('access.token.planFormHint')}>
+        <PlanSelector
+          showLabel={false}
+          value={planValue}
+          plans={plans}
+          available={available}
+          onChange={onPlanChange}
+          onPlanCreated={onPlanCreated}
+          creating={creating}
+          onCreatingChange={onCreatingChange}
+          createdNote={createdNote}
+          onDismissCreatedNote={onDismissCreatedNote}
+          disabled={!editable || busy}
+          disabledTargets={disabledTargets}
+          disabledHint={disabledHint}
+        />
+      </SettingsField>
+
+      <SettingsField label={t('settings.access.issueExpires')} hint={t('access.token.expiresLockedHint')}>
+        <LockedField value={expiresLabel} aria={t('settings.access.issueExpires')} />
+      </SettingsField>
+    </>
+  )
+}
+
+function SaveBar({
+  tokenName,
+  dirty,
+  creating,
+  busy,
+  onDiscard,
+  onSave
+}: {
+  tokenName: string
+  dirty: boolean
+  creating: boolean
+  busy: boolean
+  onDiscard: () => void
+  onSave: () => void
+}) {
+  const { t } = useTranslation()
+  const canDiscard = (dirty || creating) && !busy
+  const canSave = dirty && !busy && !creating
+  return (
+    <div className='flex items-center gap-2 border-t border-border/60 px-6 py-4'>
+      <span className='text-[12px] text-muted-foreground'>
+        {creating ? (
+          t('access.token.creatingPlanFirst')
+        ) : (
+          <Trans
+            i18nKey='settings.access.scopeEditNote'
+            values={{ name: tokenName }}
+            components={{ strong: <span className='font-medium text-foreground' /> }}
+          />
+        )}
+      </span>
+      <div className='ml-auto flex gap-2'>
+        <RButton variant='ghost' onClick={onDiscard} disabled={!canDiscard}>
+          {t('common.discard')}
+        </RButton>
+        <RButton variant='primary' icon='ri-check-line' onClick={onSave} disabled={!canSave}>
+          {t('common.save')}
+        </RButton>
+      </div>
+    </div>
+  )
 }
 
 export function TokenDetail() {
@@ -89,17 +201,23 @@ export function TokenDetail() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const { surfaces } = useSurfaces()
+  const { config } = useConfig()
   const { confirm, dialog: confirmDialog } = useConfirm()
   const [token, setToken] = useState<AccessTokenWire | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [revealed, setRevealed] = useState<Revealed | null>(null)
   const [draft, setDraft] = useState<ScopeDraft | null>(null)
-  const [profiles, setProfiles] = useState<{ key: string }[]>([])
   const [plans, setPlans] = useState<PlanWire[]>([])
-  // Every relative label measures from the same instant.
+  const [creating, setCreating] = useState(false)
+  const [createdNote, setCreatedNote] = useState<string | null>(null)
   const [now, setNow] = useState(Date.now())
   const phone = usePhone()
+
+  const available = useMemo(
+    () => (config === null ? [] : enabledTargets(config.Providers).map((target) => target.target)),
+    [config]
+  )
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 30_000)
@@ -111,9 +229,9 @@ export function TokenDetail() {
       .getAccessToken(id)
       .then((res) => {
         setToken(res)
-        // Reset the draft from the server's answer after every load, so a
-        // rotation or a save cannot leave a stale edit on screen.
         setDraft(draftOf(res))
+        setCreating(false)
+        setCreatedNote(null)
         setNow(Date.now())
       })
       .catch((e: Error) => setError(e.message))
@@ -123,23 +241,11 @@ export function TokenDetail() {
 
   useEffect(() => {
     api
-      .getTierProfiles()
-      .then(setProfiles)
-      .catch(() => {
-        // The picker falls back to "follow the endpoint", which is the
-        // server's own default when profileKey is null.
-      })
-    api
       .getPlans()
       .then((res) => setPlans(res.plans))
-      .catch(() => {
-        // The plan picker then offers only "no plan" and the token's own.
-      })
+      .catch(() => {})
   }, [])
 
-  // Every action on this page that cannot be undone asks through the same
-  // dialog: its title is the question the confirm copy leads with, and its
-  // red button carries the words and icon of the button that opened it.
   const ask = (message: string, confirmLabel: string, icon: string): Promise<boolean> => {
     const { title, description } = splitConfirmMessage(message)
     return confirm({ title, description, confirmLabel, icon })
@@ -161,7 +267,6 @@ export function TokenDetail() {
         setRevealed({
           plaintext: res.plaintext,
           scope: paths.length === 0 ? t('settings.access.allEndpoints') : paths.join(', '),
-          profile: res.token.profileKey === null ? t('settings.access.followEndpoint') : res.token.profileKey,
           expiry: res.token.expiresAt === null ? t('settings.access.never') : res.token.expiresAt.slice(0, 10)
         })
         load()
@@ -186,15 +291,12 @@ export function TokenDetail() {
       .revokeAccessToken(token.id)
       .then(() => {
         toast.success(t('settings.access.revoked', { name: token.name }))
-        // Revoking deletes the token, so this page has nothing left to describe.
         navigate(BACK)
       })
       .catch((e: Error) => toast.error(t('settings.access.revokeFailed', { message: e.message })))
       .finally(() => setBusy(false))
   }
 
-  // Computed above the early returns: useUnsavedGuard is a hook, and a
-  // return between renders would change the hook order.
   const dirty = token !== null && draft !== null && draftChanged(draft, token)
   const unsavedDialog = useUnsavedGuard(dirty)
   const { usage, setUsage } = useTokenUsageWindows(token)
@@ -205,7 +307,6 @@ export function TokenDetail() {
     api
       .updateAccessToken(token.id, {
         surfaces: scopeForWire(surfaces, draft.surfaces),
-        profileKey: draft.profileKey === ANY ? null : draft.profileKey,
         planId: draft.planId === ANY ? null : draft.planId
       })
       .then(() => {
@@ -219,6 +320,18 @@ export function TokenDetail() {
   const discard = () => {
     if (token === null) return
     setDraft(draftOf(token))
+    setCreating(false)
+    setCreatedNote(null)
+  }
+
+  const onPlanCreated = (plan: PlanWire) => {
+    setPlans((prev) => [...prev, plan])
+    setDraft((prev) => (prev === null ? prev : { ...prev, planId: plan.id }))
+    setCreatedNote(plan.name)
+    api
+      .getPlans()
+      .then((res) => setPlans(res.plans))
+      .catch(() => {})
   }
 
   if (error !== null) {
@@ -239,26 +352,15 @@ export function TokenDetail() {
   }
 
   const state = tokenState(token, now)
-  // Read from the saved plan, not the draft: the windows are what the
-  // gate applies now, and an unsaved plan choice applies nothing yet.
   const windows = usageWindowsView(token.plan === null ? null : token.plan.name, usage)
   const editable = state === 'active'
-  // The token's own plan stays selectable even if the plans list failed to load.
-  const own = token.plan
-  const planOptions = own === null || plans.some((plan) => plan.id === own.id) ? plans : [own, ...plans]
 
-  // A modal over this page, not a panel inserted into it: the rotated
-  // secret is shown once, and a panel that pushes the page down can be
-  // scrolled past. It is the same dialog the issue flow ends on — the
-  // rules are identical, only the copy says "rotated" rather than
-  // "issued". Both layouts rotate, so both carry it.
   const rotatedDialog =
     revealed === null ? null : (
       <IssuedTokenDialog
         plaintext={revealed.plaintext}
         name={token.name}
         scope={revealed.scope}
-        profile={revealed.profile}
         expiry={revealed.expiry}
         titleKey='settings.access.rotatedTitle'
         bodyKey='settings.access.rotatedBody'
@@ -299,52 +401,22 @@ export function TokenDetail() {
           onRevoke={revoke}
         />
 
-        {/* Editable only while the token can actually be used: changing
-            the scope of an expired row alters nothing about
-            what reaches the proxy, so the controls would be theatre. */}
-        <SettingsField label={t('settings.access.colEndpoint')} hint={t('settings.access.issueEndpointHint')}>
-          <SurfacePicker
-            surfaces={surfaces}
-            selected={draft.surfaces}
-            onChange={(next) => setDraft({ ...draft, surfaces: next })}
-            allLabel={t('settings.access.allEndpoints')}
-            disabled={!editable || busy}
-          />
-        </SettingsField>
-
-        <SettingsField label={t('settings.access.colProfile')} hint={t('settings.access.issueProfileHint')}>
-          <Picker
-            label={t('settings.access.colProfile')}
-            value={draft.profileKey}
-            onChange={(next) => setDraft({ ...draft, profileKey: next })}
-            disabled={!editable || busy}
-          >
-            <option value={ANY}>{t('settings.access.followEndpoint')}</option>
-            {profiles.map((profile) => (
-              <option key={profile.key} value={profile.key}>
-                {profile.key}
-              </option>
-            ))}
-          </Picker>
-        </SettingsField>
-
-        {/* A plan limits the models and the usage windows; no plan leaves
-            the token unrestricted, as hand-issued ones always were. */}
-        <SettingsField label={t('access.token.plan')} hint={t('access.token.planHint')}>
-          <Picker
-            label={t('access.token.plan')}
-            value={draft.planId}
-            onChange={(next) => setDraft({ ...draft, planId: next })}
-            disabled={!editable || busy}
-          >
-            <option value={ANY}>{t('access.token.noPlan')}</option>
-            {planOptions.map((plan) => (
-              <option key={plan.id} value={plan.id}>
-                {plan.name}
-              </option>
-            ))}
-          </Picker>
-        </SettingsField>
+        <TokenScopeForm
+          token={token}
+          draft={draft}
+          plans={plans}
+          surfaces={surfaces}
+          available={available}
+          providers={config === null ? [] : config.Providers}
+          editable={editable}
+          busy={busy}
+          creating={creating}
+          createdNote={createdNote}
+          onDraftChange={setDraft}
+          onPlanCreated={onPlanCreated}
+          onCreatingChange={setCreating}
+          onDismissCreatedNote={() => setCreatedNote(null)}
+        />
 
         <TokenUsageWindows token={token} view={windows} now={now} onReset={setUsage} />
 
@@ -359,39 +431,14 @@ export function TokenDetail() {
             />
           </div>
         </div>
-        {/* Last thing on the page, which is where a form's own actions
-            belong. It started in the app title bar, where it sat beside
-            the breadcrumbs and said nothing about which of the page's
-            controls it applied to; moving it up against the two editable
-            fields fixed that and introduced a worse problem — a bar
-            across the middle of a page reads as the end of the page, and
-            the rows below it looked like a separate screen.
-            Always present rather than appearing on the first edit: a bar
-            that materialises moves everything around it, and the
-            disabled pair states the rule (there is a Save, and nothing
-            to save yet) before the operator touches anything. */}
-        <div className='flex items-center gap-2 border-t border-border/60 px-6 py-4'>
-          {/* Names the token. The page can be reached from a table of
-              several, and a bare "Save" in a bar says which controls it
-              applies to but not which row — the one thing an operator
-              about to change what a live client may reach needs to be
-              sure of. */}
-          <span className='text-[12px] text-muted-foreground'>
-            <Trans
-              i18nKey='settings.access.scopeEditNote'
-              values={{ name: token.name }}
-              components={{ strong: <span className='font-medium text-foreground' /> }}
-            />
-          </span>
-          <div className='ml-auto flex gap-2'>
-            <RButton variant='ghost' onClick={discard} disabled={!dirty || busy}>
-              {t('common.discard')}
-            </RButton>
-            <RButton variant='primary' icon='ri-check-line' onClick={save} disabled={!dirty || busy}>
-              {t('common.save')}
-            </RButton>
-          </div>
-        </div>
+        <SaveBar
+          tokenName={token.name}
+          dirty={dirty}
+          creating={creating}
+          busy={busy}
+          onDiscard={discard}
+          onSave={save}
+        />
         <div className='h-8' />
 
         {rotatedDialog}
