@@ -1,6 +1,6 @@
 /**
- * Activity › Session › Routing trace — every upstream call the session
- * made, newest first, a page at a time.
+ * Activity › Session › Trace — every upstream call the session made,
+ * newest first, a page at a time.
  *
  * The trace is the part the old build could not answer: "why did this turn
  * go to that model" was written to the request log but only readable by
@@ -9,12 +9,10 @@
 import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { type ActivityRequestLog, fetchSessionRequestLogs } from '@/components/rialto/activity/data'
-import { LANE_KEYS, lane } from '@/components/rialto/activity/requests-rows'
 import { TraceListPhone } from '@/components/rialto/activity/SessionPhone'
 import { DASH, ScreenMessage, StatusPill } from '@/components/rialto/activity/shared'
 import { useSessionPage } from '@/components/rialto/activity/use-session-page'
 import { Pager } from '@/components/rialto/Pager'
-import { Pill } from '@/components/rialto/primitives'
 import { usePhone } from '@/hooks/use-phone'
 import dayjs from '@/lib/dayjs'
 import { fmtCost } from '@/lib/sessions/format'
@@ -41,12 +39,6 @@ function CallRow({ call }: { call: ActivityRequestLog }) {
       </td>
       <td className='truncate px-3 font-mono text-[12px] text-muted-foreground'>
         {call.reasoningEffort === null ? DASH : call.reasoningEffort}
-      </td>
-      <td className='px-3'>
-        <div className='flex gap-1.5'>
-          <Pill tone='mute'>{call.scenario === null ? t('activity.common.untracked') : call.scenario}</Pill>
-          <Pill tone='mute'>{t(LANE_KEYS[lane(call.isSubagent)])}</Pill>
-        </div>
       </td>
       <td className='px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
         {call.totalInputTokens.toLocaleString()}
@@ -89,7 +81,6 @@ function TraceTable({ calls }: { calls: ActivityRequestLog[] }) {
         <col />
         <col />
         <col className='w-20' />
-        <col className='w-52' />
         <col className='w-20' />
         <col className='w-20' />
         <col className='w-20' />
@@ -102,7 +93,6 @@ function TraceTable({ calls }: { calls: ActivityRequestLog[] }) {
           <th className='px-3 text-left'>{t('activity.requests.colRequested')}</th>
           <th className='px-3 text-left'>{t('activity.requests.colSent')}</th>
           <th className='px-3 text-left'>{t('activity.requests.colEffort')}</th>
-          <th className='px-3 text-left'>{t('activity.requests.colRule')}</th>
           <th className='px-3 text-right'>{t('activity.requests.colInput')}</th>
           <th className='px-3 text-right'>{t('activity.requests.colOutput')}</th>
           <th className='px-3 text-right'>{t('activity.requests.colMs')}</th>

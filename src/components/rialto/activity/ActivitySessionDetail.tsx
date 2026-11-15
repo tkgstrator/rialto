@@ -2,10 +2,10 @@
  * Activity › Session — what one session cost, where each of its calls
  * went, and what was said.
  *
- * The routing trace and the conversation are two tabs rather than two
- * panes. Side by side, the transcript took the wide column and squeezed
- * the trace — the one thing this screen knows that no other screen does —
- * into a 22rem rail that could only show its last five rows; the fix then
+ * The trace and the conversation are two tabs rather than two panes. Side
+ * by side, the transcript took the wide column and squeezed the trace —
+ * the one thing this screen knows that no other screen does — into a
+ * 22rem rail that could only show its last five rows; the fix then
  * dropped the transcript altogether, which left a store of conversations
  * with no way to read them. A tab gives each the full width.
  *
@@ -28,7 +28,7 @@ import { fmtAgo, fmtRate, shortId } from '@/lib/rialto/format'
 import { fmtCost } from '@/lib/sessions/format'
 
 const TABS = [
-  { id: 'trace', labelKey: 'activity.session.routingTrace', href: '?tab=trace' },
+  { id: 'trace', labelKey: 'activity.session.trace', href: '?tab=trace' },
   { id: 'conversation', labelKey: 'activity.session.conversation', href: '?tab=conversation' }
 ] as const
 
@@ -51,7 +51,7 @@ function Stat({ label, value }: { label: string; value: ReactNode }) {
 /**
  * The session's numbers, across the top.
  *
- * These were nine rows down the right rail, above the routing trace, on a
+ * These were nine rows down the right rail, above the call trace, on a
  * screen whose subject was the transcript beside them. Read left to right
  * they cost one line, and the width goes to the tabs below. Inbound is not
  * here because the subtitle already says it.

@@ -11,7 +11,7 @@ import { api, type RequestLogItem, type SessionMessageItem } from '@/lib/api'
 import type { UsageHistorySample, UsageWire } from './usage-derive'
 
 export interface ActivityRequestLog extends RequestLogItem {
-  /** Routing lane. Null on rows written before subagent capture landed. */
+  /** Subagent capture, true for subagent lane calls. Null on rows written before capture landed. */
   isSubagent: boolean | null
 }
 
