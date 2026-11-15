@@ -12,8 +12,7 @@
  * rails.
  *
  * What is left is the file, the level filter, the search and the lines,
- * each of which opens to the whole event. Where a request was routed, and
- * why, is Activity › Requests, which reads the archive rather than the log.
+ * each of which opens to the whole event.
  */
 
 import { cn } from 'cn'

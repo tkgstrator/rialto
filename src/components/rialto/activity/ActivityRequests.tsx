@@ -1,10 +1,7 @@
 /**
  * Activity › Requests — one row per upstream call.
  *
- * Where Sessions groups calls, this is the raw log. The three columns that
- * did not exist in the old UI are `Requested` / `Sent`, `Rule` and `Lane`:
- * the routing decision was written to the request log all along but was
- * only readable by grepping pino output.
+ * Where Sessions groups calls, this is the raw log.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
@@ -27,7 +24,6 @@ import {
 import {
   applyFilters,
   type Filters,
-  lane,
   options,
   RANGES,
   type Row,
@@ -105,8 +101,8 @@ function StatsRow({ stats, rangeLabel }: { stats: RequestLogStats | null; rangeL
 
 /**
  * The filter row. A phone keeps Status and Range — "did anything fail in
- * the last hour" — and drops Surface, Token and Rule, which wrapped the
- * row onto three lines above a list that no longer shows those fields.
+ * the last hour" — and drops Surface and Token, which wrapped the row
+ * onto three lines above a list that no longer shows those fields.
  */
 function FilterBar({
   rows,
@@ -143,26 +139,15 @@ function FilterBar({
         onChange={(status) => onFilters((f) => ({ ...f, status }))}
       />
       {phone ? null : (
-        <>
-          <FilterSelect
-            label={t('activity.requests.filterToken')}
-            value={filters.client}
-            options={options(
-              rows.map((r) => r.client),
-              t('activity.common.all')
-            )}
-            onChange={(client) => onFilters((f) => ({ ...f, client }))}
-          />
-          <FilterSelect
-            label={t('activity.requests.filterRule')}
-            value={filters.rule}
-            options={options(
-              rows.map((r) => r.rule),
-              t('activity.common.all')
-            )}
-            onChange={(rule) => onFilters((f) => ({ ...f, rule }))}
-          />
-        </>
+        <FilterSelect
+          label={t('activity.requests.filterToken')}
+          value={filters.client}
+          options={options(
+            rows.map((r) => r.client),
+            t('activity.common.all')
+          )}
+          onChange={(client) => onFilters((f) => ({ ...f, client }))}
+        />
       )}
       <FilterSelect
         label={t('activity.requests.filterRange')}
@@ -249,7 +234,6 @@ export function ActivityRequests() {
     surface: 'all',
     status: 'all',
     client: 'all',
-    rule: 'all',
     range: '24h'
   })
   const throttle = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -335,19 +319,14 @@ export function ActivityRequests() {
       // this column a copy of Surface — every /v1/messages row read
       // "Claude Code" — so "which of my three tokens is spending this?"
       // could not be asked, although the row had the answer all along.
-      client: tokenNameOf(log.accessTokenId, tokenNames, surfaces.clientOf(log.surface)),
-      lane: lane(log.isSubagent),
-      // The scenario the router classified the request into, or
-      // "passthrough" when it went upstream as sent — the stored value,
-      // shown as it is.
-      rule: log.scenario
+      client: tokenNameOf(log.accessTokenId, tokenNames, surfaces.clientOf(log.surface))
     }))
   }, [page, surfaces.pathOf, surfaces.clientOf, tokenNames])
 
-  // The phone bar draws only Status and Range, so the other three must not
+  // The phone bar draws only Status and Range, so the other two must not
   // keep narrowing the list after a wide window shrinks to one.
   const visible = useMemo(
-    () => applyFilters(rows, phone ? { ...filters, surface: 'all', client: 'all', rule: 'all' } : filters),
+    () => applyFilters(rows, phone ? { ...filters, surface: 'all', client: 'all' } : filters),
     [rows, phone, filters]
   )
   const columns = useMemo(() => COLUMNS.filter((c) => !hidden.has(c.id)), [hidden])
