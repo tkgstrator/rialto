@@ -184,7 +184,7 @@ function AccountRow({
           </RButton>
         )}
         {/* Selection is independent of auth health and quota: an account
-            stays signed in while excluded from routing. */}
+            stays signed in while excluded from traffic. */}
         <span className='ml-auto flex items-center gap-1.5'>
           {t('providers.detail.routable')}
           {editing ? (

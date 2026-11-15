@@ -18,6 +18,7 @@
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RButton } from '@/components/rialto/primitives'
+import { PlanSelector } from '@/components/rialto/settings/access/PlanSelector'
 import { ANY, Picker, SurfacePicker } from '@/components/rialto/settings/access/pickers'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { InboundSurfaceWire, PlanWire } from '@/lib/api'
@@ -56,21 +57,38 @@ export function IssueTokenDialog({
   draft,
   surfaces,
   plans,
+  available,
+  creating,
+  createdNote,
   issuing,
   onChange,
   onSubmit,
-  onCancel
+  onCancel,
+  onCreatingChange,
+  onDismissCreatedNote,
+  onPlanCreated
 }: {
   draft: IssueDraft
   surfaces: InboundSurfaceWire[]
   plans: readonly PlanWire[]
+  /** `provider,model` ids the operator has left routable, for the inline new-plan form. */
+  available: readonly string[]
+  /** True while the inline new-plan form is open — blocks Issue token. */
+  creating: boolean
+  /** One-shot "Plan {name} created and selected" note, carried on the parent. */
+  createdNote: string | null
   issuing: boolean
   onChange: (next: IssueDraft) => void
   onSubmit: () => void
   onCancel: () => void
+  onCreatingChange: (next: boolean) => void
+  onDismissCreatedNote: () => void
+  onPlanCreated: (plan: PlanWire) => void
 }) {
   const { t } = useTranslation()
   const set = <K extends keyof IssueDraft>(key: K, value: IssueDraft[K]) => onChange({ ...draft, [key]: value })
+
+  const issueDisabled = issuing || draft.name.trim().length === 0 || creating
 
   return (
     <Dialog
@@ -108,16 +126,17 @@ export function IssueTokenDialog({
             />
           </Field>
 
-          <Field label={t('access.token.plan')} hint={t('access.token.planHint')}>
-            <Picker label={t('access.token.plan')} value={draft.planId} onChange={(v) => set('planId', v)}>
-              <option value={ANY}>{t('access.token.noPlan')}</option>
-              {plans.map((plan) => (
-                <option key={plan.id} value={plan.id}>
-                  {plan.name}
-                </option>
-              ))}
-            </Picker>
-          </Field>
+          <PlanSelector
+            value={draft.planId === ANY ? '' : draft.planId}
+            plans={plans}
+            available={available}
+            onChange={(next) => set('planId', next === '' ? ANY : next)}
+            onPlanCreated={onPlanCreated}
+            creating={creating}
+            onCreatingChange={onCreatingChange}
+            createdNote={createdNote}
+            onDismissCreatedNote={onDismissCreatedNote}
+          />
 
           <Field label={t('settings.access.issueExpires')} hint={t('settings.access.issueExpiresHint')}>
             <Picker label={t('settings.access.issueExpires')} value={draft.expiry} onChange={(v) => set('expiry', v)}>
@@ -139,16 +158,16 @@ export function IssueTokenDialog({
           </p>
         </div>
 
-        <div className='flex flex-col-reverse gap-2 sm:flex-row sm:justify-end'>
+        <div className='flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end'>
+          {creating ? (
+            <span className='mr-auto text-[12px] leading-snug text-muted-foreground'>
+              {t('access.token.creatingPlanFirst')}
+            </span>
+          ) : null}
           <RButton variant='ghost' onClick={onCancel}>
             {t('common.cancel')}
           </RButton>
-          <RButton
-            variant='primary'
-            icon='ri-key-2-line'
-            onClick={onSubmit}
-            disabled={issuing || draft.name.trim().length === 0}
-          >
+          <RButton variant='primary' icon='ri-key-2-line' onClick={onSubmit} disabled={issueDisabled}>
             {t('settings.access.issueToken')}
           </RButton>
         </div>

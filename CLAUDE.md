@@ -75,13 +75,17 @@ warnings but are the house rules:
 - **Inbound surfaces** are one descriptor each in `src/llms/inbound/surfaces.ts`. Adding a surface
   should mean adding one descriptor; if it takes edits in several files, knowledge has leaked out
   of it. `docs/architecture/inbound-surfaces.md`.
-- **Routing mode** is stored per surface, `routed` or `passthrough`, and a fresh install starts in
-  passthrough. `docs/architecture/routing.md`.
+- **There is no routing.** Every surface is passthrough — the caller's `body.model` wins and the
+  upstream is picked by provider priority. `routed` mode, scenarios, lanes, tiers, TierRoute,
+  profiles, the Long context tuner and the subagent-lane switch were removed in v3. The off-plan
+  response is now 403, not a redirect to `defaultModel`. `docs/architecture/routing.md`,
+  `docs/guides/migration-v3.md`.
 - **`/codex` is not an inbound surface.** It is the Codex MCP server, reached with its own
   `codex-mcp` token scope. `docs/guides/codex-mcp.md`.
-- **Subagent tag**: `<RIALTO-SUBAGENT-MODEL>` in the second system block selects the scenario's
-  subagent lane; only its presence is read. The legacy `<CCR-SUBAGENT-MODEL>` spelling must stay
-  accepted (`SUBAGENT_TAGS` in `src/llms/router/request-signals.ts`).
+- **Subagent tag**: `<RIALTO-SUBAGENT-MODEL>` in the second system block is stripped on entry and
+  its presence is recorded in `RequestLog.isSubagent`; the tag's value is not read and no lane is
+  switched. The legacy `<CCR-SUBAGENT-MODEL>` spelling must stay accepted (`SUBAGENT_TAGS` in
+  `src/llms/router/request-signals.ts`).
 - **Three things are called "provider"**: the Prisma `Provider` row (an upstream you can route to),
   `src/llms/registry/provider.ts` (the runtime registry, on the request path), and `src/vendors/`
   (catalog and pricing only).
