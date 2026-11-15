@@ -374,7 +374,7 @@ claude mcp add --transport http --scope user codex https://rialto.example.com/co
 ロガーは 1 つ（pino）で、HTTP リクエスト・ルーティング判断・上流呼び出し・サーバーイベントのすべてを書きます：
 
 - **コンソール** — 常時、整形して出力。
-- **ファイル** — `~/.rialto/logs/rialto-YYYY-MM-DD.log`。`LOG` が `true` のときだけ書かれます（デフォルトは `false`）。`LOG_MAX_MB`（デフォルト 10）を超えたファイルは `rialto-YYYY-MM-DD-N.log` に続きます。レベルは `LOG_LEVEL` で制御し、シークレット（`authorization`、`x-api-key`、トークン、cookie）は書き込み前にマスクされます。
+- **ファイル** — `~/.rialto/logs/YYYY-MM-DD.log`。`LOG` が `true` のときだけ書かれます（デフォルトは `false`）。`LOG_MAX_MB`（デフォルト 10）を超えたファイルは `YYYY-MM-DD-N.log` に続きます。レベルは `LOG_LEVEL` で制御し、シークレット（`authorization`、`x-api-key`、トークン、cookie）は書き込み前にマスクされます。
 
 ファイルは UI の **Activity → Logs** から閲覧できます。別建てのアプリケーションログはありません。
 

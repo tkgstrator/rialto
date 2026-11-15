@@ -374,7 +374,7 @@ claude mcp add --transport http --scope user codex https://rialto.example.com/co
 只有一个日志器（pino），它记录全部内容——HTTP 请求、路由决策、上游调用、服务器事件：
 
 - **控制台** — 始终输出，经过美化。
-- **文件** — `~/.rialto/logs/rialto-YYYY-MM-DD.log`，仅当 `LOG` 为 `true` 时写入（默认为 `false`）。超过 `LOG_MAX_MB`（默认 10）的文件会续写到 `rialto-YYYY-MM-DD-N.log`。级别由 `LOG_LEVEL` 控制；密钥（`authorization`、`x-api-key`、令牌、cookie）在写入前会被脱敏。
+- **文件** — `~/.rialto/logs/YYYY-MM-DD.log`，仅当 `LOG` 为 `true` 时写入（默认为 `false`）。超过 `LOG_MAX_MB`（默认 10）的文件会续写到 `YYYY-MM-DD-N.log`。级别由 `LOG_LEVEL` 控制；密钥（`authorization`、`x-api-key`、令牌、cookie）在写入前会被脱敏。
 
 这些文件可以在界面的 **Activity → Logs** 中查看。不存在单独的应用日志。
 
