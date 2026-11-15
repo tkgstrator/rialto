@@ -1,48 +1,23 @@
-/**
- * Issue form, as a dialog over the list.
- *
- * A dialog rather than the inline panel this used to be: naming a token
- * is a decision made against the ones that already exist — "MacBook —
- * Claude Code" being taken is exactly what you need to see while typing
- * it — and an inline form pushed that list off the page to ask. Issuing
- * is also discrete and cancellable, which is what a modal is for; the
- * rest of the screen is not what you are answering.
- *
- * Surface and plan are the reason per-client tokens exist at all — a
- * token pinned to `/v1/chat/completions` under a plan is how one client
- * gets its own limits without a second config axis — so both are
- * first-class fields here rather than an advanced disclosure. The surface
- * list comes from the server (`/api/inbound-surfaces`); nothing about it
- * is hardcoded.
- */
-import type { ReactNode } from 'react'
+import { type ReactNode, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useConfig } from '@/components/ConfigProvider'
 import { RButton } from '@/components/rialto/primitives'
 import { PlanSelector } from '@/components/rialto/settings/access/PlanSelector'
 import { ANY, Picker, SurfacePicker } from '@/components/rialto/settings/access/pickers'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { InboundSurfaceWire, PlanWire } from '@/lib/api'
 import { EXPIRY_CHOICES } from '@/lib/rialto/settings/access-tokens'
+import { targetMatchesSurfaces } from '@/lib/rialto/settings/surface-model-compat'
 
 export interface IssueDraft {
   name: string
-  /** Empty selects every surface, which is what the wire's empty list means. */
   surfaces: string[]
   expiry: string
-  /** ANY for no plan: unrestricted, as hand-issued tokens always were. */
   planId: string
 }
 
 export const emptyDraft = (): IssueDraft => ({ name: '', surfaces: [], expiry: 'never', planId: ANY })
 
-/**
- * A labelled field, stacked.
- *
- * `SettingsField`'s 14rem/1fr grid cannot survive a 28rem panel, and it
- * was never the dialog's shape anyway — the same stack ReplaceKeyDialog
- * already uses, so the two dialogs in this app agree on what a field
- * looks like.
- */
 function Field({ label, hint, children }: { label: string; hint: string; children: ReactNode }) {
   return (
     <div>
@@ -71,11 +46,8 @@ export function IssueTokenDialog({
   draft: IssueDraft
   surfaces: InboundSurfaceWire[]
   plans: readonly PlanWire[]
-  /** `provider,model` ids the operator has left routable, for the inline new-plan form. */
   available: readonly string[]
-  /** True while the inline new-plan form is open — blocks Issue token. */
   creating: boolean
-  /** One-shot "Plan {name} created and selected" note, carried on the parent. */
   createdNote: string | null
   issuing: boolean
   onChange: (next: IssueDraft) => void
@@ -86,7 +58,18 @@ export function IssueTokenDialog({
   onPlanCreated: (plan: PlanWire) => void
 }) {
   const { t } = useTranslation()
+  const { config } = useConfig()
   const set = <K extends keyof IssueDraft>(key: K, value: IssueDraft[K]) => onChange({ ...draft, [key]: value })
+
+  const providers = config === null ? [] : config.Providers
+  const disabledTargets = useMemo(() => {
+    const out = new Set<string>()
+    for (const target of available) {
+      if (!targetMatchesSurfaces(target, providers, surfaces, draft.surfaces)) out.add(target)
+    }
+    return out
+  }, [available, providers, surfaces, draft.surfaces])
+  const disabledHint = t('settings.access.incompatibleWithEndpoint')
 
   const issueDisabled = issuing || draft.name.trim().length === 0 || creating
 
@@ -104,9 +87,6 @@ export function IssueTokenDialog({
 
         <div className='space-y-3'>
           <Field label={t('settings.access.issueName')} hint={t('settings.access.issueNameHint')}>
-            {/* The dialog exists to take this one value first, so the
-                caret belongs here on open rather than on Radix's close
-                button. */}
             <input
               autoFocus
               type='text'
@@ -136,6 +116,8 @@ export function IssueTokenDialog({
             onCreatingChange={onCreatingChange}
             createdNote={createdNote}
             onDismissCreatedNote={onDismissCreatedNote}
+            disabledTargets={disabledTargets}
+            disabledHint={disabledHint}
           />
 
           <Field label={t('settings.access.issueExpires')} hint={t('settings.access.issueExpiresHint')}>
@@ -148,10 +130,6 @@ export function IssueTokenDialog({
             </Picker>
           </Field>
 
-          {/* Said before the button rather than after the reveal: the
-              next screen is the only chance to copy the secret, and a
-              warning that arrives with it is a warning that arrives too
-              late to prepare for. */}
           <p className='text-[12px] leading-relaxed text-muted-foreground'>
             <i className='ri-information-line mr-1 align-[-1px]' />
             {t('settings.access.issueOnceNote')}

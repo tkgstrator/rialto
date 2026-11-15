@@ -32,28 +32,20 @@ const HINT = 'text-[12px] leading-snug text-muted-foreground'
 export const PLAN_NONE = ''
 
 interface PlanSelectorProps {
-  /** '' = no plan, otherwise a plan id. */
   value: string
   plans: readonly PlanWire[]
-  /** `provider,model` ids the operator has left routable (for the inline new-plan form). */
   available: readonly string[]
   onChange: (next: string) => void
-  /** Called after POST /api/plans succeeds. Parent merges into its list and typically selects it via onChange. */
   onPlanCreated: (plan: PlanWire) => void
-  /** True while the inline new-plan form is open — the parent disables its primary action on this. */
   creating: boolean
   onCreatingChange: (next: boolean) => void
-  /** Plan name for the "Plan {name} created and selected" one-shot note, or null. Parent clears on next pick. */
   createdNote: string | null
   onDismissCreatedNote: () => void
   disabled?: boolean
-  /**
-   * The edit page already renders its label and hint through SettingsField's
-   * 14rem column, so the selector draws only its trigger + summary there.
-   * The dialog uses the stacked layout the mock describes — label, trigger,
-   * hint, then the extra (summary / new-plan form / no-plan note).
-   */
   showLabel?: boolean
+  /** Targets to grey out in the inline new-plan model picker, with a hover hint. */
+  disabledTargets?: ReadonlySet<string>
+  disabledHint?: string
 }
 
 function triggerLabelOf(value: string, plans: readonly PlanWire[], creating: boolean, t: (k: string) => string) {
@@ -83,6 +75,8 @@ function planExtra({
   saving,
   duplicate,
   canCreate,
+  disabledTargets,
+  disabledHint,
   onDraftChange,
   onCreate,
   onCancel
@@ -97,6 +91,8 @@ function planExtra({
   saving: boolean
   duplicate: boolean
   canCreate: boolean
+  disabledTargets?: ReadonlySet<string>
+  disabledHint?: string
   onDraftChange: (next: PlanDraft) => void
   onCreate: () => void
   onCancel: () => void
@@ -110,6 +106,8 @@ function planExtra({
         saving={saving}
         duplicate={duplicate}
         canCreate={canCreate}
+        disabledTargets={disabledTargets}
+        disabledHint={disabledHint}
         onChange={onDraftChange}
         onCreate={onCreate}
         onCancel={onCancel}
@@ -132,7 +130,9 @@ export function PlanSelector({
   createdNote,
   onDismissCreatedNote,
   disabled,
-  showLabel = true
+  showLabel = true,
+  disabledTargets,
+  disabledHint
 }: PlanSelectorProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -231,6 +231,8 @@ export function PlanSelector({
         saving,
         duplicate,
         canCreate,
+        disabledTargets,
+        disabledHint,
         onDraftChange: setDraft,
         onCreate: createPlan,
         onCancel: cancelCreate
@@ -450,6 +452,8 @@ function InlineNewPlanForm({
   saving,
   duplicate,
   canCreate,
+  disabledTargets,
+  disabledHint,
   onChange,
   onCreate,
   onCancel
@@ -460,6 +464,8 @@ function InlineNewPlanForm({
   saving: boolean
   duplicate: boolean
   canCreate: boolean
+  disabledTargets?: ReadonlySet<string>
+  disabledHint?: string
   onChange: (next: PlanDraft) => void
   onCreate: () => void
   onCancel: () => void
@@ -472,7 +478,15 @@ function InlineNewPlanForm({
         <span className={HINT}>{t('access.token.newPlanSharedNote')}</span>
       </div>
 
-      <PlanEditorBody draft={draft} available={available} statusId={statusId} autoFocusName onChange={onChange} />
+      <PlanEditorBody
+        draft={draft}
+        available={available}
+        statusId={statusId}
+        autoFocusName
+        disabledTargets={disabledTargets}
+        disabledHint={disabledHint}
+        onChange={onChange}
+      />
 
       <p className={cn('mt-1', HINT)}>{t('access.token.newPlanLimitsHint')}</p>
 
