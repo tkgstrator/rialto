@@ -18,9 +18,10 @@
  * answers "what can reach the proxy right now", and a revoked row never
  * could.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { useConfig } from '@/components/ConfigProvider'
 import { scopePaths } from '@/components/rialto/activity/use-surfaces'
 import { useConfirm } from '@/components/rialto/ConfirmDialog'
 import { RButton } from '@/components/rialto/primitives'
@@ -32,6 +33,7 @@ import { TokenTable } from '@/components/rialto/settings/access/TokenTable'
 import { SectionHead } from '@/components/rialto/settings/fields'
 import { usePhone } from '@/hooks/use-phone'
 import { type AccessTokenWire, api, type InboundSurfaceWire, type PlanWire } from '@/lib/api'
+import { enabledTargets } from '@/lib/models/enabled-targets'
 import { countTokens, expiryToIso, type TokenCounts } from '@/lib/rialto/settings/access-tokens'
 
 interface Revealed {
@@ -59,6 +61,7 @@ function Summary({ counts }: { counts: TokenCounts }) {
 
 export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire[] }) {
   const { t } = useTranslation()
+  const { config } = useConfig()
   const [tokens, setTokens] = useState<AccessTokenWire[]>([])
   const [plans, setPlans] = useState<PlanWire[]>([])
   const [draft, setDraft] = useState<IssueDraft | null>(null)
@@ -66,11 +69,44 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
   const [issuing, setIssuing] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [allReset, setAllReset] = useState(false)
+  // Inline new-plan form state: lifted to this section because the two
+  // dialogs (Issue + the Issued reveal) take turns rendering, so the
+  // parent is the one place that outlives the dialog reopen.
+  const [creating, setCreating] = useState(false)
+  const [createdNote, setCreatedNote] = useState<string | null>(null)
   const { confirm, dialog: confirmDialog } = useConfirm()
   // Pinned per load so every relative label on the page measures from
   // the same instant, and so an expiry cannot flip mid-render.
   const [now, setNow] = useState(Date.now())
   const phone = usePhone()
+
+  // What the operator has left switched on: the models an inline new plan may name.
+  const available = useMemo(
+    () => (config === null ? [] : enabledTargets(config.Providers).map((target) => target.target)),
+    [config]
+  )
+
+  // Closing the issue dialog: wipe every piece of transient state it owns,
+  // so a second Open starts on a blank form with no stale notes or inline
+  // new-plan hold-over.
+  const closeDialog = () => {
+    setDraft(null)
+    setCreating(false)
+    setCreatedNote(null)
+  }
+
+  const onPlanCreated = (plan: PlanWire) => {
+    setPlans((prev) => [...prev, plan])
+    setDraft((prev) => (prev === null ? prev : { ...prev, planId: plan.id }))
+    setCreatedNote(plan.name)
+    // Pick up tokenCount and anything else the server normalises.
+    api
+      .getPlans()
+      .then((res) => setPlans(res.plans))
+      .catch(() => {
+        // The local merge above already kept the form usable.
+      })
+  }
 
   const load = useCallback(() => {
     api
@@ -113,7 +149,7 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
           // the two summaries agree on what "Expires" means.
           expiry: res.token.expiresAt === null ? t('settings.access.never') : res.token.expiresAt.slice(0, 10)
         })
-        setDraft(null)
+        closeDialog()
         load()
       })
       .catch((e: Error) => toast.error(t('settings.access.issueFailed', { message: e.message })))
@@ -164,10 +200,21 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
           draft={draft}
           surfaces={surfaces}
           plans={plans}
+          available={available}
+          creating={creating}
+          createdNote={createdNote}
           issuing={issuing}
-          onChange={setDraft}
+          onChange={(next) => {
+            // Picking a different plan clears the one-shot "created and selected"
+            // note; the created plan is no longer what is selected.
+            if (draft !== null && next.planId !== draft.planId) setCreatedNote(null)
+            setDraft(next)
+          }}
           onSubmit={issue}
-          onCancel={() => setDraft(null)}
+          onCancel={closeDialog}
+          onCreatingChange={setCreating}
+          onDismissCreatedNote={() => setCreatedNote(null)}
+          onPlanCreated={onPlanCreated}
         />
       ) : null}
       {confirmDialog}
