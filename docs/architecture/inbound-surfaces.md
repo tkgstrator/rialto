@@ -2,7 +2,7 @@
 
 ## 目的
 
-Rialto は「複数のワイヤ形式を受け、複数のベンダへ振り分けるルーティング・ゲートウェイ」である。
+Rialto は「複数のワイヤ形式を受け、呼び出し側が指定したモデルのベンダへ送るゲートウェイ」である。
 その **受け口 = inbound surface** の知識を1箇所に集約し、面を増やす作業を「記述子を1つ足す」に落とす。
 
 実装:
@@ -80,7 +80,7 @@ Hono はマッチする middleware を**すべて**走らせるので、OpenAI �
 
 | 事情 | 対処 |
 |---|---|
-| モデルと action が **URL** にあり body に無い | 記述子の `extractModel` / `extractStream` が `body.model` / `body.stream` に畳み込む。下流（passthrough やルートが取らなかったときの宛先 / failover chain / pipeline / JSON-vs-SSE 判定）はすべて body を読むので、ここが2つのワイヤ規約の合流点 |
+| モデルと action が **URL** にあり body に無い | 記述子の `extractModel` / `extractStream` が `body.model` / `body.stream` に畳み込む。下流（Plan のモデル判定 / failover chain / pipeline / JSON-vs-SSE 判定）はすべて body を読むので、ここが2つのワイヤ規約の合流点 |
 | transformer の `endPoint` が `/v1beta/models/:modelAndAction` で、実パスと一致しない | `buildRoutePlan` は `surface.endpoint` で transformer を引く（実パス一致ではない） |
 | 認証ヘッダが `x-goog-api-key` / `?key=` | `createProxyAuth({ credential: 'google' })`。受理するのは発行済みアクセストークンだけ（他の /v1 面と同じ） |
 | エラー封筒が3種目 `{ error: { code, message, status } }` | `buildErrorEnvelope` の `google` 分岐。`status` は google.rpc.Code 名 |
@@ -108,10 +108,10 @@ Google のワイヤ規約に代替が無いのでこの面だけ受理する。`
 - **既定は無効（オプトイン）。** 両モデルは接続前の Codex のカタログに出るが、他のモデルと同じく
   オフで入る。provider ページで有効化する。価格は公開されていないので
   通常の価格3列は null のまま。Codexのサブスク枠に実際の従量課金単価があると誤認させないため、
-  API参考単価はモダリティ別に別表示する。chat のルート・tier alias 候補・モデルテスト・
+  API参考単価はモダリティ別に別表示する。chat の候補・モデルテスト・
   scheduler の対象からは外してある。
-- **常に passthrough。** routingMode は `passthrough` 固定で、`routed` への変更は拒否する。
-  `deniedTargets` は効く（403）。
+- **Plan が効く。** `generateImage` が最初に Plan のモデル判定を行い、Plan に無いモデルは 403
+  （OpenAI の封筒）。`/codex` の `generate_image` ツールも同じ関数を通る。`deniedTargets` も効く（403）。
 - **リクエスト**：`application/json`、128 KiB 以下。`model`・`prompt`（1〜32,000 文字）必須、
   任意で `size`（`auto` / `1024x1024` / `1024x1536` / `1536x1024`）、`quality`
   （`auto` / `low` / `medium` / `high`）、`background`（`auto` / `opaque` / `transparent`）、
@@ -153,73 +153,25 @@ Providers に表示される。公開モデル詳細ページの存在だけで�
 OpenAI の公開 Images API の契約ではない。予告なく形が変わり得るので、この面は OpenAI 互換を
 保証しない。
 
-## routingMode — 「messages専用に見える」問題の正体
+## ルーティングは無い — どの面も同じ前処理を通る
 
-`routed` はシナリオ別のルーティング（入力の長さと thinking でシナリオを、サブエージェントタグでレーンを決め、
-そのリストのルートを順にゲートへ通してペースで並べる）→ failover の全段を通す。詳細は [routing.md](./routing.md)。
-`passthrough` は呼び出し側が素のモデル名を指定し、Rialto が provider を解決した上で**シナリオ分類をスキップ**する
-（サブエージェントタグの除去だけはどちらのモードでも走る — タグは Rialto の内部マーカーで、
-どの上流にも意味が無いため）。ルーティングの機構はこの 2 つだけである（ルール・スロット・
-プリセット、モデルを直接並べたチェーンは無い）。
+どの面も、呼び出し側が指定したモデルをそのまま上流へ送る。かつては面ごとに `routing_mode`
+（`routed` / `passthrough`）を保存し、`routed` ならシナリオ別のルートで行き先を決めていたが、
+その機構は丸ごと廃止した（[migration-v3.md](../guides/migration-v3.md) §9）。
 
-この分岐自体は妥当だった（OpenAI互換クライアントは自分でモデルを選ぶ）。問題は
-`router.ts` に**ハードコードされていて、UIから見えず、切り替えられない**ことだった。
+面が共通に通る前処理は `src/api/v1/route-plan.ts` にあり、順に次のとおり。詳細は
+[routing.md](./routing.md)。
 
-```ts
-// 旧: 固定・不可視
-if (req.inboundPath === '/v1/chat/completions' || req.inboundPath === '/v1/responses') { ... }
+1. アクセストークンの **Plan** のモデル判定。Plan に載っていないモデルは、その面自身のエラー形の
+   **403** で拒否する（リダイレクトはしない）。モデルを書かないリクエストだけが `defaultModel` になる
+2. サブエージェントのタグの除去と `RequestLog.isSubagent` の記録（`/v1/messages` のみ）、
+   アクティブなペルソナの挿入（`/v1/messages` のみ）
+3. 素のモデル名の provider 解決
+4. 面ごとの **deniedTargets**（400）
 
-// 新: 設定
-if (!(await isRoutedPath(req.inboundPath))) { ... }
-```
-
-結果として `RouterPreferences` / `RoutingLibrary` / `TierEditor` などの画面が事実上
-「`/v1/messages` 専用の設定画面」になっていた。これが **「UI上の機能が全部messagesだけの設定に
-なっている」の正体**である。
-
-### 記述子に `defaultRoutingMode` は無い
-
-面ごとの既定値は**廃止した**。旧実装は messages=routed / 他=passthrough を記述子に持っていたが、
-それはハードコードされた bypass を場所を変えて再現しただけで、何も表現していなかった。さらに
-UI 側に「見た目が同じ2つの値のうちどちらが出荷時のものか」を説明させる負債を生んでいた
-（旧 `overridden` フラグの存在理由がそれ）。
-
-いまは全面が `InboundSurfaceConfig` に**明示的な保存済みモードを1つ**持つ。起動時の
-`ensureInboundSurfaces()` が、行の無い面に単一の
-
-```ts
-export const INITIAL_ROUTING_MODE: RoutingMode = 'passthrough'
-```
-
-を入れる（既存行は触らない。冪等）。読み取り側（`listSurfaces`）も、まだ行が無い面には同じ
-seed 値を返すので、「面ごとの既定値」を発明する必要がどこにも無い。
-
-**passthrough が seed なのは、未設定のインストールでルーティングを走らせても何も起きないから。**
-ルートが無い状態では、どのシナリオも同じレーンの default に落ち、その default も空なので呼び出し側の
-model に素通りする。ルーティングは
-振り先（ルートと、それが名指すプロバイダのティアエイリアス）が揃ってから面ごとに有効化するものである。
-
-つまり **新規インストールは `/v1/messages` すらルーティングしない**。旧ビルドからの移行では
-Routing 画面で明示的に `routed` へ切り替える必要がある — ここは旧挙動を踏襲していない、
-意図的な非互換点である。
-
-## profileKey — 面ごとのルート
-
-`RouterPreferenceProfile.key` は元々「将来の preference presets 用」としてスキーマコメント付きで
-置かれ、`key='live'` のシングルトンのまま眠っていた。面ごとルーティングがその用途である。
-プロファイルの行は、モデルのチェーンから provider · tier のルートへ移ったあとも同じものを使っている（面と
-トークンの `profileKey` が指し続けられるように）。
-
-```
-InboundSurfaceConfig.profileKey → RouterPreferenceProfile.key → TierRoute
-```
-
-リクエスト時に `router.ts`（`routeRequest`）が inbound path から面を解決し、その
-`profileKey` のルートをルーターに読ませる。認証したアクセストークンが `profileKey` を
-持っていればそちらが面のものに勝つ。これにより **CIのクライアントが叩く面だけ cost-first に固定する**
-といった運用ができる。`profileKey` の無い面は既定プロファイル `live` に解決される。予約キー
-`passthrough` を指す面は、`routingMode` が `routed` でも passthrough として扱われる
-（`isRoutedPath`）。
+`InboundSurfaceConfig` に残っている列は `deniedTargets` だけである。行が無い面は何も拒否しない。
+読み取りは書き込みで無効化されるキャッシュ越しに行う（`src/services/inbound-surface-service.ts`）。
+`/api/inbound-surfaces` で読み書きできるが、いまは編集する画面は無い。
 
 ## RequestLog.surface
 
@@ -260,14 +212,14 @@ MCP を話すのでワイヤ形式でもなく、呼び先は常に Codex に固
 ## 面を1つ足す手順
 
 **`INBOUND_SURFACES` に記述子を1つ足す。** ルートのマウント・認証ゲート・アクセスログ・
-エラー封筒・SSE集約・`inboundType` / `surface` の記録・トークンの面スコープ・Routing 画面の
-行は、すべてそこから導出される。
+エラー封筒・SSE集約・`inboundType` / `surface` の記録・トークンの面スコープは、
+すべてそこから導出される。
 
 記述子に**書く値が無い**場合だけ、その値を作る作業が別途要る。
 
 | 条件 | 追加で要るもの |
 |---|---|
-| 新しいワイヤ形式 | endpoint transformer 1つ（`endPoint` は記述子の `endpoint` と一致させる）。`transformRequestOut`（wire → 内部形）と `transformResponseIn`（内部形 → wire）の両方。加えて `src/llms/router/surface-signals.ts` の `READERS` に signal reader 1つ — ルーターが読むのは `tokenize`（Long context のしきい値と context ゲート）、`thinking`（Think シナリオ）、`webSearch`（Web 検索ゲート）の 3 つで、reader の無い面は Anthropic の語彙で読まれる。語彙が違えば本文も thinking も Web 検索ツールも見えず、どのリクエストも Default に入り、ゲートも素通りしてしまう |
+| 新しいワイヤ形式 | endpoint transformer 1つ（`endPoint` は記述子の `endpoint` と一致させる）。`transformRequestOut`（wire → 内部形）と `transformResponseIn`（内部形 → wire）の両方。|
 | 新しいエラー封筒 | `buildErrorEnvelope` に分岐1つ、`unauthorizedResponse` に 401 の形1つ |
 | 新しい非ストリーム集約 | `sse-aggregate/` にファイル1つ（ワイヤ形式ごとに1ファイル）と barrel の1行 |
 | 新しい認証規約 | `presentedSecret` に読み取り1行、`GATE_BY_CREDENTIAL` に1エントリ |
@@ -276,15 +228,14 @@ MCP を話すのでワイヤ形式でもなく、呼び先は常に Codex に固
 いずれも「新しい概念を1つ持ち込んだときだけ」であって、面を足すこと自体には要らない。
 たとえば5つ目が OpenAI 互換の別パスなら、記述子1つで終わる。
 
-DBマイグレーションは不要（`InboundSurfaceConfig` は行が無ければ記述子の既定値を使う）。
-起動時の `ensureInboundSurfaces()` が新しい面にも行を1つ入れる。
+DBマイグレーションは不要（`InboundSurfaceConfig` は行が無ければ何も拒否しない）。
 
 ## 関連
 
 - [`docs/architecture/inbound-parity.md`](./inbound-parity.md) — **面 × 機能のパリティ表**。
   記述子を足せば面は増えるが、増えた面がどこまで実際に動くかは記述子の外側（変換層）で決まる。
   その実態と、未対応セルの理由・担保テストはあちら。
-- [`docs/architecture/routing.md`](./routing.md) — routed な面の後段: シナリオとレーン・provider · tier のルート・ゲート・ペース・結果
+- [`docs/architecture/routing.md`](./routing.md) — 前処理（Plan のモデル判定・素のモデル名の解決・deniedTargets）と quota snapshot
 - [`docs/architecture/request-flow.md`](./request-flow.md) — その後の failover chain と 429 ローテーション
 - [`docs/architecture/pipeline-overview.md`](./pipeline-overview.md) — 起動から応答整形までの通し動線
 - `docs/plan/rialto/master-plan.md` §4.1, §4.2 — 設計の経緯
@@ -294,8 +245,6 @@ DBマイグレーションは不要（`InboundSurfaceConfig` は行が無けれ�
 | 画面 | ルート | モック差分 (light / dark) |
 |---|---|---|
 | Overview | `/overview` | 1.76% / 1.85% |
-| Routing — Chain | `/routing` | 3.51% / 3.82% |
-| Routing — Chain (passthrough) | `/routing?surface=openai-responses` | 2.45% / 3.55% |
 | Providers — subscription | `/providers/:name` | 3.89% / 7.75% |
 | Providers — api_key | `/providers/:name` | 3.83% / 7.15% |
 | Providers — connect | `/providers/connect` | 7.22% / 14.66% ※1 |
@@ -312,10 +261,7 @@ DBマイグレーションは不要（`InboundSurfaceConfig` は行が無けれ�
 | Session detail | `/activity/sessions/:sessionId` | セッション実データが無く撮影できない（ルート自体は登録済み） |
 
 差分の大半は**モックのダミー値と実データの差**である（このインストールには provider が3件、モックのフィクスチャには7件、など）。
-当時測った Routing — Map / Routing — Rules / Settings — Presets の3画面は、その後ルートごと廃止された
-（ルーティングは chain と passthrough だけになった）ので、表から外してある。Routing — Chain の2行は
-チェーン編集画面のときの数値である。その画面はのちに v2.89.0 で要求ティアのマップの編集画面に、さらに
-シナリオ × Agent / Subagent の provider · tier の表（`mocks/routing.html`）に作り替えられたので、いまの画面の差分ではない。
+当時測った Routing 系の画面と Settings — Presets は、その後ルートごと廃止されたので、表から外してある。
 
 10% を超える2画面は、どちらも**モックと実機が別の状態を描いている**ことによる既知差分で、実装の欠落ではない。
 コピーや構造をいじっても下がらないので、追わないこと。

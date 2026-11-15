@@ -1,15 +1,12 @@
 // Rialto's Postgres-backed config store.
 //
-// The upstreams and how traffic is routed to them:
-//   - Provider:                one row per LLM provider account (api_base_url + api_key)
-//   - Model:                   one row per model name, child of Provider
-//   - RouterPreferenceProfile: a named routing profile; `live` is the default every surface uses
-//   - ProviderTierAlias:       which model a tier (fable/opus/sonnet/haiku) no model's name says is
-//   - TierRoute:               a profile's routes — per scenario and lane, the ordered provider·tiers
-//   - RouterPreferenceEntry, RoutingWeightChange, ScenarioKey, Model.manualTier: retired,
-//     read only by the one-shot conversion into TierRoute; dropped by the contract migration
+// The upstreams a request can be sent to:
+//   - Provider: one row per LLM provider account (api_base_url + api_key)
+//   - Model:    one row per model name, child of Provider
 // Everything else here is the archive behind Activity and Overview, the
 // subscription accounts and their observed quota, and issued credentials.
+// A request goes to the provider that serves the model it names; there is
+// no routing table.
 //
 // Prisma 7: the datasource URL lives in prisma.config.ts (passed via a
 // driver adapter), not in this file.
@@ -21,30 +18,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-}
-
-// Retired with the per-scenario chains; kept only until the contract
-// migration drops RouterPreferenceEntry. The scenarios a request was
-// classified into, each owning its own chain lanes. `default` was the
-// catch-all; the rest were reached only when the chain had an entry for
-// them. The former `background` scenario was folded into `default`
-// (migration `20260728_router_rules_drop_background`).
-enum ScenarioKey {
-  default
-  think
-  longContext
-  webSearch
-  image
-}
-
-// Which caller lane a RouterPreferenceEntry participates in. Main-agent
-// traffic (no <RIALTO-SUBAGENT-MODEL> tag) reads the `agent` chain;
-// requests carrying the tag read the `subagent` chain. Kept as an enum
-// so a future third lane (e.g. "batch") is one migration away instead
-// of a boolean flag flip.
-enum RouterPreferenceKind {
-  agent
-  subagent
 }
 
 // Outcome of the last real-inference connectivity test for a Model.
@@ -105,9 +78,9 @@ model Provider {
   // for every provider; the default only covers a row created before
   // the seed runs.
   apiStyle             ApiStyle            @default(openai_chat)
-  // Whether this provider is offered for routing at all. This used to be
+  // Whether this provider is offered for requests at all. This used to be
   // `providerEnabled` inside a free-form `transformer` JSONB blob, which
-  // meant the one question the scheduler asks most often could not be
+  // meant the one question the request path asks most often could not be
   // filtered or indexed in SQL. The blob is gone: its other two tenants
   // were a derived view of `Model.enabled` (`_disabledModels`, rebuilt on
   // read and stripped before write, so never really stored) and the OAuth
@@ -125,8 +98,6 @@ model Provider {
   // one promoted row.
   subscriptionAccounts SubAccount[]        @relation("ProviderSubscriptionAccounts")
   models               Model[]
-  tierAliases          ProviderTierAlias[]
-  tierRoutes           TierRoute[]
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
 }
@@ -267,8 +238,8 @@ model SubAccountQuota {
   updatedAt        DateTime  @updatedAt
 }
 
-// Retired: the scheduler publishes quota, not weights, and writes no rows
-// here any more; dropped by the contract migration. Was the audit log of
+// Retired: the scheduler publishes quota, not weights, and nothing reads or
+// writes this table any more; left for a later contract migration. Was the audit log of
 // scheduler weight adjustments, one row per (tick, target) whose
 // published weight changed. Pruned after 14 days from the tick
 // path, mirroring UsageSnapshot's retention pattern.
@@ -293,12 +264,11 @@ model Model {
   providerId        String
   provider          Provider                @relation(fields: [providerId], references: [id], onDelete: Cascade)
   name              String
-  // Whether this model is offered for routing / tested. Authoritative
+  // Whether this model is offered for requests / tested. Authoritative
   // (replaces the old provider.transformer._disabledModels list).
   // Defaults false, and every row a refresh or a connect creates is
-  // written false: a tier routes to the newest switched-on model its name
-  // says, so this switch is what takes a release into routing, and only
-  // the operator flips it.
+  // written false: only the operator switches a model on, so a release
+  // never starts serving traffic by itself.
   enabled           Boolean                 @default(false)
   // Per-model request-shape override. A single api_key provider (e.g.
   // openai) hosts both chat models and Responses-only models (codex
@@ -306,14 +276,9 @@ model Model {
   // Null means "use the provider's apiStyle"; set explicitly (seeded)
   // for the models that need a different endpoint.
   apiStyle          ApiStyle?
-  // Retired: nothing writes it any more, tier resolution does not read it
-  // (a tier is what the name says), and it is dropped by the contract
-  // migration. Until then only the one-shot tier-map backfill reads it.
-  // Manual tier override used by the quota-aware preference selector.
-  // Null = fall back to name-substring inference (tierOf) which only
-  // recognises the four Claude families; setting this lets operators
-  // classify third-party models (gpt-5.6-*, gemini-*, ...) as one of
-  // fable / opus / sonnet / haiku so tier-respect constraints match.
+  // Retired: nothing writes or reads it any more; left for a later
+  // contract migration. Was the manual tier override used by the
+  // quota-aware preference selector.
   manualTier        String?
   // Manual reasoning-effort override for OpenAI / OpenAI-Responses /
   // Codex models. Null = pass the request through untouched (vendor
@@ -357,8 +322,6 @@ model Model {
   testCheckedAt     DateTime?
   testPassedAt      DateTime?
   testError         String?
-  preferenceEntries RouterPreferenceEntry[]
-  tierAliases       ProviderTierAlias[]
   providerPreference ModelProviderPreference?
   capability        ModelCapability?
   createdAt         DateTime                @default(now())
@@ -410,130 +373,6 @@ model ModelCapability {
   thinkingDisabled     String[]  @default([])
   thinkingBetweenTools String[]  @default([])
   recordedAt           DateTime  @default(now())
-}
-
-// A named routing profile. One row per profile holds the constraint knobs
-// (exhaustedBehavior, quotaSkipPct, errorRateSkipPct, minHealthSamples);
-// its routes are TierRoute, and the Long context tuner keeps its state in
-// the same JSONB. The retired RouterPreferenceEntry chain hangs off it
-// too, until the contract migration drops it.
-//
-// `live` is the default profile every surface routes through until it
-// is pointed at another one (InboundSurfaceConfig.profileKey), and a
-// token may pin its client to a profile of its own (AccessToken.profileKey).
-model RouterPreferenceProfile {
-  id                String                  @id @default(cuid())
-  key               String                  @unique @default("live")
-  // Constraint knobs as JSONB (allowEscalation / exhaustedBehavior /
-  // longContextThreshold / ...). JSONB so adding a knob is not a
-  // migration; the schema layer supplies every default.
-  constraints       Json?
-  updatedAt         DateTime                @updatedAt
-  entries           RouterPreferenceEntry[]
-  tierRoutes        TierRoute[]
-  // When the one-shot backfill turned this profile's old chain into tier
-  // routes (routing-migration/backfill-tier-routes.ts). Null until then;
-  // it is what makes the backfill run once per profile however many
-  // times the container starts, and what the contract migration checks
-  // before it drops the old chain. Goes with RouterPreferenceEntry.
-  chainBackfilledAt DateTime?
-}
-
-// "Which model is <tier> on this provider", for a tier no model's name
-// says. Routing names a provider and a tier; on a tier some model names
-// (claude-sonnet-5 says sonnet) the newest switched-on one is the answer
-// and a row here is dormant — kept for a rollback, ignored by routing
-// (tier-alias-service.ts). Only a tier nothing names — Codex's gpt-*, an
-// OpenAI key — reads this row, set by the operator.
-//
-// Cascades both ways: deleting the model or the provider removes the
-// alias, and a route that named it reads as unresolved rather than
-// pointing at nothing.
-model ProviderTierAlias {
-  id         String   @id @default(cuid())
-  providerId String
-  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
-  // fable | opus | sonnet | haiku. Validated by Zod (ModelTierSchema), kept
-  // a string like InboundSurfaceConfig.routingMode so a new model family
-  // is a code change, not a migration.
-  tier       String
-  modelId    String
-  model      Model    @relation(fields: [modelId], references: [id], onDelete: Cascade)
-  // When the alias was last pointed somewhere.
-  updatedAt  DateTime @updatedAt
-
-  @@unique([providerId, tier])
-  @@index([modelId])
-}
-
-// One route of a profile: a request classified into `scenario` (default |
-// think | longContext) on `lane` (agent | subagent) may be served by
-// `provider`'s `targetTier` model, in `priority` order (1 = first). The
-// provider's tier says which model that is — the newest switched-on model
-// its name says, else the tier alias — so a model release moves every
-// list at once, when the operator switches it on. Replaced the per-scenario, per-lane,
-// per-model chain; a (scenario, lane) with no usable routes falls back to
-// the same lane's default list, and an empty default passes the request
-// through as the caller sent it.
-model TierRoute {
-  id         String                  @id @default(cuid())
-  profileId  String
-  profile    RouterPreferenceProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  // default | think | longContext. Validated by Zod (RoutingScenarioSchema),
-  // kept a string so a new scenario is a code change, not a migration.
-  scenario   String
-  // agent | subagent — whether the request carried the subagent tag.
-  lane       String
-  priority   Int
-  providerId String
-  provider   Provider                @relation(fields: [providerId], references: [id], onDelete: Cascade)
-  // fable | opus | sonnet | haiku, resolved through the provider's alias.
-  targetTier String
-  // Soft toggle: the route keeps its place while it is out of use.
-  enabled    Boolean                 @default(true)
-
-  @@unique([profileId, scenario, lane, priority])
-  // A provider's tier appears once per list: a second copy would resolve
-  // to the same model and could only ever be skipped.
-  @@unique([profileId, scenario, lane, providerId, targetTier])
-  @@index([profileId])
-  @@index([providerId])
-}
-
-// Retired: the per-scenario, per-lane chain of models TierRoute replaced. Read
-// only by the one-shot backfill into TierRoute; dropped by the contract
-// migration once every profile carries chainBackfilledAt.
-model RouterPreferenceEntry {
-  id        String                  @id @default(cuid())
-  profileId String
-  profile   RouterPreferenceProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  // Scenario the entry participates in. Legacy rows created before
-  // the per-scenario split default to `default` via the migration
-  // backfill; new rows must pass the value explicitly. Each scenario
-  // owns an independent chain (default / think / longContext /
-  // webSearch / image).
-  scenario  ScenarioKey             @default(default)
-  // Which caller lane this entry participates in — `agent` for main-
-  // agent traffic, `subagent` for requests carrying a
-  // <RIALTO-SUBAGENT-MODEL> tag. Split from the pre-A design (a single
-  // chain plus per-entry `subagentTiers` filter) so operators can
-  // reorder subagent independently of agent. Existing rows are
-  // backfilled to `agent` by the migration.
-  kind      RouterPreferenceKind    @default(agent)
-  // 1 = most preferred. Unique per (profile, scenario, kind) so each
-  // (scenario, kind) chain has a total ordering independent of the
-  // others.
-  priority  Int
-  modelId   String
-  model     Model                   @relation(fields: [modelId], references: [id], onDelete: Cascade)
-  // Soft toggle: keep the row (and its priority slot) while excluding
-  // the model from selection — "temporarily drop Fable" without
-  // reordering the chain.
-  enabled   Boolean                 @default(true)
-
-  @@unique([profileId, scenario, kind, priority])
-  @@index([profileId])
-  @@index([profileId, scenario, kind])
 }
 
 // One row per client session. The id is the raw session token from
@@ -592,9 +431,8 @@ model Message {
 // without being enough to use.
 //
 // Scoping is the reason this is a table rather than a longer key:
-// `surface` pins a token to one inbound surface, and `profileKey` runs
-// that client's traffic through a named preference chain — a CI token on
-// cost-first while interactive traffic stays on the default.
+// `surfaces` pins a token to the inbound surfaces it may call, and `plan`
+// says which models it may use and how much it may spend.
 model AccessToken {
   id           String                  @id @default(cuid())
   name         String
@@ -607,9 +445,6 @@ model AccessToken {
   // pinning it to either meant the other 401'd and the only way out was
   // an unscoped token — which is the scoping turned off, not narrowed.
   surfaces     String[]
-  // RouterPreferenceProfile.key this token's traffic routes through.
-  // Null = the surface's own profile.
-  profileKey   String?
   lastUsedAt   DateTime?
   requestCount Int                     @default(0)
   // When the secret behind this row was last replaced. Null means it is
@@ -637,10 +472,9 @@ model AccessToken {
 }
 
 // What a token on it may spend. `models` is the allow-list of
-// `provider,model` ids; a request naming one of them goes to it, any other
-// name (or none) goes to `defaultModel`. Either way the tier router is
-// skipped, so a routed chain cannot pick a costlier target than the plan
-// lists.
+// `provider,model` ids. A request naming one of them goes to it, a request
+// naming any other model is refused with 403, and a request naming no
+// model at all goes to `defaultModel`.
 model Plan {
   id                    String        @id @default(cuid())
   name                  String        @unique
@@ -688,31 +522,21 @@ model AccessTokenUsageWindow {
   @@id([accessTokenId, window])
 }
 
-// Per-surface routing behaviour.
+// Per-surface settings.
 //
-// One row per InboundSurface the operator has overridden; a surface with
-// no row uses its descriptor's `defaultRoutingMode`, which keeps the
-// pre-Rialto behaviour (messages routed, everything else passthrough)
-// as the shipped default. `profileKey` selects which
-// RouterPreferenceProfile the surface's chain comes from — null means
-// the shared 'live' profile.
+// One row per InboundSurface; a surface with no row has no denied targets.
 model InboundSurfaceConfig {
   id            String   @id @default(cuid())
   surface       String   @unique
-  routingMode   String
-  profileKey    String?
-  // `provider,model` pairs a caller may NOT name on this surface while it
-  // is in passthrough. A deny list rather than an allow list because
-  // passthrough's rule today is "anything enabled is nameable": an empty
-  // array is exactly that behaviour, so this column is a no-op on every
-  // existing install and a model added to a provider later stays
-  // reachable without anyone editing a list.
+  // `provider,model` pairs a caller may NOT name on this surface. A deny
+  // list rather than an allow list because the rule is "anything enabled
+  // is nameable": an empty array is exactly that behaviour, so a model
+  // added to a provider later stays reachable without anyone editing a
+  // list.
   //
   // Distinct from `Model.enabled`, which is whether the provider serves
-  // the model at all — that one is shared by every surface and every
-  // chain. This is per surface, and only consulted in passthrough: in
-  // routed mode the caller's string is a hint the chain overrides, so
-  // there is nothing to deny.
+  // the model at all — that one is shared by every surface. This is per
+  // surface.
   deniedTargets String[] @default([])
   updatedAt     DateTime @updatedAt
 }
@@ -723,20 +547,20 @@ model RequestLog {
   session            Session  @relation(fields: [sessionId], references: [id])
   provider           String
   model              String
-  // What the client (Claude Code) asked for in body.model BEFORE routing
-  // rewrote it, and the scenario whose list served it (default / think /
-  // longContext), or "passthrough". Rows written by v2.89.0 carry the
-  // requested tier it routed by (fable / opus / sonnet / haiku / other),
-  // and older ones the old chain's scenario. Both null
+  // What the client (Claude Code) asked for in body.model, and the
+  // scenario the request was recorded under. Every request is
+  // "passthrough" now; rows written while scenario routing existed carry
+  // its scenario (default / think / longContext), and older ones a
+  // requested tier (fable / opus / sonnet / haiku / other). Both null
   // for rows written before this landed (backfill is not possible — the
   // original request is gone), so readers treat null as "untracked".
   // `model`/`provider` above stay the actual upstream target.
   requestedModel     String?
   scenario           String?
-  // Whether the request carried a <RIALTO-SUBAGENT-MODEL> tag, which picks
-  // the subagent lane of the scenario's routes. Null for rows written
-  // before this column landed (untracked); true / false thereafter. Kept nullable so a reader
-  // can distinguish "no data" from "data says agent".
+  // Whether the request carried a <RIALTO-SUBAGENT-MODEL> tag. Null for
+  // rows written before this column landed (untracked); true / false
+  // thereafter. Kept nullable so a reader can distinguish "no data" from
+  // "data says agent".
   isSubagent         Boolean?
   // Which wire format the client came in on: 'anthropic' for
   // /v1/messages (Claude Code), 'openai' for /v1/chat/completions and
@@ -748,8 +572,8 @@ model RequestLog {
   // Which inbound surface the request arrived on, as an
   // `InboundSurface.id` slug (see src/llms/inbound/surfaces.ts). Finer
   // than `inboundType`: /v1/chat/completions and /v1/responses are both
-  // 'openai' but are separate surfaces with independent routing modes,
-  // and Overview / Activity break traffic down per surface. Null on rows
+  // 'openai' but are separate surfaces with their own settings, and
+  // Overview / Activity break traffic down per surface. Null on rows
   // written before this landed (untracked, not backfillable).
   surface            String?
   // Which AccessToken served the request, when one did. Null for rows

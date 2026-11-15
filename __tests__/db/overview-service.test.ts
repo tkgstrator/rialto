@@ -13,6 +13,7 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import { getPrismaClient } from '../../src/db/client'
 import dayjs from '../../src/lib/dayjs'
+import { INBOUND_SURFACES } from '../../src/llms/inbound/surfaces'
 import { invalidateSurfaceCache } from '../../src/services/inbound-surface-service'
 import { getOverview } from '../../src/services/overview-service'
 import { HAS_DB, resetDbTables, teardownPrisma } from './helpers'
@@ -137,15 +138,10 @@ describe.skipIf(!HAS_DB)('getOverview', () => {
     expect(bySurface((await getOverview(1)).surfaces, 'anthropic-messages')?.requests).toBe(1)
   })
 
-  test('a routing-mode override shows up on the surface row', async () => {
-    const prisma = getPrismaClient()
-    await prisma.inboundSurfaceConfig.create({
-      data: { surface: 'openai-chat', routingMode: 'routed' }
-    })
-    invalidateSurfaceCache()
+  test('every surface gets a row, even before it has seen traffic', async () => {
     const out = await getOverview(24)
-    expect(bySurface(out.surfaces, 'openai-chat')?.routingMode).toBe('routed')
-    expect(bySurface(out.surfaces, 'openai-responses')?.routingMode).toBe('passthrough')
+    expect(out.surfaces.map((row) => row.id)).toEqual(INBOUND_SURFACES.map((surface) => surface.id))
+    expect(bySurface(out.surfaces, 'openai-chat')?.requests).toBe(0)
   })
 
   test('recent sessions carry the surface of their newest request', async () => {

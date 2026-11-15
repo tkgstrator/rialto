@@ -21,9 +21,6 @@ export interface NavEntry extends NavChild {
  */
 export const NAV: readonly NavEntry[] = [
   { id: 'overview', labelKey: 'shell.navOverview', icon: 'ri-dashboard-3-line', href: '/overview', children: [] },
-  // Routing has no children: the chain IS the screen, and it is the only
-  // selector.
-  { id: 'routing', labelKey: 'shell.navRouting', icon: 'ri-git-branch-line', href: '/routing', children: [] },
   // Neither child is href '/providers' — the section root redirects to
   // the first instead. Activity and Settings can let their first child
   // hold the section's own path because `childOf` matches by prefix and
@@ -93,8 +90,8 @@ export function sectionOf(pathname: string): NavEntry | undefined {
 }
 
 /**
- * The deepest child a path matches. Longest href first so `/routing/map`
- * does not resolve to `/routing`, which every routing path starts with.
+ * The deepest child a path matches. Longest href first so `/activity/usage`
+ * does not resolve to `/activity`, which every activity path starts with.
  */
 export function childOf(pathname: string): NavChild | undefined {
   const section = sectionOf(pathname)

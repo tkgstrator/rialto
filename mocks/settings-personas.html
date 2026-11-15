@@ -19,9 +19,9 @@ const { renderShell, pill, btn, SURFACES, surfaceChip } = window.Shell
 // object. List on the left, editor on the right, no navigation between
 // "view" and "edit" states.
 const PERSONAS = [
-  { id: 'yachiyo',  name: 'Yachiyo',   words: '1,240', applied: 'all endpoints', active: true,  on: true },
-  { id: 'terse',    name: 'Terse',     words: '86',    applied: '/v1/chat/completions, /v1/responses', active: false, on: true },
-  { id: 'reviewer', name: 'Reviewer',  words: '640',   applied: 'subagent lane', active: false, on: true },
+  { id: 'yachiyo',  name: 'Yachiyo',   words: '1,240', applied: 'all /v1/messages requests', active: true,  on: true },
+  { id: 'terse',    name: 'Terse',     words: '86',    applied: '—', active: false, on: true },
+  { id: 'reviewer', name: 'Reviewer',  words: '640',   applied: '—', active: false, on: true },
   { id: 'draft',    name: 'Draft',     words: '312',   applied: '—', active: false, on: false }
 ]
 
@@ -87,11 +87,6 @@ document.getElementById('root').innerHTML = `
       <div class="flex items-center gap-2 border-b border-border px-6 py-2.5">
         <span class="text-[12px] text-muted-foreground">Applies to</span>
         ${SURFACES.map((s, i) => surfaceChip(s.path, i === 0)).join('')}
-        <span class="mx-1 h-4 w-px bg-border"></span>
-        <span class="text-[12px] text-muted-foreground">Lane</span>
-        <button class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] hover:bg-muted/60">
-          both <i class="ri-arrow-down-s-line text-sm text-muted-foreground"></i>
-        </button>
       </div>
 
       <div class="grid grid-cols-2">

@@ -24,10 +24,9 @@ The list is not fetched while serving an inference request.
 
 Newly discovered models are always **off** — on a new provider as on an existing
 one — and neither Refresh nor a provider reconnect changes existing model
-switches. A tier routes to the newest switched-on model its name says
-([routing.md](./routing.md#tiers-and-model-releases)), so to route to a new Opus
-release, switch it on on the provider page and save: the Opus tier moves to it.
-The runtime provider and model switches remain the dispatch gates.
+switches. To use a new Opus release, switch it on on the provider page and save.
+The runtime provider and model switches remain the dispatch gates: a model that is
+off is not in the registry and is never sent.
 
 The Code catalog's advertised context window and effort levels are not used.
 A model's context window and effort levels are read once from Anthropic's

@@ -43,8 +43,8 @@ customProviderRoute.openapi(createCustomRoute, async (c) => {
       ? c.json({ success: false as const, error: 'A provider with this name already exists.' }, 409)
       : c.json({ success: false as const, error: { type: 'validation_error' as const, issues: [] } }, 400)
   }
-  // The new provider has no switched-on model yet, so no tier route can have
-  // moved; the snapshot is still rebuilt so the Routing screen lists it.
+  // The snapshot is rebuilt so the new provider is covered right away
+  // rather than at the next tick.
   await republishRoutingSnapshot()
   return c.json(
     {

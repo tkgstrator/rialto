@@ -27,8 +27,8 @@ export const ProviderListResponseSchema = z.array(ProviderSchema).openapi('Provi
 
 // Wire shape returned by POST/PATCH /api/providers and
 // PATCH /api/providers/:name. Carries the round-tripped Provider plus
-// any non-fatal warnings the apply layer produced (e.g. chain entries
-// the cascade removed because a model they named was dropped).
+// any non-fatal warnings the apply layer produced (e.g. a model API
+// style naming a model the provider no longer lists).
 export const ProviderUpsertResponseSchema = z
   .object({
     success: z.literal(true),
@@ -37,13 +37,9 @@ export const ProviderUpsertResponseSchema = z
   })
   .openapi('ProviderUpsertResponse')
 
-// Same `warnings` convention: deleting a provider cascades to every
-// chain entry naming one of its models, and the count is reported here
-// rather than silently swallowed.
 export const ProviderDeleteResponseSchema = z
   .object({
-    success: z.literal(true),
-    warnings: z.array(z.string().nonempty()).optional()
+    success: z.literal(true)
   })
   .openapi('ProviderDeleteResponse')
 

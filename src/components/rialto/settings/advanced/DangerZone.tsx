@@ -1,11 +1,11 @@
 /**
  * Danger zone.
  *
- * The mock offers three resets — routing, model catalog, captured data.
- * None of them has an endpoint. The one destructive operation the server
- * does expose is the session archive, so that is what this renders; the
- * other three are named as the backend gap they are rather than wired to
- * buttons that would fail on click.
+ * The mock offers two resets — model catalog and captured data. Neither
+ * has an endpoint. The one destructive operation the server does expose
+ * is the session archive, so that is what this renders; the other two are
+ * named as the backend gap they are rather than wired to buttons that
+ * would fail on click.
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'

@@ -1,516 +1,105 @@
-# Routing: scenarios and provider tiers
+# Where a request goes
 
-## Purpose
+Rialto does not route. A request goes to the model its caller named: `provider,model`, or a bare
+public model id that resolves to the one provider that hosts it. There are no scenarios, lanes,
+tiers or per-surface routing modes; every inbound surface behaves the same way. (Until v3 a surface
+could be switched to `routed`, which picked the target from per-scenario "provider · tier" lists.
+That whole mechanism, its tables and its screen were removed; see
+[migration-v3.md](../guides/migration-v3.md) section 9.)
 
-A reference for how a routed request picks its upstream: what is stored, how one request is
-classified, which gates can skip a route, how pace reorders the routes that pass, and what the
-four outcomes answer. The request path around it — the failover walker, account rotation, the
-pipeline — is in [request-flow.md](./request-flow.md) and
-[pipeline-overview.md](./pipeline-overview.md). The design this implements, with the reason for
-each decision, is [scenario-tier-routing.md](../plan/scenario-tier-routing.md) (Japanese).
-
-**Routing is by scenario and lane; a route names a provider and a tier, never a model.** A
-request is classified into a scenario (`default` / `think` / `longContext`) and a lane (`agent` /
-`subagent`), and that list says which provider tiers may serve it, top first. The model a tier
-means is the newest switched-on model on that provider whose name says the tier, so switching a
-new Sonnet on moves every route that says "that provider's sonnet" at once. A tier no model names
-(Codex, an OpenAI key) keeps a hand-set alias instead.
-
-How it got here, because each step explains a piece of the current shape:
-
-| Build | What routing was keyed by | Why it changed |
-|---|---|---|
-| Before v2.89.0 | Scenario × lane, each list an ordered chain of concrete models (`RouterPreferenceEntry`) | Every entry pointed at a `Model` row, so every vendor release meant re-wiring every list that should use it |
-| v2.89.0 | The tier the caller's model name asked for (`fable` / `opus` / `sonnet` / `haiku` / `other`) → provider · tier ([quota-and-tier-routing.md](../plan/quota-and-tier-routing.md)) | The operator had asked for provider · tier *in place of the model*, not for a new key. Converting to a requested-tier key dropped every `think` / `longContext` / subagent list, and Opus requests started landing on Sonnet |
-| Now | Scenario × lane again, each list an ordered set of provider · tier routes | Keeps the scenarios the operator configured and changes only what a row holds |
-
-## Two modes
-
-Every inbound surface stores one `routingMode` (`InboundSurfaceConfig`, seeded `passthrough` —
-see [inbound-surfaces.md](./inbound-surfaces.md)).
-
-| Mode | What happens | Chosen by |
-|---|---|---|
-| `routed` | The request is classified into a scenario and a lane, and `body.model` is rewritten to the first route of that list that can serve it | The surface's `routingMode` |
-| `passthrough` | The caller supplies a bare model name; Rialto chooses its provider from the configured priority for duplicates, then sends only the native model name upstream. An unconfigured duplicate is refused; older `provider,model` inputs remain accepted. Classification and persona are skipped; `passthroughDenial` may refuse the resolved target | The surface's `routingMode`, or the reserved profile key `passthrough` on the authenticating `AccessToken` (or on the surface) |
-
-In both modes the subagent tag is stripped first and recorded as `RequestLog.isSubagent` (see
-[The subagent tag](#the-subagent-tag)).
-
-## Data model
-
-| Table | Key | What it says |
-|---|---|---|
-| `RouterPreferenceProfile` | `key` (`live` is the default) | A named profile. `constraints` (JSONB) holds the knobs and the Long context tuner's state below; `chainBackfilledAt` marks the one-shot conversion of its old chain |
-| `TierRoute` | `(profileId, scenario, lane, priority)` | "A request classified into `scenario` on `lane` may be served by `provider`'s `targetTier`", in `priority` order (1 first). `enabled` is a soft toggle that keeps the route's place. A provider's tier appears at most once per list (`@@unique([profileId, scenario, lane, providerId, targetTier])`): a second copy would resolve to the same model and could only ever be skipped |
-| `ProviderTierAlias` | `(providerId, tier)` | "`tier` on this provider is `model`." Read only for a tier no model on the provider names (a manual tier); on a tier some model names, a stored row is dormant — kept for a rollback, ignored by routing |
-| `InboundSurfaceConfig.profileKey` / `AccessToken.profileKey` | — | Which profile a surface, or one client, routes through |
-
-- **Scenarios** are `default` / `think` / `longContext`; **lanes** are `agent` / `subagent`;
-  **tiers** are `fable` / `opus` / `sonnet` / `haiku`. All are strings validated by Zod
-  (`src/schemas/domain/tier-route.ts`), not Prisma enums, for the same reason as `routingMode`: a
-  new one is a code change, not a migration. Rows another build wrote are not handed to a reader
-  that switches on them: an unknown scenario or lane is dropped on read, and a tier that does not
-  parse makes the whole profile read as empty, logged at `warn`.
-- **`image` and `webSearch` are no longer scenarios.** Every model worth routing to reads images,
-  and a request carrying a web-search tool is served by the routes that can run it — a gate, not
-  a list of its own (gate 3 below).
-- **The model name does not choose the scenario.** Its tier only limits forbidden escalation destinations. The list says which provider tiers serve the
-  scenario; `body.model` is only what goes out when nothing is routed.
-- **Cascades.** Deleting a model unsets a manual alias that named it and moves a derived tier it
-  served on to the next newest switched-on model its name says; deleting a provider removes its
-  aliases and every route that named it. The apply layer works both out before the delete and
-  returns a warning naming the provider tiers that were unset or moved (and where to), or the
-  `profile/scenario/lane` lists that lost something (`src/services/config/apply/tier-route-cascade.ts`).
+What is left between the wire and the upstream is a short, fixed sequence. The code is
+`src/api/v1/route-plan.ts` (once per request) and `src/api/v1/chain-failover.ts` (once per
+candidate).
 
 ## One request
 
-`routeRequest` (`src/llms/router.ts`) → `routeByScenario`, which calls `classify`
-(`src/llms/tier-router/runtime.ts`) → `selectTierRoute` (`src/llms/tier-router/select.ts`, pure).
+1. **Authenticate and admit.** `src/api/api-key-auth.ts` checks the issued access token and then the
+   plan's usage windows. A spent window answers 429 here. This runs before anything below, so a
+   request refused later (step 2) still counts against the window.
+2. **Plan model check** (`src/services/plan-model.ts`). Only for a token that has a plan:
+   - the request names a model the plan lists: it is used (a bare name that several listed
+     providers host stays bare and is resolved by provider priority in step 4);
+   - the request names no model: the plan's `defaultModel` is used. This is the only time the
+     default applies;
+   - the request names a model the plan does not list: **403**, in the surface's own error shape
+     (Anthropic `permission_error`, OpenAI `permission_error`, Google `PERMISSION_DENIED`), with a
+     message that names the model and the allowed list. It is never redirected to the default.
 
-1. **Strip the subagent tag** and take the lane from it — `subagent` when it was there, `agent`
-   otherwise — in every mode.
-2. **Mode.** Passthrough stamps `route = 'passthrough'` and returns: `body.model` is untouched,
-   there are no fallbacks, and no persona is added.
-3. **Signals.** `signalsOf` reads the request in its own wire vocabulary
-   (`src/llms/router/surface-signals.ts`): what to hand the tokenizer, whether thinking is on,
-   and whether the request carries a web-search tool. The token count comes from
-   `src/llms/tokenizers/`.
-4. **Profile.** The token's `profileKey` wins, else the surface's, else `live`.
-5. **Load.** `loadTierProfileView` reads the profile's routes and the tiers of the providers they
-   name in one pass (`loadResolvedTiers`, [Tiers and model releases](#tiers-and-model-releases)) and
-   resolves each route to its model, whether that model and its provider are both switched on,
-   whether it can run web search, and its `Model.contextWindow`. It also computes the Long context
-   threshold in effect.
-6. **Scenario.** Input tokens over the [Long context threshold](#the-long-context-threshold) →
-   `longContext`; otherwise thinking on → `think`; otherwise `default`. Long input wins because a
-   long prompt is Long context whether or not it asks to think.
-7. **Fall back to Default.** When the chosen `think` or `longContext` list has no usable route in
-   the lane — none that is switched on, resolves to a model and reaches one that is on — the
-   request is classified `default` in the same lane instead. An unconfigured list is "no opinion",
-   so the lane's everyday list serves it. The fallback reads configuration only: a Think list whose
-   routes are all out of quota answers as exhausted (below); it does not borrow Default's routes.
-8. **Select.** The list's routes are walked in order through the [gates](#gates-in-order); the
-   ones that pass are ordered by [pace](#pace). The first becomes `body.model`, the rest become the
-   fallbacks the reactive failover path walks (`buildFailoverChain` in
-   `src/api/v1/candidate-chain.ts`).
-9. **Persona.** On `/v1/messages` only, the active persona is appended on every routed exit —
-   a route found, no route taken, or routing failed — because it is a property of the install, not
-   of whether a route was found. OpenAI-shape and Gemini callers get exactly what they sent.
+   A token without a plan sends whatever the caller named. Image generation applies the same check
+   inside `generateImage`, so `POST /v1/images/generations` and the `/codex` `generate_image` tool
+   cannot disagree. The other `/codex` tools refuse a target the plan does not list
+   (`src/api/codex-mcp/targets.ts`); they never fall back to a default.
+3. **Stamp the request** (`src/llms/router.ts`, `routeRequest`). It strips the subagent tag from the
+   second system block and records whether it was present (`RequestLog.isSubagent`; the tag's value
+   is not read), and on `/v1/messages` it appends the active persona's prompt. It never rewrites
+   `body.model`. The recorded scenario is always `passthrough`.
+4. **Resolve a bare model name** to its provider: the providers that are enabled and host it, ordered
+   by provider priority (`src/services/model-provider-preference.ts`), restricted to the providers
+   the plan lists. Several hosts with no priority set is a 400.
+5. **Surface deny list.** `InboundSurfaceConfig.deniedTargets` can refuse a `provider,model` on one
+   surface (400). The list is stored per surface and read through a short cache
+   (`src/services/inbound-surface-service.ts`); `/api/inbound-surfaces` reads and writes it.
+6. **Walk the candidates** (`candidate-chain.ts`, `chain-failover.ts`). The chain is the resolved
+   primary followed by the other providers of a bare name, skipping targets currently marked
+   exhausted (never emptying the list). A subscription provider rotates across its accounts inside
+   one candidate before the next candidate is tried. See [request-flow.md](./request-flow.md).
 
-`routeRequest` never throws and never invents a target: `body.model` is only ever rewritten to a
-route's resolved model. If the profile cannot be read (Postgres away) or routing throws (the
-tokenizer is a native module), the caller's model goes out untouched, logged at `error`.
-
-### Reading thinking
-
-`think` grades what the client asked for, so thinking is read off the request's own opt-in, per
-surface. Absence is never an opt-in, even though some vendors reason by default.
-
-| Surface | Thinking is on when | Reader |
-|---|---|---|
-| `/v1/messages` | `thinking` is an object whose `type` is anything but `'disabled'` — `enabled` and `adaptive` both count | `isThinkingEnabled` (`src/llms/router/request-signals.ts`) |
-| `/v1/chat/completions`, `/v1/responses` | `reasoning_effort` or `reasoning.effort` is set to anything but `'none'`, or `reasoning` is an object with no effort at all (Codex CLI sends `reasoning: {summary: 'auto'}`, and asking for a summary of the reasoning is asking for reasoning). Both spellings are read on both surfaces, since clients send whichever their SDK emits | `openAiReasoningRequested` (`src/llms/router/surface-signals.ts`) |
-| `/v1beta/models/*` | `generationConfig.thinkingConfig` (or `generation_config`) asks for thinking — a `thinkingLevel` or `thinkingBudget` that does not map to `none`, or `includeThoughts` — read through the same `inboundReasoning` the request conversion uses. A `thinkingLevel` it does not recognise counts: `none` is recognised, so an unknown level can only ask to think | `readGeminiSignals` (`src/llms/utils/gemini/router-signals.ts`) |
-
-### Gates, in order
-
-| # | Gate | Skip reason | Reads | Why it is here |
-|---|---|---|---|---|
-| 1 | The route and its target are switched on | `disabled` | `TierRoute.enabled`, `Model.enabled && Provider.enabled` | A switched-off target is never dispatched on any path; the registry the walker resolves against holds enabled models only |
-| 2 | The route's tier resolves to a model | `alias_unset` | the provider's models, then `ProviderTierAlias` | A route to "that provider's opus" means nothing while no model on it is named opus and no alias says which model that is |
-| 3 | It can run the request's web-search tool | `no_web_search` | `hostsWebSearch` (`src/shared/transformer-chain.ts`) | Anthropic sends `web_search` as-is, Responses maps it to the hosted tool, Gemini to `googleSearch`; Chat Completions has no equivalent. Decided on the same apiStyle the transformer chain is built from, so the skip cannot drift from what runs. This is what replaced the `webSearch` scenario |
-| 4 | Its context window holds the prompt | `context_too_small` | `Model.contextWindow` vs the token count | A prompt too big for one route goes to the next that can hold it, instead of to an upstream that would refuse it. An unknown window is trusted |
-| 5 | It is not out of quota | `exhausted` | Exhaustion marks (`failover-state`) and the scheduler snapshot's targets and account-wide windows | Held when a 429 marked the model or provider, the target reads as spent, or fresh readings show every provider account's 5h/7d window spent — even if this particular model is absent from the target snapshot. Otherwise `quotaSkipPct` can hold a target used past its threshold. Unknown or stale account readings never alone hold a provider. See [The quota snapshot](#the-quota-snapshot) |
-| 6 | Its recent error rate is under the threshold | `error_rate` | `model-health` (5-minute in-process ring per target) | Only once the target has `minHealthSamples` samples: one failure out of one is not a rate |
-
-The ring behind gate 6 is fed by the chain walker: a success, and a 429 that could not be rotated
-away to a peer account. Other upstream errors are relayed verbatim and not counted.
-
-### Pace
-
-The routes that pass every gate are reordered by **pace**: the snapshot's `projectedPct` for each
-target — where its quota lands at the reset if use keeps going as it has, 100 meaning exactly
-spent.
-
-| Band | `projectedPct` | Where the route goes | Why |
-|---|---|---|---|
-| Surplus | below 60 (`PACE_SURPLUS_PCT`) | To the front | Quota the operator pays for would be left unused at the reset — Fable, on most installs |
-| Even | 60–100, or no reading | Stays in list order | On track, or nothing to judge by: the operator's order stands |
-| Over | above 100 (`PACE_OVER_PCT`) | To the back | On track to run out before the reset, so the route the operator listed below it — typically a lower tier — takes the traffic before the limit is hit |
-
-List order holds within the Surplus and Even bands (the sort is stable). Within the Over band the
-route least over leads, and on a tie the lower tier. The tie is the common case: every model on one
-subscription reads the same 5h and weekly windows (Fable aside), so that subscription's Opus and
-Sonnet always carry the same `projectedPct` and cross into Over together. With list order alone the
-Opus route would stay in front however far over the shared budget ran, and nothing would ever step
-down; Sonnet spends that budget more slowly, so it takes the traffic. A projection alone never
-refuses a request — that is the quota gate's job, on readings, not forecasts — so when every route
-is over pace they all still serve, in that order. A reorder is logged at `info`
-(`[routing] pace reordered the list`, with the routes promoted and stepped down).
-
-**Pace lowers the tier one step at most, and only from Fable or Opus**: it may serve an Opus route
-ahead of a Fable one, or a Sonnet route ahead of an Opus one, and nothing else below a route listed
-above it — never Sonnet ahead of Fable, never Haiku ahead of Sonnet or Opus. Past that the quality
-drop costs more than the quota a forecast says it would save. The limit binds both bands: an
-over-pace route that has no one-step-lower route behind it keeps its place, and a surplus route is
-not promoted past a route more than one step above it. A route of the same tier (another provider's
-Sonnet) or a higher one may always move ahead. It is pace alone that is limited: the operator's own
-list order, and a gate skipping a route, can still reach any tier. `mayServeAhead` in
-`src/llms/tier-router/select.ts`.
-
-**Pace steps down only to a route the list has.** It reorders the routes that passed; it never adds
-one, and it never borrows from another scenario's list — the fallback to Default reads
-configuration only (step 7 of [One request](#one-request)). So a list with no route one tier below
-an over-pace route has nowhere to step down to, and that route keeps serving. A Think list of Fable
-and Opus alone, for example:
-
-| Fable / Opus `projectedPct` | Served, in order | Why |
-|---|---|---|
-| 80 / 200 | Fable → Opus | Opus is listed second already |
-| 200 / 80 | Opus → Fable | Fable over pace steps down one tier |
-| 150 / 200 | Fable → Opus | Both over: the one less over leads |
-| 200 / 200 | Opus → Fable | Both over on the same pace: the lower tier leads, one step down from Fable |
-| Fable spent, Opus 200 | Opus | Gate 5 holds Fable |
-| Both spent | nothing | Exhausted: 429 + `Retry-After`, or the caller's own model under `exhaustedBehavior = 'passthrough'`. Never Sonnet |
-
-The two rarely tie: Fable is paced on its own scoped weekly window, Opus on the account-wide ones.
-For Think to step down from Opus to Sonnet, list Sonnet under Opus (Fable, Opus, Sonnet): Fable over
-pace then gives way to Opus, Opus to Sonnet, and Sonnet never serves ahead of Fable.
-
-Pace orders only what passed: a route held by gate 5 is not in the list to reorder. `quotaSkipPct`
-and pace are therefore independent: `quotaSkipPct` holds a route on how much is used, pace moves
-the ones still open by how fast it is going.
-
-### Outcomes
-
-| Outcome | When | `body.model` | Answer | Route stamped (`RequestLog.scenario`) |
-|---|---|---|---|---|
-| **routed** | At least one route passed | The first route after pace ordering; the rest are fallbacks | Dispatched | The scenario — after the fallback to Default, so a Think request served by Default's list is recorded `default` |
-| **passthrough** | The lane's Default list (the chosen list, or the one it fell back to) has no routes, or every route or target on it is switched off | Untouched, no fallbacks | Dispatched as the caller sent it — an unconfigured list is "no opinion", **never** a 429 | `passthrough` |
-| **exhausted** | Nothing passed and at least one route was held by quota (5) or health (6) | Untouched | `exhaustedBehavior = '429'` (default): `buildRoutePlan` answers 429 + `Retry-After` in the surface's error envelope without dispatching. `'passthrough'`: dispatched as sent | `'429'`: nothing is dispatched, so no row is written. `'passthrough'`: `passthrough` |
-| **refused** | Nothing passed and nothing was held by quota or health, but some route was skipped by 2–4 (alias unset, no web search, prompt too big) | Untouched | 400 in the surface's envelope (`invalid_request_error`, `INVALID_ARGUMENT` on Gemini), with the reasons. `exhaustedBehavior` does not soften it: waiting would not change the answer | Nothing is dispatched, so no row is written |
-
-When skip reasons mix, exhausted wins over refused and refused over passthrough: one route held on
-quota means waiting might help.
-
-A Think or Long context list whose routes all lack an alias never reaches "refused": it is not
-usable, so the request has already fallen back to Default (step 7). A Default list in that state
-has nowhere to fall back to, and answers 400.
-
-`Retry-After` is the soonest moment one of the routes held on quota can serve again: its
-exhaustion mark's deadline when a 429 set one, else the snapshot's `resetAt` for it, else 30 s.
-Answers 429 and 400 come from `src/api/v1/route-plan.ts`, because `routeRequest` swallows every
-exception and a refusal raised inside it would never reach the client.
-
-`RequestLog.scenario` records the scenario (`default` / `think` / `longContext`) or `passthrough`,
-and Activity labels the column "Scenario". Older rows keep what their build wrote: the chain's
-scenario names before v2.89.0, the requested tier (`fable` … `other`) from v2.89.0.
-
-### The subagent tag
-
-`<RIALTO-SUBAGENT-MODEL>…</RIALTO-SUBAGENT-MODEL>` (or the pre-rename `<CCR-SUBAGENT-MODEL>`) at the
-start of the second system block **selects the `subagent` lane** of whichever scenario the request
-falls into. Only its presence is read; its value is ignored. `stripSubagentTag`
-(`src/llms/router/request-signals.ts`) strips a closed tag in place before anything else, in every
-mode — the marker means nothing to any upstream — and returns whether it was there; a malformed
-(unclosed) tag counts as present but is left in the prompt. The answer is recorded as
-`RequestLog.isSubagent`. The tag lives in an Anthropic-shape `system` array — Claude Code's
-convention — so requests on the OpenAI and Gemini surfaces, which carry their system prompt
-elsewhere, always walk the agent lane ([inbound-parity.md](./inbound-parity.md)).
-
-The lane's lists are ordinary lists: a subagent Think list with nothing usable falls back to the
-subagent Default list, and an empty subagent Default passes the caller's model through. The
-subagent lane never borrows the agent lane's routes. In v2.89.0 the tag selected nothing (the
-requested-tier map had no lanes); the lane is back because it is where an operator puts the
-smaller model subagents should use.
-
-## Constraints
-
-Stored in `RouterPreferenceProfile.constraints` and defaulted by `RoutingConstraintsSchema`:
-
-| Key | Default | Meaning |
-|---|---|---|
-| `blockedEscalationTiers` | `[]` | Forbid upward moves into these tiers; same-tier routes and all demotions remain eligible |
-| `exhaustedBehavior` | `'429'` | What an exhausted list answers: 429 + `Retry-After`, or the caller's own model upstream |
-| `quotaSkipPct` | `100` | Skip a route whose snapshot budget is used at or past this percentage |
-| `errorRateSkipPct` | `0.5` | Skip a route whose 5-minute error rate is at or above this (0–1)… |
-| `minHealthSamples` | `5` | …once it has at least this many samples |
-| `longContextThreshold` | `null` | The tuner's value; `null` means the automatic base. See below |
-| `previousLongContextThreshold` | `null` | The value before the tuner's last change, for its rollback |
-| `longContextTunedAt` | `null` | ISO time of the tuner's last change |
-| `autoTuneLongContext` | `true` | The tuner's kill switch. Not on the screen |
-
-A blob that still carries retired keys (`allowEscalation`, `tierFallback`, the scheduler's scoring
-knobs) parses; they are ignored, and a save merges the constraints over the blob rather than
-replacing it, so a rollback to an older build still finds its own keys. A blob that does not parse
-reads as the defaults.
-
-The Routing screen exposes `blockedEscalationTiers` as a multi-select below the scenario table,
-using the same Edit / Revert / Save controls. With Opus and Fable selected, Sonnet cannot escalate
-to either, but Haiku may still escalate to Sonnet. Same-tier routing and demotion are always
-allowed, including pace-driven demotion. The gate runs before pace ordering for both primary and
-fallback candidates. Tier order is Fable > Opus > Sonnet > Haiku; the caller's model family is
-inferred from its model name, excluding an optional provider prefix. Unknown caller tiers retain
-normal routing rather than guessing their rank. If every configured route is blocked, the existing
-400 refusal applies; exhausted allowed routes still follow `exhaustedBehavior`. Passthrough is
-unchanged. An omitted write preserves the stored restriction; an empty array clears it.
-
-## The Long context threshold
-
-The input size over which a request is Long context. It is not an operator setting: it has an
-automatic base, and the routing scheduler tunes it within a range below that base.
-
-**The base** (`src/llms/tier-router/threshold.ts`) is 70 % (`LONG_CONTEXT_AUTO_RATIO`) of the
-context window of the model the first usable `default` / `agent` route reaches — the first one
-that is on, resolves to a model that is on, and has a known window — or 128 000
-(`DEFAULT_LONG_CONTEXT_THRESHOLD`) when none does. The 30 % left over is room for the reply. The
-base is recomputed on every read, so it follows the Default tier: switch on a newer Sonnet with a
-bigger window and the threshold moves with it.
-
-**The value in effect** is the tuned value clamped to `[30 000, base]` (`LONG_CONTEXT_FLOOR`), or
-the base when nothing is tuned. Never above the base: a request that big would not fit the Default
-model it is being kept on. Never below 30 000: under that, ordinary coding turns would all count as
-Long context. (A base below the floor wins over the floor.)
-
-**The tuner** (`src/services/routing-scheduler/threshold-tuner.ts`). Long context is where an
-operator puts the model they most want used — Fable, on most installs — and the threshold decides
-how much traffic reaches it. So it moves the threshold by the pace of that route:
-
-| The first usable `longContext` / `agent` route's `projectedPct` | Change |
-|---|---|
-| Below 60 | Lower by 20 % (not below the floor) — more requests qualify, so quota left over gets used |
-| Above 100 | Raise by 20 % (not above the base) — fewer requests qualify |
-| 60–100, or no reading | None |
-
-Its guards, because an automatic change that is wrong costs quietly:
-
-- It runs in the scheduler's **timer ticks** only — not in a republish after a Refresh — over every
-  profile that has a Long context route, and changes a profile **at most once per 24 hours**.
-- No reading, no change: a target the snapshot does not cover (an api_key provider), or a window
-  less than 10 % elapsed, leaves the value alone.
-- **Rollback.** If the last change was a lowering and, within the day, the snapshot reads that
-  route exhausted, the value goes back to what it was before. Running out after a raise is not
-  rolled back: raising was already the answer to running out.
-- `constraints.autoTuneLongContext = false` stops it. It is not on the Routing screen; it is set
-  with `PUT /api/routing/profiles/{key}`.
-- Every change is logged at `info` (`[routing-scheduler] Long context threshold tuned`, with the
-  profile, from, to, the reason and the pace reading). A failure is logged at `warn` and the tick
-  carries on; the threshold simply stays where it was.
-
-Its state is the three `longContext*` keys in `constraints`. **`saveTierProfile` keeps them from
-the database** instead of taking them from the request: an editor saves the constraints it loaded,
-and a tune that landed between that load and the save would otherwise be written back to what the
-editor last saw. The consequence is that there is no manual threshold, not even through the API.
-`GET /api/routing/profiles/{key}` returns the value in effect as `longContextThreshold`, beside the
-raw `constraints`, so the screen can print "input over 700k tokens (auto)" without a second request.
+A model switched off, or a provider switched off, is not in the registry. It is hidden from `/v1/models`
+and from the plan's model picker, a bare name never resolves to it, and a named `provider,model` finds no
+invocation and is skipped — so nothing on it is ever sent. If no candidate is left the request gets a 400
+`No usable model`.
 
 ## The quota snapshot
 
-The routing scheduler (`src/services/routing-scheduler/`) publishes one reading per target —
-**every enabled model of every enabled subscription provider**, not only those a profile names —
-so every profile's routes are gated and paced on quota:
+`src/services/routing-scheduler/` survived the removal of routing because two readers still need it:
+
+- `providerExhaustionOf` in `chain-failover.ts` asks whether every account behind a provider is spent,
+  so the walker can skip to the next candidate instead of sending a request that will 429;
+- adaptive reasoning effort reads the pace (`projectedPct`), see
+  [adaptive-reasoning-effort.md](./adaptive-reasoning-effort.md).
+
+The scheduler publishes one reading per target (every enabled model of every enabled subscription
+provider) into `getRoutingSnapshot()`:
 
 | Field | Meaning |
 |---|---|
-| `targets[].exhausted` | Every account behind the target reads as spent now. Only a fresh, known reading counts: an account never polled, or one gone stale, leaves the target open and the upstream's own 429 is the judge |
-| `targets[].remainingBudgetPct` | Capacity-weighted remaining budget across the target's accounts, 0–100 (null with no fresh reading). An account's budget is its tighter of 5h / weekly; a Fable target reads the Fable-scoped weekly window |
-| `targets[].projectedPct` | Pace: where the target lands at its reset, % of the budget (null until a window is far enough in to judge). See below |
+| `targets[].exhausted` | Every account behind the target reads as spent now. Only a fresh, known reading counts; an account never polled, or one gone stale, leaves the target open and the upstream's own 429 is the judge |
+| `targets[].remainingBudgetPct` | Capacity-weighted remaining budget across the target's accounts, 0 to 100 (null with no fresh reading). An account's budget is its tighter of 5h / weekly; a Fable target reads the Fable-scoped weekly window |
+| `targets[].projectedPct` | Pace: where the target lands at its reset, as a percent of the budget (null until a window is far enough in to judge) |
 | `targets[].resetAt` | When the budget next refills |
-| `soonestResetAt` | The earliest reset across the exhausted targets |
 
-**Pace** is `projectedUsage` in `quota-math.ts`:
+Pace is `projectedUsage` in `quota-math.ts`: per window, used % divided by the share of the window
+elapsed (judged only once 10 % of it has passed); per account, the tightest of the windows that
+bind the model; across accounts, weighted by plan capacity (Pro 1 / Max 5 / Max 20). A spent
+account-wide window makes the scheduler hold the account's other windows as spent too, until the last
+spent window resets (`account-limit.ts`); only its own view changes, not what is stored or shown.
 
-- **Per window**, used % ÷ the share of the window elapsed — half spent half way through projects
-  to exactly 100 %. A window is judged only once 10 % of it has passed (`PACE_MIN_ELAPSED`): early
-  on, a handful of requests looks like a runaway pace.
-- **Per account**, the tightest of the windows that bind the model — 5h and weekly, or, for a
-  Fable target, Fable's own weekly window, as its budget does. An account never polled, or with a
-  stale reading, is left out rather than read as idle.
-- **Across accounts**, weighted by plan capacity (Pro 1 / Max 5 / Max 20, `planCapacityWeight`),
-  because the account picker spreads a target's traffic over all of them and a Max 20 account
-  carries twenty times what a Pro one does.
-
-Activity → Usage answers a related but different question. Each account's 5h, 7d and scoped
-window retains the vendor's **current used percentage** as a meter and shows the projected
-percentage at reset alongside it. The chart shows historical projected percentages, grouped by
-window metric: each poll stores one `UsageSnapshot` per account and window with its own reset,
-observed-time projection and plan-capacity weight. The history endpoint averages only accounts
-whose forecast was known at that poll, using those stored weights; an unknown forecast is not
-zero usage. Older snapshots contain only a cross-account average used percentage and cannot be
-reconstructed into a pace forecast, so they appear as gaps. Missing reset times, missing Codex
-window lengths, readings in the first tenth of a window, and stale cached polls are likewise
-not presented as safe pace. The chart can exceed 100%: at or above 100% estimates that
-continuing at that pace would reach the limit by reset, **not** when a vendor will issue a 429. The routing
-snapshot still selects the tightest binding window per model, rather than the chart's separate
-window series.
-
-A spent account-wide window (5h or 7d; Codex primary / secondary) refuses every request on the
-account, so the scheduler holds the account's other windows as spent too, until the last spent
-account-wide window resets (`account-limit.ts`). Only in its own view: what is stored and shown is
-the vendor's reading.
-
-**When it is published.** A tick every `ROUTING_SCHEDULER_INTERVAL_MS` (default 5 minutes,
-minimum 60 s; the first one an interval after boot), plus `republishRoutingSnapshot()` whenever
-fresh quota has been written — the Providers screens' Refresh, a newly connected account, a spent
-Codex reset, a model switched on or off, an alias promotion that switched a model on. Two ticks never overlap: a republish
-queues behind a running tick, because the running one read `SubAccountQuota` before the write. A
-failed tick keeps the previous snapshot. Timer ticks also run the Long context tuner.
-`GET /api/routing-scheduler-state` serves the snapshot, `projectedPct` included.
-
-**No weights.** The scheduler used to compute a weight per chain entry; the request path only ever
-asked whether a weight was zero, and a damper made that answer lag the budget by up to five ticks.
-It publishes the quota reading and the pace instead, and writes nothing to `RoutingWeightChange`.
+A tick runs every `ROUTING_SCHEDULER_INTERVAL_MS` (default 5 minutes, minimum 60 s), and
+`republishRoutingSnapshot()` runs one whenever fresh quota has been written (a Providers Refresh, a
+newly connected account, a model switched on or off). Two ticks never overlap; a failed tick keeps
+the previous snapshot. Nothing reorders candidates by the snapshot any more.
 
 ### Exhaustion marks
 
-The reactive 429 path (`src/api/v1/chain-failover.ts`) writes in-process marks that gate 5 reads:
+The reactive 429 path in `chain-failover.ts` writes in-process marks (`src/services/failover-state.ts`):
 
 | Mark | Written when | Lifted when |
 |---|---|---|
 | Account | A subscription account 429s; until the binding window's reset, else 5 minutes | It expires; a request on that account succeeds; a Refresh reads the account below its limits |
-| Model `(provider, model)` | No peer account is left to rotate to | It expires (5 minutes); a Refresh finds a freshly read account on the provider that can serve that model, per-model windows included |
+| Model `(provider, model)` | No peer account is left to rotate to | It expires (5 minutes); a Refresh finds a freshly read account on the provider that can serve that model |
 | Provider | `insufficient_quota` (an api_key spend cap) | It expires (5 minutes). Refresh never lifts it: no subscription reading speaks for an api_key cap |
 
-Marks are process-local, as are the snapshot and the health ring; several instances do not share
-them. The lifting on Refresh is `releaseRecoveredMarks` in
-`src/services/subscription-refresh-service.ts`: a reset spent in the vendor's own app used to leave
-the account behind its peers until the original reset time, days away on a weekly window.
-
-## Tiers and model releases
-
-A route names a provider and a tier; `src/shared/tier-resolution.ts` says which model that is, and
-the server (`loadResolvedTiers` in `src/services/tier-alias-service.ts`) and the provider page run
-the same function, so the page previews a staged switch exactly as routing will read it after Save.
-
-- **A tier some model names is derived.** The provider's models whose name says the tier (`tierOf`,
-  `src/shared/model-tier.ts`: `fable` / `opus` / `sonnet` / `haiku` by substring; Codex image models
-  never count) are ordered newest first by the version in the id (`src/shared/model-version.ts`:
-  `claude-sonnet-5-5` › `claude-sonnet-5` › `claude-sonnet-4-6`; an 8-digit snapshot date only
-  orders ids whose numbers tie, and an undated id comes first). The tier routes to the first of
-  those that is switched on. With none on, it resolves to the newest one, switched off, and gate 1
-  skips it.
-- **Nothing assigns a model but the switch.** No model list ships with Rialto: which models a
-  subscription has comes from the vendor (the Claude Code catalog, the Codex account's list), and
-  every model a refresh or a connect creates lands switched off, on every provider
-  (`buildCreateRow` in `src/services/model-sync-service.ts`). A release is offered — the provider
-  page counts it as "newer" on its tier and marks it in the model table — and routed only once an
-  operator switches it on after looking at its price and entitlement. Switching a model on or off
-  republishes the quota snapshot at once, like any other write that can move a route.
-- **A tier no model names is manual.** Codex's `gpt-*`, an OpenAI key or Gemini name no Claude
-  family, so the stored `ProviderTierAlias` decides, set in the strip's picker and saved with the
-  page: `PUT /api/providers/{name}/tier-aliases/{tier}` sets it and switches the model on in one
-  transaction, then mirrors `Providers` to disk, drops the cached LLM context and republishes the
-  quota snapshot. The picker offers every model of the provider.
-- **An alias on a derived tier is refused** with 409: the switches decide there. A row an older
-  build stored for such a tier is left in place and ignored, and the boot seed logs each one that
-  names a different model than the tier now follows (`derivedTierDrift`), so an upgrade that moved a
-  route is visible.
-- **Unsetting** (`DELETE …/tier-aliases/{tier}`) leaves routes naming a manual tier skipped as
-  `alias_unset` until one is set again; on a derived tier it only drops a dormant row. A Think or Long
-  context list left with nothing usable falls back to Default; a Default list whose switched-on routes
-  all resolve to nothing answers 400.
-- **The tier moves the Long context base too** when it is the one the first usable
-  `default` / `agent` route resolves through: the base is 70 % of that model's window.
-
-## Editing and reading
-
-| Endpoint | What it does |
-|---|---|
-| `GET /api/routing/profiles` | Every profile a surface or token can point at — `live` even before it has a row — plus the reserved `passthrough`, flagged as such |
-| `GET /api/routing/profiles/{key}` | The profile's routes per scenario and lane, each resolved to its model (`model`, `targetEnabled`, `hostsWebSearch`, `contextWindow`, or `null` when the tier resolves to nothing), its constraints, and `longContextThreshold` — the value in effect |
-| `PUT /api/routing/profiles/{key}` | Whole-profile replacement in one transaction: routes per scenario and lane, and constraints. An unknown provider is dropped and a duplicate provider · tier in one list keeps its first place, both with a warning naming `scenario/lane`; a route whose tier resolves to nothing is kept and warned about. The tuner's three `longContext*` keys are kept from the database, whatever the body says. `passthrough` is refused (400) |
-| `GET /api/tier-aliases` | Every provider's four tiers: `mode` (`derived` / `manual`), the model each reaches today and whether it is on, and a derived tier's other named models newest first (`isNew`: newer and switched off) |
-| `PUT` / `DELETE /api/providers/{name}/tier-aliases/{tier}` | Set / unset a manual tier's alias; `PUT` on a derived tier is 409 |
-| `GET /api/routing-scheduler-state` | The quota snapshot, pace included |
-
-The Routing screen ([mocks/routing.html](../../mocks/routing.html) is its spec) picks a surface,
-then its mode and profile, then shows the profile as one table: a row per scenario (Default, Think,
-Long context — the last with the threshold in effect, "input over 700k tokens (auto)") and a column
-per lane (Agent, Subagent). Each cell lists its routes top first, each line a provider and a tier
-badge with an on/off switch, a drag handle and a remove button. Adding or changing a line is a
-dialog with two selects, the provider and under it the tier. The tier select opens up once a
-provider is chosen, and lists a tier the provider has no model for as disabled, because it would
-reach nothing. The screen shows no model names, no status or
-quota column. Below the table, escalation destinations can be blocked by tier; demotion stays
-allowed. The question an operator brings to the table is which provider and
-tier each scenario uses; which model that is belongs to the provider's page, and quota to Overview
-and the provider pages.
-
-`/api/router-preferences`, `/api/router-utilization` and `/api/solver-input` are gone, and so is the
-per-model manual tier (`manualTier`) on the provider page and in the model PATCH.
-
-## From the chain to scenario routes
-
-`db seed` converts each profile's old chain once (`src/services/routing-migration/`);
-[migration-v3.md](../guides/migration-v3.md) has the operator-facing version.
-
-**Why it runs a second time.** v2.89.0 converted only the `default` / `agent` chain into the
-requested-tier map, and its contract migration (#535) would have dropped the chain. #540 reverted
-that, so production still has every lane of `RouterPreferenceEntry`. Migration
-`20260925010000_key_tier_routes_by_scenario` then deletes every `TierRoute` row — a requested tier
-is not a scenario, so those rows cannot be carried over — re-keys the table by `scenario` and
-`lane`, and clears every profile's `chainBackfilledAt`, so the next seed converts every chain again.
-
-- **When.** `entrypoint.sh` runs `prisma db seed` after `migrate deploy` on every start;
-  `chainBackfilledAt` makes it once per profile, and a profile that already has routes (an operator
-  got there first) is only marked. `live` goes first so the default profile claims the aliases.
-- **Failure stops the container.** Each profile converts in its own transaction, but the error is not
-  swallowed: carrying on would start the new build with that profile silently empty, every request
-  on it passed through.
-- **What it reads:** every entry of `default`, `think` and `longContext`, in both the `agent` and the
-  `subagent` lane. Each becomes a route in the same list, in the same order, switched on or off as
-  the entry was. There is no tier-gate conversion any more: the list already says which tiers serve
-  it.
-- **Which tier.** A route names the entry's provider and the tier its model is (the model's retired
-  `manualTier` when set, else what the name says), and the provider's alias for that tier is claimed
-  for the model when the slot is free. Claims go in rank order — a model whose name says a tier
-  before one that does not, an entry that is on with its model and provider on before one that is
-  not, then list order (`default/agent` first), priority, a non-deprecated model, the name. **An
-  existing alias is never overwritten** — one another profile claimed, or one the operator set in
-  v2.89.0 — and a route that now resolves to a different model than its
-  entry named is noted.
-- **Tierless models** (a `gpt-*` on Codex) are reached through a slot their provider already points
-  at them, else the first free one of `sonnet` / `opus` / `haiku` / `fable`, else `sonnet` —
-  through whatever model holds it, which the notes say.
-- **Duplicates.** Two entries of one list that land on the same provider · tier become one route; a
-  later one that is on rescues an earlier one that was off, at the later position, the way the chain
-  would have run.
-- **What it does not read:** the `webSearch` and `image` lists. They are no longer scenarios; their
-  entries are counted in the notes.
-- **What is lost:** edits made on the v2.89.0 tier-map screen. Those routes were keyed by requested
-  tier and are the rows the migration deletes. Aliases set during v2.89.0 stay — the migration does
-  not touch `ProviderTierAlias`.
-- **Logged** as `[tier-routes] converted the chain into scenario routes`, with the counts and every
-  note, per profile.
-- **Re-running** one profile: `bun run scripts/rebackfill-tier-routes.ts --profile <key>` deletes its
-  routes and clears its mark, and the next `bun run db:seed` converts the chain again. Aliases are
-  left as they are. It exists for a rollback: while an older image runs, Routing edits land only in
-  the old chain.
-
-A later contract migration drops `RouterPreferenceEntry`, `RoutingWeightChange`, the `ScenarioKey` /
-`RouterPreferenceKind` enums, `Model.manualTier` and `chainBackfilledAt`, together with the backfill
-and its re-run script — once this build has run in production and every profile carries its mark.
-Until then the backfill still reads `Model.manualTier`; tier resolution does not (a derived tier is
-what the name says, nothing else). The aliases the backfill claims on a tier some model names are
-dormant: routing follows the switches there.
+Marks, the snapshot and the health ring are process-local; several instances do not share them. The
+lifting on Refresh is `releaseRecoveredMarks` in `src/services/subscription-refresh-service.ts`.
 
 ## Tests
 
-| Test | What it pins |
+| Behavior | File |
 |---|---|
-| `__tests__/llms/tier-router/select.test.ts` | The pure selector: the gates and their order, the four outcomes and which wins when skip reasons mix, the pace ordering of the routes that pass, and how far pace may step a tier down |
-| `__tests__/llms/tier-router/threshold.test.ts` | The Long context base (70 % of the Default model's window, 128k without one) and the clamp to `[floor, base]`, a base under the floor winning |
-| `__tests__/llms/route-request.test.ts` | Scenario and lane classification, the subagent tag, and fallback to the lane's Default |
-| `__tests__/llms/route-request-gates.test.ts` | Pace ordering, profiles, exhaustion marks, the quota snapshot, health, web search, context windows, and disabled targets |
-| `__tests__/llms/route-request-outcomes.test.ts` | Passthrough for unconfigured lists, exhaustion with Retry-After, refusal, and map failures |
-| `__tests__/llms/route-request-passthrough.test.ts` | Passthrough surfaces and profiles, persona on routed exits, and escalation restrictions |
-| `__tests__/api/route-plan.test.ts` | 429 + `Retry-After` and the refusal 400 in each surface's envelope |
-| `__tests__/services/routing-scheduler/pace.test.ts` | `projectedUsage`: used ÷ elapsed, no judgement before 10 % of the window, the tightest window binding, Fable on its own window, plan-capacity weighting, unknown and stale accounts left out |
-| `__tests__/services/routing-scheduler/threshold-tuner.test.ts` | `tuneThreshold`: ±20 % by pace, the floor and the base, no change on pace or without a reading, once a day, the rollback of a lowering and not of a raise |
-| `__tests__/services/routing-scheduler/{targets,tick-targets,tick-concurrency}.test.ts` | The per-target reading, which targets are published, and that ticks never overlap |
-| `__tests__/services/plan-tier-routes.test.ts` / `__tests__/db/backfill-tier-routes.test.ts` | The conversion planner, list by list, and its idempotence against the database |
-| `__tests__/shared/model-version.test.ts` / `__tests__/shared/tier-resolution.test.ts` | The release order read from an id, and derived vs manual resolution |
-| `__tests__/db/tier-route-service.test.ts` / `__tests__/db/tier-alias-service.test.ts` / `__tests__/api/routing-profiles.test.ts` | Storage, a switch moving a tier, the 409 on a derived tier, manual promotion and the API |
-
-The full list is in [testing-map.md](./testing-map.md).
+| Plan decision (allowed, default, denied) | `__tests__/services/plan-model.test.ts` |
+| 403 and the default on each plan-applying surface, bare-name resolution, the deny list | `__tests__/api/route-plan.test.ts` |
+| Image generation applies the plan | `__tests__/api/openai-images.test.ts` |
+| `/codex` refuses a target the plan does not list | `__tests__/api/codex-mcp.test.ts` |
+| Subagent tag, persona | `__tests__/llms/router.test.ts` |
+| Usage-window 429 | `__tests__/api/usage-windows.test.ts` |
+| Quota snapshot, pace, account holds | `__tests__/services/routing-scheduler/` |

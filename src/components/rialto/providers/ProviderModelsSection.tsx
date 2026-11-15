@@ -3,8 +3,7 @@ import { Trans, useTranslation } from 'react-i18next'
 import { Pager } from '@/components/rialto/Pager'
 import { enabledCountOf, hidesAsLegacy, listedModelsOf, type ModelRow, passesShow, type ShowMode } from './derive'
 import { ModelsTable } from './ModelsTable'
-import type { TierView } from './tier-aliases'
-import type { Provider, ReasoningEffort, Tier } from './types'
+import type { Provider, ReasoningEffort } from './types'
 
 const SHOW_LABEL_KEYS: Record<ShowMode, string> = {
   priced: 'providers.models.showPriced',
@@ -41,8 +40,8 @@ const NOTE_COMPONENTS = {
 }
 
 /**
- * The note under the table: how a model is reached at all. OpenAI-style
- * providers also explain their Effort column.
+ * The note under the table: what switching a model on or off does.
+ * OpenAI-style providers also explain their Effort column.
  */
 function ModelsNote({
   isApiKey,
@@ -71,12 +70,7 @@ function ModelsNote({
           </>
         ) : (
           <>
-            {/* Claude Code names its tiers; Codex names none, so its
-                tiers are set by hand. */}
-            <Trans
-              i18nKey={claudeCode ? 'providers.models.noteSubscription' : 'providers.models.noteSubscriptionManual'}
-              components={NOTE_COMPONENTS}
-            />
+            <Trans i18nKey='providers.models.noteSubscription' components={NOTE_COMPONENTS} />
             {hasEffort ? (
               <span className='mt-1.5 block'>
                 <Trans
@@ -95,24 +89,20 @@ function ModelsNote({
 export function ProviderModelsSection({
   provider,
   rows,
-  tiers,
   editing,
   onToggle,
-  onEffort,
-  onAlias
+  onEffort
 }: {
   provider: Provider
   rows: ModelRow[]
-  tiers: readonly TierView[]
   editing: boolean
   onToggle: (model: string, next: boolean) => void
   onEffort: (model: string, next: ReasoningEffort | null) => void
-  onAlias: (tier: Tier, model: string | null) => void
 }) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
-  // "Enabled only": what a provider is actually routing to is the
-  // question this table is opened with. The priced slice is one click
+  // "Enabled only": what a provider actually serves is the question
+  // this table is opened with. The priced slice is one click
   // away for the times the question is what else could be switched on.
   const [show, setShow] = useState<ShowMode>('enabled')
   const [page, setPage] = useState(0)
@@ -190,12 +180,9 @@ export function ProviderModelsSection({
         offset={offset}
         withOverride={hasEffort}
         effortKind={claudeCode ? 'claude-code' : 'openai'}
-        withTier
         editable={editing}
-        tiers={tiers}
         onToggle={onToggle}
         onEffort={onEffort}
-        onAlias={onAlias}
       />
       <ModelsNote isApiKey={isApiKey} hasEffort={hasEffort} claudeCode={claudeCode} />
       {isApiKey ? (

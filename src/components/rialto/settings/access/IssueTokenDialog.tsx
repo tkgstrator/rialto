@@ -8,12 +8,12 @@
  * is also discrete and cancellable, which is what a modal is for; the
  * rest of the screen is not what you are answering.
  *
- * Surface and profile are the reason per-client tokens exist at all — a
- * token pinned to `/v1/chat/completions` on `cost-first` is how one
- * client gets its own routing without a second config axis — so both are
- * first-class fields here rather than an advanced disclosure. Both lists
- * come from the server (`/api/inbound-surfaces`,
- * `/api/routing/profiles`); nothing about them is hardcoded.
+ * Surface and plan are the reason per-client tokens exist at all — a
+ * token pinned to `/v1/chat/completions` under a plan is how one client
+ * gets its own limits without a second config axis — so both are
+ * first-class fields here rather than an advanced disclosure. The surface
+ * list comes from the server (`/api/inbound-surfaces`); nothing about it
+ * is hardcoded.
  */
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -27,13 +27,12 @@ export interface IssueDraft {
   name: string
   /** Empty selects every surface, which is what the wire's empty list means. */
   surfaces: string[]
-  profileKey: string
   expiry: string
   /** ANY for no plan: unrestricted, as hand-issued tokens always were. */
   planId: string
 }
 
-export const emptyDraft = (): IssueDraft => ({ name: '', surfaces: [], profileKey: ANY, expiry: 'never', planId: ANY })
+export const emptyDraft = (): IssueDraft => ({ name: '', surfaces: [], expiry: 'never', planId: ANY })
 
 /**
  * A labelled field, stacked.
@@ -56,7 +55,6 @@ function Field({ label, hint, children }: { label: string; hint: string; childre
 export function IssueTokenDialog({
   draft,
   surfaces,
-  profiles,
   plans,
   issuing,
   onChange,
@@ -65,7 +63,6 @@ export function IssueTokenDialog({
 }: {
   draft: IssueDraft
   surfaces: InboundSurfaceWire[]
-  profiles: { key: string }[]
   plans: readonly PlanWire[]
   issuing: boolean
   onChange: (next: IssueDraft) => void
@@ -109,21 +106,6 @@ export function IssueTokenDialog({
               onChange={(next) => set('surfaces', next)}
               allLabel={t('settings.access.allEndpoints')}
             />
-          </Field>
-
-          <Field label={t('settings.access.issueProfile')} hint={t('settings.access.issueProfileHint')}>
-            <Picker
-              label={t('settings.access.issueProfile')}
-              value={draft.profileKey}
-              onChange={(v) => set('profileKey', v)}
-            >
-              <option value={ANY}>{t('settings.access.followEndpoint')}</option>
-              {profiles.map((p) => (
-                <option key={p.key} value={p.key}>
-                  {p.key}
-                </option>
-              ))}
-            </Picker>
           </Field>
 
           <Field label={t('access.token.plan')} hint={t('access.token.planHint')}>

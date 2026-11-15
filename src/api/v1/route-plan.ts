@@ -3,9 +3,10 @@
  *
  * `buildRoutePlan` runs once per inbound request, before any model has
  * been chosen: it resolves the surface, parses the body, folds in
- * whatever the surface carries in the URL rather than the body, runs
- * tier routing to land on a primary "provider,model", and bundles
- * what the chain walker needs for the rest of the request.
+ * whatever the surface carries in the URL rather than the body, applies
+ * the token's plan to the model, resolves a bare model name to its
+ * provider, and bundles what the chain walker needs for the rest of the
+ * request.
  *
  * The two later stages live next door, because they run per candidate
  * rather than per request:
@@ -26,6 +27,7 @@ import { archiveRequest, requestArchiveEnabled } from '../../llms/request-archiv
 import type { TokenPlan } from '../../services/access-token-service'
 import { passthroughDenial } from '../../services/inbound-surface-service'
 import { preferredProviderOrder } from '../../services/model-provider-preference'
+import { decidePlanModel } from '../../services/plan-model'
 import { qualifiedModelId } from '../../shared/public-model-id'
 import { buildErrorEnvelope, errorShapeForPath } from './error-shape'
 
@@ -44,21 +46,18 @@ function endpointTransformerMap(ctx: LlmsContext): Map<string, Map<string, Trans
 // ─── Route plan shape ──────────────────────────────────────────────────
 
 // Resolved once per inbound request, before any model is picked off the
-// failover chain. routeRequest has run, so `primaryModel` is the
-// "provider,model" it landed on and `route` names the tier-map row that
-// chose it. `routedBody` is the post-routeRequest body BEFORE
-// per-model shaping (effort clamp, internal-field strip) so every chain
-// attempt re-derives those from a clean copy.
+// failover chain. `primaryModel` is the model the request goes to after the
+// plan and provider-priority resolution. `routedBody` is the post-
+// routeRequest body BEFORE per-model shaping (effort clamp, internal-field
+// strip) so every chain attempt re-derives those from a clean copy.
 export interface RoutePlan {
   reqId?: string
-  selectedRoutes?: RouterRequest['selectedRoutes']
   routedBody: Record<string, unknown>
   headers: Record<string, string>
   transformersByName: Map<string, Transformer>
   defaultTransformer: Transformer
-  // The scenario whose list served the request (default / think /
-  // longContext), or 'passthrough'. Recorded on the RequestLog row's
-  // `scenario` column.
+  // Always 'passthrough' now; recorded on the RequestLog row's `scenario`
+  // column, which older rows fill with the retired scenario names.
   route: string
   primaryModel: string
   // The client's original body.model (pre-routing), carried through to the
@@ -70,8 +69,9 @@ export interface RoutePlan {
   // Whether the request carried a <RIALTO-SUBAGENT-MODEL> tag. Recorded on
   // the request log so Activity can tell subagent traffic apart.
   isSubagent: boolean
-  // The rest of the tier's routes after the primary, as the selector
-  // resolved them. buildFailoverChain walks this list.
+  // The other providers hosting a bare model name, in priority order; empty
+  // when the request named `provider,model`. buildFailoverChain walks it
+  // after the primary.
   fallbacks: readonly string[]
   path: string
   search: string
@@ -122,7 +122,7 @@ function resolveInboundSession(
  *
  * Gemini names the model and the streaming choice in the path
  * (`/v1beta/models/gemini-3-pro:streamGenerateContent`) and puts neither
- * in the body. Everything downstream — the tier router, the failover
+ * in the body. Everything downstream — the plan check, the failover
  * chain, the pipeline, the JSON-vs-SSE relay decision — reads
  * `body.model` and `body.stream`, so this is where the two wire
  * conventions are reconciled. A no-op for the surfaces whose body
@@ -137,22 +137,8 @@ function applyPathParams(body: Record<string, unknown>, path: string): void {
   if (stream !== undefined) body.stream = stream
 }
 
-/**
- * The model a plan sends a request to, or undefined for a token with no
- * plan (the caller and the router decide, as before). An allowed bare name
- * with multiple hosts stays bare until provider priority resolves it below.
- */
-export function planModel(plan: TokenPlan | null | undefined, requested: string | undefined): string | undefined {
-  if (plan === null || plan === undefined) return undefined
-  if (requested !== undefined && plan.models.includes(requested)) return requested
-  if (requested !== undefined && !requested.includes(',')) {
-    const matching = plan.models.filter((allowed) => allowed.slice(allowed.indexOf(',') + 1) === requested)
-    if (matching.length === 1) return matching[0]
-    if (matching.length > 1) return requested
-  }
-  return plan.defaultModel
-}
-
+// An allowed bare name with multiple hosts stays bare until provider
+// priority resolves it here, restricted to the providers the plan lists.
 async function bareModelProviders(model: string, ctx: LlmsContext, plan: TokenPlan | null | undefined) {
   const hosts = ctx.providers
     .getAll()
@@ -205,18 +191,9 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
     headers[k] = v
   })
 
-  // Capture what the client asked for BEFORE routeRequest rewrites
+  // Capture what the client asked for BEFORE the plan may rewrite
   // body.model in place — this is the only point the original is visible.
   const requestedModel = typeof body.model === 'string' && body.model.length > 0 ? body.model : undefined
-  // A token on a plan may only spend the plan's models: one it names is
-  // kept, anything else (or nothing) becomes the plan's default rather than
-  // a refusal, so a client with a stale model setting keeps working.
-  // Decided after `requestedModel` is captured, so the log still shows
-  // what the client asked for next to what the plan sent.
-  const pinnedModel = planModel(token?.plan, requestedModel)
-  if (pinnedModel !== undefined) body.model = pinnedModel
-  // Before routeRequest rewrites model and strips the subagent tag in place.
-  const archivedBody = requestArchiveEnabled() ? structuredClone(body) : undefined
   const signals = path === '/v1/messages' ? classifierSignals(body) : undefined
   const diagnosticLog = (status: number, reason: string): void => {
     if (!signals || (!signals.safeguardsPresent && !signals.suspectedClassifier)) return
@@ -226,9 +203,24 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
     )
   }
 
-  // Tier routing: rewrite body.model to the resolved provider,model and
-  // stamp req.route. We keep the request object so we can read the
-  // route, the fallbacks and the 429 / 400 outcomes back below.
+  // A token on a plan may only spend the plan's models. One it names is
+  // kept; naming none sends the request to the plan's default; naming one
+  // the plan does not list is refused with 403 rather than redirected, so a
+  // stale client setting surfaces instead of being served by a model the
+  // caller never asked for. Decided after `requestedModel` is captured, so
+  // the log still shows what the client asked for next to what was sent.
+  const decision = decidePlanModel(token?.plan, requestedModel)
+  if (decision.kind === 'denied') {
+    diagnosticLog(403, 'plan_model_denied')
+    return c.json(buildErrorEnvelope({ shape, status: 403, from: decision.message }), 403)
+  }
+  if (decision.kind === 'allowed' || decision.kind === 'default') body.model = decision.model
+
+  // Before routeRequest strips the subagent tag in place.
+  const archivedBody = requestArchiveEnabled() ? structuredClone(body) : undefined
+
+  // Stamps the subagent flag, strips its tag and injects the persona; the
+  // request object is kept so the flag and the fallbacks can be read back.
   const routeReq: RouterRequest = {
     body: body as PipelineRequest['body'] & { model: string },
     log: requestLog,
@@ -237,17 +229,10 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
     // (persona injection etc.) so OpenAI-compat callers on
     // /v1/chat/completions and /v1/responses get the exact request
     // they sent rather than one enriched for Claude Code.
-    inboundPath: path,
-    // A token may pin its client to a named routing profile, which
-    // then wins over the surface's own profile. This is the point of
-    // per-client tokens: a CI runner on cost-first while interactive
-    // traffic keeps the default.
-    profileKeyOverride: token?.profileKey === null ? undefined : token?.profileKey
+    inboundPath: path
   }
-  // A pinned request skips the tier router: a routed surface's chain
-  // could otherwise swap the plan's model for a costlier target.
-  if (pinnedModel === undefined) await routeRequest(routeReq, { config: ctx.config, tokenizers: ctx.tokenizers })
-  const route = routeReq.route !== undefined ? routeReq.route : PASSTHROUGH_ROUTE
+  routeRequest(routeReq, { config: ctx.config })
+  const route = PASSTHROUGH_ROUTE
   if (archivedBody !== undefined) {
     void archiveRequest({
       reqId,
@@ -258,46 +243,14 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
       requestedModel,
       routedModel: body.model,
       route,
-      isSubagent: routeReq.isSubagent,
-      tokenCount: routeReq.tokenCount
+      isSubagent: routeReq.isSubagent
     })
   }
 
-  // Every route of the scenario's list is out of quota and the profile's
-  // `exhaustedBehavior` is '429'. Answered here so no upstream dispatch
-  // happens; `Retry-After` carries the seconds until the first of those
-  // routes can serve again.
-  const retryAfter = routeReq.quotaExhaustedRetryAfterSec
-  if (typeof retryAfter === 'number' && retryAfter > 0) {
-    diagnosticLog(429, 'quota_exhausted')
-    return new Response(
-      JSON.stringify(
-        buildErrorEnvelope({
-          shape,
-          status: 429,
-          from: 'Every route for this request is out of quota; retry after the window resets.'
-        })
-      ),
-      {
-        status: 429,
-        headers: { 'content-type': 'application/json', 'Retry-After': String(retryAfter) }
-      }
-    )
-  }
-
-  // The map refused the request by configuration — a route with no alias,
-  // no route that can run its web_search tool, a prompt no route can hold.
-  // Answered 400 and never dispatched: unlike exhaustion, waiting would
-  // not change it.
-  if (routeReq.routingRefusal !== undefined) {
-    diagnosticLog(400, 'routing_refusal')
-    return c.json(buildErrorEnvelope({ shape, status: 400, from: routeReq.routingRefusal }), 400)
-  }
-
-  // A bare passthrough name is a public model id. Resolve the provider here,
-  // before deny rules and the failover walker, so both judge the same target.
+  // A bare name is a public model id. Resolve the provider here, before deny
+  // rules and the failover walker, so both judge the same target.
   const bareModel = typeof body.model === 'string' && !body.model.includes(',') ? body.model : undefined
-  if (route === PASSTHROUGH_ROUTE && bareModel !== undefined && bareModel.length > 0) {
+  if (bareModel !== undefined && bareModel.length > 0) {
     const order = await bareModelProviders(bareModel, ctx, token?.plan)
     if (order.status === 'ambiguous') {
       diagnosticLog(400, 'model_provider_ambiguous')
@@ -318,23 +271,15 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
     }
   }
 
-  // A passthrough surface can refuse a target. The check lives here and
-  // not in `routeRequest` because that function never throws — it
-  // catches everything and falls back, so a rejection raised inside it
-  // would be swallowed and the request would go upstream anyway. Here we
-  // still have the inbound path and the client's error shape, which is
-  // what a refusal has to answer in.
-  //
-  // It runs after routeRequest on purpose: in routed mode body.model is
-  // no longer the caller's string, and `passthroughDenial` returns
-  // undefined for routed surfaces rather than judging a value a route
-  // already replaced.
+  // A surface can refuse a target. The check lives here, where the inbound
+  // path and the client's error shape are at hand, which is what a refusal
+  // has to answer in.
   const denial = await passthroughDenial(path, typeof body.model === 'string' ? body.model : undefined)
   if (denial !== undefined) {
     diagnosticLog(400, 'passthrough_denial')
     return c.json(buildErrorEnvelope({ shape, status: 400, from: denial }), 400)
   }
-  if (route === PASSTHROUGH_ROUTE && routeReq.resolvedFallbacks !== undefined) {
+  if (routeReq.resolvedFallbacks !== undefined) {
     const checked = await Promise.all(
       routeReq.resolvedFallbacks.map(async (target) => ({
         target,
@@ -352,7 +297,6 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
 
   return {
     reqId,
-    selectedRoutes: routeReq.selectedRoutes,
     routedBody: body,
     headers,
     accountSessionKey: resolveInboundSession(headers, body, tokenId),
@@ -363,9 +307,9 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
     requestedModel,
     classifierSignals: signals ?? { safeguardsPresent: false, suspectedClassifier: false },
     isSubagent: routeReq.isSubagent === true,
-    // The rest of the routes the selector resolved for this request.
+    // The other providers hosting a bare model name, in priority order.
     // buildFailoverChain reads this directly so the reactive path walks
-    // exactly the routes the selector passed.
+    // exactly the providers that were resolved here.
     fallbacks: Array.isArray(routeReq.resolvedFallbacks) ? routeReq.resolvedFallbacks : [],
     path,
     search: url.search,

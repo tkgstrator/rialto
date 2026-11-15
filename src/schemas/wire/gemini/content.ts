@@ -208,7 +208,6 @@ const GeminiInboundFunctionDeclarationSchema = z
     parameters: z.unknown().optional()
   })
   .loose()
-export type GeminiInboundFunctionDeclaration = z.infer<typeof GeminiInboundFunctionDeclarationSchema>
 
 const GeminiInboundToolSchema = z
   .object({

@@ -15,10 +15,9 @@
  * at it — and replaces only the secret, so the client's history stays
  * one story instead of splitting across "CI" and "CI (old)".
  *
- * Scope and profile are editable here, because neither is an issue-time
- * decision: a client picks up a second endpoint, or its traffic should
- * start following a different chain, and neither is a reason to hand the
- * machine a new secret. Edited through a draft with an explicit Save
+ * Scope and plan are editable here, because neither is an issue-time
+ * decision: a client picks up a second endpoint, or moves to another plan,
+ * and neither is a reason to hand the machine a new secret. Edited through a draft with an explicit Save
  * rather than applied on click — a stray chip would otherwise change
  * what a live client can reach, with the failure landing on the client
  * as a 401 nobody can trace from that end.
@@ -59,28 +58,23 @@ const ROTATE_REFUSAL: Readonly<Record<string, string>> = {
 /** The fields this page can change. */
 interface ScopeDraft {
   surfaces: string[]
-  profileKey: string
   /** ANY for no plan, which the wire sends as null. */
   planId: string
 }
 
 const draftOf = (token: AccessTokenWire): ScopeDraft => ({
   surfaces: token.surfaces,
-  profileKey: token.profileKey === null ? ANY : token.profileKey,
   planId: token.plan === null ? ANY : token.plan.id
 })
 
 const draftChanged = (draft: ScopeDraft, token: AccessTokenWire): boolean => {
   const saved = draftOf(token)
-  return (
-    !sameScope(draft.surfaces, saved.surfaces) || draft.profileKey !== saved.profileKey || draft.planId !== saved.planId
-  )
+  return !sameScope(draft.surfaces, saved.surfaces) || draft.planId !== saved.planId
 }
 
 interface Revealed {
   plaintext: string
   scope: string
-  profile: string
   expiry: string
 }
 
@@ -95,7 +89,6 @@ export function TokenDetail() {
   const [busy, setBusy] = useState(false)
   const [revealed, setRevealed] = useState<Revealed | null>(null)
   const [draft, setDraft] = useState<ScopeDraft | null>(null)
-  const [profiles, setProfiles] = useState<{ key: string }[]>([])
   const [plans, setPlans] = useState<PlanWire[]>([])
   // Every relative label measures from the same instant.
   const [now, setNow] = useState(Date.now())
@@ -122,13 +115,6 @@ export function TokenDetail() {
   useEffect(load, [load])
 
   useEffect(() => {
-    api
-      .getTierProfiles()
-      .then(setProfiles)
-      .catch(() => {
-        // The picker falls back to "follow the endpoint", which is the
-        // server's own default when profileKey is null.
-      })
     api
       .getPlans()
       .then((res) => setPlans(res.plans))
@@ -161,7 +147,6 @@ export function TokenDetail() {
         setRevealed({
           plaintext: res.plaintext,
           scope: paths.length === 0 ? t('settings.access.allEndpoints') : paths.join(', '),
-          profile: res.token.profileKey === null ? t('settings.access.followEndpoint') : res.token.profileKey,
           expiry: res.token.expiresAt === null ? t('settings.access.never') : res.token.expiresAt.slice(0, 10)
         })
         load()
@@ -205,7 +190,6 @@ export function TokenDetail() {
     api
       .updateAccessToken(token.id, {
         surfaces: scopeForWire(surfaces, draft.surfaces),
-        profileKey: draft.profileKey === ANY ? null : draft.profileKey,
         planId: draft.planId === ANY ? null : draft.planId
       })
       .then(() => {
@@ -258,7 +242,6 @@ export function TokenDetail() {
         plaintext={revealed.plaintext}
         name={token.name}
         scope={revealed.scope}
-        profile={revealed.profile}
         expiry={revealed.expiry}
         titleKey='settings.access.rotatedTitle'
         bodyKey='settings.access.rotatedBody'
@@ -310,22 +293,6 @@ export function TokenDetail() {
             allLabel={t('settings.access.allEndpoints')}
             disabled={!editable || busy}
           />
-        </SettingsField>
-
-        <SettingsField label={t('settings.access.colProfile')} hint={t('settings.access.issueProfileHint')}>
-          <Picker
-            label={t('settings.access.colProfile')}
-            value={draft.profileKey}
-            onChange={(next) => setDraft({ ...draft, profileKey: next })}
-            disabled={!editable || busy}
-          >
-            <option value={ANY}>{t('settings.access.followEndpoint')}</option>
-            {profiles.map((profile) => (
-              <option key={profile.key} value={profile.key}>
-                {profile.key}
-              </option>
-            ))}
-          </Picker>
         </SettingsField>
 
         {/* A plan limits the models and the usage windows; no plan leaves

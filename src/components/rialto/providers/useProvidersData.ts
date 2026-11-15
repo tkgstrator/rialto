@@ -15,7 +15,6 @@ import type {
   Provider,
   SubscriptionsResponse,
   SubscriptionWire,
-  TierAliasWire,
   TransformersResponse,
   TransformerWire
 } from './types'
@@ -28,8 +27,6 @@ export interface ProvidersData {
   quota: QuotaIndex
   /** Per account: what it carried at API prices, and its banked resets. */
   accounts: AccountExtrasIndex
-  /** Every provider's four tier aliases and the candidates for each. */
-  aliases: TierAliasWire[]
   /** Server-side totals; null when the summary has never been available. */
   counts: { providers: number; enabledModels: number } | null
   /** Current wall clock, not the instant an old quota snapshot was captured. */
@@ -42,8 +39,7 @@ const readProviders = () =>
     api.get<SubscriptionsResponse>('/subscriptions'),
     api.get<CatalogResponse>('/catalog'),
     api.get<TransformersResponse>('/transformers'),
-    api.getOverview({ windowHours: 24 }),
-    api.getTierAliases()
+    api.getOverview({ windowHours: 24 })
   ])
 
 const keepSuccessful = <T, U>(result: PromiseSettledResult<T>, project: (value: T) => U, previous: U): U =>
@@ -56,14 +52,13 @@ const EMPTY_DATA: ProvidersData = {
   transformers: [],
   quota: new Map(),
   accounts: new Map(),
-  aliases: [],
   counts: null,
   now: 0
 }
 
 function mergeRead(previous: ProvidersData | null, read: Awaited<ReturnType<typeof readProviders>>): ProvidersData {
   const known = previous === null ? EMPTY_DATA : previous
-  const [providers, subs, catalog, transformers, overview, aliases] = read
+  const [providers, subs, catalog, transformers, overview] = read
   return {
     providers: keepSuccessful(providers, (rows) => rows, known.providers),
     subscriptions: keepSuccessful(
@@ -75,7 +70,6 @@ function mergeRead(previous: ProvidersData | null, read: Awaited<ReturnType<type
     transformers: keepSuccessful(transformers, (value) => value.transformers, known.transformers),
     quota: keepSuccessful(overview, (value) => indexQuota(value.quota), known.quota),
     accounts: keepSuccessful(overview, (value) => indexAccountExtras(value.quota), known.accounts),
-    aliases: keepSuccessful(aliases, (value) => value, known.aliases),
     counts: keepSuccessful(
       overview,
       (value) => ({ providers: value.providerCount, enabledModels: value.enabledModelCount }),

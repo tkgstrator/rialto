@@ -6,18 +6,14 @@
  * delete exactly what it wrote and nothing else. Prisma's `@default(cuid())`
  * only applies when the id is omitted, so supplying one is free.
  *
- * Configuration rows that are singletons per key — tier aliases, the
- * `live` profile, InboundSurfaceConfig — cannot carry a marker. Those are
- * written only when they are still unset, and are left alone by
- * `--clean`; see seed-demo/routing.ts.
+ * Configuration rows that are singletons per key — an account's quota,
+ * InboundSurfaceConfig — cannot carry a marker. Those are written only
+ * when they are still unset, and are left alone by `--clean`.
  */
 
 import type { PrismaClient } from '../../src/generated/prisma/client'
 
 export const DEMO_PREFIX = 'demo-'
-
-/** The demo-owned preference profile, offered next to `live` in Routing. */
-export const DEMO_PROFILE_KEY = 'cost-first'
 
 export const demoId = (kind: string, n: number): string => `${DEMO_PREFIX}${kind}-${String(n).padStart(5, '0')}`
 
@@ -34,7 +30,6 @@ export interface CleanCounts {
   accessToken: number
   usageSnapshot: number
   subAccount: number
-  preferenceProfile: number
 }
 
 /**
@@ -53,9 +48,6 @@ export async function cleanDemoRows(prisma: PrismaClient): Promise<CleanCounts> 
   const usageSnapshot = await prisma.usageSnapshot.deleteMany({ where: { id: startsWithDemo } })
   // Usage / quota children cascade from the account.
   const subAccount = await prisma.subAccount.deleteMany({ where: { id: startsWithDemo } })
-  // The demo profile is keyed, not id-prefixed: its key is reserved for
-  // the seed, and its routes cascade.
-  const preferenceProfile = await prisma.routerPreferenceProfile.deleteMany({ where: { key: DEMO_PROFILE_KEY } })
 
   return {
     message: message.count,
@@ -64,7 +56,6 @@ export async function cleanDemoRows(prisma: PrismaClient): Promise<CleanCounts> 
     routingWeightChange: routingWeightChange.count,
     accessToken: accessToken.count,
     usageSnapshot: usageSnapshot.count,
-    subAccount: subAccount.count,
-    preferenceProfile: preferenceProfile.count
+    subAccount: subAccount.count
   }
 }

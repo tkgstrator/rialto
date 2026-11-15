@@ -5,10 +5,9 @@
  * provider is live, how much of each account's quota is spent, which key
  * it sends and which models it serves — so the page keeps the header,
  * the accounts (or the credential) and the switched-on models. Request
- * shape, the tier strip, the model table's prices-and-capabilities grid
- * and Edit stay on the desktop page: a staged edit across a 390px model
- * table is not a change anyone should be making on a phone, and the tier
- * a model serves is still on its row below.
+ * shape, the model table's prices-and-capabilities grid and Edit stay on
+ * the desktop page: a staged edit across a 390px model table is not a
+ * change anyone should be making on a phone.
  *
  * Test all stays. It writes nothing but test results, and "is this
  * provider answering" is exactly the question a phone check-in asks.
@@ -20,15 +19,15 @@ import { fmtCost } from '@/lib/sessions/format'
 import { AccountsPanel } from './AccountsPanel'
 import { CredentialsPanel } from './CredentialsPanel'
 import { buildModelRows, enabledCountOf, fmtContext, hasCredential, listedModelsOf, type ModelRow } from './derive'
-import { TestIcon, TierCell } from './ModelsTable'
+import { TestIcon } from './ModelsTable'
 import { ProviderDetail, type ProviderDetailProps } from './ProviderDetail'
 import { STATE_LABEL_KEYS, STATE_TONE } from './ProviderTable'
 import { SwitchReading } from './SwitchReading'
 
 /**
- * Models as phone rows: name and test result on the first line, the
- * tiers that reach it and its context window on the second, and on an
- * api_key provider the in / out price that Routing's cost ordering reads.
+ * Models as phone rows: name and test result on the first line, its
+ * context window on the second, and on an api_key provider the in / out
+ * price.
  *
  * With `onToggle` the test result gives way to the model's switch — the
  * add-provider flow's last step, where choosing models is the whole job.
@@ -62,10 +61,6 @@ export function PhoneModelList({
           }
           secondary={
             <>
-              {/* No dash for "no tier": on a two-line row an empty slot
-                  says it as well, and the dash read as a stray rule. */}
-              {row.tiers.length === 0 ? null : <TierCell row={row} />}
-              {row.newer ? <Pill tone='info'>{t('providers.models.newer')}</Pill> : null}
               <span className='font-mono tabular-nums'>{fmtContext(row.contextWindow)}</span>
               {priced ? (
                 <span
@@ -90,7 +85,7 @@ export function ProviderDetailPhone(props: ProviderDetailProps) {
   const credentialed = hasCredential(provider, subscription)
   // Switched-on models only: the rest are the catalogue, which is the
   // desktop table's job to browse.
-  const rows = buildModelRows(provider, catalogEntry, props.tiers).filter((row) => row.enabled)
+  const rows = buildModelRows(provider, catalogEntry).filter((row) => row.enabled)
   const switchLabel = t('providers.detail.toggleProvider', { provider: props.label })
   return (
     <div className='min-w-0'>

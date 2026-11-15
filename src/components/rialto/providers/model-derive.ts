@@ -1,8 +1,7 @@
 import type { CatalogEntry, CatalogModel } from '@/schemas/api/catalog'
 import type { ThinkingOff } from '@/schemas/domain/model-capability'
 import { apiStyleOverrideOf, disabledModelsOf, effortOf, listedModelsOf, testStatusOf } from './derive'
-import type { TierView } from './tier-aliases'
-import type { ApiStyle, Provider, ReasoningEffort, TestStatus, Tier } from './types'
+import type { ApiStyle, Provider, ReasoningEffort, TestStatus } from './types'
 
 /**
  * Context window, in the mock's `400k` / `1M` shorthand.
@@ -23,16 +22,6 @@ export function fmtContext(n: number | undefined): string {
 
 export interface ModelRow {
   name: string
-  /**
-   * The tiers this model belongs to on its provider, in strip order: the
-   * one its name says, and any manual tier aliased to it. `routed` is
-   * whether the tier reaches this model today. Routing reaches a model
-   * only through a tier, so no routed entry means nothing routed lands
-   * here however the model is switched.
-   */
-  tiers: Array<{ tier: Tier; routed: boolean }>
-  /** Newer than the model its tier routes to, and switched off: switching it on moves the tier. */
-  newer: boolean
   /** Model.reasoningEffort. Null means "send nothing, let the vendor pick". */
   effort: ReasoningEffort | null
   /**
@@ -69,15 +58,8 @@ const catalogModelIndex = (entry: CatalogEntry | undefined): Map<string, Catalog
  * one exception: the cached-input leg is not mirrored onto Provider, so it
  * is read from the vendor catalog entry. Absent on both sides means the
  * vendor publishes no price, which the table shows as a dash.
- *
- * `views` are the provider's tiers (`tierViewsOf`). The add-provider
- * wizard shows no tier column and passes nothing.
  */
-export function buildModelRows(
-  p: Provider,
-  catalogEntry: CatalogEntry | undefined,
-  views: readonly TierView[] = []
-): ModelRow[] {
+export function buildModelRows(p: Provider, catalogEntry: CatalogEntry | undefined): ModelRow[] {
   const off = new Set(disabledModelsOf(p))
   const ctx = p.modelContextWindows === undefined ? {} : p.modelContextWindows
   const recordedEfforts = p.modelSupportedEfforts === undefined ? {} : p.modelSupportedEfforts
@@ -89,16 +71,6 @@ export function buildModelRows(
     const fromCatalog = catalogModels.get(name)
     return {
       name,
-      tiers: views.flatMap((v) =>
-        v.mode === 'derived'
-          ? v.named.includes(name)
-            ? [{ tier: v.tier, routed: v.model === name }]
-            : []
-          : v.model === name
-            ? [{ tier: v.tier, routed: true }]
-            : []
-      ),
-      newer: views.some((v) => v.newer.includes(name)),
       effort: effortOf(p, name),
       supportedEfforts: recordedEfforts[name] === undefined ? null : recordedEfforts[name],
       thinkingOff: probedThinking[name] === undefined ? null : probedThinking[name],
@@ -132,8 +104,8 @@ export type ShowMode = 'priced' | 'enabled' | 'all'
  * to, and a decision the operator already made.
  *
  * Unless one is switched on. A legacy model that is enabled is a live
- * routing target, and a list that hides a live target cannot be trusted
- * to say what this provider serves.
+ * target, and a list that hides a live target cannot be trusted to say
+ * what this provider serves.
  */
 export const hidesAsLegacy = (row: ModelRow): boolean => row.legacy && !row.enabled
 

@@ -17,7 +17,6 @@ import {
 import { modelApiStyleOverride } from '../api-style'
 import type { Tx } from '../apply'
 import { disabledSet } from '../transformer'
-import { tierCascadeWarning } from './tier-route-cascade'
 
 export async function syncDeprecationFlags(tx: Tx, providerId: string, names: string[]): Promise<void> {
   if (names.length === 0) return
@@ -38,14 +37,12 @@ export async function syncDeprecationFlags(tx: Tx, providerId: string, names: st
 }
 
 // Reconcile the Model rows for a provider against the UI's `models` list:
-// create the missing ones, delete the removed ones (warning about the
-// tier aliases they unset), and resync the deprecated
-// flag on the rows we kept.
+// create the missing ones, delete the removed ones, and resync the
+// deprecated flag on the rows we kept.
 export async function reconcileModelRows(
   tx: Tx,
   provider: DbProvider & { models: DbModel[] },
-  incoming: Provider,
-  warnings: string[]
+  incoming: Provider
 ): Promise<void> {
   const desired = new Set(incoming.models)
   const existingNames = new Set(provider.models.map((m) => m.name))
@@ -58,13 +55,6 @@ export async function reconcileModelRows(
   const toCreate = [...desired].filter((n) => !existingNames.has(n))
 
   if (toDelete.length > 0) {
-    const cascade = await tierCascadeWarning(
-      tx,
-      provider.id,
-      toDelete,
-      `"${provider.name}" model(s) removed in this save (${toDelete.join(', ')})`
-    )
-    if (cascade !== null) warnings.push(cascade)
     await tx.model.deleteMany({
       where: { providerId: provider.id, name: { in: toDelete } }
     })

@@ -15,7 +15,6 @@ import { ProviderPrioritiesScreen } from '@/components/rialto/providers/Provider
 import { ProvidersScreen } from '@/components/rialto/providers/ProvidersScreen'
 import { RialtoShell } from '@/components/rialto/RialtoShell'
 import { RouteError } from '@/components/rialto/RouteError'
-import { RoutingScenarios } from '@/components/rialto/routing/RoutingScenarios'
 import { TokenDetail } from '@/components/rialto/settings/access/TokenDetail'
 import { SettingsAccess } from '@/components/rialto/settings/SettingsAccess'
 import { SettingsAdvanced } from '@/components/rialto/settings/SettingsAdvanced'
@@ -71,10 +70,6 @@ export const router = createBrowserRouter([
           { path: '/providers/priorities', element: <ProviderPrioritiesScreen /> },
           { path: '/providers/connect', element: <AddProviderScreen /> },
           { path: '/providers/:name', element: <ProviderDetailScreen /> },
-          // One table is the whole of Routing: per surface's profile, a
-          // scenario per row and a lane per column, each cell a list of
-          // provider · tier combinations.
-          { path: '/routing', element: <RoutingScenarios /> },
           // Top level, beside Providers: outbound and inbound at the same
           // depth. These were /settings/access and
           // /settings/access/tokens/:id.

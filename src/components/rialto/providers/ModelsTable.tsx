@@ -14,43 +14,19 @@ import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-
 import { fmtCost } from '@/lib/sessions/format'
 import { effortLadder } from './capability-reading'
 import { fmtContext, type ModelRow } from './derive'
-import {
-  DASH,
-  EffortCell,
-  EffortLevelsCell,
-  ImagePriceBadge,
-  TestIcon,
-  ThinkingOffCell,
-  TierCell
-} from './ModelsTableCells'
+import { DASH, EffortCell, EffortLevelsCell, ImagePriceBadge, TestIcon, ThinkingOffCell } from './ModelsTableCells'
 import { SwitchReading } from './SwitchReading'
-import { TIERS, type TierView } from './tier-aliases'
-import type { ReasoningEffort, Tier } from './types'
+import type { ReasoningEffort } from './types'
 
-export { TestIcon, TierCell } from './ModelsTableCells'
+export { TestIcon } from './ModelsTableCells'
 
-type ModelSortKey =
-  | 'name'
-  | 'tier'
-  | 'contextWindow'
-  | 'inputPer1M'
-  | 'cachedInputPer1M'
-  | 'outputPer1M'
-  | 'test'
-  | 'enabled'
+type ModelSortKey = 'name' | 'contextWindow' | 'inputPer1M' | 'cachedInputPer1M' | 'outputPer1M' | 'test' | 'enabled'
 
 // Sorting reads the row's own field for every column, so what the header
 // orders by is what the cell shows. `test` is a short enum rendered as a
 // glyph; sorting it alphabetically groups like with like, which is the
-// whole point of clicking it. The tier sorts by the first tier a model
-// belongs to, in strip order — fable first ascending — rather than by the
-// label, which would put haiku ahead of opus; a model in none is missing,
-// and sorts last either way.
-const modelSortValue = (row: ModelRow, key: ModelSortKey): SortValue => {
-  if (key !== 'tier') return row[key]
-  const [first] = row.tiers
-  return first === undefined ? null : TIERS.indexOf(first.tier)
-}
+// whole point of clicking it.
+const modelSortValue = (row: ModelRow, key: ModelSortKey): SortValue => row[key]
 
 const NUM_CELL = 'px-2 text-right font-mono text-xs tabular-nums'
 
@@ -63,7 +39,7 @@ const WIDE_CELL = 'hidden @min-[84rem]:table-cell'
 const WIDE_COL = 'hidden @min-[84rem]:table-column'
 
 // The Effort levels column, sized for the longest ladder a row reports:
-// its badges sit on one line and would otherwise run on into the Tier
+// its badges sit on one line and would otherwise run on into the next
 // column, as a Codex list up to `ultra` did at a fixed 16rem. At 12px the
 // widest badges (medium, minimal) are about 58px and the rest narrower, so
 // 16rem holds any four levels and each level past that adds 2.5rem, with
@@ -82,7 +58,6 @@ const HEAD_CELL = 'px-2 text-right font-medium'
 
 function Head({
   withOverride,
-  withTier,
   hasCached,
   hasShape,
   hasEffortReading,
@@ -90,7 +65,6 @@ function Head({
   sort
 }: {
   withOverride: boolean
-  withTier: boolean
   hasCached: boolean
   hasShape: boolean
   hasEffortReading: boolean
@@ -115,11 +89,6 @@ function Head({
           <th className={cn(WIDE_CELL, 'px-2 text-left font-medium')} title={t('providers.models.capThinkingTitle')}>
             {t('providers.models.colThinkingOff')}
           </th>
-        ) : null}
-        {withTier ? (
-          <SortTh sortKey='tier' sort={sort} className='px-2 text-left'>
-            {t('providers.models.colTier')}
-          </SortTh>
         ) : null}
         <SortTh sortKey='contextWindow' sort={sort} className={HEAD_CELL} align='right'>
           {t('providers.models.colContext')}
@@ -155,31 +124,25 @@ function Head({
 function Row({
   row,
   withOverride,
-  withTier,
   editable,
   effortKind,
   hasCached,
   hasShape,
   hasEffortReading,
   hasThinkingReading,
-  tiers,
   onToggle,
-  onEffort,
-  onAlias
+  onEffort
 }: {
   row: ModelRow
   withOverride: boolean
-  withTier: boolean
   editable: boolean
   effortKind: 'openai' | 'claude-code'
   hasCached: boolean
   hasShape: boolean
   hasEffortReading: boolean
   hasThinkingReading: boolean
-  tiers: readonly TierView[]
   onToggle: (model: string, next: boolean) => void
   onEffort: (model: string, next: ReasoningEffort | null) => void
-  onAlias: (tier: Tier, model: string | null) => void
 }) {
   const { t } = useTranslation()
   // Generic money columns do not describe image vs text modalities.
@@ -193,10 +156,6 @@ function Row({
         <div className='flex items-center gap-2'>
           <span className='font-mono text-xs'>{row.name}</span>
           <ImagePriceBadge pricing={row.imagePricing} />
-          {/* Newer than the model its tier routes to, and switched off:
-              it serves nothing until someone switches it on, which moves
-              the tier to it. */}
-          {row.newer ? <Pill tone='info'>{t('providers.models.newer')}</Pill> : null}
           {row.legacy ? <Pill tone='mute'>{t('providers.models.legacy')}</Pill> : null}
         </div>
       </td>
@@ -208,11 +167,6 @@ function Row({
       {hasThinkingReading ? (
         <td className={cn(WIDE_CELL, 'px-2 whitespace-nowrap')}>
           <ThinkingOffCell row={row} />
-        </td>
-      ) : null}
-      {withTier ? (
-        <td className='px-2'>
-          <TierCell row={row} editable={editable} tiers={tiers} onAlias={onAlias} />
         </td>
       ) : null}
       <td className={cn(NUM_CELL, 'text-muted-foreground')}>{fmtContext(row.contextWindow)}</td>
@@ -248,13 +202,10 @@ export function ModelsTable({
   limit,
   offset = 0,
   withOverride,
-  withTier = false,
   editable = true,
   effortKind = 'openai',
-  tiers = [],
   onToggle,
-  onEffort,
-  onAlias = () => {}
+  onEffort
 }: {
   rows: ModelRow[]
   /** Rows to render, from `offset`. Paging happens AFTER the sort, not
@@ -263,20 +214,13 @@ export function ModelsTable({
   limit?: number
   offset?: number
   withOverride: boolean
-  /** The Tier column. A provider's page has the tiers to fill it; the
-   *  add-provider wizard does not resolve them, and a column of dashes
-   *  there would say "serves nothing" about models it has not resolved. */
-  withTier?: boolean
   /** False while a provider's page reads: the pickers and switches show
    *  their values and take no input until Edit is pressed. The
    *  add-provider wizard's table is always editable. */
   editable?: boolean
   effortKind?: 'openai' | 'claude-code'
-  /** Every tier this provider resolves, so manual tiers can be assigned from a model row. */
-  tiers?: readonly TierView[]
   onToggle: (model: string, next: boolean) => void
   onEffort: (model: string, next: ReasoningEffort | null) => void
-  onAlias?: (tier: Tier, model: string | null) => void
 }) {
   const { t } = useTranslation()
   // Hooks run before the empty-state return: an early return above a hook
@@ -294,11 +238,6 @@ export function ModelsTable({
   // which records nothing, gets neither.
   const hasEffortReading = rows.some((row) => row.supportedEfforts !== null)
   const hasThinkingReading = rows.some((row) => row.thinkingOff !== null)
-  // Wide enough for two tier pills wherever a model is in two tiers. The
-  // subscription table has the room to spare anyway; the api_key one,
-  // with Shape and Effort beside it, keeps the narrow column until a row
-  // needs more.
-  const tierWidth = !withOverride || rows.some((row) => row.tiers.length > 1) ? 'w-28' : 'w-20'
 
   if (rows.length === 0) {
     return <div className='px-6 pb-6 text-xs text-muted-foreground'>{t('providers.models.empty')}</div>
@@ -310,7 +249,6 @@ export function ModelsTable({
           <col />
           {hasEffortReading ? <col className={cn(WIDE_COL, effortLevelsWidth(rows))} /> : null}
           {hasThinkingReading ? <col className={cn(WIDE_COL, 'w-44')} /> : null}
-          {withTier ? <col className={tierWidth} /> : null}
           <col className='w-20' />
           <col className='w-20' />
           {hasCached ? <col className='w-20' /> : null}
@@ -322,7 +260,6 @@ export function ModelsTable({
         </colgroup>
         <Head
           withOverride={withOverride}
-          withTier={withTier}
           hasCached={hasCached}
           hasShape={hasShape}
           hasEffortReading={hasEffortReading}
@@ -335,17 +272,14 @@ export function ModelsTable({
               key={row.name}
               row={row}
               withOverride={withOverride}
-              withTier={withTier}
               editable={editable}
               effortKind={effortKind}
               hasCached={hasCached}
               hasShape={hasShape}
               hasEffortReading={hasEffortReading}
               hasThinkingReading={hasThinkingReading}
-              tiers={tiers}
               onToggle={onToggle}
               onEffort={onEffort}
-              onAlias={onAlias}
             />
           ))}
         </tbody>

@@ -41,7 +41,7 @@ function PersonaRow({
         </span>
       </div>
       <div className='mt-0.5 text-[12px] text-muted-foreground'>
-        {active ? t('settings.personas.allRoutedRequests') : '—'}
+        {active ? t('settings.personas.allRequests') : '—'}
       </div>
     </button>
   )

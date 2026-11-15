@@ -129,10 +129,10 @@ document.getElementById('root').innerHTML = `
       </div>
     </div>
 
-    <!-- Scope and profile are editable here, because neither is an
+    <!-- Scope and plan are editable here, because neither is an
          issue-time-only decision: a client picks up a second endpoint, or
-         its traffic should start following a different chain, and neither
-         is a reason to hand the machine a new secret. -->
+         moves to another plan, and neither is a reason to hand the machine
+         a new secret. -->
     ${field(
       'Endpoint',
       'Pick the endpoints this token may call. Choose several when one client speaks more than one — Codex uses both <span class="font-mono">/v1/responses</span> and <span class="font-mono">/v1/chat/completions</span>. All endpoints leaves it unrestricted.',
@@ -140,12 +140,6 @@ document.getElementById('root').innerHTML = `
         ${surfaceChip('all endpoints', false)}
         ${SURFACES.map((s, i) => surfaceChip(s.path, i === 1 || i === 2)).join('')}
       </div>`
-    )}
-
-    ${field(
-      'Profile',
-      'Route this client’s traffic through a named profile. Unset follows the endpoint’s own routing.',
-      select('live')
     )}
 
     ${field(
@@ -192,7 +186,7 @@ document.getElementById('root').innerHTML = `
       <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
         <i class="ri-information-line mr-1 align-[-1px]"></i>
         <span class="font-medium text-foreground">Rotating keeps this row.</span>
-        The name, endpoint scope, routing profile and every request already attributed to this token
+        The name, endpoint scope, plan and every request already attributed to this token
         stay as they are; only the secret the client presents changes.
       </div>
     </div>
@@ -208,7 +202,7 @@ document.getElementById('root').innerHTML = `
          that materialises moves everything around it. -->
     <div class="flex items-center gap-2 border-t border-border/60 px-6 py-4">
       <span class="text-[12px] text-muted-foreground">
-        Saves the endpoint, profile and plan of <span class="font-medium text-foreground">MacBook — Codex</span>,
+        Saves the endpoint and plan of <span class="font-medium text-foreground">MacBook — Codex</span>,
         from its next request. The token value itself does not change.
       </span>
       <div class="ml-auto flex gap-2">

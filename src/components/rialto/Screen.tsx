@@ -141,9 +141,9 @@ function PhoneScreen({
   const { t } = useTranslation()
   const { pathname } = useLocation()
   const parent = !deep || trail.length < 2 ? undefined : trail[trail.length - 2].href
-  // Routing's "Routing / Scenarios" names one page twice; its parent crumb
-  // is the page itself, and an arrow back to where you already are is
-  // not a way back.
+  // A section whose crumb trail names one page twice has a parent crumb
+  // that is the page itself, and an arrow back to where you already are
+  // is not a way back.
   const back = parent === undefined || parent === pathname ? undefined : parent
   const title =
     back === undefined ? (section === undefined ? trail.at(-1)?.label : t(section.labelKey)) : trail.at(-1)?.label

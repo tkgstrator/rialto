@@ -18,4 +18,3 @@ export {
   upsertProvider
 } from './crud'
 export { getEnabledModels } from './enabled-models'
-export { ensurePreferenceProfile } from './seed'

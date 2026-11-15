@@ -1,39 +1,11 @@
 /**
  * Readers for what a request carries on the wire, one question each.
  *
- * None of them sees the routes or the inbound surface: they answer
- * "what did the client send?" and nothing more. The tier a model name
- * says is read in `src/shared/model-tier.ts`, where the provider page can
- * reach it too.
+ * None of them sees the inbound surface: they answer "what did the client
+ * send?" and nothing more.
  */
 
 import type { RouterRequestBody } from './types'
-
-/**
- * Whether the caller opted into extended thinking — the Think scenario.
- *
- * Presence of `thinking` is the opt-in and `type: 'disabled'` the
- * explicit opt-out; 'enabled' and 'adaptive' both count. A field that is
- * not an object, or a discriminator that is not a string, is "not
- * thinking", so a malformed body never lands on the Think list.
- */
-export function isThinkingEnabled(body: RouterRequestBody): boolean {
-  const t = body.thinking
-  if (t === null || typeof t !== 'object') return false
-  const type: unknown = Reflect.get(t, 'type')
-  if (typeof type !== 'string') return false
-  return type !== 'disabled'
-}
-
-// Whether an Anthropic tool entry is the hosted web-search tool.
-// Prefix-matched because Anthropic versions the type
-// (`web_search_20250305`) and a new version must not slip past the
-// router's web-search gate.
-export function isWebSearchTool(tool: unknown): tool is { type: string } {
-  if (tool === null || typeof tool !== 'object' || !('type' in tool)) return false
-  const type: unknown = Reflect.get(tool, 'type')
-  return typeof type === 'string' && type.startsWith('web_search')
-}
 
 /**
  * Tag names that mark a request as subagent traffic, newest first.

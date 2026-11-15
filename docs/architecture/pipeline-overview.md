@@ -3,7 +3,7 @@
 ## 目的
 
 `/v1/*` に届いた 1 本のリクエストが、どの順序で、どのモジュールを通って、最終的にクライアントへ返るまでの **全体像** を描く。
-[request-flow.md](./request-flow.md) はルーティング判断と 429 ローテーションだけを切り出した拡大図、[routing.md](./routing.md) はルーティングそのもの（データモデル・シナリオとレーン・ゲート・ペース・結果・Long context のしきい値・scheduler の snapshot）の参照。本ドキュメントは「サーバ起動 → 1 リクエスト処理 → upstream 呼び出し → 応答整形」の通し動線を扱う。
+[request-flow.md](./request-flow.md) は 429 ローテーションだけを切り出した拡大図、[routing.md](./routing.md) はリクエストの行き先の決まり方（Plan のモデル判定・素のモデル名の解決・deniedTargets・scheduler の snapshot）の参照。本ドキュメントは「サーバ起動 → 1 リクエスト処理 → upstream 呼び出し → 応答整形」の通し動線を扱う。
 
 ---
 
@@ -23,9 +23,8 @@ flowchart TB
     B0[migrateHomeDir<br/>~/.claude-code-router → ~/.rialto]
     B1[initDir]
     B2[initConfig + syncLoggerFromEnv<br/>disk envelope → process.env]
-    B3[ensureInboundSurfaces]
     B4[背景ジョブ起動<br/>usage / auth-health / scheduler]
-    B0 --> B1 --> B2 --> B3 --> B4
+    B0 --> B1 --> B2 --> B4
   end
 
   subgraph STATE["② State (プロセス常駐 / DB)"]
@@ -35,13 +34,13 @@ flowchart TB
     SNAP[routing-scheduler<br/>target ごとの quota snapshot]
     SR[session-account-router<br/>sessionId → subAccountId sticky]
     US[usage-service / subaccount-usage-store<br/>weekly/5h 窓のキャッシュ]
-    DB[(Postgres<br/>TierRoute / ProviderTierAlias<br/>RequestLog / Session<br/>SubAccountUsage)]
+    DB[(Postgres<br/>AccessToken / InboundSurfaceConfig<br/>RequestLog / Session<br/>SubAccountUsage)]
   end
 
   subgraph REQ["③ Per-Request (1 リクエスト)"]
     direction TB
     R1[HTTP Hono<br/>POST /v1/*]
-    R2[buildRoutePlan<br/>+ routeRequest<br/>シナリオ × レーン → 6 ゲート → ペース]
+    R2[buildRoutePlan<br/>+ routeRequest<br/>Plan のモデル判定 → 素のモデル名の解決 → deniedTargets]
     R3[buildFailoverChain<br/>exhausted 除外]
     R4[attemptChainEntry × N<br/>resolveInvocationForModel<br/>+ runPipeline<br/>+ tryRotateAccount on 429]
     R5[runPipeline<br/>request transformers →<br/>fetchProvider →<br/>response transformers]
@@ -58,12 +57,12 @@ flowchart TB
   REQ -.reads.-> SNAP
   REQ -.read/write.-> SR
   REQ -.reads.-> US
-  R2 -.reads routes.-> DB
+  R2 -.reads deny list.-> DB
   R6 -.writes RequestLog.-> DB
   US -.5min polling.-> DB
   SNAP -.5min tick.-> DB
 
-  class B0,B1,B2,B3,B4 boot
+  class B0,B1,B2,B4 boot
   class R1,R2,R3,R4,R5,R6,R7 perreq
   class CTX,FS,SNAP,SR,US,DB state
 ```
@@ -75,17 +74,16 @@ flowchart TB
 | ① Bootstrap | 0. migrateHomeDir | 旧 `~/.claude-code-router` を `~/.rialto` へコピー→検証→旧削除。**必ず最初**（`~/.rialto` が先にできると恒久 no-op になる） | disk → disk | `src/services/config/migrate-home-dir.ts` |
 | | 1. initDir | `~/.rialto/` などホーム作成 | – | `src/services/config/envelope.ts` |
 | | 2. initConfig | disk envelope を読み、HOST/PORT/LOG_LEVEL/PROXY_URL を `process.env` に反映。直後に `syncLoggerFromEnv()` が LOG_LEVEL を既存 pino に再適用 | disk → env | `src/services/config/envelope.ts`<br/>`src/logger.ts` |
-| | 3. ensureInboundSurfaces | 全面に明示的な `routingMode` 行を入れる（既存行は不変） | – → DB | `src/services/inbound-surface-service.ts` |
-| | 4. 背景ジョブ | usage capture / auth health / routing scheduler。いずれも fire-and-forget で boot をブロックしない | – | `src/services/usage-job.ts` ほか |
+| | 3. 背景ジョブ | usage capture / auth health / routing scheduler。いずれも fire-and-forget で boot をブロックしない | – | `src/services/usage-job.ts` ほか |
 | ② State | LlmsContext | 4 registries を 1 個に束ねた lazy singleton。DB-backed config 変更時に `resetLlmsContext()` で再生成 | AppConfig → ctx | `src/llms/context.ts` |
 | | failover-state | provider / sub-account / (provider, model) 単位の枯渇フラグ。`until` 時刻 or default 5min で失効 | – | `src/services/failover-state.ts` |
-| | routing-scheduler | 有効なサブスクプロバイダの有効なモデルごとの quota snapshot（`exhausted` / `remainingBudgetPct` / `projectedPct` / `resetAt`）。5 分 tick、Refresh と Codex のリセット消費の直後にも作り直す。セレクタの quota ゲートとペースの並べ替えが読む。タイマーの tick は Long context のしきい値の調整（1 日 1 回まで）も行い、結果を DB の `constraints` に書く | DB → mem（しきい値は mem → DB） | `src/services/routing-scheduler/` |
+| | routing-scheduler | 有効なサブスクプロバイダの有効なモデルごとの quota snapshot（`exhausted` / `remainingBudgetPct` / `projectedPct` / `resetAt`）。5 分 tick、Refresh と Codex のリセット消費の直後にも作り直す。chain walker の枯渇判定（`providerExhaustionOf`）と適応的 reasoning effort のペースが読む。候補を並べ替えることはしない | DB → mem | `src/services/routing-scheduler/` |
 | | session-account-router | session → 選択 sub-account の sticky マップ | – | `src/services/session-account-router.ts` |
-| | usage-service | 5h / weekly ウィンドウのキャッシュ。背景 polling で更新。**ルーティング判断には使われない**（Overview / Subscriptions の表示とアカウント選択の材料） | DB → mem | `src/services/usage-service.ts` |
-| | Postgres | `Provider`/`Model`/`ProviderTierAlias`/`RouterPreferenceProfile`/`TierRoute`/`InboundSurfaceConfig`/`Session`/`RequestLog`/`SubAccountUsage` ほか（`RouterSlot` / `RoutingPreset` は無い。退役した `RouterPreferenceEntry` / `RoutingWeightChange` は contract migration まで残るが、backfill 以外は読まない） | – | `src/prisma/schema.prisma` |
+| | usage-service | 5h / weekly ウィンドウのキャッシュ。背景 polling で更新。**候補の選択には使われない**（Overview / Subscriptions の表示とアカウント選択の材料） | DB → mem | `src/services/usage-service.ts` |
+| | Postgres | `Provider`/`Model`/`AccessToken`/`Plan`/`InboundSurfaceConfig`/`Session`/`RequestLog`/`SubAccountUsage` ほか（`RoutingWeightChange` は読み手の無い残骸としてスキーマに残してある） | – | `src/prisma/schema.prisma` |
 | ③ Per-Request | HTTP | エンドポイント (`/v1/messages` 等) → 面記述子 → endpoint transformer 解決 | HTTP → ctx | `src/api/v1/route.ts` |
-| | RoutePlan | body parse + シナリオ別のルーティング + persona append。枯渇の 429 と拒否の 400 はここで返す | body → RoutePlan | `src/api/v1/route-plan.ts`<br/>`src/llms/router.ts`<br/>`src/llms/tier-router/` |
-| | FailoverChain | primary + fallbacks を exhausted マークで絞る（auth_mode では絞らない） | RoutePlan → string[] | `src/api/v1/candidate-chain.ts` |
+| | RoutePlan | body parse + Plan のモデル判定 + サブエージェントタグの除去 + persona append + 素のモデル名の解決。許可されないモデルの 403 と `deniedTargets` の 400 はここで返す | body → RoutePlan | `src/api/v1/route-plan.ts`<br/>`src/llms/router.ts`<br/>`src/services/plan-model.ts` |
+| | FailoverChain | primary + 素のモデル名を持つ他のプロバイダを exhausted マークで絞る（auth_mode では絞らない） | RoutePlan → string[] | `src/api/v1/candidate-chain.ts` |
 | | ChainEntry loop | 各 entry を試し、429 ならアカウントを回し、それでも駄目なら次へ | string → Response | `src/api/v1/chain-failover.ts` |
 | | runPipeline | request transformers → fetch → response transformers の本処理 | invocation → Response | `src/llms/pipeline.ts` |
 | | captureUsage | **変換前の** response.clone() から usage を抽出、`RequestLog` に書く（非同期、応答ブロックしない） | Response → DB | `src/llms/pipeline/usage-extraction.ts` |
@@ -117,9 +115,9 @@ flowchart LR
     A3[Account A3]
   end
 
-  subgraph P2[provider: claude-code 別 model]
+  subgraph P2[provider: 同じモデルを持つ別の provider]
     direction LR
-    B1[同 Account 群]
+    B1[別の Account 群]
   end
 
   subgraph P3[provider: gemini 〈api_key〉]
@@ -130,11 +128,11 @@ flowchart LR
   REQ --> P1 --> P2 --> P3
 ```
 
-- リクエストはまず **primary の provider** に入る（シナリオとレーンで決まったリストのルートのうち、セレクタのゲートを通り、ペースで並べ替えた先頭）
+- リクエストはまず **primary の provider** に入る（呼び出し側が指定した `provider,model`。素のモデル名なら、そのモデルを持つプロバイダのうち優先度が最も高いもの）
 - その provider 内で **未枯渇の sub-account** を 1 つ選んで試す（同 session は粘着、初回は balancingScore で選択）
 - 429 を受けたら **同 provider の別 account** に回す（最大 10 回）
-- 同 provider の peer が尽きたら **次の chain entry**（リストの次のルート）へ
-- **chain の順序は operator がリストに書いたとおり**（ペースによる前後の移動を除く） — subscription のルートの後ろに api_key（例: gemini）のルートを書けば、そこへ落ちる。auth_mode で弾くゲートは無い
+- 同 provider の peer が尽きたら **次の chain entry**（素のモデル名を持つ次のプロバイダ）へ
+- **chain の順序はプロバイダの優先度どおり**（Providers → Priorities で設定する）— 素のモデル名を subscription と api_key（例: gemini）の両方が持っていれば、優先度の低い方へ落ちる。`provider,model` を名指しした呼び出しは候補が 1 つだけで、別のプロバイダへは落ちない。auth_mode で弾くゲートは無い
 
 ```mermaid
 flowchart LR
@@ -203,16 +201,16 @@ flowchart TD
 **重要なルール:**
 
 1. **chain は最初に 1 回だけ作る** — `buildFailoverChain` は entry 開始時のスナップショット。途中で新しい fallback が現れることはない。
-2. **chain の順序は operator の記述そのもの** — シナリオ・レーンのリストのルートを、書かれた順に並べたもの（ゲートで落ちたルートを除き、ペースで余りを先頭へ・超過を末尾へ動かす）。auth_mode gate は廃止された。primary が subscription でも、後ろに書いた api_key のルートはそのまま走る。落としたくなければルートに書かない。
-3. **同 provider の fallback も通る** — 枯渇マークは `(provider, model)` 単位なので、Fable の 429 で同 provider の Opus のルートへ逃げるのは正当。peer が尽きたときに付くのも `markModelExhausted`（その model だけ）である。ただし 5h/weekly quota は **account 単位** で全 model 共通なので、account が枯れた 429 では別 model でも同じ account で 429 になる。provider ごと塞ぐのは `insufficient_quota` の `markProviderExhausted` だけ。
-4. **無効な provider / model は chain に載らない** — `loadTierProfileView` がエイリアスの先の `Model.enabled && Provider.enabled` を `targetEnabled` に折り込み、セレクタがそのルートを落とす。registry も有効なものしか持たないので、ルートの target でも passthrough の `provider,model` でも、無効な pair は `resolveInvocationForModel` が null を返して skip される。
+2. **chain の順序はプロバイダの優先度** — primary は呼び出し側が指定した `provider,model`、または素のモデル名を持つプロバイダのうち優先度が最も高いもの。残りが優先度順に続く（`src/services/model-provider-preference.ts`）。auth_mode gate は廃止された。primary が subscription でも、後ろの api_key のプロバイダはそのまま走る。落としたくなければ、そのプロバイダの `provider,model` を Plan に載せない（素のモデル名の解決は Plan が載せるプロバイダに限られる）。
+3. **枯渇マークは `(provider, model)` 単位が基本** — Fable の 429 は Fable だけを塞ぎ、同 provider の Opus は塞がない（呼び出し側が Opus を指定すれば通る）。peer が尽きたときに付くのも `markModelExhausted`（その model だけ）である。ただし 5h/weekly quota は **account 単位** で全 model 共通なので、account が枯れた 429 では別 model でも同じ account で 429 になる。provider ごと塞ぐのは `insufficient_quota` の `markProviderExhausted` だけ。
+4. **無効な provider / model は送られない** — registry は有効な provider の有効な model しか持たないので、無効な pair は `resolveInvocationForModel` が null を返して skip される。`provider,model` を手で名指しても同じ。
 5. **sub-account は OAuth transformer の `auth()` 内で選ばれる** — chain ループはアカウント名を知らない。transformer が選んだアカウントをその試行の request に `subAccountId` として stamp するので、429 が返ってきたらそれを読む。session 単位の `getActiveAccountForSession(sessionId)` は同じ session の並行リクエストに上書きされうるため、transformer がアカウントを解決する前に失敗した試行のフォールバックでしかない。候補になるのは**有効な provider** の有効な account だけ（`getSubAccountTokensForKind` が `Provider.enabled` で絞る）。
 6. **アカウント選択は 4 段** — `src/services/session-account-router.ts` の順序どおり:
    1. in-process の枯渇マップが reactive に落としたアカウントを除外。
    2. **DB に記録された rate-limit 状態**で、このリクエストを拘束する窓が `HARD_LIMIT_PCT`（99 %）以上かつ `resetAt` が未来のアカウントを除外。どの窓が拘束するかは `windowBinds` が決める — account 全体の 5h / 7d（codex は primary / secondary）は全 model、per-model の 7d（Fable など）はその model だけ。
       `SubAccountUsage` の値は上流が返したとおりで、畳み込みはしない。account 全体の 5h / 7d はどの model に対しても拘束するので、どちらかが 100 % ならこの段で除外されるし、他の窓を 100 % に引き上げても判断は変わらない。
-      **account 全体の窓（5h か 7d）のどちらかが 100 % に達したら残りの窓も 100 % 扱い（リセットは到達した窓のうち遅い方）にするのは、quota snapshot を出す routing-scheduler の中だけ。** 上流は到達後も他の窓を自分の値のまま返す（7d 到達なら 5h ≈ 0 %、5h 到達なら 7d や Fable は到達前の値）が、実際には全リクエストが拒否される。scheduler の Fable の残り予算とリセット時刻（`Retry-After` の元）は scoped 窓しか見ないので、tick が `SubAccountQuota` を読み込むときに畳み込む（`routing-scheduler/account-limit.ts`）。per-model 7d の到達はその model だけの話なので、他の窓には波及させない。codex の primary / secondary も同じ。
-      以前は usage 取得時に畳み込んでいたため、キャッシュ・`SubAccountUsage`・`SubAccountQuota`・`UsageSnapshot` に 100 % 扱いの値がそのまま書かれ、Activity → Usage などに「5-hour のリセットが 1 日後」「7-day だけが Fable より何日も早くリセット」といった上流が返していない値が出ていた。保存と表示は上流の値、100 % 扱いはルーティングの判断、と分けてある。
+      **account 全体の窓（5h か 7d）のどちらかが 100 % に達したら残りの窓も 100 % 扱い（リセットは到達した窓のうち遅い方）にするのは、quota snapshot を出す routing-scheduler の中だけ。** 上流は到達後も他の窓を自分の値のまま返す（7d 到達なら 5h ≈ 0 %、5h 到達なら 7d や Fable は到達前の値）が、実際には全リクエストが拒否される。scheduler の Fable の残り予算とリセット時刻は scoped 窓しか見ないので、tick が `SubAccountQuota` を読み込むときに畳み込む（`routing-scheduler/account-limit.ts`）。per-model 7d の到達はその model だけの話なので、他の窓には波及させない。codex の primary / secondary も同じ。
+      以前は usage 取得時に畳み込んでいたため、キャッシュ・`SubAccountUsage`・`SubAccountQuota`・`UsageSnapshot` に 100 % 扱いの値がそのまま書かれ、Activity → Usage などに「5-hour のリセットが 1 日後」「7-day だけが Fable より何日も早くリセット」といった上流が返していない値が出ていた。保存と表示は上流の値、100 % 扱いはスケジューラの内部の見方、と分けてある。
    3. 生き残りの中に sticky マッピング（同じ `sessionId` = `x-claude-code-session-id`）が指すアカウントがあれば、それを再利用（prompt cache の連続性）。
    4. それも無ければ "weekly 窓の残り % ÷ リセットまでの残り時間" が **最高** のアカウント。一番余裕のあるアカウント優先ではなく、**消化を急ぐ必要があるアカウント** から優先する。
 
@@ -236,25 +234,19 @@ score = (100 - 当該 weekly 窓の使用率%) / 窓のリセットまでの残�
 
 **前提**
 
-| Provider | auth_mode | hosts（オン） | ティア（オンの最新） | sub-accounts |
-|----------|-----------|-------|------------------|--------------|
-| `claude-code` | subscription | claude-sonnet-4-6, claude-opus-4-8 | sonnet → claude-sonnet-4-6、opus → claude-opus-4-8 | A1, A2, A3 |
-| `gemini` | api_key | gemini-2.5-pro | sonnet → gemini-2.5-pro | – |
+| Provider | auth_mode | hosts（オン） | sub-accounts | 優先度 |
+|----------|-----------|-------|--------------|------|
+| `claude-code` | subscription | claude-sonnet-4-6, claude-opus-4-8 | A1, A2, A3 | 1 |
+| `anthropic-api` | api_key | claude-sonnet-4-6 | – | 2 |
 
-**`live` profile の `default` / `agent` のリスト**
+呼び出し側は素のモデル名 `claude-sonnet-4-6` を投げる。Plan はどちらのプロバイダの `claude-sonnet-4-6` も許している。
 
-| priority | ルート | エイリアスで解決した target |
-|------|-------|-------|
-| 1 | `claude-code · sonnet` | `claude-code,claude-sonnet-4-6` |
-| 2 | `claude-code · opus` | `claude-code,claude-opus-4-8` |
-| 3 | `gemini · sonnet` | `gemini,gemini-2.5-pro` |
-
-**chain 構築結果**（thinking 無し・しきい値以下の入力 → シナリオ `default`・レーン `agent`。どの target も見込みは 60〜100 % で、ペースによる移動は無いとする。`body.model` が何であっても同じ）
+**chain 構築結果**
 
 | step | 結果 |
 |------|------|
-| セレクタの primary + fallbacks | `[claude-code,sonnet-4-6, claude-code,opus-4-8, gemini,gemini-2.5-pro]` |
-| exhausted 除外 | (どれも生きてれば) そのまま。api_key の `gemini` も**そのまま残る** — auth_mode で弾くゲートは無い |
+| `buildRoutePlan` の解決 | primary = `claude-code,claude-sonnet-4-6`、fallbacks = `[anthropic-api,claude-sonnet-4-6]`（優先度順） |
+| exhausted 除外 | (どれも生きてれば) そのまま。api_key の `anthropic-api` も**そのまま残る** — auth_mode で弾くゲートは無い |
 
 #### ケース A: 何事もなく成功
 
@@ -320,13 +312,12 @@ sequenceDiagram
   T-->>W: 200 OK
 ```
 
-#### ケース C: provider 全アカ枯渇 → 同 provider の別ティアのルートへ → api_key の gemini へ
+#### ケース C: provider 全アカ枯渇 → 同じモデルを持つ api_key のプロバイダへ
 
 ```mermaid
 sequenceDiagram
   autonumber
   participant W as Chain walker
-  participant SAR as session-account-router
   participant FS as failover-state
   participant U as Upstream
 
@@ -344,88 +335,65 @@ sequenceDiagram
     W->>W: peer なし → markModelExhausted(claude-code, sonnet-4-6)<br/>break
   end
 
-  rect rgb(216,234,255)
-    Note over W: entry 2: claude-code, opus-4-8
-    W->>SAR: resolveAccountForSession(sid)
-    Note over SAR: notExhausted = ∅<br/>→ fallback = 全候補
-    SAR-->>W: A? (どれか)
-    W->>U: attempt #1
-    U-->>W: 429
-    W->>W: peer なし → markModelExhausted(claude-code, opus-4-8)<br/>break
-  end
-
   rect rgb(216,245,208)
-    Note over W: entry 3: gemini, gemini-2.5-pro (api_key)
+    Note over W: entry 2: anthropic-api, sonnet-4-6 (api_key)
     W->>U: attempt #1
     U-->>W: 200 OK
   end
 ```
 
-> `session-account-router` は "全部 exhaust なら notExhausted 空 → fallback で全候補に戻す" 設計（401 を返すよりは送って 429 を素直にもらう方が良い、という判断）。そのため entry 2 でも 1 回は upstream を叩く。
->
-> entry 3 の `gemini` は api_key provider だが、ルートに書いてある以上そこへ落ちる。これが嫌ならルートに書かない。
-> `gemini` も枯れていれば chain 全 exhaust で、`lastForwarded`（最後の 429 body）を verbatim 返却する。
+> entry 2 の `anthropic-api` は api_key provider だが、同じモデルを持ち Plan が許している以上そこへ落ちる。
+> これが嫌なら `provider,model` で名指しするか、Plan にそのプロバイダを載せない。
+> `anthropic-api` も枯れていれば chain 全 exhaust で、`lastForwarded`（最後の 429 body）を verbatim 返却する。
 
-#### ケース D: 直前の 429 のマークで、送る前にルートが外れるケース
+#### ケース D: 直前の 429 のマークで、送る前に候補が外れるケース
 
 **直前のリクエスト**が 429 を食って `failover-state` に枯渇マークが残っているとき、次のリクエストでは
-セレクタが quota ゲートでそのルートを落とし、次のルートを primary にする。マークを付ける
-のは reactive 経路であって、セレクタは**それを読むだけ**である。かつての `applyProactiveFailover` の
-ような、選んだ後にもう一度歩く段は無い — 枯渇と context のゲートはセレクタに吸収された。
+`buildFailoverChain` がマークのある `(provider, model)` を候補から外し、次の候補を先頭にする。マークを付けるのは
+reactive 経路であって、chain の組み立ては**それを読むだけ**である。候補が全部マーク済みなら、窓が転がっているかも
+しれないので元の順のまま全部を試す。
 
 ```mermaid
 sequenceDiagram
   autonumber
   participant RP as buildRoutePlan
-  participant TR as tier-router<br/>(routeByScenario / selectTierRoute)
+  participant CC as buildFailoverChain
   participant FS as failover-state
-  participant SN as routing-scheduler<br/>snapshot
 
-  RP->>TR: routeByScenario(profileKey, tokenCount, thinking, isSubagent, webSearch)
-  TR->>TR: classify — シナリオとレーン<br/>使えるルートが無ければ default
-  loop ルート = そのシナリオ・レーンのリストのルート（優先順）
-    TR->>TR: on/off・エイリアス・web 検索・context
-    TR->>FS: isModelExhausted(provider, model)?
-    FS-->>TR: マークがあれば skip (reason: exhausted)
-    TR->>SN: targets[provider,model]
-    SN-->>TR: exhausted か 使用率 ≥ quotaSkipPct なら skip
+  RP->>CC: primary + fallbacks（素のモデル名を持つ他のプロバイダ）
+  loop 候補ごと
+    CC->>FS: isModelExhausted(provider, model)?
+    FS-->>CC: マークがあれば候補から外す
   end
-  alt 通ったルートがある
-    TR->>SN: targets[provider,model].projectedPct
-    TR->>TR: ペースで並べ替え<br/>60 % 未満は先頭へ・100 % 超は末尾へ
-    TR-->>RP: routed — 先頭が primary、残りが fallbacks
-  else quota / error rate で落ちたルートがある
-    TR-->>RP: exhausted — 429 + Retry-After<br/>（exhaustedBehavior=passthrough なら素通し）
+  alt 生きている候補がある
+    CC-->>RP: 生きている候補を元の順で返す
+  else 全部マーク済み
+    CC-->>RP: 元の順のまま全部返す（窓が転がっている賭け）
   end
 ```
 
 > 枯渇マークは **モデル単位が基本**で、プロバイダ単位のマークもORで効く（`isModelExhausted`）。
-> Fable の 429 が Fable だけを塞ぎ、同一プロバイダ上の Opus のルートには到達できるようにするためである。
+> Fable の 429 が Fable だけを塞ぎ、同一プロバイダ上の Opus には到達できるようにするためである。
 > プロバイダ単位のマーク（`insufficient_quota`）はプロバイダ全体を塞ぐので、そのときは同 provider 別モデルでも救えない。
-> リストのルートが全部落ちたとき、以前は primary を維持して reactive の 429 経路に任せていたが、いまは
-> セレクタが `exhausted` を返し、`buildRoutePlan` が upstream へ出さずに 429 + `Retry-After` を返す
-> （`Retry-After` はマークの期限 → snapshot の `resetAt` → どちらも無ければ 30 秒）。
+> かつてあった「リストのルートが全部落ちたら upstream へ出さずに 429 + `Retry-After` を返す」経路は無い。
+> 候補が尽きたときの 429 は、実際に upstream が返した最後のものである。
 
 ### よくある勘違い
 
 | 勘違い | 実際 |
 |--------|------|
-| 「subscription の primary から api_key の fallback には落ちない」 | 落ちる。auth_mode gate は廃止され、ルートの順序どおりに辿る。落としたくなければルートに書かない |
+| 「subscription の primary から api_key の fallback には落ちない」 | 落ちる。auth_mode gate は廃止され、プロバイダの優先度順に辿る。落としたくなければ Plan にそのプロバイダを載せない |
 | 「sub-account は順番に A1 → A2 → A3 と試される」 | balancingScore でソート、同じ session は sticky |
 | 「429 出るたびに chain を作り直す」 | chain は entry 開始時 1 回スナップショット。途中で増減しない |
 | 「sticky は永続」 | アカが exhaust マークされた瞬間 `releaseAccountForSession` で破棄 |
 | 「provider exhausted は config 修正まで解けない」 | `until` 時刻 (default 5min / 実 resetAt) で自動失効 |
-| 「週次が減ってきたら先回りで切り替わる」 | weekly drain guard は廃止済み。上流の上限まで走り、実際の 429 で切り替わる。先回りに近いのは profile の `quotaSkipPct` だけで、既定の 100 では残り 0 % になるまでルートを外さない |
-| 「bare な model 名を投げれば provider を探してくれる」 | `routed` な面ではモデル名は行き先を選ばず、シナリオとレーンのリストのルートが使われる。レーンの default のリストが空・全部 off のとき、あるいは `passthrough` な面では、bare 名を**有効な**プロバイダがちょうど 1 つ hosts している場合に限りそこへ送る。曖昧・未知・無効なら skip |
-| 「`<RIALTO-SUBAGENT-MODEL>` の中身のモデルに飛ぶ」 | 中身は読まない。読むのは有無だけで、有ればそのシナリオの `subagent` レーンのリストに従う。タグは routed でも passthrough でも最初に取り除かれ、`RequestLog.isSubagent` に記録される |
+| 「週次が減ってきたら先回りで切り替わる」 | weekly drain guard は廃止済み。上流の上限まで走り、実際の 429 で切り替わる |
+| 「bare な model 名を投げれば provider を探してくれる」 | 探す。そのモデルを有効なプロバイダが 1 つだけ持っていればそこへ、複数なら Providers → Priorities の優先度順に送る。優先度が無いまま複数あれば 400。Plan があれば Plan が載せるプロバイダに限る |
+| 「`<RIALTO-SUBAGENT-MODEL>` の中身のモデルに飛ぶ」 | 飛ばない。中身は読まない。読むのは有無だけで、有れば `RequestLog.isSubagent` に記録する。タグはどの受け口でも最初に取り除かれる |
 | 「同 provider 別 model を fallback に入れれば安心」 | 入れてよいし、model 単位の 429（Fable だけ枯れた）には効く。ただし 5h/weekly は account 単位の制限なので、account が枯れた 429 では model を変えても同じ account で同様に 429 |
-| 「Providers 画面で model を OFF にしても、ルートに残っていれば送られる」 | 送られない。`loadTierProfileView` がエイリアスの先の on/off を `targetEnabled` に折り込んでセレクタが落とし、registry にも無いので `resolveInvocationForModel` も skip する。passthrough で手で名指ししても同じ |
-| 「ルートが空なら 429 になる」 | ならない。think / longContext のリストが空（か全部 off）なら同じレーンの default へ落ち、default も空なら `exhaustedBehavior` に関係なく呼び出し側の `body.model` を素通しする。429 は「quota か error rate で落ちたルートがある」かつ `exhaustedBehavior='429'` のときだけ |
-| 「Haiku を頼めば Haiku が来る」 | 来るとは限らない。routed な面ではモデル名は行き先を選ばず、行き先はシナリオ・レーンのリストに書いた provider · tier で決まる。サブエージェントに Haiku を使わせたいなら、subagent レーンのリストに `claude-code · haiku` を書く |
-| 「このペースだと尽きそうなルートは 429 になる」 | ならない。見込みが 100 % を超えたルートはリストの末尾へ下がるだけで、下に書いたルートが先に使われる。全ルートが超過ならリストの順のまま。止めるのは quota ゲート（使い切り、または `quotaSkipPct` 以上）だけ |
-| 「Long context のしきい値は画面か API で決める」 | 決められない。基準値は default / agent の先頭ルートのモデルのコンテキスト長の 70 % で、scheduler がペースを見て 1 日 1 回まで ±20 % 動かす。保存は tuner の値を DB から引き継ぐので、PUT の body に書いても無視される。止めるだけなら `constraints.autoTuneLongContext = false` |
-| 「新しいモデルが出たらルートを張り替える」 | 張り替えない。ルートはプロバイダとティアを指し、モデルを指さない。名前がティアを示すモデルのうちオンの最新にティアが向くので、新モデルのスイッチを入れればルートが移る。Refresh は新モデルをオフで追加するだけで、勝手には動かない。名前でティアが分からないプロバイダ（Codex など）は手動のエイリアス |
-| 「設定が合わないと 429 が返る」 | 返らない。エイリアス未設定・web 検索非対応・context 不足で全ルートが受けられないときは 400（面のエラー封筒）。429 は quota と error rate だけ |
+| 「Providers 画面で model を OFF にしても、名指しすれば送られる」 | 送られない。registry が有効なものしか持たないので `resolveInvocationForModel` が skip する。`provider,model` で手で名指ししても同じ |
+| 「Haiku を頼めば Haiku が来る」 | 来る。呼び出し側のモデルがそのまま使われる（Plan に載っていれば。載っていなければ 403） |
+| 「Plan に無いモデルを投げるとデフォルトのモデルで返る」 | 返らない。**403**（面のエラー封筒）。`defaultModel` が使われるのは、リクエストがモデルを書いていないときだけ |
 
 ---
 
@@ -436,8 +404,7 @@ sequenceDiagram
 1. `migrateHomeDir()` — 旧 `~/.claude-code-router` を `~/.rialto` へ移す。**この文が最初でなければならない**: 移行の冪等条件が「宛先が既に存在する」なので、`initDir()` でも logger の初回ファイル書き込みでも、先に `~/.rialto` を作った時点でコピーは恒久的な no-op になり、運用者は無言で空の設定から始まってしまう。`RIALTO_HOME_DIR` でホームが別の場所に固定されているときはスキップする。
 2. `initDir()` — `~/.rialto/` などのホームディレクトリ確保。
 3. `initConfig()` — disk envelope を読んで `HOST` / `PORT` / `LOG_LEVEL` / `PROXY_URL` などを `process.env` に反映。続けて `syncLoggerFromEnv()` が、import 時に構築済みの pino インスタンスへ `LOG_LEVEL` を再適用する。
-4. `ensureInboundSurfaces()` — 全面に明示的な `routingMode` 行を入れる。
-5. `startUsageCapture()` / `startAuthHealthCheck()` / `startRoutingScheduler()` — 背景ジョブ。Redis 到達性などで boot をブロックしない。
+4. `startUsageCapture()` / `startAuthHealthCheck()` / `startRoutingScheduler()` — 背景ジョブ。Redis 到達性などで boot をブロックしない。
 
 **`runJsonToDbMigration()` は存在しない。** 旧 `config.json` の `Providers` を Postgres へ
 lift する一回限りの移行は削除済みで、流れは逆向きになった: `syncToConfigFile()`
@@ -449,8 +416,8 @@ lift する一回限りの移行は削除済みで、流れは逆向きになっ
 `APIKEY` も同じ扱いで、`process.env` へは反映されない。
 
 `loadFullConfig()`（`src/services/config/compose.ts`）はいまも存在するが、起動時ではなく
-`buildLlmsContext` から遅延で呼ばれる。DDL とシード行もここでは作らない — `entrypoint.sh` が
-`prisma migrate deploy` と `prisma db seed` をこのプロセスの exec 前に走らせる。
+`buildLlmsContext` から遅延で呼ばれる。DDL もここでは作らない — `entrypoint.sh` が
+`prisma migrate deploy` をこのプロセスの exec 前に走らせる（シード行は無い）。
 
 ここで作るのは **設定スナップショット** のみ。Provider/Transformer の実体は後段 `LlmsContext` で組み立てる。
 
@@ -464,10 +431,10 @@ lift する一回限りの移行は削除済みで、流れは逆向きになっ
 
 | メンバ | 中身 | 読まれる場所 |
 |--------|------|--------------|
-| `config: ConfigStore` | Providers（有効な provider の有効な model だけ）/ Personas / ActivePersona / 各種スカラを key で引ける薄いラッパ。`Router` は載らない。ルートも載らない — それはリクエストごとに Postgres から読む（`loadTierProfileView`） | routeRequest（persona）, chain-failover |
+| `config: ConfigStore` | Providers（有効な provider の有効な model だけ）/ Personas / ActivePersona / 各種スカラを key で引ける薄いラッパ。`Router` は載らない | routeRequest（persona）, chain-failover |
 | `transformers: TransformerRegistry` | endpoint transformer 群 (`anthropic`, `openai`, `openai-responses`, `gemini`, `claude-code-oauth`, `codex-oauth`) | endpointTransformerMap |
 | `providers: ProviderRegistry` | name → ResolvedProvider Map。`api_base_url` / `api_key` 揃ったものだけ登録 | resolveInvocationForModel |
-| `tokenizers: TokenizerRegistry` | 既定は tiktoken (cl100k_base)。`@huggingface/tokenizers` を使うモデル精確なバックエンドと、API 集計バックエンドも登録できる（`src/llms/tokenizers/`） | routeRequest の token 数計上（context ゲート） |
+| `tokenizers: TokenizerRegistry` | 既定は tiktoken (cl100k_base)。`@huggingface/tokenizers` を使うモデル精確なバックエンドと、API 集計バックエンドも登録できる（`src/llms/tokenizers/`） | いまリクエスト経路に読み手は無い（トークン数を数えていたのはルーティングだけ）。`/v1/messages/count_tokens` は自前のレジストリを持つ |
 | `log: pino.Logger` | ベースロガー。`reqId` で child を切る | 全レイヤ |
 
 ### transformer chain の導出
@@ -552,123 +519,58 @@ v1Route.post('/v1/*', async (c) => {
 
 ```mermaid
 flowchart TD
-  R[c.req] --> PARSE[body 安全 parse<br/>headers コピー<br/>Gemini は URL の model/action を body へ]
-  PARSE --> TAG[stripSubagentTag<br/>タグを除去し isSubagent を記録<br/>※ モードによらず]
-  TAG --> MODE{routed な面?<br/>かつ token が passthrough<br/>profile を指していない?}
-  MODE -- No --> PT[passthrough<br/>body.model そのまま<br/>route=passthrough, fallbacks=空]
-  MODE -- Yes --> TOK[signalsOf + countTokens<br/>トークン数 / thinking / web_search の有無]
-  TOK --> PROF[profile 解決<br/>token → surface → live<br/>loadTierProfileView]
-  PROF --> SCN[classify<br/>シナリオ: しきい値超え / thinking / default<br/>レーン: タグの有無<br/>使えるルートが無ければ default]
-  SCN --> SEL[selectTierRoute<br/>6 つのゲート → ペース]
-  SEL --> OUT{outcome}
-  OUT -- exhausted<br/>exhaustedBehavior=429 --> R429[429 + Retry-After<br/>upstream へ出さない]
-  OUT -- refused --> R400R[400 面のエラー封筒<br/>upstream へ出さない]
-  OUT -- passthrough /<br/>exhausted + passthrough /<br/>例外 --> KEEP[body.model そのまま<br/>route=passthrough, fallbacks=空]
-  OUT -- routed --> RW[body.model = primary<br/>route=シナリオ<br/>fallbacks=残り]
-  KEEP --> PERSONA[applyGlobalSystemPrompt<br/>ActivePersona を<br/>cache-safe に append<br/>※ /v1/messages のみ]
-  RW --> PERSONA
-  PERSONA --> PLAN[(RoutePlan)]
-  PT --> DENY{passthrough 面の<br/>deniedTargets に該当?}
+  R[c.req] --> PARSE[body 安全 parse<br/>headers コピー<br/>Gemini は URL の model / stream を body へ]
+  PARSE --> HAS{token に Plan がある?}
+  HAS -- No --> KEEP[body.model そのまま]
+  HAS -- Yes --> DEC{decidePlanModel}
+  DEC -- 許可リストにある --> KEEP
+  DEC -- モデルを書いていない --> DEF[body.model = defaultModel]
+  DEC -- 許可リストに無い --> R403[403 面のエラー封筒<br/>upstream へ出さない]
+  KEEP --> STAMP[routeRequest<br/>タグを除去し isSubagent を記録<br/>※ /v1/messages のみ ActivePersona を append]
+  DEF --> STAMP
+  STAMP --> BARE{素のモデル名?}
+  BARE -- Yes --> RES[provider 解決<br/>優先度順 / 曖昧なら 400]
+  BARE -- No --> DENY
+  RES --> DENY{面の deniedTargets に該当?}
   DENY -- Yes --> R400[400]
-  DENY -- No --> PLAN
+  DENY -- No --> PLAN[(RoutePlan)]
 ```
 
-### routeRequest の段階
+### リクエスト前処理の段階
 
-`src/llms/router.ts`→ `src/llms/tier-router/runtime.ts:routeByScenario`（`classify` を含む）
-→ `src/llms/tier-router/select.ts:selectTierRoute`。ゲート・ペース・結果の全体は [routing.md](./routing.md)
-が正で、ここでは各段が何を読むかを押さえる。**bare 名からプロバイダを逆引きする段は無い** —
-それは chain walker 側の `resolveInvocationForModel` が、ルートが何も取らなかった（あるいは
-passthrough の）ときに、有効なホストがちょうど 1 つあれば行う。
+行き先を選ぶ段は無い。`body.model` は呼び出し側が書いたものか、モデルを書かなかったときの `defaultModel` である。
+各段の全体は [routing.md](./routing.md) が正で、ここでは各段が何を読むかを押さえる。
 
-**段階 0 — サブエージェントタグ**
+**段階 1 — Plan のモデル判定**（`decidePlanModel`、`src/services/plan-model.ts`）
+Plan を持つ token だけが対象。許可リストにあるモデルはそのまま使う。モデルを書いていなければ `defaultModel`。
+許可リストに無いモデルは **403** で、面ごとのエラー封筒（Anthropic `permission_error` / OpenAI `permission_error` /
+Google `PERMISSION_DENIED`）で拒否したモデルと許可リストを名指しする。別のモデルへ振り替えることはしない。
+元の `body.model` は、この段が書き換える前に `requestedModel` として取っておく。
+
+**段階 2 — スタンプ**（`routeRequest`、`src/llms/router.ts`）
 `stripSubagentTag(body.system)` が system[1] のタグの**有無**を返し、閉じたタグを in-place で除去する。
-`RIALTO-SUBAGENT-MODEL` / `CCR-SUBAGENT-MODEL` のどちらでもよい。**モードより先**に走るので、
-passthrough の面でも内部マーカーは上流へ漏れず、`isSubagent` も記録される。routed の面では、この有無が
-**レーン**（`agent` / `subagent`）になる。タグの中身は読まない。
+`RIALTO-SUBAGENT-MODEL` / `CCR-SUBAGENT-MODEL` のどちらでもよい。タグの中身は読まない。`RequestLog.isSubagent` に
+記録するだけで、行き先には効かない。続けて `/v1/messages` に限り、`applyGlobalSystemPrompt` が ActivePersona を
+cache-safe に append する。OpenAI 形・Gemini 形の面には付けない（top-level の未知パラメータを拒否する upstream
+がある — codex がその例）。`body.model` は書き換えない。route は常に `passthrough`。
 
-**段階 1 — モード**
-面の `routingMode` が `passthrough`、または認証したトークンの `profileKey` が予約キー `passthrough`
-（面の `profileKey` がそれを指していても同じ）なら、ここで終わり。`body.model` は触らず、
-`route='passthrough'` / fallbacks `[]` を stamp して返る。persona も付かない。
+**段階 3 — 素のモデル名の provider 解決**
+`body.model` に `,` が無ければ、そのモデルを持つ有効なプロバイダを優先度順に並べる（Plan があれば Plan が載せる
+プロバイダに限る）。先頭が `provider,model` の primary になり、残りが `fallbacks` になる。優先度が無いまま複数の
+ホストがあれば 400。
 
-**段階 2 — シグナルとトークン数**
-`signalsOf(req)` が面ごとの語彙の違いを吸収して `{ tokenize, thinking, webSearch }` を作り
-（`src/llms/router/surface-signals.ts`）、トークナイザが `signals.tokenize` を数える。
-Responses の呼び手は会話を `input` に、Gemini は `contents` に載せるので、`body.messages` を直に数えない。
-数えた値は Long context のしきい値判定と context ゲートが、`thinking` はシナリオの判定が、`webSearch` は
-web 検索ゲートが読む。thinking の読み方は面ごとに違う — Anthropic は `thinking`（`type: 'disabled'` 以外。
-`adaptive` も含む）、OpenAI の 2 面は `reasoning_effort` / `reasoning`（`'none'` 以外。effort の無い
-`reasoning` オブジェクトも含む）、Gemini は `thinkingConfig`（`src/llms/utils/gemini/router-signals.ts`）。
+**段階 4 — deniedTargets**
+面ごとの `InboundSurfaceConfig.deniedTargets` に primary か fallback が該当すれば 400（fallback は該当したものだけ
+落とす）。
 
-**段階 3 — profile**
-トークンの `profileKey` → 面の `profileKey` → `live`（`DEFAULT_PROFILE_KEY`）。`loadTierProfileView` が
-1 回だけ読み、各ルートを「そのプロバイダのそのティアのエイリアス」でモデルへ解決する。解決できた
-ルートには `targetEnabled`（`Model.enabled && Provider.enabled`）、`hostsWebSearch`、`contextWindow`
-（`Model.contextWindow`）が付く。
+#### tool_result の中の画像
 
-**段階 4 — シナリオとレーン**（`classify`）
-入力トークンが Long context のしきい値を超えれば `longContext`、そうでなく thinking があれば `think`、
-どちらでもなければ `default`。長い入力が先なのは、長いプロンプトは thinking の有無によらず Long context
-だから。しきい値は `default` / `agent` の先頭の使えるルートのモデルのコンテキスト長の 70 %（解決できなければ
-128k）を基準に、scheduler が調整した値を `[30k, 基準値]` に収めたもの（`src/llms/tier-router/threshold.ts`）。
-選んだ `think` / `longContext` のリストに、そのレーンで使えるルート（on・エイリアスあり・target on）が
-1 本も無ければ、同じレーンの `default` に落とす。落とすかどうかは設定だけで決まり、quota は見ない —
-Think のルートが全部枯渇していても、Default のルートを借りずに exhausted になる。
-**呼び出し側のモデル名は、どのリストを使うかに関わらない。**
+`tool_result` の配列 content は、ブロック単位で扱う。中に入れ子になった image / document の base64 を文字列化する
+ことはしない — 文字列化していた頃はスクリーンショット 1 枚が 100 万トークンになり、上流が受けられなくなった。
 
-**段階 5 — 選択**（`selectTierRoute`）
-そのリストのルートを優先順に歩き、6 つのゲート（ルートと target の on/off → エイリアス → web 検索 →
-context → quota → error rate）を順に掛ける。通ったものを **ペース**（snapshot の `projectedPct`。
-このペースならリセット時点で予算の何 % を使うか）で並べ替える — 60 % 未満は先頭へ、100 % 超は末尾へ、
-それ以外と読みの無いものはリストの順のまま。各グループの中では元の順を保ち、全部が 100 % 超なら
-リストの順のまま（見込みだけでは断らない）。並べ替えた結果が `[primary, ...fallbacks]` になる。
-結果と `body.model` の関係:
-
-| outcome | `body.model` | fallbacks / 応答 |
-|---|---|---|
-| routed（通ったルートがある） | ペースで並べ替えた先頭ルートの `provider,model` | 残りのルート。route = シナリオ（default へ落ちたなら `default`） |
-| exhausted（quota か error rate で落ちたルートがある）、`exhaustedBehavior='429'`（既定） | 触らない | — `buildRoutePlan` が 429 + `Retry-After` を返し、upstream へ出さない |
-| 同上、`exhaustedBehavior='passthrough'` | 触らない | `[]`。route = `passthrough` |
-| refused（ルートはあるが、エイリアス未設定・web 検索非対応・context 不足でどれも受けられない） | 触らない | — `buildRoutePlan` が面のエラー封筒で 400 を返す。**`exhaustedBehavior` は見ない**（待っても変わらない） |
-| passthrough（レーンの default のリストのルートが 0 本、または全部 off） | 触らない。**`exhaustedBehavior` は見ない**（未設定のリストは「意見無し」であって「全部枯渇」ではない） | `[]`。route = `passthrough` |
-| プロファイルの読込失敗（Postgres 不在）/ トークナイザやルーティングが例外 | 触らない。error ログ、route = `passthrough`、`isSubagent` はタグから | `[]` |
-
-skip 理由が混ざったときは exhausted が refused より、refused が passthrough より優先する。どれか 1 本でも
-quota か error rate で落ちていれば、待てば通る見込みがあるからである。
-
-`Retry-After` は、quota で落ちたルートのうち最も早く戻るものまでの秒数: 429 経路が付けたマークの期限、
-無ければ scheduler の snapshot の `resetAt`、どちらも無ければ 30 秒。
-
-`body.model` が書き換わるのはルートの target に置き換えるときだけ。振り先を捏造する経路は無い。
-テストは `__tests__/llms/route-request.test.ts`（分類・レーン・Default fallback）、
-`route-request-gates.test.ts`（pace・ゲート）、`route-request-outcomes.test.ts`（枯渇・拒否・読込失敗）、
-`route-request-passthrough.test.ts`（passthrough・persona・escalation）、
-`__tests__/llms/router.test.ts`（`classify`）と `__tests__/llms/tier-router/select.test.ts`。
-
-**persona** — routed な面の `/v1/messages` では、どの出口（routed / passthrough / 例外）でも
-`applyGlobalSystemPrompt` が ActivePersona を append する。persona はインストールの属性であって、ルートが
-見つかったかどうかの属性ではない。OpenAI 形の面には付けない（top-level の未知パラメータを拒否する
-upstream がある — codex がその例）。passthrough の面では付かない。
-
-#### トークン数と context ゲート
-
-トークン数は `tool_result` の配列 content をブロック単位で数える。中に入れ子になった image /
-document の base64 は（トップレベルの image ブロックと同じく）0 として数える — 文字列化して
-数えていた頃はスクリーンショット 1 枚が 100 万トークンになり、以後のリクエストが全部
-`longContext` シナリオに分類された。この数を読むのは Long context のしきい値判定と context ゲートで、
-数え過ぎはそのまま「Long context のリストへ行く」か「どのルートの context window にも収まらない」= 400 になる。
-
-`contextWindow` が未知（`null`）のモデルは context ゲートで止めない（unknown = allow）。
-しきい値と context ゲートは役割が違う。しきい値はリクエストを `longContext` のリストへ振り分ける
-（基準値が default のモデルのコンテキスト長の 70 % なので、しきい値ちょうどのリクエストは default の
-モデルにもまだ収まる）。context ゲートは振り分けた先のリストで、収まらないルートを飛ばして次のルートへ
-回し、どれにも収まらなければ 400 にする — Long context のリストで収まらなくても default へは戻らない。
-
-上流へ送る変換も同じ扱いにしてある。Anthropic → unified の変換（`toolResultContent`）は
-`tool_result` の配列 content を `JSON.stringify` していたため、Read で読んだスクリーンショットが
-base64 のままプロンプトのテキストとして上流に届き、Codex ではコンテキスト長を超えて
-ストリーム途中の `response.failed` になっていた（その会話の以後のターンもすべて同じく失敗する）。
+Anthropic → unified の変換（`toolResultContent`）は `tool_result` の配列 content を `JSON.stringify` していたため、
+Read で読んだスクリーンショットが base64 のままプロンプトのテキストとして上流に届き、Codex ではコンテキスト長を
+超えてストリーム途中の `response.failed` になっていた（その会話の以後のターンもすべて同じく失敗する）。
 今は unified の tool メッセージが画像を image part のまま持ち、Responses では
 `function_call_output.output` の `input_image` 配列として送る。tool メッセージに画像を
 載せられない Chat Completions と Gemini では、`liftToolResultImages` がそれを tool メッセージ群の
@@ -679,14 +581,13 @@ Responses の上流へは同じ `input_text` / `input_image` の配列で返す�
 
 ### 先回りの failover は無い
 
-`applyProactiveFailover` は廃止された。以前はセレクタが選んだ後にもう一度 `[primary, ...fallbacks]` を
-歩き、枯渇マークと context window で候補を落としていたが、その 2 つはいまセレクタのゲートそのもので、
-選ぶ時点で済んでいる。2 回目の歩きには何も残っていない。
+`applyProactiveFailover` は廃止された。以前は選んだ後にもう一度 `[primary, ...fallbacks]` を歩き、枯渇マークと
+context window で候補を落としていた。いまは `buildFailoverChain` が枯渇マークで 1 回だけ絞る。
 
 **weekly drain guard も廃止された。** 以前は subscription の週次ウィンドウが線形ドレイン
 目標を超えていないかを見て先回りで切り替え、その余裕幅を `Router.weeklyDrainMarginPct` で
 調整していた。どちらも削除済みで、schema にも実装にも残っていない。subscription は上流の上限まで
-走り（profile の `quotaSkipPct` を下げればその手前で外れる）、実際に返ってきた 429 に反応してローテーションする。
+走り、実際に返ってきた 429 に反応してローテーションする。
 
 `getKindWindowHeadroom` / `drainTarget` は `src/services/usage-service/` に残っているが、
 リクエスト経路からは呼ばれない（現在の呼び出し元はテストのみ）。
@@ -695,15 +596,15 @@ Responses の上流へは同じ `input_text` / `input_image` の配列で返す�
 
 | field | 用途 |
 |-------|------|
-| `routedBody` | ルーティングを当てた **per-model shaping 前** の body |
+| `routedBody` | Plan のモデル判定とスタンプを当てた **per-model shaping 前** の body |
 | `headers` | inbound headers コピー |
 | `transformersByName` | このエンドポイント用 transformer の name → instance |
 | `defaultTransformer` | bypass で使う 1 個目 |
-| `route` | シナリオ（ルートが取ったとき。default へ落ちたなら `default`）か `passthrough`。`RequestLog.scenario` 列に記録され、Activity が Scenario として出す（v2.89.0 の行には要求ティアが入っている） |
+| `route` | 常に `passthrough`。`RequestLog.scenario` 列に記録される（過去の行にはシナリオ名や v2.89.0 の要求ティアが入っている） |
 | `primaryModel` | `provider,model` 文字列 |
 | `requestedModel` | クライアントが投げてきた元の `body.model`。`RequestLog` に「何を頼まれたか」を「何を送ったか」の隣に残すため |
-| `isSubagent` | サブエージェントタグの有無。routed の面ではこれがレーンを選んだ。`RequestLog.isSubagent` に記録する |
-| `fallbacks` | セレクタがゲートを通したルートの残り（primary の後ろ、ペースで並べ替えた後のリストの順）。ルートが取らなかったときは空。`buildFailoverChain` は引き直さずこれを読むので、セレクタが選んだ順と reactive 経路が歩く順が必ず一致する |
+| `isSubagent` | サブエージェントタグの有無。`RequestLog.isSubagent` に記録する |
+| `fallbacks` | 素のモデル名を持つ他のプロバイダ（優先度順）の `provider,model`。`provider,model` を名指しした呼び出しでは空。`deniedTargets` に該当するものは除く。`buildFailoverChain` は引き直さずこれを読むので、解決した順と reactive 経路が歩く順が必ず一致する |
 | `accountSessionKey` | サブアカウント picker が粘着するキー。ヘッダに session id が無ければ `token:<id>`、それも無ければ `anonymous` |
 | `accessTokenId` | このリクエストを認証した `AccessToken`。Activity がクライアント単位に支出を帰属させるため |
 | `path` / `search` | upstream に投げ直す URL 構築用 |
@@ -714,12 +615,12 @@ Responses の上流へは同じ `input_text` / `input_image` の配列で返す�
 
 `buildFailoverChain(plan)`:
 
-- `plan.fallbacks`（セレクタが既に解決済みのルートの残り）を読む。ここで引き直さないのは、セレクタが選んだチェーンと reactive 経路が歩くチェーンを必ず一致させるため。
+- `plan.fallbacks`（`buildRoutePlan` が解決済みの、素のモデル名を持つ他のプロバイダ）を読む。ここで引き直さないのは、`deniedTargets` を通ったものと reactive 経路が歩くものを必ず一致させるため。
 - 先頭に primary、続けて fallbacks。重複排除。
 - 既に exhausted な `(provider, model)` を除外。
 - 全部 exhausted の場合は元の順序を返す（窓が転がってる可能性に賭ける）。
 
-**auth_mode gate も same-provider gate も無い。** chain の順序は operator がリストに書いたルートの順そのもの（ペースによる前後の移動を除く）であり、
+**auth_mode gate も same-provider gate も無い。** chain の順序はプロバイダの優先度そのもので、「subscription の後に api_key が来てよいか」は、そのプロバイダが同じモデルを持ち Plan が許しているかどうかで決まる。
 「subscription の後に api_key が来てよいか」はルートにそう書いたかどうかで決まる。
 
 ---
@@ -736,14 +637,14 @@ flowchart TD
   RI1 -- Yes --> NV[ResolvedInvocation<br/>body + headers + provider +<br/>transformer + request meta]
   NV --> ATT[attempt = runPipeline]
   ATT --> R{結果}
-  R -- 2xx --> DONE[done<br/>+ recordModelSuccess<br/>+ 試行アカウントのマーク解除]
+  R -- 2xx --> DONE[done<br/>+ 試行アカウントのマーク解除]
   R -- 4xx非429 --> FWD[forward verbatim → done]
   R -- 例外 --> ERR[500 → done]
   R -- 429 insufficient_quota --> MKP[markProviderExhausted → next entry]
   R -- 429 --> RO[tryRotateAccount]
   RO --> RO1{peer 残?}
   RO1 -- Yes --> ATT
-  RO1 -- No --> MK[markModelExhausted<br/>+ recordModelFailure → next entry]
+  RO1 -- No --> MK[markModelExhausted → next entry]
 ```
 
 `resolveInvocationForModel` は **per-attempt の新規 body / headers** を切り出して shaping する:
@@ -811,8 +712,7 @@ flowchart TD
 `UsageBlock` → `TokenStats` に整形して `deps.recordUsage({...})` を叩く。記録は `RequestLog` 行と
 して DB に入る。失敗は黙って握り潰す（応答に影響しない）。
 
-行には量のほかに、`context.req` に載って届いた属性が入る: 要求モデル（`requestedModel`）、ルート
-（`scenario` 列。シナリオか `passthrough`）、`isSubagent`、面、`AccessToken`、そして
+行には量のほかに、`context.req` に載って届いた属性が入る: 要求モデル（`requestedModel`）、ルート（`scenario` 列。いまは常に `passthrough`。過去の行にはシナリオ名が入っている）、`isSubagent`、面、`AccessToken`、そして
 **この試行を処理したサブスクのアカウント**（`subAccountId`。OAuth transformer が送信前に試行の request へ
 stamp する。api_key のプロバイダでは null）。アカウントの切り替えで試行ごとに request が作り直されるので、
 記録されるのは成功した試行のアカウントである。Overview とプロバイダのページがアカウントごとの API 換算額を
@@ -878,11 +778,11 @@ cache write のうち 1 時間 TTL の分は `cacheWrite1hTokens` に別に残�
 
 ## サブスクの 429 を 1 本のリクエストで追ってみる
 
-例: `POST /v1/messages` (body.model = `claude-opus-4-8`, thinking 有効, stream:true, 5h 窓 99%)
+例: `POST /v1/messages` (body.model = `claude-code,claude-opus-4-8`, thinking 有効, stream:true, 5h 窓 99%)
 
 1. **HTTP** — `/v1/messages` → `anthropic` endpoint transformer マッチ。
-2. **RoutePlan** — thinking 付きなのでシナリオは `think`、タグが無いのでレーンは `agent`（`body.model` の `opus` は関係ない）。`think` / `agent` の先頭ルート `claude-code · opus` をエイリアスで `claude-code,claude-opus-4-8` に解決し、ゲートを通す。枯渇マークは無く、snapshot の使用率が profile の `quotaSkipPct`（既定 100）未満なので quota ゲートは通る（**99 % でも外さない**。外すのは snapshot が使い切りと読んだときか、`quotaSkipPct` を下げたとき）。このペースだと見込みは 100 % を超えるので、リストの下に別のルートがあればそちらが先頭に来るが、ここでは 1 本だけなので primary のまま。
-3. **buildFailoverChain** — `[claude-code,claude-opus-4-8]` + `think` / `agent` のルートの残り（api_key のルートも書いてあればそのまま）。
+2. **RoutePlan** — token の Plan が `claude-code,claude-opus-4-8` を許していれば `body.model` はそのまま。`provider,model` の形なので provider 解決は無く、`fallbacks` は空。quota の使用率による除外は無い（**99 % でも送る**）。
+3. **buildFailoverChain** — `[claude-code,claude-opus-4-8]`（枯渇マークがあれば外し、全部マーク済みなら元のまま）。
 4. **attemptChainEntry** — `resolveInvocationForModel` で per-attempt body 用意。
 5. **runPipeline** (bypass) — `applyBypassAuth` が `claude-code-oauth.auth()` を呼んで、`.credentials.json` から bearer token を取得し `Authorization` ヘッダにセット。`anthropic-beta` から `context-1m-*` を落として `oauth-2025-04-20` を付加。
 6. **fetchProvider** — `api.anthropic.com/v1/messages` に POST、SSE で返ってくる。
@@ -903,13 +803,13 @@ cache write のうち 1 時間 TTL の分は `cacheWrite1hTokens` に別に残�
 
 - `reqId` (sendToProvider 起点の UUID) を child logger に bind しているので、`reqId=xxx` で grep すると 1 upstream call の request / response / error が揃う。
 - `[provider_response_error]` の `body` フィールドは構造化済み — pino-pretty / log viewer で展開できる。
-- `provider 'X' skipped — missing required fields: api_key` の warn が出ていたら、その provider は **registry に存在しない**。router 解決もスキップされるので、`Used request-specified model — exact provider match` と `failover: provider not found; skipping` が同じ provider 名で連続することは無くなった（auth gate 修正後）。
+- `provider 'X' skipped — missing required fields: api_key` の warn が出ていたら、その provider は **registry に存在しない**。`provider,model` でその provider を名指ししても `failover: provider not found; skipping` になり、送られない。
 
 ---
 
 ## 関連ドキュメント
 
 - [request-flow.md](./request-flow.md) — 本書の 3〜5 章を拡大した図とシナリオ早見表。
-- [routing.md](./routing.md) — ルーティング（データモデル・シナリオとレーン・ゲート・ペース・結果・Long context のしきい値・scheduler の snapshot・モデルの世代交代・旧チェーンの変換）。
+- [routing.md](./routing.md) — リクエストの行き先の決まり方（Plan のモデル判定・素のモデル名の解決・deniedTargets・scheduler の snapshot と枯渇マーク）。
 - [testing-map.md](./testing-map.md) — テストがどこにあり、何を担保しているか。
 - [inbound-surfaces.md](./inbound-surfaces.md) — 受け口レジストリと、そこから導出されるもの。

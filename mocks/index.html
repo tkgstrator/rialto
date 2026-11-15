@@ -25,30 +25,7 @@ const GROUPS = [
         "file": "overview.html",
         "title": "Overview",
         "replaces": "新規",
-        "why": "4つのinbound面・クォータ・コスト・failoverを1枚で。「いまルーティングがどの面に効いているか」が最初に目に入る。"
-      }
-    ]
-  },
-  {
-    "name": "Routing",
-    "screens": [
-      {
-        "file": "routing.html",
-        "title": "Tier map",
-        "replaces": "RouterPreferences / TierEditor / RouterUtilization / シナリオ×レーンのチェーン",
-        "why": "最上位の軸を inbound面 にした。この画面が「設定が messages 専用」問題の解消点。チェーンはシナリオ×レーン×モデル名ではなく、要求 tier → provider · tier の表になった。モデル名は各プロバイダの tier 別名が持つので、新モデルが出ても直すのは別名 1 か所。Haiku を Sonnet で受けるのも gate ではなく表の 1 行。"
-      },
-      {
-        "file": "routing-passthrough.html",
-        "title": "Tier map (passthrough)",
-        "replaces": "—",
-        "why": "ルーターが効かない側の表示。今日 chat/completions と responses にハードコードされている挙動を、見えて切り替えられる状態にした。"
-      },
-      {
-        "file": "routing.html?edit",
-        "title": "Tier map (editing)",
-        "replaces": "—",
-        "why": "普段は読み取り専用で、Edit を押したときだけ tier ごとのルートの並べ替え・有効化・追加・削除と制約の変更ができる。Revert / Save は1組で、ルートと制約をまとめて破棄・保存する。編集中は面のタブ・モード・プロファイルを切り替えられない（切り替えると未保存の変更が消えるため）。"
+        "why": "4つのinbound面・クォータ・コスト・failoverを1枚で。どの面にどれだけ流れているかが最初に目に入る。"
       }
     ]
   },
@@ -95,7 +72,7 @@ const GROUPS = [
         "file": "provider-subscription.html?codex&reset",
         "title": "Use a banked reset",
         "replaces": "—",
-        "why": "取り消せない操作なので確認ダイアログを挟み、ベンダー側で何が起きるか（5 時間と週次が 0% に戻る・残り回数が 1 減る）を書く。使った直後に routing が拾うことも書く。"
+        "why": "取り消せない操作なので確認ダイアログを挟み、ベンダー側で何が起きるか（5 時間と週次が 0% に戻る・残り回数が 1 減る）を書く。使った直後に残り回数へ反映されることも書く。"
       },
       {
         "file": "provider-apikey.html?edit",
@@ -236,7 +213,7 @@ const GROUPS = [
         "file": "nav-accordion.html",
         "title": "A — アコーディオン",
         "replaces": "settings-* の13remレール",
-        "why": "アクティブなセクションがサイドバー内で開き、設定レールが消える。他の4セクションは見えたままなので他所へは1クリック。Routing / Activity のタブはそのまま（横タブは幅を食わないので二重の原因ではない）。"
+        "why": "アクティブなセクションがサイドバー内で開き、設定レールが消える。他の4セクションは見えたままなので他所へは1クリック。Activity のタブはそのまま（横タブは幅を食わないので二重の原因ではない）。"
       },
       {
         "file": "nav-drilldown.html",
@@ -247,13 +224,13 @@ const GROUPS = [
       {
         "file": "nav-cloudflare.html",
         "title": "D — Cloudflare 風（採用）",
-        "replaces": "settings-* のレール + Routing / Activity のタブ",
+        "replaces": "settings-* のレール + Activity のタブ",
         "why": "Cのツリーに、Cloudflareのサイドバーを成立させている2つを足した形 — 上部の検索と、複数グループを同時に開けること（Settings にいても Activity は開いたまま）。幅は16rem。A・Bと同じ画面で描いてある。ダークなトップバーとアカウント切替は入れていない（1インストールに対して意味が無く、ヘッダーは既にパンくずと操作を持っているため）。"
       },
       {
         "file": "nav-tree.html",
         "title": "C — 全部サイドバー",
-        "replaces": "settings-* のレール + Routing / Activity のタブ",
+        "replaces": "settings-* のレール + Activity のタブ",
         "why": "Aを全セクションに適用した形。タブ列も無くなり「サイドバー＝ナビ、本文＝中身」の例外が消える。Chain だけタブが無い問題も同時に解決。Activity › Requests で描いてあるのは、Settings 画面では A と絵が同じになるため。"
       }
     ]
@@ -320,7 +297,7 @@ document.getElementById('root').innerHTML = `
     <div class="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">確認していただきたい点</div>
     <ul class="mt-2 space-y-1 text-xs leading-relaxed text-muted-foreground">
       <li>1. 5画面への集約の粒度（分けすぎ / まとめすぎがないか）</li>
-      <li>2. Routing の最上位軸を「inbound面」にしたこと</li>
+      <li>2. Overview の最上位軸を「inbound面」にしたこと</li>
       <li>3. 情報密度（1440×900 で足りているか、詰まりすぎていないか）</li>
       <li>4. フラット表現（shadcn Card なし、border-l アクセント）で問題ないか</li>
       <li>5. Providers から transformer 選択欄を外し、読み取り専用の Request shape にしたこと</li>

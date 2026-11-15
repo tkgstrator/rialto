@@ -26,9 +26,9 @@ The pipeline has two paths.
   **disappears silently**.
 
 **What this table evaluates is the conversion path.** Mixing the bypass path in would mark every
-cell supported and the table would say nothing. The conversion path is also the one that only
-opens when a surface's `routingMode` is set to `routed` — that is, the path you take the moment
-you use routing at all.
+cell supported and the table would say nothing. The conversion path is the one a request takes whenever the
+caller names a model whose provider speaks a different wire format from the surface it came in on
+(a Chat Completions client naming a Claude model, say).
 
 ## Matrix
 
@@ -62,7 +62,7 @@ cell note below.
 | usage record (RequestLog) | `__tests__/parity/usage-record.test.ts`, `__tests__/llms/claude-conversion-pipeline.test.ts` |
 | error shape | `__tests__/parity/error-envelope.test.ts`, `__tests__/api/error-shape.test.ts`, `__tests__/llms/anthropic-response-to-chat-stream.test.ts` |
 | cache token accounting | `__tests__/parity/cache-tokens.test.ts` |
-| failover / 429 | `__tests__/parity/failover-429.test.ts`, `__tests__/parity/routing-mode.test.ts` |
+| failover / 429 | `__tests__/parity/failover-429.test.ts` |
 
 The surfaces themselves — descriptors, path resolution, aggregator assignment — are backed by
 `__tests__/llms/inbound-surfaces.test.ts` and `__tests__/api/route-plan.test.ts`. That the gaps in
@@ -194,8 +194,8 @@ the value a `||` fallback loses, and the one a client asking for deterministic o
 sends.
 
 The bypass path (gemini surface → Google provider) never ran this conversion, so it was unaffected.
-Which means this was an "unsupported" that **broke the moment the gemini surface was set to
-`routed`**.
+Which means this was an "unsupported" that **broke the moment a gemini request named a model
+on a provider that is not Google**.
 
 ### (5) messages × thinking — supported, but the block order is inverted
 
@@ -207,8 +207,7 @@ conversion (`buildParts` in `gemini-inbound-response.ts`) explicitly orders thin
 tools, so the order is forked between surfaces.
 
 `thinking.type === 'adaptive'` sets no unified `reasoning`, because there is no budget to
-translate. Routing does read it: an adaptive request counts as thinking and walks the Think list
-(see [routing.md](./routing.md)).
+translate.
 
 ### (6) chat/completions × thinking — lost only on the aggregation path
 
@@ -342,7 +341,7 @@ The other two legs would have failed next: a call's `namespace` was dropped in b
 and an array output was `JSON.stringify`'d into the tool message, so the model read its tool's
 result as a JSON dump of part objects.
 
-**The fix** stays in the conversion path — no bypass — so it holds in both routing modes:
+**The fix** stays in the conversion path — no bypass — so it holds for every target:
 
 - **Declaration.** The item's tools are read exactly as top-level ones (`declaredTools` in
   `src/llms/transformers/openai/responses/inbound.ts`): a function becomes a unified function
@@ -367,7 +366,7 @@ the headers its transformers write.
 **What other targets do with it.** Chat Completions, Anthropic and Gemini take function tools only,
 so for them the namespaces and custom tools are **lowered to functions** on the way out and the
 calls **raised back** on the way in — see (14). (This first shipped dropping them instead: a Lite
-request routed to Chat or Gemini ran without tools, a custom call in history broke both, and
+request sent to Chat or Gemini ran without tools, a custom call in history broke both, and
 Anthropic was sent no conversion at all.)
 
 Backed by `__tests__/llms/openai-responses-lite.test.ts` (each leg),
@@ -380,7 +379,7 @@ Backed by `__tests__/llms/openai-responses-lite.test.ts` (each leg),
 The cells above judge a surface's own conversion. What its caller can actually do also depends on
 the provider step converting unified into the target's wire format — and for a Claude target it did
 not. `/v1/chat/completions` and `/v1/responses` should answer in their own format whatever model
-they are routed to, exactly as `/v1/messages` answers in Anthropic's when Claude Code is routed to
+they are sent to, exactly as `/v1/messages` answers in Anthropic's when Claude Code is sent to
 Codex or Gemini.
 
 **What broke.** `claude-code-oauth.transformRequestIn` only ran `auth()` (bearer, identity, system
@@ -535,56 +534,24 @@ non-stream retry as "JSON but not a Message (HTTP 200)", blaming a proxy. Now
 - A stream that never sent `message_start` closes with no events at all, so an empty upstream is a
   `no-events` defect (502) on the non-stream path instead of a two-event husk.
 
-## Surface parity for routing
+## Surface parity for the request prelude
 
-Before the matrix comes a prior question: can routing be turned on per surface at all
-(master-plan §2-5's second completion condition). This used to be hard-coded in
-`router.ts`, where anything but `/v1/messages` passed through unconditionally — which made
-the entire Routing screen a `/v1/messages`-only screen. The mode is now a value on
-`InboundSurfaceConfig` and all four behave symmetrically
-(`__tests__/parity/routing-mode.test.ts`).
-
-**The router reads the request in each surface's own vocabulary** (2026-09-01). This section once
-said "a surface can be set to `routed`, but anything other than `/v1/messages` falls almost
-entirely to the `default` lane": the scenario classifier read `body.thinking` /
-`body.output_config.effort` / `tools[].type` directly, so a surface could have its mode set while
-no road existed to the lane behind it. `src/llms/router/surface-signals.ts` fixed that by absorbing
-the per-surface vocabulary differences into one normalised `RouterSignals`.
-
-v2.89.0 routed on the tier the model name asked for instead, and read only the size and the web
-search tool. Routing is by scenario and lane again now ([routing.md](./routing.md)), and the
-normalised signals are exactly what it reads — all three of them, on all four surfaces:
-
-| What the router reads | Where it comes from | Used for |
-|---|---|---|
-| `signals.tokenize` | built per surface from `messages` / `input` + `instructions` / `contents` + `systemInstruction` | the Long context threshold (over it, the Long context list) and the context-window gate: a route whose model cannot hold the prompt is skipped |
-| `signals.thinking` | Anthropic `thinking` (any `type` but `disabled`, `adaptive` included); OpenAI `reasoning_effort` or `reasoning.effort` (anything but `none`), or a `reasoning` object with no effort; Gemini `generationConfig.thinkingConfig`, read through the same `inboundReasoning` the request conversion uses | the Think list |
-| `signals.webSearch` | decided on meaning across each vendor's spelling (a `web_search*` tool type, a function named `web_search*`, `web_search_options`, a `googleSearch*` built-in) | the web-search gate: a route whose wire format cannot carry the tool — Chat Completions, per `hostsWebSearch` — is skipped |
-
-The model name plays no part: in routed mode `body.model` picks nothing. The gemini surface still
-folds the model out of the URL into `body.model`, because passthrough and the chain walker read it.
-Effort levels play no part either — only whether reasoning was asked for — so the old effort →
-longContext escalation and the `minimal` / `none` rounding no longer touch routing on any surface.
-
-The per-surface reading is backed by `__tests__/parity/routing-mode.test.ts`, which checks that each
-surface's own thinking switch reaches the Think list and that token counting reads all four
-vocabularies so the context gate holds on each, and by `__tests__/llms/openai-surface-signals.test.ts`
-/ `__tests__/llms/gemini-router-signals.test.ts`, which pin each signal to the wire key it reads — a
-test pre-converted to the Anthropic shape would verify nothing about the normalisation. The old
-per-lane reachability test (`routing-lanes.test.ts`) went with the v2.89.0 switch; the Think half
-of it is now in `routing-mode`, and web search is a gate rather than a lane.
+Every surface runs the same prelude (`src/api/v1/route-plan.ts`, see [routing.md](./routing.md)):
+the plan's model check, the subagent tag strip, the surface's deny list, bare-name resolution. The
+prelude reads the request in each surface's own vocabulary only for the model and the streaming
+flag, which the gemini surface carries in the URL and folds into `body.model` / `body.stream`
+before anything else looks (`applyPathParams`). A plan's 403 is rendered in the surface's own error
+shape and pinned per surface in `__tests__/api/route-plan.test.ts`.
 
 Two asymmetries remain:
 
 - **Persona injection is `/v1/messages` only** (deliberate). Adding a top-level `system` on an
   OpenAI-compatible surface makes the upstream — codex being the standing example — answer 400 for
   an unknown parameter.
-- **The subagent lane is reachable from `/v1/messages` only.** The tag is read from the second block
-  of an Anthropic `system` array, which is Claude Code's convention (`stripSubagentTag`). The OpenAI
-  and Gemini shapes carry their system prompt elsewhere (`messages[0]`, `instructions`,
-  `systemInstruction`), so their requests always walk the agent lane. A profile shared between
-  surfaces shares its lists too; point a surface at its own profile
-  (`InboundSurfaceConfig.profileKey`) when the two should route differently.
+- **The subagent tag is read from `/v1/messages` only.** The tag sits in the second block of an
+  Anthropic `system` array, which is Claude Code's convention (`stripSubagentTag`). The OpenAI and
+  Gemini shapes carry their system prompt elsewhere (`messages[0]`, `instructions`,
+  `systemInstruction`), so their requests are never recorded as subagent traffic.
 
 ## How to fix an unsupported cell
 

@@ -4,7 +4,6 @@ export interface SurfaceTrafficRow {
   id: string
   path: string
   client: string
-  routingMode: 'routed' | 'passthrough'
   requests: number
   /** Median upstream duration in ms. Null when the surface saw no traffic. */
   p50Ms: number | null

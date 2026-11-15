@@ -14,7 +14,6 @@ import { toast } from 'sonner'
 import { useConfig } from '@/components/ConfigProvider'
 import { useConfirm } from '@/components/rialto/ConfirmDialog'
 import { Mono, Pill, RButton } from '@/components/rialto/primitives'
-import { enabledTargets } from '@/components/rialto/routing/derive'
 import { Screen } from '@/components/rialto/Screen'
 import { AccessTabs } from '@/components/rialto/settings/access/AccessTabs'
 import { PlanDialog } from '@/components/rialto/settings/access/PlanDialog'
@@ -22,6 +21,7 @@ import { SectionHead } from '@/components/rialto/settings/fields'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
 import { usePhone } from '@/hooks/use-phone'
 import { api, type PlanWire } from '@/lib/api'
+import { enabledTargets } from '@/lib/models/enabled-targets'
 import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
 import { fmtCount } from '@/lib/rialto/format'
 import { emptyPlanDraft, type PlanDraft, planDraftOf, planInputOf } from '@/lib/rialto/settings/plans'
@@ -230,7 +230,7 @@ export function AccessPlans() {
 
   useEffect(load, [load])
 
-  // What the operator has left routable, the same list Routing offers.
+  // What the operator has left switched on: the models a plan may name.
   const available = useMemo(
     () => (config === null ? [] : enabledTargets(config.Providers).map((target) => target.target)),
     [config]

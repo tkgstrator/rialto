@@ -81,42 +81,38 @@ function PersonaHeader({
   )
 }
 
+// The one surface the persona is injected into: `routeRequest` only
+// prepends it to Anthropic-shape bodies, because upstreams that allow-list
+// top-level params (codex) reject a stray `system` on an OpenAI-shape one.
+const PERSONA_SURFACE_PATH = '/v1/messages'
+
 /**
  * Which inbound surfaces the persona reaches.
  *
- * Read-only: a persona has no per-surface scope in the config, it is
- * injected on every routed request. So the chips report the surfaces'
- * real routing mode — a passthrough surface never sees the persona,
- * because passthrough traffic is not rewritten at all.
+ * Read-only: a persona has no per-surface scope in the config. The chips
+ * report where the server injects it, so a surface that forwards the body
+ * untouched is shown as off.
  */
 function AppliesToBar({ surfaces }: { surfaces: InboundSurfaceWire[] }) {
   const { t } = useTranslation()
   return (
     <div className='flex items-center gap-2 border-b border-border px-6 py-2.5 max-md:flex-wrap max-md:px-4'>
       <span className='text-[12px] text-muted-foreground'>{t('settings.personas.appliesTo')}</span>
-      {surfaces.map((surface) => (
-        <SurfaceChip
-          key={surface.id}
-          path={surface.path}
-          on={surface.routingMode === 'routed'}
-          readOnlyHint={
-            surface.routingMode === 'routed'
-              ? t('settings.personas.surfaceRoutedHint', { path: surface.path })
-              : t('settings.personas.surfacePassthroughHint', { path: surface.path })
-          }
-        />
-      ))}
-      <span className='mx-1 h-4 w-px bg-border max-md:hidden' />
-      <span className='text-[12px] text-muted-foreground'>{t('settings.personas.lane')}</span>
-      {/* Not a control: persona injection is not lane-scoped, so there is
-          nothing to choose. A disabled button still reads as a control
-          someone is being denied, which is a different and wrong story. */}
-      <span
-        title={t('settings.personas.laneHint')}
-        className='inline-flex h-7 items-center rounded-md border border-border px-2.5 text-[12px] text-muted-foreground'
-      >
-        {t('settings.personas.laneBoth')}
-      </span>
+      {surfaces.map((surface) => {
+        const applied = surface.path === PERSONA_SURFACE_PATH
+        return (
+          <SurfaceChip
+            key={surface.id}
+            path={surface.path}
+            on={applied}
+            readOnlyHint={
+              applied
+                ? t('settings.personas.surfaceAppliedHint', { path: surface.path })
+                : t('settings.personas.surfaceNotAppliedHint', { path: surface.path, applied: PERSONA_SURFACE_PATH })
+            }
+          />
+        )
+      })}
     </div>
   )
 }

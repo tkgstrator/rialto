@@ -22,7 +22,7 @@ const { renderShell, btn, dialog, SURFACES, surfaceChip, tokenTable } = window.S
 //
 // `placeholder` is the empty-input state (nothing typed yet); `select` is
 // the impl's picker — a bordered box with a chevron, monospace because
-// every value in it is a path or a profile key.
+// every value in it is a path or a plan name.
 const dlgField = (label, value, kind, hint = '') => `
   <div>
     <div class="mb-1 text-[12px] text-muted-foreground">${label}</div>
@@ -62,7 +62,6 @@ const form = `
   <div class="space-y-3">
     ${dlgField('Name', 'MacBook — Claude Code', 'placeholder', 'How this client is identified in the list and in Activity.')}
     ${endpointField}
-    ${dlgField('Routing profile', 'follow the endpoint', 'select', 'Route this client through a named profile. Unset follows the endpoint’s own routing.')}
     ${dlgField('Expires', '90 days', 'select', 'A bounded token limits the damage if it leaks. Revoke works either way.')}
     <p class="text-[12px] leading-relaxed text-muted-foreground">
       <i class="ri-information-line mr-1 align-[-1px]"></i>
@@ -86,9 +85,7 @@ document.getElementById('root').innerHTML = `
         <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
           <i class="ri-information-line mr-1 align-[-1px]"></i>
           Only a SHA-256 digest is stored — the plaintext is shown once, when the token is issued.
-          Scoping a token to endpoints and a routing profile is how a client gets its own routing:
-          the CI token below is pinned to <span class="font-mono">cost-first</span> without touching
-          anyone else's chain.
+          Scoping a token to endpoints and a plan is how a client gets its own limits.
           <span class="font-medium text-foreground">Open a row</span> to rotate it — a new secret on
           the same row, keeping its name, scope and history — or to revoke it.
         </div>
@@ -96,9 +93,8 @@ document.getElementById('root').innerHTML = `
 
       ${tokenTable()}
 
-      <!-- The endpoint and profile lists come from the server
-           (/api/inbound-surfaces, the profile list); none of it is
-           hardcoded. -->
+      <!-- The endpoint list comes from the server
+           (/api/inbound-surfaces); none of it is hardcoded. -->
       ${dialog('Issue access token', form, `${btn('Cancel', 'ghost')}${btn('Issue token', 'primary', 'ri-add-line', 'access-token-issued.html')}`)}
   </div>`
 

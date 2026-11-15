@@ -8,11 +8,8 @@
  */
 
 import type { Logger } from 'pino'
-import type { ModelTier } from '@/schemas/domain/tier-route'
 import type { ConfigStore } from '../registry/config'
-import type { TokenizerRegistry } from '../registry/tokenizer'
 import type { TokenizeMessage, TokenizeSystem, TokenizeTool } from '../tokenizers/base'
-import type { RouterSignals } from './surface-signals'
 
 export type RouterRequestBody = {
   model: string
@@ -26,7 +23,6 @@ export type RouterRequestBody = {
 export type RouterRequest = {
   body: RouterRequestBody
   reqId?: string
-  selectedRoutes?: Array<{ target: string; targetTier: ModelTier; route: string }>
   log: Logger
   // Inbound wire endpoint the request arrived on (e.g. `/v1/messages`,
   // `/v1/chat/completions`, `/v1/responses`). Rialto-idiom mutations that
@@ -36,43 +32,20 @@ export type RouterRequest = {
   // expects. Absent for pre-existing test callers that predate this
   // hook — treated as "unknown, apply everything" for backward-compat.
   inboundPath?: string
-  // A per-client override for which RouterPreferenceProfile this request
-  // routes through, from the AccessToken that authenticated it. Wins
-  // over the inbound surface's own profile; absent means use the
-  // surface's.
-  profileKeyOverride?: string
-  // Set by routeRequest: the scenario whose list served the request
-  // ('default', 'think', 'longContext'), or 'passthrough' when it went
-  // upstream as sent. Recorded on the RequestLog row.
+  // Set by routeRequest: always 'passthrough' — the request goes upstream
+  // as the caller named its model. Recorded on the RequestLog row.
   route?: string
-  tokenCount?: number
-  // Normalised routing signals for this request, in whatever wire format
-  // it arrived in. Filled lazily by `signalsOf` so a caller that builds a
-  // RouterRequest by hand does not have to know about surfaces.
-  signals?: RouterSignals
   // True when the request carried a <RIALTO-SUBAGENT-MODEL> tag (stripped
-  // before it can reach upstream). It picks the subagent lane, and is
-  // recorded.
+  // before it can reach upstream). It is recorded; nothing is routed by it.
   isSubagent?: boolean
-  // Set by routeRequest: the rest of the list's usable routes after the
-  // primary, in pace order. The reactive failover path (buildFailoverChain) walks
-  // this list.
+  // Set by routeRequest to [], and filled by the /v1 handler with the
+  // other providers that host a bare model name, in priority order. The
+  // reactive failover path (buildFailoverChain) walks this list.
   resolvedFallbacks?: string[]
-  // Set when every route of the tier was held back by quota or health
-  // AND the profile's `exhaustedBehavior` is '429': seconds until the
-  // first of them can serve again. The caller returns a 429 with
-  // `Retry-After` instead of dispatching upstream.
-  quotaExhaustedRetryAfterSec?: number
-  // Set when the map cannot take this request at all — every route is
-  // configured but refused it (alias unset, no web search, prompt too
-  // big). The caller answers 400; a 429 would promise a wait that never
-  // helps.
-  routingRefusal?: string
 }
 
 export type RouterContext = {
   config: ConfigStore
-  tokenizers: TokenizerRegistry
 }
 
 export type ConfigProvider = {

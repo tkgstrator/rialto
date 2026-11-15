@@ -219,13 +219,10 @@ Rialto は persona を `cache_control` を持つ system ブロックの**内側*
 
 ### 挿入される範囲
 
-**ルーティングの結果による除外は無い。** routed な `/v1/messages` では、ルートが見つかって
-`body.model` が書き換わったときも、リストにルートが無く（あるいは全部 OFF で）呼び出し側のモデルの
-まま送るときも、プロファイルの読み込みやルーティング自体が失敗したときも、
-**どの出口でも** persona が付く（`routeRequest` が try/catch の後で付ける）。persona はインストールの
-属性であって、ルートが見つかったかどうかの属性ではないからである。シナリオ（default / think /
-longContext）やレーン（agent / subagent）で persona が変わることも無い — シナリオとレーンが選ぶのは
-ルートだけである（[routing.md](../architecture/routing.md)）。
+**リクエストの行き先による除外は無い。** persona はインストールの属性であって、どのモデルへ送るか・
+どのプロバイダへ回るかの属性ではない。Plan のモデル判定、素のモデル名の解決、failover のどれを
+通っても、`/v1/messages` には `routeRequest` が persona を付ける。Rialto にはシナリオもレーンも無く
+（[routing.md](../architecture/routing.md)）、リクエストの内容で persona が変わることも無い。
 
 代わりに**受け口による制限**がある。persona 挿入が走るのは **`/v1/messages` だけ**である
 (`router.ts` の `req.inboundPath` 判定、テストは
@@ -234,23 +231,19 @@ longContext）やレーン（agent / subagent）で persona が変わること�
 足すと codex が `Unsupported parameter: system` で 400 を返し、寛容な upstream でも
 ワイヤ形式がモデル化していないフィールドを見ることになるため。
 
-もう一つの制限は**ルーティングモード**で、persona が付くのは routed なトラフィックだけである。
-passthrough の受け口、あるいは予約プロファイル `passthrough` に固定したアクセストークンは
-ルーティングを丸ごと飛ばすので、persona も付かない — passthrough が約束するのは「呼び出し側が
-送ったとおり」であり、persona もその例外ではない。
+v3 でルーティングモード（routed / passthrough）が無くなったので、`/v1/messages` はどの
+トークン・どの面の設定でも persona が付く。以前は passthrough の面では付かなかったので、
+`ActivePersona` を設定したまま passthrough で運用していたインストールでは、v3 から挙動が変わる。
 
 軽量な内部タスク（タイトル生成など）にキャラ性を出したくない場合は、persona 側に抑制指示を
-入れる。ルーティング側にリクエスト単位の除外は無い（ルール画面は廃止された）。どうしても
-外したいクライアントがあれば、`passthrough` プロファイルに固定したトークンを渡す。
+入れる。Rialto 側にリクエスト単位の除外は無い。
 
 ### `<RIALTO-SUBAGENT-MODEL>` との合成
 
 `<RIALTO-SUBAGENT-MODEL>`（旧綴り `<CCR-SUBAGENT-MODEL>` も同じ）は `routeRequest` の**最初**に
-除去され、`RequestLog.isSubagent` として記録される。これはルーティングモードによらない —
-passthrough でもタグは上流へ届かない。routed な面では、タグの有無がレーンを選ぶ（有ればそのシナリオの
-`subagent` レーンのリストに従う。タグの中身は読まない）。persona 挿入はこの除去の**後**で走るため、
-サブエージェントごとの system 内容を上書きせず合成される（persona が付くのは上記のとおり routed な
-`/v1/messages` だけ）。
+除去され、`RequestLog.isSubagent` として記録される。タグが上流へ届くことは無く、
+タグの有無は行き先を変えない（タグの中身は読まない）。persona 挿入はこの除去の**後**で走るため、
+サブエージェントごとの system 内容を上書きせず合成される。
 ペルソナ側で「サブエージェント文脈ではキャラ性を抑えろ」と書いておくと、
 サブエージェント呼び出しでの不自然な語り口を抑制できる (必須ではない)。
 

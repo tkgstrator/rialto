@@ -3,7 +3,7 @@
 A **Custom** provider is an endpoint Rialto has no catalog entry for: a local server such as LM
 Studio, Ollama or vLLM, a self-hosted gateway, or a hosted vendor that is not in the Add provider
 list. It is added by hand in **Providers -> Add provider -> Custom**, and from then on it is an
-ordinary `Provider` row: it can be switched on, put in a tier route, tested and edited like any
+ordinary `Provider` row: it can be switched on, named in a request, tested and edited like any
 other API-key provider.
 
 ## What you enter

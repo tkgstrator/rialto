@@ -20,10 +20,8 @@ import type { z } from '@hono/zod-openapi'
 import { isDeprecatedModel, OFFICIAL_VENDOR_PRICES, VENDOR_DEFAULTS } from '@/shared/data'
 import { getPrismaClient } from '../db/client'
 import { AuthMode, type Prisma, type PrismaClient } from '../generated/prisma/client'
-import { logger } from '../logger'
 import type { PriceSeedOutcomeSchema } from '../schemas/api/price'
 import { apiStyleForVendor, modelApiStyleOverride } from './config'
-import { tierCascadeWarning } from './config/apply/tier-route-cascade'
 
 const OFFICIAL_VENDORS = ['openai', 'anthropic', 'google'] as const
 type OfficialVendor = (typeof OFFICIAL_VENDORS)[number]
@@ -62,18 +60,9 @@ const ensureProviderRow = async (tx: Tx, vendor: OfficialVendor): Promise<Provid
   })
 }
 
-// Delete model rows the scrape no longer lists. A tier routed to one is
-// unset or moves on with it; there is no request to attach a warning to
-// here, so it goes to the log instead.
+// Delete model rows the scrape no longer lists.
 const deleteStaleModels = async (tx: Tx, providerId: string, stale: string[]): Promise<number> => {
   if (stale.length === 0) return 0
-  const cascade = await tierCascadeWarning(
-    tx,
-    providerId,
-    stale,
-    `model(s) the price scrape no longer lists (${stale.join(', ')})`
-  )
-  if (cascade !== null) logger.warn({ providerId, stale }, `[price-seed] ${cascade}`)
   const res = await tx.model.deleteMany({
     where: { providerId, name: { in: stale } }
   })

@@ -1,11 +1,10 @@
 # Demo data
 
 `bun run db:seed:demo` fills a development install with enough data that
-all six screens render something real: providers and models, tier
-aliases and scenario routes, subscription quota, access tokens, and a month of
-traffic behind Activity and Overview.
+every screen renders something real: providers and models, subscription
+quota, access tokens, and a month of traffic behind Activity and Overview.
 
-It is **not** wired into `prisma db seed` — that runs in production, and
+It is **not** part of the container start-up, which only runs `prisma migrate deploy` and
 must stay side-effect free. This one is always explicit.
 
 ```bash
@@ -24,89 +23,38 @@ rows it owns and configuration you own.
 written into a table that also holds real data carries an explicit
 `demo-` id — sessions, messages, request logs, access tokens, generated
 usage samples, and any subscription account it had to invent. `--clean`
-deletes exactly those and nothing else, matched on the id prefix. The one
-exception is the `cost-first` profile, which is matched on its key instead:
-the key is reserved for the seed, and the profile's routes cascade
-with it. (`--clean` also still removes `RoutingWeightChange` rows an older
+deletes exactly those and nothing else, matched on the id prefix.
+(`--clean` also still removes `RoutingWeightChange` rows an older
 seed wrote; the scheduler writes none any more, and neither does the seed.)
 
-**Yours — written only while still unset, and never taken back:** some
-configuration is a singleton per key and cannot carry a marker — a
-provider's tier alias, the `live` routes, a surface's routing mode, an
-account's quota row. The seed fills each of those in only when it is still
-empty — an alias only for a `(provider, tier)` that has none, the `live`
-profile only while it has no routes at all, a surface only while it still
-carries the seeded passthrough default — so running it against a
+**Yours — written only while still unset, and never taken back:** an
+account's quota row is a singleton per key and cannot carry a marker. The
+seed fills it in only when it is still empty, so running it against a
 configured install adds traffic without re-pointing anything. The run's
 summary says which ones it skipped.
 
-The same rule decides where the routing targets come from: it uses the
-enabled models already in the database, and only registers the bundled
-vendor catalog when nothing at all is routable — a fresh install, before
-any vendor is connected. It never invents a parallel set of fake vendors
-beside your real ones.
-
-## The routes it writes
-
-Aliases come from those targets. A model whose name says its tier
-(`claude-sonnet-5`) is aliased as that tier. A provider whose model names
-say no Claude family gets stand-ins picked by name — `astra` as fable,
-`-sol` as opus, `terra` / `flash` as sonnet, `luna` / `flash-lite` as
-haiku — taking the last match in name order, which for names like
-`claude-opus-4-7` / `claude-opus-5` is the newer generation. The stand-ins
-are demo choices written against the bundled catalog, not a rule the
-router knows: on a real install an operator picks them on each provider's
-page. An alias the install already has always wins over the plan, and the
-routes below are built from what is actually stored.
-
-Every profile gets the same lists — the shape a Claude plan install
-typically has: Sonnet for ordinary work, Opus when thinking, Fable for long
-input, and the smaller model first for subagents. Each tier in a list is
-served by the first provider in the profile's order that has an alias for
-it; a tier no provider has is left out.
-
-| Scenario | Agent | Subagent |
-|---|---|---|
-| Default | `sonnet`, `haiku` (switched off) | `haiku`, `sonnet` |
-| Think | `opus`, `sonnet` | `sonnet` |
-| Long context | `fable`, `opus` | — |
-
-The switched-off `haiku` shows the per-route toggle in its off state, and
-the empty Long context · Subagent cell shows the fallback: a long subagent
-request is served from Default · Subagent.
-
-| Profile | When written | Provider order | Constraints |
-|---|---|---|---|
-| `live` | only while it has no routes | subscriptions first | the defaults (`429`, quota skip 100 %, error-rate skip 0.5, 5 samples); the Long context threshold automatic |
-| `cost-first` | every run | per tier, cheapest alias first — unpriced (subscription) models last, because "no price" is not "cheapest" | quota skip 90 %, exhausted → passthrough |
-
-Surfaces follow suit: `/v1/messages` routes through `live`,
-`/v1/chat/completions` through `cost-first` (a per-surface profile
-override), and the Responses and Gemini surfaces stay in passthrough, so
-both modes are on screen at once.
+The same rule decides where the targets come from: it uses the enabled
+models already in the database, and only registers the bundled vendor
+catalog when nothing at all is usable — a fresh install, before any vendor
+is connected. It never invents a parallel set of fake vendors beside your
+real ones.
 
 ## What the data looks like
 
-Traffic is generated against the same routes the seed wrote, so Activity
-and Routing tell the same story. Each request is given a scenario — about
-70 % Default, 20 % Think and 10 % Long context, the last with 420k–820k
-input tokens — and about 15 % of them the subagent tag. On a routed
-surface it is served from that scenario's list in its lane, else from the
-lane's Default list, the way the router falls back; a list's first route
-serves most requests and a later one the rest. A request with no list to
-use — or any request on a passthrough surface — is recorded as
-`passthrough` on the model it named. The scenario lands in
-`RequestLog.scenario`, and subscription traffic carries a `subAccountId`,
-one account per provider for the whole session, the way the account picker
-sticks a session to the account it first chose.
+Every request is recorded the way the gateway sends it: the model the
+client named, as `passthrough` in `RequestLog.scenario` (the column outlived
+the retired scenario routing and always reads `passthrough` now). About 15 %
+of requests carry the subagent flag. Subscription traffic carries a
+`subAccountId`, one account per provider for the whole session, the way the
+account picker sticks a session to the account it first chose.
 
 Sessions are weighted toward the present (roughly a quarter of them inside
 the last day) because Activity opens on a 6-hour window and Overview on
 24 — a uniform spread over 30 days would show an empty screen on first
 load. Nothing is dated in the future.
 
-The mix is deliberate rather than uniform: all four inbound surfaces,
-routed scenarios next to passthrough, a share of subagent-tagged requests, a
+The mix is deliberate rather than uniform: all four inbound surfaces, a
+share of subagent-tagged requests, a
 few 429 / 500 / 400 responses so the error-rate and failover views have
 something to show, one account near its 5-hour ceiling carrying a recent
 rate limit, some archived sessions, traffic from one since-revoked access token, and chat
@@ -127,10 +75,9 @@ anywhere.
 |---|---|
 | `scripts/seed-demo-data.ts` | Entry point: flags, run order, summary |
 | `scripts/seed-demo/demo-rows.ts` | The `demo-` id convention and `--clean` |
-| `scripts/seed-demo/targets.ts` | Resolving routable (provider, model) pairs |
-| `scripts/seed-demo/routing.ts` | Tier aliases, the `live` and `cost-first` routes, surface modes |
+| `scripts/seed-demo/targets.ts` | Resolving usable (provider, model) pairs |
 | `scripts/seed-demo/accounts.ts` | Subscription accounts, quota, usage history |
 | `scripts/seed-demo/tokens.ts` | Access tokens |
-| `scripts/seed-demo/traffic.ts` | Sessions, messages, request logs (scenario, subagent flag, account, surface, token) |
+| `scripts/seed-demo/traffic.ts` | Sessions, messages, request logs (subagent flag, account, surface, token) |
 | `scripts/seed-demo/conversations.ts` | The curated chat content |
 | `scripts/seed-demo/random.ts` | The seeded PRNG |

@@ -12,10 +12,10 @@ export interface RequestLogItem {
   sessionId: string
   provider: string
   model: string
-  // What the client asked for pre-routing, and the scenario whose list
-  // served it, or "passthrough". Rows v2.89.0 wrote carry a requested tier
-  // instead. Null on rows written
-  // before routing capture landed.
+  // What the client asked for, and the scenario that served it: always
+  // "passthrough" now, older rows carry the scenario list that served them
+  // (or, from v2.89.0, a requested tier). Null on rows written before
+  // routing capture landed.
   requestedModel: string | null
   scenario: string | null
   // Which inbound surface served the request (an `InboundSurface.id`
@@ -134,11 +134,10 @@ export type SurfaceId = 'anthropic-messages' | 'openai-chat' | 'openai-responses
  *
  * Kept apart from SurfaceId on purpose. /codex is not an inbound surface —
  * `/api/inbound-surfaces` never lists it and nothing routes it — so every
- * picker that asks "which surface" (routing, personas) must keep taking
+ * picker that asks "which surface" (personas) must keep taking
  * SurfaceId and cannot be handed this one by mistake.
  */
 export type TokenScopeId = SurfaceId | 'codex-mcp'
-export type RoutingMode = 'routed' | 'passthrough'
 
 export interface InboundSurfaceWire {
   id: SurfaceId
@@ -147,9 +146,7 @@ export interface InboundSurfaceWire {
   inboundType: 'anthropic' | 'openai' | 'gemini'
   auth: 'x-api-key' | 'bearer' | 'google'
   errorShape: 'anthropic' | 'openai' | 'google'
-  routingMode: RoutingMode
-  profileKey: string
-  /** `provider,model` pairs refused on this surface while it is in passthrough. */
+  /** `provider,model` pairs refused on this surface. */
   deniedTargets: string[]
 }
 
@@ -181,7 +178,6 @@ export interface AccessTokenWire {
    * "every surface".
    */
   surfaces: TokenScopeId[]
-  profileKey: string | null
   lastUsedAt: string | null
   requestCount: number
   /**
@@ -231,121 +227,6 @@ export interface IdentityResponse {
 }
 
 export type * from '@/lib/api-overview-types'
-
-export interface RoutingSchedulerTargetState {
-  target: string // "provider,model"
-  exhausted: boolean // out of use on quota right now
-  remainingBudgetPct: number | null // 0..100, null = unknown (api_key targets, cold start)
-  projectedPct: number | null // use at the reset if the pace holds; over 100 steps down
-  resetAt: string | null // ISO; when the binding window resets
-}
-
-export interface RoutingSchedulerAccountView {
-  subAccountId: string
-  providerName: string
-  kind: 'claude' | 'codex'
-  fiveHour: { used: number; limit: number; resetAt: string | null } | null
-  weekly: { used: number; limit: number; resetAt: string | null } | null
-  refreshedAt: string | null
-  stale: boolean
-}
-
-export interface RoutingSchedulerStateResponse {
-  tickAt: string | null
-  tickCount: number
-  consecutiveFailures: number
-  degraded: boolean
-  targets: RoutingSchedulerTargetState[]
-  accounts: RoutingSchedulerAccountView[]
-  soonestResetAt: string | null
-}
-
-// ─── Scenario routes and provider tier aliases ─────────────────────────
-// Mirrors schemas/api/routing.ts. The stored shape (per scenario and lane,
-// routes that name a provider and a tier) plus, on read, what each tier
-// resolves to today and the Long context threshold in effect.
-
-export type ModelTier = 'fable' | 'opus' | 'sonnet' | 'haiku'
-export const MODEL_TIER_ORDER: readonly ModelTier[] = ['fable', 'opus', 'sonnet', 'haiku']
-/** Long input, thinking on, or neither. */
-export type RoutingScenario = 'default' | 'think' | 'longContext'
-export const ROUTING_SCENARIO_ORDER: readonly RoutingScenario[] = ['default', 'think', 'longContext']
-/** Whether the request carried the subagent tag. */
-export type RoutingLane = 'agent' | 'subagent'
-export const ROUTING_LANE_ORDER: readonly RoutingLane[] = ['agent', 'subagent']
-
-export interface TierRouteWire {
-  provider: string
-  targetTier: ModelTier
-  enabled: boolean
-}
-
-export interface TierRouteResolutionWire {
-  model: string
-  /** The model and its provider are both switched on. */
-  targetEnabled: boolean
-  hostsWebSearch: boolean
-  contextWindow: number | null
-}
-
-export interface TierRouteViewWire extends TierRouteWire {
-  /** Null when the provider has no alias for `targetTier`. */
-  resolved: TierRouteResolutionWire | null
-}
-
-export interface RoutingConstraintsWire {
-  blockedEscalationTiers: ModelTier[]
-  exhaustedBehavior: '429' | 'passthrough'
-  quotaSkipPct: number
-  errorRateSkipPct: number
-  minHealthSamples: number
-  /** The tuner's state; not edited on the screen. Null = the automatic base. */
-  longContextThreshold: number | null
-  previousLongContextThreshold: number | null
-  longContextTunedAt: string | null
-  autoTuneLongContext: boolean
-}
-
-export type ScenarioRoutesWire<R> = Record<RoutingScenario, Record<RoutingLane, R[]>>
-
-export interface TierProfileViewWire {
-  key: string
-  routes: ScenarioRoutesWire<TierRouteViewWire>
-  constraints: RoutingConstraintsWire
-  /** Input tokens over which a request is Long context right now. */
-  longContextThreshold: number
-}
-
-export interface TierProfileWriteWire {
-  routes: ScenarioRoutesWire<TierRouteWire>
-  constraints: RoutingConstraintsWire
-}
-
-export interface TierProfileSummaryWire {
-  key: string
-  routeCount: number
-  updatedAt: string | null
-  kind: 'map' | 'passthrough'
-}
-
-export interface TierProfileSaveOutcome {
-  success: boolean
-  warnings: string[]
-}
-
-export interface TierAliasWire {
-  provider: string
-  tier: ModelTier
-  /** derived: follows the newest switched-on model named `tier`. manual: the stored alias. */
-  mode: 'derived' | 'manual'
-  /** The model the tier reaches today, switched on or not; null only on an unset manual tier. */
-  model: string | null
-  modelEnabled: boolean
-  /** When the manual alias was set; null on a derived tier. */
-  updatedAt: string | null
-  /** A derived tier's other named models, newest first; `isNew` is newer and switched off. */
-  candidates: Array<{ model: string; enabled: boolean; isNew: boolean }>
-}
 
 /** GET /api/subscriptions/accounts/{id}/reset-credits. Mirrors ResetCreditsResponse. */
 export interface ResetCreditsResponse {

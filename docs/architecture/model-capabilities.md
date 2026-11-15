@@ -28,7 +28,7 @@ reachable calls it:
 
 - at server start (this covers models that were already switched on before an upgrade);
 - at the end of every Refresh, and after a Codex account connects;
-- whenever a model is switched on: the per-model toggle, a tier alias that enables a model, and a config save.
+- whenever a model is switched on: the per-model toggle and a config save.
 
 It works in two stages because they cost differently:
 

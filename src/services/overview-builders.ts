@@ -133,7 +133,6 @@ export function buildSurfaces(configs: ResolvedSurfaceLike[], windowLogs: Window
       id: surface.id,
       path: surface.path,
       client: surface.client,
-      routingMode: surface.routingMode,
       requests: rows.length,
       p50Ms: median(durations),
       errorRate: rows.length === 0 ? null : errors / rows.length
@@ -345,5 +344,4 @@ export interface ResolvedSurfaceLike {
   id: string
   path: string
   client: string
-  routingMode: 'routed' | 'passthrough'
 }

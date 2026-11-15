@@ -14,10 +14,6 @@ import { SystemPage } from './SystemPage'
 
 // Keyed by first path segment, so /sessions/<id> resolves like /sessions.
 const MERGED_INTO: Record<string, string> = {
-  '/router-tiers': 'shell.navRouting',
-  '/router-preferences': 'shell.navRouting',
-  '/router-utilization': 'shell.navRouting',
-  '/routing-map': 'shell.navRouting',
   '/models': 'shell.navProviders',
   '/subscriptions': 'shell.navProviders',
   '/transformers': 'shell.navProviders',
@@ -27,11 +23,12 @@ const MERGED_INTO: Record<string, string> = {
   '/logs': 'shell.navActivity',
   '/personas': 'shell.navSettings',
   '/json': 'shell.navSettings'
-  // `/presets` and `/debug` are deliberately absent. Both were removed
-  // rather than merged (the presets screen in c0b0742, the Advanced
-  // scratchpad tab in ebf10bd), so "moved into Settings" sent operators
-  // looking for a screen that is not there. They fall through to the
-  // plain not-a-page sentence instead.
+  // `/presets`, `/debug` and `/routing` (with the old routing paths) are
+  // deliberately absent. All were removed rather than merged (the presets
+  // screen in c0b0742, the Advanced scratchpad tab in ebf10bd, routing in
+  // v3), so "moved into Settings" sent operators looking for a screen that
+  // is not there. They fall through to the plain not-a-page sentence
+  // instead.
 }
 
 const explain = (pathname: string, t: TFunction): string => {

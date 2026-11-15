@@ -1,6 +1,7 @@
 /**
- * The model tiers routing speaks: what a requested model name is read as,
- * and what a provider's tier aliases are keyed by.
+ * The Claude model families a requested model name is read as. Only the
+ * per-account usage windows still read them (a family can have its own
+ * weekly window); no request is routed by one.
  *
  * Domain rather than api because the request path and the UI both read
  * it — see the note in ./index.ts.

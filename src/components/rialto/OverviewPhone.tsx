@@ -19,7 +19,6 @@ import type { OverviewQuotaRow, OverviewResponse } from '@/lib/api'
 import { fmtAgo, fmtCount, fmtUntil, shortId } from '@/lib/rialto/format'
 import { fmtCost } from '@/lib/sessions/format'
 import { FailoverEntry } from './OverviewActivity'
-import { RoutingModePill } from './OverviewSurfaces'
 import { deltaTone, fmtDelta, SPEND_LABEL_KEYS, windowMeta } from './overview-shared'
 
 export function OverviewPhone({ data, now }: { data: OverviewResponse; now: number }) {
@@ -43,15 +42,9 @@ export function OverviewPhone({ data, now }: { data: OverviewResponse; now: numb
           {data.surfaces.map((s) => (
             <PhoneRow
               key={s.id}
-              href={`/routing?surface=${s.id}`}
               primary={<span className='font-mono'>{s.path}</span>}
               trailing={fmtCount(s.requests)}
-              secondary={
-                <>
-                  <RoutingModePill mode={s.routingMode} />
-                  <span className='truncate'>{s.client}</span>
-                </>
-              }
+              secondary={<span className='truncate'>{s.client}</span>}
             />
           ))}
         </div>

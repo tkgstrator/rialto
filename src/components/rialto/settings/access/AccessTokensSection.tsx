@@ -38,7 +38,6 @@ interface Revealed {
   plaintext: string
   name: string
   scope: string
-  profile: string
   expiry: string
 }
 
@@ -58,7 +57,6 @@ function Summary({ counts }: { counts: TokenCounts }) {
 export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire[] }) {
   const { t } = useTranslation()
   const [tokens, setTokens] = useState<AccessTokenWire[]>([])
-  const [profiles, setProfiles] = useState<{ key: string }[]>([])
   const [plans, setPlans] = useState<PlanWire[]>([])
   const [draft, setDraft] = useState<IssueDraft | null>(null)
   const [revealed, setRevealed] = useState<Revealed | null>(null)
@@ -84,13 +82,6 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
   useEffect(() => {
     load()
     api
-      .getTierProfiles()
-      .then(setProfiles)
-      .catch(() => {
-        // The picker falls back to "follow the endpoint", which is the
-        // server's own default when profileKey is null.
-      })
-    api
       .getPlans()
       .then((res) => setPlans(res.plans))
       .catch(() => {
@@ -105,7 +96,6 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
       .issueAccessToken({
         name: draft.name.trim(),
         surfaces: scopeForWire(surfaces, draft.surfaces),
-        profileKey: draft.profileKey === ANY ? null : draft.profileKey,
         expiresAt: expiryToIso(draft.expiry, Date.now()),
         planId: draft.planId === ANY ? null : draft.planId
       })
@@ -115,7 +105,6 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
           plaintext: res.plaintext,
           name: res.token.name,
           scope: paths.length === 0 ? t('settings.access.allEndpoints') : paths.join(', '),
-          profile: res.token.profileKey === null ? t('settings.access.followEndpoint') : res.token.profileKey,
           // The resolved date the server actually stored, not the form's
           // relative choice — the same reading rotate's reveal gives, so
           // the two summaries agree on what "Expires" means.
@@ -171,7 +160,6 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
         <IssueTokenDialog
           draft={draft}
           surfaces={surfaces}
-          profiles={profiles}
           plans={plans}
           issuing={issuing}
           onChange={setDraft}
