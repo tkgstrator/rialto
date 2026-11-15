@@ -2,7 +2,7 @@
  * Activity › Session › Conversation — what was said, newest first, a page
  * at a time.
  *
- * This pane used to share the screen with the routing trace and lost: a
+ * This pane used to share the screen with the trace and lost: a
  * real Claude Code session is mostly tool traffic and injected context, so
  * the transcript spent a screen's width on material nobody came to read
  * and squeezed the trace into a rail. It is back as a tab of its own, and

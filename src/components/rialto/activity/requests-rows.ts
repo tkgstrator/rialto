@@ -46,27 +46,11 @@ export const statusOptions = (allLabel: string): FilterOption<StatusId>[] => [
   { id: 'failed', label: '4xx / 5xx' }
 ]
 
-/** Routing lane, as an id: the label for it is looked up on render. */
-export type LaneId = 'untracked' | 'subagent' | 'agent'
-
 export interface Row {
   log: ActivityRequestLog
   surfacePath: string | null
   /** Nearest thing the data has to a caller identity — see the report. */
   client: string | null
-  lane: LaneId
-  rule: string | null
-}
-
-export const lane = (isSubagent: boolean | null): LaneId => {
-  if (isSubagent === null) return 'untracked'
-  return isSubagent ? 'subagent' : 'agent'
-}
-
-export const LANE_KEYS: Record<LaneId, string> = {
-  untracked: 'activity.requests.laneUntracked',
-  subagent: 'activity.requests.laneSubagent',
-  agent: 'activity.requests.laneAgent'
 }
 
 const statusMatches = (status: number, filter: StatusId): boolean => {
@@ -80,7 +64,6 @@ export interface Filters {
   surface: string
   status: StatusId
   client: string
-  rule: string
   range: RangeId
 }
 
@@ -97,7 +80,6 @@ export function applyFilters(rows: Row[], filters: Filters): Row[] {
     if (filters.surface !== 'all' && row.surfacePath !== filters.surface) return false
     if (!statusMatches(row.log.status, filters.status)) return false
     if (filters.client !== 'all' && row.client !== filters.client) return false
-    if (filters.rule !== 'all' && row.rule !== filters.rule) return false
     return true
   })
 }
