@@ -110,7 +110,7 @@ export function SessionTable({ data, now }: { data: OverviewResponse; now: numbe
               </td>
               <td className='px-3'>
                 {label === undefined ? (
-                  <Mono>{t('activity.requests.laneUntracked')}</Mono>
+                  <Mono>{t('activity.common.untracked')}</Mono>
                 ) : (
                   <SurfacePill path={label.path} />
                 )}

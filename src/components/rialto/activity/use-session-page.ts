@@ -1,6 +1,6 @@
 /**
- * One page of something a session owns — its routing trace, its
- * conversation — fetched by offset.
+ * One page of something a session owns — its trace, its conversation —
+ * fetched by offset.
  *
  * Both tabs of the session screen page the same way and need the same
  * guard: a late answer for the page the reader just left must not replace

@@ -87,7 +87,7 @@ export interface QuotaAccount {
  * burst averaged into the week hides both.
  *
  * Seats are weighted by `planCapacityWeight`, the same 1 / 5 / 20 the
- * routing scheduler weights its own pool budget by, because a percentage
+ * scheduler weights its own pool budget by, because a percentage
  * is a ratio and ratios over different denominators do not average. A
  * spent Max 5x beside a fresh Max 20x is 20% of the pool gone, not half
  * of it — and the column has to agree with the scheduler that is about to
