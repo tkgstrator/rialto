@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rialto — Access token form (v3)</title>
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/inter/index.css">
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/geist-mono/index.css">
+<link rel="stylesheet" href="../node_modules/remixicon/fonts/remixicon.css">
+<link rel="stylesheet" href="_shared/mock.build.css">
+<script src="_shared/shell.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const { renderShell, btn, pill, navTo, surfaceChip, tokenTable, PLANS } = window.Shell
+
+// The v3 access-token form: issue and edit.
+//
+// v3 removes routing, so a token no longer picks a "routing profile". What it
+// picks instead is the three things that decide what the client can do:
+//
+//   endpoints   which inbound surfaces it may call       (token.surfaces)
+//   plan        which models it may use, and how much     (token.planId ->
+//               it may spend per 5-hour / 7-day window     plan.models, limits)
+//   expiry      when it stops authenticating
+//
+// plus its name. The plan is shown, not just named: a select with only a
+// name in it asks the operator to remember what "Plus" allows, and the answer
+// decides whether the client's next request is served or refused with 403.
+// So the plan's models and limits are drawn read-only under the select.
+//
+// One form, two layouts. The controls are written once and wrapped two ways
+// — stacked for the dialog that issues a token, 14rem label / 1fr body for the
+// token's own page that edits one — so the two cannot drift, for the same
+// reason pickers.tsx is shared in the app. Editing is a page because that is
+// where access-token.html already edits scope and plan; issuing stays the
+// dialog over the list that access-token-issue.html approved.
+//
+// States, chosen by query string (see mocks.json):
+//   (none)                issue; name typed, Free plan selected
+//   ?plan-menu            the plan select open: plans, No plan, Create a plan
+//   ?no-plan              issue with No plan (unrestricted)
+//   ?create-plan          Create a plan... chosen; the mini form is blank
+//   ?create-plan&filled   the mini form filled in, Create plan enabled
+//   ?created              the plan just created is selected
+//   ?edit                 the token's page; name and expiry locked
+//   ?edit&create-plan&filled
+//   ?phone                the form alone in a 390px column (add &create-plan&filled)
+// Also accepted, unregistered: ?blank (issue, nothing typed, Issue disabled),
+// ?plan=Plus|Pro|Max (a plan other than Free).
+//
+// Below the form, the token's page keeps its Usage windows, Usage and
+// Lifetime sections exactly as access-token.html draws them; they are not
+// part of the form and are not repeated here.
+
+const P = new URLSearchParams(location.search)
+const EDIT = P.has('edit')
+const PHONE = P.has('phone')
+
+// ─── Fixtures ─────────────────────────────────────────────────────────
+// The five inbound surfaces of src/llms/inbound/surfaces.ts, named by the raw
+// path a client calls (the convention surfaceChip already follows). Shell's
+// SURFACES still lists four and other mocks render it, so the fifth is kept
+// local rather than changing every screen that draws the chips.
+const ENDPOINTS = ['/v1/messages', '/v1/chat/completions', '/v1/responses', '/v1beta/models/*', '/v1/images/generations']
+// The Codex MCP server is not an inbound surface and is never part of "all
+// endpoints": it is granted only by picking it (codexMcpHint in pickers.tsx).
+// It stays in the form because v3 does not remove it.
+const CODEX_MCP = '/codex'
+
+const EXPIRY = [['never', 'No expiry'], ['30d', '30 days'], ['90d', '90 days'], ['365d', '1 year']]
+
+// A plan's first model is its default, the way PLANS in shell.js orders them.
+const plans = PLANS.map((p) => ({
+  id: p.name.toLowerCase(),
+  name: p.name,
+  models: p.models,
+  defaultModel: p.models[0],
+  windows: p.windows,
+  tokens: Number(p.tokens)
+}))
+const TEAM = {
+  id: 'team',
+  name: 'Team',
+  models: ['codex,gpt-6-luna', 'codex,gpt-6-sol'],
+  defaultModel: 'codex,gpt-6-luna',
+  windows: [{ requests: 200, usd: 5 }, { requests: 1000, usd: 20 }],
+  tokens: 0
+}
+const PROVIDERS = [
+  { id: 'codex', name: 'Codex', models: ['gpt-6-luna', 'gpt-5.6-terra', 'gpt-6-sol', 'gpt-6-astra'] },
+  { id: 'google', name: 'Google', models: ['gemini-3-flash', 'gemini-3-pro'] },
+  { id: 'anthropic', name: 'Anthropic', models: ['claude-haiku-4-5', 'claude-sonnet-5', 'claude-opus-5'] },
+  { id: 'openai', name: 'OpenAI', models: ['gpt-6-luna', 'gpt-6-sol'] }
+]
+const ALL_MODELS = PROVIDERS.flatMap((p) => p.models.map((m) => `${p.id},${m}`))
+
+const blankDraft = () => ({
+  name: '',
+  provider: 'Codex',
+  allowed: new Set(),
+  defaultModel: null,
+  limits: { fiveReq: '', fiveUsd: '', sevenReq: '', sevenUsd: '' }
+})
+const filledDraft = () => ({
+  name: 'Team',
+  provider: 'Codex',
+  allowed: new Set(TEAM.models),
+  defaultModel: TEAM.defaultModel,
+  limits: { fiveReq: '200', fiveUsd: '5', sevenReq: '1000', sevenUsd: '20' }
+})
+
+// ─── State ────────────────────────────────────────────────────────────
+const startPlan = P.has('no-plan') ? null : (plans.find((p) => p.name === P.get('plan')) ?? plans[0]).id
+const S = {
+  name: EDIT ? 'MacBook — Codex' : P.has('blank') ? '' : 'Mac mini — Claude Code',
+  surfaces: new Set(EDIT ? ['/v1/responses', '/v1/chat/completions'] : ['/v1/messages']),
+  planId: startPlan,
+  expiry: '90d',
+  menu: P.has('plan-menu'),
+  creating: P.has('create-plan'),
+  draft: P.has('filled') ? filledDraft() : blankDraft(),
+  note: false,
+  saved: false
+}
+if (P.has('created')) {
+  plans.push(TEAM)
+  S.planId = TEAM.id
+  S.note = true
+}
+const initial = { surfaces: new Set(S.surfaces), planId: S.planId }
+const sameSet = (a, b) => a.size === b.size && [...a].every((x) => b.has(x))
+const dirty = () => !sameSet(S.surfaces, initial.surfaces) || S.planId !== initial.planId
+const planOf = (id) => plans.find((p) => p.id === id)
+
+// Focus survives a repaint through this key; every interactive control has one.
+const ctl = (act, id = '') => `data-act="${act}" data-id="${id}" data-k="${act}:${id}"`
+
+// ─── Controls (written once) ──────────────────────────────────────────
+const LABEL = 'text-[12px] text-muted-foreground'
+const HINT = 'text-[12px] leading-snug text-muted-foreground'
+const INPUT = 'h-8 w-full min-w-0 rounded-md border border-border bg-transparent px-3 font-mono text-xs outline-none placeholder:text-muted-foreground/50 focus:border-foreground/40'
+const SELECT = 'relative flex h-8 w-full items-center rounded-md border border-border pl-3 pr-8 text-left font-mono text-xs transition-colors hover:bg-muted/60'
+const CHEVRON = '<i class="ri-arrow-down-s-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"></i>'
+
+/**
+ * One field in either layout. `extra` is whatever hangs under the control and
+ * is not its hint (the plan summary, the new-plan form): in the stack it
+ * follows the hint, on the page it follows the control, so the hint stays
+ * next to the thing it explains in both.
+ */
+const field = (id, label, hint, body, extra = '') =>
+  PHONE || !EDIT
+    ? `<div id="field-${id}">
+        <div class="mb-1 ${LABEL}">${label}</div>
+        ${body}
+        <p class="mt-1 ${HINT}">${hint}</p>
+        ${extra}
+      </div>`
+    : `<div id="field-${id}" class="grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4 @max-[40rem]:grid-cols-1 @max-[40rem]:gap-2">
+        <div>
+          <div class="text-xs font-medium">${label}</div>
+          <div class="mt-0.5 ${HINT}">${hint}</div>
+        </div>
+        <div class="min-w-0 max-w-2xl">${body}${extra}</div>
+      </div>`
+
+// Fixed at issue: PATCH /api/access-tokens/{id} takes endpoints, profile and
+// plan only. A name is cosmetic and has its own place in the list; an expiry
+// that could be pushed out indefinitely is not an expiry.
+const locked = (value, why) => `
+  <div class="relative">
+    <input readonly aria-readonly="true" value="${value}" aria-label="${why}" class="${INPUT} cursor-not-allowed bg-muted/40 pr-9 text-muted-foreground">
+    <i class="ri-lock-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground/60"></i>
+  </div>`
+
+const nameField = () =>
+  field(
+    'name',
+    'Name',
+    EDIT ? 'Fixed when the token was issued.' : 'How this client is identified in the list and in Activity.',
+    EDIT
+      ? locked(S.name, 'Name, fixed at issue')
+      : `<input type="text" spellcheck="false" autocomplete="off" aria-label="Name" ${ctl('name')} value="${S.name}" placeholder="MacBook — Claude Code" class="${INPUT}">`
+  )
+
+const chip = (path, on, attrs) =>
+  surfaceChip(path, on).replace('<button ', `<button type="button" aria-pressed="${on}" ${attrs} `)
+
+const endpointField = () =>
+  field(
+    'endpoint',
+    'Endpoint',
+    'Pick the endpoints this token may call. Choose several when one client speaks more than one — Codex uses both <span class="font-mono">/v1/responses</span> and <span class="font-mono">/v1/chat/completions</span>. All endpoints leaves it unrestricted.',
+    `<div class="flex flex-wrap gap-2">
+      ${chip('all endpoints', S.surfaces.size === 0, ctl('surface-all'))}
+      ${ENDPOINTS.map((path) => chip(path, S.surfaces.has(path), ctl('surface', path))).join('')}
+      ${chip(CODEX_MCP, S.surfaces.has(CODEX_MCP), ctl('surface', CODEX_MCP))}
+    </div>`,
+    `<p class="mt-2 ${HINT}"><span class="font-mono">/codex</span> (Codex MCP) is never part of “all endpoints” — select it explicitly.</p>`
+  )
+
+// ─── Plan ─────────────────────────────────────────────────────────────
+// The trigger is a bordered box like the Expires select beside it. It cannot
+// be the native <select> the app uses today: "Create a plan..." is an action,
+// not a value, and a native option list cannot set one apart or run it. The
+// open list is ui/select.tsx's SelectContent (see uiSelectContent in shell.js).
+const planLabel = () =>
+  S.creating
+    ? '<span class="inline-flex items-center gap-1.5"><i class="ri-add-line text-sm"></i>New plan</span>'
+    : S.planId === null
+      ? 'No plan (unrestricted)'
+      : planOf(S.planId).name
+
+const planTrigger = () => `
+  <div class="relative">
+    <button type="button" ${ctl('plan-menu')} aria-label="Plan" aria-haspopup="listbox" aria-expanded="${S.menu}" class="${SELECT}">${planLabel()}</button>
+    ${CHEVRON}
+  </div>`
+
+const menuItem = (act, id, label, selected, extra = '') => `
+  <div role="option" aria-selected="${selected}" tabindex="0" ${ctl(act, id)} class="relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm select-none hover:bg-accent hover:text-accent-foreground ${selected ? 'bg-accent text-accent-foreground' : ''}">
+    ${label}${extra}
+    ${selected ? '<span class="pointer-events-none absolute right-2 flex size-4 items-center justify-center"><i class="ri-check-line"></i></span>' : ''}
+  </div>`
+
+// Item classes are the component's own, as in uiSelectContent. The menu is
+// drawn in its own layer and placed under the trigger by positionMenu(),
+// because Radix portals the real one to the body, outside the dialog's scroll.
+const planMenu = () => `
+  <div id="plan-menu" role="listbox" aria-label="Plan" class="z-[60] overflow-hidden rounded-md bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10">
+    <div class="p-1">
+      ${menuItem('pick-plan', 'none', 'No plan (unrestricted)', S.planId === null && !S.creating)}
+      ${plans.map((p) => menuItem('pick-plan', p.id, `<span class="font-mono text-xs">${p.name}</span>`, S.planId === p.id && !S.creating, `<span class="ml-auto text-[12px] text-muted-foreground">${p.models.length} model${p.models.length === 1 ? '' : 's'}</span>`)).join('')}
+      <div class="pointer-events-none -mx-1 my-1 h-px bg-border"></div>
+      ${menuItem('start-create', '', '<i class="ri-add-line text-sm"></i>Create a plan…', S.creating)}
+    </div>
+  </div>`
+
+// The default is marked inside its own chip, not beside it: a pill between two
+// chips reads as belonging to either.
+const modelChip = (id, isDefault) => `
+  <span class="inline-flex items-center rounded bg-muted px-1.5 py-0.5 font-mono text-[12px] ${isDefault ? 'text-foreground' : 'text-muted-foreground'}">${id}${isDefault ? '<span class="ml-1.5 font-sans text-[11px] font-medium text-muted-foreground">default</span>' : ''}</span>`
+
+const money = (v) => `$${v.toFixed(2)}`
+const limitCell = (v, fmt) =>
+  v === null ? '<span class="text-muted-foreground/60">No limit</span>' : fmt(v)
+
+// Read-only: the plan is edited on the Plans screen, once, for every token on
+// it. Flat house pattern (a border-l accent), not a Card.
+const planSummary = (p) => `
+  <div id="plan-summary" class="mt-3 space-y-3 border-l-2 border-border pl-3">
+    <div class="flex items-center gap-2">
+      <span class="text-xs font-medium">${p.name}</span>
+      <span class="${HINT}">${p.tokens === 0 ? 'not used by any token yet' : `used by ${p.tokens} token${p.tokens === 1 ? '' : 's'}`}</span>
+      <a href="access-plans.html?edit&plan=${p.name}" class="ml-auto inline-flex items-center gap-0.5 ${HINT} hover:text-foreground">Edit plan<i class="ri-arrow-right-up-line text-xs"></i></a>
+    </div>
+    <div>
+      <div class="mb-1 ${LABEL}">Models · ${p.models.length}</div>
+      <div class="flex flex-wrap gap-1.5">${p.models.map((m) => modelChip(m, m === p.defaultModel)).join('')}</div>
+    </div>
+    <div>
+      <div class="mb-1 ${LABEL}">Limits · per token</div>
+      <div class="grid grid-cols-[4.5rem_1fr_1fr] gap-x-3 gap-y-1 text-xs">
+        <span></span><span class="text-right ${LABEL}">Requests</span><span class="text-right ${LABEL}">Spend (USD)</span>
+        ${['5-hour', '7-day'].map((name, i) => `
+        <span class="text-muted-foreground">${name}</span>
+        <span class="text-right font-mono tabular-nums">${limitCell(p.windows[i].requests, (v) => v.toLocaleString('en-US'))}</span>
+        <span class="text-right font-mono tabular-nums">${limitCell(p.windows[i].usd, money)}</span>`).join('')}
+      </div>
+    </div>
+    <p class="${HINT}">
+      <i class="ri-shield-check-line mr-1 align-[-1px]"></i>
+      A request for a model outside this list is rejected with <span class="font-mono">403</span>.
+      The default is used only when a request names no model. Past a limit, requests get
+      <span class="font-mono">429</span> until the window resets.
+    </p>
+    ${S.note ? `<p class="${HINT} text-foreground"><i class="ri-checkbox-circle-line mr-1 align-[-1px] text-emerald-600 dark:text-emerald-400"></i>Plan <span class="font-medium">${p.name}</span> created and selected. It is shared: other tokens can use it from Plans.</p>` : ''}
+  </div>`
+
+const noPlanNote = () => `
+  <div id="plan-summary" class="mt-3 rounded-md border border-dashed border-border px-3 py-2 ${HINT}">
+    <span class="font-medium text-foreground">No plan.</span>
+    This token may use any model of any provider, with no request or spend limit.
+    Pick a plan to restrict it — a model outside the plan is then rejected with <span class="font-mono">403</span>.
+  </div>`
+
+// ─── Inline plan creation ─────────────────────────────────────────────
+// The same fields as the Plans screen's editor (name, models with a default,
+// four limits) and, in the app, the same picker component: a plan made here
+// is an ordinary plan. It is saved the moment Create plan is pressed — it
+// has to exist before a token can name it — and so stays in Plans even if
+// the token dialog is then cancelled.
+const providerChip = (p, picked, on) => `
+  <button type="button" ${ctl('provider', p.name)} aria-pressed="${on}" class="inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors ${on ? 'border-foreground/60 bg-muted font-medium' : 'border-border text-muted-foreground hover:bg-muted/60'}">${p.name}${picked ? `<span class="font-mono text-[12px] tabular-nums text-muted-foreground">${picked}</span>` : ''}</button>`
+
+const modelOption = (id, name, allowed, isDefault) => `
+  <div class="flex h-9 items-center gap-2 border-t border-border/60 px-3 first:border-t-0">
+    <button type="button" role="checkbox" aria-checked="${allowed}" aria-label="Allow ${name}" ${ctl('model', id)} class="inline-flex size-4 shrink-0 items-center justify-center rounded border ${allowed ? 'border-primary bg-primary text-primary-foreground' : 'border-border'}">
+      ${allowed ? '<i class="ri-check-line text-[11px] leading-none"></i>' : ''}
+    </button>
+    <span class="min-w-0 flex-1 truncate font-mono text-xs ${allowed ? '' : 'text-muted-foreground'}">${name}</span>
+    ${allowed ? `<button type="button" role="radio" aria-checked="${isDefault}" aria-label="Use ${name} as default" ${ctl('default', id)} class="inline-flex items-center gap-1 text-[12px] ${isDefault ? 'text-foreground' : 'text-muted-foreground/60'}">
+        <span class="inline-flex size-3.5 items-center justify-center rounded-full border ${isDefault ? 'border-primary' : 'border-border'}">${isDefault ? '<span class="size-1.5 rounded-full bg-primary"></span>' : ''}</span>default</button>` : ''}
+  </div>`
+
+const draftProblem = () => {
+  const d = S.draft
+  if (d.name.trim().length === 0) return 'Name the plan.'
+  if (plans.some((p) => p.name.toLowerCase() === d.name.trim().toLowerCase())) return `A plan named “${d.name.trim()}” already exists.`
+  if (d.allowed.size === 0) return 'Allow at least one model and choose its default.'
+  if (d.defaultModel === null) return 'Choose a default model.'
+  return ''
+}
+
+// Only a taken name is said here; the other reasons Create plan is disabled
+// are already written next to the control they are about (the models line).
+const newPlanActions = () => {
+  const problem = draftProblem()
+  const duplicate = problem.includes('already exists')
+  const create = btn('Create plan', 'outline', 'ri-check-line').replace('<button ', `<button type="button" ${problem ? 'disabled aria-disabled="true" ' : ''}${ctl('create-plan')} `)
+  return `<div id="new-plan-actions" class="flex items-center gap-2">
+      <span class="min-w-0 flex-1 ${HINT} text-destructive" aria-live="polite">${duplicate ? problem : ''}</span>
+      ${btn('Cancel', 'ghost').replace('<button ', `<button type="button" ${ctl('cancel-create')} `)}
+      ${problem ? create.replace('class="', 'class="opacity-50 pointer-events-none ') : create}
+    </div>`
+}
+
+const newPlanForm = () => {
+  const d = S.draft
+  const provider = PROVIDERS.find((p) => p.name === d.provider)
+  const count = (p) => p.models.filter((m) => d.allowed.has(`${p.id},${m}`)).length
+  const picked = count(provider)
+  const lim = (key, label) => `<input type="number" min="0" step="${key.endsWith('Usd') ? '0.01' : '1'}" aria-label="${label}" ${ctl('limit', key)} value="${d.limits[key]}" placeholder="No limit" class="${INPUT}">`
+  return `
+  <div id="new-plan" class="mt-3 space-y-3 border-l-2 border-foreground/40 pl-3">
+    <div class="flex items-baseline gap-2">
+      <span class="text-xs font-medium">New plan</span>
+      <span class="${HINT}">Shared — it appears in Plans.</span>
+    </div>
+    <div>
+      <div class="mb-1 ${LABEL}">Name</div>
+      <input type="text" spellcheck="false" autocomplete="off" aria-label="Plan name" ${ctl('plan-name')} value="${d.name}" placeholder="e.g. Team" class="${INPUT}">
+    </div>
+    <div>
+      <div class="flex items-center justify-between">
+        <div class="mb-1 ${LABEL}">Models</div>
+        <div class="flex items-center gap-1 ${LABEL}"><span>All providers</span>${btn('Select all').replace('<button ', `<button type="button" ${ctl('bulk', 'all')} `)}<span>·</span>${btn('Clear').replace('<button ', `<button type="button" ${ctl('bulk', 'none')} `)}</div>
+      </div>
+      <div class="mb-2 flex flex-wrap gap-1.5">${PROVIDERS.map((p) => providerChip(p, count(p), p.name === d.provider)).join('')}</div>
+      <div class="rounded-md border border-border">
+        <button type="button" role="checkbox" aria-checked="${picked === provider.models.length ? 'true' : picked ? 'mixed' : 'false'}" aria-label="Allow all ${provider.name} models" ${ctl('bulk', 'provider')} class="flex h-9 w-full items-center gap-2 border-b border-border/60 px-3 text-xs">
+          <span class="inline-flex size-4 shrink-0 items-center justify-center rounded border ${picked ? 'border-primary bg-primary text-primary-foreground' : 'border-border'}">${picked ? `<i class="${picked === provider.models.length ? 'ri-check-line' : 'ri-subtract-line'} text-[11px] leading-none"></i>` : ''}</span>
+          Allow all ${provider.name} models <span class="text-muted-foreground">${picked}/${provider.models.length}</span>
+        </button>
+        <div class="max-h-36 overflow-y-auto">${provider.models.map((m) => modelOption(`${provider.id},${m}`, m, d.allowed.has(`${provider.id},${m}`), d.defaultModel === `${provider.id},${m}`)).join('')}</div>
+      </div>
+      <p aria-live="polite" class="mt-1 ${HINT}">${d.allowed.size} allowed · ${d.defaultModel ? `default <span class="font-mono">${d.defaultModel}</span>.` : d.allowed.size ? 'No default yet. Pick one with its radio.' : 'No models yet. Tick one and pick its default.'}</p>
+    </div>
+    <div>
+      <div class="mb-1 ${LABEL}">Limits · per token</div>
+      <div class="grid grid-cols-[4.5rem_1fr_1fr] items-center gap-2 text-xs">
+        <span></span><span class="${LABEL}">Requests</span><span class="${LABEL}">Spend (USD)</span>
+        <span class="text-muted-foreground">5-hour</span>${lim('fiveReq', '5-hour requests (optional)')}${lim('fiveUsd', '5-hour spend in USD (optional)')}
+        <span class="text-muted-foreground">7-day</span>${lim('sevenReq', '7-day requests (optional)')}${lim('sevenUsd', '7-day spend in USD (optional)')}
+      </div>
+      <p class="mt-1 ${HINT}">All four are optional; empty means no limit. Saved as a plan as soon as you create it, so it stays in Plans even if you cancel this token.</p>
+    </div>
+    ${newPlanActions()}
+  </div>`
+}
+
+const planField = () =>
+  field(
+    'plan',
+    'Plan',
+    'Sets the models this token may use and its 5-hour and 7-day limits. A plan is shared: editing it changes every token on it.',
+    planTrigger(),
+    S.creating ? newPlanForm() : S.planId === null ? noPlanNote() : planSummary(planOf(S.planId))
+  )
+
+const expiryField = () =>
+  field(
+    'expiry',
+    'Expires',
+    EDIT ? 'Set when the token was issued; it cannot be changed afterwards.' : 'A bounded token limits the damage if it leaks. Revoke works either way.',
+    EDIT
+      ? locked('No expiry', 'Expiry, fixed at issue')
+      : `<div class="relative">
+          <select aria-label="Expires" ${ctl('expiry')} class="${SELECT} appearance-none">
+            ${EXPIRY.map(([id, label]) => `<option value="${id}" ${S.expiry === id ? 'selected' : ''}>${label}</option>`).join('')}
+          </select>${CHEVRON}
+        </div>`
+  )
+
+// ─── Actions ──────────────────────────────────────────────────────────
+const disabledBtn = (b) => b.replace('<button ', '<button type="button" disabled aria-disabled="true" ').replace('class="', 'class="opacity-50 pointer-events-none ')
+
+const issueBlocked = () => (S.name.trim().length === 0 ? 'name' : S.creating ? 'plan' : '')
+const issueActions = () => {
+  const why = issueBlocked()
+  const primary = why
+    ? disabledBtn(btn('Issue token', 'primary', 'ri-key-2-line'))
+    : btn('Issue token', 'primary', 'ri-key-2-line', 'access-token-issued.html')
+  return `<div id="actions" class="${PHONE ? 'flex flex-col-reverse gap-2 [&>*]:justify-center' : 'flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end'}">
+      ${why === 'plan' ? `<span class="mr-auto ${HINT}">Create or cancel the new plan first.</span>` : ''}
+      ${btn('Cancel', 'ghost', '', 'access-tokens.html')}${primary}
+    </div>`
+}
+
+const saveBar = () => {
+  const can = dirty() && !S.creating
+  const save = can ? btn('Save', 'primary', 'ri-check-line').replace('<button ', `<button type="button" ${ctl('save')} `) : disabledBtn(btn('Save', 'primary', 'ri-check-line'))
+  return `<div id="actions" class="flex items-center gap-2 border-t border-border/60 px-6 py-4">
+      <span class="${HINT}">
+        ${S.creating ? 'Create or cancel the new plan first.' : S.saved && !dirty() ? 'Saved. Takes effect from the next request; the token value did not change.' : `Saves the endpoints and plan of <span class="font-medium text-foreground">${S.name}</span>, from its next request. The token value itself does not change.`}
+      </span>
+      <div class="ml-auto flex gap-2">
+        ${dirty() || S.creating ? btn('Discard', 'ghost').replace('<button ', `<button type="button" ${ctl('discard')} `) : disabledBtn(btn('Discard', 'ghost'))}
+        ${save}
+      </div>
+    </div>`
+}
+
+// ─── Views ────────────────────────────────────────────────────────────
+const formBody = () => `${nameField()}${endpointField()}${planField()}${expiryField()}`
+
+// The dialog that issues a token. A pinned header and footer around a body
+// that scrolls: with the plan summary, and the new-plan form under it, this
+// form is taller than the viewport, and a footer inside the scroll would put
+// Issue token out of reach exactly when the operator is mid-way through
+// creating a plan. Otherwise the shell's dialog(): same overlay, ring,
+// radius and close button.
+// The panel is the same on a desktop and on a phone; only where it sits
+// differs (`place`), so the pinned footer is drawn in both.
+const issuePanel = (place) => `
+  <div role="dialog" aria-modal="true" aria-labelledby="form-title" class="${place} flex flex-col overflow-hidden rounded-xl bg-popover text-sm text-popover-foreground ring-1 ring-foreground/10">
+    <h2 id="form-title" class="shrink-0 px-6 pt-6 pb-4 font-heading text-sm font-medium leading-none">Issue access token</h2>
+    <div id="form-scroll" class="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pb-4">
+      ${formBody()}
+      <p class="${LABEL} leading-relaxed"><i class="ri-information-line mr-1 align-[-1px]"></i>The token is shown once, immediately after issuing, and never again.</p>
+    </div>
+    <div class="shrink-0 border-t border-border/60 px-6 py-4">${issueActions()}</div>
+    <a href="access-tokens.html" aria-label="Close" class="absolute top-4 right-4 inline-flex size-8 shrink-0 items-center justify-center rounded-[min(var(--radius-md),10px)] border border-transparent text-sm transition-all hover:bg-muted hover:text-foreground">
+      <i class="ri-close-line text-base leading-none"></i>
+    </a>
+  </div>`
+
+const issueDialog = () => `
+  <div class="fixed inset-0 isolate z-50 bg-black/10 supports-backdrop-filter:backdrop-blur-xs"></div>
+  ${issuePanel('fixed top-1/2 left-1/2 z-50 max-h-[calc(100vh-4rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 sm:max-w-md')}`
+
+// What the dialog sits over: the list, unchanged. Only its explanatory note
+// is rewritten, because the old one describes routing profiles.
+const listBehind = () => `
+  <div class="flex items-center gap-3 px-6 pt-5 pb-3">
+    <span class="text-[12px] text-muted-foreground">4 active · all <span class="font-mono">/v1/*</span></span>
+    <div class="ml-auto">${btn('Issue token', 'primary', 'ri-add-line')}</div>
+  </div>
+  <div class="px-6 pb-4">
+    <div class="rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
+      <i class="ri-information-line mr-1 align-[-1px]"></i>
+      Only a SHA-256 digest is stored — the plaintext is shown once, when the token is issued.
+      A token's endpoints and plan decide what that client may call, which models it may use and how much it may spend.
+      <span class="font-medium text-foreground">Open a row</span> to change them, to rotate its secret or to revoke it.
+    </div>
+  </div>
+  ${tokenTable()}`
+
+// The token's own page, as access-token.html draws its top, with the form in
+// place of the Endpoint / Profile / Plan rows. Profile is gone with routing.
+const editPage = () => `
+  <div class="@container min-w-0">
+    <div class="flex items-center gap-3 px-6 pt-6 pb-3">
+      <span ${navTo('access-tokens.html')} class="text-muted-foreground hover:text-foreground"><i class="ri-arrow-left-line text-base"></i></span>
+      <div class="min-w-0">
+        <div class="truncate text-sm font-semibold">${S.name}</div>
+        <div class="font-mono text-[12px] text-muted-foreground">rlt_7c02…</div>
+      </div>
+      ${pill('active', 'ok')}
+      <div class="ml-auto flex items-center gap-2">${btn('Rotate', 'outline', 'ri-refresh-line')}${btn('Revoke', 'danger', 'ri-forbid-line')}</div>
+    </div>
+    ${formBody()}
+    ${saveBar()}
+    <div class="h-8"></div>
+  </div>`
+
+// A phone shows the same dialog: the viewport width less 2rem on each side
+// (max-w-[calc(100%-2rem)]) and at most the viewport height less 4rem, so the
+// header and footer stay pinned and the body scrolls. There is no phone-sized
+// shell in the mocks, so it is drawn alone in a 390x820 box standing in for the
+// viewport, the way providers-connect.html?apikey&phone does.
+const phoneView = () => `
+  <div class="flex min-h-screen justify-center bg-muted/40 py-5">
+    <div class="flex h-[820px] w-[390px] items-center justify-center rounded-xl border border-border bg-black/5 dark:bg-white/5">
+      ${issuePanel('relative max-h-[calc(820px-4rem)] w-[calc(100%-2rem)]')}
+    </div>
+  </div>`
+
+const view = () =>
+  PHONE ? phoneView() : EDIT ? editPage() : `<div class="min-w-0">${listBehind()}</div>${issueDialog()}`
+
+// ─── Paint and events ─────────────────────────────────────────────────
+// renderShell() wraps whatever #root holds when it is called, so everything
+// that repaints lives in #token-app, inside the shell.
+document.getElementById('root').innerHTML = '<div id="token-app"></div>'
+if (!PHONE) {
+  renderShell({
+    active: 'access-tokens',
+    navMode: 'cloudflare',
+    crumbs: EDIT ? [{ label: 'Access tokens', href: 'access-tokens.html' }, S.name] : [],
+    subtitle: EDIT ? 'Re-scope one client’s credential' : 'Per-client credentials for /v1/*'
+  })
+}
+
+const positionMenu = () => {
+  const menu = document.getElementById('plan-menu')
+  const trigger = document.querySelector('[data-act="plan-menu"]')
+  if (!menu || !trigger) return
+  const r = trigger.getBoundingClientRect()
+  Object.assign(menu.style, { position: 'fixed', left: `${r.left}px`, top: `${r.bottom + 4}px`, width: `${r.width}px` })
+}
+
+// Where the plan opens: at its top, so a click on "Create a plan..." lands on the form's
+// first field. A phone shows the tail instead (limits and the Create plan button), because
+// the stacked chips and model list already fill the screen above it.
+const showPlan = (tail = false) =>
+  document.getElementById(tail ? 'new-plan-actions' : 'field-plan')?.scrollIntoView({ block: tail ? 'end' : 'start' })
+
+function paint({ reveal = false } = {}) {
+  const app = document.getElementById('token-app')
+  const scroller = document.getElementById('form-scroll')
+  const top = scroller ? scroller.scrollTop : 0
+  const focusKey = document.activeElement?.dataset?.k
+  app.innerHTML = `${view()}${S.menu ? planMenu() : ''}`
+  const next = document.getElementById('form-scroll')
+  if (next) next.scrollTop = top
+  if (focusKey) document.querySelector(`[data-k="${CSS.escape(focusKey)}"]`)?.focus()
+  positionMenu()
+  if (reveal) showPlan(reveal === 'tail')
+}
+
+// Typing updates state and only the parts that depend on it, so the caret
+// is never moved by a repaint.
+const refreshActions = () => {
+  const el = document.getElementById('actions')
+  if (el) el.outerHTML = EDIT && !PHONE ? saveBar() : issueActions()
+}
+const refreshNewPlan = () => {
+  const el = document.getElementById('new-plan-actions')
+  if (el) el.outerHTML = newPlanActions()
+}
+
+const toggle = (set, value) => (set.has(value) ? set.delete(value) : set.add(value))
+const drop = () => {
+  if (S.draft.defaultModel !== null && !S.draft.allowed.has(S.draft.defaultModel)) S.draft.defaultModel = null
+}
+const provider = () => PROVIDERS.find((p) => p.name === S.draft.provider)
+
+const ACTIONS = {
+  surface: (id) => toggle(S.surfaces, id),
+  'surface-all': () => S.surfaces.clear(),
+  'plan-menu': () => { S.menu = !S.menu },
+  'pick-plan': (id) => { S.planId = id === 'none' ? null : id; S.creating = false; S.menu = false; S.note = false },
+  'start-create': () => { S.creating = true; S.menu = false; S.note = false },
+  'cancel-create': () => { S.creating = false; S.draft = blankDraft() },
+  'create-plan': () => {
+    if (draftProblem()) return
+    const d = S.draft
+    const limit = (v) => (v === '' ? null : Number(v))
+    const made = {
+      id: d.name.trim().toLowerCase(),
+      name: d.name.trim(),
+      models: [d.defaultModel, ...[...d.allowed].filter((m) => m !== d.defaultModel)],
+      defaultModel: d.defaultModel,
+      windows: [{ requests: limit(d.limits.fiveReq), usd: limit(d.limits.fiveUsd) }, { requests: limit(d.limits.sevenReq), usd: limit(d.limits.sevenUsd) }],
+      tokens: 0
+    }
+    plans.push(made)
+    S.planId = made.id
+    S.creating = false
+    S.note = true
+    S.draft = blankDraft()
+  },
+  provider: (id) => { S.draft.provider = id },
+  model: (id) => { toggle(S.draft.allowed, id); drop() },
+  default: (id) => { if (S.draft.allowed.has(id)) S.draft.defaultModel = id },
+  bulk: (id) => {
+    if (id === 'all') S.draft.allowed = new Set(ALL_MODELS)
+    if (id === 'none') S.draft.allowed = new Set()
+    if (id === 'provider') {
+      const ids = provider().models.map((m) => `${provider().id},${m}`)
+      const clear = ids.every((m) => S.draft.allowed.has(m))
+      ids.forEach((m) => (clear ? S.draft.allowed.delete(m) : S.draft.allowed.add(m)))
+    }
+    drop()
+  },
+  discard: () => { S.surfaces = new Set(initial.surfaces); S.planId = initial.planId; S.creating = false; S.saved = false },
+  save: () => {
+    initial.surfaces = new Set(S.surfaces)
+    initial.planId = S.planId
+    S.saved = true
+  }
+}
+
+document.addEventListener('click', (event) => {
+  const el = event.target.closest('[data-act]')
+  if (!el) {
+    if (S.menu) { S.menu = false; paint() }
+    return
+  }
+  if (el.disabled) return
+  const act = el.dataset.act
+  if (!(act in ACTIONS)) return
+  ACTIONS[act](el.dataset.id)
+  paint({ reveal: act === 'start-create' })
+})
+document.addEventListener('input', (event) => {
+  const el = event.target
+  if (el.dataset.act === 'name') S.name = el.value
+  if (el.dataset.act === 'plan-name') S.draft.name = el.value
+  if (el.dataset.act === 'limit') S.draft.limits[el.dataset.id] = el.value
+  if (el.dataset.act === 'expiry') S.expiry = el.value
+  refreshActions()
+  refreshNewPlan()
+})
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && S.menu) { S.menu = false; paint() }
+  const el = event.target
+  if ((event.key === 'Enter' || event.key === ' ') && el.getAttribute?.('role') === 'option') { event.preventDefault(); el.click() }
+})
+window.addEventListener('resize', positionMenu)
+
+paint({ reveal: S.creating && !S.menu && (PHONE ? 'tail' : true) })
+// Webfonts change line heights, and with them where the menu and the plan
+// field sit; settle again once they land.
+document.fonts.ready.then(() => { positionMenu(); if (S.creating) showPlan(PHONE) })
+</script>
+</body>
+</html>
