@@ -28,6 +28,7 @@ import type { TokenPlan } from '../../services/access-token-service'
 import { passthroughDenial } from '../../services/inbound-surface-service'
 import { preferredProviderOrder } from '../../services/model-provider-preference'
 import { decidePlanModel } from '../../services/plan-model'
+import { isVersionUpdate, newestFirst } from '../../shared/model-version'
 import { qualifiedModelId } from '../../shared/public-model-id'
 import { buildErrorEnvelope, errorShapeForPath } from './error-shape'
 
@@ -137,21 +138,50 @@ function applyPathParams(body: Record<string, unknown>, path: string): void {
   if (stream !== undefined) body.stream = stream
 }
 
+// Exact hosts for a bare model, and — only when none has it — the newest
+// enabled release of the same family. `claude-sonnet-5` → `claude-sonnet-5-5`
+// when the former is not among any provider's enabled models: a client
+// pinned to the shorter spelling keeps working as point releases land.
+//
+// The update is picked across every host that lists some newer release,
+// then handed to `preferredProviderOrder` under the resolved name so
+// collisions use the stored preference for that name (not for the id the
+// client happened to type).
+function resolveBareHosts(model: string, ctx: LlmsContext): { model: string; hosts: string[] } {
+  const exact: string[] = []
+  const updates: Array<{ provider: string; model: string }> = []
+  for (const provider of ctx.providers.getAll()) {
+    if (!Array.isArray(provider.models)) continue
+    if (provider.models.includes(model)) {
+      exact.push(provider.name)
+      continue
+    }
+    for (const candidate of provider.models) {
+      if (isVersionUpdate(model, candidate)) updates.push({ provider: provider.name, model: candidate })
+    }
+  }
+  if (exact.length > 0) return { model, hosts: exact }
+  if (updates.length === 0) return { model, hosts: [] }
+  updates.sort((a, b) => newestFirst(a.model, b.model))
+  const chosen = updates[0].model
+  return { model: chosen, hosts: updates.filter((u) => u.model === chosen).map((u) => u.provider) }
+}
+
 // An allowed bare name with multiple hosts stays bare until provider
 // priority resolves it here, restricted to the providers the plan lists.
+// When no host carries the exact id, the version-update branch resolves
+// it to the newest enabled release in the same family.
 async function bareModelProviders(model: string, ctx: LlmsContext, plan: TokenPlan | null | undefined) {
-  const hosts = ctx.providers
-    .getAll()
-    .filter((provider) => Array.isArray(provider.models) && provider.models.includes(model))
-    .map((provider) => provider.name)
+  const resolved = resolveBareHosts(model, ctx)
   const allowed =
     plan === null || plan === undefined
       ? undefined
       : plan.models.flatMap((entry) => {
           const comma = entry.indexOf(',')
-          return comma > 0 && entry.slice(comma + 1) === model ? [entry.slice(0, comma)] : []
+          return comma > 0 && entry.slice(comma + 1) === resolved.model ? [entry.slice(0, comma)] : []
         })
-  return preferredProviderOrder(model, hosts, allowed)
+  const order = await preferredProviderOrder(resolved.model, resolved.hosts, allowed)
+  return { order, model: resolved.model }
 }
 
 export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Response | RoutePlan> {
@@ -245,10 +275,13 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   }
 
   // A bare name is a public model id. Resolve the provider here, before deny
-  // rules and the failover walker, so both judge the same target.
+  // rules and the failover walker, so both judge the same target. The
+  // resolver updates a stale id to its newest enabled release in the same
+  // family (claude-sonnet-5 → claude-sonnet-5-5) when no host carries the
+  // literal name.
   const bareModel = typeof body.model === 'string' && !body.model.includes(',') ? body.model : undefined
   if (bareModel !== undefined && bareModel.length > 0) {
-    const order = await bareModelProviders(bareModel, ctx, token?.plan)
+    const { order, model: resolvedModel } = await bareModelProviders(bareModel, ctx, token?.plan)
     if (order.status === 'ambiguous') {
       diagnosticLog(400, 'model_provider_ambiguous')
       return c.json(
@@ -261,10 +294,16 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
       )
     }
     if (order.status === 'preferred') {
-      body.model = qualifiedModelId({ provider: order.providers[0], model: bareModel })
+      if (resolvedModel !== bareModel) {
+        ctx.log.info(
+          { requested: bareModel, resolved: resolvedModel, providers: order.providers },
+          'passthrough: bare model updated to newer release in same family'
+        )
+      }
+      body.model = qualifiedModelId({ provider: order.providers[0], model: resolvedModel })
       routeReq.resolvedFallbacks = order.providers
         .slice(1)
-        .map((provider) => qualifiedModelId({ provider, model: bareModel }))
+        .map((provider) => qualifiedModelId({ provider, model: resolvedModel }))
     }
   }
 

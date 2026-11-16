@@ -14,7 +14,9 @@ import {
   buildSurfaces,
   SPEND_PERIODS,
   type SpendBucket,
-  spendWindows
+  type SurfaceStat,
+  spendWindows,
+  type WindowLog
 } from './overview-builders'
 import type { OverviewResponse } from './overview-types'
 
@@ -42,6 +44,114 @@ const SpendBucketSchema = z.object({
   cacheWriteTokens: z.number(),
   cacheWrite1hTokens: z.number()
 })
+
+const SurfaceStatRowSchema = z.object({
+  surface: z.string().nonempty(),
+  requests: z.number(),
+  p50: z.number().nullable(),
+  errorRate: z.number().nullable()
+})
+
+const RecentSessionRowSchema = z.object({
+  sessionId: z.string().nonempty(),
+  surface: z.string().nullable(),
+  provider: z.string().nonempty(),
+  model: z.string().nonempty(),
+  durationMs: z.number(),
+  status: z.number(),
+  inputTokens: z.number(),
+  outputTokens: z.number(),
+  cacheReadTokens: z.number(),
+  cacheWriteTokens: z.number(),
+  cacheWrite1hTokens: z.number(),
+  totalInputTokens: z.number(),
+  createdAt: z.date()
+})
+
+/**
+ * Per-surface traffic aggregate, computed in Postgres.
+ *
+ * The screen only needs three numbers per surface (count, median
+ * latency, error share) over `windowHours` of RequestLog, but the
+ * original code fetched every row in the window to compute them in JS.
+ * At even a modest ~1 req/sec that is 86 400 rows per load, serialized
+ * over the wire, whatever the operator actually looks at. One GROUP BY
+ * with `percentile_cont` is the same answer and leaves the rows in the
+ * database.
+ *
+ * `surface IS NOT NULL` keeps rows written before the column landed out
+ * of the aggregate — the screen does not bucket untracked traffic into
+ * a surface, and the Surface test pins that.
+ */
+async function loadSurfaceStats(since: Date): Promise<Map<string, SurfaceStat>> {
+  const rows = await getPrismaClient().$queryRaw`
+    SELECT surface AS surface,
+           COUNT(*)::double precision AS requests,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY "durationMs")::double precision AS p50,
+           (COUNT(*) FILTER (WHERE status < 200 OR status >= 300))::double precision
+             / NULLIF(COUNT(*), 0)::double precision AS "errorRate"
+    FROM "RequestLog"
+    WHERE "createdAt" >= ${since}::timestamptz
+      AND surface IS NOT NULL
+    GROUP BY surface
+  `
+  const parsed = z.array(SurfaceStatRowSchema).safeParse(rows)
+  if (!parsed.success) throw new Error('surface aggregate did not match the expected shape')
+  const out = new Map<string, SurfaceStat>()
+  for (const r of parsed.data) {
+    out.set(r.surface, {
+      requests: r.requests,
+      // JS median rounded to int on the two-element case; `percentile_cont`
+      // returns the same interpolation, rounded here so SurfaceTrafficRow
+      // keeps its int shape.
+      p50Ms: r.p50 === null ? null : Math.round(r.p50),
+      errorRate: r.errorRate
+    })
+  }
+  return out
+}
+
+/**
+ * Row-level data for just the sessions the recent-session table renders.
+ *
+ * The screen shows eight entries; the old query fetched every row in the
+ * window to drop all but the first eight sessions. Restricting the scan
+ * to those sessions' rows (picked in SQL by MAX(createdAt)) keeps the
+ * per-session aggregate exact — buildRecentSessions walks the rows and
+ * prices each (provider, model) sub-group — without pulling the window.
+ */
+async function loadRecentSessionLogs(since: Date): Promise<WindowLog[]> {
+  const rows = await getPrismaClient().$queryRaw`
+    WITH recent AS (
+      SELECT "sessionId", MAX("createdAt") AS last_at
+      FROM "RequestLog"
+      WHERE "createdAt" >= ${since}::timestamptz
+      GROUP BY "sessionId"
+      ORDER BY last_at DESC
+      LIMIT 8
+    )
+    SELECT r."sessionId" AS "sessionId",
+           r.surface AS surface,
+           r.provider AS provider,
+           r.model AS model,
+           r."durationMs"::double precision AS "durationMs",
+           r.status::double precision AS status,
+           r."inputTokens"::double precision AS "inputTokens",
+           r."outputTokens"::double precision AS "outputTokens",
+           r."cacheReadTokens"::double precision AS "cacheReadTokens",
+           r."cacheWriteTokens"::double precision AS "cacheWriteTokens",
+           r."cacheWrite1hTokens"::double precision AS "cacheWrite1hTokens",
+           r."totalInputTokens"::double precision AS "totalInputTokens",
+           r."createdAt" AS "createdAt"
+    FROM "RequestLog" r
+    JOIN recent USING ("sessionId")
+    WHERE r."createdAt" >= ${since}::timestamptz
+    ORDER BY r."createdAt" DESC
+  `
+  const parsed = z.array(RecentSessionRowSchema).safeParse(rows)
+  if (!parsed.success) throw new Error('recent-session rows did not match the expected shape')
+  return parsed.data
+}
 
 export function loadQuotas() {
   return getPrismaClient().subAccountQuota.findMany({
@@ -104,30 +214,13 @@ export async function getOverview(windowHours: number): Promise<OverviewResponse
   // period before it, and the month tile's predecessor reaches back 60.
   const windows = spendWindows(dayjs())
 
-  const [surfaceConfigs, providerCount, enabledModelCount, windowLogs, spendBuckets, quotas, rejected] =
+  const [surfaceConfigs, providerCount, enabledModelCount, surfaceStats, sessionLogs, spendBuckets, quotas, rejected] =
     await Promise.all([
       listSurfaces(),
       prisma.provider.count(),
       prisma.model.count({ where: { enabled: true } }),
-      prisma.requestLog.findMany({
-        where: { createdAt: { gte: since } },
-        select: {
-          sessionId: true,
-          surface: true,
-          provider: true,
-          model: true,
-          durationMs: true,
-          status: true,
-          inputTokens: true,
-          outputTokens: true,
-          cacheReadTokens: true,
-          cacheWriteTokens: true,
-          cacheWrite1hTokens: true,
-          totalInputTokens: true,
-          createdAt: true
-        },
-        orderBy: { createdAt: 'desc' }
-      }),
+      loadSurfaceStats(since),
+      loadRecentSessionLogs(since),
       loadSpendBuckets(windows),
       loadQuotas(),
       // Switched-off providers are left out: a credential nobody routes
@@ -140,7 +233,12 @@ export async function getOverview(windowHours: number): Promise<OverviewResponse
       })
     ])
 
-  const priceMap = await buildPriceMap(prisma, [...new Set(spendBuckets.map((b) => priceKey(b.provider, b.model)))])
+  // Session rows carry (provider, model) too, so their pairs must price
+  // alongside the spend aggregate's — otherwise a session on a model that
+  // did not land in any spend bucket would read as unpriced.
+  const pricePairs = new Set<string>(spendBuckets.map((b) => priceKey(b.provider, b.model)))
+  for (const row of sessionLogs) pricePairs.add(priceKey(row.provider, row.model))
+  const priceMap = await buildPriceMap(prisma, [...pricePairs])
   // Per-account usage is an addition to the quota rows, not a condition
   // of them: if the aggregate fails, the windows still render and the
   // usage lines say they could not be read.
@@ -161,10 +259,10 @@ export async function getOverview(windowHours: number): Promise<OverviewResponse
     generatedAt: dayjs().toISOString(),
     providerCount,
     enabledModelCount,
-    surfaces: buildSurfaces(surfaceConfigs, windowLogs),
+    surfaces: buildSurfaces(surfaceConfigs, surfaceStats),
     spend: buildSpend(spendBuckets, priceMap),
     quota: buildQuota(quotas, usage),
     failover: buildFailover(quotas, rejected),
-    recentSessions: buildRecentSessions(windowLogs, priceMap)
+    recentSessions: buildRecentSessions(sessionLogs, priceMap)
   }
 }

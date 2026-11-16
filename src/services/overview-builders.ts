@@ -12,16 +12,6 @@ import type {
 
 export type OverviewQuotaRecord = Awaited<ReturnType<typeof import('./overview-service').loadQuotas>>[number]
 
-// Exact median of an already-sorted list; averages the middle pair on an
-// even count so a two-request surface does not report the slower one as
-// its typical latency.
-function median(sorted: number[]): number | null {
-  if (sorted.length === 0) return null
-  const mid = Math.floor(sorted.length / 2)
-  if (sorted.length % 2 === 1) return sorted[mid]
-  return Math.round((sorted[mid - 1] + sorted[mid]) / 2)
-}
-
 function sumCost(
   logs: Array<{
     provider: string
@@ -122,20 +112,28 @@ function groupBy<T>(rows: T[], key: (row: T) => string | null): { order: string[
   return { order, buckets }
 }
 
-export function buildSurfaces(configs: ResolvedSurfaceLike[], windowLogs: WindowLog[]): SurfaceTrafficRow[] {
-  const { buckets } = groupBy(windowLogs, (l) => l.surface)
+// Per-surface aggregates as Postgres returns them. The row-by-row walk
+// used to pull every RequestLog row in the window into this process; it
+// now folds in SQL and arrives as one row per surface that saw traffic.
+export interface SurfaceStat {
+  requests: number
+  p50Ms: number | null
+  errorRate: number | null
+}
+
+export function buildSurfaces(
+  configs: ResolvedSurfaceLike[],
+  stats: ReadonlyMap<string, SurfaceStat>
+): SurfaceTrafficRow[] {
   return configs.map((surface) => {
-    const bucket = buckets.get(surface.id)
-    const rows = bucket === undefined ? [] : bucket
-    const durations = rows.map((r) => r.durationMs).sort((a, b) => a - b)
-    const errors = rows.filter((r) => r.status < 200 || r.status >= 300).length
+    const stat = stats.get(surface.id)
     return {
       id: surface.id,
       path: surface.path,
       client: surface.client,
-      requests: rows.length,
-      p50Ms: median(durations),
-      errorRate: rows.length === 0 ? null : errors / rows.length
+      requests: stat === undefined ? 0 : stat.requests,
+      p50Ms: stat === undefined ? null : stat.p50Ms,
+      errorRate: stat === undefined ? null : stat.errorRate
     }
   })
 }
