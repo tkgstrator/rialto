@@ -617,6 +617,11 @@ model RequestLog {
   @@index([sessionId])
   @@index([provider, model])
   @@index([surface, createdAt])
+  // Overview's per-account weekly / 30-day aggregates filter by
+  // subAccountId first and then by createdAt; the compound index lets
+  // them land on a single range scan instead of a 30-day scan filtered
+  // row by row.
+  @@index([subAccountId, createdAt])
 }
 
 // Time series of per-account subscription windows. `metric` is the

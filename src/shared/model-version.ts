@@ -50,6 +50,58 @@ export function parseModelVersion(name: string): ModelVersion {
 const partAt = (parts: readonly number[], i: number): number => (i < parts.length ? parts[i] : 0)
 
 /**
+ * The non-version identity of an id ("claude-sonnet" for "claude-sonnet-5-5",
+ * "gpt-mini" for "gpt-5-mini").
+ *
+ * Used alongside `parseModelVersion` to decide whether one id is a newer
+ * version of another: `claude-sonnet-5` and `claude-sonnet-5-5` share the
+ * stem, so one is a later release of the other, while `gpt-5-mini` is a
+ * different variant (its stem keeps `mini`) and `claude-opus-5` is a
+ * different family.
+ *
+ * Tokens are split the same way `parseModelVersion` splits them. Two
+ * flavours of version token drop out: the semver-like 1-3 digit numbers
+ * (`5-5`) and the 8-digit snapshot pin (`20250514`, read as `date` by
+ * `parseModelVersion` for historical reasons — a snapshot is still a
+ * version of the same model). Both are what distinguishes releases of
+ * one model, so neither belongs in the stem. The rest is joined back
+ * with `-` so two ids that spell separators differently (`gpt-5.4`,
+ * `gpt-5_4`) read the same. The 8-digit check is a shape, not a date
+ * validation: anything that is 8 consecutive digits reads as a snapshot
+ * pin, which is what every vendor id we have seen uses.
+ */
+export function modelStem(name: string): string {
+  return name
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length > 0 && !VERSION_TOKEN.test(t) && !DATE_TOKEN.test(t))
+    .join('-')
+}
+
+/**
+ * Whether `candidate` is a newer or equal release of `requested`.
+ *
+ * Yes when their stems match and the candidate's version parts start with
+ * the requested's: `claude-sonnet-5` matches `claude-sonnet-5-5` but not
+ * `claude-sonnet-4-5` (first part differs) or `claude-opus-5` (stem). A
+ * requested id with no version parts (`claude-sonnet`) never matches —
+ * the family is too wide to pick a target from on its own.
+ *
+ * Used by the bare-model resolver as a fallback when no exact match is
+ * found: `claude-sonnet-5` can route to whichever `claude-sonnet-5-N` is
+ * enabled, so a client pinned to a stable-looking id does not break when
+ * a point release lands.
+ */
+export function isVersionUpdate(requested: string, candidate: string): boolean {
+  if (modelStem(requested) !== modelStem(candidate)) return false
+  const req = parseModelVersion(requested)
+  if (req.parts.length === 0) return false
+  const cand = parseModelVersion(candidate)
+  if (req.parts.length > cand.parts.length) return false
+  return req.parts.every((part, i) => part === cand.parts[i])
+}
+
+/**
  * Sort comparator, newest first: negative when `a` is the newer id.
  *
  * A total order, so a sort is deterministic whatever the input order:
