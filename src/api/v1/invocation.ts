@@ -20,6 +20,7 @@ import { hasSafeguards } from '../../llms/pipeline/classifier-diagnostics'
 import { shouldBypass } from '../../llms/pipeline/request-chain'
 import { isLongContextDenied } from '../../services/failover-state'
 import { getActiveAccountForSession } from '../../services/session-account-router'
+import { isVersionUpdate, newestFirst } from '../../shared/model-version'
 import type { RoutePlan } from './route-plan'
 import { prepareSubscriptionBetas } from './subscription-betas'
 
@@ -123,17 +124,46 @@ export interface ResolvedInvocation {
 // chain had no primary for the request. The registry lists only
 // enabled models of enabled providers, so a switched-off model never
 // hosts anything here.
-function providerHostingModel(ctx: LlmsContext, bareModel: string): string | null {
-  const hosts: string[] = []
+//
+// When no provider lists the exact id, the same version-update fallback
+// route-plan runs covers chain entries too: `claude-sonnet-5` resolves
+// to the newest enabled `claude-sonnet-5-N` in the family. Returned
+// `model` is the name to call upstream with, which may differ from the
+// requested id.
+function providerHostingModel(ctx: LlmsContext, bareModel: string): { provider: string; model: string } | null {
+  const exact: string[] = []
+  const updates: Array<{ provider: string; model: string }> = []
   for (const p of ctx.providers.getAll()) {
-    if (Array.isArray(p.models) && p.models.includes(bareModel)) hosts.push(p.name)
+    if (!Array.isArray(p.models)) continue
+    if (p.models.includes(bareModel)) {
+      exact.push(p.name)
+      continue
+    }
+    for (const candidate of p.models) {
+      if (isVersionUpdate(bareModel, candidate)) updates.push({ provider: p.name, model: candidate })
+    }
   }
-  if (hosts.length === 0) return null
-  if (hosts.length > 1) {
-    ctx.log.warn({ model: bareModel, hosts }, 'passthrough: bare model is ambiguous across providers; skipping')
+  if (exact.length === 1) return { provider: exact[0], model: bareModel }
+  if (exact.length > 1) {
+    ctx.log.warn({ model: bareModel, hosts: exact }, 'passthrough: bare model is ambiguous across providers; skipping')
     return null
   }
-  return hosts[0]
+  if (updates.length === 0) return null
+  updates.sort((a, b) => newestFirst(a.model, b.model))
+  const chosen = updates[0].model
+  const hosts = updates.filter((u) => u.model === chosen).map((u) => u.provider)
+  if (hosts.length > 1) {
+    ctx.log.warn(
+      { requested: bareModel, resolved: chosen, hosts },
+      'passthrough: version-updated bare model is ambiguous across providers; skipping'
+    )
+    return null
+  }
+  ctx.log.info(
+    { requested: bareModel, resolved: chosen, provider: hosts[0] },
+    'passthrough: bare model updated to newer release in same family'
+  )
+  return { provider: hosts[0], model: chosen }
 }
 
 // Resolve one "provider,model" string into a ready-to-run invocation, or
@@ -249,11 +279,17 @@ function splitModelString(modelString: string, ctx: LlmsContext): { providerName
   if (commaIdx > 0) {
     return { providerName: modelString.slice(0, commaIdx), model: modelString.slice(commaIdx + 1) }
   }
-  const host = providerHostingModel(ctx, modelString)
-  if (host === null || modelString.length === 0) {
+  if (modelString.length === 0) {
     ctx.log.warn({ modelString }, 'failover: malformed provider,model; skipping')
     return null
   }
-  ctx.log.info({ model: modelString, provider: host }, 'passthrough: bare model resolved to provider')
-  return { providerName: host, model: modelString }
+  const host = providerHostingModel(ctx, modelString)
+  if (host === null) {
+    ctx.log.warn(
+      { modelString },
+      'failover: no enabled provider hosts this model (even after version update); skipping'
+    )
+    return null
+  }
+  return { providerName: host.provider, model: host.model }
 }
