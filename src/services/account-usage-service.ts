@@ -19,8 +19,9 @@
  * `computeCosts` is linear in the token counts, so that is exact.
  */
 
+import { z } from 'zod'
 import { getPrismaClient } from '../db/client'
-import type { PrismaClient } from '../generated/prisma/client'
+import { Prisma, type PrismaClient } from '../generated/prisma/client'
 import dayjs from '../lib/dayjs'
 import { buildPriceMap, computeCosts, type PriceEntry } from './cost-service'
 
@@ -92,9 +93,22 @@ interface ModelGroup {
 
 const orZero = (value: number | null): number => (value === null ? 0 : value)
 
-// The one groupBy shape both spans use. `subAccountId` is part of the key
-// so a single query can serve every account.
-async function groupsFor(prisma: PrismaClient, subAccountIds: string[], since: Date): Promise<ModelGroup[]> {
+const ModelGroupRowSchema = z.object({
+  subAccountId: z.string().nonempty(),
+  provider: z.string().nonempty(),
+  model: z.string().nonempty(),
+  requests: z.number(),
+  inputTokens: z.number(),
+  outputTokens: z.number(),
+  cacheReadTokens: z.number(),
+  cacheWriteTokens: z.number(),
+  cacheWrite1hTokens: z.number()
+})
+
+// The flat last-30-days span. One groupBy keyed by (subAccountId,
+// provider, model); `subAccountId` is in the key so a single query
+// covers every account at once.
+async function groupsFlat(prisma: PrismaClient, subAccountIds: string[], since: Date): Promise<ModelGroup[]> {
   const rows = await prisma.requestLog.groupBy({
     by: ['subAccountId', 'provider', 'model'],
     where: { subAccountId: { in: subAccountIds }, createdAt: { gte: since } },
@@ -124,6 +138,58 @@ async function groupsFor(prisma: PrismaClient, subAccountIds: string[], since: D
           }
         ]
   )
+}
+
+/**
+ * The weekly span, every account in one query.
+ *
+ * Each account's window starts at a different instant (`weeklyResetAt`
+ * minus the window length), so Prisma's `groupBy` cannot do it: there is
+ * one lower bound per account. Joining RequestLog against a per-account
+ * (subAccountId, from) VALUES set folds the N parallel groupBys into a
+ * single statement — the compound (subAccountId, createdAt) index does
+ * one range scan per account.
+ *
+ * Empty input short-circuits: Postgres rejects `VALUES ()` with a syntax
+ * error, which is not what "no accounts, no rows" should look like.
+ */
+async function groupsAcrossWeeks(
+  prisma: PrismaClient,
+  accounts: readonly AccountUsageInput[],
+  now: number
+): Promise<ModelGroup[]> {
+  if (accounts.length === 0) return []
+  const windowRows = accounts.map(
+    (a) => Prisma.sql`(${a.subAccountId}::text, ${dayjs(weeklyWindowStart(a, now)).toDate()}::timestamptz)`
+  )
+  const rows = await prisma.$queryRaw`
+    SELECT r."subAccountId" AS "subAccountId",
+           r.provider AS provider,
+           r.model AS model,
+           COUNT(*)::double precision AS requests,
+           SUM(r."inputTokens")::double precision AS "inputTokens",
+           SUM(r."outputTokens")::double precision AS "outputTokens",
+           SUM(r."cacheReadTokens")::double precision AS "cacheReadTokens",
+           SUM(r."cacheWriteTokens")::double precision AS "cacheWriteTokens",
+           SUM(r."cacheWrite1hTokens")::double precision AS "cacheWrite1hTokens"
+    FROM "RequestLog" r
+    JOIN (VALUES ${Prisma.join(windowRows)}) AS w(sub_id, from_ts)
+      ON r."subAccountId" = w.sub_id AND r."createdAt" >= w.from_ts
+    GROUP BY r."subAccountId", r.provider, r.model
+  `
+  const parsed = z.array(ModelGroupRowSchema).safeParse(rows)
+  if (!parsed.success) throw new Error('weekly usage aggregate did not match the expected shape')
+  return parsed.data.map((r) => ({
+    subAccountId: r.subAccountId,
+    provider: r.provider,
+    model: r.model,
+    requests: r.requests,
+    inputTokens: r.inputTokens,
+    outputTokens: r.outputTokens,
+    cacheReadTokens: r.cacheReadTokens,
+    cacheWriteTokens: r.cacheWriteTokens,
+    cacheWrite1hTokens: r.cacheWrite1hTokens
+  }))
 }
 
 /** Add up one account's groups and price them. Pure, so it is tested on its own. */
@@ -160,10 +226,13 @@ export function valueRatioOf(costUsd: number | null, monthlyPriceUsd: number | n
 /**
  * Usage per account, keyed by subAccountId.
  *
- * One grouped query covers every account's 30 days. The weekly window
- * starts at a different instant for each account, so each gets its own
- * query for that span — a handful of accounts, each a small aggregate on
- * the `createdAt` index. Prices are looked up once for every pair seen.
+ * Two grouped queries cover every account: one flat 30-day aggregate
+ * across every account, and one that walks every account's own weekly
+ * window in a single pass through a VALUES join. The previous shape ran
+ * one weekly query per account in parallel, which with a handful of
+ * accounts was a handful of 7-day scans per Overview load; the
+ * compound-index range scan is the same answer in one round trip.
+ * Prices are looked up once for every (provider, model) pair seen.
  */
 export async function usageByAccount(
   accounts: readonly AccountUsageInput[],
@@ -175,11 +244,10 @@ export async function usageByAccount(
   const monthSince = dayjs(now).subtract(MONTH_DAYS, 'day').toDate()
   const starts = new Map(accounts.map((a) => [a.subAccountId, weeklyWindowStart(a, now)]))
 
-  const [month, ...weeks] = await Promise.all([
-    groupsFor(prisma, ids, monthSince),
-    ...accounts.map((a) => groupsFor(prisma, [a.subAccountId], dayjs(weeklyWindowStart(a, now)).toDate()))
+  const [month, week] = await Promise.all([
+    groupsFlat(prisma, ids, monthSince),
+    groupsAcrossWeeks(prisma, accounts, now)
   ])
-  const week = weeks.flat()
   const pairs = [...new Set([...month, ...week].map((g) => `${g.provider}||${g.model}`))]
   const priceMap = await buildPriceMap(prisma, pairs)
 
