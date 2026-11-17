@@ -162,7 +162,7 @@ DB もネットワークも要らないユニットテスト。`bun run test` �
 | `custom-provider.test.ts` | Custom プロバイダの純粋な規則。形式は 3 つで `gemini` は含まない。名前は slug（長さ上限は含む、大文字・空白・カンマ・先頭の `-` は charset）、全ビルトイン vendor・subscription preset・`claude-code*` 接頭・`custom` / `gemini-cli` / SPA のルート片は `reserved`。Base URL は http(s) のみで、認証情報・クエリ・フラグメントつきを拒否し、末尾の `/chat/completions` / `/responses` / `/messages` は「endpoint を直接入力した」と読み、プライベートアドレスは許可。保存する endpoint は `/v1` を足さず二重にもせず、入力した tail は選んだ形式に付け替える。モデル一覧の候補 URL は重複せず `/v1/v1` にならない。フォームとサーバが同じ答えを読む |
 | `transformer-chain.test.ts` | `apiStyle` × `authMode` → chain の写像。サーバとフロントが**同じ関数**を読むので、この 1 本が両方を守る。モデル別 chain は、運用者が切り替えた任意のモデル（名前によらない）に付き、Base URL の形には左右されず、provider と同じ style や anthropic（足す段が無い）には付かないこと |
 | `constants.test.ts` | `HOME_DIR` の解決（`RIALTO_HOME_DIR` の優先） |
-| `model-version.test.ts` | モデル id から読むリリースの新旧（`newestFirst`）。バージョンの数字が先に効き、8 桁の日付は同じバージョン同士でしか効かず、日付なしが先、最後は名前で全順序になること |
+| `model-version.test.ts` | モデル id から読むリリースの新旧（`newestFirst`）。バージョンの数字が先に効き、8 桁の日付は同じバージョン同士でしか効かず、日付なしが先、最後は名前で全順序になること。bare 名の読み替え（`isVersionUpdate`）が同じ系列の同じか新しいバージョンにだけ当たり、メジャーもまたぐこと（`claude-opus-4-7` → `claude-opus-5-5`）、古いほう・別の変種（`-mini`・`[1m]`）・バージョン無しの id には当たらず、候補の中から最新が選ばれること |
 | `plan-capacity.test.ts` | `planCapacityWeight` の席の重み。Claude は `rate_limit_tier` から Max 5x / 20x を読み、Codex は `plan_type` の `prolite` を 5・`pro` を 20 と数える。Providers 画面の Quota 列とスケジューラのプール予算が同じ関数を読むので、この 1 本が両方を守る |
 | `plan-label.test.ts` | プランの表示名。Claude は `rate_limit_tier` から「Max 5x」/「Max 20x」、基本プランは「Pro」。Codex は `plan_type` の `prolite` を「Pro 5x」、`pro` を「Pro 20x」、基本プランは「Plus」。Activity → Usage がアカウントごとに出す名前 |
 

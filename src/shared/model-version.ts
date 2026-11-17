@@ -49,6 +49,14 @@ export function parseModelVersion(name: string): ModelVersion {
 // A missing part reads as 0, so `claude-opus-4` and `claude-opus-4-0` tie.
 const partAt = (parts: readonly number[], i: number): number => (i < parts.length ? parts[i] : 0)
 
+// Version parts alone, left to right: negative when `a` is the higher
+// version, 0 when they tie. Dates are not looked at.
+function compareParts(a: readonly number[], b: readonly number[]): number {
+  const length = Math.max(a.length, b.length)
+  const differs = Array.from({ length }, (_, i) => i).find((i) => partAt(a, i) !== partAt(b, i))
+  return differs === undefined ? 0 : partAt(b, differs) - partAt(a, differs)
+}
+
 /**
  * The non-version identity of an id ("claude-sonnet" for "claude-sonnet-5-5",
  * "gpt-mini" for "gpt-5-mini").
@@ -81,24 +89,25 @@ export function modelStem(name: string): string {
 /**
  * Whether `candidate` is a newer or equal release of `requested`.
  *
- * Yes when their stems match and the candidate's version parts start with
- * the requested's: `claude-sonnet-5` matches `claude-sonnet-5-5` but not
- * `claude-sonnet-4-5` (first part differs) or `claude-opus-5` (stem). A
+ * Yes when their stems match and the candidate's version parts read at
+ * least as high, left to right with a missing part as 0. That crosses
+ * majors: `claude-opus-4-7` matches `claude-opus-4-8` and `claude-opus-5-5`,
+ * but not `claude-opus-4-6` (older) or `claude-sonnet-5-5` (stem). Dates
+ * are ignored — a snapshot is a copy of a version, never a newer one. A
  * requested id with no version parts (`claude-sonnet`) never matches —
  * the family is too wide to pick a target from on its own.
  *
  * Used by the bare-model resolver as a fallback when no exact match is
- * found: `claude-sonnet-5` can route to whichever `claude-sonnet-5-N` is
- * enabled, so a client pinned to a stable-looking id does not break when
- * a point release lands.
+ * found, so a client pinned to a release the operator has switched off
+ * moves to the newest enabled one instead of failing with `No usable
+ * model`. It never moves down: an id newer than anything enabled stays
+ * unresolved.
  */
 export function isVersionUpdate(requested: string, candidate: string): boolean {
   if (modelStem(requested) !== modelStem(candidate)) return false
   const req = parseModelVersion(requested)
   if (req.parts.length === 0) return false
-  const cand = parseModelVersion(candidate)
-  if (req.parts.length > cand.parts.length) return false
-  return req.parts.every((part, i) => part === cand.parts[i])
+  return compareParts(parseModelVersion(candidate).parts, req.parts) <= 0
 }
 
 /**
@@ -113,9 +122,8 @@ export function isVersionUpdate(requested: string, candidate: string): boolean {
 export function newestFirst(a: string, b: string): number {
   const va = parseModelVersion(a)
   const vb = parseModelVersion(b)
-  const length = Math.max(va.parts.length, vb.parts.length)
-  const differs = Array.from({ length }, (_, i) => i).find((i) => partAt(va.parts, i) !== partAt(vb.parts, i))
-  if (differs !== undefined) return partAt(vb.parts, differs) - partAt(va.parts, differs)
+  const byParts = compareParts(va.parts, vb.parts)
+  if (byParts !== 0) return byParts
   if (va.date !== vb.date) {
     if (va.date === null) return -1
     if (vb.date === null) return 1
