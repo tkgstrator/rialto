@@ -92,8 +92,8 @@ describe('modelStem', () => {
     // Claude old scheme: the family word ("sonnet") comes after the
     // version run and stays in the stem, so the old and new schemes land
     // on the same stem — "claude-3-5-sonnet" and "claude-sonnet-5-5"
-    // are both of the "claude-sonnet" family, but their version parts
-    // differ so `isVersionUpdate` separates them.
+    // are both of the "claude-sonnet" family, and `isVersionUpdate` moves
+    // the old scheme forward onto the new one by version parts.
     ['claude-3-5-sonnet-20241022', 'claude-sonnet'],
     ['claude-3-7-sonnet-20250219', 'claude-sonnet'],
     ['claude-3-opus-20240229', 'claude-opus'],
@@ -178,13 +178,24 @@ describe('isVersionUpdate', () => {
     expect(isVersionUpdate('claude-haiku-4', 'claude-haiku-4-5')).toBe(true)
   })
 
-  test('Claude old and new schemes do not cross-update', () => {
+  test('a later major is an update, so a client pinned to a switched-off release moves forward', () => {
+    // The case that motivated crossing majors: Claude Code pinned to
+    // `claude-opus-4-7` after only `claude-opus-5-5` is enabled.
+    expect(isVersionUpdate('claude-opus-4-7', 'claude-opus-5-5')).toBe(true)
+    expect(isVersionUpdate('claude-opus-4-7', 'claude-opus-4-8')).toBe(true)
+    expect(isVersionUpdate('claude-sonnet-4-5', 'claude-sonnet-5')).toBe(true)
+    expect(isVersionUpdate('claude-sonnet-4-20250514', 'claude-sonnet-5-5')).toBe(true)
+    expect(isVersionUpdate('gemini-2.5-pro', 'gemini-3-pro')).toBe(true)
+    // Never down.
+    expect(isVersionUpdate('claude-opus-5-5', 'claude-opus-4-7')).toBe(false)
+  })
+
+  test('Claude old scheme moves forward onto the new scheme, never back', () => {
     // Old `claude-3-5-sonnet-*` shares the stem with new `claude-sonnet-*`,
-    // but the version parts differ ([3, 5] vs [5, 5]) so the branch
-    // separates them. A client pinned to the old id does not silently
-    // route onto a new-scheme model and the other way round.
+    // and [3, 5] reads below [5, 5], so the retired id lands on the new
+    // model. A new-scheme id never routes back onto the old one.
+    expect(isVersionUpdate('claude-3-5-sonnet-20241022', 'claude-sonnet-5-5')).toBe(true)
     expect(isVersionUpdate('claude-sonnet-5', 'claude-3-5-sonnet-20241022')).toBe(false)
-    expect(isVersionUpdate('claude-3-5-sonnet-20241022', 'claude-sonnet-5-5')).toBe(false)
   })
 
   test('Claude: a context-window suffix like [1m] stays a different variant', () => {
@@ -198,8 +209,10 @@ describe('isVersionUpdate', () => {
     expect(isVersionUpdate('gpt-5', 'gpt-5.4')).toBe(true)
     expect(isVersionUpdate('gpt-5', 'gpt-5.5')).toBe(true)
     expect(isVersionUpdate('gpt-5.1', 'gpt-5.1')).toBe(true)
-    // Different major sibling does not update across.
-    expect(isVersionUpdate('gpt-5.2', 'gpt-5.4')).toBe(false)
+    // A later minor is an update; an earlier one is not.
+    expect(isVersionUpdate('gpt-5.2', 'gpt-5.4')).toBe(true)
+    expect(isVersionUpdate('gpt-5.4', 'gpt-5.2')).toBe(false)
+    // A codename after the version is a different line (stem `gpt-astra`).
     expect(isVersionUpdate('gpt-5', 'gpt-6-astra')).toBe(false)
   })
 
@@ -235,7 +248,7 @@ describe('isVersionUpdate', () => {
     expect(isVersionUpdate('gemini-2.5-pro', 'gemini-2.5-flash')).toBe(false)
   })
 
-  test('an earlier or sibling major version does not update up', () => {
+  test('an earlier version is never an update', () => {
     expect(isVersionUpdate('claude-sonnet-5', 'claude-sonnet-4-5')).toBe(false)
     expect(isVersionUpdate('claude-sonnet-5-5', 'claude-sonnet-5-4')).toBe(false)
   })
@@ -247,5 +260,15 @@ describe('isVersionUpdate', () => {
 
   test('a candidate shorter than the request is not an update', () => {
     expect(isVersionUpdate('claude-sonnet-5-5', 'claude-sonnet-5')).toBe(false)
+  })
+
+  test('the resolver picks the newest update overall, not the nearest', () => {
+    // Both callers filter with `isVersionUpdate` and take the head of
+    // `newestFirst`, so a pinned 4.7 skips an enabled 4.8 for 5.5.
+    const enabled = ['claude-opus-4-6', 'claude-opus-4-8', 'claude-opus-5-5', 'claude-sonnet-6', 'claude-opus-5-5[1m]']
+    const pick = (requested: string): string | undefined =>
+      enabled.filter((candidate) => isVersionUpdate(requested, candidate)).sort(newestFirst)[0]
+    expect(pick('claude-opus-4-7')).toBe('claude-opus-5-5')
+    expect(pick('claude-opus-6')).toBeUndefined()
   })
 })

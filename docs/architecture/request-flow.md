@@ -152,7 +152,7 @@ flowchart TD
 
 | 場面 | 挙動 |
 |------|------|
-| bare 名 `claude-opus-4-8` を受信 | そのモデルを有効なプロバイダがちょうど 1 つ持っていればそこへ送る。複数あれば Providers → Priorities の優先度順で、優先度が無ければ 400。0 件なら送らない（400 `No usable model`） |
+| bare 名 `claude-opus-4-8` を受信 | そのモデルを有効なプロバイダがちょうど 1 つ持っていればそこへ送る。複数あれば Providers → Priorities の優先度順で、優先度が無ければ 400。完全一致が 0 件なら、同じ系列で同じか新しいバージョンのうち最新の有効なモデルへ読み替える（`claude-opus-4-7` → `claude-opus-5-5`。古いほうや `-mini` などの別系列へは行かない）。それも無ければ送らない（400 `No usable model`） |
 | `provider,model` を受信 | そのまま宛先になる。OpenAI 互換面が `/v1/models` の id をそのまま投げ返せるのはこの経路。fallback は無い |
 | Plan に無いモデルを受信 | 403（面のエラー封筒）。`defaultModel` へは振り替えない |
 | モデルを書いていないリクエスト | Plan があれば `defaultModel`。無ければ 400 `Missing model in request body` |

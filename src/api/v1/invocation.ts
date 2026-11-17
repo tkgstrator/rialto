@@ -126,8 +126,8 @@ export interface ResolvedInvocation {
 // hosts anything here.
 //
 // When no provider lists the exact id, the same version-update fallback
-// route-plan runs covers chain entries too: `claude-sonnet-5` resolves
-// to the newest enabled `claude-sonnet-5-N` in the family. Returned
+// route-plan runs covers chain entries too: `claude-opus-4-7` resolves
+// to the newest enabled `claude-opus-*` at 4.7 or later. Returned
 // `model` is the name to call upstream with, which may differ from the
 // requested id.
 function providerHostingModel(ctx: LlmsContext, bareModel: string): { provider: string; model: string } | null {

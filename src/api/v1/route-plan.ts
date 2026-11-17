@@ -139,9 +139,11 @@ function applyPathParams(body: Record<string, unknown>, path: string): void {
 }
 
 // Exact hosts for a bare model, and — only when none has it — the newest
-// enabled release of the same family. `claude-sonnet-5` → `claude-sonnet-5-5`
-// when the former is not among any provider's enabled models: a client
-// pinned to the shorter spelling keeps working as point releases land.
+// enabled release of the same family at the same or a later version.
+// `claude-sonnet-5` → `claude-sonnet-5-5` and `claude-opus-4-7` →
+// `claude-opus-5-5` when the former is not among any provider's enabled
+// models: a client pinned to an older release keeps working once the
+// operator switches it off for a newer one.
 //
 // The update is picked across every host that lists some newer release,
 // then handed to `preferredProviderOrder` under the resolved name so
@@ -277,8 +279,8 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   // A bare name is a public model id. Resolve the provider here, before deny
   // rules and the failover walker, so both judge the same target. The
   // resolver updates a stale id to its newest enabled release in the same
-  // family (claude-sonnet-5 → claude-sonnet-5-5) when no host carries the
-  // literal name.
+  // family (claude-sonnet-5 → claude-sonnet-5-5, claude-opus-4-7 →
+  // claude-opus-5-5) when no host carries the literal name.
   const bareModel = typeof body.model === 'string' && !body.model.includes(',') ? body.model : undefined
   if (bareModel !== undefined && bareModel.length > 0) {
     const { order, model: resolvedModel } = await bareModelProviders(bareModel, ctx, token?.plan)

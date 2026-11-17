@@ -34,7 +34,14 @@ candidate).
    is not read). It never rewrites `body.model`. The recorded scenario is always `passthrough`.
 4. **Resolve a bare model name** to its provider: the providers that are enabled and host it, ordered
    by provider priority (`src/services/model-provider-preference.ts`), restricted to the providers
-   the plan lists. Several hosts with no priority set is a 400.
+   the plan lists. Several hosts with no priority set is a 400. When no enabled provider lists the
+   exact id, the name resolves to the newest enabled release of the same model line at the same or
+   a later version — `claude-sonnet-5` → `claude-sonnet-5-5`, and across majors `claude-opus-4-7` →
+   `claude-opus-5-5` (`isVersionUpdate` in `src/shared/model-version.ts`). It never moves to an
+   older release or to another line (`-mini`, `-pro`, `[1m]`). A plan token is checked in step 2
+   against the id it sent, so a plan that lists only the newer id still answers 403 to the older one,
+   and a plan that still lists the older id pins it as `provider,model`, which skips this step and
+   gets 400 `No usable model` once that model is switched off — update the plan instead.
 5. **Surface deny list.** `InboundSurfaceConfig.deniedTargets` can refuse a `provider,model` on one
    surface (400). The list is stored per surface and read through a short cache
    (`src/services/inbound-surface-service.ts`); `/api/inbound-surfaces` reads and writes it.
