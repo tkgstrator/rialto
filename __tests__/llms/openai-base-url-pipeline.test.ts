@@ -48,6 +48,12 @@ const RESPONSES_REPLY = {
 }
 
 type Received = { path: string; authorization: string | null; body: Bag }
+const responsesOptions = {
+  include: ['reasoning.encrypted_content'],
+  text: { verbosity: 'low' },
+  client_metadata: { session_id: 'test-session' },
+  prompt_cache_key: 'test-cache'
+}
 
 async function exchange(input: { baseTail: string; endpoint: 'chat' | 'responses'; body: Bag }) {
   const received: Received[] = []
@@ -56,7 +62,14 @@ async function exchange(input: { baseTail: string; endpoint: 'chat' | 'responses
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname
-      received.push({ path, authorization: request.headers.get('authorization'), body: Object(await request.json()) })
+      const body = Object(await request.json())
+      received.push({ path, authorization: request.headers.get('authorization'), body })
+      if (path === '/v1/chat/completions') {
+        const unsupported = Object.keys(responsesOptions).find((key) => key in body)
+        if (unsupported !== undefined) {
+          return Response.json({ error: { message: `Unknown parameter: '${unsupported}'` } }, { status: 400 })
+        }
+      }
       return Response.json(path === '/v1/responses' ? RESPONSES_REPLY : CHAT_REPLY)
     }
   })
@@ -141,8 +154,9 @@ describe('a Chat model (the provider default)', () => {
     const result = await exchange({
       baseTail: '/v1/responses',
       endpoint: 'responses',
-      body: { model: CHAT_MODEL, input: 'ping', stream: false }
+      body: { model: CHAT_MODEL, input: 'ping', stream: false, ...responsesOptions }
     })
+    expect(result.status).toBe(200)
     expect(result.received.map((r) => r.path)).toEqual(['/v1/chat/completions'])
     expect(result.received[0].body.messages).toEqual([{ role: 'user', content: 'ping' }])
     expect('input' in result.received[0].body).toBe(false)
@@ -174,10 +188,17 @@ describe('a model switched to Responses', () => {
     const result = await exchange({
       baseTail: '/v1/chat/completions',
       endpoint: 'responses',
-      body: { model: RESPONSES_MODEL, input: 'ping', reasoning: { effort: 'low' }, stream: false }
+      body: {
+        model: RESPONSES_MODEL,
+        input: 'ping',
+        reasoning: { effort: 'low' },
+        stream: false,
+        ...responsesOptions
+      }
     })
     expect(result.received.map((r) => r.path)).toEqual(['/v1/responses'])
     expect(result.received[0].body.reasoning).toMatchObject({ effort: 'low' })
+    expect(result.received[0].body).toMatchObject(responsesOptions)
     // A text-only reply converts back to the envelope the caller asked for.
     expect(result.reply.object).toBe('response')
     expect(JSON.stringify(result.reply.output)).toContain('pong')

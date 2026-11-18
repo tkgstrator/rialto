@@ -118,14 +118,26 @@ export class OpenAITransformer extends Transformer {
   async transformRequestIn(
     request: UnifiedChatRequest,
     provider: RuntimeProvider,
-    _context: TransformerContext
+    context: TransformerContext
   ): Promise<TransformerHookResult | UnifiedChatRequest> {
     // Served over Responses, by a step that runs after this one and expects
     // the body still unified.
     if (hasOwnModelChain(provider, request.model)) return request
     const req = request as UnifiedChatRequest & {
+      include?: unknown
+      text?: unknown
+      client_metadata?: unknown
+      prompt_cache_key?: unknown
       max_completion_tokens?: number
       reasoning_effort?: string
+    }
+    // Codex clients send these Responses options together. Chat-compatible
+    // upstreams can reject them, including the cache key.
+    if (context.req?.surface === 'openai-responses') {
+      delete req.include
+      delete req.text
+      delete req.client_metadata
+      delete req.prompt_cache_key
     }
     if (
       modelNeedsMaxCompletionTokens(req.model) &&
