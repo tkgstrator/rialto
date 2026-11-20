@@ -1,7 +1,7 @@
 /**
  * How much disk the archives actually occupy, and a way to shrink them.
  *
- * RequestLog and Message grow with every request and nothing prunes
+ * Request and session records grow over time and nothing prunes
  * them, so the honest first step is showing the operator the number.
  * UsageSnapshot already self-prunes on the usage job's tick; it is
  * listed here so all four stores read from one place.
@@ -67,20 +67,28 @@ async function logFileStats(): Promise<{ count: number; bytes: number }> {
 
 export async function getStorageStats(): Promise<StorageStats> {
   const prisma = getPrismaClient()
-  const [requestLogRows, messageRows, usageRows, sizes, logs] = await Promise.all([
+  const [requestLogRows, messageRows, usageRows, sizes, logs, inputs] = await Promise.all([
     prisma.requestLog.count(),
     prisma.message.count(),
     prisma.usageSnapshot.count(),
     Promise.all(TABLES.map((t) => tableBytes(t.table))),
-    logFileStats()
+    logFileStats(),
+    prisma.$queryRaw<Array<{ count: bigint; bytes: bigint }>>`
+      SELECT COUNT(*) AS count, COALESCE(SUM(octet_length("firstUserInput")), 0) AS bytes
+      FROM "Session" WHERE "firstUserInput" IS NOT NULL
+    `
   ])
   const rowCounts: Record<string, number> = {
     requestLog: requestLogRows,
-    message: messageRows,
+    message: messageRows + Number(inputs[0].count),
     usageSnapshot: usageRows
   }
 
-  const stores: StoreStats[] = TABLES.map((t, i) => ({ id: t.id, count: rowCounts[t.id], bytes: sizes[i] }))
+  const stores: StoreStats[] = TABLES.map((t, i) => ({
+    id: t.id,
+    count: rowCounts[t.id],
+    bytes: sizes[i] + (t.id === 'message' ? Number(inputs[0].bytes) : 0)
+  }))
 
   stores.push({ id: 'logFiles', count: logs.count, bytes: logs.bytes })
 
@@ -111,8 +119,14 @@ export async function pruneStore(store: StoreId, olderThanDays: number): Promise
     return { store, deleted: count }
   }
   if (store === 'message') {
-    const { count } = await prisma.message.deleteMany({ where: { createdAt: { lt: cutoff } } })
-    return { store, deleted: count }
+    const [messages, previews] = await prisma.$transaction([
+      prisma.message.deleteMany({ where: { createdAt: { lt: cutoff } } }),
+      prisma.session.updateMany({
+        where: { createdAt: { lt: cutoff }, firstUserInput: { not: null } },
+        data: { firstUserInput: null }
+      })
+    ])
+    return { store, deleted: messages.count + previews.count }
   }
   if (store === 'usageSnapshot') {
     const { count } = await prisma.usageSnapshot.deleteMany({ where: { capturedAt: { lt: cutoff } } })

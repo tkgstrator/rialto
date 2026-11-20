@@ -1,3 +1,4 @@
+import { apiKeyVendorName } from '@/shared/custom-provider'
 /**
  * Registry of every vendor provider Rialto knows how to talk to.
  * `model-sync-service` and `catalog-service` iterate over this map to
@@ -50,7 +51,8 @@ const SCRAPED_VENDORS_SET = new Set(SCRAPED_VENDORS)
 
 export const scrapedVendors = (): readonly string[] => SCRAPED_VENDORS
 
-export const getVendorProvider = (name: string): VendorProvider | undefined => {
+export const getVendorProvider = (providerName: string): VendorProvider | undefined => {
+  const name = apiKeyVendorName(providerName)
   const explicit = explicitRegistry.get(name)
   if (explicit !== undefined) return explicit
   const cached = genericCache.get(name)

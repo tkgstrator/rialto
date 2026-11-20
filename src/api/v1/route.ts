@@ -16,7 +16,8 @@ import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import type { Logger } from 'pino'
 import { getPrismaClient } from '../../db/client'
-import { getLlmsContext, type MessageRecord, runPipeline, type UsageRecord } from '../../llms'
+import { firstUserInputOf } from '../../lib/sessions/first-user-input'
+import { getLlmsContext, runPipeline, type UsageRecord } from '../../llms'
 import { INBOUND_SURFACES, surfaceForPath } from '../../llms/inbound/surfaces'
 import { hasSafeguards } from '../../llms/pipeline/classifier-diagnostics'
 import { aggregateAnthropicSseToJson, findSseStreamDefect, isSseContentType } from '../../llms/utils/sse-aggregate'
@@ -27,7 +28,6 @@ import { attemptChainEntry, type ChainCtx, type SubscriptionKindProvider } from 
 import { buildErrorEnvelope, errorShapeForPath } from './error-shape'
 import { handleImageGeneration } from './images'
 import type { ResolvedInvocation } from './invocation'
-import { redactToolArguments } from './redact'
 import { applyResponseModelIdentity } from './response-model-identity'
 import { buildRoutePlan, type RoutePlan } from './route-plan'
 import { bestSupportedLevel, deepReplaceValue, forwardUpstreamError } from './upstream-error'
@@ -44,14 +44,14 @@ export const v1Route = new Hono()
  * the wrong behaviour. Absent reads as on, which is what capture did
  * before these keys existed.
  */
-const captureEnabled = (key: 'CAPTURE_REQUESTS' | 'CAPTURE_MESSAGES'): boolean => process.env[key] !== 'false'
+const captureEnabled = (): boolean => process.env.CAPTURE_REQUESTS !== 'false'
 
-async function recordUsage(entry: UsageRecord): Promise<void> {
+async function recordUsage(entry: UsageRecord, firstUserInput: string | null): Promise<void> {
   // Spend goes to the token's usage windows whether or not the request is
   // captured: switching capture off must not switch a plan's spend limit
   // off with it. Never throws.
   await recordCallSpend(entry)
-  if (!captureEnabled('CAPTURE_REQUESTS')) return
+  if (!captureEnabled()) return
   const prisma = getPrismaClient()
   // New activity un-archives a previously archived session so it returns to
   // the History list (archivedAt: null), while still bumping updatedAt.
@@ -61,37 +61,11 @@ async function recordUsage(entry: UsageRecord): Promise<void> {
   // path did not carry a known inbound type.
   await prisma.session.upsert({
     where: { id: entry.sessionId },
-    create: { id: entry.sessionId, inboundType: entry.inboundType ?? null },
+    create: { id: entry.sessionId, inboundType: entry.inboundType ?? null, firstUserInput },
     update: { updatedAt: new Date(), archivedAt: null }
   })
   await prisma.requestLog.create({ data: { ...entry } })
   requestLogEmitter.emit('new_log', { sessionId: entry.sessionId })
-}
-
-// Chat-view archive. Best-effort — the pipeline fires this fire-and-forget
-// so a DB write failure never disturbs the upstream call. Upserts the
-// Session first because the user turn can land before recordUsage has
-// created it.
-async function recordMessages(entries: MessageRecord[]): Promise<void> {
-  if (entries.length === 0 || !captureEnabled('CAPTURE_MESSAGES')) return
-  const redact = process.env.REDACT_TOOL_ARGUMENTS === 'true'
-  const prisma = getPrismaClient()
-  const sessionIds = new Set(entries.map((e) => e.sessionId))
-  for (const id of sessionIds) {
-    await prisma.session.upsert({
-      where: { id },
-      create: { id },
-      update: { updatedAt: new Date(), archivedAt: null }
-    })
-  }
-  await prisma.message.createMany({
-    // biome-ignore plugin: MessageRecord.content is unknown by wire schema (Anthropic block arrays and user content shapes vary); Prisma InputJsonValue wants a concrete JSON value. The pipeline only passes wire-safe values here.
-    data: entries.map((e) => ({
-      sessionId: e.sessionId,
-      role: e.role,
-      content: (redact ? redactToolArguments(e.content) : e.content) as never
-    }))
-  })
 }
 
 // ─── Response formatting ────────────────────────────────────────────────
@@ -314,6 +288,7 @@ const handleInbound = async (c: Context): Promise<Response> => {
   const planOrResponse = await buildRoutePlan(c, ctx)
   if (planOrResponse instanceof Response) return planOrResponse
   const plan = planOrResponse
+  const firstUserInput = captureEnabled() ? firstUserInputOf(plan.routedBody) : null
 
   const chain = buildFailoverChain(plan)
   const providers = ctx.config.get<SubscriptionKindProvider[]>('providers', [])
@@ -336,7 +311,11 @@ const handleInbound = async (c: Context): Promise<Response> => {
         transformer: inv.transformer,
         context: { req: inv.request }
       },
-      { log: ctx.log, httpsProxy: ctx.config.getHttpsProxy(), recordUsage, recordMessages }
+      {
+        log: ctx.log,
+        httpsProxy: ctx.config.getHttpsProxy(),
+        recordUsage: (entry) => recordUsage(entry, firstUserInput)
+      }
     )
     const identified = await applyResponseModelIdentity(upstream, {
       provider: inv.provider.name,

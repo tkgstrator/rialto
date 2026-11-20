@@ -1,5 +1,6 @@
 import { cn } from 'cn'
 import { useTranslation } from 'react-i18next'
+import { SelectPicker } from '@/components/rialto/SelectPicker'
 import { openAiEffortsFor } from '@/shared/model-reasoning-effort'
 import { effortLadder, type ThinkingOffReading, thinkingOffReadings } from './capability-reading'
 import type { ModelRow } from './derive'
@@ -49,27 +50,14 @@ function OverrideCell({
   onChange: (next: string) => void
 }) {
   return (
-    <span
-      className={cn(
-        'relative inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] transition-colors hover:bg-muted/60',
-        CELL_TONE[tone]
-      )}
-    >
-      {reading}
-      <i className='ri-arrow-down-s-line text-xs opacity-60' />
-      <select
-        aria-label={label}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className='absolute inset-0 cursor-pointer opacity-0'
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </span>
+    <SelectPicker
+      label={label}
+      value={value}
+      onChange={onChange}
+      options={options}
+      reading={reading}
+      className={cn('h-auto px-1.5 py-0.5 text-xs', CELL_TONE[tone])}
+    />
   )
 }
 

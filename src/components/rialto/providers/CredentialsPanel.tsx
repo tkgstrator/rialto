@@ -15,12 +15,12 @@
  * staged with the rest of the edit: Save writes the key, Revert drops it.
  */
 import { useState } from 'react'
-import { Trans, useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { RButton } from '@/components/rialto/primitives'
 import { maskKeyParts } from './derive'
 import { ReplaceKeyDialog } from './ReplaceKeyDialog'
 import type { Provider } from './types'
+import { useProviderAccount } from './useProviderAccount'
 
 /** The masked key, clipped in the middle rather than at the end. */
 function MaskedKey({ value }: { value: string }) {
@@ -36,13 +36,11 @@ function MaskedKey({ value }: { value: string }) {
 
 export function CredentialsPanel({
   provider,
-  label,
   editing,
   onReplace
 }: {
   /** As Save would leave it, so a staged replacement shows here like a stored key. */
   provider: Provider
-  label: string
   editing: boolean
   /** Stages a replacement; nothing is written until the page's Save. */
   onReplace: (key: string) => void
@@ -51,6 +49,7 @@ export function CredentialsPanel({
   const current = provider.api_key === null ? '' : provider.api_key
   const [revealed, setRevealed] = useState(false)
   const [replacing, setReplacing] = useState(false)
+  const account = useProviderAccount(provider)
 
   // Re-mask after a replacement: whatever the operator was looking at is
   // not the key any more, and leaving the box open would show the new one
@@ -116,22 +115,28 @@ export function CredentialsPanel({
             </span>
           </div>
         </div>
-        <p className='text-[12px] leading-relaxed text-muted-foreground'>
-          <Trans
-            i18nKey='providers.credentials.interpolationNote'
-            components={{ mono: <span className='font-mono' /> }}
-          />
-        </p>
-        <p className='text-[12px] leading-relaxed text-muted-foreground'>
-          <Trans
-            i18nKey='providers.credentials.outboundNote'
-            values={{ label }}
-            components={{
-              strong: <span className='font-medium text-foreground' />,
-              tokens: <Link to='/access-tokens' className='underline underline-offset-2' />
-            }}
-          />
-        </p>
+        {account.workspaceId || account.organizationId || account.projectId ? (
+          <dl className='space-y-2 break-all text-xs'>
+            {account.projectId ? (
+              <div>
+                <dt className='text-muted-foreground'>{t('providers.credentials.projectId')}</dt>
+                <dd className='font-mono'>{account.projectId}</dd>
+              </div>
+            ) : null}
+            {account.workspaceId ? (
+              <div>
+                <dt className='text-muted-foreground'>{t('providers.credentials.workspaceId')}</dt>
+                <dd className='font-mono'>{account.workspaceId}</dd>
+              </div>
+            ) : null}
+            {account.organizationId ? (
+              <div>
+                <dt className='text-muted-foreground'>{t('providers.credentials.organizationId')}</dt>
+                <dd className='font-mono'>{account.organizationId}</dd>
+              </div>
+            ) : null}
+          </dl>
+        ) : null}
       </div>
       <ReplaceKeyDialog open={replacing} current={current} onOpenChange={setReplacing} onReplace={replace} />
     </div>

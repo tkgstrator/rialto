@@ -28,8 +28,8 @@ const browser = (): Browser => {
 
 /** Both lists, with the add button each one offers. */
 const LISTS = [
-  { path: '/providers/subscriptions', add: 'Add subscription', empty: 'No subscriptions connected yet' },
-  { path: '/providers/api-keys', add: 'Add key', empty: 'No API-key providers configured yet' }
+  { path: '/providers/subscriptions', empty: 'No subscriptions connected yet' },
+  { path: '/providers/api-keys', empty: 'No API-key providers configured yet' }
 ] as const
 
 /** The first-run gate opens once /setup has rendered. From a bare
@@ -64,21 +64,20 @@ describe.skipIf(!HAS_E2E)('Providers lists', () => {
   })
 
   for (const list of LISTS) {
-    test(`${list.path} offers exactly one way to add`, async () => {
+    test(`${list.path} offers Add and Refresh`, async () => {
       const page = await open(list.path)
-      expect(await page.getByText(list.add, { exact: true }).count()).toBe(1)
+      expect(await page.getByRole('button', { name: 'Add', exact: true }).count()).toBe(1)
+      expect(await page.getByRole('button', { name: 'Refresh', exact: true }).count()).toBe(1)
       await page.context().close()
     })
 
-    test(`${list.path} — the empty-state message points at a button that exists`, async () => {
-      // Guards against saying "Use Add provider to connect one" while no
-      // "Add provider" is on the screen.
+    test(`${list.path} — shows the empty state and Add`, async () => {
       const page = await open(list.path)
       if ((await providerCount(page)) === 0) {
         // bun:test's expect has none of playwright's matchers
         // (toBeVisible), so resolve the boolean on the locator first.
         expect(await page.getByText(list.empty, { exact: false }).isVisible()).toBe(true)
-        expect(await page.getByText(list.add, { exact: true }).count()).toBeGreaterThan(0)
+        expect(await page.getByRole('button', { name: 'Add', exact: true }).count()).toBeGreaterThan(0)
       }
       await page.context().close()
     })
@@ -93,7 +92,7 @@ describe.skipIf(!HAS_E2E)('Providers lists', () => {
     await page.context().close()
   })
 
-  test('model switches and manual tier picks use the provider mutations', async () => {
+  test('model switches save and Refresh syncs models even if pricing fails', async () => {
     const page = await open('/overview')
     const writes: Array<{ method: string; url: string; body: string }> = []
     const provider = {
@@ -115,18 +114,8 @@ describe.skipIf(!HAS_E2E)('Providers lists', () => {
       writes.push({ method: request.method(), url: request.url(), body: body === null ? '' : body })
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
     })
-    await page.route('**/api/tier-aliases', async (route) => {
-      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
-    })
-    await page.route('**/api/providers/e2e-manual/tier-aliases/opus', async (route) => {
-      const request = route.request()
-      const body = request.postData()
-      writes.push({ method: request.method(), url: request.url(), body: body === null ? '' : body })
-      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"enabledModel":true}' })
-    })
     await page.goto(`${E2E_BASE_URL}/providers/models`, { waitUntil: 'networkidle' })
     expect(await page.getByRole('button', { name: 'Toggle beta' }).isDisabled()).toBe(true)
-    expect(await page.getByRole('combobox', { name: 'Model the opus alias points at' }).count()).toBe(0)
     await page.getByRole('button', { name: 'Edit', exact: true }).click()
     expect(await page.getByRole('button', { name: 'Toggle beta' }).isDisabled()).toBe(false)
     await page.getByRole('button', { name: 'Toggle beta' }).click()
@@ -138,35 +127,25 @@ describe.skipIf(!HAS_E2E)('Providers lists', () => {
     expect(switchWrite.method).toBe('POST')
     expect(JSON.parse(switchWrite.body).transformer._disabledModels).toEqual(['alpha', 'beta'])
 
-    await page.getByRole('combobox', { name: 'Model the opus alias points at' }).selectOption('alpha')
-    await page.waitForFunction(
-      () =>
-        document.querySelector('select[aria-label="Model the opus alias points at"]')?.getAttribute('disabled') === null
-    )
-    const tierWrite = writes[1]
-    if (tierWrite === undefined) throw new Error('tier picker did not write')
-    expect(tierWrite.method).toBe('PUT')
-    expect(JSON.parse(tierWrite.body)).toEqual({ model: 'alpha' })
     await page.setViewportSize({ width: 390, height: 844 })
     expect(await page.getByRole('button', { name: 'Toggle beta' }).isVisible()).toBe(true)
-    expect(await page.getByRole('combobox', { name: 'Model the opus alias points at' }).isVisible()).toBe(true)
     await page.getByRole('button', { name: 'Done', exact: true }).click()
     expect(await page.getByRole('button', { name: 'Toggle beta' }).isDisabled()).toBe(true)
-    expect(await page.getByRole('combobox', { name: 'Model the opus alias points at' }).count()).toBe(0)
     const refreshed: string[] = []
     await page.route('**/api/catalog/refresh', async (route) => {
       refreshed.push('catalog')
-      await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+      await route.fulfill({ status: 503, contentType: 'application/json', body: '{}' })
     })
     await page.route('**/api/refresh-models', async (route) => {
       refreshed.push('models')
-      await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"outcomes":[]}' })
     })
     await Promise.all([
+      page.waitForResponse('**/api/catalog/refresh'),
       page.waitForResponse('**/api/refresh-models'),
       page.getByRole('button', { name: 'Refresh', exact: true }).click()
     ])
-    expect(refreshed).toEqual(['catalog', 'models'])
+    expect(refreshed.sort()).toEqual(['catalog', 'models'])
     const overflow = await page.evaluate(() => {
       const main = document.querySelector('main')
       return main === null ? 0 : main.scrollWidth - main.clientWidth

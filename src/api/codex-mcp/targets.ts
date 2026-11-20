@@ -13,6 +13,7 @@ import { AuthMode } from '../../generated/prisma/client'
 import type { TokenPlan } from '../../services/access-token-service'
 import { getEnabledModels } from '../../services/config/enabled-models'
 import { resolvePreferredProvider } from '../../services/model-provider-preference'
+import { allowsProviderMode, allowsTokenModel, type TokenPolicy } from '../../shared/access-token-policy'
 import { newestFirst } from '../../shared/model-version'
 
 const CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex'
@@ -67,18 +68,28 @@ async function chooseCodexModels(eligible: readonly CodexTarget[]): Promise<Code
 
 export async function callableCodexModels(
   operation: 'completion' | 'image',
-  plan: TokenPlan | null = null
+  plan: TokenPlan | null = null,
+  policy?: TokenPolicy
 ): Promise<CodexTarget[]> {
-  return chooseCodexModels((await codexModels(operation)).filter((target) => planAllows(plan, target)))
+  return chooseCodexModels(
+    (await codexModels(operation)).filter(
+      (target) =>
+        planAllows(plan, target) && allowsTokenModel(policy, target.model) && allowsProviderMode(policy, 'subscription')
+    )
+  )
 }
 
 /** Qualified names remain valid for older clients; bare names use Rialto's provider priority. */
 export async function resolveCodexTarget(
   operation: 'completion' | 'image',
   requested: string | undefined,
-  plan: TokenPlan | null = null
+  plan: TokenPlan | null = null,
+  policy?: TokenPolicy
 ): Promise<TargetResult> {
-  const eligible = (await codexModels(operation)).filter((target) => planAllows(plan, target))
+  const eligible = (await codexModels(operation)).filter(
+    (target) =>
+      planAllows(plan, target) && allowsTokenModel(policy, target.model) && allowsProviderMode(policy, 'subscription')
+  )
   if (eligible.length === 0) {
     const kind = operation === 'image' ? 'image model' : 'model'
     return { ok: false, message: `No Codex ${kind} is enabled for this token.` }

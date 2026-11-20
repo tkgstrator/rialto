@@ -1,3 +1,4 @@
+import type { ReactElement } from 'react'
 import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { AccessPlans } from '@/components/rialto/AccessPlans'
@@ -24,6 +25,10 @@ import { AccessRejectedScreen } from '@/components/rialto/system/AccessRejected'
 import { NotFoundScreen } from '@/components/rialto/system/NotFound'
 import { OauthResultScreen } from '@/components/rialto/system/OauthResult'
 import { SetupScreen } from '@/components/rialto/system/SetupScreen'
+
+function page(path: string, purpose: string, element: ReactElement) {
+  return { path, element, handle: { purpose: `pagePurpose.${purpose}` } }
+}
 
 export const router = createBrowserRouter([
   {
@@ -52,7 +57,7 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         ),
         children: [
-          { path: '/overview', element: <Overview /> },
+          page('/overview', 'overview', <Overview />),
           // Providers is two lists and a detail, not one master-detail
           // screen. The rail that used to hold the master half grouped it
           // under these same two headings, and cost the detail half 288px
@@ -63,29 +68,29 @@ export const router = createBrowserRouter([
           // path the sidebar cannot highlight.
           { path: '/providers', element: <Navigate to='/providers/subscriptions' replace /> },
           // Static before dynamic so section pages cannot become provider names.
-          { path: '/providers/subscriptions', element: <ProvidersScreen kind='subscription' /> },
-          { path: '/providers/api-keys', element: <ProvidersScreen kind='api_key' /> },
-          { path: '/providers/models', element: <ProviderModelsScreen /> },
-          { path: '/providers/priorities', element: <ProviderPrioritiesScreen /> },
-          { path: '/providers/connect', element: <AddProviderScreen /> },
-          { path: '/providers/:name', element: <ProviderDetailScreen /> },
+          page('/providers/subscriptions', 'subscriptions', <ProvidersScreen kind='subscription' />),
+          page('/providers/api-keys', 'apiKeys', <ProvidersScreen kind='api_key' />),
+          page('/providers/models', 'modelList', <ProviderModelsScreen />),
+          page('/providers/priorities', 'providerPriorities', <ProviderPrioritiesScreen />),
+          page('/providers/connect', 'connectProvider', <AddProviderScreen />),
+          page('/providers/:name', 'providerDetail', <ProviderDetailScreen />),
           // Top level, beside Providers: outbound and inbound at the same
           // depth. These were /settings/access and
           // /settings/access/tokens/:id.
-          { path: '/access-tokens', element: <AccessTokens /> },
+          page('/access-tokens', 'accessTokens', <AccessTokens />),
           // Static before dynamic, as under Providers: a token id is never
           // "plans", and it must not be read as one.
-          { path: '/access-tokens/plans', element: <AccessPlans /> },
-          { path: '/access-tokens/:id', element: <TokenDetail /> },
-          { path: '/activity', element: <ActivitySessions /> },
-          { path: '/activity/requests', element: <ActivityRequests /> },
-          { path: '/activity/sessions/:sessionId', element: <ActivitySessionDetail /> },
-          { path: '/activity/usage', element: <ActivityUsage /> },
-          { path: '/activity/logs', element: <ActivityLogs /> },
-          { path: '/settings', element: <SettingsServer /> },
-          { path: '/settings/access', element: <SettingsAccess /> },
-          { path: '/settings/logging', element: <SettingsLogging /> },
-          { path: '/settings/advanced', element: <SettingsAdvanced /> }
+          page('/access-tokens/plans', 'accessPlans', <AccessPlans />),
+          page('/access-tokens/:id', 'tokenDetail', <TokenDetail />),
+          page('/activity', 'sessions', <ActivitySessions />),
+          page('/activity/requests', 'requests', <ActivityRequests />),
+          page('/activity/sessions/:sessionId', 'sessionDetail', <ActivitySessionDetail />),
+          page('/activity/usage', 'usage', <ActivityUsage />),
+          page('/activity/logs', 'logs', <ActivityLogs />),
+          page('/settings', 'serverSettings', <SettingsServer />),
+          page('/settings/access', 'accessSettings', <SettingsAccess />),
+          page('/settings/logging', 'loggingSettings', <SettingsLogging />),
+          page('/settings/advanced', 'advancedSettings', <SettingsAdvanced />)
         ]
       },
       {

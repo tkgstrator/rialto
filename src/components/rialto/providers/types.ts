@@ -64,6 +64,9 @@ export interface ProviderTestResponse {
   success: boolean
   latencyMs?: number
   error?: string
+  organizationId?: string
+  workspaceId?: string
+  projectId?: string
 }
 
 export interface ModelTestResponse {

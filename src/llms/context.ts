@@ -14,7 +14,7 @@ import { logger } from '../logger'
 import { loadFullConfig } from '../services/config'
 import { disabledSet } from '../services/config/transformer'
 import { applySubscriptionAuth } from '../services/subscription-overlay'
-import { isCodexImageModel } from '../shared/data/subscriptions'
+import { isImageOnlyModel } from '../shared/data/openai-images'
 import { ConfigStore } from './registry/config'
 import { ProviderRegistry } from './registry/provider'
 import { TokenizerRegistry } from './registry/tokenizer'
@@ -107,7 +107,7 @@ function servableProviders(providers: Provider[]): Provider[] {
     .filter((p) => p.enabled !== false)
     .map((p) => {
       const disabled = disabledSet(p.transformer)
-      return { ...p, models: p.models.filter((m) => !disabled.has(m) && !isCodexImageModel(m)) }
+      return { ...p, models: p.models.filter((m) => !disabled.has(m) && !isImageOnlyModel(m)) }
     })
 }
 

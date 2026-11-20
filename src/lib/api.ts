@@ -12,11 +12,13 @@ import type {
   RevokedTokensWire,
   SessionMessageItem,
   SessionSummary,
+  TokenModelChoice,
   TokenScopeId,
   TokenUsageWindowsWire,
   UpdateCheckResponse,
   UseResetResponse
 } from '@/lib/api-types'
+import type { TokenFolder, TokenPolicy } from '@/shared/access-token-policy'
 import type { Config } from '@/types'
 
 // Every wire type lives in ./api-types and is re-exported here, so
@@ -251,6 +253,8 @@ class ApiClient {
 
   async issueAccessToken(body: {
     name: string
+    folderId?: string | null
+    policy?: TokenPolicy
     /**
      * Omitted or empty issues a token that may call every /v1 surface —
      * but not /codex, which only a list naming 'codex-mcp' grants.
@@ -261,6 +265,26 @@ class ApiClient {
     planId?: string | null
   }): Promise<{ token: AccessTokenWire; plaintext: string }> {
     return this.post<{ token: AccessTokenWire; plaintext: string }>('/access-tokens', body)
+  }
+
+  async previewTokenPolicy(body: { scopes: readonly string[]; planId: string | null; policy: TokenPolicy }): Promise<{
+    choices: TokenModelChoice[]
+  }> {
+    return this.post('/access-tokens/preview', { surfaces: body.scopes, planId: body.planId, policy: body.policy })
+  }
+
+  async getTokenFolders(): Promise<{ folders: TokenFolder[] }> {
+    return this.get('/access-token-folders')
+  }
+
+  async saveTokenFolder(id: string | null, body: Omit<TokenFolder, 'id'>): Promise<TokenFolder> {
+    return id === null
+      ? this.post('/access-token-folders', body)
+      : this.put(`/access-token-folders/${encodeURIComponent(id)}`, body)
+  }
+
+  async deleteTokenFolder(id: string): Promise<{ deleted: boolean }> {
+    return this.deleteRequest(`/access-token-folders/${encodeURIComponent(id)}`)
   }
 
   async getAccessToken(id: string): Promise<AccessTokenWire> {
@@ -275,9 +299,22 @@ class ApiClient {
    */
   async updateAccessToken(
     id: string,
-    body: { surfaces?: TokenScopeId[]; planId?: string | null }
+    body: {
+      name?: string
+      surfaces?: TokenScopeId[]
+      planId?: string | null
+      folderId?: string | null
+      policy?: TokenPolicy
+    }
   ): Promise<AccessTokenWire> {
     return this.patch<AccessTokenWire>(`/access-tokens/${encodeURIComponent(id)}`, body)
+  }
+
+  async updateProviderConnection(
+    name: string,
+    body: { display_name: string | null; api_base_url?: string }
+  ): Promise<void> {
+    await this.patch(`/providers/${encodeURIComponent(name)}/connection`, body)
   }
 
   /**

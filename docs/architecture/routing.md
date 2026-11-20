@@ -109,3 +109,18 @@ lifting on Refresh is `releaseRecoveredMarks` in `src/services/subscription-refr
 | Subagent tag | `__tests__/llms/router.test.ts` |
 | Usage-window 429 | `__tests__/api/usage-windows.test.ts` |
 | Quota snapshot, pace, account holds | `__tests__/services/routing-scheduler/` |
+
+## アクセストークンのフォルダと接続先設定
+
+フォルダは `parentId` で階層化する。フォルダの既定 Plan と接続先設定はトークン発行時に
+コピーする。発行済みトークンを移動しても、そのトークンのポリシーと利用履歴は引き継がれる。
+
+Plan の `provider,model` 許可リストと、トークンのモデル名の許可リストの両方を適用する。
+トークンでモデル制限を有効にして許可リストを空にすると、モデルへのリクエストをすべて拒否する。
+接続先にサブスクまたは API キーを指定できる。優先モードで別の認証方式へ切り替えるには
+フォールバックを有効にする。同じ認証方式の候補が複数ある場合は Providers の優先順位を使う。
+`provider,model` の直接指定でも、Plan とトークンの制限は適用される。
+
+設定画面のプレビューでは、トークンの対象 API 面、Plan、モデル制限、接続先設定を反映した
+モデル一覧と、各モデルで選ばれるプロバイダーを確認できる。既存トークンはルートフォルダに
+置かれ、現在の Plan とシステムのプロバイダー優先順位を使用する。

@@ -28,7 +28,6 @@ export interface ProvidersData {
   /** Per account: what it carried at API prices, and its banked resets. */
   accounts: AccountExtrasIndex
   /** Server-side totals; null when the summary has never been available. */
-  counts: { providers: number; enabledModels: number } | null
   /** Current wall clock, not the instant an old quota snapshot was captured. */
   now: number
 }
@@ -52,7 +51,6 @@ const EMPTY_DATA: ProvidersData = {
   transformers: [],
   quota: new Map(),
   accounts: new Map(),
-  counts: null,
   now: 0
 }
 
@@ -70,11 +68,6 @@ function mergeRead(previous: ProvidersData | null, read: Awaited<ReturnType<type
     transformers: keepSuccessful(transformers, (value) => value.transformers, known.transformers),
     quota: keepSuccessful(overview, (value) => indexQuota(value.quota), known.quota),
     accounts: keepSuccessful(overview, (value) => indexAccountExtras(value.quota), known.accounts),
-    counts: keepSuccessful(
-      overview,
-      (value) => ({ providers: value.providerCount, enabledModels: value.enabledModelCount }),
-      known.counts
-    ),
     now: dayjs().valueOf()
   }
 }

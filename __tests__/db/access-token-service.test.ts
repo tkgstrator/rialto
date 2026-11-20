@@ -8,6 +8,7 @@
  * must not resolve as unscoped.
  */
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
+import { tokenFoldersRoute } from '../../src/api/access-tokens/folders'
 import { accessTokensRoute } from '../../src/api/access-tokens/route'
 import { getPrismaClient } from '../../src/db/client'
 import dayjs from '../../src/lib/dayjs'
@@ -110,6 +111,48 @@ describe('sumSpendByToken', () => {
 })
 
 describe.skipIf(!HAS_DB)('access-token-service', () => {
+  test('folders can be nested and their defaults are copied only on issuance', async () => {
+    const folderBody = {
+      name: 'Parent',
+      parentId: null,
+      defaultPlanId: null,
+      defaultProviderMode: 'subscription_only',
+      defaultProviderFallback: false
+    }
+    const parentResponse = await tokenFoldersRoute.request('/api/access-token-folders', {
+      method: 'POST',
+      body: JSON.stringify(folderBody)
+    })
+    expect(parentResponse.status).toBe(200)
+    const parent = await parentResponse.json()
+    const childBody = { ...folderBody, name: 'Child', parentId: parent.id, defaultProviderMode: 'api_key_only' }
+    const child = await (
+      await tokenFoldersRoute.request('/api/access-token-folders', {
+        method: 'POST',
+        body: JSON.stringify(childBody)
+      })
+    ).json()
+    const issued = await issueAccessToken({ name: 'Nested', folderId: child.id })
+    expect(issued.token.folderId).toBe(child.id)
+    expect(issued.token.policy.providerMode).toBe('api_key_only')
+    const cycle = await tokenFoldersRoute.request(`/api/access-token-folders/${parent.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ ...folderBody, parentId: child.id })
+    })
+    expect(cycle.status).toBe(400)
+    const occupied = await tokenFoldersRoute.request(`/api/access-token-folders/${child.id}`, { method: 'DELETE' })
+    expect(occupied.status).toBe(409)
+    await updateAccessToken(issued.token.id, { folderId: parent.id })
+    expect((await resolveAccessToken(issued.plaintext))?.policy?.providerMode).toBe('api_key_only')
+    expect(
+      (await tokenFoldersRoute.request(`/api/access-token-folders/${child.id}`, { method: 'DELETE' })).status
+    ).toBe(200)
+    await deleteAccessToken(issued.token.id)
+    expect(
+      (await tokenFoldersRoute.request(`/api/access-token-folders/${parent.id}`, { method: 'DELETE' })).status
+    ).toBe(200)
+  })
+
   beforeEach(async () => {
     await resetDbTables()
     await getPrismaClient().accessToken.deleteMany({})

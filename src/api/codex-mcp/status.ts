@@ -98,8 +98,8 @@ export async function status(ctx: ToolContext): Promise<CallToolResult> {
   noteTokenUse(ctx.token.id)
   const [accounts, chat, images, allowance] = await Promise.all([
     accountsReport(),
-    callableCodexModels('completion', ctx.token.plan),
-    callableCodexModels('image', ctx.token.plan),
+    callableCodexModels('completion', ctx.token.plan, ctx.token.policy),
+    callableCodexModels('image', ctx.token.plan, ctx.token.policy),
     allowanceReport(ctx)
   ])
   const efforts = await recordedEfforts(chat)

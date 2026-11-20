@@ -8,13 +8,15 @@ import { RButton } from '@/components/rialto/primitives'
 import { IssuedTokenDialog } from '@/components/rialto/settings/access/IssuedTokenDialog'
 import { emptyDraft, type IssueDraft, IssueTokenDialog } from '@/components/rialto/settings/access/IssueTokenDialog'
 import { ANY, scopeForWire } from '@/components/rialto/settings/access/pickers'
+import { TokenFolderBrowser } from '@/components/rialto/settings/access/TokenFolderBrowser'
+import { TokenFolderDialog } from '@/components/rialto/settings/access/TokenFolderDialog'
 import { TokenListPhone } from '@/components/rialto/settings/access/TokenListPhone'
 import { TokenTable } from '@/components/rialto/settings/access/TokenTable'
-import { SectionHead } from '@/components/rialto/settings/fields'
 import { usePhone } from '@/hooks/use-phone'
 import { type AccessTokenWire, api, type InboundSurfaceWire, type PlanWire } from '@/lib/api'
 import { enabledTargets } from '@/lib/models/enabled-targets'
 import { countTokens, expiryToIso, type TokenCounts } from '@/lib/rialto/settings/access-tokens'
+import { folderTokenDefaults, type TokenFolder } from '@/shared/access-token-policy'
 
 interface Revealed {
   plaintext: string
@@ -39,13 +41,15 @@ function Summary({ counts }: { counts: TokenCounts }) {
 export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire[] }) {
   const { t } = useTranslation()
   const { config } = useConfig()
+  const [folders, setFolders] = useState<TokenFolder[]>([])
+  const [folderId, setFolderId] = useState<string | null>(null)
+  const [editingFolder, setEditingFolder] = useState<TokenFolder | null | undefined>(undefined)
   const [tokens, setTokens] = useState<AccessTokenWire[]>([])
   const [plans, setPlans] = useState<PlanWire[]>([])
   const [draft, setDraft] = useState<IssueDraft | null>(null)
   const [revealed, setRevealed] = useState<Revealed | null>(null)
   const [issuing, setIssuing] = useState(false)
   const [resetting, setResetting] = useState(false)
-  const [allReset, setAllReset] = useState(false)
   const [creating, setCreating] = useState(false)
   const [createdNote, setCreatedNote] = useState<string | null>(null)
   const { confirm, dialog: confirmDialog } = useConfirm()
@@ -86,10 +90,14 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
   useEffect(() => {
     load()
     api
+      .getTokenFolders()
+      .then((res) => setFolders(res.folders))
+      .catch((error: Error) => toast.error(t('settings.access.listFailed', { message: error.message })))
+    api
       .getPlans()
       .then((res) => setPlans(res.plans))
       .catch(() => {})
-  }, [load])
+  }, [load, t])
 
   const issue = () => {
     if (draft === null) return
@@ -97,6 +105,8 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
     api
       .issueAccessToken({
         name: draft.name.trim(),
+        folderId: draft.folderId,
+        policy: draft.policy,
         surfaces: scopeForWire(surfaces, draft.surfaces),
         expiresAt: expiryToIso(draft.expiry, Date.now()),
         planId: draft.planId === ANY ? null : draft.planId
@@ -131,12 +141,80 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
     setResetting(true)
     api
       .resetAllUsageWindows()
-      .then(() => setAllReset(true))
+      .then(() => toast.success(t('access.token.allResetNote')))
       .catch((e: Error) => toast.error(t('access.token.resetFailed', { message: e.message })))
       .finally(() => setResetting(false))
   }
 
-  const counts = countTokens(tokens, now)
+  const selectedFolder = folders.find((folder) => folder.id === folderId)
+  const visibleTokens = tokens.filter((token) => (token.folderId === undefined ? null : token.folderId) === folderId)
+  const newToken = () => {
+    const defaults = folderTokenDefaults(selectedFolder)
+    setDraft({
+      ...emptyDraft(),
+      folderId,
+      planId: defaults.planId === null ? ANY : defaults.planId,
+      policy: defaults.policy
+    })
+  }
+  const removeFolder = async (folder: TokenFolder) => {
+    const accepted = await confirm({
+      title: t('settings.access.folderDelete'),
+      description: [{ text: t('settings.access.folderDeleteConfirm', { name: folder.name }) }],
+      confirmLabel: t('settings.access.folderDelete'),
+      icon: 'ri-delete-bin-line'
+    })
+    if (!accepted) return
+    try {
+      await api.deleteTokenFolder(folder.id)
+      setFolders((previous) => previous.filter((item) => item.id !== folder.id))
+      setFolderId(folder.parentId)
+    } catch (error) {
+      toast.error(t('settings.common.saveFailed', { message: error instanceof Error ? error.message : String(error) }))
+    }
+  }
+  const toolbar = (
+    <div className='flex flex-wrap items-center gap-2 px-6 pt-5 pb-3 max-md:px-4'>
+      <RButton variant='outline' icon='ri-folder-add-line' onClick={() => setEditingFolder(null)}>
+        {t('settings.access.folderNew')}
+      </RButton>
+      {selectedFolder === undefined ? null : (
+        <>
+          <RButton variant='outline' icon='ri-pencil-line' onClick={() => setEditingFolder(selectedFolder)}>
+            {t('settings.access.folderEdit')}
+          </RButton>
+          <RButton
+            variant='danger'
+            icon='ri-delete-bin-line'
+            onClick={() => removeFolder(selectedFolder)}
+            disabled={visibleTokens.length > 0 || folders.some((folder) => folder.parentId === selectedFolder.id)}
+          >
+            {t('settings.access.folderDelete')}
+          </RButton>
+        </>
+      )}
+      <RButton variant='primary' icon='ri-add-line' onClick={newToken} className='ml-auto'>
+        {t('settings.access.issueToken')}
+      </RButton>
+    </div>
+  )
+
+  const renderTokens = (id: string | null) => {
+    const entries = tokens.filter((token) => (token.folderId === undefined ? null : token.folderId) === id)
+    if (entries.length === 0) return null
+    return (
+      <div className={id === null ? undefined : 'ml-4 border-l border-border md:ml-6'}>
+        <div className='px-4 py-2 text-xs text-muted-foreground md:px-6'>
+          <Summary counts={countTokens(entries, now)} />
+        </div>
+        {phone ? (
+          <TokenListPhone tokens={entries} now={now} />
+        ) : (
+          <TokenTable tokens={entries} surfaces={surfaces} now={now} />
+        )}
+      </div>
+    )
+  }
 
   const dialogs = (
     <>
@@ -147,6 +225,7 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
           draft={draft}
           surfaces={surfaces}
           plans={plans}
+          folders={folders}
           available={available}
           creating={creating}
           createdNote={createdNote}
@@ -162,58 +241,39 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
           onPlanCreated={onPlanCreated}
         />
       ) : null}
+      {editingFolder !== undefined ? (
+        <TokenFolderDialog
+          folder={editingFolder}
+          parentId={folderId}
+          folders={folders}
+          plans={plans}
+          onClose={() => setEditingFolder(undefined)}
+          onSaved={(folder) => {
+            setFolders((previous) => [...previous.filter((item) => item.id !== folder.id), folder])
+            setFolderId(editingFolder === null ? folder.parentId : folder.id)
+            setEditingFolder(undefined)
+          }}
+        />
+      ) : null}
       {confirmDialog}
     </>
   )
 
-  if (phone) {
-    return (
-      <>
-        <TokenListPhone
-          tokens={tokens}
-          now={now}
-          summary={<Summary counts={counts} />}
-          onIssue={() => setDraft(emptyDraft())}
-        />
-        {dialogs}
-      </>
-    )
-  }
-
   return (
     <>
-      <SectionHead
-        meta={<Summary counts={counts} />}
-        actions={
-          <RButton variant='primary' icon='ri-add-line' onClick={() => setDraft(emptyDraft())}>
-            {t('settings.access.issueToken')}
-          </RButton>
-        }
-      />
-
-      <div className='px-6 pb-4'>
-        <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
-          <i className='ri-information-line mr-1 align-[-1px]' />
-          <Trans
-            i18nKey='settings.access.tokensNote'
-            components={{ strong: <span className='font-medium text-foreground' /> }}
-          />
-        </div>
-      </div>
-
-      <TokenTable tokens={tokens} surfaces={surfaces} now={now} />
-
-      <div className='flex items-center gap-3 border-t border-border/60 px-6 py-4'>
-        <span className='text-[12px] text-muted-foreground'>
-          {t(allReset ? 'access.token.allResetNote' : 'access.token.listWindowsNote')}
-        </span>
-        <div className='ml-auto shrink-0'>
-          <RButton variant='ghost' icon='ri-restart-line' onClick={resetAll} disabled={resetting}>
-            {t('access.token.resetAll')}
-          </RButton>
-        </div>
-      </div>
-
+      {toolbar}
+      <TokenFolderBrowser folders={folders} folderId={folderId} onOpen={setFolderId} renderTokens={renderTokens} />
+      {renderTokens(null)}
+      <div aria-hidden className='h-16' />
+      <RButton
+        variant='danger'
+        icon='ri-restart-line'
+        onClick={resetAll}
+        disabled={resetting}
+        className='fixed right-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-20 bg-destructive text-white shadow-sm hover:bg-destructive/90 hover:text-white md:right-6'
+      >
+        {t('access.token.resetAll')}
+      </RButton>
       {dialogs}
     </>
   )

@@ -1,3 +1,4 @@
+import { folderTokenDefaults, type TokenPolicy } from '../shared/access-token-policy'
 /**
  * Access tokens for /v1/*.
  *
@@ -32,6 +33,8 @@ export type { TokenSpendGroup, TokenWindowTotals } from './access-token-spend'
 
 export interface AccessTokenRow {
   id: string
+  folderId: string | null
+  policy: TokenPolicy
   name: string
   prefix: string
   /** Surfaces this token may call. Empty means every surface. */
@@ -82,7 +85,8 @@ const WIRE_INCLUDE = {
 } as const
 
 const toWire = (
-  row: {
+  row: TokenPolicy & {
+    folderId: string | null
     id: string
     name: string
     prefix: string
@@ -97,6 +101,13 @@ const toWire = (
   totals: TokenWindowTotals | undefined = undefined
 ): AccessTokenRow => ({
   id: row.id,
+  folderId: row.folderId,
+  policy: {
+    restrictModels: row.restrictModels,
+    allowedModels: row.allowedModels,
+    providerMode: row.providerMode,
+    providerFallback: row.providerFallback
+  },
   name: row.name,
   prefix: row.prefix,
   surfaces: row.surfaces,
@@ -161,6 +172,8 @@ export async function getAccessToken(id: string): Promise<AccessTokenRow | null>
 }
 
 export interface IssueInput {
+  folderId?: string | null
+  policy?: TokenPolicy
   name: string
   /** Omitted or empty scopes the token to every surface. */
   surfaces?: string[]
@@ -171,14 +184,24 @@ export interface IssueInput {
 
 export async function issueAccessToken(input: IssueInput): Promise<IssuedToken> {
   const { plaintext, tokenHash, prefix } = mintSecret()
-  const row = await getPrismaClient().accessToken.create({
+  const prisma = getPrismaClient()
+  const folder =
+    input.folderId == null
+      ? null
+      : await prisma.accessTokenFolder.findUniqueOrThrow({
+          where: { id: input.folderId }
+        })
+  const defaults = folderTokenDefaults(folder)
+  const row = await prisma.accessToken.create({
     data: {
       name: input.name,
       tokenHash,
       prefix,
       surfaces: input.surfaces === undefined ? [] : input.surfaces,
       expiresAt: input.expiresAt === undefined || input.expiresAt === null ? null : new Date(input.expiresAt),
-      planId: input.planId === undefined ? null : input.planId
+      folderId: input.folderId === undefined ? null : input.folderId,
+      planId: input.planId === undefined ? defaults.planId : input.planId,
+      ...(input.policy === undefined ? defaults.policy : input.policy)
     },
     include: WIRE_INCLUDE
   })
@@ -187,34 +210,26 @@ export async function issueAccessToken(input: IssueInput): Promise<IssuedToken> 
 }
 
 export interface UpdateInput {
+  name?: string
+  folderId?: string | null
+  policy?: TokenPolicy
   /** Replaces the scope wholesale. Empty means every surface. */
   surfaces?: string[]
   /** Moves the token onto a plan, or off every plan with null. */
   planId?: string | null
 }
 
-/**
- * Change what an existing token is allowed to do.
- *
- * Scope and plan are the two things about a token that legitimately
- * change after it is issued — a client picks up a second endpoint, or
- * moves onto a different plan — and neither is a reason to hand the
- * machine a new secret. The name,
- * the secret and the expiry are deliberately not editable here: the
- * first is cosmetic, and the other two have their own operations
- * (`rotateAccessToken`, re-issue) whose consequences differ.
- *
- * Clears the resolver cache, without which a widened scope would take up
- * to CACHE_TTL_MS to admit the client and a narrowed one would keep
- * admitting it for just as long.
- */
+/** Update token settings while preserving its credential, expiry and history. */
 export async function updateAccessToken(id: string, input: UpdateInput): Promise<AccessTokenRow | null> {
   const row = await getPrismaClient()
     .accessToken.update({
       where: { id },
       data: {
+        ...(input.name === undefined ? {} : { name: input.name.trim() }),
         ...(input.surfaces === undefined ? {} : { surfaces: input.surfaces }),
-        ...(input.planId === undefined ? {} : { planId: input.planId })
+        ...(input.planId === undefined ? {} : { planId: input.planId }),
+        ...(input.folderId === undefined ? {} : { folderId: input.folderId }),
+        ...input.policy
       },
       include: WIRE_INCLUDE
     })

@@ -1,3 +1,5 @@
+import { SelectPicker } from '@/components/rialto/SelectPicker'
+import { Switch } from '@/components/ui/switch'
 /**
  * The controls that go in a settings row's right-hand column.
  *
@@ -74,28 +76,11 @@ export function ToggleField({
 }) {
   return (
     <SettingsField label={label} hint={hint}>
-      <button
-        type='button'
-        role='switch'
-        aria-checked={value}
-        aria-label={label}
-        onClick={() => onChange(!value)}
-        className={cn(
-          'inline-flex h-5 w-9 items-center rounded-full px-0.5 align-middle transition-colors',
-          value ? 'bg-foreground' : 'bg-muted-foreground/30'
-        )}
-      >
-        <span className={cn('size-4 rounded-full bg-background transition-transform', value ? 'translate-x-4' : '')} />
-      </button>
+      <Switch aria-label={label} checked={value} onCheckedChange={onChange} />
     </SettingsField>
   )
 }
 
-/**
- * The mock draws a bordered button with a trailing chevron. A native
- * `select` with `appearance-none` keeps that box exactly while giving
- * the real thing an accessible, zero-dependency picker.
- */
 export function SelectField({
   label,
   hint,
@@ -111,21 +96,13 @@ export function SelectField({
 }) {
   return (
     <SettingsField label={label} hint={hint}>
-      <div className='relative inline-flex'>
-        <select
-          value={value}
-          aria-label={label}
-          onChange={(e) => onChange(e.target.value)}
-          className='inline-flex h-8 min-w-40 appearance-none items-center rounded-md border border-border bg-transparent pl-3 pr-8 font-mono text-xs transition-colors hover:bg-muted/60'
-        >
-          {options.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
-        <i className='ri-arrow-down-s-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground' />
-      </div>
+      <SelectPicker
+        label={label}
+        value={value}
+        onChange={onChange}
+        className='min-w-40 font-mono'
+        options={options.map((option) => ({ value: option, label: option }))}
+      />
     </SettingsField>
   )
 }

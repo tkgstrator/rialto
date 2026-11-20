@@ -1,5 +1,6 @@
-import { type ReactNode, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Button } from '@/components/ui/button'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { InboundSurfaceWire, TokenScopeId } from '@/lib/api'
@@ -7,38 +8,6 @@ import { cn } from '@/lib/utils'
 import { CODEX_MCP_PATH, CODEX_MCP_SCOPE } from '@/shared/codex-mcp'
 
 export const ANY = ''
-
-const SELECT_CLASS =
-  'inline-flex h-8 w-full max-w-md appearance-none items-center rounded-md border border-border bg-transparent pl-3 pr-8 font-mono text-xs transition-colors hover:bg-muted/60 disabled:pointer-events-none disabled:opacity-50'
-
-export function Picker({
-  label,
-  value,
-  onChange,
-  disabled,
-  children
-}: {
-  label: string
-  value: string
-  onChange: (next: string) => void
-  disabled?: boolean
-  children: ReactNode
-}) {
-  return (
-    <div className='relative inline-flex w-full max-w-md'>
-      <select
-        aria-label={label}
-        value={value}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
-        className={SELECT_CLASS}
-      >
-        {children}
-      </select>
-      <i className='ri-arrow-down-s-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground' />
-    </div>
-  )
-}
 
 export interface MultiPickerOption {
   label: string
@@ -49,6 +18,7 @@ export interface MultiPickerOption {
 }
 
 export function MultiPicker({
+  id,
   options,
   selected,
   onChange,
@@ -57,6 +27,7 @@ export function MultiPicker({
   emptyPlaceholder,
   disabled
 }: {
+  id?: string
   options: readonly MultiPickerOption[]
   selected: readonly string[]
   onChange: (next: string[]) => void
@@ -79,7 +50,10 @@ export function MultiPicker({
   return (
     <Popover open={open} onOpenChange={disabled ? undefined : setOpen}>
       <PopoverTrigger asChild>
-        <button
+        <Button
+          id={id}
+          variant='outline'
+          size='sm'
           type='button'
           disabled={disabled}
           aria-expanded={open}
@@ -90,7 +64,7 @@ export function MultiPicker({
         >
           <span className='truncate text-left'>{label}</span>
           <i className='ri-arrow-down-s-line ml-2 shrink-0 text-sm text-muted-foreground' />
-        </button>
+        </Button>
       </PopoverTrigger>
       <PopoverContent className='w-[var(--radix-popover-trigger-width)] max-w-md p-0'>
         <Command>
@@ -127,16 +101,20 @@ export function MultiPicker({
 }
 
 export function SurfacePicker({
+  id,
   surfaces,
   selected,
   onChange,
   allLabel,
+  showHint = true,
   disabled
 }: {
+  id?: string
   surfaces: readonly InboundSurfaceWire[]
   selected: readonly string[]
   onChange: (next: string[]) => void
   allLabel: string
+  showHint?: boolean
   disabled?: boolean
 }) {
   const { t } = useTranslation()
@@ -147,6 +125,7 @@ export function SurfacePicker({
   return (
     <div>
       <MultiPicker
+        id={id}
         options={options}
         selected={selected}
         onChange={onChange}
@@ -155,7 +134,9 @@ export function SurfacePicker({
         emptyPlaceholder={t('settings.access.endpointSearchEmpty')}
         disabled={disabled}
       />
-      <p className='mt-2 text-[12px] leading-snug text-muted-foreground'>{t('settings.access.codexMcpHint')}</p>
+      {showHint ? (
+        <p className='mt-2 text-[12px] leading-snug text-muted-foreground'>{t('settings.access.codexMcpHint')}</p>
+      ) : null}
     </div>
   )
 }

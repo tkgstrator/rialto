@@ -1,3 +1,4 @@
+import type { ProviderAuthMode, TokenPolicy } from '@/shared/access-token-policy'
 /**
  * Wire shapes for every `/api/*` response the browser reads.
  *
@@ -161,7 +162,15 @@ export interface RevokedTokensWire {
   costUsd: number | null
 }
 
+export interface TokenModelChoice {
+  model: string
+  chosen: string | null
+  candidates: Array<{ provider: string; model: string; authMode: ProviderAuthMode }>
+}
+
 export interface AccessTokenWire {
+  folderId?: string | null
+  policy?: TokenPolicy
   id: string
   name: string
   /** First characters only — identifies a token without being usable. */

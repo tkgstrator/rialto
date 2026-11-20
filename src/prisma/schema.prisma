@@ -68,6 +68,11 @@ enum ApiStyle {
 model Provider {
   id                   String              @id @default(cuid())
   name                 String              @unique
+  displayName          String?
+  organizationId       String?
+  workspaceId          String?
+  projectId            String?
+  routingPriority      Int?
   apiBaseUrl           String
   // Null means "unset" — the user hasn't supplied a key yet (fresh
   // seed) or has cleared it. An empty string is never stored; "no key"
@@ -399,15 +404,14 @@ model Session {
   // registry, and an enum would make each new one a DDL migration and a
   // deploy-order hazard for no read-side benefit.
   inboundType String?
+  // Bounded plain text of the first user input, used to identify sessions.
+  firstUserInput String?
   logs        RequestLog[]
   messages    Message[]
 }
 
-// One row per chat turn. Populated by the pipeline: on request send it
-// appends the last user block; on response completion it appends the
-// assembled assistant blocks (text / tool_use). Skips system prompt and
-// tools — those repeat across turns and would dominate storage without
-// helping the chat view.
+// Historical chat turns, kept for existing installations and retention.
+
 model Message {
   id        String   @id @default(cuid())
   sessionId String
@@ -422,6 +426,30 @@ model Message {
 // Per-LLM-request stats: one row per upstream call that reaches the provider.
 // Stored for the History view (model, tokens, cost, cache).
 // No message content is ever stored here.
+enum TokenProviderMode {
+  system
+  subscription_only
+  api_key_only
+  subscription_first
+  api_key_first
+}
+
+model AccessTokenFolder {
+  id                      String              @id @default(cuid())
+  name                    String
+  parentId                String?
+  parent                  AccessTokenFolder?  @relation("TokenFolderTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children                AccessTokenFolder[] @relation("TokenFolderTree")
+  defaultPlanId           String?
+  defaultPlan             Plan?               @relation(fields: [defaultPlanId], references: [id], onDelete: SetNull)
+  defaultProviderMode     TokenProviderMode   @default(system)
+  defaultProviderFallback Boolean             @default(false)
+  tokens                  AccessToken[]
+
+  @@index([parentId])
+  @@index([defaultPlanId])
+}
+
 // A credential a client presents to /v1/*.
 //
 // Replaces the single envelope APIKEY for machine traffic. The plaintext
@@ -434,9 +462,9 @@ model Message {
 // `surfaces` pins a token to the inbound surfaces it may call, and `plan`
 // says which models it may use and how much it may spend.
 model AccessToken {
-  id           String                  @id @default(cuid())
+  id           String                   @id @default(cuid())
   name         String
-  tokenHash    String                  @unique
+  tokenHash    String                   @unique
   prefix       String
   // InboundSurface ids this token may call. Empty = every surface.
   //
@@ -446,7 +474,7 @@ model AccessToken {
   // an unscoped token — which is the scoping turned off, not narrowed.
   surfaces     String[]
   lastUsedAt   DateTime?
-  requestCount Int                     @default(0)
+  requestCount Int                      @default(0)
   // When the secret behind this row was last replaced. Null means it is
   // still the one issued at createdAt. Rotation keeps the row — the id,
   // the name, the scope and every RequestLog pointing at it — and swaps
@@ -457,7 +485,7 @@ model AccessToken {
   // RequestLog rows it authenticated keep its id (not a foreign key), so
   // they still group as one client after it is gone.
   expiresAt    DateTime?
-  createdAt    DateTime                @default(now())
+  createdAt    DateTime                 @default(now())
   // The plan this token spends under: which models it may use and how
   // much it may spend per 5-hour and 7-day window. Null = unrestricted, as
   // operator-issued tokens have always been. Referenced rather than
@@ -468,7 +496,15 @@ model AccessToken {
   plan         Plan?                    @relation(fields: [planId], references: [id], onDelete: Restrict)
   usageWindows AccessTokenUsageWindow[]
 
+  folderId         String?
+  folder           AccessTokenFolder? @relation(fields: [folderId], references: [id], onDelete: Restrict)
+  restrictModels   Boolean            @default(false)
+  allowedModels    String[]           @default([])
+  providerMode     TokenProviderMode  @default(system)
+  providerFallback Boolean            @default(false)
+
   @@index([planId])
+  @@index([folderId])
 }
 
 // What a token on it may spend. `models` is the allow-list of
@@ -476,8 +512,8 @@ model AccessToken {
 // naming any other model is refused with 403, and a request naming no
 // model at all goes to `defaultModel`.
 model Plan {
-  id                    String        @id @default(cuid())
-  name                  String        @unique
+  id                    String              @id @default(cuid())
+  name                  String              @unique
   models                String[]
   // Always one of `models`; the service refuses a plan where it is not.
   defaultModel          String
@@ -492,8 +528,9 @@ model Plan {
   sevenDayRequestLimit  Int?
   sevenDaySpendLimitUsd Float?
   tokens                AccessToken[]
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
+  tokenFolders          AccessTokenFolder[]
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
 }
 
 // One token's usage in one window, the ledger behind a plan's limits.

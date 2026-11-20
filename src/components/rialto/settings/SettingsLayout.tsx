@@ -26,7 +26,6 @@ const SECTION_LABEL_KEYS: Readonly<Record<string, string>> = {
 export function SettingsLayout({
   active,
   heading,
-  subtitle,
   actions,
   headerNote,
   headerBadge,
@@ -35,7 +34,6 @@ export function SettingsLayout({
   children
 }: {
   active: string
-  subtitle?: ReactNode
   /** Actions for the app-level title bar. */
   actions?: ReactNode
   /**
@@ -64,7 +62,7 @@ export function SettingsLayout({
   const labelKey = SECTION_LABEL_KEYS[active]
   const title = heading === undefined ? (labelKey === undefined ? '' : t(labelKey)) : heading
   return (
-    <Screen subtitle={subtitle} actions={actions}>
+    <Screen actions={actions}>
       <div className='min-w-0'>
         {showHeading ? (
           // On a phone the note drops under the title rather than beside

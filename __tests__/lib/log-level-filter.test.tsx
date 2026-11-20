@@ -9,7 +9,7 @@ import { LEVEL_CHIPS, type LevelChip } from '../../src/components/rialto/activit
 const i18n = createInstance()
 await i18n.init({ lng: 'en', resources: { en: { translation: {} } }, initImmediate: false })
 
-const FILE = { name: 'a.log', path: '/logs/a.log', size: 10, lastModified: '2026-10-21T00:00:00.000Z' }
+const DATE = '2026-10-21'
 
 const LINES = parseLogLines(
   LEVEL_CHIPS.map((level) => JSON.stringify({ level, time: 1791435629917, msg: `${level} line marker` }))
@@ -19,9 +19,9 @@ const render = (levels: ReadonlySet<LevelChip>) =>
   renderToStaticMarkup(
     <I18nextProvider i18n={i18n}>
       <LogPane
-        files={[FILE]}
-        file={FILE}
-        onSelectFile={() => {}}
+        dates={[DATE]}
+        date={DATE}
+        onSelectDate={() => {}}
         levels={levels}
         onLevelsChange={() => {}}
         lines={LINES}
@@ -35,13 +35,13 @@ const chipStates = (html: string) =>
     m[1] === 'true'
   ])
 
-// The Logs screen remounts LogPane on every file switch (`key={file.path}`) so the search and
+// The Logs screen remounts LogPane on every date switch (`key={date}`) so the search and
 // the page reset with the file. The level filter must not ride along, which only holds while
 // ActivityLogs owns it and LogPane merely renders what it is handed. There is no DOM
 // environment in this suite (no happy-dom / jsdom, and the sibling component tests are all
-// static markup), so the file switch itself cannot be driven here; this pins the ownership that
+// static markup), so the date switch itself cannot be driven here; this pins the ownership that
 // makes it safe: the chips and the visible lines are a function of the `levels` prop alone.
-describe('log level filter is owned above the per-file pane', () => {
+describe('log level filter is owned above the per-date pane', () => {
   test('a fresh set of all four levels shows every chip on and every line', () => {
     const html = render(new Set(LEVEL_CHIPS))
     expect(chipStates(html)).toEqual(LEVEL_CHIPS.map((level) => [level, true]))

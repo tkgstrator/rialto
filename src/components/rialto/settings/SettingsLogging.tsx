@@ -3,8 +3,7 @@
  *
  * All three of the mock's groups are real envelope or archive state:
  * the pino sink (LOG / LOG_LEVEL / LOG_MAX_MB), what the archive is
- * allowed to keep (CAPTURE_REQUESTS / CAPTURE_MESSAGES /
- * REDACT_TOOL_ARGUMENTS), and the store sizes behind `GET /api/storage`.
+ * allowed to keep and the store sizes behind `GET /api/storage`.
  *
  * The capture keys are read per request rather than at boot, so a save
  * here stops a recording already in flight — which is the situation an
@@ -24,13 +23,11 @@ import {
   type StoreId,
   type StoreStats
 } from '@/components/rialto/settings/logging/RetentionTable'
-import { WarnNotice } from '@/components/rialto/settings/notice'
 import { SettingsLayout } from '@/components/rialto/settings/SettingsLayout'
 import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
 import { api } from '@/lib/api'
 import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
 import {
-  captureSettings,
   DEFAULT_LOG_MAX_MB,
   type EnvelopeWire,
   fmtBytes,
@@ -44,8 +41,6 @@ interface LoggingDraft {
   LOG_LEVEL: string
   LOG_MAX_MB: string
   CAPTURE_REQUESTS: boolean
-  CAPTURE_MESSAGES: boolean
-  REDACT_TOOL_ARGUMENTS: boolean
 }
 
 const toDraft = (w: EnvelopeWire): LoggingDraft => ({
@@ -54,7 +49,7 @@ const toDraft = (w: EnvelopeWire): LoggingDraft => ({
   // Absent on disk means the logger's own fallback, so show the value
   // that is actually in force rather than an empty box.
   LOG_MAX_MB: String(typeof w.LOG_MAX_MB === 'number' ? w.LOG_MAX_MB : DEFAULT_LOG_MAX_MB),
-  ...captureSettings(w)
+  CAPTURE_REQUESTS: w.CAPTURE_REQUESTS !== false
 })
 
 /**
@@ -85,24 +80,6 @@ function CaptureSection({
         value={draft.CAPTURE_REQUESTS}
         onChange={(v) => onChange('CAPTURE_REQUESTS', v)}
       />
-      <ToggleField
-        label={t('settings.logging.recordMessages')}
-        hint={t('settings.logging.recordMessagesHint')}
-        value={draft.CAPTURE_MESSAGES}
-        onChange={(v) => onChange('CAPTURE_MESSAGES', v)}
-      />
-      <ToggleField
-        label={t('settings.logging.redactToolArgs')}
-        hint={t('settings.logging.redactToolArgsHint')}
-        value={draft.REDACT_TOOL_ARGUMENTS}
-        onChange={(v) => onChange('REDACT_TOOL_ARGUMENTS', v)}
-      />
-
-      <div className='px-6 py-4 max-md:px-4'>
-        <WarnNotice title={t('settings.logging.privacyTitle')} tag={t('settings.logging.privacyTag')}>
-          {t('settings.logging.privacyBody')}
-        </WarnNotice>
-      </div>
     </>
   )
 }
@@ -212,9 +189,7 @@ export function SettingsLogging() {
         LOG: draft.LOG,
         LOG_LEVEL: draft.LOG_LEVEL,
         LOG_MAX_MB,
-        CAPTURE_REQUESTS: draft.CAPTURE_REQUESTS,
-        CAPTURE_MESSAGES: draft.CAPTURE_MESSAGES,
-        REDACT_TOOL_ARGUMENTS: draft.REDACT_TOOL_ARGUMENTS
+        CAPTURE_REQUESTS: draft.CAPTURE_REQUESTS
       })
       .then((res) => {
         toast.success(res.message)
@@ -229,14 +204,11 @@ export function SettingsLogging() {
   }
 
   const logFiles = stats === null ? undefined : stats.stores.find((s) => s.id === 'logFiles')
-  const level = draft === null ? '–' : draft.LOG_LEVEL
-  const captured = stats === null ? '–' : fmtBytes(totalBytes(stats.stores))
 
   return (
     <SettingsLayout
       active='logging'
       heading={t('settings.logging.serverLog')}
-      subtitle={t('settings.logging.subtitle', { level, captured })}
       headerActions={
         <RButton variant='outline' icon='ri-external-link-line' onClick={() => navigate('/activity/logs')}>
           {t('settings.logging.openInActivity')}
@@ -245,7 +217,7 @@ export function SettingsLogging() {
       actions={
         <>
           <RButton
-            variant='ghost'
+            variant='outline'
             onClick={() => (wire === null ? undefined : setDraft(toDraft(wire)))}
             disabled={!dirty}
           >

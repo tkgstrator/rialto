@@ -1,0 +1,12 @@
+language js
+
+or {
+  `<select $attributes>$children</select>`,
+  `<select $attributes />`
+} as $match where {
+  register_diagnostic(
+    span=$match,
+    message="Use the shadcn Select from @/components/ui/select instead of a native select.",
+    severity="error"
+  )
+}

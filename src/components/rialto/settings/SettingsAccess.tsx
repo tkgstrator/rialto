@@ -277,13 +277,11 @@ export function SettingsAccess() {
   }
 
   const configured = identity?.accessConfigured === true
-  const subtitle = t(configured ? 'settings.access.subtitleConfigured' : 'settings.access.subtitleUnconfigured')
 
   return (
     <SettingsLayout
       active='access'
       heading={t('settings.access.adminAccess')}
-      subtitle={subtitle}
       headerBadge={
         configured ? (
           <Pill tone='ok'>{t('settings.access.badgeConfigured')}</Pill>
@@ -299,7 +297,12 @@ export function SettingsAccess() {
               question occurs to you. Goes to the screen that already
               exists rather than to a second log reader. Locked while
               editing: it leaves the page, and the edit would go with it. */}
-          <RButton variant='ghost' icon='ri-history-line' onClick={() => navigate('/activity/logs')} disabled={editing}>
+          <RButton
+            variant='outline'
+            icon='ri-history-line'
+            onClick={() => navigate('/activity/logs')}
+            disabled={editing}
+          >
             {t('settings.access.auditLog')}
           </RButton>
           {editing ? (

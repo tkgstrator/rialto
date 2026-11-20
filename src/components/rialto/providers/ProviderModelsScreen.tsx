@@ -10,13 +10,14 @@ import { toast } from 'sonner'
 import { PhoneRow, RButton, Section, Toggle } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import { fmtCost } from '@/lib/sessions/format'
+import { apiKeyVendorName } from '@/shared/custom-provider'
 import { toggleModel } from './actions'
 import { buildModelRows, fmtContext, type ModelRow } from './derive'
 import { SwitchReading } from './SwitchReading'
 import type { Provider } from './types'
 import { type ProvidersData, useProvidersData } from './useProvidersData'
 import { type RefreshScope, useRefresh } from './useRefresh'
-import { vendorLabel } from './vendor-labels'
+import { providerLabel } from './vendor-labels'
 
 interface ModelGroup {
   provider: Provider
@@ -28,10 +29,10 @@ type SaveChange = (group: ModelGroup, write: () => Promise<void>, failure: (mess
 
 function modelGroups(data: ProvidersData): ModelGroup[] {
   return data.providers.map((provider) => {
-    const entry = data.catalog.find((vendor) => vendor.name === provider.name)
+    const entry = data.catalog.find((vendor) => vendor.name === apiKeyVendorName(provider.name))
     return {
       provider,
-      label: entry === undefined ? provider.name : vendorLabel(entry.name, entry.displayName),
+      label: providerLabel(provider, entry),
       rows: buildModelRows(provider, entry)
     }
   })
@@ -65,7 +66,6 @@ export function ProviderModelsScreen() {
   const [pending, setPending] = useState(false)
   const groups = data === null ? [] : modelGroups(data)
   const total = groups.reduce((sum, group) => sum + group.rows.length, 0)
-  const enabled = groups.reduce((sum, group) => sum + group.rows.filter((row) => row.enabled).length, 0)
   const matching = matchingGroups(groups, query)
 
   const save = async (group: ModelGroup, write: () => Promise<void>, failure: (message: string) => string) => {
@@ -83,7 +83,7 @@ export function ProviderModelsScreen() {
   }
 
   return (
-    <Screen subtitle={data === null ? undefined : t('providers.models.enabledCount', { enabled, total })}>
+    <Screen>
       <div className='flex flex-wrap items-center gap-2 px-4 py-4 md:px-6'>
         <label className='sr-only' htmlFor='model-search'>
           {t('providers.models.filterModels')}
@@ -99,7 +99,7 @@ export function ProviderModelsScreen() {
             className='h-9 min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground'
           />
         </div>
-        <div className='ml-auto flex items-center gap-1'>
+        <div className='ml-auto flex items-center gap-2'>
           <RButton
             variant='outline'
             icon={editing ? 'ri-check-line' : 'ri-pencil-line'}
@@ -193,13 +193,7 @@ function ModelSection({
   const { t } = useTranslation()
   const href = `/providers/${encodeURIComponent(group.provider.name)}`
   return (
-    <Section
-      title={group.label}
-      meta={t('providers.models.enabledCount', {
-        enabled: group.rows.filter((row) => row.enabled).length,
-        total: group.rows.length
-      })}
-    >
+    <Section title={group.label}>
       <div className='pb-2 md:hidden'>
         {group.rows.map((row) => (
           <PhoneRow

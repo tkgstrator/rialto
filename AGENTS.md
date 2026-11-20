@@ -1,5 +1,18 @@
 # Repository instructions
 
+## UI components
+
+- Use the shadcn components in `src/components/ui/` for application controls.
+  Compose or wrap those components for product-specific interactions. For
+  dropdowns, use shadcn `Select` or a wrapper around it. The Biome check rejects
+  native select elements in application source.
+- Give visible actions a recognizable button treatment at rest. Prefer filled
+  primary buttons and outlined secondary buttons for text-labeled actions.
+  Keep explanatory copy only when it is needed to complete the action.
+- Give each management page a one-sentence purpose in the route metadata.
+  Use the header to explain what users can do. Put counts and statuses in the
+  relevant tables, fields, or panels.
+
 <!-- non-code-verification -->
 ## Verification for non-code changes
 

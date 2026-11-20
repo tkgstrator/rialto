@@ -237,7 +237,7 @@ const parsePricingPage = (pricingHtml: string, overviewHtml: string | null): Scr
 
 export class AnthropicProvider extends VendorProvider {
   readonly vendor = 'anthropic'
-  protected readonly modelsEndpoint = 'https://api.anthropic.com/v1/models'
+  protected readonly modelsEndpoint = 'https://api.anthropic.com/v1/models?limit=1000'
   protected readonly modelsAuth = 'x-api-key' as const
 
   async scrape(): Promise<ScrapedPriceEntry[]> {

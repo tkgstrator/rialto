@@ -5,6 +5,7 @@
  * server restart.
  */
 
+import { randomUUID } from 'node:crypto'
 import { type Provider, ProviderSchema } from '@/schemas/domain/provider'
 import { getPrismaClient } from '../../db/client'
 import { ModelTestStatus, type PrismaClient } from '../../generated/prisma/client'
@@ -32,14 +33,32 @@ export async function getProviders(prisma: PrismaClient = getPrismaClient()): Pr
   return providers.map(toProvider)
 }
 
-export async function upsertProvider(incoming: Provider): Promise<{ provider: Provider; warnings: string[] }> {
+export async function upsertProvider(
+  incoming: Provider,
+  addApiKey = false
+): Promise<{ provider: Provider; warnings: string[] }> {
   // Parse to fill in defaults (e.g. `enabled`) and to keep external
   // callers honest. ProviderSchema rejects anything off-shape — the
   // public API routes already pre-parse, this is belt-and-suspenders.
-  const parsed = ProviderSchema.parse(incoming)
+  let parsed = ProviderSchema.parse(incoming)
   const warnings: string[] = []
   const prisma = getPrismaClient()
   await prisma.$transaction(async (tx) => {
+    if (addApiKey) {
+      // Reserve the canonical ID atomically. Concurrent adds get distinct rows.
+      const reserved = await tx.provider.createMany({
+        data: { name: parsed.name, apiBaseUrl: parsed.api_base_url },
+        skipDuplicates: true
+      })
+      if (reserved.count === 0) {
+        const id = randomUUID().replaceAll('-', '')
+        parsed = {
+          ...parsed,
+          name: `${parsed.name}-key-${id}`,
+          display_name: parsed.name === 'anthropic' ? null : `${parsed.display_name || parsed.name} · ${id.slice(0, 6)}`
+        }
+      }
+    }
     // Fetch the pre-image only for THIS provider (the row-level helper
     // needs the prior model.enabled map for its enabled-flip
     // reconciliation). Do NOT call applyProviders here — that path
@@ -61,6 +80,35 @@ export async function upsertProvider(incoming: Provider): Promise<{ provider: Pr
     include: { models: { include: { capability: true } }, subscriptionAccounts: { orderBy: { createdAt: 'asc' } } }
   })
   return { provider: toProvider(p), warnings }
+}
+
+export async function updateProviderConnection(
+  name: string,
+  input: { displayName?: string | null; apiBaseUrl?: string }
+): Promise<'updated' | 'missing' | 'subscription'> {
+  const result = await getPrismaClient().$transaction(async (tx) => {
+    const provider = await tx.provider.findUnique({ where: { name } })
+    if (provider === null) return 'missing'
+    const apiBaseUrl = input.apiBaseUrl
+    if (apiBaseUrl !== undefined && provider.authMode === 'subscription') return 'subscription'
+    const endpointChanged = apiBaseUrl !== undefined && apiBaseUrl !== provider.apiBaseUrl
+    await tx.provider.update({
+      where: { id: provider.id, authMode: provider.authMode },
+      data: endpointChanged ? { ...input, organizationId: null, workspaceId: null, projectId: null } : input
+    })
+    if (endpointChanged) {
+      await tx.model.updateMany({
+        where: { providerId: provider.id },
+        data: { testStatus: ModelTestStatus.unknown, testCheckedAt: null, testPassedAt: null, testError: null }
+      })
+    }
+    return 'updated'
+  })
+  if (result === 'updated') {
+    await syncToConfigFile()
+    resetLlmsContext()
+  }
+  return result
 }
 
 // Deleting a provider cascades to its models, capabilities and

@@ -66,18 +66,8 @@ export function Overview() {
   const range = RANGES.find((r) => r.hours === windowHours)
   const rangeLabelKey = range === undefined ? 'activity.requests.range24h' : range.labelKey
 
-  const subtitle =
-    data === null
-      ? undefined
-      : t('overview.subtitle', {
-          surfaces: data.surfaces.length,
-          providers: data.providerCount,
-          models: data.enabledModelCount
-        })
-
   return (
     <Screen
-      subtitle={subtitle}
       actions={
         <>
           <Popover open={rangeOpen} onOpenChange={setRangeOpen}>
@@ -192,13 +182,13 @@ function OverviewSections({ data, now }: { data: OverviewResponse; now: number }
         )}
       </Section>
 
-      <Section title={t('overview.failoverActivity')} meta={t('overview.failoverMeta')}>
-        {data.failover.length === 0 ? (
-          <div className='px-6 pb-6 text-xs text-muted-foreground'>{t('overview.noFailover')}</div>
-        ) : (
-          data.failover.map((f) => <FailoverEntry key={`${f.kind}-${f.at}-${f.account}`} row={f} now={now} />)
-        )}
-      </Section>
+      {data.failover.length > 0 ? (
+        <Section title={t('overview.failoverActivity')}>
+          {data.failover.map((f) => (
+            <FailoverEntry key={`${f.kind}-${f.at}-${f.account}`} row={f} now={now} />
+          ))}
+        </Section>
+      ) : null}
 
       <Section title={t('overview.recentSessions')}>
         <SessionTable data={data} now={now} />

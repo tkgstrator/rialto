@@ -22,6 +22,7 @@ import { toast } from 'sonner'
 import { useConfirm } from '@/components/rialto/ConfirmDialog'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
+import { apiKeyVendorName } from '@/shared/custom-provider'
 import {
   getResetCredits,
   removeProvider,
@@ -31,7 +32,8 @@ import {
   testModels
 } from './actions'
 import { BusyOverlay } from './BusyOverlay'
-import { accountLabel, disabledModelsOf, enabledCountOf, fmtExpiry, listedModelsOf, providerState } from './derive'
+import { accountLabel, disabledModelsOf, fmtExpiry, listedModelsOf, providerState } from './derive'
+import { ProviderConnectionDialog } from './ProviderConnectionDialog'
 import { ProviderDetailPane } from './ProviderDetailPhone'
 import {
   applyDraft,
@@ -45,7 +47,7 @@ import type { Provider, SubAccountWire } from './types'
 import { useProvidersAutoRefresh } from './useProvidersAutoRefresh'
 import { type ProvidersData, useProvidersData } from './useProvidersData'
 import { type RefreshScope, useRefresh } from './useRefresh'
-import { vendorBrand, vendorLabel } from './vendor-labels'
+import { providerLabel } from './vendor-labels'
 
 const SAVE_FAILURE_KEYS: Record<SaveFailure['write'], string> = {
   provider: 'providers.detail.saveFailedProvider',
@@ -66,11 +68,10 @@ const refreshScopeOf = (provider: Provider | undefined): RefreshScope =>
 
 /** What the page calls the provider, and where its breadcrumb leads back to. */
 function framingOf(data: ProvidersData, provider: Provider, t: TFunction) {
-  const entry = data.catalog.find((e) => e.name === provider.name)
+  const entry = data.catalog.find((e) => e.name === apiKeyVendorName(provider.name))
   return {
     entry,
-    label: entry === undefined ? provider.name : vendorLabel(entry.name, entry.displayName),
-    vendor: entry === undefined ? new URL(provider.api_base_url).hostname : vendorBrand(entry.name, entry.vendor),
+    label: providerLabel(provider, entry),
     // The list this provider came from, so the breadcrumb leads back to the
     // half of Providers it belongs to rather than to the section root.
     listCrumb:
@@ -80,45 +81,9 @@ function framingOf(data: ProvidersData, provider: Provider, t: TFunction) {
   }
 }
 
-/** Accounts across every subscription provider, for the summary subtitle below. */
-const subscriptionAccountCountOf = (data: ProvidersData): number =>
-  [...data.subscriptions.values()].reduce((sum, s) => sum + s.accounts.length, 0)
-
-/**
- * The header subtitle.
- *
- * An api_key provider's page reports itself — the vendor and its own model
- * count — because each one is billed on its own. A subscription provider's
- * quota pools across the whole fleet, so its page reports the same
- * install-wide numbers Overview does instead of a figure specific to the
- * one account list below it; `data.counts` is the
- * server's own tally so the two screens never disagree, falling back to a
- * client-side count only when the overview call it rode in on failed.
- */
-function subtitleOf(data: ProvidersData, provider: Provider, shown: Provider, vendor: string, t: TFunction): string {
-  if (provider.auth_mode !== 'subscription') {
-    return t('providers.screen.apiKeySubtitle', {
-      label: vendor,
-      enabled: enabledCountOf(shown),
-      total: listedModelsOf(shown).length
-    })
-  }
-  const counts =
-    data.counts === null
-      ? {
-          providers: data.providers.length,
-          enabledModels: data.providers.reduce((sum, p) => sum + enabledCountOf(p), 0)
-        }
-      : data.counts
-  return t('providers.screen.summarySubtitle', {
-    providers: counts.providers,
-    models: counts.enabledModels,
-    accounts: subscriptionAccountCountOf(data)
-  })
-}
-
 export function ProviderDetailScreen() {
   const { t, i18n } = useTranslation()
+  const [connectionFor, setConnectionFor] = useState<string | null>(null)
   const { name } = useParams<{ name: string }>()
   const navigate = useNavigate()
   const { data, error, loading, reload, reloadBackground, cancelBackground } = useProvidersData()
@@ -177,7 +142,7 @@ export function ProviderDetailScreen() {
     )
   }
 
-  const { entry, label, vendor, listCrumb } = framingOf(data, provider, t)
+  const { entry, label, listCrumb } = framingOf(data, provider, t)
   const subscription = data.subscriptions.get(provider.name)
   const draft = edit !== null && edit.provider === provider.name ? edit.draft : null
   const editing = draft !== null
@@ -262,11 +227,18 @@ export function ProviderDetailScreen() {
   return (
     <Screen
       crumbs={[listCrumb, { label }]}
-      subtitle={subtitleOf(data, provider, shown, vendor, t)}
       actions={
         <>
           {/* Locked while editing, with Add: a refresh re-reads the page and
               Add leaves it, and an unsaved edit would go either way. */}
+          <RButton
+            variant='outline'
+            icon='ri-edit-2-line'
+            disabled={locked || editing}
+            onClick={() => setConnectionFor(provider.name)}
+          >
+            {t('providers.credentials.editConnection')}
+          </RButton>
           <RButton variant='outline' icon='ri-refresh-line' onClick={refresh} disabled={locked || editing}>
             {t('providers.screen.refresh')}
           </RButton>
@@ -314,6 +286,17 @@ export function ProviderDetailScreen() {
         />
         {pending === null ? null : <BusyOverlay label={pending} />}
       </div>
+      {connectionFor === provider.name ? (
+        <ProviderConnectionDialog
+          provider={provider}
+          label={label}
+          onClose={() => setConnectionFor(null)}
+          onSaved={() => {
+            setConnectionFor(null)
+            void reload()
+          }}
+        />
+      ) : null}
       {dialog}
     </Screen>
   )

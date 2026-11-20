@@ -9,6 +9,7 @@
  */
 
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
+import { getPrismaClient } from '../../db/client'
 import {
   deleteAccessToken,
   getAccessToken,
@@ -20,7 +21,9 @@ import {
   rotateAccessToken,
   updateAccessToken
 } from '../../services/access-token-service'
+import { tokenModelChoices } from '../../services/token-model-catalog'
 import { UsageWindowSchema } from '../../services/usage-window-service'
+import { TOKEN_PROVIDER_MODES } from '../../shared/access-token-policy'
 import { CODEX_MCP_SCOPE } from '../../shared/codex-mcp'
 import { validationErrorHook } from '../zod-response'
 
@@ -38,6 +41,27 @@ const SurfaceIdSchema = z.enum([
   CODEX_MCP_SCOPE
 ])
 
+const TokenPolicySchema = z.object({
+  restrictModels: z.boolean(),
+  allowedModels: z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(1)
+        .max(200)
+        .regex(/^[^,]+$/)
+    )
+    .max(1000),
+  providerMode: z.enum(TOKEN_PROVIDER_MODES),
+  providerFallback: z.boolean()
+})
+
+const tokenSettings = {
+  folderId: z.string().nonempty().nullable().optional(),
+  policy: TokenPolicySchema.optional()
+}
+
 const TokenSchema = z
   .object({
     id: z.string().nonempty(),
@@ -45,6 +69,8 @@ const TokenSchema = z
     // First characters only — enough to tell two tokens apart in a list,
     // not enough to authenticate with.
     prefix: z.string().nonempty(),
+    folderId: z.string().nullable(),
+    policy: TokenPolicySchema,
     // Surfaces this token may call. Empty means every surface — the
     // meaning the nullable single-surface field carried before it
     // became a list.
@@ -80,6 +106,7 @@ const IssueBodySchema = z
     name: z.string().nonempty(),
     surfaces: z.array(SurfaceIdSchema).optional(),
     expiresAt: z.iso.datetime().nullable().optional(),
+    ...tokenSettings,
     planId: z.string().nonempty().nullable().optional()
   })
   .openapi('AccessTokenIssueRequest')
@@ -93,6 +120,27 @@ const IssuedSchema = z
   .openapi('AccessTokenIssued')
 
 export const accessTokensRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
+
+const PreviewInputSchema = z.object({
+  surfaces: z.array(SurfaceIdSchema),
+  planId: z.string().nonempty().nullable(),
+  policy: TokenPolicySchema
+})
+
+accessTokensRoute.post('/api/access-tokens/preview', async (c) => {
+  const parsed = PreviewInputSchema.safeParse(await c.req.json().catch(() => null))
+  if (!parsed.success) return c.json({ error: 'Invalid token policy.' }, 400)
+  const input = parsed.data
+  const plan =
+    input.planId === null
+      ? null
+      : await getPrismaClient().plan.findUnique({
+          where: { id: input.planId },
+          select: { models: true }
+        })
+  if (input.planId !== null && plan === null) return c.json({ error: 'Plan no longer exists.' }, 404)
+  return c.json({ choices: await tokenModelChoices({ ...input, plan }) })
+})
 
 accessTokensRoute.openapi(
   createRoute({
@@ -137,16 +185,11 @@ accessTokensRoute.openapi(
   }
 )
 
-/**
- * What a token is allowed to do, after the fact.
- *
- * Scope and plan. Renaming is cosmetic, the secret has its own
- * operation, and an expiry that could be pushed out indefinitely is not
- * an expiry — so none of them are here.
- */
 const UpdateBodySchema = z
   .object({
+    name: z.string().trim().nonempty().max(200).optional(),
     surfaces: z.array(SurfaceIdSchema).optional(),
+    ...tokenSettings,
     planId: z.string().nonempty().nullable().optional()
   })
   .openapi('AccessTokenUpdateRequest')

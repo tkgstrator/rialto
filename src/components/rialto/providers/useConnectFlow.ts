@@ -26,7 +26,7 @@ import {
   startOAuth,
   submitManualCallback
 } from './connect-actions'
-import { type CustomDraft, EMPTY_CUSTOM_DRAFT, isCustomDraftReady, isCustomEntry, withCustomEntry } from './custom-form'
+import { type CustomDraft, EMPTY_CUSTOM_DRAFT, isCustomDraftReady, withCustomEntry } from './custom-form'
 import type { CatalogEntry } from './types'
 import type { ProvidersData } from './useProvidersData'
 import { vendorBrand } from './vendor-labels'
@@ -59,7 +59,7 @@ export function useConnectFlow(data: ProvidersData | null, reload: () => Promise
   // no row in it, so the rail gets a card of its own appended here.
   const entries = useMemo(() => (data === null ? [] : withCustomEntry(data.catalog)), [data])
   const entry = selectedName === null ? undefined : entries.find((e) => e.name === selectedName)
-  const providerName = isCustomEntry(entry) ? createdName : selectedName
+  const providerName = createdName === null ? selectedName : createdName
   const provider =
     data === null || providerName === null ? undefined : data.providers.find((p) => p.name === providerName)
   const existingNames = useMemo(() => (data === null ? [] : data.providers.map((p) => p.name)), [data])
@@ -240,7 +240,10 @@ export function useConnectFlow(data: ProvidersData | null, reload: () => Promise
   const saveApiKey = useCallback(() => {
     if (entry === undefined) return
     guard(async () => {
-      await saveNewApiKey(entry, apiKeyDraft)
+      const { provider, warnings } = await saveNewApiKey(entry, apiKeyDraft)
+      setCreatedName(provider.name)
+      if (warnings && warnings.length > 0) toast.warning(warnings.join(' · '))
+      setApiKeyDraft('')
       await reload()
       setStep(3)
       toast.success(t('providers.connect.apiKeySaved', { brand }))

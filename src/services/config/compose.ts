@@ -120,6 +120,10 @@ export const toProvider = (p: ProviderWithModels): Provider => {
   )
   return {
     name: p.name,
+    ...(p.displayName === null ? {} : { display_name: p.displayName }),
+    ...(p.organizationId ? { organization_id: p.organizationId } : {}),
+    ...(p.workspaceId ? { workspace_id: p.workspaceId } : {}),
+    ...(p.projectId ? { project_id: p.projectId } : {}),
     enabled: p.enabled,
     api_base_url: p.apiBaseUrl,
     // DB value verbatim: null when unset. Never coerced to ''.

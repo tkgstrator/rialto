@@ -7,10 +7,11 @@
 import { cn } from 'cn'
 import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { COLUMNS, type ColumnDef, type ColumnId } from '@/components/rialto/activity/request-columns'
 import type { Row } from '@/components/rialto/activity/requests-rows'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
+import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 
 export type { ColumnDef, ColumnId } from '@/components/rialto/activity/request-columns'
@@ -40,15 +41,8 @@ const edgeClass = (index: number, count: number, cell: boolean): string => {
 
 function RequestRow({ row, columns }: { row: Row; columns: readonly ColumnDef[] }) {
   const { t } = useTranslation()
-  const navigate = useNavigate()
-  // "This request cost $0.13 — which conversation was that?" had no answer
-  // from here: the session id is on every row and was rendered nowhere, so
-  // there was not even a value to paste into the Sessions search.
   return (
-    <tr
-      className='cursor-pointer border-t border-border/60 transition-colors hover:bg-muted/50'
-      onClick={() => navigate(`/activity/sessions/${encodeURIComponent(row.log.sessionId)}`)}
-    >
+    <tr className='border-t border-border/60'>
       {columns.map((col, i) => (
         <td
           key={col.id}
@@ -57,6 +51,16 @@ function RequestRow({ row, columns }: { row: Row; columns: readonly ColumnDef[] 
           {col.render(row, t)}
         </td>
       ))}
+      <td className='py-2 pr-6 text-right'>
+        <Button asChild variant='outline' size='icon-sm'>
+          <Link
+            aria-label={t('activity.requests.openSession')}
+            to={`/activity/sessions/${encodeURIComponent(row.log.sessionId)}`}
+          >
+            <i aria-hidden className='ri-arrow-right-s-line text-base' />
+          </Link>
+        </Button>
+      </td>
     </tr>
   )
 }
@@ -84,7 +88,7 @@ export function RequestsTable({ rows, columns }: { rows: Row[]; columns: readonl
   // summed from the visible columns, so hiding one through the Columns
   // menu takes its width out of the scroll as well as out of the row.
   const minWidth = useMemo(
-    () => columns.reduce((sum, col) => sum + (col.width === 0 ? AUTO_MIN_WIDTH : col.width), 0),
+    () => columns.reduce((sum, col) => sum + (col.width === 0 ? AUTO_MIN_WIDTH : col.width), 56),
     [columns]
   )
   return (
@@ -94,6 +98,7 @@ export function RequestsTable({ rows, columns }: { rows: Row[]; columns: readonl
           {columns.map((col) => (
             <col key={col.id} style={col.width === 0 ? undefined : { width: col.width }} />
           ))}
+          <col className='w-14' />
         </colgroup>
         <thead>
           <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2'>
@@ -113,6 +118,9 @@ export function RequestsTable({ rows, columns }: { rows: Row[]; columns: readonl
                 </SortTh>
               )
             })}
+            <th>
+              <span className='sr-only'>{t('activity.requests.openSession')}</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -137,26 +145,31 @@ export function ColumnMenu({ hidden, onChange }: { hidden: Set<ColumnId>; onChan
   }
   return (
     <Popover>
-      <PopoverTrigger className='inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground'>
-        <i className='ri-layout-column-line text-sm leading-none' />
-        {t('activity.requests.columnsMenu')}
+      <PopoverTrigger asChild>
+        <Button variant='outline' size='sm' type='button'>
+          <i aria-hidden className='ri-layout-column-line text-sm leading-none' />
+          {t('activity.requests.columnsMenu')}
+        </Button>
       </PopoverTrigger>
       <PopoverContent align='end' className='w-48 gap-0 p-1'>
         {COLUMNS.map((col) => {
           const on = !hidden.has(col.id)
           return (
-            <button
+            <Button
+              variant='ghost'
+              size='sm'
+              aria-pressed={on}
               key={col.id}
               type='button'
               onClick={() => toggle(col.id)}
               className={cn(
-                'flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/60',
+                'justify-start gap-2 rounded px-2 text-left text-xs',
                 on ? 'font-medium' : 'text-muted-foreground'
               )}
             >
-              <i className={cn('ri-check-line text-xs', on ? '' : 'opacity-0')} />
+              <i aria-hidden className={cn('ri-check-line text-xs', on ? '' : 'opacity-0')} />
               {t(col.labelKey)}
-            </button>
+            </Button>
           )
         })}
       </PopoverContent>

@@ -15,21 +15,24 @@
  * each of which opens to the whole event.
  */
 
-import { cn } from 'cn'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { enUS, ja, zhCN } from 'date-fns/locale'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { useConfig } from '@/components/ConfigProvider'
 import { LogBody } from '@/components/rialto/activity/LogBody'
 import { type LogLine, parseLogLines } from '@/components/rialto/activity/log-lines'
 import { chipFor, LEVEL_CHIPS, type LevelChip } from '@/components/rialto/activity/log-view'
-import { FilterSelect, NoteBox, ScreenMessage } from '@/components/rialto/activity/shared'
+import { NoteBox, ScreenMessage } from '@/components/rialto/activity/shared'
 import { useActivityCounts } from '@/components/rialto/activity/use-activity-counts'
 import { Pager } from '@/components/rialto/Pager'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
+import { Button } from '@/components/ui/button'
+import { Calendar } from '@/components/ui/calendar'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { api } from '@/lib/api'
-import { formatFileSize } from '@/lib/log-viewer/format'
+import dayjs from '@/lib/dayjs'
 import type { LogFile } from '@/lib/log-viewer/types'
 
 const FOLLOW_INTERVAL_MS = 5000
@@ -37,76 +40,136 @@ const FOLLOW_INTERVAL_MS = 5000
 /** Lines per page. A tail is read from the top, not scrolled to the end. */
 const PAGE = 100
 
-/**
- * File list + line fetch. Split out of the screen so the screen itself
- * stays a layout: the fetch has four states, and holding both in one
- * function pushed it past the complexity ceiling.
- */
-function useLogFiles() {
+function logDate(file: LogFile): string {
+  const match = /^(\d{4}-\d{2}-\d{2})(?:-\d+)?\.log$/.exec(file.name)
+  return match === null ? dayjs(file.lastModified).format('YYYY-MM-DD') : match[1]
+}
+
+function useLogDates() {
   const [files, setFiles] = useState<LogFile[]>([])
-  const [file, setFile] = useState<LogFile | null>(null)
-  const [rawLines, setRawLines] = useState<string[]>([])
+  const [selection, setSelection] = useState<string | null>(null)
+  const [result, setResult] = useState<{ date: string; lines: string[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const generation = useRef(0)
+  const byDate = useMemo(() => {
+    const groups = new Map<string, LogFile[]>()
+    // The API lists recent files first. Read chunks in write order.
+    for (const file of [...files].reverse()) {
+      const date = logDate(file)
+      const group = groups.get(date)
+      if (group === undefined) groups.set(date, [file])
+      else group.push(file)
+    }
+    return groups
+  }, [files])
+  const dates = useMemo(() => [...byDate.keys()].sort(), [byDate])
+  const date = selection === null ? dates.at(-1) : selection
 
   useEffect(() => {
     api
       .getLogFiles()
-      .then((res) => {
-        setFiles(res)
-        setFile(res.length === 0 ? null : res[0])
-      })
-      .catch((e: Error) => setError(e.message))
+      .then(setFiles)
+      .catch((cause: Error) => setError(cause.message))
   }, [])
 
+  const selectDate = (next: string) => {
+    if (next === date) return
+    generation.current += 1
+    setError(null)
+    setSelection(next)
+  }
+
   const loadLines = useCallback(() => {
-    if (file === null) return
-    api
-      .getLogs(file.path)
-      .then((res) => {
-        setRawLines(res)
+    if (date === undefined) return
+    const group = byDate.get(date)
+    if (group === undefined) return
+    const request = ++generation.current
+    Promise.all(group.map((file) => api.getLogs(file.path)))
+      .then((chunks) => {
+        if (request !== generation.current) return
+        setResult({ date, lines: chunks.flat() })
         setError(null)
       })
-      .catch((e: Error) => setError(e.message))
-  }, [file])
+      .catch((cause: Error) => {
+        if (request === generation.current) setError(cause.message)
+      })
+  }, [date, byDate])
 
   useEffect(loadLines, [loadLines])
-
-  return { files, file, setFile, rawLines, error, loadLines }
+  return { dates, date, selectDate, rawLines: result?.date === date ? result?.lines : undefined, error, loadLines }
 }
 
-/** One level, on or off. Off is the absence of a border, not a grey pill. */
+function LogDatePicker({
+  date,
+  dates,
+  onSelect
+}: {
+  date: string
+  dates: readonly string[]
+  onSelect: (date: string) => void
+}) {
+  const { t, i18n } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const selected = dayjs(date).toDate()
+  const locale = i18n.language.startsWith('ja') ? ja : i18n.language.startsWith('zh') ? zhCN : enUS
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button type='button' variant='outline' size='sm' aria-label={t('activity.logs.date', { date })}>
+          {date}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align='start' className='w-auto p-0'>
+        <Calendar
+          mode='single'
+          locale={locale}
+          selected={selected}
+          defaultMonth={selected}
+          startMonth={dayjs(dates[0]).toDate()}
+          endMonth={dayjs(dates.at(-1)).toDate()}
+          disabled={(day) => !dates.includes(dayjs(day).format('YYYY-MM-DD'))}
+          onSelect={(day) => {
+            if (day === undefined) return
+            onSelect(dayjs(day).format('YYYY-MM-DD'))
+            setOpen(false)
+          }}
+        />
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 function LevelChipButton({ level, on, onToggle }: { level: LevelChip; on: boolean; onToggle: () => void }) {
   return (
-    <button
+    <Button
       type='button'
+      size='sm'
+      variant='outline'
       aria-pressed={on}
       onClick={onToggle}
-      className={cn(
-        'h-7 rounded-md border px-2.5 text-xs transition-colors',
-        on ? 'border-border bg-muted/60' : 'border-transparent text-muted-foreground hover:bg-muted/50'
-      )}
+      className={on ? 'bg-muted' : 'text-muted-foreground'}
     >
       {level}
-    </button>
+    </Button>
   )
 }
 
 /**
  * The toolbar and the lines. Owns the search and the page, which belong to
- * one file; the level filter is handed in, because this pane is remounted
- * on every file switch and would take it along.
+ * one date; the level filter is handed in, because this pane is remounted
+ * on every date switch and would take it along.
  */
 export function LogPane({
-  files,
-  file,
-  onSelectFile,
+  dates,
+  date,
+  onSelectDate,
   levels,
   onLevelsChange,
   lines
 }: {
-  files: LogFile[]
-  file: LogFile
-  onSelectFile: (next: LogFile) => void
+  dates: readonly string[]
+  date: string
+  onSelectDate: (next: string) => void
   levels: ReadonlySet<LevelChip>
   onLevelsChange: (next: Set<LevelChip>) => void
   lines: LogLine[]
@@ -147,19 +210,7 @@ export function LogPane({
     <div className='min-w-0'>
       <div className='max-w-[64rem]'>
         <div className='flex flex-wrap items-center gap-2 border-b border-border px-4 py-3 md:px-6'>
-          {/* The file is a control, not a rail: it is chosen once per
-              visit and then never looked at again. */}
-          <FilterSelect
-            label={t('activity.logs.file')}
-            value={file.path}
-            options={files.map((f) => ({ id: f.path, label: `${f.name} · ${formatFileSize(f.size)}` }))}
-            onChange={(path) => {
-              const next = files.find((f) => f.path === path)
-              if (next !== undefined) onSelectFile(next)
-            }}
-          />
-          {/* Hidden on a phone: there the file select fills its own line and
-              the rule was left dangling at the end of it. */}
+          <LogDatePicker date={date} dates={dates} onSelect={onSelectDate} />
           <span className='mx-1 h-4 w-px bg-border max-md:hidden' />
           {LEVEL_CHIPS.map((level) => (
             <LevelChipButton key={level} level={level} on={levels.has(level)} onToggle={() => toggleLevel(level)} />
@@ -196,7 +247,7 @@ export function LogPane({
 
 export function ActivityLogs() {
   const { t } = useTranslation()
-  const { files, file, setFile, rawLines, error, loadLines } = useLogFiles()
+  const { dates, date, selectDate, rawLines, error, loadLines } = useLogDates()
   const [follow, setFollow] = useState(false)
   // Held here, above the per-file remount below, so a file switch keeps it.
   // debug is on: with the rails gone there is nothing else competing for
@@ -226,15 +277,12 @@ export function ActivityLogs() {
     return () => clearInterval(timer)
   }, [follow, loadLines])
 
-  const lines = useMemo(() => parseLogLines(rawLines), [rawLines])
+  const lines = useMemo(() => parseLogLines(rawLines === undefined ? [] : rawLines), [rawLines])
 
   // No Download. The screens hand out no files: the log is read here, or
   // on the host it is written to.
   return (
     <Screen
-      subtitle={
-        file === null ? undefined : t('activity.logs.subtitle', { file: file.name, size: formatFileSize(file.size) })
-      }
       actions={
         <RButton
           variant='outline'
@@ -249,7 +297,7 @@ export function ActivityLogs() {
     >
       {error !== null ? (
         <ScreenMessage tone='bad'>{error}</ScreenMessage>
-      ) : file === null ? (
+      ) : date === undefined ? (
         // With file logging off the notice already says why there is nothing.
         offNotice === null ? (
           <ScreenMessage>{t('activity.logs.noFiles')}</ScreenMessage>
@@ -259,18 +307,11 @@ export function ActivityLogs() {
       ) : (
         <>
           {offNotice}
-          {/* Remount per file, but only for what belongs to the file. The
-              search needle and the page index describe one file's contents
-              (a needle typed against a.log says nothing about b.log, and
-              page 3 of one may not exist in the next), so they reset with
-              the key. The level filter is the operator's intent ("show me
-              errors"), not a property of any file, so it lives in the
-              screen above the key and survives the switch. */}
           <LogPane
-            key={file.path}
-            files={files}
-            file={file}
-            onSelectFile={setFile}
+            key={date}
+            dates={dates}
+            date={date}
+            onSelectDate={selectDate}
             levels={levels}
             onLevelsChange={setLevels}
             lines={lines}
