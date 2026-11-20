@@ -91,7 +91,7 @@ function limitResponse(
  * refuses it when a window is full (429) or the ledger is down (503).
  * Null when the request may proceed.
  */
-async function windowLimitRefusal(
+export async function windowLimitRefusal(
   c: Parameters<MiddlewareHandler>[0],
   tokenId: string,
   limits: PlanLimits,

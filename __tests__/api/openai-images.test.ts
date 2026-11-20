@@ -10,7 +10,7 @@ import { invalidateTokenCache, issueAccessToken } from '../../src/services/acces
 import { getCatalog } from '../../src/services/catalog-service'
 import { applyUiConfig } from '../../src/services/config'
 import { clearAccountExhaustion, isAccountExhausted } from '../../src/services/failover-state'
-import { invalidateSurfaceCache } from '../../src/services/inbound-surface-service'
+import { invalidateSurfaceCache, updateSurface } from '../../src/services/inbound-surface-service'
 import { setModelProviderPriorities } from '../../src/services/model-provider-preference'
 import { encryptionKey, encryptString } from '../../src/services/subscription-account-sync/crypto'
 import { DEFAULT_TOKEN_POLICY } from '../../src/shared/access-token-policy'
@@ -202,6 +202,84 @@ describe.skipIf(!HAS_DB)('POST /v1/images/generations', () => {
     expect((await (await list()).json()).data).toEqual([])
     expect((await send({ model: models[0], prompt: 'x' }, token)).status).toBe(400)
     expect(calls).toHaveLength(2)
+  })
+
+  test('edits an uploaded image with the image scope and forwards the resolved model', async () => {
+    const db = getPrismaClient()
+    const provider = await db.provider.create({
+      data: { name: 'openai', apiBaseUrl: 'https://api.openai.com/v1/responses', apiKey: 'upstream-key', enabled: true }
+    })
+    const model = 'gpt-image-2.6-flare'
+    await db.model.create({ data: { providerId: provider.id, name: model, enabled: true } })
+    const imageToken = (await issueAccessToken({ name: 'edit', surfaces: ['openai-images'] })).plaintext
+    const chatToken = (await issueAccessToken({ name: 'chat', surfaces: ['openai-chat'] })).plaintext
+    const sendEdit = (token: string) => {
+      const data = new FormData()
+      data.set('model', `openai,${model}`)
+      data.set('prompt', 'Make the lantern blue')
+      data.append('image[]', new Blob(['image content'], { type: 'image/png' }), 'lantern.png')
+      return app.request('/v1/images/edits', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: data
+      })
+    }
+    expect((await sendEdit(chatToken)).status).toBe(401)
+    const edits: Array<{ url: string; key: string | null; body: FormData }> = []
+    globalThis.fetch = Object.assign(
+      async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        if (!(init?.body instanceof FormData)) throw new Error('Expected multipart edit')
+        edits.push({ url: String(input), key: new Headers(init.headers).get('authorization'), body: init.body })
+        return json(payload)
+      },
+      { preconnect: ORIGINAL_FETCH.preconnect }
+    )
+    const response = await sendEdit(imageToken)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual(payload)
+    expect(edits.map(({ url, key, body }) => [url, key, body.get('model')])).toEqual([
+      ['https://api.openai.com/v1/images/edits', 'Bearer upstream-key', model]
+    ])
+    const file = edits[0].body.get('image[]')
+    if (!(file instanceof File)) throw new Error('Expected the uploaded image')
+    expect(await file.text()).toBe('image content')
+  })
+
+  test('forwards JSON file references and enforces the image surface denial', async () => {
+    const db = getPrismaClient()
+    const provider = await db.provider.create({
+      data: { name: 'openai', apiBaseUrl: 'https://api.openai.com/v1/responses', apiKey: 'upstream-key', enabled: true }
+    })
+    const model = 'gpt-image-2.6-sunburst'
+    await db.model.create({ data: { providerId: provider.id, name: model, enabled: true } })
+    const token = (await issueAccessToken({ name: 'edit', surfaces: ['openai-images'] })).plaintext
+    const sendEdit = (body: unknown) =>
+      app.request('/v1/images/edits', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+    const body = {
+      model: `openai,${model}`,
+      prompt: 'Make it blue',
+      images: [{ file_id: 'file-original' }],
+      mask: { file_id: 'file-mask' }
+    }
+    const sent: unknown[] = []
+    globalThis.fetch = Object.assign(
+      async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        sent.push(JSON.parse(String(init?.body)))
+        return json(payload)
+      },
+      { preconnect: ORIGINAL_FETCH.preconnect }
+    )
+    expect((await sendEdit({ ...body, images: [] })).status).toBe(400)
+    expect((await sendEdit({ ...body, stream: true })).status).toBe(400)
+    expect((await sendEdit(body)).status).toBe(200)
+    expect(sent).toEqual([{ ...body, model }])
+    await updateSurface({ surface: 'openai-images', deniedTargets: [body.model] })
+    expect((await sendEdit(body)).status).toBe(403)
+    expect(sent).toHaveLength(1)
   })
 
   test('rejects disabled targets, ambiguous names, and unsupported models without a network call', async () => {

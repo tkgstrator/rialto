@@ -41,7 +41,8 @@ export async function fetchProvider(
   context: ProviderFetchContext = {},
   logger?: Logger
 ): Promise<Response> {
-  const headers = new Headers({ 'Content-Type': 'application/json' })
+  const multipart = body instanceof FormData
+  const headers = new Headers(multipart ? {} : { 'Content-Type': 'application/json' })
   const headerEntries: Array<[string, string | undefined]> = options.headers ? Object.entries(options.headers) : []
   for (const [k, v] of headerEntries) {
     if (v !== undefined && v !== null && v !== 'undefined') headers.set(k, v)
@@ -52,11 +53,11 @@ export async function fetchProvider(
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
   options.signal?.addEventListener('abort', () => controller.abort())
 
-  const bodyString = JSON.stringify(body)
+  const requestBody = multipart ? body : JSON.stringify(body)
   const init: RequestInitWithDispatcher = {
     method: 'POST',
     headers,
-    body: bodyString,
+    body: requestBody,
     signal: controller.signal
   }
 
@@ -70,7 +71,7 @@ export async function fetchProvider(
   logger?.debug(
     {
       reqId: context.reqId,
-      request: { method: init.method, bodyLength: bodyString.length },
+      request: { method: init.method, bodyLength: typeof requestBody === 'string' ? requestBody.length : undefined },
       headers: Object.fromEntries(headers.entries()),
       requestUrl: typeof url === 'string' ? url : url.toString(),
       useProxy: options.httpsProxy
