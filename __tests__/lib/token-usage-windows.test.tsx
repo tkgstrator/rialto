@@ -87,21 +87,18 @@ describe('token usage windows', () => {
     expect(html).toContain('Every spent window must reset before requests resume.')
   })
 
-  test('not started: Not started and nothing to reset', () => {
+  test('not started: shows the status without a reset action', () => {
     const html = render('Free', usage(0, 0, false))
     expect(html).toContain('Not started')
-    expect(html).toContain('Nothing to reset')
-    expect(html).toContain('The next counted request starts each window.')
     expect(html).not.toContain('Reset usage')
   })
 
-  test('no plan and an unlimited plan: the note, no meters, no reset', () => {
+  test('no plan and an unlimited plan: show no limit and no reset action', () => {
     const none = render(null, null)
-    expect(none).toContain('No plan usage limits.')
-    expect(none).toContain('Assign a plan')
+    expect(none).toContain('>No limit<')
     expect(none).not.toContain('Reset usage')
     const max = render('Max', { limited: false, windows: [] })
-    expect(max).toContain('Max has no request or spend limits in either window.')
+    expect(max).toContain('>No limit<')
     expect(max).not.toContain('Reset usage')
   })
 })
