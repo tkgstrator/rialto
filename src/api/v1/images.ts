@@ -4,6 +4,7 @@ import type { Context } from 'hono'
 import { getPrismaClient } from '../../db/client'
 import { AuthMode } from '../../generated/prisma/client'
 import dayjs from '../../lib/dayjs'
+import { IMAGE_EDIT_PATH } from '../../llms/inbound/surfaces'
 import { fetchProvider } from '../../llms/provider-fetch'
 import { CODEX_ORIGINATOR, CODEX_USER_AGENT } from '../../llms/transformers/openai/codex-oauth'
 import { logger } from '../../logger'
@@ -24,14 +25,17 @@ import {
   OPENAI_IMAGE_ENDPOINT,
   supportsImageModel
 } from '../../shared/data/openai-images'
+import { readBoundedBody } from './bounded-body'
 import { buildErrorEnvelope } from './error-shape'
 import '../context'
 
 const MAX_BODY_BYTES = 128 * 1024
+const MAX_EDIT_BODY_BYTES = 50 * 1024 * 1024
 const MAX_ROTATIONS = 10
 // The surface whose passthrough denials an image target is checked
 // against. The Codex MCP server generates through here too, and a target
 // the operator denied on the images surface stays denied there.
+const OPENAI_IMAGE_EDIT_ENDPOINT = `https://api.openai.com${IMAGE_EDIT_PATH}`
 const IMAGE_PATH = '/v1/images/generations'
 const ImageBody = z
   .object({
@@ -80,7 +84,7 @@ const fail = (c: Context, status: number, message: unknown, via?: string): Respo
   })
 }
 
-async function resolveImageTargets(model: string, caller: ImageCaller) {
+async function resolveImageTargets(model: string, caller: ImageCaller, path: string) {
   const comma = model.indexOf(',')
   const name = model.slice(comma + 1)
   const rows = await getPrismaClient().model.findMany({
@@ -112,7 +116,7 @@ async function resolveImageTargets(model: string, caller: ImageCaller) {
       })
     )
   ).filter((provider) => provider !== null)
-  const surface = await resolveSurfaceForPath(IMAGE_PATH)
+  const surface = await resolveSurfaceForPath(path)
   const allowed = available.filter((provider) => !surface?.deniedTargets.includes(`${provider.name},${name}`))
   const order = await orderTokenProviders(
     name,
@@ -129,30 +133,16 @@ async function resolveImageTargets(model: string, caller: ImageCaller) {
       : []
   const denial =
     allowed.length === 0 && available.length > 0
-      ? await passthroughDenial(IMAGE_PATH, `${available[0].name},${name}`)
+      ? await passthroughDenial(path, `${available[0].name},${name}`)
       : undefined
   return { targets, denial }
 }
 
 async function readImageInput(c: Context): Promise<ImageInput | null> {
   if (!c.req.header('content-type')?.toLowerCase().startsWith('application/json')) return null
-  const length = Number(c.req.header('content-length'))
-  if (Number.isFinite(length) && length > MAX_BODY_BYTES) return null
-  const reader = c.req.raw.body?.getReader()
-  if (reader === undefined) return null
-  const chunks: Uint8Array[] = []
-  const total = { bytes: 0 }
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    total.bytes += value.byteLength
-    if (total.bytes > MAX_BODY_BYTES) {
-      await reader.cancel()
-      return null
-    }
-    chunks.push(value)
-  }
-  const raw = new TextDecoder().decode(Buffer.concat(chunks))
+  const bytes = await readBoundedBody(c, MAX_BODY_BYTES)
+  if (bytes === null) return null
+  const raw = new TextDecoder().decode(bytes)
   try {
     const parsed = ImageBody.safeParse(JSON.parse(raw))
     return parsed.success ? parsed.data : null
@@ -274,7 +264,7 @@ const b64Of = (payload: Record<string, unknown>): string => {
 async function imageResult(
   upstream: Response,
   target: ImageTarget,
-  body: ImageInput,
+  body: { model: string },
   account: ImageAccount | null,
   caller: ImageCaller,
   sessionId: string,
@@ -354,12 +344,18 @@ async function dispatchImage(
   return failure(429, 'All Codex subscription accounts are rate limited.', target.provider.name)
 }
 
-async function dispatchOpenAIImage(body: ImageInput, target: ImageTarget, caller: ImageCaller): Promise<ImageOutcome> {
+async function dispatchOpenAIImage(
+  body: { model: string },
+  target: ImageTarget,
+  caller: ImageCaller,
+  url: string,
+  request: Record<string, unknown> | FormData
+): Promise<ImageOutcome> {
   const key = target.provider.apiKey?.trim()
   if (!key) return failure(503, 'No OpenAI API key configured.', target.provider.name)
   const started = Date.now()
   try {
-    const upstream = await fetchProvider(OPENAI_IMAGE_ENDPOINT, imageRequest(body, target.model), {
+    const upstream = await fetchProvider(url, request, {
       headers: { authorization: `Bearer ${key}`, accept: 'application/json' },
       httpsProxy: process.env.PROXY_URL
     })
@@ -387,7 +383,7 @@ export async function generateImage(body: ImageInput, caller: ImageCaller): Prom
   if (!isImageOnlyModel(model)) return failure(400, 'Image model is unavailable, disabled, or ambiguous.')
   if (!allowsProviderMode(caller.policy, isOpenAIImageModel(model) ? 'api_key' : 'subscription'))
     return failure(403, 'Image provider is not allowed for this token.')
-  const { targets, denial } = await resolveImageTargets(body.model, caller)
+  const { targets, denial } = await resolveImageTargets(body.model, caller, IMAGE_PATH)
   if (denial !== undefined) return failure(403, denial)
   if (targets.length === 0) return failure(400, 'Image model is unavailable, disabled, or ambiguous.')
 
@@ -396,7 +392,7 @@ export async function generateImage(body: ImageInput, caller: ImageCaller): Prom
   for (const target of targets) {
     const outcome =
       target.provider.authMode === AuthMode.api_key
-        ? await dispatchOpenAIImage(body, target, caller)
+        ? await dispatchOpenAIImage(body, target, caller, OPENAI_IMAGE_ENDPOINT, imageRequest(body, target.model))
         : await dispatchImage(body, target, `${target.provider.apiBaseUrl}/images/generations`, caller)
     if (outcome.ok || (outcome.status !== 429 && outcome.status !== 503)) return outcome
     // Preserve the existing image behavior unless the operator enabled provider fallback.
@@ -410,15 +406,89 @@ export async function handleImageGeneration(c: Context): Promise<Response> {
   const body = await readImageInput(c)
   if (body === null)
     return fail(c, 400, 'Invalid image request (JSON, model, prompt, and supported image options required).')
+  return imageResponse(c, await generateImage(body, imageCaller(c)))
+}
+
+function imageCaller(c: Context): ImageCaller {
   const token = c.get('accessToken')
-  const outcome = await generateImage(body, {
-    accessTokenId: token.id,
-    surface: 'openai-images',
-    plan: token.plan,
-    policy: token.policy
-  })
+  return { accessTokenId: token.id, surface: 'openai-images', plan: token.plan, policy: token.policy }
+}
+
+function imageResponse(c: Context, outcome: ImageOutcome): Response {
   if (outcome.ok) return c.json(outcome.payload)
-  // Set before `fail`, which carries the context's headers onto its response.
   if (outcome.retryAfter !== undefined) c.header('retry-after', outcome.retryAfter)
   return fail(c, outcome.status, outcome.message, outcome.via)
+}
+
+const EditFields = ImageBody.pick({ model: true, prompt: true, n: true }).extend({
+  stream: z.literal(false).optional()
+})
+const ImageReference = z.union([
+  z.object({ file_id: z.string().nonempty() }).strict(),
+  z.object({ image_url: z.string().nonempty() }).strict()
+])
+const EditJson = EditFields.extend({ images: z.array(ImageReference).min(1).max(16) }).loose()
+type ImageEdit = { model: string; request: Record<string, unknown> | FormData }
+
+function multipartEdit(form: FormData): ImageEdit | null {
+  if (['model', 'prompt', 'n', 'stream'].some((field) => form.getAll(field).length > 1)) return null
+  const parsed = EditFields.safeParse({
+    model: form.get('model'),
+    prompt: form.get('prompt'),
+    n: form.has('n') ? Number(form.get('n')) : undefined,
+    stream: form.has('stream') ? form.get('stream') !== 'false' : undefined
+  })
+  const images = [...form.getAll('image'), ...form.getAll('image[]')]
+  if (!parsed.success || images.length === 0 || images.length > 16) return null
+  if (images.some((image) => typeof image === 'string' || image.size === 0)) return null
+  return { model: parsed.data.model, request: form }
+}
+
+async function parseImageEdit(
+  type: string,
+  contentType: string,
+  bytes: Uint8Array<ArrayBuffer>
+): Promise<ImageEdit | null> {
+  if (type === 'multipart/form-data') {
+    const form = await new Response(bytes, { headers: { 'content-type': contentType } }).formData()
+    return multipartEdit(form)
+  }
+  const parsed = EditJson.safeParse(JSON.parse(new TextDecoder().decode(bytes)))
+  return parsed.success ? { model: parsed.data.model, request: parsed.data } : null
+}
+
+async function editImage(body: ImageEdit, caller: ImageCaller): Promise<ImageOutcome> {
+  const decision = decidePlanModel(caller.plan, body.model)
+  if (decision.kind === 'denied') return failure(403, decision.message)
+  const name = body.model.slice(body.model.indexOf(',') + 1)
+  if (!allowsTokenModel(caller.policy, name)) return failure(403, 'Image model is not allowed for this token.')
+  if (!isOpenAIImageModel(name)) return failure(400, 'Image editing requires a supported OpenAI API model.')
+  if (!allowsProviderMode(caller.policy, 'api_key'))
+    return failure(403, 'Image provider is not allowed for this token.')
+  const { targets, denial } = await resolveImageTargets(body.model, caller, IMAGE_EDIT_PATH)
+  if (denial !== undefined) return failure(403, denial)
+  const [first] = targets
+  if (first === undefined) return failure(400, 'Image model is unavailable, disabled, or ambiguous.')
+  const request = body.request
+  if (request instanceof FormData) request.set('model', first.model)
+  const upstreamBody = request instanceof FormData ? request : { ...request, model: first.model }
+  let outcome: ImageOutcome = failure(503, 'No image provider is available.')
+  for (const target of targets) {
+    outcome = await dispatchOpenAIImage(body, target, caller, OPENAI_IMAGE_EDIT_ENDPOINT, upstreamBody)
+    if (outcome.ok || (outcome.status !== 429 && outcome.status !== 503)) return outcome
+    if (!caller.policy?.providerMode.endsWith('_first') || !caller.policy.providerFallback) return outcome
+  }
+  return outcome
+}
+
+export async function handleImageEdit(c: Context): Promise<Response> {
+  const contentType = c.req.header('content-type')
+  const type = contentType?.split(';')[0].trim().toLowerCase()
+  if (contentType === undefined || (type !== 'application/json' && type !== 'multipart/form-data'))
+    return fail(c, 400, 'Image edits require multipart/form-data or application/json.')
+  const bytes = await readBoundedBody(c, MAX_EDIT_BODY_BYTES).catch(() => null)
+  if (bytes === null) return fail(c, 413, 'Image edit request exceeds the 50 MiB limit.')
+  const body = await parseImageEdit(type, contentType, bytes).catch(() => null)
+  if (body === null) return fail(c, 400, 'Image edits require a model, prompt, and at least one input image.')
+  return imageResponse(c, await editImage(body, imageCaller(c)))
 }
