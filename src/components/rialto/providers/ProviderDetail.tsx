@@ -171,6 +171,7 @@ export interface ProviderDetailProps {
   /** Per-model reasoning effort; null clears it back to the vendor default. */
   onModelEffort: (model: string, next: ReasoningEffort | null) => void
   onReplaceKey: (key: string) => void
+  onBaseUrlChange?: (url: string) => void
   /** Spend one of the account's banked resets; the screen confirms first. */
   onReauthenticated?: () => Promise<void>
   onUseReset: (account: SubAccountWire) => void
@@ -216,6 +217,7 @@ export function ProviderDetail(props: ProviderDetailProps) {
             provider={provider}
             editing={props.editing}
             onReplace={props.onReplaceKey}
+            onBaseUrlChange={props.onBaseUrlChange}
           />
         )}
         {subscriptionMode ? (

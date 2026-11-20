@@ -25,6 +25,7 @@ export interface ProviderDraft {
   efforts: Record<string, ReasoningEffort | null>
   /** A replacement API key. Empty clears the stored one. */
   apiKey?: string
+  apiBaseUrl?: string
 }
 
 export const EMPTY_DRAFT: ProviderDraft = { accounts: {}, models: {}, efforts: {} }
@@ -65,6 +66,7 @@ export function applyDraft(provider: Provider, draft: ProviderDraft): Provider {
     ...switched,
     enabled: draft.enabled === undefined ? provider.enabled : draft.enabled,
     api_key: apiKeyOf(provider, draft),
+    api_base_url: draft.apiBaseUrl === undefined ? provider.api_base_url : draft.apiBaseUrl,
     subscription_accounts:
       provider.auth_mode !== 'subscription' || provider.subscription_accounts === undefined
         ? provider.subscription_accounts
@@ -110,6 +112,7 @@ export function savePlan(loaded: Provider, draft: ProviderDraft): SavePlan {
   const rowChanged =
     edited.enabled !== loaded.enabled ||
     edited.api_key !== loaded.api_key ||
+    edited.api_base_url.trim() !== loaded.api_base_url ||
     !sameMembers(disabledModelsOf(edited), disabledModelsOf(loaded)) ||
     accounts.length > 0
   return {
@@ -118,6 +121,7 @@ export function savePlan(loaded: Provider, draft: ProviderDraft): SavePlan {
           ...loaded,
           enabled: edited.enabled,
           api_key: edited.api_key,
+          api_base_url: edited.api_base_url.trim(),
           transformer: edited.transformer,
           subscription_accounts: accounts.length === 0 ? undefined : accounts
         }

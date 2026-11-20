@@ -11,53 +11,28 @@
  * the same page at desktop width.
  */
 
-import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { scopePaths } from '@/components/rialto/activity/use-surfaces'
-import { PhoneStats, Pill, RButton, Section, SurfacePill } from '@/components/rialto/primitives'
-import { TokenUsageWindowsBody } from '@/components/rialto/settings/access/TokenUsageWindows'
-import type { AccessTokenWire, InboundSurfaceWire, TokenUsageWindowsWire } from '@/lib/api'
-import { fmtAgo, fmtCount } from '@/lib/rialto/format'
-import { fmtTokenCount, TOKEN_STATE_PILL, type TokenState } from '@/lib/rialto/settings/access-tokens'
-import type { UsageWindowsView } from '@/lib/rialto/settings/usage-windows'
-import { fmtCost } from '@/lib/sessions/format'
-
-/** A label and its value on one line, the value right-aligned so a column of them reads down one edge. */
-function Fact({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className='flex items-baseline gap-3 border-t border-border/60 px-4 py-2.5 text-xs'>
-      <span className='shrink-0 text-muted-foreground'>{label}</span>
-      <span className='ml-auto flex min-w-0 flex-wrap justify-end gap-1 text-right'>{children}</span>
-    </div>
-  )
-}
+import { Pill, RButton } from '@/components/rialto/primitives'
+import type { AccessTokenWire } from '@/lib/api'
+import { TOKEN_STATE_PILL, type TokenState } from '@/lib/rialto/settings/access-tokens'
 
 export function TokenDetailPhone({
   token,
   state,
-  windows,
   usageBlocked,
-  surfaces,
-  now,
   busy,
   onRotate,
-  onRevoke,
-  onReset
+  onRevoke
 }: {
   token: AccessTokenWire
   state: TokenState
-  windows: UsageWindowsView
   usageBlocked: boolean
-  surfaces: readonly InboundSurfaceWire[]
-  now: number
   busy: boolean
   onRotate: () => void
   onRevoke: () => void
-  onReset: (next: TokenUsageWindowsWire) => void
 }) {
   const { t } = useTranslation()
   const pill = TOKEN_STATE_PILL[state]
-  const paths = scopePaths(surfaces, token.surfaces)
   return (
     <>
       {/* The page header already names the token and leads back to the
@@ -85,64 +60,6 @@ export function TokenDetailPhone({
             {t('settings.access.revoke')}
           </RButton>
         </div>
-      </div>
-
-      <Section title={t('access.token.windows')}>
-        <div className='px-4 pb-4'>
-          <TokenUsageWindowsBody token={token} view={windows} now={now} onReset={onReset} />
-        </div>
-      </Section>
-
-      <Section title={t('settings.access.detailUsage')}>
-        <PhoneStats
-          items={[
-            {
-              label: t('settings.access.colRequests'),
-              value: fmtCount(token.requestCount),
-              note: t('settings.access.detailTokens', {
-                in: fmtTokenCount(token.inputTokens),
-                out: fmtTokenCount(token.outputTokens)
-              })
-            },
-            { label: t('settings.access.colCost'), value: fmtCost(token.costUsd) },
-            {
-              label: t('settings.access.colLastUsed'),
-              value:
-                token.lastUsedAt === null
-                  ? t('settings.access.never')
-                  : t('settings.access.lastUsedAgo', { ago: fmtAgo(token.lastUsedAt, now) })
-            },
-            {
-              label: t('settings.access.colExpires'),
-              value: token.expiresAt === null ? t('settings.access.never') : token.expiresAt.slice(0, 10)
-            }
-          ]}
-        />
-      </Section>
-
-      <div className='pb-6'>
-        <Fact label={t('settings.access.colEndpoint')}>
-          {paths.length === 0 ? (
-            <span className='text-muted-foreground'>{t('settings.access.allEndpoints')}</span>
-          ) : (
-            paths.map((path) => <SurfacePill key={path} path={path} />)
-          )}
-        </Fact>
-        <Fact label={t('access.token.plan')}>
-          {token.plan === null ? (
-            <span className='text-muted-foreground'>{t('access.token.noPlan')}</span>
-          ) : (
-            token.plan.name
-          )}
-        </Fact>
-        <Fact label={t('settings.access.detailLifetime')}>
-          <span className='font-mono text-[12px] text-muted-foreground'>
-            {t('settings.access.detailCreated', { date: token.createdAt.slice(0, 10) })}
-            {token.rotatedAt === null
-              ? ''
-              : ` · ${t('settings.access.detailRotated', { date: token.rotatedAt.slice(0, 10) })}`}
-          </span>
-        </Fact>
       </div>
     </>
   )
