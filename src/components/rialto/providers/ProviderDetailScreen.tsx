@@ -62,10 +62,13 @@ const autoRefreshPaused = (loading: boolean, busy: boolean, pending: string | nu
 
 // A subscription provider's page refreshes its accounts along with the
 // catalog; an api_key provider has none.
-const refreshScopeOf = (provider: Provider | undefined): RefreshScope =>
-  provider !== undefined && provider.auth_mode === 'subscription'
-    ? { accounts: 'provider', provider: provider.name }
-    : { accounts: 'none' }
+const refreshScopeOf = (provider: Provider | undefined): RefreshScope => {
+  if (provider?.auth_mode === 'subscription') return { accounts: 'provider', provider: provider.name }
+  if (provider && isCustomProvider(provider.name, provider.auth_mode)) {
+    return { accounts: 'none', customProvider: provider.name }
+  }
+  return { accounts: 'none' }
+}
 
 /** What the page calls the provider, and where its breadcrumb leads back to. */
 function framingOf(data: ProvidersData, provider: Provider, t: TFunction) {

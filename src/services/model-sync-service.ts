@@ -15,10 +15,7 @@
  * from the subscription's own model list by model-capability-service,
  * and nothing here overwrites them.
  *
- * Custom providers (hand-added endpoints, `shared/custom-provider.ts`) take
- * no part in any of this. They have no vendor adapter, no price sheet and no
- * catalog page; their model ids come from the one-shot lookup at connect
- * time or from the operator. They are reported as skipped, not as failed.
+ * Custom providers synchronize with their configured models endpoint.
  *
  * All vendor-specific plumbing lives under providers/<vendor>/; this
  * service just orchestrates. Subscription providers (claude-code,
@@ -28,13 +25,15 @@
  */
 
 import type { z } from '@hono/zod-openapi'
-import { isCustomProvider } from '@/shared/custom-provider'
+import { isCustomApiStyle, isCustomProvider } from '@/shared/custom-provider'
 import { isDeprecatedModel, LLM_PRICES_SEED } from '@/shared/data'
 import { getPrismaClient } from '../db/client'
 import { AuthMode, type Prisma } from '../generated/prisma/client'
+import { resetLlmsContext } from '../llms'
 import { logger } from '../logger'
 import type { RefreshOutcomeSchema } from '../schemas/api/models'
 import type { ModelsCredential, ScrapedPriceEntry } from '../vendors/base'
+import { fetchCustomModels } from '../vendors/custom'
 import { getVendorProvider } from '../vendors/registry'
 import { claudeCodeModels, refreshClaudeCodeModels } from './claude-code-model-catalog'
 import { fetchCodexModels } from './codex-model-catalog'
@@ -263,6 +262,62 @@ export async function syncConnectedCodexModels(
   await captureModelCapabilities(fetchModels)
 }
 
+type CustomProviderRow = Prisma.ProviderGetPayload<{
+  select: { id: true; name: true; apiBaseUrl: true; apiKey: true; apiStyle: true; updatedAt: true }
+}>
+
+async function syncCustomModels(p: CustomProviderRow): Promise<RefreshOutcome> {
+  const failed = (error: string): RefreshOutcome => ({ provider: p.name, added: [], error })
+  if (!p.apiKey?.trim()) return failed('API key is required')
+  const style = isCustomApiStyle(p.apiStyle) ? p.apiStyle : 'openai_chat'
+  const found = await fetchCustomModels({ baseUrl: p.apiBaseUrl, apiKey: p.apiKey, style }, fetch, { complete: true })
+  if (!found.ok) return failed(found.error)
+
+  const added = await getPrismaClient().$transaction(async (tx) => {
+    const current = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "Provider" WHERE "id" = ${p.id} AND "updatedAt" = ${p.updatedAt} FOR UPDATE
+    `
+    if (current.length === 0) return null
+
+    const models = await tx.model.findMany({
+      where: { providerId: p.id },
+      select: { name: true, contextWindow: true }
+    })
+    const existing = new Set(models.map((model) => model.name))
+    const newIds = found.ids.filter((name) => !existing.has(name))
+
+    await tx.model.deleteMany({ where: { providerId: p.id, name: { notIn: found.ids } } })
+    if (newIds.length > 0) {
+      await tx.model.createMany({
+        data: newIds.map((name) => ({
+          providerId: p.id,
+          name,
+          enabled: false,
+          contextWindow: found.contextWindows?.get(name)
+        })),
+        skipDuplicates: true
+      })
+    }
+    for (const model of models) {
+      const contextWindow = found.contextWindows?.get(model.name)
+      if (contextWindow === undefined || contextWindow === model.contextWindow) continue
+      await tx.model.updateMany({ where: { providerId: p.id, name: model.name }, data: { contextWindow } })
+    }
+    return newIds
+  })
+  if (added === null) return failed('Provider changed during refresh. Run Refresh again.')
+  resetLlmsContext()
+  return { provider: p.name, added }
+}
+
+export async function refreshCustomProviderModels(name: string): Promise<RefreshOutcome> {
+  const provider = await getPrismaClient().provider.findUnique({ where: { name } })
+  if (provider === null || !isCustomProvider(provider.name, provider.authMode)) {
+    return { provider: name, added: [], error: 'Custom provider is unavailable' }
+  }
+  return syncCustomModels(provider)
+}
+
 export async function refreshModelsForAllProviders(): Promise<RefreshOutcome[]> {
   const prisma = getPrismaClient()
   const providers = await prisma.provider.findMany({ include: { models: true } })
@@ -288,7 +343,7 @@ export async function refreshModelsForAllProviders(): Promise<RefreshOutcome[]> 
   const results: RefreshOutcome[] = []
   for (const p of providers) {
     if (isCustomProvider(p.name, p.authMode)) {
-      results.push({ provider: p.name, added: [], skipped: 'custom provider: models are managed by hand' })
+      results.push(await syncCustomModels(p))
       continue
     }
     const scrapeVendor = scrapeVendorFor(p.name)

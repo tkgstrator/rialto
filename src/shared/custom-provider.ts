@@ -78,8 +78,7 @@ export const customNameProblem = (raw: string): CustomNameProblem | null => {
  * vendor the catalog knows. Decided on the name because nothing else marks
  * the row — which also makes a legacy api_key provider carried over under
  * an unknown name count as custom. That is the right reading: such a row
- * has no vendor adapter either, so the model sync and the price jobs must
- * leave it alone for the same reason.
+ * has no vendor adapter either, so it is refreshed from its own endpoint.
  */
 export const isCustomProvider = (name: string, authMode: 'api_key' | 'subscription'): boolean =>
   authMode === 'api_key' && !isBuiltInVendorName(apiKeyVendorName(name))

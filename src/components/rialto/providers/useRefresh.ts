@@ -13,7 +13,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import type { SubscriptionRefreshResponse } from '@/schemas/api/subscriptions'
-import { refreshCatalog, refreshSubscriptions } from './actions'
+import { refreshCatalog, refreshModels, refreshSubscriptions } from './actions'
 
 /**
  * Which subscription accounts ride along with the catalog: none on the
@@ -21,7 +21,10 @@ import { refreshCatalog, refreshSubscriptions } from './actions'
  * one provider's on its own page — where the server covers the provider
  * even while it is switched off.
  */
-export type RefreshScope = { accounts: 'none' } | { accounts: 'all' } | { accounts: 'provider'; provider: string }
+export type RefreshScope =
+  | { accounts: 'none'; customProvider?: string }
+  | { accounts: 'all' }
+  | { accounts: 'provider'; provider: string }
 
 interface RefreshOutcome {
   catalog: PromiseSettledResult<void>
@@ -35,7 +38,9 @@ const messageOf = (reason: unknown): string => (reason instanceof Error ? reason
 // answer.
 async function refreshScope(scope: RefreshScope): Promise<RefreshOutcome> {
   if (scope.accounts === 'none') {
-    const [catalog] = await Promise.allSettled([refreshCatalog()])
+    const [catalog] = await Promise.allSettled([
+      scope.customProvider === undefined ? refreshCatalog() : refreshModels(scope.customProvider)
+    ])
     return { catalog, accounts: null }
   }
   const [catalog, accounts] = await Promise.allSettled([

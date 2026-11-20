@@ -120,16 +120,18 @@ export async function testModels(providerName: string, models: string[]): Promis
  * second is what makes the first show up: they are one round trip.
  */
 export async function refreshCatalog(): Promise<void> {
-  const [catalog, models] = await Promise.allSettled([
-    api.post('/catalog/refresh', {}),
-    api.post<z.infer<typeof RefreshModelsResponseSchema>>('/refresh-models', {})
-  ])
+  const [catalog, models] = await Promise.allSettled([api.post('/catalog/refresh', {}), refreshModels()])
   if (models.status === 'rejected') throw models.reason
-  const failures = models.value.outcomes.flatMap(({ provider, error }) =>
+  if (catalog.status === 'rejected') throw catalog.reason
+}
+
+export async function refreshModels(provider?: string): Promise<void> {
+  const query = provider === undefined ? '' : `?${new URLSearchParams({ provider })}`
+  const result = await api.post<z.infer<typeof RefreshModelsResponseSchema>>(`/refresh-models${query}`, {})
+  const failures = result.outcomes.flatMap(({ provider, error }) =>
     error === undefined ? [] : [`${provider}: ${error}`]
   )
   if (failures.length > 0) throw new Error(failures.join(' · '))
-  if (catalog.status === 'rejected') throw catalog.reason
 }
 
 /**
