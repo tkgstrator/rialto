@@ -227,9 +227,11 @@ export function surfaceById(id: string): InboundSurface | undefined {
  * globbed surface resolves without editing this function.
  */
 export const IMAGE_EDIT_PATH = '/v1/images/edits'
+export const DECISIONS_PATH = '/v1/decisions'
 
 export function surfaceForPath(path: string | undefined): InboundSurface | undefined {
   if (typeof path !== 'string' || path.length === 0) return undefined
+  if (path === DECISIONS_PATH) return surfaceById('openai-responses')
   if (path === IMAGE_EDIT_PATH) return surfaceById('openai-images')
   for (const surface of INBOUND_SURFACES) {
     if (surface.path === path) return surface

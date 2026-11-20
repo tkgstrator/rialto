@@ -18,7 +18,7 @@ import type { Logger } from 'pino'
 import { getPrismaClient } from '../../db/client'
 import { firstUserInputOf } from '../../lib/sessions/first-user-input'
 import { getLlmsContext, runPipeline, type UsageRecord } from '../../llms'
-import { IMAGE_EDIT_PATH, INBOUND_SURFACES, surfaceForPath } from '../../llms/inbound/surfaces'
+import { DECISIONS_PATH, IMAGE_EDIT_PATH, INBOUND_SURFACES, surfaceForPath } from '../../llms/inbound/surfaces'
 import { hasSafeguards } from '../../llms/pipeline/classifier-diagnostics'
 import { aggregateAnthropicSseToJson, findSseStreamDefect, isSseContentType } from '../../llms/utils/sse-aggregate'
 import { recordCallSpend } from '../../services/usage-window-service'
@@ -28,6 +28,7 @@ import { attemptChainEntry, type ChainCtx, type SubscriptionKindProvider } from 
 import { buildErrorEnvelope, errorShapeForPath } from './error-shape'
 import { handleImageEdit, handleImageGeneration } from './images'
 import type { ResolvedInvocation } from './invocation'
+import { handleDecisions } from './openai-specialized'
 import { applyResponseModelIdentity } from './response-model-identity'
 import { buildRoutePlan, type RoutePlan } from './route-plan'
 import { bestSupportedLevel, deepReplaceValue, forwardUpstreamError } from './upstream-error'
@@ -372,6 +373,7 @@ for (const surface of INBOUND_SURFACES) {
 }
 
 v1Route.post(IMAGE_EDIT_PATH, handleImageEdit)
+v1Route.post(DECISIONS_PATH, handleDecisions)
 
 // Not a surface: the fail-closed lane for an unknown /v1 path, which has
 // to answer 404 in the caller's own envelope rather than fall through to

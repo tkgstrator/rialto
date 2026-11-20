@@ -20,7 +20,9 @@
 import type { Context } from 'hono'
 import { Hono } from 'hono'
 import { logger } from '../../logger'
+import { readBoundedBody } from './bounded-body'
 import { buildErrorEnvelope } from './error-shape'
+import { handleOpenAISpeech, isOpenAISpeechModel, readSpecializedBody } from './openai-specialized'
 
 // Speech is short replies, not audiobooks. The cap keeps a single request
 // from tying up the GPU; the TTS server enforces its own limits as well.
@@ -63,7 +65,11 @@ export function upstreamUrl(base: URL, path: string): URL {
   return url
 }
 
-async function relay(c: Context, path: string, init: { method: string; body?: ArrayBuffer }): Promise<Response> {
+async function relay(
+  c: Context,
+  path: string,
+  init: { method: string; body?: Uint8Array<ArrayBuffer> }
+): Promise<Response> {
   const base = ttsBaseUrl()
   if (base === null) return fail(503, 'Speech is not configured on this server.')
 
@@ -98,12 +104,11 @@ async function relay(c: Context, path: string, init: { method: string; body?: Ar
 export const audioRoute = new Hono()
 
 audioRoute.post('/v1/audio/speech', async (c) => {
-  const declared = Number(c.req.header('content-length'))
-  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) return fail(413, 'The request body is too large.')
-  const body = await c.req.arrayBuffer()
-  // Checked again on the bytes read: a chunked body declares no length.
-  if (body.byteLength > MAX_BODY_BYTES) return fail(413, 'The request body is too large.')
-  return relay(c, '/v1/audio/speech', { method: 'POST', body })
+  const bytes = await readBoundedBody(c, MAX_BODY_BYTES).catch(() => null)
+  if (bytes === null) return fail(413, 'The request body is too large.')
+  const speech = readSpecializedBody(bytes)
+  if (speech !== null && isOpenAISpeechModel(speech.model)) return handleOpenAISpeech(c, speech)
+  return relay(c, '/v1/audio/speech', { method: 'POST', body: bytes })
 })
 
 audioRoute.get('/v1/audio/voices', (c) => relay(c, '/v1/audio/voices', { method: 'GET' }))
