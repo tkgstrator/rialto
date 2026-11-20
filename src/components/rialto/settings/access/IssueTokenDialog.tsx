@@ -1,4 +1,4 @@
-import { type ReactNode, useId, useMemo } from 'react'
+import { useId, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useConfig } from '@/components/ConfigProvider'
 import { RButton } from '@/components/rialto/primitives'
@@ -6,9 +6,17 @@ import { SelectPicker } from '@/components/rialto/SelectPicker'
 import { PlanSelector } from '@/components/rialto/settings/access/PlanSelector'
 import { ANY, SurfacePicker } from '@/components/rialto/settings/access/pickers'
 import { FolderPicker, TokenPolicyFields } from '@/components/rialto/settings/access/TokenPolicyFields'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog'
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import type { InboundSurfaceWire, PlanWire } from '@/lib/api'
 import { EXPIRY_CHOICES } from '@/lib/rialto/settings/access-tokens'
 import { targetMatchesSurfaces } from '@/lib/rialto/settings/surface-model-compat'
@@ -36,17 +44,6 @@ export const emptyDraft = (): IssueDraft => ({
   folderId: null,
   policy: DEFAULT_TOKEN_POLICY
 })
-
-function Field({ id, label, children }: { id: string; label: string; children: ReactNode }) {
-  return (
-    <div className='grid gap-1'>
-      <Label htmlFor={id} className='text-xs'>
-        {label}
-      </Label>
-      {children}
-    </div>
-  )
-}
 
 export function IssueTokenDialog({
   draft,
@@ -97,16 +94,19 @@ export function IssueTokenDialog({
   const issueDisabled = issuing || draft.name.trim().length === 0 || creating
 
   return (
-    <Dialog
+    <AlertDialog
       open
       onOpenChange={(next) => {
         if (!next) onCancel()
       }}
     >
-      <DialogContent className='max-h-[calc(100vh-4rem)] overflow-y-auto sm:max-w-2xl'>
-        <DialogHeader>
-          <DialogTitle className='text-sm'>{t('settings.access.issueTitle')}</DialogTitle>
-        </DialogHeader>
+      <AlertDialogContent className='max-h-[calc(100vh-4rem)] overflow-y-auto data-[size=default]:max-w-[calc(100%-2rem)] data-[size=default]:sm:max-w-2xl'>
+        <AlertDialogHeader className='justify-items-start text-left'>
+          <AlertDialogTitle className='text-sm'>{t('settings.access.issueTitle')}</AlertDialogTitle>
+          <AlertDialogDescription className='sr-only'>
+            {t('settings.access.issueDialogDescription')}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
 
         <form
           className='grid gap-6'
@@ -116,8 +116,11 @@ export function IssueTokenDialog({
           }}
         >
           <div className='grid gap-4 sm:grid-cols-2 sm:gap-6'>
-            <div className='min-w-0 space-y-3'>
-              <Field id={`${formId}-name`} label={t('settings.access.issueName')}>
+            <FieldGroup className='min-w-0 gap-3'>
+              <Field className='gap-2'>
+                <FieldLabel className='text-xs' htmlFor={`${formId}-name`}>
+                  {t('settings.access.issueName')}
+                </FieldLabel>
                 <Input
                   id={`${formId}-name`}
                   required
@@ -130,7 +133,10 @@ export function IssueTokenDialog({
                 />
               </Field>
 
-              <Field id={`${formId}-endpoint`} label={t('settings.access.issueEndpoint')}>
+              <Field className='gap-2'>
+                <FieldLabel className='text-xs' htmlFor={`${formId}-endpoint`}>
+                  {t('settings.access.issueEndpoint')}
+                </FieldLabel>
                 <SurfacePicker
                   id={`${formId}-endpoint`}
                   surfaces={surfaces}
@@ -141,7 +147,10 @@ export function IssueTokenDialog({
                 />
               </Field>
 
-              <Field id={`${formId}-folder`} label={t('settings.access.folder')}>
+              <Field className='gap-2'>
+                <FieldLabel className='text-xs' htmlFor={`${formId}-folder`}>
+                  {t('settings.access.folder')}
+                </FieldLabel>
                 <FolderPicker
                   id={`${formId}-folder`}
                   className='w-full'
@@ -163,7 +172,10 @@ export function IssueTokenDialog({
                   }}
                 />
               </Field>
-              <Field id={`${formId}-expires`} label={t('settings.access.issueExpires')}>
+              <Field className='gap-2'>
+                <FieldLabel className='text-xs' htmlFor={`${formId}-expires`}>
+                  {t('settings.access.issueExpires')}
+                </FieldLabel>
                 <SelectPicker
                   id={`${formId}-expires`}
                   label={t('settings.access.issueExpires')}
@@ -173,8 +185,8 @@ export function IssueTokenDialog({
                   options={EXPIRY_CHOICES.map((choice) => ({ value: choice.id, label: t(choice.labelKey) }))}
                 />
               </Field>
-            </div>
-            <div className='min-w-0 space-y-3'>
+            </FieldGroup>
+            <FieldGroup className='min-w-0 gap-3'>
               <PlanSelector
                 id={`${formId}-plan`}
                 showSummary={false}
@@ -198,23 +210,23 @@ export function IssueTokenDialog({
                 available={available}
                 scopes={draft.surfaces}
               />
-            </div>
+            </FieldGroup>
           </div>
-          <div className='flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end'>
+          <AlertDialogFooter className='sm:items-center'>
             {creating ? (
               <span className='mr-auto text-[12px] leading-snug text-muted-foreground'>
                 {t('access.token.creatingPlanFirst')}
               </span>
             ) : null}
-            <RButton variant='outline' onClick={onCancel}>
+            <AlertDialogCancel type='button' size='sm' className='px-3 text-xs'>
               {t('common.cancel')}
-            </RButton>
+            </AlertDialogCancel>
             <RButton variant='primary' icon='ri-key-2-line' type='submit' disabled={issueDisabled}>
               {t('settings.access.issueToken')}
             </RButton>
-          </div>
+          </AlertDialogFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }

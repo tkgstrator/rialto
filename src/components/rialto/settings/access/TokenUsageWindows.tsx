@@ -14,13 +14,12 @@
  * the point, but not something to do by a stray click.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Trans, useTranslation } from 'react-i18next'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { useConfirm } from '@/components/rialto/ConfirmDialog'
 import { Meter, Pill, RButton } from '@/components/rialto/primitives'
-import { SettingsField } from '@/components/rialto/settings/SettingsLayout'
+import { FieldGroup } from '@/components/ui/field'
 import { type AccessTokenWire, api, type TokenUsageWindowsWire } from '@/lib/api'
-import dayjs from '@/lib/dayjs'
 import { fmtUntil } from '@/lib/rialto/format'
 import {
   fmtResetAt,
@@ -28,9 +27,7 @@ import {
   type Measure,
   type SpentMeasure,
   type UsageWindowsView,
-  type WindowView,
-  zoneName,
-  zoneOffset
+  type WindowView
 } from '@/lib/rialto/settings/usage-windows'
 
 type WindowId = WindowView['window']
@@ -134,19 +131,6 @@ function WindowBlock({ view, now }: { view: WindowView; now: number }) {
   )
 }
 
-/** A token with no plan, or on a plan that limits neither window. */
-function NoLimits({ view }: { view: Extract<UsageWindowsView, { kind: 'no-plan' | 'unlimited' }> }) {
-  return (
-    <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
-      <Trans
-        i18nKey={view.kind === 'no-plan' ? 'access.token.noPlanNote' : 'access.token.unlimitedNote'}
-        values={{ name: view.kind === 'unlimited' ? view.planName : '' }}
-        components={{ strong: <span className='font-medium text-foreground' /> }}
-      />
-    </div>
-  )
-}
-
 interface TokenUsageWindowsProps {
   token: AccessTokenWire
   view: UsageWindowsView
@@ -156,18 +140,14 @@ interface TokenUsageWindowsProps {
 }
 
 export function TokenUsageWindows(props: TokenUsageWindowsProps) {
-  const { t, i18n } = useTranslation()
-  const nowIso = dayjs(props.now).toISOString()
+  const { t } = useTranslation()
   return (
-    <SettingsField
-      label={t('access.token.windows')}
-      hint={t('access.token.windowsHint', {
-        zone: zoneName(nowIso, i18n.language),
-        offset: zoneOffset(nowIso)
-      })}
-    >
-      <TokenUsageWindowsBody {...props} />
-    </SettingsField>
+    <div className='border-t border-border/60'>
+      <FieldGroup className='max-w-3xl gap-2 px-4 py-4 md:px-6'>
+        <h2 className='text-xs font-medium'>{t('access.token.windows')}</h2>
+        <TokenUsageWindowsBody {...props} />
+      </FieldGroup>
+    </div>
   )
 }
 
@@ -219,23 +199,16 @@ export function TokenUsageWindowsBody({ token, view, now, onReset }: TokenUsageW
           {view.windows.map((row) => (
             <WindowBlock key={row.window} view={row} now={now} />
           ))}
-          <div className='flex items-center gap-3 border-t border-border/60 pt-3'>
-            <span className='text-[12px] leading-snug text-muted-foreground'>
-              {t(view.resettable ? 'access.token.windowsNote' : 'access.token.windowsNoteIdle')}
-            </span>
-            <span className='ml-auto shrink-0'>
-              {view.resettable ? (
-                <RButton variant='outline' icon='ri-restart-line' onClick={reset} disabled={busy}>
-                  {t('access.token.reset')}
-                </RButton>
-              ) : (
-                <span className='text-[12px] text-muted-foreground'>{t('access.token.nothingToReset')}</span>
-              )}
-            </span>
-          </div>
+          {view.resettable ? (
+            <div className='flex justify-end border-t border-border/60 pt-3'>
+              <RButton variant='outline' icon='ri-restart-line' onClick={reset} disabled={busy}>
+                {t('access.token.reset')}
+              </RButton>
+            </div>
+          ) : null}
         </div>
       ) : (
-        <NoLimits view={view} />
+        <div className='text-xs text-muted-foreground'>{t('access.token.noLimit')}</div>
       )}
       {confirmDialog}
     </>

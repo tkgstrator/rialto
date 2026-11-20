@@ -1,54 +1,54 @@
 import { useTranslation } from 'react-i18next'
-import { SettingsField } from '@/components/rialto/settings/SettingsLayout'
+import { FieldGroup } from '@/components/ui/field'
 import type { AccessTokenWire } from '@/lib/api'
 import { fmtAgo, fmtCount } from '@/lib/rialto/format'
 import { fmtTokenCount } from '@/lib/rialto/settings/access-tokens'
 import { fmtCost } from '@/lib/sessions/format'
 
+function Readings({ title, items }: { title: string; items: Array<[string, string]> }) {
+  return (
+    <FieldGroup className='gap-2'>
+      <h2 className='text-xs font-medium'>{title}</h2>
+      <dl className='divide-y divide-border/60 text-xs'>
+        {items.map(([label, value]) => (
+          <div key={label} className='flex justify-between gap-3 py-1.5'>
+            <dt className='text-muted-foreground'>{label}</dt>
+            <dd className='text-right font-mono tabular-nums'>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </FieldGroup>
+  )
+}
+
 export function TokenReadings({ token, now }: { token: AccessTokenWire; now: number }) {
   const { t } = useTranslation()
+  const usage: Array<[string, string]> = [
+    [t('settings.access.colRequests'), fmtCount(token.requestCount)],
+    [t('settings.access.colCost'), fmtCost(token.costUsd)],
+    [t('settings.access.colInputTokens'), fmtTokenCount(token.inputTokens)],
+    [t('settings.access.colOutputTokens'), fmtTokenCount(token.outputTokens)],
+    [
+      t('settings.access.colLastUsed'),
+      token.lastUsedAt === null
+        ? t('settings.access.never')
+        : t('settings.access.lastUsedAgo', { ago: fmtAgo(token.lastUsedAt, now) })
+    ]
+  ]
+  const lifetime: Array<[string, string]> = [
+    [t('settings.access.createdLabel'), token.createdAt.slice(0, 10)],
+    [
+      t('settings.access.colExpires'),
+      token.expiresAt === null ? t('settings.access.detailNoExpiry') : token.expiresAt.slice(0, 10)
+    ]
+  ]
+  if (token.rotatedAt !== null) lifetime.push([t('settings.access.rotatedLabel'), token.rotatedAt.slice(0, 10)])
   return (
-    <>
-      <SettingsField label={t('settings.access.detailUsage')} hint={t('settings.access.detailUsageHint')}>
-        <div className='flex items-center gap-4 font-mono text-xs tabular-nums'>
-          <span>{t('settings.access.detailRequests', { n: fmtCount(token.requestCount) })}</span>
-          <span className='text-muted-foreground'>·</span>
-          <span>{fmtCost(token.costUsd)}</span>
-          <span className='text-muted-foreground'>·</span>
-          {/* Same window and same absent-dash as the Cost beside it, so
-              the row reads as one span rather than three. */}
-          <span>
-            {t('settings.access.detailTokens', {
-              in: fmtTokenCount(token.inputTokens),
-              out: fmtTokenCount(token.outputTokens)
-            })}
-          </span>
-          <span className='text-muted-foreground'>·</span>
-          <span className='text-muted-foreground'>
-            {token.lastUsedAt === null
-              ? t('settings.access.never')
-              : t('settings.access.lastUsedAgo', { ago: fmtAgo(token.lastUsedAt, now) })}
-          </span>
-        </div>
-      </SettingsField>
-
-      <SettingsField label={t('settings.access.detailLifetime')} hint={t('settings.access.detailLifetimeHint')}>
-        <div className='space-y-1 font-mono text-xs'>
-          <div>{t('settings.access.detailCreated', { date: token.createdAt.slice(0, 10) })}</div>
-          <div>
-            {token.expiresAt === null
-              ? t('settings.access.detailNoExpiry')
-              : t('settings.access.detailExpires', { date: token.expiresAt.slice(0, 10) })}
-          </div>
-          {/* Absent until the secret has actually been replaced — a
-              "never rotated" line on a week-old token is noise, but on
-              a two-year-old one the absence is the point, so it is the
-              date that appears rather than a reassuring default. */}
-          {token.rotatedAt === null ? null : (
-            <div>{t('settings.access.detailRotated', { date: token.rotatedAt.slice(0, 10) })}</div>
-          )}
-        </div>
-      </SettingsField>
-    </>
+    <div className='border-t border-border/60'>
+      <div className='grid max-w-3xl gap-4 px-4 py-4 md:grid-cols-2 md:gap-6 md:px-6'>
+        <Readings title={t('settings.access.detailUsage')} items={usage} />
+        <Readings title={t('settings.access.detailLifetime')} items={lifetime} />
+      </div>
+    </div>
   )
 }

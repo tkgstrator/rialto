@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Trans, useTranslation } from 'react-i18next'
+import { type FormEvent, type ReactNode, useCallback, useEffect, useId, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useConfig } from '@/components/ConfigProvider'
@@ -15,8 +15,8 @@ import { TokenDetailPhone } from '@/components/rialto/settings/access/TokenDetai
 import { FolderPicker, TokenPolicyFields } from '@/components/rialto/settings/access/TokenPolicyFields'
 import { TokenReadings } from '@/components/rialto/settings/access/TokenReadings'
 import { TokenUsageWindows, useTokenUsageWindows } from '@/components/rialto/settings/access/TokenUsageWindows'
-import { SettingsField } from '@/components/rialto/settings/SettingsLayout'
 import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { usePhone } from '@/hooks/use-phone'
 import { type AccessTokenWire, api, type InboundSurfaceWire, type PlanWire } from '@/lib/api'
@@ -30,15 +30,14 @@ import { DEFAULT_TOKEN_POLICY, type TokenFolder, type TokenPolicy } from '@/shar
 
 const BACK = '/access-tokens'
 
-function LockedField({ value, aria }: { value: string; aria: string }) {
+function LockedField({ id, value }: { id: string; value: string }) {
   return (
     <div className='relative w-full max-w-md'>
-      <input
+      <Input
+        id={id}
         readOnly
-        aria-readonly
-        aria-label={aria}
         value={value}
-        className='h-8 w-full min-w-0 cursor-not-allowed rounded-md border border-border bg-muted/40 px-3 pr-9 font-mono text-xs text-muted-foreground outline-none'
+        className='h-8 cursor-not-allowed bg-muted/40 pr-9 text-xs text-muted-foreground md:text-xs'
       />
       <i
         aria-hidden
@@ -85,7 +84,10 @@ interface Revealed {
   expiry: string
 }
 
-function TokenScopeForm({
+function TokenSettingsFields({
+  nameField,
+  folderField,
+  policyFields,
   token,
   draft,
   plans,
@@ -101,6 +103,9 @@ function TokenScopeForm({
   onCreatingChange,
   onDismissCreatedNote
 }: {
+  nameField: ReactNode
+  folderField: ReactNode
+  policyFields: ReactNode
   token: AccessTokenWire
   draft: ScopeDraft
   plans: readonly PlanWire[]
@@ -117,6 +122,7 @@ function TokenScopeForm({
   onDismissCreatedNote: () => void
 }) {
   const { t } = useTranslation()
+  const id = useId()
   const expiresLabel = token.expiresAt === null ? t('settings.access.never') : token.expiresAt.slice(0, 10)
   const planValue = draft.planId === ANY ? '' : draft.planId
   const onPlanChange = (next: string) => {
@@ -128,80 +134,88 @@ function TokenScopeForm({
   )
   const disabledHint = t('settings.access.incompatibleWithEndpoint')
   return (
-    <>
-      <SettingsField label={t('settings.access.colEndpoint')} hint={t('settings.access.issueEndpointHint')}>
-        <SurfacePicker
-          surfaces={surfaces}
-          selected={draft.surfaces}
-          onChange={(next) => onDraftChange({ ...draft, surfaces: next })}
-          allLabel={t('settings.access.allEndpoints')}
-          disabled={!editable || busy}
-        />
-      </SettingsField>
-
-      <SettingsField label={t('access.token.plan')} hint={t('access.token.planFormHint')}>
-        <PlanSelector
-          showLabel={false}
-          value={planValue}
-          plans={plans}
-          available={available}
-          onChange={onPlanChange}
-          onPlanCreated={onPlanCreated}
-          creating={creating}
-          onCreatingChange={onCreatingChange}
-          createdNote={createdNote}
-          onDismissCreatedNote={onDismissCreatedNote}
-          disabled={!editable || busy}
-          disabledTargets={disabledTargets}
-          disabledHint={disabledHint}
-        />
-      </SettingsField>
-
-      <SettingsField label={t('settings.access.issueExpires')} hint={t('access.token.expiresLockedHint')}>
-        <LockedField value={expiresLabel} aria={t('settings.access.issueExpires')} />
-      </SettingsField>
-    </>
+    <div className='grid max-w-3xl gap-4 px-4 py-4 md:grid-cols-2 md:gap-6 md:px-6'>
+      <FieldGroup className='min-w-0 gap-3'>
+        {nameField}
+        <Field className='gap-2'>
+          <FieldLabel className='text-xs' htmlFor={`${id}-endpoint`}>
+            {t('settings.access.colEndpoint')}
+          </FieldLabel>
+          <SurfacePicker
+            id={`${id}-endpoint`}
+            surfaces={surfaces}
+            selected={draft.surfaces}
+            onChange={(next) => onDraftChange({ ...draft, surfaces: next })}
+            allLabel={t('settings.access.standardEndpoints')}
+            showHint={false}
+            disabled={!editable || busy}
+          />
+        </Field>
+        {folderField}
+        <Field className='gap-2'>
+          <FieldLabel className='text-xs' htmlFor={`${id}-expires`}>
+            {t('settings.access.issueExpires')}
+          </FieldLabel>
+          <LockedField id={`${id}-expires`} value={expiresLabel} />
+        </Field>
+      </FieldGroup>
+      <FieldGroup className='min-w-0 gap-3'>
+        <Field className='gap-2'>
+          <FieldLabel className='text-xs' htmlFor={`${id}-plan`}>
+            {t('access.token.plan')}
+          </FieldLabel>
+          <PlanSelector
+            id={`${id}-plan`}
+            showLabel={false}
+            showSummary={false}
+            value={planValue}
+            plans={plans}
+            available={available}
+            onChange={onPlanChange}
+            onPlanCreated={onPlanCreated}
+            creating={creating}
+            onCreatingChange={onCreatingChange}
+            createdNote={createdNote}
+            onDismissCreatedNote={onDismissCreatedNote}
+            disabled={!editable || busy}
+            disabledTargets={disabledTargets}
+            disabledHint={disabledHint}
+          />
+        </Field>
+        {policyFields}
+      </FieldGroup>
+    </div>
   )
 }
 
 function SaveBar({
-  tokenName,
   dirty,
   valid,
   creating,
   busy,
   onDiscard,
-  onSave
+  formId
 }: {
-  tokenName: string
   dirty: boolean
   valid: boolean
   creating: boolean
   busy: boolean
   onDiscard: () => void
-  onSave: () => void
+  formId: string
 }) {
   const { t } = useTranslation()
   const canDiscard = (dirty || creating) && !busy
   const canSave = valid && dirty && !busy && !creating
   return (
     <div className='flex items-center gap-2 border-t border-border/60 px-6 py-4'>
-      <span className='text-[12px] text-muted-foreground'>
-        {creating ? (
-          t('access.token.creatingPlanFirst')
-        ) : (
-          <Trans
-            i18nKey='settings.access.scopeEditNote'
-            values={{ name: tokenName }}
-            components={{ strong: <span className='font-medium text-foreground' /> }}
-          />
-        )}
-      </span>
+      {creating ? (
+        <span className='text-[12px] text-muted-foreground'>{t('access.token.creatingPlanFirst')}</span>
+      ) : null}
       <div className='ml-auto flex gap-2'>
         <RButton variant='outline' onClick={onDiscard} disabled={!canDiscard}>
           {t('common.discard')}
         </RButton>
-        <RButton variant='primary' icon='ri-check-line' onClick={onSave} disabled={!canSave}>
+        <RButton variant='primary' icon='ri-check-line' type='submit' form={formId} disabled={!canSave}>
           {t('common.save')}
         </RButton>
       </div>
@@ -212,6 +226,7 @@ function SaveBar({
 export function TokenDetail() {
   const { t } = useTranslation()
   const { id = '' } = useParams()
+  const formId = useId()
   const navigate = useNavigate()
   const { surfaces } = useSurfaces()
   const { config } = useConfig()
@@ -393,64 +408,97 @@ export function TokenDetail() {
     )
 
   const nameField = (
-    <SettingsField label={t('settings.access.issueName')}>
+    <Field className='gap-2'>
+      <FieldLabel className='text-xs' htmlFor={`${formId}-name`}>
+        {t('settings.access.issueName')}
+      </FieldLabel>
       <Input
-        aria-label={t('settings.access.issueName')}
-        className='max-w-md'
+        id={`${formId}-name`}
+        className='h-8 text-xs md:text-xs'
         maxLength={200}
         value={draft.name}
         disabled={busy}
         onChange={(event) => setDraft({ ...draft, name: event.target.value })}
       />
-    </SettingsField>
+    </Field>
   )
 
-  const policyForm = (
-    <SettingsField label={t('settings.access.tokenPolicy')} hint={t('settings.access.tokenPolicyHint')}>
-      <fieldset disabled={!editable || busy} className='grid gap-3'>
-        <FolderPicker
-          folders={folders}
-          disabled={!editable || busy}
-          value={draft.folderId}
-          onChange={(folderId) => setDraft({ ...draft, folderId })}
-        />
-        <TokenPolicyFields
-          policy={draft.policy}
-          disabled={!editable || busy}
-          onChange={(policy) => setDraft({ ...draft, policy })}
-          plan={plans.find((plan) => plan.id === draft.planId)}
-          available={available}
-          scopes={draft.surfaces}
-        />
-      </fieldset>
-    </SettingsField>
+  const folderField = (
+    <Field className='gap-2'>
+      <FieldLabel className='text-xs' htmlFor={`${formId}-folder`}>
+        {t('settings.access.folder')}
+      </FieldLabel>
+      <FolderPicker
+        id={`${formId}-folder`}
+        className='w-full'
+        folders={folders}
+        disabled={!editable || busy}
+        value={draft.folderId}
+        onChange={(folderId) => setDraft({ ...draft, folderId })}
+      />
+    </Field>
+  )
+
+  const form = (
+    <form
+      id={formId}
+      onSubmit={(event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault()
+        if (dirty && !busy && !creating && draft.name.trim()) void save()
+      }}
+    >
+      <TokenSettingsFields
+        nameField={nameField}
+        folderField={folderField}
+        policyFields={
+          <TokenPolicyFields
+            policy={draft.policy}
+            disabled={!editable || busy}
+            onChange={(policy) => setDraft({ ...draft, policy })}
+            plan={plans.find((plan) => plan.id === draft.planId)}
+            available={available}
+            scopes={draft.surfaces}
+          />
+        }
+        token={token}
+        draft={draft}
+        plans={plans}
+        surfaces={surfaces}
+        available={available}
+        providers={config === null ? [] : config.Providers}
+        editable={editable}
+        busy={busy}
+        creating={creating}
+        createdNote={createdNote}
+        onDraftChange={setDraft}
+        onPlanCreated={onPlanCreated}
+        onCreatingChange={setCreating}
+        onDismissCreatedNote={() => setCreatedNote(null)}
+      />
+    </form>
   )
 
   if (phone) {
     return (
       <Screen crumbs={[{ label: token.name }]}>
+        {form}
         <TokenDetailPhone
           token={token}
           state={state}
-          windows={windows}
           usageBlocked={usageBlocked(windows)}
-          surfaces={surfaces}
-          now={now}
           busy={busy}
           onRotate={rotate}
           onRevoke={revoke}
-          onReset={setUsage}
         />
-        {nameField}
-        {policyForm}
+        <TokenUsageWindows token={token} view={windows} now={now} onReset={setUsage} />
+        <TokenReadings token={token} now={now} />
         <SaveBar
-          tokenName={token.name}
           dirty={dirty}
           valid={draft.name.trim().length > 0}
           creating={creating}
           busy={busy}
           onDiscard={discard}
-          onSave={save}
+          formId={formId}
         />
         {unsavedDialog}
         {rotatedDialog}
@@ -471,46 +519,18 @@ export function TokenDetail() {
           onRevoke={revoke}
         />
 
-        <TokenScopeForm
-          token={token}
-          draft={draft}
-          plans={plans}
-          surfaces={surfaces}
-          available={available}
-          providers={config === null ? [] : config.Providers}
-          editable={editable}
-          busy={busy}
-          creating={creating}
-          createdNote={createdNote}
-          onDraftChange={setDraft}
-          onPlanCreated={onPlanCreated}
-          onCreatingChange={setCreating}
-          onDismissCreatedNote={() => setCreatedNote(null)}
-        />
-
-        {nameField}
-        {policyForm}
+        {form}
         <TokenUsageWindows token={token} view={windows} now={now} onReset={setUsage} />
 
         <TokenReadings token={token} now={now} />
 
-        <div className='px-6 py-4'>
-          <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
-            <i className='ri-information-line mr-1 align-[-1px]' />
-            <Trans
-              i18nKey='settings.access.rotateNote'
-              components={{ strong: <span className='font-medium text-foreground' /> }}
-            />
-          </div>
-        </div>
         <SaveBar
-          tokenName={token.name}
           dirty={dirty}
           valid={draft.name.trim().length > 0}
           creating={creating}
           busy={busy}
           onDiscard={discard}
-          onSave={save}
+          formId={formId}
         />
         <div className='h-8' />
 
