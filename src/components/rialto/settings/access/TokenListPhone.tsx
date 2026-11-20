@@ -11,11 +11,26 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PhoneRow, Pill } from '@/components/rialto/primitives'
+import { MoveTokenPicker } from '@/components/rialto/settings/access/MoveTokenPicker'
+import type { MoveToken } from '@/components/rialto/settings/access/TokenFolderBrowser'
 import { fmtAgo, fmtCount } from '@/lib/rialto/format'
 import { type AccessTokenWire, sortTokens, TOKEN_STATE_PILL, tokenState } from '@/lib/rialto/settings/access-tokens'
 import { fmtCost } from '@/lib/sessions/format'
+import type { TokenFolder } from '@/shared/access-token-policy'
 
-export function TokenListPhone({ tokens, now }: { tokens: AccessTokenWire[]; now: number }) {
+export function TokenListPhone({
+  tokens,
+  now,
+  depth,
+  folders,
+  onMove
+}: {
+  tokens: AccessTokenWire[]
+  now: number
+  depth: number
+  folders: readonly TokenFolder[]
+  onMove?: MoveToken
+}) {
   const { t } = useTranslation()
   // The desktop table's resting order: live credentials first.
   const sorted = useMemo(() => sortTokens(tokens, now), [tokens, now])
@@ -25,7 +40,11 @@ export function TokenListPhone({ tokens, now }: { tokens: AccessTokenWire[]; now
         const state = tokenState(token, now)
         const dead = state !== 'active'
         return (
-          <div key={token.id} className={dead ? 'opacity-60' : ''}>
+          <div
+            key={token.id}
+            className={dead ? 'opacity-60' : ''}
+            style={{ paddingInlineStart: `${Math.min(depth, 5) * 0.75}rem` }}
+          >
             <PhoneRow
               href={`/access-tokens/${encodeURIComponent(token.id)}`}
               primary={
@@ -53,6 +72,11 @@ export function TokenListPhone({ tokens, now }: { tokens: AccessTokenWire[]; now
                 </>
               }
             />
+            {onMove === undefined ? null : (
+              <div className='px-4 pb-2'>
+                <MoveTokenPicker token={token} folders={folders} onMove={onMove} />
+              </div>
+            )}
           </div>
         )
       })}

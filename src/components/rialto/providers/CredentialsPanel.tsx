@@ -14,9 +14,12 @@
  * Replace only exists while the page is in Edit, and what it takes is
  * staged with the rest of the edit: Save writes the key, Revert drops it.
  */
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RButton } from '@/components/rialto/primitives'
+import { Field, FieldError, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { isProviderBaseUrl } from '@/shared/provider-base-url'
 import { maskKeyParts } from './derive'
 import { ReplaceKeyDialog } from './ReplaceKeyDialog'
 import type { Provider } from './types'
@@ -34,16 +37,53 @@ function MaskedKey({ value }: { value: string }) {
   )
 }
 
+function BaseUrlField({ url, onChange }: { url: string; onChange?: (url: string) => void }) {
+  const { t } = useTranslation()
+  const id = useId()
+  const invalid = !isProviderBaseUrl(url.trim())
+  if (onChange === undefined) {
+    return (
+      <Field className='gap-2'>
+        <div className='text-xs font-medium'>{t('providers.credentials.baseUrl')}</div>
+        <div className='flex h-8 min-w-0 items-center rounded-md border border-border px-3 font-mono text-xs'>
+          <span className='truncate' title={url}>
+            {url}
+          </span>
+        </div>
+      </Field>
+    )
+  }
+  return (
+    <Field className='gap-2' data-invalid={invalid}>
+      <FieldLabel htmlFor={id} className='text-xs'>
+        {t('providers.credentials.baseUrl')}
+      </FieldLabel>
+      <Input
+        id={id}
+        type='url'
+        className='h-8 font-mono text-xs md:text-xs'
+        value={url}
+        aria-invalid={invalid}
+        aria-describedby={invalid ? `${id}-error` : undefined}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      {invalid ? <FieldError id={`${id}-error`}>{t('providers.credentials.invalidBaseUrl')}</FieldError> : null}
+    </Field>
+  )
+}
+
 export function CredentialsPanel({
   provider,
   editing,
-  onReplace
+  onReplace,
+  onBaseUrlChange
 }: {
   /** As Save would leave it, so a staged replacement shows here like a stored key. */
   provider: Provider
   editing: boolean
   /** Stages a replacement; nothing is written until the page's Save. */
   onReplace: (key: string) => void
+  onBaseUrlChange?: (url: string) => void
 }) {
   const { t } = useTranslation()
   const current = provider.api_key === null ? '' : provider.api_key
@@ -105,16 +145,7 @@ export function CredentialsPanel({
             </RButton>
           </div>
         </div>
-        <div>
-          <div className='mb-1 text-[12px] text-muted-foreground'>{t('providers.credentials.baseUrl')}</div>
-          {/* A long base URL must not wrap out of the h-8 box or widen the
-              column: clip it and keep the whole value on hover. */}
-          <div className='flex h-8 min-w-0 items-center rounded-md border border-border px-3 font-mono text-xs'>
-            <span className='truncate' title={provider.api_base_url}>
-              {provider.api_base_url}
-            </span>
-          </div>
-        </div>
+        <BaseUrlField url={provider.api_base_url} onChange={editing ? onBaseUrlChange : undefined} />
         {account.workspaceId || account.organizationId || account.projectId ? (
           <dl className='space-y-2 break-all text-xs'>
             {account.projectId ? (

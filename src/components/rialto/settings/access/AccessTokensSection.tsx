@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Trans, useTranslation } from 'react-i18next'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { useConfig } from '@/components/ConfigProvider'
 import { scopePaths } from '@/components/rialto/activity/use-surfaces'
@@ -15,7 +15,7 @@ import { TokenTable } from '@/components/rialto/settings/access/TokenTable'
 import { usePhone } from '@/hooks/use-phone'
 import { type AccessTokenWire, api, type InboundSurfaceWire, type PlanWire } from '@/lib/api'
 import { enabledTargets } from '@/lib/models/enabled-targets'
-import { countTokens, expiryToIso, type TokenCounts } from '@/lib/rialto/settings/access-tokens'
+import { expiryToIso } from '@/lib/rialto/settings/access-tokens'
 import { folderTokenDefaults, type TokenFolder } from '@/shared/access-token-policy'
 
 interface Revealed {
@@ -25,24 +25,13 @@ interface Revealed {
   expiry: string
 }
 
-function Summary({ counts }: { counts: TokenCounts }) {
-  const { t } = useTranslation()
-  if (counts.active === 0 && counts.expired === 0) return null
-  return (
-    <>
-      {t('settings.access.countActive', { n: counts.active })}
-      {counts.expired > 0 ? ` · ${t('settings.access.countExpired', { n: counts.expired })}` : ''}
-      {' · '}
-      <Trans i18nKey='settings.access.tokensScope' components={{ mono: <span className='font-mono' /> }} />
-    </>
-  )
-}
-
 export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire[] }) {
   const { t } = useTranslation()
   const { config } = useConfig()
   const [folders, setFolders] = useState<TokenFolder[]>([])
   const [folderId, setFolderId] = useState<string | null>(null)
+  const [moving, setMoving] = useState(false)
+  const inFlightMoves = useRef(new Set<string>())
   const [editingFolder, setEditingFolder] = useState<TokenFolder | null | undefined>(undefined)
   const [tokens, setTokens] = useState<AccessTokenWire[]>([])
   const [plans, setPlans] = useState<PlanWire[]>([])
@@ -173,6 +162,28 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
       toast.error(t('settings.common.saveFailed', { message: error instanceof Error ? error.message : String(error) }))
     }
   }
+  const moveToken = async (id: string, destination: string | null) => {
+    const token = tokens.find((entry) => entry.id === id)
+    if (
+      !moving ||
+      token === undefined ||
+      (token.folderId === undefined ? null : token.folderId) === destination ||
+      inFlightMoves.current.has(id)
+    )
+      return
+    if (destination !== null && !folders.some((folder) => folder.id === destination)) return
+    inFlightMoves.current.add(id)
+    try {
+      await api.updateAccessToken(id, { folderId: destination })
+      setTokens((previous) => previous.map((entry) => (entry.id === id ? { ...entry, folderId: destination } : entry)))
+      setFolderId(destination)
+    } catch (error) {
+      toast.error(t('settings.common.saveFailed', { message: error instanceof Error ? error.message : String(error) }))
+    } finally {
+      inFlightMoves.current.delete(id)
+    }
+  }
+  const onMove = moving ? moveToken : undefined
   const toolbar = (
     <div className='flex flex-wrap items-center gap-2 px-6 pt-5 pb-3 max-md:px-4'>
       <RButton variant='outline' icon='ri-folder-add-line' onClick={() => setEditingFolder(null)}>
@@ -193,28 +204,14 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
           </RButton>
         </>
       )}
-      <RButton variant='primary' icon='ri-add-line' onClick={newToken} className='ml-auto'>
+      <RButton variant='outline' onClick={() => setMoving(!moving)} className='ml-auto'>
+        {t(moving ? 'common.done' : 'common.edit')}
+      </RButton>
+      <RButton variant='primary' icon='ri-add-line' onClick={newToken}>
         {t('settings.access.issueToken')}
       </RButton>
     </div>
   )
-
-  const renderTokens = (id: string | null) => {
-    const entries = tokens.filter((token) => (token.folderId === undefined ? null : token.folderId) === id)
-    if (entries.length === 0) return null
-    return (
-      <div className={id === null ? undefined : 'ml-4 border-l border-border md:ml-6'}>
-        <div className='px-4 py-2 text-xs text-muted-foreground md:px-6'>
-          <Summary counts={countTokens(entries, now)} />
-        </div>
-        {phone ? (
-          <TokenListPhone tokens={entries} now={now} />
-        ) : (
-          <TokenTable tokens={entries} surfaces={surfaces} now={now} />
-        )}
-      </div>
-    )
-  }
 
   const dialogs = (
     <>
@@ -262,8 +259,43 @@ export function AccessTokensSection({ surfaces }: { surfaces: InboundSurfaceWire
   return (
     <>
       {toolbar}
-      <TokenFolderBrowser folders={folders} folderId={folderId} onOpen={setFolderId} renderTokens={renderTokens} />
-      {renderTokens(null)}
+      {phone ? (
+        <TokenFolderBrowser
+          folders={folders}
+          folderId={folderId}
+          onOpen={setFolderId}
+          onMove={onMove}
+          renderTokens={(id, depth) => (
+            <TokenListPhone
+              tokens={tokens.filter((token) => (token.folderId === undefined ? null : token.folderId) === id)}
+              now={now}
+              depth={depth}
+              folders={folders}
+              onMove={onMove}
+            />
+          )}
+        />
+      ) : (
+        <div className='overflow-x-auto'>
+          <TokenTable
+            tokens={tokens}
+            surfaces={surfaces}
+            now={now}
+            folders={folders}
+            onMove={onMove}
+            renderTree={(renderTokens) => (
+              <TokenFolderBrowser
+                table
+                folders={folders}
+                folderId={folderId}
+                onOpen={setFolderId}
+                onMove={onMove}
+                renderTokens={renderTokens}
+              />
+            )}
+          />
+        </div>
+      )}
       <div aria-hidden className='h-16' />
       <RButton
         variant='danger'

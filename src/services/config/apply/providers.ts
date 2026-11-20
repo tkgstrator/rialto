@@ -6,7 +6,12 @@
 
 import type { Provider } from '@/schemas/domain/provider'
 import { isCustomProvider } from '@/shared/custom-provider'
-import { AuthMode, type Model as DbModel, type Provider as DbProvider } from '../../../generated/prisma/client'
+import {
+  AuthMode,
+  type Model as DbModel,
+  type Provider as DbProvider,
+  ModelTestStatus
+} from '../../../generated/prisma/client'
 import { providerApiStyle } from '../api-style'
 import type { Tx } from '../apply'
 import { apiKeyForStorage } from './fields'
@@ -107,6 +112,12 @@ export async function applyProviderRow(
   // _disabledModels selection (must run after reconcileModelRows so
   // the freshly-created rows exist).
   await applyModelEnabledFlips(tx, provider, inc, prevEnabledByName)
+  if (prevProvider !== undefined && prevProvider.apiBaseUrl !== inc.api_base_url) {
+    await tx.model.updateMany({
+      where: { providerId: provider.id },
+      data: { testStatus: ModelTestStatus.unknown, testCheckedAt: null, testPassedAt: null, testError: null }
+    })
+  }
 }
 
 export async function applyProviders(tx: Tx, incoming: Provider[], warnings: string[]): Promise<void> {

@@ -22,7 +22,8 @@ import { toast } from 'sonner'
 import { useConfirm } from '@/components/rialto/ConfirmDialog'
 import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
-import { apiKeyVendorName } from '@/shared/custom-provider'
+import { apiKeyVendorName, isCustomProvider } from '@/shared/custom-provider'
+import { isProviderBaseUrl } from '@/shared/provider-base-url'
 import {
   getResetCredits,
   removeProvider,
@@ -150,7 +151,8 @@ export function ProviderDetailScreen() {
   // switch staged in the table already shows as flipped.
   const shown = draft === null ? provider : applyDraft(provider, draft)
   const shownSubscription = applySubscriptionDraft(subscription, draft)
-  const plan = draft === null ? null : savePlan(provider, draft)
+  const invalidUrl = draft?.apiBaseUrl !== undefined && !isProviderBaseUrl(draft.apiBaseUrl.trim())
+  const plan = draft === null || invalidUrl ? null : savePlan(provider, draft)
   const stage = (change: (current: ProviderDraft) => ProviderDraft) =>
     setEdit((prev) => (prev === null ? prev : { ...prev, draft: change(prev.draft) }))
   const locked = busy || pending !== null
@@ -281,6 +283,11 @@ export function ProviderDetailScreen() {
           onToggleModel={(model, next) => stage((d) => ({ ...d, models: { ...d.models, [model]: next } }))}
           onModelEffort={(model, next) => stage((d) => ({ ...d, efforts: { ...d.efforts, [model]: next } }))}
           onReplaceKey={(key) => stage((d) => ({ ...d, apiKey: key }))}
+          onBaseUrlChange={
+            isCustomProvider(provider.name, provider.auth_mode)
+              ? (apiBaseUrl) => stage((d) => ({ ...d, apiBaseUrl }))
+              : undefined
+          }
           onUseReset={spendReset}
           onReauthenticated={reload}
         />

@@ -18,7 +18,7 @@
  * the panel swaps its contents the moment the token exists, so the
  * reveal appears exactly where the operator is already looking.
  */
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { useConfirm } from '@/components/rialto/ConfirmDialog'
@@ -53,21 +53,61 @@ export function IssuedTokenDialog({
 }) {
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
+  const secretRef = useRef<HTMLSpanElement>(null)
+  const copiedRef = useRef(false)
+  const copyPending = useRef(false)
   const { confirm, dialog: confirmDialog } = useConfirm()
 
-  const copy = () => {
-    navigator.clipboard
-      .writeText(plaintext)
-      .then(() => {
-        setCopied(true)
+  const markCopied = () => {
+    copiedRef.current = true
+    setCopied(true)
+  }
+
+  const copySelection = () => {
+    const selection = window.getSelection()
+    const secret = secretRef.current
+    if (secret === null || selection === null) return false
+    const before = Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index).cloneRange())
+    const range = document.createRange()
+    range.selectNodeContents(secret)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    try {
+      // Clipboard API access is unavailable on the HTTP Tailscale origin.
+      return document.execCommand('copy')
+    } catch {
+      return false
+    } finally {
+      selection.removeAllRanges()
+      for (const original of before) selection.addRange(original)
+    }
+  }
+
+  const copy = async () => {
+    if (copyPending.current) return
+    copyPending.current = true
+    try {
+      let succeeded = false
+      if (navigator.clipboard?.writeText) {
+        succeeded = await navigator.clipboard.writeText(plaintext).then(
+          () => true,
+          () => false
+        )
+      }
+      if (succeeded || copySelection()) {
+        markCopied()
         toast.success(t('settings.access.issuedCopied'))
-      })
-      .catch(() => toast.error(t('settings.access.issuedCopyRefused')))
+      } else {
+        toast.error(t('settings.access.issuedCopyRefused'))
+      }
+    } finally {
+      copyPending.current = false
+    }
   }
 
   const dismiss = () => {
-    // Only guard the case where losing it actually costs something.
-    if (copied) {
+    if (copyPending.current) return
+    if (copiedRef.current) {
       onDone()
       return
     }
@@ -85,11 +125,16 @@ export function IssuedTokenDialog({
           if (!next) dismiss()
         }}
       >
-        <DialogContent className='sm:max-w-md'>
+        <DialogContent
+          className='sm:max-w-md'
+          onCopy={(event) => {
+            if (!event.defaultPrevented && window.getSelection()?.toString().trim() === plaintext) markCopied()
+          }}
+        >
           <DialogHeader>
             <div className='flex items-center gap-2'>
               <DialogTitle className='text-sm'>{t(titleKey)}</DialogTitle>
-              <Pill tone='warn'>{t('settings.access.issuedCopyNow')}</Pill>
+              {copied ? null : <Pill tone='warn'>{t('settings.access.issuedCopyNow')}</Pill>}
             </div>
           </DialogHeader>
 
@@ -103,7 +148,9 @@ export function IssuedTokenDialog({
           <div className='min-w-0 space-y-3'>
             <p className='text-[12px] leading-relaxed text-muted-foreground'>{t(bodyKey)}</p>
             <div className='flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2'>
-              <span className='min-w-0 flex-1 break-all font-mono text-xs leading-relaxed'>{plaintext}</span>
+              <span ref={secretRef} className='min-w-0 flex-1 break-all font-mono text-xs leading-relaxed'>
+                {plaintext}
+              </span>
               <Button
                 variant='outline'
                 size='icon-sm'
