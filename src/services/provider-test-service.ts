@@ -1,6 +1,6 @@
 import type { z } from '@hono/zod-openapi'
 import { VENDOR_DEFAULTS } from '@/shared'
-import { isCustomApiStyle, isCustomProvider } from '@/shared/custom-provider'
+import { apiKeyVendorName, isCustomApiStyle, isCustomProvider } from '@/shared/custom-provider'
 import { hasAuthenticableAccount, hasUnexpiredAccount } from '@/shared/subscription-credential'
 import { getPrismaClient } from '../db/client'
 import dayjs from '../lib/dayjs'
@@ -23,7 +23,9 @@ const probeCustom = async (
   return result.ok ? { ok: true } : { ok: false, error: result.error }
 }
 
-const probeApiKey = async (vendor: string, apiKey: string): Promise<{ ok: boolean; error?: string }> => {
+type ApiKeyProbe = { ok: boolean; error?: string; organizationId?: string; workspaceId?: string; projectId?: string }
+
+const probeApiKey = async (vendor: string, apiKey: string): Promise<ApiKeyProbe> => {
   const defaults = VENDOR_DEFAULTS[vendor]
   if (!defaults?.modelsEndpoint || !defaults.modelsAuth) {
     return { ok: false, error: `vendor "${vendor}" has no /v1/models endpoint configured for testing` }
@@ -39,9 +41,33 @@ const probeApiKey = async (vendor: string, apiKey: string): Promise<{ ok: boolea
     url += `?key=${encodeURIComponent(apiKey)}`
   }
   try {
-    const res = await fetch(url, { headers })
-    if (!res.ok) return { ok: false, error: `upstream returned HTTP ${res.status}` }
-    return { ok: true }
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) })
+    if (!res.ok) {
+      if (defaults.modelsAuth === 'x-api-key' && res.status === 400) {
+        const body = await res.text()
+        if (body.includes('This API key is not scoped to a workspace') && body.includes('anthropic-workspace-id')) {
+          return { ok: false, error: 'Use an Anthropic API key scoped to a workspace.' }
+        }
+      }
+      return { ok: false, error: `upstream returned HTTP ${res.status}` }
+    }
+    if (vendor === 'openai') {
+      const project = res.headers.get('openai-project')
+      const organization = res.headers.get('openai-organization')
+      return {
+        ok: true,
+        ...(project && /^proj_[a-z0-9]+$/i.test(project) ? { projectId: project } : {}),
+        ...(organization && /^org-[a-z0-9]+$/i.test(organization) ? { organizationId: organization } : {})
+      }
+    }
+    if (vendor !== 'anthropic') return { ok: true }
+    const organizationId = res.headers.get('anthropic-organization-id')
+    const workspaceId = res.headers.get('anthropic-workspace-id')
+    return {
+      ok: true,
+      ...(organizationId ? { organizationId } : {}),
+      ...(workspaceId ? { workspaceId } : {})
+    }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'fetch failed' }
   }
@@ -86,8 +112,15 @@ export async function testProvider(name: string): Promise<ProviderTestResult> {
   if (!provider.apiKey || provider.apiKey.trim() === '') {
     return { success: false, latencyMs: dayjs().diff(start), error: 'no api key on file' }
   }
-  const probe = isCustomProvider(provider.name, provider.authMode)
+  const probe: ApiKeyProbe = isCustomProvider(provider.name, provider.authMode)
     ? await probeCustom(provider, provider.apiKey)
-    : await probeApiKey(provider.name, provider.apiKey)
-  return { success: probe.ok, latencyMs: dayjs().diff(start), error: probe.error }
+    : await probeApiKey(apiKeyVendorName(provider.name), provider.apiKey)
+  const { ok, ...details } = probe
+  if (ok && (details.organizationId || details.workspaceId || details.projectId)) {
+    await prisma.provider.updateMany({
+      where: { id: provider.id, apiKey: provider.apiKey, apiBaseUrl: provider.apiBaseUrl, authMode: provider.authMode },
+      data: { organizationId: details.organizationId, workspaceId: details.workspaceId, projectId: details.projectId }
+    })
+  }
+  return { success: ok, latencyMs: dayjs().diff(start), ...details }
 }

@@ -27,7 +27,7 @@
  */
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useMatches } from 'react-router-dom'
 import { Tabs } from '@/components/rialto/primitives'
 import { childOf, type NavEntry, sectionOf } from '@/components/rialto/shell-navigation'
 import { usePhone } from '@/hooks/use-phone'
@@ -40,18 +40,21 @@ export interface Crumb {
 export function Screen({
   crumbs = [],
   hideChildCrumb = false,
-  subtitle,
   actions,
   children
 }: {
   crumbs?: readonly Crumb[]
   hideChildCrumb?: boolean
-  subtitle?: ReactNode
   actions?: ReactNode
   children: ReactNode
 }) {
   const { t } = useTranslation()
   const { pathname } = useLocation()
+  const handle = useMatches().at(-1)?.handle
+  const purpose =
+    handle !== null && typeof handle === 'object' && 'purpose' in handle && typeof handle.purpose === 'string'
+      ? t(handle.purpose)
+      : undefined
   const section = sectionOf(pathname)
   const child = childOf(pathname)
   const phone = usePhone()
@@ -62,14 +65,14 @@ export function Screen({
   ]
   if (phone) {
     return (
-      <PhoneScreen trail={trail} deep={crumbs.length > 0} section={section} subtitle={subtitle} actions={actions}>
+      <PhoneScreen trail={trail} deep={crumbs.length > 0} section={section} subtitle={purpose} actions={actions}>
         {children}
       </PhoneScreen>
     )
   }
   return (
     <>
-      <header className='flex h-14 shrink-0 items-center gap-4 border-b border-border px-6'>
+      <header className='flex min-h-14 shrink-0 items-center gap-4 border-b border-border px-6 py-2'>
         <div className='min-w-0'>
           <h1 className='truncate text-sm font-semibold tracking-tight'>
             {trail.map((crumb, i) => {
@@ -95,7 +98,7 @@ export function Screen({
               )
             })}
           </h1>
-          {subtitle ? <p className='truncate text-xs text-muted-foreground'>{subtitle}</p> : null}
+          {purpose ? <p className='text-xs text-muted-foreground'>{purpose}</p> : null}
         </div>
         <div className='ml-auto flex items-center gap-2'>{actions}</div>
       </header>
@@ -154,7 +157,7 @@ function PhoneScreen({
   const strip = back === undefined && section !== undefined && section.children.length > 0 ? section : undefined
   return (
     <>
-      <header className='flex h-14 shrink-0 items-center gap-2 border-b border-border px-4'>
+      <header className='flex min-h-14 shrink-0 items-center gap-2 border-b border-border px-4 py-2'>
         {back === undefined ? null : (
           <Link
             to={back}
@@ -166,7 +169,7 @@ function PhoneScreen({
         )}
         <div className='min-w-0 flex-1'>
           <h1 className='truncate text-sm font-semibold tracking-tight'>{title}</h1>
-          {subtitle ? <p className='truncate text-xs text-muted-foreground'>{subtitle}</p> : null}
+          {subtitle ? <p className='text-xs text-muted-foreground'>{subtitle}</p> : null}
         </div>
         <div className='flex shrink-0 items-center gap-1 [&_[data-rbutton-label]]:sr-only [&>button]:px-2'>
           {actions}

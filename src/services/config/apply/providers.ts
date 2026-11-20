@@ -62,9 +62,16 @@ export async function applyProviderRow(
     inc.api_style,
     prevProvider === undefined ? undefined : prevProvider.apiStyle
   )
+  const connectionChanged =
+    prevProvider !== undefined &&
+    (prevProvider.apiKey !== apiKey ||
+      prevProvider.apiBaseUrl !== inc.api_base_url ||
+      prevProvider.authMode !== authMode)
   const provider = await tx.provider.upsert({
     where: { name: inc.name },
     update: {
+      ...(connectionChanged ? { organizationId: null, workspaceId: null, projectId: null } : {}),
+      ...(inc.display_name === undefined ? {} : { displayName: inc.display_name }),
       apiBaseUrl: inc.api_base_url,
       apiKey,
       authMode,
@@ -73,6 +80,7 @@ export async function applyProviderRow(
     },
     create: {
       name: inc.name,
+      displayName: inc.display_name,
       apiBaseUrl: inc.api_base_url,
       apiKey,
       authMode,

@@ -153,7 +153,7 @@ export abstract class VendorProvider {
       return { error: 'no models endpoint configured for this vendor' }
     }
     const { url, headers } = buildAuthedRequest(this.modelsAuth, { kind: 'api_key', key: apiKey }, this.modelsEndpoint)
-    const res = await fetch(url, { headers })
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) })
     if (!res.ok) return { error: `${this.vendor} returned HTTP ${res.status}` }
     const parsed = VendorModelsResponseSchema.safeParse(await res.json())
     if (!parsed.success) return { error: `${this.vendor} returned an unrecognised response shape` }

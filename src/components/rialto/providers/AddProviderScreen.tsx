@@ -24,7 +24,6 @@ import { isCustomEntry } from './custom-form'
 import { accountLabel, disabledModelsOf, listedModelsOf } from './derive'
 import { type ConnectFlow, type ConnectStep, useConnectFlow } from './useConnectFlow'
 import { type ProvidersData, useProvidersData } from './useProvidersData'
-import { vendorLabel } from './vendor-labels'
 
 const NEXT_STEP: Record<ConnectStep, ConnectStep> = { 1: 2, 2: 3, 3: 3 }
 const PREV_STEP: Record<ConnectStep, ConnectStep> = { 1: 1, 2: 1, 3: 2 }
@@ -242,18 +241,9 @@ export function AddProviderScreen() {
     navigate(`/providers/${encodeURIComponent(provider.name)}`)
   }, [step, setStep, provider, navigate, entry, flow])
 
-  const subtitle =
-    flow.entry === undefined
-      ? t('providers.connect.stepOf', { step })
-      : t('providers.connect.stepOfVendor', {
-          step,
-          vendor: vendorLabel(flow.entry.name, flow.entry.displayName)
-        })
-
   return (
     <Screen
       crumbs={[{ label: t('providers.connect.title') }]}
-      subtitle={subtitle}
       actions={
         <>
           <RButton variant='ghost' icon='ri-arrow-left-line' onClick={back}>
@@ -270,10 +260,11 @@ export function AddProviderScreen() {
         </>
       }
     >
-      {/* No step bar on a phone: three labelled steps and Cancel do not
-          fit a row, the header subtitle already says "Step n of 3", and
-          the header's Back is the way out. */}
-      {phone ? null : <ConnectStepBar current={step} onCancel={cancel} />}
+      {phone ? (
+        <p className='px-4 pt-3 text-xs text-muted-foreground'>{t('providers.connect.stepOf', { step })}</p>
+      ) : (
+        <ConnectStepBar current={step} onCancel={cancel} />
+      )}
       {error !== null ? (
         <div className='px-6 py-6 text-xs text-destructive'>{error}</div>
       ) : data === null ? (

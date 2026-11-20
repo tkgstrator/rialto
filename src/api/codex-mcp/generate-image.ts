@@ -63,7 +63,7 @@ export async function generateImageTool(
   args: ImageArgsInput,
   run: <T>(f: () => Promise<T>) => Promise<T>
 ): Promise<CallToolResult> {
-  const resolved = await resolveCodexTarget('image', args.model, ctx.token.plan)
+  const resolved = await resolveCodexTarget('image', args.model, ctx.token.plan, ctx.token.policy)
   if (!resolved.ok) return errorResult(resolved.message)
   const target = resolved.target
   if (!planAllows(ctx.token.plan, target)) {
@@ -81,7 +81,7 @@ export async function generateImageTool(
         ...(args.quality === undefined ? {} : { quality: args.quality }),
         ...(args.background === undefined ? {} : { background: args.background })
       },
-      { accessTokenId: ctx.token.id, surface: CODEX_MCP_SCOPE, plan: ctx.token.plan }
+      { accessTokenId: ctx.token.id, surface: CODEX_MCP_SCOPE, plan: ctx.token.plan, policy: ctx.token.policy }
     )
   )
   if (!outcome.ok) return errorResult(`Image generation failed (HTTP ${outcome.status}): ${describe(outcome.message)}`)

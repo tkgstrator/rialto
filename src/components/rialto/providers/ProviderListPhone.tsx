@@ -9,6 +9,7 @@
 import { useTranslation } from 'react-i18next'
 import { Meter, PhoneRow, Pill } from '@/components/rialto/primitives'
 import { enabledCountOf, listedModelsOf, planOf, providerQuotaPct, type QuotaIndex } from './derive'
+import { ProviderAccountId } from './ProviderAccountId'
 import { accountsOf, hostOf, type ListedProvider, STATE_LABEL_KEYS, STATE_TONE, seatKindOf } from './ProviderTable'
 
 const hrefOf = (entry: ListedProvider): string => `/providers/${encodeURIComponent(entry.provider.name)}`
@@ -64,7 +65,12 @@ function ApiKeyRow({ entry }: { entry: ListedProvider }) {
   return (
     <PhoneRow
       href={hrefOf(entry)}
-      primary={<span className='font-medium'>{entry.label}</span>}
+      primary={
+        <>
+          <span className='font-medium'>{entry.label}</span>
+          <ProviderAccountId provider={entry.provider} />
+        </>
+      }
       trailing={<StatePill entry={entry} />}
       secondary={
         <>

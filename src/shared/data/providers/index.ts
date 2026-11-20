@@ -14,6 +14,7 @@
  *   - google     (ai.google.dev/gemini-api/docs/pricing — empty pending scraper)
  */
 
+import { OPENAI_IMAGE_GENERATION_PRICE, OPENAI_IMAGE_MODELS } from '../openai-images'
 import anthropic from './anthropic/prices.json'
 import google from './google/prices.json'
 import openai from './openai/prices.json'
@@ -52,6 +53,7 @@ const buildLookup = (): Record<string, Record<string, OfficialPricingEntry>> => 
     }
     out[file.vendor] = vendorMap
   }
+  for (const name of OPENAI_IMAGE_MODELS) out.openai[name] = OPENAI_IMAGE_GENERATION_PRICE
   return out
 }
 

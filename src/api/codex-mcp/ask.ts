@@ -127,7 +127,7 @@ export async function ask(ctx: ToolContext, args: AskArgs, run: <T>(f: () => Pro
       'Unknown or expired thread_id. Threads last 24 hours and do not survive a Rialto restart; ask again without thread_id to start a new one.'
     )
   }
-  const resolved = await resolveCodexTarget('completion', args.model, ctx.token.plan)
+  const resolved = await resolveCodexTarget('completion', args.model, ctx.token.plan, ctx.token.policy)
   if (!resolved.ok) return errorResult(resolved.message)
   const target = resolved.target
   if (!planAllows(ctx.token.plan, target)) {

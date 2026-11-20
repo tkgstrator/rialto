@@ -18,6 +18,7 @@
  */
 import { useTranslation } from 'react-i18next'
 import { RButton } from '@/components/rialto/primitives'
+import { Button } from '@/components/ui/button'
 
 export function Pager({
   page,
@@ -56,25 +57,27 @@ export function Pager({
     return (
       <div className='flex items-center gap-1 border-t border-border px-4 py-2'>
         <span className='text-[12px] text-muted-foreground'>{range}</span>
-        <div className='ml-auto flex items-center'>
-          <button
+        <div className='ml-auto flex items-center gap-2'>
+          <Button
+            variant='outline'
+            size='icon-xs'
             type='button'
             aria-label={t('common.previous')}
             disabled={page === 0}
             onClick={() => onPage(page - 1)}
-            className='inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-40'
           >
-            <i className='ri-arrow-left-s-line text-sm' />
-          </button>
-          <button
+            <i aria-hidden className='ri-arrow-left-s-line text-sm' />
+          </Button>
+          <Button
+            variant='outline'
+            size='icon-xs'
             type='button'
             aria-label={t('common.next')}
             disabled={!hasNext}
             onClick={() => onPage(page + 1)}
-            className='inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-40'
           >
-            <i className='ri-arrow-right-s-line text-sm' />
-          </button>
+            <i aria-hidden className='ri-arrow-right-s-line text-sm' />
+          </Button>
         </div>
       </div>
     )
@@ -84,10 +87,10 @@ export function Pager({
     <div className='flex items-center gap-3 border-t border-border px-6 py-3'>
       <span className='text-[12px] text-muted-foreground'>{range}</span>
       <div className='ml-auto flex items-center gap-2'>
-        <RButton variant='ghost' icon='ri-arrow-left-s-line' disabled={page === 0} onClick={() => onPage(page - 1)}>
+        <RButton variant='outline' icon='ri-arrow-left-s-line' disabled={page === 0} onClick={() => onPage(page - 1)}>
           {t('common.previous')}
         </RButton>
-        <RButton variant='ghost' disabled={!hasNext} onClick={() => onPage(page + 1)}>
+        <RButton variant='outline' disabled={!hasNext} onClick={() => onPage(page + 1)}>
           {t('common.next')}
         </RButton>
       </div>

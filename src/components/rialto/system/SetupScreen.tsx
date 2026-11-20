@@ -220,9 +220,7 @@ export function SetupScreen() {
             <span className='text-base font-semibold tracking-tight'>Rialto</span>
             <span className='ml-auto font-mono text-[12px] text-muted-foreground'>v{version}</span>
           </div>
-          <p className='mt-4 text-xs leading-relaxed text-muted-foreground'>
-            <Trans i18nKey='system.setup.intro' components={{ mono: <span className='font-mono' /> }} />
-          </p>
+          <p className='mt-4 text-xs leading-relaxed text-muted-foreground'>{t('system.setup.intro')}</p>
         </div>
 
         <Step n={1} state='done' title={t('system.setup.databaseTitle')} body={catalogBody} />

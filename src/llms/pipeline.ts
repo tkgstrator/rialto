@@ -52,7 +52,7 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
 
   // Capture at the client wire boundary, not between vendor transforms: Codex
   // replaces messages with input and returns Responses events, not tool_use.
-  const userContent = structuredClone(extractLastUserContent(input.body))
+  const userContent = deps.recordMessages === undefined ? null : structuredClone(extractLastUserContent(input.body))
   const sessionId = resolveSessionId(input.context)
   const captureLog = deps.log.child({ sessionId })
   const bypass = shouldBypass(provider.transformer, transformer, input.body)

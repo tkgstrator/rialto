@@ -1,17 +1,23 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { inboundProxyAuth } from '../../src/api/api-key-auth'
+import { v1ModelsRoute } from '../../src/api/v1/models-list'
 import { v1Route } from '../../src/api/v1/route'
+import { providerFromCatalog } from '../../src/components/rialto/providers/connect-actions'
 import { getPrismaClient } from '../../src/db/client'
 import dayjs from '../../src/lib/dayjs'
 import { invalidateTokenCache, issueAccessToken } from '../../src/services/access-token-service'
+import { getCatalog } from '../../src/services/catalog-service'
+import { applyUiConfig } from '../../src/services/config'
 import { clearAccountExhaustion, isAccountExhausted } from '../../src/services/failover-state'
 import { invalidateSurfaceCache } from '../../src/services/inbound-surface-service'
 import { setModelProviderPriorities } from '../../src/services/model-provider-preference'
 import { encryptionKey, encryptString } from '../../src/services/subscription-account-sync/crypto'
+import { DEFAULT_TOKEN_POLICY } from '../../src/shared/access-token-policy'
 import { HAS_DB, resetDbTables, teardownPrisma } from '../db/helpers'
 
 const ENDPOINT = 'https://chatgpt.com/backend-api/codex/images/generations'
+const OPENAI_ENDPOINT = 'https://api.openai.com/v1/images/generations'
 const MODEL = 'gpt-image-2.5-flare'
 const ORIGINAL_FETCH = globalThis.fetch
 const ORIGINAL_KEY = process.env.RIALTO_ACCOUNT_ENCRYPTION_KEY
@@ -28,6 +34,7 @@ const json = (value: unknown, status = 200, headers: Record<string, string> = {}
 const app = new Hono()
 app.use('/v1/*', inboundProxyAuth)
 app.route('/', v1Route)
+app.route('/', v1ModelsRoute)
 
 const calls: Array<{ url: string; headers: Headers; body: Record<string, unknown> }> = []
 const replies: Response[] = []
@@ -64,7 +71,7 @@ const createAccount = async (providerId: string, label: string) => {
 const stubUpstream = () => {
   const fake = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-    if (url !== ENDPOINT) throw new Error(`unexpected upstream: ${url}`)
+    if (url !== ENDPOINT && url !== OPENAI_ENDPOINT) throw new Error(`unexpected upstream: ${url}`)
     calls.push({ url, headers: new Headers(init?.headers), body: JSON.parse(String(init?.body)) })
     const reply = replies.shift()
     return reply === undefined ? json(payload) : reply
@@ -140,6 +147,61 @@ describe.skipIf(!HAS_DB)('POST /v1/images/generations', () => {
       outputTokens: 343
     })
     expect(await getPrismaClient().message.count()).toBe(0)
+  })
+
+  test('lists enabled OpenAI API image models and generates with the configured key', async () => {
+    const db = getPrismaClient()
+    const models = ['gpt-image-2.6-flare', 'gpt-image-2.6-sunburst']
+    const catalog = await getCatalog(async () => new Response(null, { status: 503 }))
+    const openai = catalog.find((entry) => entry.name === 'openai')
+    if (openai === undefined) throw new Error('OpenAI catalog entry missing')
+    await applyUiConfig({
+      Providers: [{ ...providerFromCatalog(openai), api_key: 'upstream-key', enabled: true }]
+    })
+    const provider = await db.provider.findUniqueOrThrow({ where: { name: 'openai' }, include: { models: true } })
+    expect(
+      provider.models
+        .filter((row) => models.includes(row.name))
+        .map((row) => [row.name, row.enabled])
+        .sort()
+    ).toEqual(models.map((name) => [name, false]))
+    await db.model.updateMany({ where: { providerId: provider.id, name: { in: models } }, data: { enabled: true } })
+    const token = (await issueAccessToken({ name: 'image', surfaces: ['openai-images'] })).plaintext
+    const list = () => app.request('/v1/models', { headers: { authorization: `Bearer ${token}` } })
+    expect((await (await list()).json()).data.map((model: { id: string }) => model.id)).toEqual(models)
+
+    for (const model of models) {
+      const result = await send({ model, prompt: 'A paper lantern' }, token)
+      expect(result.status).toBe(200)
+      expect(await result.json()).toEqual(payload)
+    }
+    expect(calls.map((call) => call.body.model)).toEqual(models)
+    for (const call of calls) {
+      expect(call.url).toBe(OPENAI_ENDPOINT)
+      expect(call.headers.get('authorization')).toBe('Bearer upstream-key')
+      expect(call.headers.has('chatgpt-account-id')).toBe(false)
+    }
+
+    const restricted = (
+      await issueAccessToken({
+        name: 'flare-only',
+        surfaces: ['openai-images'],
+        policy: {
+          ...DEFAULT_TOKEN_POLICY,
+          restrictModels: true,
+          allowedModels: [models[0]],
+          providerMode: 'api_key_only'
+        }
+      })
+    ).plaintext
+    const restrictedList = await app.request('/v1/models', { headers: { authorization: `Bearer ${restricted}` } })
+    expect((await restrictedList.json()).data.map((model: { id: string }) => model.id)).toEqual([models[0]])
+    expect((await send({ model: `openai,${models[1]}`, prompt: 'x' }, restricted)).status).toBe(403)
+
+    await db.provider.update({ where: { id: provider.id }, data: { apiKey: null } })
+    expect((await (await list()).json()).data).toEqual([])
+    expect((await send({ model: models[0], prompt: 'x' }, token)).status).toBe(400)
+    expect(calls).toHaveLength(2)
   })
 
   test('rejects disabled targets, ambiguous names, and unsupported models without a network call', async () => {

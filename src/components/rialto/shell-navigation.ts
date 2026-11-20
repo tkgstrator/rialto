@@ -55,7 +55,10 @@ export const NAV: readonly NavEntry[] = [
     labelKey: 'shell.navAccessTokens',
     icon: 'ri-key-2-line',
     href: '/access-tokens',
-    children: []
+    children: [
+      { id: 'tokens', labelKey: 'access.tabs.tokens', icon: 'ri-key-line', href: '/access-tokens' },
+      { id: 'plans', labelKey: 'access.tabs.plans', icon: 'ri-list-check-2', href: '/access-tokens/plans' }
+    ]
   },
   {
     id: 'activity',

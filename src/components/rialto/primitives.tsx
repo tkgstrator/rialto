@@ -12,6 +12,7 @@
 import { cn } from 'cn'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { Button } from '@/components/ui/button'
 
 /** Flat row treatment used everywhere instead of shadcn Card. */
 export const ROW = 'border-l-2 border-l-transparent px-4 py-3 transition-colors hover:bg-muted/50'
@@ -108,33 +109,15 @@ export function Meter({ pct, tone = 'auto' }: { pct: number; tone?: 'auto' | 'ok
 }
 
 const BUTTON_VARIANTS = {
-  primary: 'bg-primary text-primary-foreground hover:bg-primary/90',
-  outline: 'border border-border hover:bg-muted/60',
-  ghost: 'hover:bg-muted/60 text-muted-foreground hover:text-foreground',
-  // Outlined rather than filled: a solid red button is the loudest thing
-  // on any screen it lands on, and revoke sits beside actions the
-  // operator reaches for far more often. It reads destructive on
-  // approach without owning the page at rest.
-  danger: 'border border-destructive/30 text-destructive hover:border-destructive/50 hover:bg-destructive/10'
+  primary: 'default',
+  outline: 'outline',
+  ghost: 'ghost',
+  danger: 'destructive'
 } as const
 
 export type ButtonVariant = keyof typeof BUTTON_VARIANTS
 
-/**
- * The compact 32px control used in headers and section toolbars.
- *
- * shadcn's `Button` is 36px tall with different padding, so matching the
- * mock through it would mean overriding every class that defines it.
- *
- * `disabled` paints, which it did not used to. A disabled button that
- * looks exactly like a live one is worse than no button: Save on an
- * unchanged form and Previous on the first page both invited a click and
- * answered with nothing, and the operator has no way to tell that from a
- * control that is broken. The mocks are
- * static HTML with no disabled state to draw, so this is expected to
- * read as a small mock diff on the screens that rest with a disabled
- * control — state the mock cannot express, not a design difference.
- */
+/** Compact shadcn button used in headers and section toolbars. */
 export function RButton({
   variant = 'ghost',
   icon,
@@ -147,14 +130,11 @@ export function RButton({
   children: ReactNode
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
-    <button
+    <Button
       type='button'
-      className={cn(
-        'inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors',
-        'disabled:pointer-events-none disabled:opacity-50',
-        BUTTON_VARIANTS[variant],
-        className
-      )}
+      size='sm'
+      variant={BUTTON_VARIANTS[variant]}
+      className={cn('gap-1.5 rounded-md px-3 text-xs', className)}
       {...rest}
     >
       {/* aria-hidden: Chromium folds a Remix Icon's ::before glyph (a
@@ -167,7 +147,7 @@ export function RButton({
           (see `Screen`), and a button with nothing else to show would
           vanish with it. */}
       {icon ? <span data-rbutton-label>{children}</span> : children}
-    </button>
+    </Button>
   )
 }
 

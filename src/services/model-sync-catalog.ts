@@ -1,3 +1,4 @@
+import { apiKeyVendorName } from '@/shared/custom-provider'
 import { OFFICIAL_VENDOR_PRICES, SUBSCRIPTION_PRESETS } from '@/shared/data'
 import type { ScrapedPriceEntry } from '../vendors/base'
 import { getVendorProvider, isScrapedVendor } from '../vendors/registry'
@@ -100,7 +101,8 @@ export async function loadVendorCatalogs(providerNames: ReadonlySet<string>): Pr
 // table, but nothing ever asked for it, so every Gemini row kept the null
 // price it was created with. Both the load and the lookup have to agree
 // on which vendors have prices at all.
-export const scrapeVendorFor = (providerName: string): string | null => {
+export const scrapeVendorFor = (name: string): string | null => {
+  const providerName = apiKeyVendorName(name)
   if (isScrapedVendor(providerName)) return providerName
   if (OFFICIAL_VENDOR_PRICES[providerName] !== undefined) return providerName
   const preset = SUBSCRIPTION_PRESETS.find((p) => p.id === providerName)

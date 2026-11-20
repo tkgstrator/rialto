@@ -4,12 +4,13 @@
  * value written to the DB, and per-model overrides are explicit.
  */
 
-import { isCustomApiStyle } from '@/shared/custom-provider'
+import { apiKeyVendorName, isCustomApiStyle } from '@/shared/custom-provider'
 import { ApiStyle } from '../../generated/prisma/client'
 
 // Explicit per-provider request shape. No runtime fallback — every
 // seeded provider gets a concrete value written to the DB.
-export const apiStyleForVendor = (name: string): ApiStyle => {
+export const apiStyleForVendor = (providerName: string): ApiStyle => {
+  const name = apiKeyVendorName(providerName)
   if (name === 'anthropic' || name.startsWith('claude-code')) return ApiStyle.anthropic
   if (name === 'google') return ApiStyle.gemini
   if (name === 'codex') return ApiStyle.openai_responses

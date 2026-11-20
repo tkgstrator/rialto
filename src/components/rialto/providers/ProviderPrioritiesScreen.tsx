@@ -1,172 +1,145 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { Pill, RButton } from '@/components/rialto/primitives'
+import type { ProviderPriorityGroupsResponse } from '@/api/providers/priorities'
+import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
+import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
-import type { ModelProviderPrioritiesResponse, ModelProviderPriority } from '@/schemas/api/model-provider-priorities'
+import type { ProviderPriorityGroup } from '@/shared/provider-priority'
+import { vendorLabel } from './vendor-labels'
 
-function PriorityRow({
-  row,
+const ENDPOINT = '/providers/priorities'
+type PriorityGroup = ProviderPriorityGroupsResponse['groups'][number]
+
+function GroupOrder({
+  group,
   saving,
   onSave
 }: {
-  row: ModelProviderPriority
+  group: PriorityGroup
   saving: boolean
-  onSave: (model: string, providers: string[]) => void
+  onSave: (group: ProviderPriorityGroup, providers: string[]) => void
 }) {
   const { t } = useTranslation()
-  const configured = row.preferredProviders.length > 0
-  const order = row.providers
-  const move = (index: number, by: number) => {
-    const next = [...order]
-    const other = index + by
-    if (other < 0 || other >= next.length) return
-    const current = next[index]
-    next[index] = next[other]
-    next[other] = current
-    onSave(row.model, next)
+  const { providers } = group
+  const move = (index: number, offset: number) => {
+    const order = providers.map(({ name }) => name)
+    const to = index + offset
+    if (to < 0 || to >= order.length) return
+    const current = order[index]
+    order[index] = order[to]
+    order[to] = current
+    onSave(group.group, order)
+  }
+  if (providers.length === 0) {
+    return <p className='px-3 py-2 text-xs text-muted-foreground'>{t('providers.priorities.empty')}</p>
   }
   return (
-    <div className='grid gap-3 border-t border-border/60 px-6 py-4 md:grid-cols-[14rem_minmax(0,1fr)] md:gap-6 max-md:px-4'>
-      <div className='min-w-0'>
-        <div className='truncate font-mono text-xs' title={row.model}>
-          {row.model}
-        </div>
-        <div className='mt-1'>
-          <Pill tone={configured ? 'ok' : 'warn'}>
-            {t(configured ? 'providers.priorities.configured' : 'providers.priorities.unconfigured')}
-          </Pill>
-        </div>
-      </div>
-      <div className='min-w-0 space-y-2'>
-        {/* Radix rejects an empty-string item, so "not configured" is the empty value, which shows the placeholder. */}
-        <Select
-          value={configured ? row.preferredProviders[0] : ''}
-          disabled={saving}
-          onValueChange={(primary) =>
-            onSave(row.model, [primary, ...row.providers.filter((provider) => provider !== primary)])
-          }
-        >
-          <SelectTrigger
-            size='sm'
-            aria-label={t('providers.priorities.primaryFor', { model: row.model })}
-            className='w-full max-w-sm pr-3 font-mono text-xs'
-          >
-            <SelectValue placeholder={t('providers.priorities.choose')} />
-          </SelectTrigger>
-          <SelectContent>
-            {row.providers.map((provider) => (
-              <SelectItem key={provider} value={provider} className='font-mono text-xs'>
-                {provider}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {configured ? (
-          <div className='space-y-1'>
-            {order.map((provider, index) => (
-              <div key={provider} className='flex max-w-sm items-center gap-2 text-xs'>
-                <span className='w-5 shrink-0 font-mono text-muted-foreground'>{index + 1}</span>
-                <span className='min-w-0 flex-1 truncate font-mono'>{provider}</span>
-                <button
-                  type='button'
-                  disabled={saving || index === 0}
-                  onClick={() => move(index, -1)}
-                  aria-label={t('providers.priorities.moveUp', { provider })}
-                  className='rounded px-1.5 py-1 text-muted-foreground hover:bg-muted disabled:opacity-30'
-                >
-                  <i aria-hidden className='ri-arrow-up-line' />
-                </button>
-                <button
-                  type='button'
-                  disabled={saving || index === order.length - 1}
-                  onClick={() => move(index, 1)}
-                  aria-label={t('providers.priorities.moveDown', { provider })}
-                  className='rounded px-1.5 py-1 text-muted-foreground hover:bg-muted disabled:opacity-30'
-                >
-                  <i aria-hidden className='ri-arrow-down-line' />
-                </button>
-              </div>
-            ))}
-            <button
+    <ol className='divide-y divide-border px-3'>
+      {providers.map(({ name, organizationId, displayName }, index) => {
+        const label = vendorLabel(name, displayName || vendorLabel(group.group, group.group))
+        const accessibleLabel = organizationId === null ? label : `${label} ${organizationId}`
+        return (
+          <li key={name} className='flex items-center gap-2 py-2 text-xs'>
+            <span className='w-5 shrink-0 font-mono text-muted-foreground' aria-hidden>
+              {index + 1}
+            </span>
+            <div className='min-w-0 flex-1'>
+              <div className='font-medium'>{label}</div>
+              {organizationId === null ? null : (
+                <div className='break-all font-mono text-muted-foreground'>{organizationId}</div>
+              )}
+            </div>
+            <Button
               type='button'
-              disabled={saving}
-              onClick={() => onSave(row.model, [])}
-              className='pt-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50'
+              variant='outline'
+              size='icon-sm'
+              aria-label={t('providers.priorities.moveUp', { provider: accessibleLabel })}
+              disabled={saving || index === 0}
+              onClick={() => move(index, -1)}
             >
-              {t('providers.priorities.clear')}
-            </button>
-          </div>
-        ) : null}
-      </div>
-    </div>
+              <i aria-hidden className='ri-arrow-up-line' />
+            </Button>
+            <Button
+              type='button'
+              variant='outline'
+              size='icon-sm'
+              aria-label={t('providers.priorities.moveDown', { provider: accessibleLabel })}
+              disabled={saving || index === providers.length - 1}
+              onClick={() => move(index, 1)}
+            >
+              <i aria-hidden className='ri-arrow-down-line' />
+            </Button>
+          </li>
+        )
+      })}
+    </ol>
   )
 }
 
 export function ProviderPrioritiesScreen() {
   const { t } = useTranslation()
-  const [rows, setRows] = useState<ModelProviderPriority[] | null>(null)
+  const [groups, setGroups] = useState<PriorityGroup[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const reload = useCallback(() => {
-    setError(null)
-    api
-      .get<ModelProviderPrioritiesResponse>('/models/provider-priorities')
-      .then((response) => setRows(response.models))
-      .catch((cause: unknown) => {
-        setRows(null)
-        setError(cause instanceof Error ? cause.message : String(cause))
-      })
-  }, [])
-  useEffect(() => reload(), [reload])
 
-  const save = async (model: string, providers: string[]) => {
+  const reload = useCallback(async () => {
+    setError(null)
+    try {
+      setGroups((await api.get<ProviderPriorityGroupsResponse>(ENDPOINT)).groups)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }, [])
+  useEffect(() => {
+    void reload()
+  }, [reload])
+
+  const save = async (group: ProviderPriorityGroup, providers: string[]) => {
     if (saving) return
     setSaving(true)
     try {
-      await api.put('/models/provider-priorities', { model, providers })
-      const response = await api.get<ModelProviderPrioritiesResponse>('/models/provider-priorities')
-      setRows(response.models)
+      await api.put(ENDPOINT, { group, providers })
+      await reload()
       toast.success(t('providers.priorities.saved'))
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : String(cause))
+      await reload()
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <Screen subtitle={t('providers.priorities.subtitle')}>
-      <div className='min-w-0'>
-        <div className='flex flex-wrap items-center gap-3 px-6 pt-6 pb-3 max-md:px-4'>
-          <h2 className='text-sm font-semibold'>{t('providers.priorities.title')}</h2>
-          <span className='text-[12px] text-muted-foreground'>{t('providers.priorities.hint')}</span>
-          <div className='ml-auto'>
-            <RButton variant='outline' icon='ri-refresh-line' onClick={reload} disabled={saving}>
-              {t('providers.screen.refresh')}
-            </RButton>
-          </div>
+    <Screen>
+      <div className='space-y-4 px-4 py-4 md:px-6'>
+        <div className='flex justify-end'>
+          <RButton variant='outline' icon='ri-refresh-line' onClick={reload} disabled={saving}>
+            {t('providers.screen.refresh')}
+          </RButton>
         </div>
         {error ? (
-          <p role='alert' className='border-t border-border/60 px-6 py-4 text-xs text-destructive max-md:px-4'>
+          <p role='alert' className='text-xs text-destructive'>
             {error}
           </p>
         ) : null}
-        {rows === null && !error ? (
-          <p className='border-t border-border/60 px-6 py-4 text-xs text-muted-foreground max-md:px-4'>
-            {t('common.loading')}
-          </p>
-        ) : null}
-        {rows?.length === 0 ? (
-          <p className='border-t border-border/60 px-6 py-4 text-xs text-muted-foreground max-md:px-4'>
-            {t('providers.priorities.empty')}
-          </p>
-        ) : null}
-        {rows?.map((row) => (
-          <PriorityRow key={row.model} row={row} saving={saving} onSave={save} />
-        ))}
+        {groups === null && !error ? <p className='text-xs text-muted-foreground'>{t('common.loading')}</p> : null}
+        <Accordion
+          type='multiple'
+          defaultValue={['openai', 'anthropic']}
+          className='divide-y divide-border border-y border-border'
+        >
+          {groups?.map((group) => (
+            <AccordionItem key={group.group} value={group.group} className='border-b-0'>
+              <AccordionTrigger className='px-3 py-3'>{vendorLabel(group.group, group.group)}</AccordionTrigger>
+              <AccordionContent>
+                <GroupOrder group={group} saving={saving} onSave={save} />
+              </AccordionContent>
+            </AccordionItem>
+          ))}
+        </Accordion>
       </div>
     </Screen>
   )

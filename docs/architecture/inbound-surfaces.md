@@ -99,28 +99,22 @@ Google のワイヤ規約に代替が無いのでこの面だけ受理する。`
 （`src/api/v1/images.ts` の `handleImageGeneration`）がマウントされる。認証（発行済み
 アクセストークンの Bearer、面スコープ込み）・OpenAI エラー封筒・アクセスログは他の面と共通。
 
-- **宛先は Codex サブスクリプションだけ。** 受け付けるモデルは `CODEX_IMAGE_MODELS`
-  （`src/shared/data/subscriptions.ts`：`gpt-image-2.5-flare` / `gpt-image-2.5-sunburst`）で、
-  `authMode = subscription` かつ `apiBaseUrl = https://chatgpt.com/backend-api/codex` の
-  provider 上で provider・model とも有効なものに限る。公開のモデル名は素の名前で、同名を
-  複数 provider が持つときは Providers → Priorities の順序で選ぶ。未設定の重複・無効・未対応は
-  400 で、上流へは何も送らない。旧 `provider,model` 入力も互換のため受け付ける。
-- **既定は無効（オプトイン）。** 両モデルは接続前の Codex のカタログに出るが、他のモデルと同じく
-  オフで入る。provider ページで有効化する。価格は公開されていないので
-  通常の価格3列は null のまま。Codexのサブスク枠に実際の従量課金単価があると誤認させないため、
-  API参考単価はモダリティ別に別表示する。chat の候補・モデルテスト・
-  scheduler の対象からは外してある。
-- **Plan が効く。** `generateImage` が最初に Plan のモデル判定を行い、Plan に無いモデルは 403
-  （OpenAI の封筒）。`/codex` の `generate_image` ツールも同じ関数を通る。`deniedTargets` も効く（403）。
+- **接続先**：OpenAI API キーのプロバイダーは `gpt-image-2.6-flare` と
+  `gpt-image-2.6-sunburst` を `https://api.openai.com/v1/images/generations` に送る。
+  Codex サブスクリプションは従来の `gpt-image-2.5-flare` と `gpt-image-2.5-sunburst` を
+  Codex バックエンドに送る。`/codex` の `generate_image` は Codex サブスクリプションを使う。
+- **有効化**：Providers で接続を設定し、利用する画像モデルを有効にする。画像モデルは
+  チャットの候補・モデルテスト・scheduler の対象から外し、画像生成を許可されたトークンの
+  `GET /v1/models` に表示する。
+- **アクセス制御**：Plan とトークンのモデル制限の両方を適用し、トークンの接続先設定でプロバイダーを絞る。
+  `deniedTargets` で画像面の接続先を拒否できる（403）。モデル名は素の名前と `provider,model` を受け付ける。
 - **リクエスト**：`application/json`、128 KiB 以下。`model`・`prompt`（1〜32,000 文字）必須、
   任意で `size`（`auto` / `1024x1024` / `1024x1536` / `1536x1024`）、`quality`
   （`auto` / `low` / `medium` / `high`）、`background`（`auto` / `opaque` / `transparent`）、
   `n: 1`、`response_format: "b64_json"`。それ以外のフィールド（`stream` など）は 400。
   画像編集（`/v1/images/edits`）、ストリーミング、`response_format: "url"`、`n > 1` は非対応。
-- **上流**：`<apiBaseUrl>/images/generations` に許可リストのフィールドだけを送る。
-  `Authorization` / `chatgpt-account-id` / `originator` はサーバ側で組み立て、呼び手のヘッダは
-  転送しない。アカウントは chat と同じ picker（`resolveAccountForSession`）で選び、429 では
-  そのアカウントに exhaustion mark を付けて次のアカウントへ回す（最大 10 回）。
+- **認証**：サーバ側で接続先の認証ヘッダを組み立てる。OpenAI には設定済み API キーを送り、
+  Codex には OAuth bearer、アカウント ID、originator を送る。Codex は 429 の際にアカウントを切り替える。
 - **レスポンス**：上流の JSON（`created` / `data[0].b64_json` / `usage`）をそのまま返す。
   `data` が画像1件でない 2xx は 502。上流のエラーは OpenAI 封筒に包み、`Retry-After` と
   `x-rialto-upstream` を付ける。
@@ -128,7 +122,7 @@ Google のワイヤ規約に代替が無いのでこの面だけ受理する。`
   上流が返したトークン数、`subAccountId`、`accessTokenId`）。`CAPTURE_REQUESTS=false` で止まる。
   プロンプトも画像も `Message` には保存しない。
 
-**モデル情報と単価の更新：** Providers の「Refresh」で OpenAI の公開モデル個別ページ
+**Codex のモデル情報と参考単価：** Providers の「Refresh」で OpenAI の公開モデル個別ページ
 （`https://developers.openai.com/api/docs/models/gpt-image-2.5-flare` と
 `.../gpt-image-2.5-sunburst`）を読み、モデルごとにテキスト入力・キャッシュ入力、画像入力・
 キャッシュ入力・画像出力の5レートと公開スナップショットIDを更新する。ページが取れない／
@@ -138,8 +132,10 @@ $30（いずれも100万トークンあたり）。これは**公開 API の参�
 請求額ではない。価格表と3列の `Model` 単価は入力モダリティを区別できないため、画像モデルの
 通常の価格列・Activity の金額は未知のまま。上流の使用量がテキスト／画像別に確認できない状態で
 合算トークンを単一の入力単価に掛けることはしない。公開ページの対応エンドポイントに edits が
-載っていても、Rialto のこの面は generations のみ受け付ける。新しい画像モデル ID の自動発見は
-しない。
+載っていても、Rialto のこの面は generations のみ受け付ける。
+
+OpenAI API キー経路では、テキストからの画像生成に対応する公開単価を使い、
+テキスト入力と画像出力のトークン数を利用上限と履歴に反映する。
 
 Codex の会話モデル一覧は OpenAI の公開価格表から推定しない。接続時と Providers の Refresh 時に、
 接続済みアカウントの OAuth bearer と account ID を使って Codex CLI と同じ
@@ -149,9 +145,7 @@ Codex の会話モデル一覧は OpenAI の公開価格表から推定しない
 Providers に表示される。公開モデル詳細ページの存在だけではサブスク枠の利用権限は確定しない。
 画像モデルは実際に動作確認した2モデルを従来どおり別途扱う。
 
-**注意：この上流は ChatGPT の非公開エンドポイントである。** Codex CLI が使う内部 API で、
-OpenAI の公開 Images API の契約ではない。予告なく形が変わり得るので、この面は OpenAI 互換を
-保証しない。
+Codex の接続先は ChatGPT の内部 API であり、仕様は予告なく変わり得る。
 
 ## ルーティングは無い — どの面も同じ前処理を通る
 
@@ -165,7 +159,7 @@ OpenAI の公開 Images API の契約ではない。予告なく形が変わり�
 1. アクセストークンの **Plan** のモデル判定。Plan に載っていないモデルは、その面自身のエラー形の
    **403** で拒否する（リダイレクトはしない）。モデルを書かないリクエストだけが `defaultModel` になる
 2. サブエージェントのタグの除去と `RequestLog.isSubagent` の記録（`/v1/messages` のみ）
-3. 素のモデル名の provider 解決
+3. トークンの許可モデルと接続先設定を適用し、素のモデル名の provider を解決
 4. 面ごとの **deniedTargets**（400）
 
 `InboundSurfaceConfig` に残っている列は `deniedTargets` だけである。行が無い面は何も拒否しない。

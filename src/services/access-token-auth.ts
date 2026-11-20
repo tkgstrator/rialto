@@ -2,6 +2,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { LRUCache } from 'lru-cache'
 import { getPrismaClient } from '../db/client'
+import type { TokenPolicy } from '../shared/access-token-policy'
 import { type PlanLimits, planLimitsOf } from './usage-window-service'
 
 const PREFIX = 'rialto_'
@@ -15,7 +16,10 @@ const sha256 = (value: string): string => createHash('sha256').update(value).dig
 // than one per request.
 const cache = new LRUCache<string, { row: ResolvedToken | null }>({ max: 500, ttl: CACHE_TTL_MS })
 
+const cacheVersion = { current: 0 }
+
 export function invalidateTokenCache(): void {
+  cacheVersion.current += 1
   cache.clear()
 }
 
@@ -25,6 +29,7 @@ export interface ResolvedToken {
   /** Empty means the token is not pinned to any surface in particular. */
   surfaces: string[]
   /** What this token may spend, read from its plan. Null = unrestricted. */
+  policy?: TokenPolicy
   plan: TokenPlan | null
 }
 
@@ -75,6 +80,7 @@ export async function resolveAccessToken(presented: string): Promise<ResolvedTok
   const cached = cache.get(hash)
   if (cached !== undefined) return cached.row
 
+  const version = cacheVersion.current
   const row = await getPrismaClient()
     .accessToken.findUnique({
       where: { tokenHash: hash },
@@ -99,6 +105,12 @@ export async function resolveAccessToken(presented: string): Promise<ResolvedTok
         id: row.id,
         name: row.name,
         surfaces: row.surfaces,
+        policy: {
+          restrictModels: row.restrictModels,
+          allowedModels: row.allowedModels,
+          providerMode: row.providerMode,
+          providerFallback: row.providerFallback
+        },
         plan:
           row.plan === null
             ? null
@@ -109,6 +121,6 @@ export async function resolveAccessToken(presented: string): Promise<ResolvedTok
               }
       }
     : null
-  cache.set(hash, { row: resolved })
+  if (version === cacheVersion.current) cache.set(hash, { row: resolved })
   return resolved
 }

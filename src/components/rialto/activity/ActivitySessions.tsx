@@ -237,10 +237,7 @@ export function ActivitySessions() {
           >
             {t('activity.sessions.liveTail')}
           </RButton>
-          {/* Ghost, not red: archiving files sessions away rather than
-              deleting them — their request logs stay — so it does not read
-              as the same kind of irreversible action as Remove elsewhere. */}
-          <RButton variant='ghost' icon='ri-archive-line' onClick={archiveAll}>
+          <RButton variant='outline' icon='ri-archive-line' onClick={archiveAll}>
             {t('activity.sessions.archive')}
           </RButton>
           {/* Portalled, so its place in the tree changes nothing on screen;

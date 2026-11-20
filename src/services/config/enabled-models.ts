@@ -9,16 +9,16 @@
  * (`llms/context.ts`), so what is advertised here is what dispatches.
  */
 
-import { isCodexImageModel } from '@/shared/data/subscriptions'
+import { isImageOnlyModel, supportsImageModel } from '@/shared/data/openai-images'
 import { hasAuthenticableAccount } from '@/shared/subscription-credential'
 import { getPrismaClient } from '../../db/client'
 import { AuthMode, type PrismaClient } from '../../generated/prisma/client'
 import { getSubscriptionsInfo } from '../subscription-info-service'
 
-export async function getEnabledModels(
+export async function getEnabledModelTargets(
   prisma: PrismaClient = getPrismaClient(),
   operation: 'completion' | 'image' = 'completion'
-): Promise<{ provider: string; model: string }[]> {
+): Promise<{ provider: string; model: string; authMode: AuthMode }[]> {
   const rows = await prisma.model.findMany({
     where: { enabled: true },
     select: {
@@ -41,14 +41,17 @@ export async function getEnabledModels(
     .filter(
       (r) =>
         r.provider.enabled &&
-        (operation === 'image'
-          ? r.provider.authMode === AuthMode.subscription &&
-            r.provider.apiBaseUrl === 'https://chatgpt.com/backend-api/codex' &&
-            isCodexImageModel(r.name)
-          : !isCodexImageModel(r.name)) &&
+        (operation === 'image' ? supportsImageModel(r.provider, r.name) : !isImageOnlyModel(r.name)) &&
         (r.provider.authMode === AuthMode.subscription
           ? subCredentialed.get(r.provider.name) === true
           : r.provider.apiKey !== null && r.provider.apiKey.trim().length > 0)
     )
-    .map((r) => ({ provider: r.provider.name, model: r.name }))
+    .map((r) => ({ provider: r.provider.name, model: r.name, authMode: r.provider.authMode }))
+}
+
+export async function getEnabledModels(
+  prisma: PrismaClient = getPrismaClient(),
+  operation: 'completion' | 'image' = 'completion'
+): Promise<{ provider: string; model: string }[]> {
+  return (await getEnabledModelTargets(prisma, operation)).map(({ provider, model }) => ({ provider, model }))
 }

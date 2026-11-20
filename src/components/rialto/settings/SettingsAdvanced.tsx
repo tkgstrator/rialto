@@ -37,10 +37,6 @@ export function SettingsAdvanced() {
   // than an empty pane — the tab it named is gone.
   const tab = requested === 'health' ? 'health' : 'config'
 
-  // Lifted out of HealthPanel so the breadcrumb subtitle can report the
-  // same status the tab is about to show, the way the mock's per-tab
-  // subtitle does — "GET /health · degraded" rather than a static label
-  // that never changes with the probe.
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [healthReachable, setHealthReachable] = useState(true)
   const loadHealth = useCallback(() => {
@@ -57,16 +53,6 @@ export function SettingsAdvanced() {
   useEffect(() => {
     if (tab === 'health') loadHealth()
   }, [tab, loadHealth])
-
-  const healthStatus = !healthReachable
-    ? t('settings.advanced.unreachable')
-    : health === null
-      ? t('settings.advanced.probing')
-      : t(health.status === 'ok' ? 'settings.advanced.statusOk' : 'settings.advanced.degraded')
-  const subtitle =
-    tab === 'health'
-      ? t('settings.advanced.subtitleHealth', { status: healthStatus })
-      : t('settings.advanced.subtitleConfig')
 
   // Also lifted out of its panel: the mock's app-level header carries its
   // own "Save" beside the config toolbar's — the two act on the same
@@ -120,7 +106,6 @@ export function SettingsAdvanced() {
   return (
     <SettingsLayout
       active='advanced'
-      subtitle={subtitle}
       showHeading={false}
       actions={
         tab === 'health' ? undefined : (

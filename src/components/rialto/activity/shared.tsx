@@ -9,7 +9,7 @@ import { cn } from 'cn'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Mono, Pill, SurfacePill } from '@/components/rialto/primitives'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { SelectPicker } from '@/components/rialto/SelectPicker'
 
 /** Rendered wherever a column has no value for this row. */
 export const DASH = '—'
@@ -19,11 +19,6 @@ export interface FilterOption<T extends string> {
   label: string
 }
 
-/**
- * The compact filter control from the mocks' filter bar. Radix Popover
- * handles outside-click and Escape; the trigger keeps the mock's classes
- * so the closed state is pixel-identical.
- */
 export function FilterSelect<T extends string>({
   label,
   value,
@@ -38,29 +33,21 @@ export function FilterSelect<T extends string>({
   const { t } = useTranslation()
   const current = options.find((o) => o.id === value)
   return (
-    <Popover>
-      <PopoverTrigger className='inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs transition-colors hover:bg-muted/60'>
-        <span className='text-muted-foreground'>{label}</span>
-        <span>{current === undefined ? t('activity.common.all') : current.label}</span>
-        <i className='ri-arrow-down-s-line text-sm text-muted-foreground' />
-      </PopoverTrigger>
-      <PopoverContent align='start' className='w-48 gap-0 p-1'>
-        {options.map((o) => (
-          <button
-            key={o.id}
-            type='button'
-            onClick={() => onChange(o.id)}
-            className={cn(
-              'flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/60',
-              o.id === value ? 'font-medium' : 'text-muted-foreground'
-            )}
-          >
-            <i className={cn('ri-check-line text-xs', o.id === value ? '' : 'opacity-0')} />
-            {o.label}
-          </button>
-        ))}
-      </PopoverContent>
-    </Popover>
+    <SelectPicker
+      label={label}
+      value={value}
+      options={options.map((option) => ({ value: option.id, label: option.label }))}
+      onChange={(next) => {
+        const option = options.find(({ id }) => id === next)
+        if (option !== undefined) onChange(option.id)
+      }}
+      reading={
+        <>
+          <span className='text-muted-foreground'>{label}</span>
+          <span>{current === undefined ? t('activity.common.all') : current.label}</span>
+        </>
+      }
+    />
   )
 }
 

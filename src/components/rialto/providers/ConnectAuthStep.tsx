@@ -10,7 +10,7 @@
  */
 
 import { cn } from 'cn'
-import { Trans, useTranslation } from 'react-i18next'
+import { useTranslation } from 'react-i18next'
 import { Pill, RButton } from '@/components/rialto/primitives'
 import { fmtAgo } from '@/lib/rialto/format'
 import type { CodexDeviceStartResponse } from '@/schemas/api/oauth'
@@ -168,12 +168,6 @@ function ApiKeyForm({
             </span>
           </div>
         </div>
-        <p className='text-[12px] leading-relaxed text-muted-foreground'>
-          <Trans
-            i18nKey='providers.credentials.interpolationNote'
-            components={{ mono: <span className='font-mono' /> }}
-          />
-        </p>
       </div>
     </>
   )

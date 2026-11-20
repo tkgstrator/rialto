@@ -119,7 +119,9 @@ async function fetchLiveCatalog(p: ProviderRow): Promise<LiveFetchResult> {
   }
   const provider = getVendorProvider(p.name)
   if (provider === undefined) return { ids: [], error: 'unknown vendor' }
-  const got = await provider.fetchLiveModels(p.apiKey)
+  const got = await provider
+    .fetchLiveModels(p.apiKey)
+    .catch(() => ({ error: 'could not reach the upstream model list' }))
   if (Array.isArray(got)) return { ids: got, error: undefined }
   return { ids: [], error: got.error }
 }
@@ -222,17 +224,14 @@ async function refreshOneProvider(p: ProviderRow, catalog: VendorCatalog): Promi
 
   // Discovery failures remain visible even when a pricing scrape succeeds;
   // price sheets cannot establish subscription model availability.
-  if ((p.name === 'codex' || p.name === 'claude-code') && live.error !== undefined)
-    return { provider: p.name, added: toAdd, error: live.error }
+  const expectsLiveCatalog =
+    p.name === 'codex' || p.name === 'claude-code' || (p.authMode === AuthMode.api_key && !!p.apiKey?.trim())
+  if (expectsLiveCatalog) return { provider: p.name, added: toAdd, error: live.error }
   // Report `error` only when NOTHING was accomplished. A subscription
   // provider that picked up new models via scrape (or refreshed the
   // contextWindow of existing ones) shouldn't be flagged just because
   // it has no api key.
-  const succeeded =
-    toAdd.length > 0 ||
-    (p.name !== 'codex' && p.name !== 'claude-code' && catalog.listed.length > 0) ||
-    contextsUpdated > 0 ||
-    ((p.name === 'codex' || p.name === 'claude-code') && live.error === undefined)
+  const succeeded = toAdd.length > 0 || catalog.listed.length > 0 || contextsUpdated > 0
   if (!succeeded) {
     const errorMsg = live.error === undefined ? 'no upstream catalog available' : live.error
     return { provider: p.name, added: [], error: errorMsg }

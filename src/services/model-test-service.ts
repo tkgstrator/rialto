@@ -24,7 +24,7 @@ import { getPrismaClient } from '../db/client'
 import { type ApiStyle, AuthMode, ModelTestStatus, type PrismaClient } from '../generated/prisma/client'
 import dayjs from '../lib/dayjs'
 import type { ModelTestAllResponseSchema, ModelTestResultSchema } from '../schemas/api/models'
-import { isCodexImageModel } from '../shared/data/subscriptions'
+import { isImageOnlyModel } from '../shared/data/openai-images'
 import { hasUnexpiredAccount } from '../shared/subscription-credential'
 import { effectiveApiStyle } from '../shared/transformer-chain'
 import { probeInference } from './model-test/probes'
@@ -117,7 +117,7 @@ export async function testModel(
 
   // A model test must not send an image-only id to the Responses chat probe.
   // The image path is deliberately opt-in and a probe would spend image quota.
-  if (isCodexImageModel(modelName)) {
+  if (isImageOnlyModel(modelName)) {
     return failResult(providerName, modelName, 'image generation has no automatic model probe', start)
   }
 
@@ -194,7 +194,7 @@ export async function testAllModels(
 
   const results: ModelTestResult[] = []
   for (const m of models) {
-    if (!hasCredentials(m.provider) || isCodexImageModel(m.name)) continue
+    if (!hasCredentials(m.provider) || isImageOnlyModel(m.name)) continue
     results.push(await testModel(m.provider.name, m.name, prisma))
   }
   return {

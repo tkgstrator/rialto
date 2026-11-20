@@ -13,7 +13,8 @@
     "./biome-plugins/no-tri-state-z-array.grit",
     "./biome-plugins/no-new-date.grit",
     "./biome-plugins/no-while-loop.grit",
-    "./biome-plugins/no-let.grit"
+    "./biome-plugins/no-let.grit",
+    "./lint/use-shadcn-select.grit"
   ],
   "assist": {
     "actions": {

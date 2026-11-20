@@ -62,13 +62,13 @@ export function OverviewPhone({ data, now }: { data: OverviewResponse; now: numb
         )}
       </Section>
 
-      <Section title={t('overview.failoverActivity')}>
-        {data.failover.length === 0 ? (
-          <div className='px-4 pb-6 text-xs text-muted-foreground'>{t('overview.noFailover')}</div>
-        ) : (
-          data.failover.map((f) => <FailoverEntry key={`${f.kind}-${f.at}-${f.account}`} row={f} now={now} />)
-        )}
-      </Section>
+      {data.failover.length > 0 ? (
+        <Section title={t('overview.failoverActivity')}>
+          {data.failover.map((f) => (
+            <FailoverEntry key={`${f.kind}-${f.at}-${f.account}`} row={f} now={now} />
+          ))}
+        </Section>
+      ) : null}
 
       <Section title={t('overview.recentSessions')}>
         {data.recentSessions.length === 0 ? (

@@ -10,6 +10,7 @@
  * the same string. No Prisma, no Node built-ins — the browser bundles it.
  */
 
+import { apiKeyProviderBaseName } from './api-key-provider-id'
 import { SUBSCRIPTION_PRESETS, VENDOR_DEFAULTS } from './data'
 
 /**
@@ -44,6 +45,12 @@ const RESERVED_WORDS: readonly string[] = ['custom', 'gemini-cli']
 export const isBuiltInVendorName = (name: string): boolean =>
   Object.hasOwn(VENDOR_DEFAULTS, name) || SUBSCRIPTION_PRESETS.some((preset) => preset.id === name)
 
+// Additional keys use distinct provider IDs while retaining the catalog vendor.
+export function apiKeyVendorName(name: string): string {
+  const vendor = apiKeyProviderBaseName(name)
+  return Object.hasOwn(VENDOR_DEFAULTS, vendor) ? vendor : name
+}
+
 export type CustomNameProblem = 'empty' | 'too_long' | 'charset' | 'reserved'
 
 /**
@@ -61,7 +68,7 @@ export const customNameProblem = (raw: string): CustomNameProblem | null => {
   // `claude-code*` is matched by prefix in the style derivation
   // (`apiStyleForVendor`), so a custom `claude-code-proxy` would silently
   // be treated as a subscription vendor.
-  if (isBuiltInVendorName(lowered) || lowered.startsWith('claude-code')) return 'reserved'
+  if (isBuiltInVendorName(apiKeyVendorName(lowered)) || lowered.startsWith('claude-code')) return 'reserved'
   if (RESERVED_WORDS.includes(lowered) || ROUTE_SEGMENTS.includes(lowered)) return 'reserved'
   return null
 }
@@ -75,7 +82,7 @@ export const customNameProblem = (raw: string): CustomNameProblem | null => {
  * leave it alone for the same reason.
  */
 export const isCustomProvider = (name: string, authMode: 'api_key' | 'subscription'): boolean =>
-  authMode === 'api_key' && !isBuiltInVendorName(name)
+  authMode === 'api_key' && !isBuiltInVendorName(apiKeyVendorName(name))
 
 export type CustomBaseUrl = {
   origin: string

@@ -26,6 +26,7 @@ import {
   providerQuotaPct,
   type QuotaIndex
 } from './derive'
+import { ProviderAccountId } from './ProviderAccountId'
 import type { Provider, SubAccountWire, SubscriptionWire } from './types'
 
 export const STATE_TONE = { off: 'mute', live: 'ok', invalid: 'bad', unknown: 'mute' } as const
@@ -137,6 +138,7 @@ function Row({
       <td className='py-2.5 pl-6 pr-3'>
         <div className='text-xs font-medium'>{entry.label}</div>
         <SubLine entry={entry} />
+        {subscriptionKind ? null : <ProviderAccountId provider={entry.provider} />}
       </td>
       {subscriptionKind ? (
         <>

@@ -17,6 +17,8 @@ const ModelCostSchema = z.object({
 
 const ProviderCostSchema = z.object({
   provider: z.string(),
+  displayName: z.string().nullable().optional(),
+  accountId: z.string().nullable().optional(),
   models: z.array(ModelCostSchema),
   totalCostUsd: z.number().nullable(),
   // True when the provider uses subscription auth (not api_key).
@@ -32,7 +34,8 @@ const UsageCostResponseSchema = z.object({
 })
 
 const UsageCostQuerySchema = z.object({
-  days: z.coerce.number().int().min(0).default(30)
+  days: z.coerce.number().int().min(0).default(30),
+  mode: z.literal('api_key').optional()
 })
 
 export const usageCostRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
@@ -50,13 +53,23 @@ usageCostRoute.openapi(
     }
   }),
   async (c) => {
-    const { days } = c.req.valid('query')
+    const { days, mode } = c.req.valid('query')
     const prisma = getPrismaClient()
     const since = days > 0 ? dayjs().subtract(days, 'day').toDate() : undefined
 
+    const connections = await prisma.provider.findMany({
+      select: { name: true, authMode: true, displayName: true, organizationId: true, projectId: true }
+    })
+    const byName = new Map(connections.map((connection) => [connection.name, connection]))
+    const subscriptions = connections
+      .filter(({ authMode }) => authMode === AuthMode.subscription)
+      .map(({ name }) => name)
     const groups = await prisma.requestLog.groupBy({
       by: ['provider', 'model'],
-      where: since ? { createdAt: { gte: since } } : {},
+      where: {
+        ...(since ? { createdAt: { gte: since } } : {}),
+        ...(mode === 'api_key' ? { subAccountId: null, provider: { notIn: subscriptions } } : {})
+      },
       _sum: {
         inputTokens: true,
         outputTokens: true,
@@ -74,16 +87,19 @@ usageCostRoute.openapi(
     const priceMap = await buildPriceMap(prisma, pairs)
 
     // Build per-provider subscription monthly price map from enabled SubAccounts.
-    const subProviders = await prisma.provider.findMany({
-      where: { authMode: AuthMode.subscription },
-      select: {
-        name: true,
-        subscriptionAccounts: {
-          where: { enabled: true, monthlyPriceUsd: { not: null } },
-          select: { monthlyPriceUsd: true }
-        }
-      }
-    })
+    const subProviders =
+      mode === 'api_key'
+        ? []
+        : await prisma.provider.findMany({
+            where: { authMode: AuthMode.subscription },
+            select: {
+              name: true,
+              subscriptionAccounts: {
+                where: { enabled: true, monthlyPriceUsd: { not: null } },
+                select: { monthlyPriceUsd: true }
+              }
+            }
+          })
     const subMonthlyMap = new Map<string, number | null>()
     for (const p of subProviders) {
       const total = p.subscriptionAccounts.reduce<number | null>((sum, a) => {
@@ -132,7 +148,20 @@ usageCostRoute.openapi(
       })
       const isSubscription = subMonthlyMap.has(provider)
       const subscriptionMonthlyUsd = isSubscription ? (subMonthlyMap.get(provider) ?? null) : null
-      return { provider, models, totalCostUsd: providerTotal, isSubscription, subscriptionMonthlyUsd }
+      const connection = byName.get(provider)
+      return {
+        provider,
+        models,
+        totalCostUsd: providerTotal,
+        isSubscription,
+        subscriptionMonthlyUsd,
+        ...(mode === 'api_key' && connection
+          ? {
+              displayName: connection.displayName,
+              accountId: connection.projectId || connection.organizationId
+            }
+          : {})
+      }
     })
 
     return c.json({ providers, days }, 200)

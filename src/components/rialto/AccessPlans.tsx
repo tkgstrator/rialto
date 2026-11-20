@@ -9,13 +9,12 @@
  * A token is put on a plan when it is issued, or later from its own page.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Trans, useTranslation } from 'react-i18next'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { useConfig } from '@/components/ConfigProvider'
 import { useConfirm } from '@/components/rialto/ConfirmDialog'
 import { Mono, Pill, RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
-import { AccessTabs } from '@/components/rialto/settings/access/AccessTabs'
 import { PlanDialog } from '@/components/rialto/settings/access/PlanDialog'
 import { SectionHead } from '@/components/rialto/settings/fields'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
@@ -296,12 +295,8 @@ export function AccessPlans() {
   const open = (plan: PlanWire) => setEditing({ plan, draft: planDraftOf(plan) })
 
   return (
-    <Screen subtitle={t('access.plans.subtitle')}>
-      <AccessTabs active='plans' />
+    <Screen>
       {phone ? (
-        // No explainer on a phone: the paragraph pushed the first plan
-        // below the fold, and the dialog a row opens says the same thing
-        // where it applies.
         <>
           <div className='flex items-center gap-3 px-4 pt-4 pb-3'>
             {summary === '' ? null : <span className='min-w-0 text-[12px] text-muted-foreground'>{summary}</span>}
@@ -312,15 +307,6 @@ export function AccessPlans() {
       ) : (
         <>
           <SectionHead meta={summary === '' ? undefined : summary} actions={newPlan} />
-          <div className='px-6 pb-4'>
-            <div className='rounded-md border border-dashed border-border px-4 py-3 text-[12px] leading-relaxed text-muted-foreground'>
-              <i className='ri-information-line mr-1 align-[-1px]' />
-              <Trans
-                i18nKey='access.plans.note'
-                components={{ strong: <span className='font-medium text-foreground' /> }}
-              />
-            </div>
-          </div>
           <PlanTable plans={plans} onOpen={open} />
         </>
       )}

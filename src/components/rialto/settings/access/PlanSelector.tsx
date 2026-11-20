@@ -15,12 +15,14 @@
  * refused with 403.
  */
 import { cn } from 'cn'
-import { useId, useState } from 'react'
+import { useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { RButton } from '@/components/rialto/primitives'
 import { PlanEditorBody } from '@/components/rialto/settings/access/PlanEditorBody'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { api, type PlanWire } from '@/lib/api'
 import { emptyPlanDraft, type PlanDraft, planInputOf } from '@/lib/rialto/settings/plans'
@@ -32,6 +34,7 @@ const HINT = 'text-[12px] leading-snug text-muted-foreground'
 export const PLAN_NONE = ''
 
 interface PlanSelectorProps {
+  id?: string
   value: string
   plans: readonly PlanWire[]
   available: readonly string[]
@@ -43,6 +46,7 @@ interface PlanSelectorProps {
   onDismissCreatedNote: () => void
   disabled?: boolean
   showLabel?: boolean
+  showSummary?: boolean
   /** Targets to grey out in the inline new-plan model picker, with a hover hint. */
   disabledTargets?: ReadonlySet<string>
   disabledHint?: string
@@ -71,7 +75,6 @@ function planExtra({
   createdNote,
   draft,
   available,
-  statusId,
   saving,
   duplicate,
   canCreate,
@@ -87,7 +90,6 @@ function planExtra({
   createdNote: string | null
   draft: PlanDraft
   available: readonly string[]
-  statusId: string
   saving: boolean
   duplicate: boolean
   canCreate: boolean
@@ -102,7 +104,6 @@ function planExtra({
       <InlineNewPlanForm
         draft={draft}
         available={available}
-        statusId={statusId}
         saving={saving}
         duplicate={duplicate}
         canCreate={canCreate}
@@ -120,6 +121,7 @@ function planExtra({
 }
 
 export function PlanSelector({
+  id,
   value,
   plans,
   available,
@@ -131,6 +133,7 @@ export function PlanSelector({
   onDismissCreatedNote,
   disabled,
   showLabel = true,
+  showSummary = true,
   disabledTargets,
   disabledHint
 }: PlanSelectorProps) {
@@ -138,7 +141,6 @@ export function PlanSelector({
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState<PlanDraft>(emptyPlanDraft())
   const [saving, setSaving] = useState(false)
-  const statusId = useId()
 
   const selected = plans.find((plan) => plan.id === value)
 
@@ -186,12 +188,19 @@ export function PlanSelector({
   // the outer SettingsField already carries them.
   return (
     <div>
-      {showLabel ? <div className={cn('mb-1', LABEL)}>{t('access.token.plan')}</div> : null}
+      {showLabel ? (
+        <Label htmlFor={id} className='mb-1 text-xs'>
+          {t('access.token.plan')}
+        </Label>
+      ) : null}
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverAnchor asChild>
           <div className='relative'>
-            <button
+            <Button
+              variant='outline'
+              size='sm'
               type='button'
+              id={id}
               aria-label={t('access.token.plan')}
               aria-haspopup='listbox'
               aria-expanded={open}
@@ -203,7 +212,7 @@ export function PlanSelector({
               )}
             >
               {triggerLabelOf(value, plans, creating, t)}
-            </button>
+            </Button>
             <i
               aria-hidden
               className='ri-arrow-down-s-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground'
@@ -218,25 +227,25 @@ export function PlanSelector({
           <PlanListbox value={value} plans={plans} creating={creating} onPick={pick} onStartCreate={startCreate} />
         </PopoverContent>
       </Popover>
-      {showLabel ? <p className={cn('mt-1', HINT)}>{t('access.token.planFormHint')}</p> : null}
 
-      {planExtra({
-        value,
-        selected,
-        creating,
-        createdNote,
-        draft,
-        available,
-        statusId,
-        saving,
-        duplicate,
-        canCreate,
-        disabledTargets,
-        disabledHint,
-        onDraftChange: setDraft,
-        onCreate: createPlan,
-        onCancel: cancelCreate
-      })}
+      {creating || showSummary
+        ? planExtra({
+            value,
+            selected,
+            creating,
+            createdNote,
+            draft,
+            available,
+            saving,
+            duplicate,
+            canCreate,
+            disabledTargets,
+            disabledHint,
+            onDraftChange: setDraft,
+            onCreate: createPlan,
+            onCancel: cancelCreate
+          })
+        : null}
     </div>
   )
 }
@@ -448,7 +457,6 @@ export function NoPlanNote() {
 function InlineNewPlanForm({
   draft,
   available,
-  statusId,
   saving,
   duplicate,
   canCreate,
@@ -460,7 +468,6 @@ function InlineNewPlanForm({
 }: {
   draft: PlanDraft
   available: readonly string[]
-  statusId: string
   saving: boolean
   duplicate: boolean
   canCreate: boolean
@@ -475,26 +482,22 @@ function InlineNewPlanForm({
     <div className='mt-3 space-y-3 border-l-2 border-foreground/40 pl-3'>
       <div className='flex items-baseline gap-2'>
         <span className='text-xs font-medium'>{t('access.token.newPlanLabel')}</span>
-        <span className={HINT}>{t('access.token.newPlanSharedNote')}</span>
       </div>
 
       <PlanEditorBody
         draft={draft}
         available={available}
-        statusId={statusId}
         autoFocusName
         disabledTargets={disabledTargets}
         disabledHint={disabledHint}
         onChange={onChange}
       />
 
-      <p className={cn('mt-1', HINT)}>{t('access.token.newPlanLimitsHint')}</p>
-
       <div className='flex items-center gap-2'>
         <span className={cn('min-w-0 flex-1 text-destructive', HINT)} aria-live='polite'>
           {duplicate ? t('access.token.newPlanDuplicate', { name: draft.name.trim() }) : ''}
         </span>
-        <RButton variant='ghost' onClick={onCancel} disabled={saving}>
+        <RButton variant='outline' onClick={onCancel} disabled={saving}>
           {t('common.cancel')}
         </RButton>
         <RButton variant='outline' icon='ri-check-line' onClick={onCreate} disabled={!canCreate}>

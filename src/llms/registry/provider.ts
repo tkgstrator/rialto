@@ -21,6 +21,7 @@ import type { TransformerRegistry } from './transformer'
  *  Transformer[], a subtype of unknown[]), so the pipeline can pass
  *  these straight into transformer hooks. */
 export type ResolvedProvider = Omit<RuntimeProvider, 'transformer'> & {
+  authMode: ProviderConfigShape['auth_mode']
   transformer?: ResolvedProviderTransformer
 }
 
@@ -95,6 +96,7 @@ export class ProviderRegistry {
   private resolve(config: ProviderConfigShape, chain: string[]): ResolvedProvider {
     const resolved: ResolvedProvider = {
       name: config.name,
+      authMode: config.auth_mode,
       api_base_url: config.api_base_url,
       api_key: config.api_key,
       // ProviderConfigShape.models has a Zod .default([]) so a missing

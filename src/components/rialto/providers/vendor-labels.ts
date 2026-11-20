@@ -9,7 +9,7 @@
  * the order, so this table records a design decision rather than inventing
  * one. Vendors the mocks do not name fall back to the catalog's own values.
  */
-import type { CatalogEntry } from './types'
+import type { CatalogEntry, Provider } from './types'
 
 /**
  * Rail order. Subscription seats lead: they are the differentiated thing
@@ -89,6 +89,15 @@ const catalogLabel = (name: string, displayName: string): string => (displayName
 export function vendorLabel(name: string, displayName: string): string {
   const named = VENDOR_LABEL[name]
   return named === undefined ? catalogLabel(name, displayName) : named
+}
+
+export function providerLabel(provider: Pick<Provider, 'name' | 'display_name'>, entry?: CatalogEntry): string {
+  const displayName = provider.display_name
+  if (entry?.name === 'openai' && (displayName === 'openai' || /^openai · [a-f0-9]{6}$/.test(displayName || ''))) {
+    return vendorLabel('openai', 'openai')
+  }
+  if (displayName != null) return displayName
+  return entry === undefined ? provider.name : vendorLabel(entry.name, entry.displayName)
 }
 
 export function vendorBrand(name: string, vendor: string): string {

@@ -30,11 +30,10 @@ import {
   rangeHours,
   statusOptions
 } from '@/components/rialto/activity/requests-rows'
-import { FilterSelect, NoteBox, ScreenMessage, StatTile } from '@/components/rialto/activity/shared'
+import { FilterSelect, ScreenMessage, StatTile } from '@/components/rialto/activity/shared'
 import { useActivityCounts } from '@/components/rialto/activity/use-activity-counts'
 import { useSurfaces } from '@/components/rialto/activity/use-surfaces'
 import { Pager } from '@/components/rialto/Pager'
-import { RButton } from '@/components/rialto/primitives'
 import { Screen } from '@/components/rialto/Screen'
 import { usePhone } from '@/hooks/use-phone'
 import { api } from '@/lib/api'
@@ -110,7 +109,6 @@ function FilterBar({
   filters,
   onFilters,
   onRange,
-  live,
   phone
 }: {
   rows: Row[]
@@ -118,7 +116,6 @@ function FilterBar({
   filters: Filters
   onFilters: (update: (prev: Filters) => Filters) => void
   onRange: (next: Filters['range']) => void
-  live: boolean
   phone: boolean
 }) {
   const { t } = useTranslation()
@@ -155,13 +152,6 @@ function FilterBar({
         options={RANGES.map((r) => ({ id: r.id, label: t(r.labelKey) }))}
         onChange={onRange}
       />
-      <div className='ml-auto flex items-center gap-2'>
-        {live ? (
-          <span className='flex items-center gap-1.5 text-[12px] text-muted-foreground'>
-            <span className='size-1.5 animate-pulse rounded-full bg-emerald-500' /> {t('activity.requests.live')}
-          </span>
-        ) : null}
-      </div>
     </div>
   )
 }
@@ -205,19 +195,6 @@ function RequestsBody({
   return phone ? <RequestsPhoneList rows={rows} /> : <RequestsTable rows={rows} columns={columns} />
 }
 
-function RequestsNote() {
-  return (
-    <div className='px-6 py-4'>
-      <NoteBox>
-        <Trans
-          i18nKey='activity.requests.note'
-          components={{ mono: <span className='font-mono' />, strong: <span className='font-medium' /> }}
-        />
-      </NoteBox>
-    </div>
-  )
-}
-
 const EMPTY_STATS: RequestLogStats = { total: 0, ok: 0, rateLimited: 0, failed: 0, p50: null, p95: null }
 
 export function ActivityRequests() {
@@ -226,9 +203,6 @@ export function ActivityRequests() {
   const [stats, setStats] = useState<RequestLogStats | null>(null)
   const [pageIndex, setPageIndex] = useState(0)
   const [error, setError] = useState<string | null>(null)
-  // The mock ships this screen tailing: a request log that does not move
-  // while requests are being served is the wrong default.
-  const [live, setLive] = useState(true)
   const [hidden, setHidden] = useState<Set<ColumnId>>(new Set())
   const [filters, setFilters] = useState<Filters>({
     surface: 'all',
@@ -283,7 +257,6 @@ export function ActivityRequests() {
   useEffect(load, [load])
 
   useEffect(() => {
-    if (!live) return
     // No credential in the URL. The `apikey` query parameter existed
     // because EventSource cannot set headers, back when the browser held
     // a key it had typed into the login form. That form is gone (Phase
@@ -307,7 +280,7 @@ export function ActivityRequests() {
       if (throttle.current !== null) clearTimeout(throttle.current)
       throttle.current = null
     }
-  }, [live, load])
+  }, [load])
 
   const rows = useMemo<Row[]>(() => {
     if (page === null) return []
@@ -333,27 +306,9 @@ export function ActivityRequests() {
 
   const range = RANGES.find((r) => r.id === filters.range)
   const rangeLabel = range === undefined ? '' : t(range.labelKey)
-  // One scope, named: the window, nothing else. This used to read "279
-  // requests · 1 failovers · newest 200" — an all-time total, a failover
-  // count taken from the filtered rows, and the page cap, three different
-  // populations with nothing saying so. Both the total and the failover
-  // count live in their own stat tiles just below, so the subtitle only
-  // has to answer "what window am I looking at".
-  const subtitle = rangeLabel === '' ? undefined : rangeLabel.toLowerCase()
 
   return (
-    <Screen
-      subtitle={subtitle}
-      actions={
-        <>
-          <RButton variant='outline' icon='ri-broadcast-line' aria-pressed={live} onClick={() => setLive((v) => !v)}>
-            {t('activity.requests.liveTail')}
-          </RButton>
-          {/* No column picker on a phone: its list has no columns to pick. */}
-          {phone ? null : <ColumnMenu hidden={hidden} onChange={setHidden} />}
-        </>
-      }
-    >
+    <Screen actions={phone ? undefined : <ColumnMenu hidden={hidden} onChange={setHidden} />}>
       <FilterBar
         rows={rows}
         surfacePaths={surfaces.surfaces.map((s) => s.path)}
@@ -366,7 +321,6 @@ export function ActivityRequests() {
           setPageIndex(0)
           setFilters((f) => ({ ...f, range: next }))
         }}
-        live={live}
         phone={phone}
       />
 
@@ -402,7 +356,6 @@ export function ActivityRequests() {
 
       {/* A paragraph on how 429 rows relate to failover is reading for a
           desk; on a phone it was a screen of text under the list. */}
-      {phone ? null : <RequestsNote />}
       <div className='h-6' />
     </Screen>
   )

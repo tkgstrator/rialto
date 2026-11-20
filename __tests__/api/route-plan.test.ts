@@ -28,9 +28,15 @@ import { TokenizerRegistry } from '../../src/llms/registry/tokenizer'
 import { TransformerRegistry } from '../../src/llms/registry/transformer'
 import { AnthropicTransformer } from '../../src/llms/transformers/anthropic'
 import { GeminiTransformer } from '../../src/llms/transformers/gemini'
-import { OpenAIResponsesTransformer, OpenAITransformer } from '../../src/llms/transformers/openai'
+import {
+  CodexOauthTransformer,
+  OpenAIResponsesTransformer,
+  OpenAITransformer
+} from '../../src/llms/transformers/openai'
 import type { TokenPlan } from '../../src/services/access-token-service'
 import { __setSurfacesForTests, invalidateSurfaceCache } from '../../src/services/inbound-surface-service'
+
+import { DEFAULT_TOKEN_POLICY, type TokenPolicy } from '../../src/shared/access-token-policy'
 
 const log = pino({ level: 'silent' })
 
@@ -53,16 +59,36 @@ const PROVIDERS = [
   }
 ]
 
-async function buildContext(): Promise<LlmsContext> {
+const TEST_PROVIDERS = [
+  {
+    name: 'openai',
+    auth_mode: 'api_key',
+    api_style: 'openai_chat',
+    api_key: 'test',
+    api_base_url: 'https://api.openai.com/v1/chat/completions',
+    models: ['shared']
+  },
+  {
+    name: 'codex',
+    auth_mode: 'subscription',
+    api_style: 'openai_responses',
+    api_key: 'test',
+    api_base_url: 'https://chatgpt.com/backend-api/codex',
+    models: ['shared']
+  }
+] satisfies Parameters<ProviderRegistry['registerFromConfig']>[0]
+
+async function buildContext(extraProviders: typeof TEST_PROVIDERS = []): Promise<LlmsContext> {
   const transformers = new TransformerRegistry(log)
   transformers.registerMany([
     new AnthropicTransformer(),
     new OpenAITransformer(),
     new OpenAIResponsesTransformer(),
-    new GeminiTransformer()
+    new GeminiTransformer(),
+    new CodexOauthTransformer()
   ])
   const providers = new ProviderRegistry(transformers, log)
-  providers.registerFromConfig(PROVIDERS)
+  providers.registerFromConfig([...PROVIDERS, ...extraProviders])
   const tokenizers = new TokenizerRegistry(log)
   await tokenizers.initialize()
   const config = new ConfigStore({ Providers: PROVIDERS, providers: PROVIDERS })
@@ -74,9 +100,15 @@ async function buildContext(): Promise<LlmsContext> {
 async function plan(
   path: string,
   body: Record<string, unknown>,
-  inbound: { headers?: Record<string, string>; tokenId?: string; plan?: TokenPlan } = {}
+  inbound: {
+    headers?: Record<string, string>
+    tokenId?: string
+    plan?: TokenPlan
+    policy?: TokenPolicy
+    sharedProviders?: boolean
+  } = {}
 ): Promise<RoutePlan | Response> {
-  const ctx = await buildContext()
+  const ctx = await buildContext(inbound.sharedProviders ? TEST_PROVIDERS : [])
   const app = new Hono()
   const captured: { value: RoutePlan | Response | null } = { value: null }
   app.post('/*', async (c) => {
@@ -87,6 +119,7 @@ async function plan(
         id: inbound.tokenId,
         name: 'test',
         surfaces: [],
+        policy: inbound.policy,
         plan: inbound.plan === undefined ? null : inbound.plan
       })
     captured.value = await buildRoutePlan(c, ctx)
@@ -372,4 +405,53 @@ describe('a token on a plan', () => {
     const result = asPlan(await plan('/v1/messages', { model: OPUS, messages: prompt }, { tokenId: 'tok-open' }))
     expect(result.primaryModel).toBe(OPUS)
   })
+})
+
+test('a token selects the billing method and must opt into cross-method fallback', async () => {
+  const body = { model: 'shared', messages: [] }
+  const scoped = { tokenId: 'test', sharedProviders: true }
+  const strict = { ...DEFAULT_TOKEN_POLICY, providerMode: 'subscription_first' as const }
+  const subscription = asPlan(await plan('/v1/chat/completions', body, { ...scoped, policy: strict }))
+  expect(subscription.primaryModel).toBe('codex,shared')
+  expect(subscription.fallbacks).toEqual([])
+  const fallback = asPlan(
+    await plan('/v1/chat/completions', body, {
+      ...scoped,
+      policy: { ...strict, providerFallback: true }
+    })
+  )
+  expect(fallback.fallbacks).toEqual(['openai,shared'])
+  const api = { ...DEFAULT_TOKEN_POLICY, providerMode: 'api_key_only' as const }
+  expect(asPlan(await plan('/v1/chat/completions', body, { ...scoped, policy: api })).primaryModel).toBe(
+    'openai,shared'
+  )
+  expect(
+    asResponse(await plan('/v1/chat/completions', { ...body, model: 'codex,shared' }, { ...scoped, policy: api }))
+      .status
+  ).toBe(403)
+  expect(
+    asResponse(
+      await plan('/v1/chat/completions', body, {
+        ...scoped,
+        policy: { ...api, restrictModels: true, allowedModels: [] }
+      })
+    ).status
+  ).toBe(403)
+  expect(
+    asResponse(
+      await plan('/v1/chat/completions', body, {
+        ...scoped,
+        policy: api,
+        plan: { models: ['codex,shared'], defaultModel: 'codex,shared', limits: LIMITS }
+      })
+    ).status
+  ).toBe(400)
+  __setSurfacesForTests({ 'openai-chat': ['codex,shared'] })
+  const allowedFallback = asPlan(
+    await plan('/v1/chat/completions', body, {
+      ...scoped,
+      policy: { ...strict, providerFallback: true }
+    })
+  )
+  expect(allowedFallback.primaryModel).toBe('openai,shared')
 })

@@ -1,6 +1,8 @@
 import { createRoute, OpenAPIHono } from '@hono/zod-openapi'
+import { VENDOR_DEFAULTS } from '@/shared/data'
 import { ProviderListResponseSchema, ProviderUpsertResponseSchema } from '../../schemas/api/providers'
 import { ProviderSchema } from '../../schemas/domain/provider'
+import { discoverAnthropicApiKeyModels } from '../../services/anthropic-api-key-models'
 import { getProviders, upsertProvider } from '../../services/config'
 import { republishRoutingSnapshot } from '../../services/routing-scheduler'
 import { ValidationErrorResponseSchema, validationErrorHook } from '../zod-response'
@@ -55,4 +57,33 @@ providersRoute.openapi(createProviderRoute, async (c) => {
     },
     201
   )
+})
+
+const addApiKeyRoute = createRoute({
+  method: 'post',
+  path: '/api/providers/api-keys',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: ProviderSchema.refine(
+            (data) =>
+              Object.hasOwn(VENDOR_DEFAULTS, data.name) && data.auth_mode === 'api_key' && !!data.api_key?.trim(),
+            'A catalog vendor and API key are required'
+          )
+        }
+      },
+      required: true
+    }
+  },
+  responses: createProviderRoute.responses
+})
+
+providersRoute.openapi(addApiKeyRoute, async (c) => {
+  const data = c.req.valid('json')
+  const discovered = data.name === 'anthropic' ? await discoverAnthropicApiKeyModels(data) : { provider: data }
+  const { provider, warnings } = await upsertProvider(discovered.provider, true)
+  if (discovered.warning !== undefined) warnings.push(discovered.warning)
+  await republishRoutingSnapshot()
+  return c.json({ success: true as const, provider, ...(warnings.length > 0 ? { warnings } : {}) }, 201)
 })

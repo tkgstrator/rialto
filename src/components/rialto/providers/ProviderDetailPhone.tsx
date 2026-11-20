@@ -135,13 +135,7 @@ export function ProviderDetailPhone(props: ProviderDetailProps) {
           onReauthenticated={props.onReauthenticated}
         />
       ) : (
-        <CredentialsPanel
-          key={provider.name}
-          provider={provider}
-          label={props.label}
-          editing={false}
-          onReplace={props.onReplaceKey}
-        />
+        <CredentialsPanel key={provider.name} provider={provider} editing={false} onReplace={props.onReplaceKey} />
       )}
       <div className='border-t border-border'>
         <div className='flex items-baseline gap-3 px-4 pt-5 pb-3'>

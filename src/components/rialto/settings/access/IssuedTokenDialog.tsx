@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { useConfirm } from '@/components/rialto/ConfirmDialog'
 import { Pill, RButton } from '@/components/rialto/primitives'
+import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { splitConfirmMessage } from '@/lib/rialto/confirm-message'
 
@@ -103,14 +104,19 @@ export function IssuedTokenDialog({
             <p className='text-[12px] leading-relaxed text-muted-foreground'>{t(bodyKey)}</p>
             <div className='flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2'>
               <span className='min-w-0 flex-1 break-all font-mono text-xs leading-relaxed'>{plaintext}</span>
-              <button
+              <Button
+                variant='outline'
+                size='icon-sm'
                 type='button'
                 aria-label={t('settings.access.issuedCopyLabel')}
                 onClick={copy}
                 className='shrink-0 text-muted-foreground transition-colors hover:text-foreground'
               >
-                <i className={copied ? 'ri-check-line text-sm text-emerald-500' : 'ri-file-copy-line text-sm'} />
-              </button>
+                <i
+                  aria-hidden
+                  className={copied ? 'ri-check-line text-sm text-emerald-500' : 'ri-file-copy-line text-sm'}
+                />
+              </Button>
             </div>
             <div className='space-y-2'>
               {[
