@@ -45,7 +45,7 @@ type VendorModelsResponse = z.infer<typeof VendorModelsResponseSchema>
  * describe are simply absent — the caller only writes what a vendor
  * confirmed.
  */
-const extractContextWindows = (data: VendorModelsResponse): Map<string, number> => {
+export const extractContextWindows = (data: VendorModelsResponse): Map<string, number> => {
   const out = new Map<string, number>()
   for (const m of data.data === undefined ? [] : data.data) {
     if (typeof m.id !== 'string' || m.id.length === 0) continue

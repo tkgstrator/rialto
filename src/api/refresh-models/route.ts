@@ -1,6 +1,6 @@
-import { createRoute, OpenAPIHono } from '@hono/zod-openapi'
+import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { RefreshModelsResponseSchema } from '../../schemas/api/models'
-import { refreshModelsForAllProviders } from '../../services/model-sync-service'
+import { refreshCustomProviderModels, refreshModelsForAllProviders } from '../../services/model-sync-service'
 import { validationErrorHook } from '../zod-response'
 
 export const refreshModelsRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
@@ -8,6 +8,7 @@ export const refreshModelsRoute = new OpenAPIHono({ defaultHook: validationError
 const route = createRoute({
   method: 'post',
   path: '/api/refresh-models',
+  request: { query: z.object({ provider: z.string().nonempty().optional() }) },
   responses: {
     200: {
       description: 'Outcome per provider after the upstream model sweep',
@@ -16,6 +17,8 @@ const route = createRoute({
   }
 })
 refreshModelsRoute.openapi(route, async (c) => {
-  const outcomes = await refreshModelsForAllProviders()
+  const { provider } = c.req.valid('query')
+  const outcomes =
+    provider === undefined ? await refreshModelsForAllProviders() : [await refreshCustomProviderModels(provider)]
   return c.json({ outcomes }, 200)
 })

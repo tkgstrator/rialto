@@ -1,7 +1,7 @@
 /**
  * A Custom provider end to end through the services: created from a typed
  * Base URL, its model list looked up once or typed by hand, its wire format
- * kept across later saves, and left alone by the catalog jobs.
+ * kept across later saves, and reconciled on Refresh.
  *
  * Nothing here reaches the network. The creation path takes the fetch it
  * should use; the jobs under test are run with the global fetch replaced by
@@ -10,6 +10,7 @@
  */
 
 import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { refreshModelsRoute } from '../../src/api/refresh-models/route'
 import { getPrismaClient } from '../../src/db/client'
 import { ApiStyle } from '../../src/generated/prisma/client'
 import { getLlmsContext, resetLlmsContext } from '../../src/llms'
@@ -39,9 +40,7 @@ const down: typeof fetch = async () => new Response('nope', { status: 503 })
 const rowsOf = async (name: string) =>
   getPrismaClient().model.findMany({ where: { provider: { name } }, orderBy: { name: 'asc' } })
 
-// Replace the global fetch for a job that is meant not to use it, and
-// report what it was asked. A spy rather than an assignment: the global's
-// type carries more than a call signature.
+// Record catalog requests without reaching the network.
 type Request = { url: string; headers: Headers }
 const requests: Request[] = []
 const stubs: Array<{ mockRestore: () => void }> = []
@@ -254,20 +253,54 @@ describe.skipIf(!HAS_DB)('a custom provider after it exists', () => {
     }
   })
 
-  test('the model sync reports it as skipped, asks nobody, and leaves its rows alone', async () => {
+  test('scoped refresh reconciles the full listing and retains settings for surviving models', async () => {
+    await createCustomProvider(
+      input({ base_url: 'http://localhost:1234/team/v1', api_style: 'anthropic' }),
+      listing('kept', 'removed')
+    )
+    await save('lm-studio', ['kept', 'removed'], { enabled: true, transformer: { _disabledModels: [] } })
+    await createCustomProvider(input({ name: 'other' }), listing('untouched'))
+    const [kept] = await rowsOf('lm-studio')
+    const pages = [
+      { data: [{ id: 'kept', max_input_tokens: 32768 }], has_more: true, last_id: 'kept' },
+      { data: [{ id: 'added' }], has_more: false }
+    ]
+    stubFetch(() => Response.json(pages.shift()))
+
+    const response = await refreshModelsRoute.request('/api/refresh-models?provider=lm-studio', { method: 'POST' })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ outcomes: [{ provider: 'lm-studio', added: ['added'] }] })
+    const rows = await rowsOf('lm-studio')
+    expect(rows.map(({ name, enabled, contextWindow }) => ({ name, enabled, contextWindow }))).toEqual([
+      { name: 'added', enabled: false, contextWindow: null },
+      { name: 'kept', enabled: true, contextWindow: 32768 }
+    ])
+    expect(rows[1].id).toBe(kept.id)
+    expect((await rowsOf('other')).map(({ name }) => name)).toEqual(['untouched'])
+    expect(requests.map(({ url }) => url)).toEqual([
+      'http://localhost:1234/team/v1/models',
+      'http://localhost:1234/team/v1/models?after_id=kept'
+    ])
+    expect(requests[0].headers.get('x-api-key')).toBe('lm-studio')
+  })
+
+  test('a failed or malformed listing leaves the stored models intact', async () => {
     await createCustomProvider(input(), listing('qwen3', 'gpt-4o'))
     const before = await rowsOf('lm-studio')
-    stubFetch(() => new Response('should not be asked', { status: 500 }))
-
-    const outcomes = await refreshModelsForAllProviders()
-
-    expect(outcomes).toHaveLength(1)
-    expect(outcomes[0].provider).toBe('lm-studio')
-    expect(outcomes[0].skipped).toContain('custom provider')
-    expect(outcomes[0].error).toBeUndefined()
-    expect(outcomes[0].added).toEqual([])
-    expect(requests).toEqual([])
+    stubFetch(() => Response.json({ data: [{}] }))
+    expect((await refreshModelsForAllProviders())[0].error).toContain('unrecognised response shape')
     expect(await rowsOf('lm-studio')).toEqual(before)
+    restoreFetch()
+    stubFetch(() => new Response('unavailable', { status: 503 }))
+    expect((await refreshModelsForAllProviders())[0].error).toContain('HTTP 503')
+    expect(await rowsOf('lm-studio')).toEqual(before)
+  })
+
+  test('a successful empty listing removes all custom models', async () => {
+    await createCustomProvider(input(), listing('qwen3'))
+    stubFetch(() => Response.json({ data: [] }))
+    expect(await refreshModelsForAllProviders()).toEqual([{ provider: 'lm-studio', added: [] }])
+    expect(await rowsOf('lm-studio')).toEqual([])
   })
 
   test('the committed price list is not applied to it, so its prices stay unknown', async () => {
@@ -282,7 +315,7 @@ describe.skipIf(!HAS_DB)('a custom provider after it exists', () => {
     ])
   })
 
-  test('a catalog vendor beside it is still priced from that list, so the skip is scoped to custom', async () => {
+  test('a catalog vendor beside it is still priced from that list, without pricing custom models', async () => {
     await createCustomProvider(input(), listing('gpt-4o'))
     await upsertProvider({
       name: 'openai',
@@ -296,14 +329,13 @@ describe.skipIf(!HAS_DB)('a custom provider after it exists', () => {
 
     const outcomes = await refreshModelsForAllProviders()
 
-    expect(outcomes.find((o) => o.provider === 'lm-studio')?.skipped).toContain('custom provider')
+    expect(outcomes.find((o) => o.provider === 'lm-studio')?.error).toContain('HTTP 503')
     expect(outcomes.find((o) => o.provider === 'openai')?.skipped).toBeUndefined()
     const [custom] = await rowsOf('lm-studio')
     const [catalog] = await rowsOf('openai')
     expect(custom.inputPer1M).toBeNull()
     expect(catalog.inputPer1M).not.toBeNull()
-    // Every address asked was a vendor's, never the custom provider's.
-    expect(requests.some((r) => r.url.startsWith('http://localhost:1234'))).toBe(false)
+    expect(requests.some((r) => r.url === 'http://localhost:1234/v1/models')).toBe(true)
   })
 
   test('the provider test is the models lookup: reachable with a good key passes', async () => {
