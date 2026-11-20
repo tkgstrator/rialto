@@ -6,9 +6,11 @@
  * the browser client, and the full-config round trip is the sanctioned
  * path for a delete.
  */
+import type { z } from 'zod'
 import { api } from '@/lib/api'
 import type { ResetCreditsResponse, UseResetResponse } from '@/lib/api-types'
 import { setModelDisabled } from '@/lib/providers/provider-edits'
+import type { RefreshModelsResponseSchema } from '@/schemas/api/models'
 import type { SubscriptionRefreshResponse } from '@/schemas/api/subscriptions'
 import type { SavePlan } from './provider-draft'
 import type { ModelTestResponse, Provider, ReasoningEffort } from './types'
@@ -118,8 +120,16 @@ export async function testModels(providerName: string, models: string[]): Promis
  * second is what makes the first show up: they are one round trip.
  */
 export async function refreshCatalog(): Promise<void> {
-  await api.post('/catalog/refresh', {})
-  await api.post('/refresh-models', {})
+  const [catalog, models] = await Promise.allSettled([
+    api.post('/catalog/refresh', {}),
+    api.post<z.infer<typeof RefreshModelsResponseSchema>>('/refresh-models', {})
+  ])
+  if (models.status === 'rejected') throw models.reason
+  const failures = models.value.outcomes.flatMap(({ provider, error }) =>
+    error === undefined ? [] : [`${provider}: ${error}`]
+  )
+  if (failures.length > 0) throw new Error(failures.join(' · '))
+  if (catalog.status === 'rejected') throw catalog.reason
 }
 
 /**

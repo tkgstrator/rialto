@@ -15,6 +15,7 @@
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { RButton } from '@/components/rialto/primitives'
+import { SelectPicker } from '@/components/rialto/SelectPicker'
 import { usePhone } from '@/hooks/use-phone'
 import { fmtBytes } from '@/lib/rialto/settings/envelope'
 
@@ -50,21 +51,12 @@ export const CUTOFF_DAYS = [7, 30, 90, 365] as const
 function CutoffSelect({ value, onChange, label }: { value: number; onChange: (days: number) => void; label: string }) {
   const { t } = useTranslation()
   return (
-    <div className='relative inline-flex'>
-      <select
-        value={value}
-        aria-label={t('settings.logging.pruneOlderThanLabel', { store: label })}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className='inline-flex h-8 appearance-none items-center rounded-md border border-border bg-transparent pl-2.5 pr-7 text-xs transition-colors hover:bg-muted/60'
-      >
-        {CUTOFF_DAYS.map((d) => (
-          <option key={d} value={d}>
-            {t('settings.logging.days', { n: d })}
-          </option>
-        ))}
-      </select>
-      <i className='ri-arrow-down-s-line pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground' />
-    </div>
+    <SelectPicker
+      label={t('settings.logging.pruneOlderThanLabel', { store: label })}
+      value={String(value)}
+      onChange={(next) => onChange(Number(next))}
+      options={CUTOFF_DAYS.map((days) => ({ value: String(days), label: t('settings.logging.days', { n: days }) }))}
+    />
   )
 }
 

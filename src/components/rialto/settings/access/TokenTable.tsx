@@ -1,10 +1,10 @@
 import { useMemo } from 'react'
-import { Trans, useTranslation } from 'react-i18next'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { scopePaths } from '@/components/rialto/activity/use-surfaces'
 import { Pill, SurfaceScope } from '@/components/rialto/primitives'
-import { WarnNotice } from '@/components/rialto/settings/notice'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
+import { Button } from '@/components/ui/button'
 import type { InboundSurfaceWire } from '@/lib/api'
 import { fmtAgo, fmtCount } from '@/lib/rialto/format'
 import {
@@ -42,10 +42,7 @@ function Row({ row, now, onOpen }: { row: TokenRow; now: number; onOpen: () => v
   const { token, state, surfacePaths } = row
   const dead = state !== 'active'
   return (
-    <tr
-      className={`cursor-pointer border-t border-border/60 transition-colors hover:bg-muted/50 ${dead ? 'opacity-60' : ''}`}
-      onClick={onOpen}
-    >
+    <tr className={`border-t border-border/60 ${dead ? 'opacity-60' : ''}`}>
       <td className='py-2.5 pl-6 pr-3'>
         <div className='flex items-center gap-2'>
           <span className='text-xs font-medium'>{token.name}</span>
@@ -68,10 +65,16 @@ function Row({ row, now, onOpen }: { row: TokenRow; now: number; onOpen: () => v
       <td className='px-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground'>
         {token.expiresAt === null ? t('settings.access.never') : token.expiresAt.slice(0, 10)}
       </td>
-      <td className='py-2.5 pl-3 pr-6'>
-        <div className='flex justify-end text-muted-foreground/50'>
-          <i className='ri-arrow-right-s-line text-base' />
-        </div>
+      <td className='py-2.5 pr-6 text-right'>
+        <Button
+          type='button'
+          variant='outline'
+          size='icon-sm'
+          aria-label={t('settings.access.openToken', { name: token.name })}
+          onClick={onOpen}
+        >
+          <i aria-hidden className='ri-arrow-right-s-line text-base' />
+        </Button>
       </td>
     </tr>
   )
@@ -98,15 +101,7 @@ export function TokenTable({
     [tokens, surfaces, now]
   )
   const sort = useTableSort<TokenRow, TokenSortKey>(rows, tokenSortValue)
-  if (tokens.length === 0) {
-    return (
-      <div className='px-6 pb-6'>
-        <WarnNotice title={t('settings.access.noTokensTitle')} tag={t('settings.access.noTokensTag')}>
-          <Trans i18nKey='settings.access.noTokensBody' components={{ mono: <span className='font-mono' /> }} />
-        </WarnNotice>
-      </div>
-    )
-  }
+  if (tokens.length === 0) return null
   return (
     <table className='w-full table-fixed'>
       <colgroup>
@@ -118,7 +113,7 @@ export function TokenTable({
         <col className='w-20' />
         <col className='w-28' />
         <col className='w-24' />
-        <col className='w-10' />
+        <col className='w-14' />
       </colgroup>
       <thead>
         <tr className='text-[12px] uppercase tracking-wider text-muted-foreground/70 [&>th]:h-9 [&>th]:whitespace-nowrap [&>th]:align-bottom [&>th]:pb-2'>

@@ -24,10 +24,9 @@
 import { Hono } from 'hono'
 import '../context'
 import { getPrismaClient } from '../../db/client'
-import { getEnabledModels } from '../../services/config'
 import { buildPriceMap, CACHE_WRITE_1H, CACHE_WRITE_5M, type PriceEntry } from '../../services/cost-service'
-import { resolvePreferredProvider } from '../../services/model-provider-preference'
-import { publicModelId, qualifiedModelId } from '../../shared/public-model-id'
+import { tokenModelChoices } from '../../services/token-model-catalog'
+import { publicModelId } from '../../shared/public-model-id'
 
 export const v1ModelsRoute = new Hono()
 
@@ -46,25 +45,9 @@ function pricingOf(price: PriceEntry | undefined) {
 }
 
 v1ModelsRoute.get('/v1/models', async (c) => {
-  const [chatModels, imageModels] = await Promise.all([getEnabledModels(), getEnabledModels(undefined, 'image')])
-  // A token on a plan sees only the models its plan allows: listing one it
-  // cannot spend would invite a request the plan then refuses (403).
-  const plan = c.get('accessToken')?.plan
-  const eligible = [...chatModels, ...imageModels].filter(
-    (m) => plan === null || plan === undefined || plan.models.includes(qualifiedModelId(m))
-  )
-  const names = [...new Set(eligible.map((m) => m.model))]
-  const selected = await Promise.all(
-    names.map(async (name) => {
-      const candidates = eligible.filter((m) => m.model === name)
-      const resolution = await resolvePreferredProvider(
-        name,
-        candidates.map((m) => m.provider)
-      )
-      return resolution.status === 'preferred' ? candidates.find((m) => m.provider === resolution.provider) : undefined
-    })
-  )
-  const models = selected.filter((m): m is (typeof eligible)[number] => m !== undefined)
+  const token = c.get('accessToken')
+  const choices = await tokenModelChoices(token === undefined ? {} : token)
+  const models = choices.flatMap(({ model, chosen }) => (chosen === null ? [] : [{ model, provider: chosen }]))
   // OpenAI uses seconds-since-epoch for `created`; the value carries no
   // real meaning here (there is no per-model creation time in Rialto), so
   // stamp the response time uniformly. SDKs that render "last modified"

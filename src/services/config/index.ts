@@ -15,6 +15,7 @@ export {
   getProviders,
   setModelEnabled,
   setModelReasoningEffort,
+  updateProviderConnection,
   upsertProvider
 } from './crud'
 export { getEnabledModels } from './enabled-models'

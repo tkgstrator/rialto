@@ -101,10 +101,7 @@ export function ProviderModelsSection({
 }) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
-  // "Enabled only": what a provider actually serves is the question
-  // this table is opened with. The priced slice is one click
-  // away for the times the question is what else could be switched on.
-  const [show, setShow] = useState<ShowMode>('enabled')
+  const [show, setShow] = useState<ShowMode>('all')
   const [page, setPage] = useState(0)
   // Subscription side only. The api_key side reveals legacy rows through
   // its Show control; this side has none, and hiding a row with no way

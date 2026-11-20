@@ -15,13 +15,15 @@
  * (`/api/usage`, `/api/usage/history`), and the per-model weekly windows
  * — the limit that actually stops a Fable request — were visible nowhere.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
+import { ApiKeyUsage } from '@/components/rialto/activity/ApiKeyUsage'
 import {
   fetchSubscriptions,
   fetchUsage,
+  fetchUsageCost,
   fetchUsageHistory,
   type UsageCostResponse
 } from '@/components/rialto/activity/data'
@@ -74,6 +76,7 @@ function SectionHead({ title, meta, action }: { title: string; meta?: string; ac
 
 /** All three panels' fetches. Kept out of the screen so it stays a layout. */
 function useUsageData(days: number) {
+  const [apiKeyUsage, setApiKeyUsage] = useState<UsageCostResponse | null>(null)
   const [usage, setUsage] = useState<UsageWire | null>(null)
   const [accountUsage, setAccountUsage] = useState<AccountUsageIndex>(new Map())
   const [subscriptions, setSubscriptions] = useState<SubscriptionWire[]>([])
@@ -84,10 +87,13 @@ function useUsageData(days: number) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
+  const generation = useRef(0)
   const load = useCallback(() => {
+    const request = ++generation.current
     setLoading(true)
 
     Promise.all([
+      fetchUsageCost(days, 'api_key'),
       fetchUsage(),
       fetchUsageHistory(days),
       api.getAccessTokens(),
@@ -101,7 +107,9 @@ function useUsageData(days: number) {
       // not their windows.
       api.getOverview({ windowHours: 24 }).catch(() => null)
     ])
-      .then(([usageRes, historyRes, tokenRes, surfaceRes, subscriptionRes, overviewRes]) => {
+      .then(([keyUsage, usageRes, historyRes, tokenRes, surfaceRes, subscriptionRes, overviewRes]) => {
+        if (request !== generation.current) return
+        setApiKeyUsage(keyUsage)
         setUsage(usageRes)
         setAccountUsage(indexAccountUsage(overviewRes === null ? [] : overviewRes.quota))
         setSubscriptions(subscriptionRes.subscriptions)
@@ -111,13 +119,29 @@ function useUsageData(days: number) {
         setSurfaces(surfaceRes.surfaces)
         setError(null)
       })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false))
+      .catch((e: Error) => {
+        if (request === generation.current) setError(e.message)
+      })
+      .finally(() => {
+        if (request === generation.current) setLoading(false)
+      })
   }, [days])
 
   useEffect(load, [load])
 
-  return { usage, accountUsage, subscriptions, samples, tokens, revokedTokens, surfaces, error, loading, reload: load }
+  return {
+    apiKeyUsage,
+    usage,
+    accountUsage,
+    subscriptions,
+    samples,
+    tokens,
+    revokedTokens,
+    surfaces,
+    error,
+    loading,
+    reload: load
+  }
 }
 
 export function ActivityUsage() {
@@ -126,8 +150,19 @@ export function ActivityUsage() {
   const _counts = useActivityCounts()
   const [days, setDays] = useState<number>(DEFAULT_RANGE_DAYS)
   const phone = usePhone()
-  const { usage, accountUsage, subscriptions, samples, tokens, revokedTokens, surfaces, error, loading, reload } =
-    useUsageData(days)
+  const {
+    apiKeyUsage,
+    usage,
+    accountUsage,
+    subscriptions,
+    samples,
+    tokens,
+    revokedTokens,
+    surfaces,
+    error,
+    loading,
+    reload
+  } = useUsageData(days)
   // One clock for the whole render, so two rows cannot disagree about how
   // long until the same reset.
   const [now, setNow] = useState(() => Date.now())
@@ -141,7 +176,6 @@ export function ActivityUsage() {
     () => (usage === null ? [] : providerWindows(usage, subscriptions, t)),
     [usage, subscriptions, t]
   )
-  const accountTotal = groups.reduce((sum, group) => sum + group.accounts.length, 0)
   const series = useMemo(() => seriesOf(samples, t), [samples, t])
   const points = useMemo(() => bucketSamples(samples, CHART_BUCKETS), [samples])
   const rows = useMemo(() => tokenUsageRows(tokens, revokedTokens), [tokens, revokedTokens])
@@ -153,7 +187,6 @@ export function ActivityUsage() {
 
   return (
     <Screen
-      subtitle={t('activity.usage.subtitle', { accounts: accountTotal, days })}
       actions={
         <RButton variant='outline' icon='ri-refresh-line' onClick={refresh} disabled={loading}>
           {t('activity.usage.refresh')}
@@ -173,6 +206,9 @@ export function ActivityUsage() {
 
       {error !== null ? <ScreenMessage tone='bad'>{error}</ScreenMessage> : null}
 
+      <SectionHead title={t('activity.usage.apiKeyTitle')} meta={t('activity.usage.chartMeta', { days })} />
+      <ApiKeyUsage result={apiKeyUsage?.days === days ? apiKeyUsage : null} loading={loading} />
+
       <SectionHead title={t('activity.usage.windowsTitle')} />
       {groups.length === 0 ? (
         <ScreenMessage>{loading ? t('common.loading') : t('activity.usage.noAccounts')}</ScreenMessage>
@@ -188,9 +224,10 @@ export function ActivityUsage() {
         </div>
       )}
 
-      {/* No Export CSV: the chart is read here, and the screens hand out
-          no files. */}
-      <SectionHead title={t('activity.usage.chartTitle')} meta={t('activity.usage.chartMeta', { days })} />
+      <div className='flex items-baseline gap-3 px-4 pt-4 pb-2 md:px-6'>
+        <h3 className='text-xs font-medium'>{t('activity.usage.chartTitle')}</h3>
+        <span className='text-xs text-muted-foreground/70'>{t('activity.usage.chartMeta', { days })}</span>
+      </div>
       {points.length === 0 ? (
         <ScreenMessage>{loading ? t('common.loading') : t('activity.usage.noHistory')}</ScreenMessage>
       ) : (

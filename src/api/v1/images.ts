@@ -10,14 +10,20 @@ import { logger } from '../../logger'
 import type { TokenPlan } from '../../services/access-token-service'
 import { ensureFreshCodexAccessToken } from '../../services/codex-auth/token'
 import { clearAccountExhaustion, markAccountExhausted } from '../../services/failover-state'
-import { passthroughDenial } from '../../services/inbound-surface-service'
-import { resolvePreferredProvider } from '../../services/model-provider-preference'
+import { passthroughDenial, resolveSurfaceForPath } from '../../services/inbound-surface-service'
 import { decidePlanModel } from '../../services/plan-model'
 import { releaseAccountForSession, resolveAccountForSession } from '../../services/session-account-router'
 import { getSubAccountTokensForProvider } from '../../services/subscription-account-sync-service'
+import { orderTokenProviders, tokenAllowsTarget } from '../../services/token-model-routing'
 import { recordCallSpend } from '../../services/usage-window-service'
+import { allowsProviderMode, allowsTokenModel, type TokenPolicy } from '../../shared/access-token-policy'
 import type { CODEX_MCP_SCOPE } from '../../shared/codex-mcp'
-import { CODEX_IMAGE_MODELS } from '../../shared/data/subscriptions'
+import {
+  isImageOnlyModel,
+  isOpenAIImageModel,
+  OPENAI_IMAGE_ENDPOINT,
+  supportsImageModel
+} from '../../shared/data/openai-images'
 import { buildErrorEnvelope } from './error-shape'
 import '../context'
 
@@ -49,6 +55,7 @@ export interface ImageCaller {
   accessTokenId: string
   surface: 'openai-images' | typeof CODEX_MCP_SCOPE
   plan?: TokenPlan | null
+  policy?: TokenPolicy
 }
 
 type ImageFailure = { ok: false; status: number; message: unknown; via?: string; retryAfter?: string }
@@ -73,48 +80,58 @@ const fail = (c: Context, status: number, message: unknown, via?: string): Respo
   })
 }
 
-/** Keep native image IDs public; choose the subscription inside Rialto. */
-export async function resolveImageTarget(model: string, plan?: TokenPlan | null) {
+async function resolveImageTargets(model: string, caller: ImageCaller) {
   const comma = model.indexOf(',')
-  const name = comma < 0 ? model : model.slice(comma + 1)
-  if (!CODEX_IMAGE_MODELS.includes(name)) return null
+  const name = model.slice(comma + 1)
   const rows = await getPrismaClient().model.findMany({
     where: {
       name,
       enabled: true,
-      provider: {
-        enabled: true,
-        authMode: AuthMode.subscription,
-        apiBaseUrl: 'https://chatgpt.com/backend-api/codex',
-        ...(comma < 0 ? {} : { name: model.slice(0, comma) })
-      }
+      provider: { enabled: true, ...(comma < 0 ? {} : { name: model.slice(0, comma) }) }
     },
-    select: { provider: { select: { name: true, apiBaseUrl: true } } }
+    select: { provider: { select: { name: true, apiBaseUrl: true, apiKey: true, authMode: true } } }
   })
-  const pools = await Promise.all(
-    rows.map(async (row) => ({
-      provider: row.provider.name,
-      tokens: await getSubAccountTokensForProvider(row.provider.name)
-    }))
-  )
-  const usable = new Set(
-    pools.filter((pool) => pool.tokens !== null && pool.tokens.codex.length > 0).map((pool) => pool.provider)
-  )
-  const allowed =
-    plan === null || plan === undefined
-      ? undefined
-      : plan.models.flatMap((entry) => {
-          const index = entry.indexOf(',')
-          return index > 0 && entry.slice(index + 1) === name ? [entry.slice(0, index)] : []
+  const candidates = rows
+    .map((row) => row.provider)
+    .filter(
+      (provider) =>
+        supportsImageModel(provider, name) &&
+        (caller.surface !== 'codex-mcp' || provider.authMode === AuthMode.subscription) &&
+        tokenAllowsTarget(caller.plan, caller.policy, {
+          provider: provider.name,
+          model: name,
+          authMode: provider.authMode
         })
-  const selected = await resolvePreferredProvider(
+    )
+  const available = (
+    await Promise.all(
+      candidates.map(async (provider) => {
+        if (provider.authMode === AuthMode.api_key) return provider.apiKey?.trim() ? provider : null
+        const pool = await getSubAccountTokensForProvider(provider.name)
+        return pool !== null && pool.codex.length > 0 ? provider : null
+      })
+    )
+  ).filter((provider) => provider !== null)
+  const surface = await resolveSurfaceForPath(IMAGE_PATH)
+  const allowed = available.filter((provider) => !surface?.deniedTargets.includes(`${provider.name},${name}`))
+  const order = await orderTokenProviders(
     name,
-    rows.filter((row) => usable.has(row.provider.name)).map((row) => row.provider.name),
-    allowed
+    allowed.map((provider) => ({ provider: provider.name, authMode: provider.authMode })),
+    caller.plan,
+    caller.policy
   )
-  const provider =
-    selected.status === 'preferred' ? rows.find((row) => row.provider.name === selected.provider)?.provider : undefined
-  return provider === undefined ? null : { provider, model: name }
+  const targets =
+    order.status === 'preferred'
+      ? order.providers.flatMap((id) => {
+          const provider = allowed.find((row) => row.name === id)
+          return provider === undefined ? [] : [{ provider, model: name }]
+        })
+      : []
+  const denial =
+    allowed.length === 0 && available.length > 0
+      ? await passthroughDenial(IMAGE_PATH, `${available[0].name},${name}`)
+      : undefined
+  return { targets, denial }
 }
 
 async function readImageInput(c: Context): Promise<ImageInput | null> {
@@ -144,18 +161,6 @@ async function readImageInput(c: Context): Promise<ImageInput | null> {
   }
 }
 
-function imageUrl(base: string): string | null {
-  try {
-    const url = new URL(base)
-    if (url.protocol !== 'https:' || url.hostname !== 'chatgpt.com' || url.pathname !== '/backend-api/codex')
-      return null
-    if (url.search || url.hash || url.username || url.password || url.port) return null
-    return `${url.origin}${url.pathname}/images/generations`
-  } catch {
-    return null
-  }
-}
-
 function usageOf(payload: Record<string, unknown>): { input: number; output: number } {
   const usage = payload.usage
   if (usage === null || typeof usage !== 'object') return { input: 0, output: 0 }
@@ -172,7 +177,7 @@ async function recordImageUsage(input: {
   provider: string
   model: string
   requestedModel: string
-  subAccountId: string
+  subAccountId: string | null
   caller: ImageCaller
   durationMs: number
   usage: { input: number; output: number }
@@ -231,7 +236,7 @@ function isImagePayload(raw: unknown): raw is Record<string, unknown> {
   )
 }
 
-type ImageTarget = NonNullable<Awaited<ReturnType<typeof resolveImageTarget>>>
+type ImageTarget = Awaited<ReturnType<typeof resolveImageTargets>>['targets'][number]
 type ImageAccount = NonNullable<Awaited<ReturnType<typeof resolveAccountForSession>>>
 
 const imageRequest = (body: ImageInput, model: string): Record<string, unknown> => ({
@@ -270,7 +275,7 @@ async function imageResult(
   upstream: Response,
   target: ImageTarget,
   body: ImageInput,
-  account: ImageAccount,
+  account: ImageAccount | null,
   caller: ImageCaller,
   sessionId: string,
   started: number
@@ -293,7 +298,7 @@ async function imageResult(
   const payload: unknown = await upstream.json().catch(() => null)
   if (!isImagePayload(payload))
     return failure(502, 'Upstream returned an invalid image response.', target.provider.name)
-  clearAccountExhaustion(account.subAccountId)
+  if (account !== null) clearAccountExhaustion(account.subAccountId)
   // Awaited but never thrown: a failed log write must not cost the caller
   // an image already generated (and charged) upstream.
   await recordImageUsage({
@@ -301,7 +306,7 @@ async function imageResult(
     provider: target.provider.name,
     model: target.model,
     requestedModel: body.model,
-    subAccountId: account.subAccountId,
+    subAccountId: account === null ? null : account.subAccountId,
     caller,
     durationMs: Date.now() - started,
     usage: usageOf(payload)
@@ -349,8 +354,23 @@ async function dispatchImage(
   return failure(429, 'All Codex subscription accounts are rate limited.', target.provider.name)
 }
 
+async function dispatchOpenAIImage(body: ImageInput, target: ImageTarget, caller: ImageCaller): Promise<ImageOutcome> {
+  const key = target.provider.apiKey?.trim()
+  if (!key) return failure(503, 'No OpenAI API key configured.', target.provider.name)
+  const started = Date.now()
+  try {
+    const upstream = await fetchProvider(OPENAI_IMAGE_ENDPOINT, imageRequest(body, target.model), {
+      headers: { authorization: `Bearer ${key}`, accept: 'application/json' },
+      httpsProxy: process.env.PROXY_URL
+    })
+    return await imageResult(upstream, target, body, null, caller, randomUUID(), started)
+  } catch {
+    return failure(502, 'OpenAI image upstream is unavailable.', target.provider.name)
+  }
+}
+
 /**
- * Generate one image on a Codex subscription, rotating accounts on 429.
+ * Generate one image through OpenAI API credentials or a Codex subscription.
  *
  * The HTTP handler below and the Codex MCP server's `generate_image` tool
  * both come through here, so the target resolution, the passthrough
@@ -362,13 +382,28 @@ export async function generateImage(body: ImageInput, caller: ImageCaller): Prom
   // the body schema, so a plan never falls back to its default here.
   const decision = decidePlanModel(caller.plan, body.model)
   if (decision.kind === 'denied') return failure(403, decision.message)
-  const target = await resolveImageTarget(body.model, caller.plan)
-  if (target === null) return failure(400, 'Image model is unavailable, disabled, or ambiguous.')
-  const denied = await passthroughDenial(IMAGE_PATH, `${target.provider.name},${target.model}`)
-  if (denied !== undefined) return failure(403, denied)
-  const url = imageUrl(target.provider.apiBaseUrl)
-  if (url === null) return failure(400, 'Codex image endpoint is not configured.')
-  return dispatchImage(body, target, url, caller)
+  const model = body.model.slice(body.model.indexOf(',') + 1)
+  if (!allowsTokenModel(caller.policy, model)) return failure(403, 'Image model is not allowed for this token.')
+  if (!isImageOnlyModel(model)) return failure(400, 'Image model is unavailable, disabled, or ambiguous.')
+  if (!allowsProviderMode(caller.policy, isOpenAIImageModel(model) ? 'api_key' : 'subscription'))
+    return failure(403, 'Image provider is not allowed for this token.')
+  const { targets, denial } = await resolveImageTargets(body.model, caller)
+  if (denial !== undefined) return failure(403, denial)
+  if (targets.length === 0) return failure(400, 'Image model is unavailable, disabled, or ambiguous.')
+
+  const fallback = caller.policy?.providerMode.endsWith('_first') && caller.policy.providerFallback
+  const result: { last: ImageOutcome } = { last: failure(503, 'No image provider is available.') }
+  for (const target of targets) {
+    const outcome =
+      target.provider.authMode === AuthMode.api_key
+        ? await dispatchOpenAIImage(body, target, caller)
+        : await dispatchImage(body, target, `${target.provider.apiBaseUrl}/images/generations`, caller)
+    if (outcome.ok || (outcome.status !== 429 && outcome.status !== 503)) return outcome
+    // Preserve the existing image behavior unless the operator enabled provider fallback.
+    if (!fallback) return outcome
+    result.last = outcome
+  }
+  return result.last
 }
 
 export async function handleImageGeneration(c: Context): Promise<Response> {
@@ -376,7 +411,12 @@ export async function handleImageGeneration(c: Context): Promise<Response> {
   if (body === null)
     return fail(c, 400, 'Invalid image request (JSON, model, prompt, and supported image options required).')
   const token = c.get('accessToken')
-  const outcome = await generateImage(body, { accessTokenId: token.id, surface: 'openai-images', plan: token.plan })
+  const outcome = await generateImage(body, {
+    accessTokenId: token.id,
+    surface: 'openai-images',
+    plan: token.plan,
+    policy: token.policy
+  })
   if (outcome.ok) return c.json(outcome.payload)
   // Set before `fail`, which carries the context's headers onto its response.
   if (outcome.retryAfter !== undefined) c.header('retry-after', outcome.retryAfter)

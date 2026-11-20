@@ -4,6 +4,7 @@ import { HTTPException } from 'hono/http-exception'
 import { ZodError } from 'zod'
 import { accessCheckRoute } from './api/access-check/route'
 import { accessLog } from './api/access-log'
+import { tokenFoldersRoute } from './api/access-tokens/folders'
 import { accessTokensRoute } from './api/access-tokens/route'
 import { adminAuth, inboundProxyAuth } from './api/api-key-auth'
 import { catalogRoute } from './api/catalog/route'
@@ -23,6 +24,7 @@ import { plansRoute } from './api/plans/route'
 import { providerModelRoute } from './api/providers/[name]/models/[model]/route'
 import { providerByNameRoute } from './api/providers/[name]/route'
 import { customProviderRoute } from './api/providers/custom/route'
+import { providerPrioritiesRoute } from './api/providers/priorities'
 import { providersRoute } from './api/providers/route'
 import { providersTestRoute } from './api/providers/test/route'
 import { refreshModelsRoute } from './api/refresh-models/route'
@@ -191,6 +193,7 @@ app.route('/', providerModelRoute)
 app.route('/', providersTestRoute)
 app.route('/', modelsRoute)
 app.route('/', modelProviderPrioritiesRoute)
+app.route('/', providerPrioritiesRoute)
 app.route('/', modelTestRoute)
 app.route('/', modelTestAllRoute)
 app.route('/', scrapePricesRoute)
@@ -199,6 +202,7 @@ app.route('/', overviewRoute)
 app.route('/', inboundSurfacesRoute)
 app.route('/', identityRoute)
 app.route('/', accessTokensRoute)
+app.route('/', tokenFoldersRoute)
 app.route('/', plansRoute)
 app.route('/', accessCheckRoute)
 app.route('/', storageRoute)

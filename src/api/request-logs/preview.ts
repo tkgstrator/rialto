@@ -29,6 +29,10 @@ function extractPreview(content: unknown): string | null {
     .join('\n')
     .trim()
   if (text.length === 0) return null
+  return truncatePreview(text)
+}
+
+function truncatePreview(text: string): string {
   return text.length > PREVIEW_MAX_CHARS ? `${text.slice(0, PREVIEW_MAX_CHARS).trimEnd()}…` : text
 }
 
@@ -46,6 +50,15 @@ export async function loadPreviews(sessionIds: string[]): Promise<Map<string, st
   const previews = new Map<string, string | null>()
   if (sessionIds.length === 0) return previews
   const prisma = getPrismaClient()
+  const sessions = await prisma.session.findMany({
+    where: { id: { in: sessionIds }, firstUserInput: { not: null } },
+    select: { id: true, firstUserInput: true }
+  })
+  for (const { id, firstUserInput } of sessions) {
+    if (firstUserInput !== null) previews.set(id, truncatePreview(firstUserInput))
+  }
+  const historical = sessionIds.filter((id) => !previews.has(id))
+  if (historical.length === 0) return previews
   // ROW_NUMBER window function caps the fetch at PREVIEW_SCAN_LIMIT user
   // messages per session inside Postgres — Prisma has no per-group LIMIT.
   const rows = await prisma.$queryRaw<Array<{ sessionId: string; content: unknown }>>`
@@ -53,7 +66,7 @@ export async function loadPreviews(sessionIds: string[]): Promise<Map<string, st
       SELECT "sessionId", content,
         ROW_NUMBER() OVER (PARTITION BY "sessionId" ORDER BY "createdAt" ASC) AS rn
       FROM "Message"
-      WHERE "sessionId" = ANY(${sessionIds}) AND role = 'user'
+      WHERE "sessionId" = ANY(${historical}) AND role = 'user'
     ) t
     WHERE rn <= ${PREVIEW_SCAN_LIMIT}
     ORDER BY "sessionId", rn`

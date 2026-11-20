@@ -8,6 +8,11 @@ import type { Provider } from '@/schemas/domain/provider'
 import { isCustomProvider } from '@/shared/custom-provider'
 import { isDeprecatedModel } from '@/shared/data'
 import {
+  isOfficialOpenAIApiProvider,
+  isOpenAIImageModel,
+  OPENAI_IMAGE_GENERATION_PRICE
+} from '@/shared/data/openai-images'
+import {
   type ApiStyle,
   AuthMode,
   type Model as DbModel,
@@ -45,6 +50,7 @@ export async function reconcileModelRows(
   incoming: Provider
 ): Promise<void> {
   const desired = new Set(incoming.models)
+  const officialOpenAI = isOfficialOpenAIApiProvider(provider)
   const existingNames = new Set(provider.models.map((m) => m.name))
   // The deprecation registry and the codex-family override describe the
   // vendors in the catalog. A custom endpoint serves whatever its operator
@@ -66,6 +72,7 @@ export async function reconcileModelRows(
       data: toCreate.map((name) => ({
         providerId: provider.id,
         name,
+        ...(officialOpenAI && isOpenAIImageModel(name) ? OPENAI_IMAGE_GENERATION_PRICE : {}),
         deprecated: !custom && isDeprecatedModel(name),
         apiStyle: modelApiStyleOverride(name, custom)
       }))

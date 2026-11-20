@@ -1,8 +1,7 @@
 /**
  * GET /api/storage, POST /api/storage/prune.
  *
- * RequestLog and Message grow with every request and nothing bounds
- * them; before this the only way to learn that was to run out of disk.
+ * Report and prune request metadata, stored input, and other log data.
  */
 
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'

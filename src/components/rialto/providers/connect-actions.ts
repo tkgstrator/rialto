@@ -11,6 +11,7 @@ import type { TFunction } from 'i18next'
 import { api } from '@/lib/api'
 import type { CodexDevicePollResponse, CodexDeviceStartResponse } from '@/schemas/api/oauth'
 import type { CustomProviderCreateResponse } from '@/schemas/api/providers'
+import { isOpenAIImageModel } from '@/shared/data/openai-images'
 import type { OAuthKind } from './ConnectAuthStep'
 import type { CustomDraft } from './custom-form'
 import type { CatalogEntry, OAuthInitiateResponse, OAuthSubmitResponse, Provider } from './types'
@@ -52,13 +53,15 @@ export function providerFromCatalog(entry: CatalogEntry): Provider {
       ...(offered.length > 0 ? { transformer: { _disabledModels: offered } } : {})
     }
   }
+  const disabled = entry.vendor === 'openai' ? offered.filter(isOpenAIImageModel) : []
   return {
     name: entry.name,
     api_base_url: entry.apiBaseUrl,
     api_key: null,
     auth_mode: entry.authMode,
     enabled: false,
-    models: offered
+    models: offered,
+    ...(disabled.length > 0 ? { transformer: { _disabledModels: disabled } } : {})
   }
 }
 
@@ -135,9 +138,17 @@ export async function importCredentials(
   if (!res.success) throw new Error(res.error === undefined ? t('providers.connect.errorCredentials') : res.error)
 }
 
-/** Seed the row and its key in one upsert, then switch the provider on. */
-export async function saveNewApiKey(entry: CatalogEntry, apiKey: string): Promise<void> {
-  await api.post('/providers', { ...providerFromCatalog(entry), api_key: apiKey.trim(), enabled: true })
+/** Add the key as its own provider connection. */
+export async function saveNewApiKey(
+  entry: CatalogEntry,
+  apiKey: string
+): Promise<{ provider: Provider; warnings?: string[] }> {
+  return api.post<{ provider: Provider; warnings?: string[] }>('/providers/api-keys', {
+    ...providerFromCatalog(entry),
+    display_name: entry.displayName,
+    api_key: apiKey.trim(),
+    enabled: true
+  })
 }
 
 /** Finish the flow: the provider has a credential, so it may take traffic. */

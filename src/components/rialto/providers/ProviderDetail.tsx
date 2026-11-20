@@ -214,7 +214,6 @@ export function ProviderDetail(props: ProviderDetailProps) {
           <CredentialsPanel
             key={provider.name}
             provider={provider}
-            label={props.label}
             editing={props.editing}
             onReplace={props.onReplaceKey}
           />

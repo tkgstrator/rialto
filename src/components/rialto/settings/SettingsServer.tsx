@@ -240,7 +240,6 @@ function ServerFields({ draft, onChange }: { draft: ServerDraft; onChange: (next
 
 export function SettingsServer() {
   const { t } = useTranslation()
-  const version = useAppVersion()
   const [wire, setWire] = useState<EnvelopeWire | null>(null)
   const [draft, setDraft] = useState<ServerDraft | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -293,12 +292,11 @@ export function SettingsServer() {
   return (
     <SettingsLayout
       active='server'
-      subtitle={t('settings.server.subtitle', { version })}
       headerNote={t('settings.server.headerNote')}
       actions={
         <>
           <RButton
-            variant='ghost'
+            variant='outline'
             onClick={() => (wire === null ? undefined : setDraft(toDraft(wire)))}
             disabled={!dirty}
           >

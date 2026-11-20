@@ -36,6 +36,10 @@ export type ProviderTransformer = z.infer<typeof ProviderTransformerSchema>
 export const ProviderSchema = z
   .object({
     name: z.string().nonempty(),
+    display_name: z.string().trim().nonempty().max(120).nullable().optional(),
+    organization_id: z.string().nonempty().optional(),
+    workspace_id: z.string().nonempty().optional(),
+    project_id: z.string().nonempty().optional(),
     enabled: z.boolean().default(true),
     api_base_url: z.url(),
     // null when the key is unset (fresh seed / cleared). A present

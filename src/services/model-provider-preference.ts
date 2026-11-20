@@ -1,5 +1,6 @@
 import { getPrismaClient } from '../db/client'
 import type { PrismaClient } from '../generated/prisma/client'
+import { compareProviderPriority, providerPriorityGroup } from '../shared/provider-priority'
 
 export interface ModelProviderPriority {
   model: string
@@ -122,9 +123,20 @@ export async function preferredProviderOrder(
   )
   if (eligible.size === 0) return { status: 'unavailable' }
   if (eligible.size === 1) return { status: 'preferred', providers: [...eligible] }
+  const db = prisma === undefined ? getPrismaClient() : prisma
+  const group = providerPriorityGroup([...eligible][0])
+  if (group !== undefined && [...eligible].every((name) => providerPriorityGroup(name) === group)) {
+    const providers = await db.provider.findMany({
+      where: { name: { in: [...eligible] } },
+      select: { name: true, routingPriority: true }
+    })
+    if (providers.length === eligible.size) {
+      return { status: 'preferred', providers: providers.sort(compareProviderPriority).map(({ name }) => name) }
+    }
+  }
   // Only collisions need stored preferences. Acquiring the client earlier
   // makes an unambiguous registry lookup unnecessarily depend on Postgres.
-  const preferred = (await readPreferences(prisma === undefined ? getPrismaClient() : prisma, modelName))
+  const preferred = (await readPreferences(db, modelName))
     .filter((row) => eligible.has(row.providerName))
     .map((row) => row.providerName)
   return preferred.length === 0 ? { status: 'ambiguous' } : { status: 'preferred', providers: preferred }

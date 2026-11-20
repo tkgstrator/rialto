@@ -18,7 +18,10 @@ export const ProviderTestResponseSchema = z
   .object({
     success: z.boolean(),
     latencyMs: z.number().int().nonnegative().optional(),
-    error: z.string().nonempty().optional()
+    error: z.string().nonempty().optional(),
+    organizationId: z.string().nonempty().optional(),
+    workspaceId: z.string().nonempty().optional(),
+    projectId: z.string().nonempty().optional()
   })
   .openapi('ProviderTestResponse')
 

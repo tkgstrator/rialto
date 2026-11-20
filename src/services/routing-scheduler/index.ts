@@ -27,7 +27,7 @@
  */
 
 import { z } from 'zod'
-import { isCodexImageModel } from '@/shared/data/subscriptions'
+import { isImageOnlyModel } from '@/shared/data/openai-images'
 import { planCapacityWeight } from '@/shared/plan-capacity'
 import { getPrismaClient } from '../../db/client'
 import type { PrismaClient, SubAccount, SubAccountQuota } from '../../generated/prisma/client'
@@ -129,7 +129,7 @@ async function loadCandidateState(prisma: PrismaClient): Promise<LoadedState> {
     accountViews.push(...accounts.map(viewOf))
     if (!p.enabled) continue
     for (const m of p.models) {
-      if (isCodexImageModel(m.name)) continue
+      if (isImageOnlyModel(m.name)) continue
       const target = `${p.name},${m.name}`
       candidates.set(target, { target, providerName: p.name, modelName: m.name, accounts })
     }

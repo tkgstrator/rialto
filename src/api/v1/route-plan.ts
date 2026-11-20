@@ -25,9 +25,10 @@ import { type ClassifierSignals, classifierSignals } from '../../llms/pipeline/c
 import { sessionIdFromRequest } from '../../llms/pipeline/session-id'
 import { archiveRequest, requestArchiveEnabled } from '../../llms/request-archive'
 import type { TokenPlan } from '../../services/access-token-service'
-import { passthroughDenial } from '../../services/inbound-surface-service'
-import { preferredProviderOrder } from '../../services/model-provider-preference'
+import { passthroughDenial, resolveSurfaceForPath } from '../../services/inbound-surface-service'
 import { decidePlanModel } from '../../services/plan-model'
+import { orderTokenProviders, tokenAllowsTarget } from '../../services/token-model-routing'
+import { allowsTokenModel, type TokenPolicy } from '../../shared/access-token-policy'
 import { isVersionUpdate, newestFirst } from '../../shared/model-version'
 import { qualifiedModelId } from '../../shared/public-model-id'
 import { buildErrorEnvelope, errorShapeForPath } from './error-shape'
@@ -173,17 +174,29 @@ function resolveBareHosts(model: string, ctx: LlmsContext): { model: string; hos
 // priority resolves it here, restricted to the providers the plan lists.
 // When no host carries the exact id, the version-update branch resolves
 // it to the newest enabled release in the same family.
-async function bareModelProviders(model: string, ctx: LlmsContext, plan: TokenPlan | null | undefined) {
+async function bareModelProviders(
+  model: string,
+  ctx: LlmsContext,
+  path: string,
+  plan: TokenPlan | null | undefined,
+  policy: TokenPolicy | undefined
+) {
   const resolved = resolveBareHosts(model, ctx)
-  const allowed =
-    plan === null || plan === undefined
-      ? undefined
-      : plan.models.flatMap((entry) => {
-          const comma = entry.indexOf(',')
-          return comma > 0 && entry.slice(comma + 1) === resolved.model ? [entry.slice(0, comma)] : []
-        })
-  const order = await preferredProviderOrder(resolved.model, resolved.hosts, allowed)
-  return { order, model: resolved.model }
+  const candidates = resolved.hosts.flatMap((provider) => {
+    const authMode = ctx.providers.get(provider)?.authMode
+    return authMode === undefined ? [] : [{ provider, authMode }]
+  })
+  const surface = await resolveSurfaceForPath(path)
+  const eligible = candidates.filter((target) => tokenAllowsTarget(plan, policy, { ...target, model: resolved.model }))
+  const available = eligible.filter(
+    ({ provider }) => !surface?.deniedTargets.includes(qualifiedModelId({ provider, model: resolved.model }))
+  )
+  const order = await orderTokenProviders(resolved.model, available, plan, policy)
+  const denial =
+    available.length === 0 && eligible.length > 0
+      ? await passthroughDenial(path, qualifiedModelId({ provider: eligible[0].provider, model: resolved.model }))
+      : undefined
+  return { order, model: resolved.model, denial }
 }
 
 export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Response | RoutePlan> {
@@ -246,7 +259,26 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
     diagnosticLog(403, 'plan_model_denied')
     return c.json(buildErrorEnvelope({ shape, status: 403, from: decision.message }), 403)
   }
-  if (decision.kind === 'allowed' || decision.kind === 'default') body.model = decision.model
+  const policy = token?.policy
+  const explicitProviderMode = policy !== undefined && policy.providerMode !== 'system'
+  if (decision.kind === 'default') {
+    body.model = explicitProviderMode ? decision.model.slice(decision.model.indexOf(',') + 1) : decision.model
+  }
+  if (decision.kind === 'allowed')
+    body.model = explicitProviderMode && requestedModel !== undefined ? requestedModel : decision.model
+
+  const named = typeof body.model === 'string' ? body.model : ''
+  const comma = named.indexOf(',')
+  const modelName = named.slice(comma + 1)
+  const providerName = named.slice(0, comma)
+  const authMode = comma < 0 ? undefined : ctx.providers.get(providerName)?.authMode
+  if (
+    (named !== '' && !allowsTokenModel(token?.policy, modelName)) ||
+    (authMode !== undefined &&
+      !tokenAllowsTarget(token?.plan, token?.policy, { provider: providerName, model: modelName, authMode }))
+  ) {
+    return c.json(buildErrorEnvelope({ shape, status: 403, from: 'Model target is not allowed for this token.' }), 403)
+  }
 
   // Before routeRequest strips the subagent tag in place.
   const archivedBody = requestArchiveEnabled() ? structuredClone(body) : undefined
@@ -283,7 +315,11 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   // claude-opus-5-5) when no host carries the literal name.
   const bareModel = typeof body.model === 'string' && !body.model.includes(',') ? body.model : undefined
   if (bareModel !== undefined && bareModel.length > 0) {
-    const { order, model: resolvedModel } = await bareModelProviders(bareModel, ctx, token?.plan)
+    const { order, model: resolvedModel, denial } = await bareModelProviders(bareModel, ctx, path, token?.plan, policy)
+    if (denial !== undefined) {
+      diagnosticLog(400, 'passthrough_denial')
+      return c.json(buildErrorEnvelope({ shape, status: 400, from: denial }), 400)
+    }
     if (order.status === 'ambiguous') {
       diagnosticLog(400, 'model_provider_ambiguous')
       return c.json(
@@ -294,6 +330,9 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
         }),
         400
       )
+    }
+    if (order.status === 'unavailable' && (policy?.restrictModels || explicitProviderMode)) {
+      return c.json(buildErrorEnvelope({ shape, status: 400, from: 'No eligible provider for this model.' }), 400)
     }
     if (order.status === 'preferred') {
       if (resolvedModel !== bareModel) {

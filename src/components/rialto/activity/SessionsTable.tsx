@@ -13,6 +13,7 @@ import { effortSortValue } from '@/components/rialto/activity/effort'
 import type { Enriched } from '@/components/rialto/activity/sessions-derive'
 import { DASH, SurfaceCell } from '@/components/rialto/activity/shared'
 import { SortTh, type SortValue, useTableSort } from '@/components/rialto/table-sort'
+import { Button } from '@/components/ui/button'
 import type { SessionSummary } from '@/lib/api'
 import { shortId } from '@/lib/rialto/format'
 import { fmtCost, fmtTokens } from '@/lib/sessions/format'
@@ -116,9 +117,12 @@ function SessionRow({ row }: { row: Enriched }) {
   return (
     <tr className='border-t border-border/60 transition-colors hover:bg-muted/50'>
       <td className='py-3 pl-6 pr-3'>
-        <Link to={`/activity/sessions/${encodeURIComponent(session.sessionId)}`} className='block'>
-          <div className='truncate font-mono text-xs'>{title}</div>
-        </Link>
+        <Button asChild variant='outline' size='sm' className='max-w-full justify-between gap-2'>
+          <Link to={`/activity/sessions/${encodeURIComponent(session.sessionId)}`}>
+            <span className='truncate font-mono text-xs'>{title}</span>
+            <i aria-hidden className='ri-arrow-right-s-line shrink-0' />
+          </Link>
+        </Button>
       </td>
       <td className='px-3'>
         <SurfaceCell path={row.surfacePath} />

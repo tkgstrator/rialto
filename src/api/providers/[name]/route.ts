@@ -5,8 +5,9 @@ import {
   ProviderUpsertResponseSchema
 } from '../../../schemas/api/providers'
 import { ProviderSchema } from '../../../schemas/domain/provider'
-import { deleteProviderByName, upsertProvider } from '../../../services/config'
+import { deleteProviderByName, updateProviderConnection, upsertProvider } from '../../../services/config'
 import { republishRoutingSnapshot } from '../../../services/routing-scheduler'
+import { isProviderBaseUrl } from '../../../shared/provider-base-url'
 import { ValidationErrorResponseSchema, validationErrorHook } from '../../zod-response'
 
 export const providerByNameRoute = new OpenAPIHono({ defaultHook: validationErrorHook })
@@ -55,6 +56,54 @@ providerByNameRoute.openapi(patchProviderRoute, async (c) => {
     },
     200
   )
+})
+
+const connectionRoute = createRoute({
+  method: 'patch',
+  path: '/api/providers/{name}/connection',
+  request: {
+    params: NameParamSchema,
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            display_name: z.string().trim().nonempty().max(120).nullable(),
+            api_base_url: z
+              .string()
+              .trim()
+              .pipe(z.url().refine(isProviderBaseUrl, 'Use an HTTP(S) endpoint without credentials or a fragment.'))
+              .optional()
+          })
+        }
+      }
+    }
+  },
+  responses: {
+    200: {
+      description: 'Connection updated.',
+      content: { 'application/json': { schema: z.object({ success: z.literal(true) }) } }
+    },
+    400: {
+      description: 'Invalid connection settings.',
+      content: { 'application/json': { schema: ProviderErrorResponseSchema } }
+    },
+    404: {
+      description: 'Provider not found.',
+      content: { 'application/json': { schema: ProviderErrorResponseSchema } }
+    }
+  }
+})
+
+providerByNameRoute.openapi(connectionRoute, async (c) => {
+  const { name } = c.req.valid('param')
+  const body = c.req.valid('json')
+  const result = await updateProviderConnection(name, { displayName: body.display_name, apiBaseUrl: body.api_base_url })
+  if (result === 'missing') return c.json({ success: false as const, error: 'Provider not found.' }, 404)
+  if (result === 'subscription') {
+    return c.json({ success: false as const, error: 'Subscription endpoints are managed by the provider.' }, 400)
+  }
+  await republishRoutingSnapshot()
+  return c.json({ success: true as const }, 200)
 })
 
 const deleteProviderRoute = createRoute({

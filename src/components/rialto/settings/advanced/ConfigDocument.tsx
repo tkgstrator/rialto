@@ -114,7 +114,7 @@ export function ConfigDocument({
           <RButton variant='outline' icon='ri-refresh-line' onClick={onLoad}>
             {t('settings.advanced.reload')}
           </RButton>
-          <RButton variant='ghost' icon='ri-code-line' onClick={onFormat} disabled={!valid}>
+          <RButton variant='outline' icon='ri-code-line' onClick={onFormat} disabled={!valid}>
             {t('settings.advanced.format')}
           </RButton>
           <RButton variant='primary' icon='ri-check-line' onClick={onSave} disabled={!valid || saving}>

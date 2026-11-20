@@ -43,7 +43,7 @@ export function HealthPanel({
                 including a check this screen has no row for yet — is the
                 difference between diagnosing the server and diagnosing
                 this panel. */}
-            <RButton variant='ghost' icon='ri-code-line' onClick={() => setRaw((prev) => !prev)}>
+            <RButton variant='outline' icon='ri-code-line' onClick={() => setRaw((prev) => !prev)}>
               {t('settings.advanced.rawJson')}
             </RButton>
             <RButton variant='outline' icon='ri-refresh-line' onClick={onReload}>

@@ -12,10 +12,12 @@ import { PlanSelector } from '@/components/rialto/settings/access/PlanSelector'
 import { ANY, SurfacePicker, sameScope, scopeForWire } from '@/components/rialto/settings/access/pickers'
 import { TokenDetailHeader } from '@/components/rialto/settings/access/TokenDetailHeader'
 import { TokenDetailPhone } from '@/components/rialto/settings/access/TokenDetailPhone'
+import { FolderPicker, TokenPolicyFields } from '@/components/rialto/settings/access/TokenPolicyFields'
 import { TokenReadings } from '@/components/rialto/settings/access/TokenReadings'
 import { TokenUsageWindows, useTokenUsageWindows } from '@/components/rialto/settings/access/TokenUsageWindows'
 import { SettingsField } from '@/components/rialto/settings/SettingsLayout'
 import { useUnsavedGuard } from '@/components/rialto/settings/use-unsaved-guard'
+import { Input } from '@/components/ui/input'
 import { usePhone } from '@/hooks/use-phone'
 import { type AccessTokenWire, api, type InboundSurfaceWire, type PlanWire } from '@/lib/api'
 import { enabledTargets } from '@/lib/models/enabled-targets'
@@ -24,6 +26,7 @@ import { tokenState } from '@/lib/rialto/settings/access-tokens'
 import { targetMatchesSurfaces } from '@/lib/rialto/settings/surface-model-compat'
 import { usageBlocked, usageWindowsView } from '@/lib/rialto/settings/usage-windows'
 import type { Provider } from '@/schemas/domain/provider'
+import { DEFAULT_TOKEN_POLICY, type TokenFolder, type TokenPolicy } from '@/shared/access-token-policy'
 
 const BACK = '/access-tokens'
 
@@ -50,18 +53,30 @@ const ROTATE_REFUSAL: Readonly<Record<string, string>> = {
 }
 
 interface ScopeDraft {
+  name: string
   surfaces: string[]
   planId: string
+  folderId: string | null
+  policy: TokenPolicy
 }
 
 const draftOf = (token: AccessTokenWire): ScopeDraft => ({
+  name: token.name,
   surfaces: token.surfaces,
+  folderId: token.folderId === undefined ? null : token.folderId,
+  policy: token.policy === undefined ? DEFAULT_TOKEN_POLICY : token.policy,
   planId: token.plan === null ? ANY : token.plan.id
 })
 
 const draftChanged = (draft: ScopeDraft, token: AccessTokenWire): boolean => {
   const saved = draftOf(token)
-  return !sameScope(draft.surfaces, saved.surfaces) || draft.planId !== saved.planId
+  return (
+    draft.name.trim() !== saved.name ||
+    !sameScope(draft.surfaces, saved.surfaces) ||
+    draft.planId !== saved.planId ||
+    draft.folderId !== saved.folderId ||
+    JSON.stringify(draft.policy) !== JSON.stringify(saved.policy)
+  )
 }
 
 interface Revealed {
@@ -114,10 +129,6 @@ function TokenScopeForm({
   const disabledHint = t('settings.access.incompatibleWithEndpoint')
   return (
     <>
-      <SettingsField label={t('settings.access.issueName')} hint={t('access.token.nameLockedHint')}>
-        <LockedField value={token.name} aria={t('settings.access.issueName')} />
-      </SettingsField>
-
       <SettingsField label={t('settings.access.colEndpoint')} hint={t('settings.access.issueEndpointHint')}>
         <SurfacePicker
           surfaces={surfaces}
@@ -156,6 +167,7 @@ function TokenScopeForm({
 function SaveBar({
   tokenName,
   dirty,
+  valid,
   creating,
   busy,
   onDiscard,
@@ -163,6 +175,7 @@ function SaveBar({
 }: {
   tokenName: string
   dirty: boolean
+  valid: boolean
   creating: boolean
   busy: boolean
   onDiscard: () => void
@@ -170,7 +183,7 @@ function SaveBar({
 }) {
   const { t } = useTranslation()
   const canDiscard = (dirty || creating) && !busy
-  const canSave = dirty && !busy && !creating
+  const canSave = valid && dirty && !busy && !creating
   return (
     <div className='flex items-center gap-2 border-t border-border/60 px-6 py-4'>
       <span className='text-[12px] text-muted-foreground'>
@@ -185,7 +198,7 @@ function SaveBar({
         )}
       </span>
       <div className='ml-auto flex gap-2'>
-        <RButton variant='ghost' onClick={onDiscard} disabled={!canDiscard}>
+        <RButton variant='outline' onClick={onDiscard} disabled={!canDiscard}>
           {t('common.discard')}
         </RButton>
         <RButton variant='primary' icon='ri-check-line' onClick={onSave} disabled={!canSave}>
@@ -208,6 +221,7 @@ export function TokenDetail() {
   const [busy, setBusy] = useState(false)
   const [revealed, setRevealed] = useState<Revealed | null>(null)
   const [draft, setDraft] = useState<ScopeDraft | null>(null)
+  const [folders, setFolders] = useState<TokenFolder[]>([])
   const [plans, setPlans] = useState<PlanWire[]>([])
   const [creating, setCreating] = useState(false)
   const [createdNote, setCreatedNote] = useState<string | null>(null)
@@ -301,16 +315,26 @@ export function TokenDetail() {
   const unsavedDialog = useUnsavedGuard(dirty)
   const { usage, setUsage } = useTokenUsageWindows(token)
 
+  useEffect(() => {
+    api
+      .getTokenFolders()
+      .then((res) => setFolders(res.folders))
+      .catch((error: Error) => toast.error(t('settings.access.listFailed', { message: error.message })))
+  }, [t])
+
   const save = () => {
-    if (token === null || draft === null) return
+    if (token === null || draft === null || !draft.name.trim()) return
     setBusy(true)
     api
       .updateAccessToken(token.id, {
+        ...(draft.name.trim() === token.name ? {} : { name: draft.name.trim() }),
         surfaces: scopeForWire(surfaces, draft.surfaces),
+        folderId: draft.folderId,
+        policy: draft.policy,
         planId: draft.planId === ANY ? null : draft.planId
       })
-      .then(() => {
-        toast.success(t('settings.access.scopeSaved', { name: token.name }))
+      .then((updated) => {
+        toast.success(t('settings.access.scopeSaved', { name: updated.name }))
         load()
       })
       .catch((e: Error) => toast.error(t('settings.common.saveFailed', { message: e.message })))
@@ -368,9 +392,43 @@ export function TokenDetail() {
       />
     )
 
+  const nameField = (
+    <SettingsField label={t('settings.access.issueName')}>
+      <Input
+        aria-label={t('settings.access.issueName')}
+        className='max-w-md'
+        maxLength={200}
+        value={draft.name}
+        disabled={busy}
+        onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+      />
+    </SettingsField>
+  )
+
+  const policyForm = (
+    <SettingsField label={t('settings.access.tokenPolicy')} hint={t('settings.access.tokenPolicyHint')}>
+      <fieldset disabled={!editable || busy} className='grid gap-3'>
+        <FolderPicker
+          folders={folders}
+          disabled={!editable || busy}
+          value={draft.folderId}
+          onChange={(folderId) => setDraft({ ...draft, folderId })}
+        />
+        <TokenPolicyFields
+          policy={draft.policy}
+          disabled={!editable || busy}
+          onChange={(policy) => setDraft({ ...draft, policy })}
+          plan={plans.find((plan) => plan.id === draft.planId)}
+          available={available}
+          scopes={draft.surfaces}
+        />
+      </fieldset>
+    </SettingsField>
+  )
+
   if (phone) {
     return (
-      <Screen crumbs={[{ label: token.name }]} subtitle={t('settings.access.tokenSubtitle')}>
+      <Screen crumbs={[{ label: token.name }]}>
         <TokenDetailPhone
           token={token}
           state={state}
@@ -383,6 +441,18 @@ export function TokenDetail() {
           onRevoke={revoke}
           onReset={setUsage}
         />
+        {nameField}
+        {policyForm}
+        <SaveBar
+          tokenName={token.name}
+          dirty={dirty}
+          valid={draft.name.trim().length > 0}
+          creating={creating}
+          busy={busy}
+          onDiscard={discard}
+          onSave={save}
+        />
+        {unsavedDialog}
         {rotatedDialog}
         {confirmDialog}
       </Screen>
@@ -390,7 +460,7 @@ export function TokenDetail() {
   }
 
   return (
-    <Screen crumbs={[{ label: token.name }]} subtitle={t('settings.access.tokenSubtitle')}>
+    <Screen crumbs={[{ label: token.name }]}>
       <div className='min-w-0'>
         <TokenDetailHeader
           token={token}
@@ -418,6 +488,8 @@ export function TokenDetail() {
           onDismissCreatedNote={() => setCreatedNote(null)}
         />
 
+        {nameField}
+        {policyForm}
         <TokenUsageWindows token={token} view={windows} now={now} onReset={setUsage} />
 
         <TokenReadings token={token} now={now} />
@@ -434,6 +506,7 @@ export function TokenDetail() {
         <SaveBar
           tokenName={token.name}
           dirty={dirty}
+          valid={draft.name.trim().length > 0}
           creating={creating}
           busy={busy}
           onDiscard={discard}

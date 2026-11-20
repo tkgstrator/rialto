@@ -89,6 +89,8 @@ export interface UsageCostModelRow {
 
 export interface UsageCostProviderRow {
   provider: string
+  displayName?: string | null
+  accountId?: string | null
   models: UsageCostModelRow[]
   totalCostUsd: number | null
   isSubscription: boolean
@@ -105,8 +107,8 @@ export interface UsageCostResponse {
  * list is paginated, so the headline numbers come from here instead of
  * from whatever page happens to be loaded.
  */
-export function fetchUsageCost(days: number): Promise<UsageCostResponse> {
-  return api.get<UsageCostResponse>(`/usage/cost?days=${days}`)
+export function fetchUsageCost(days: number, mode?: 'api_key'): Promise<UsageCostResponse> {
+  return api.get<UsageCostResponse>(`/usage/cost?days=${days}${mode === undefined ? '' : '&mode=api_key'}`)
 }
 
 /**

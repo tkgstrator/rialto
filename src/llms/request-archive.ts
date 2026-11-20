@@ -1,8 +1,8 @@
 /**
  * Full inbound request archive.
  *
- * RequestLog keeps metadata and Message keeps only the last user turn, which
- * is not enough to study how routing and subagent detection behave. When
+ * RequestLog keeps metadata. For studying how routing and subagent
+ * detection behave, this separate archive is opt-in. When
  * CAPTURE_FULL_REQUESTS=true every inbound body is appended, verbatim, to a
  * daily JSONL file next to the logs. Each line is its own gzip member, so the
  * file stays append-only and `zcat requests-YYYY-MM-DD.jsonl.gz | jq` reads it.
