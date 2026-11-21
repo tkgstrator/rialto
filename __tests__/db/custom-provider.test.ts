@@ -11,6 +11,7 @@
 
 import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { refreshModelsRoute } from '../../src/api/refresh-models/route'
+import { v1ModelsRoute } from '../../src/api/v1/models-list'
 import { getPrismaClient } from '../../src/db/client'
 import { ApiStyle } from '../../src/generated/prisma/client'
 import { getLlmsContext, resetLlmsContext } from '../../src/llms'
@@ -282,6 +283,34 @@ describe.skipIf(!HAS_DB)('a custom provider after it exists', () => {
       'http://localhost:1234/team/v1/models?after_id=kept'
     ])
     expect(requests[0].headers.get('x-api-key')).toBe('lm-studio')
+  })
+
+  test('refreshes reasoning levels by public model ID and retains them when status is unavailable', async () => {
+    await createCustomProvider(input({ name: 'omlx', base_url: 'http://localhost:1234/team/v1' }), listing('alias'))
+    const refresh = () => refreshModelsRoute.request('/api/refresh-models?provider=omlx', { method: 'POST' })
+    const readCapability = () =>
+      getPrismaClient().modelCapability.findFirst({
+        where: { model: { name: 'alias', provider: { name: 'omlx' } } }
+      })
+    const replies = [
+      Response.json({ data: [{ id: 'alias' }] }),
+      Response.json({
+        models: [{ id: 'folder/model', model_alias: 'alias', reasoning_levels: ['off', 'low', 'high'] }]
+      })
+    ]
+    stubFetch(() => replies.shift() || new Response(null, { status: 404 }))
+    expect((await refresh()).status).toBe(200)
+    expect((await readCapability())?.efforts).toEqual(['off', 'low', 'high'])
+    await save('omlx', ['alias'], { enabled: true, transformer: { _disabledModels: [] } })
+    const catalog = await v1ModelsRoute.request('/v1/models')
+    expect(await catalog.json()).toMatchObject({
+      data: [{ id: 'alias', provider: 'omlx', reasoning_levels: ['off', 'low', 'high'] }]
+    })
+    expect(requests[1].url).toBe('http://localhost:1234/team/v1/models/status')
+    expect(requests[1].headers.get('authorization')).toBe('Bearer lm-studio')
+    replies.push(Response.json({ data: [{ id: 'alias' }] }))
+    expect((await refresh()).status).toBe(200)
+    expect((await readCapability())?.efforts).toEqual(['off', 'low', 'high'])
   })
 
   test('a failed or malformed listing leaves the stored models intact', async () => {

@@ -137,7 +137,7 @@ export class OpenAITransformer extends Transformer {
       delete (req as { max_tokens?: unknown }).max_tokens
     }
     const effort = provider.modelReasoningEfforts?.[req.model ?? '']
-    if (modelNeedsMaxCompletionTokens(req.model)) {
+    if (modelNeedsMaxCompletionTokens(req.model) || provider.modelSupportedEfforts?.[req.model] !== undefined) {
       // Chat Completions takes a scalar, including when the inbound Chat
       // surface was normalised into unified reasoning by the endpoint hook.
       const clientEffort = req.reasoning?.effort
