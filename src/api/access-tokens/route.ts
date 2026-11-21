@@ -50,7 +50,7 @@ const TokenPolicySchema = z.object({
         .trim()
         .min(1)
         .max(200)
-        .regex(/^[^,]+$/)
+        .regex(/^[^,]+(?:,[^,]+)?$/)
     )
     .max(1000),
   providerMode: z.enum(TOKEN_PROVIDER_MODES),

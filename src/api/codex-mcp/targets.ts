@@ -74,7 +74,9 @@ export async function callableCodexModels(
   return chooseCodexModels(
     (await codexModels(operation)).filter(
       (target) =>
-        planAllows(plan, target) && allowsTokenModel(policy, target.model) && allowsProviderMode(policy, 'subscription')
+        planAllows(plan, target) &&
+        allowsTokenModel(policy, target.model, { ...target, authMode: 'subscription' }) &&
+        allowsProviderMode(policy, 'subscription')
     )
   )
 }
@@ -88,7 +90,9 @@ export async function resolveCodexTarget(
 ): Promise<TargetResult> {
   const eligible = (await codexModels(operation)).filter(
     (target) =>
-      planAllows(plan, target) && allowsTokenModel(policy, target.model) && allowsProviderMode(policy, 'subscription')
+      planAllows(plan, target) &&
+      allowsTokenModel(policy, target.model, { ...target, authMode: 'subscription' }) &&
+      allowsProviderMode(policy, 'subscription')
   )
   if (eligible.length === 0) {
     const kind = operation === 'image' ? 'image model' : 'model'

@@ -7,6 +7,7 @@ import dayjs from '../../lib/dayjs'
 import { IMAGE_EDIT_PATH } from '../../llms/inbound/surfaces'
 import { fetchProvider } from '../../llms/provider-fetch'
 import { CODEX_ORIGINATOR, CODEX_USER_AGENT } from '../../llms/transformers/openai/codex-oauth'
+import { isSseContentType } from '../../llms/utils/sse-aggregate/parse'
 import { logger } from '../../logger'
 import type { TokenPlan } from '../../services/access-token-service'
 import { ensureFreshCodexAccessToken } from '../../services/codex-auth/token'
@@ -25,8 +26,10 @@ import {
   OPENAI_IMAGE_ENDPOINT,
   supportsImageModel
 } from '../../shared/data/openai-images'
+import { isCodexImageModel } from '../../shared/data/subscriptions'
 import { readBoundedBody } from './bounded-body'
 import { buildErrorEnvelope } from './error-shape'
+import { relayImageEditStream } from './image-edit-stream'
 import '../context'
 
 const MAX_BODY_BYTES = 128 * 1024
@@ -91,7 +94,11 @@ async function resolveImageTargets(model: string, caller: ImageCaller, path: str
     where: {
       name,
       enabled: true,
-      provider: { enabled: true, ...(comma < 0 ? {} : { name: model.slice(0, comma) }) }
+      provider: {
+        enabled: true,
+        ...(path === IMAGE_EDIT_PATH ? { authMode: AuthMode.api_key } : {}),
+        ...(comma < 0 ? {} : { name: model.slice(0, comma) })
+      }
     },
     select: { provider: { select: { name: true, apiBaseUrl: true, apiKey: true, authMode: true } } }
   })
@@ -344,22 +351,49 @@ async function dispatchImage(
   return failure(429, 'All Codex subscription accounts are rate limited.', target.provider.name)
 }
 
-async function dispatchOpenAIImage(
+async function dispatchOpenAIImage<T = never>(
   body: { model: string },
   target: ImageTarget,
   caller: ImageCaller,
   url: string,
-  request: Record<string, unknown> | FormData
-): Promise<ImageOutcome> {
+  request: Record<string, unknown> | FormData,
+  onStream?: (
+    upstream: Response,
+    stream: ReadableStream<Uint8Array>,
+    completed: (event: Record<string, unknown>) => Promise<void>
+  ) => T
+): Promise<ImageOutcome | T> {
   const key = target.provider.apiKey?.trim()
   if (!key) return failure(503, 'No OpenAI API key configured.', target.provider.name)
   const started = Date.now()
   try {
     const upstream = await fetchProvider(url, request, {
-      headers: { authorization: `Bearer ${key}`, accept: 'application/json' },
+      headers: {
+        authorization: `Bearer ${key}`,
+        accept: onStream === undefined ? 'application/json' : 'text/event-stream'
+      },
       httpsProxy: process.env.PROXY_URL
     })
-    return await imageResult(upstream, target, body, null, caller, randomUUID(), started)
+    const sessionId = randomUUID()
+    if (upstream.ok && onStream !== undefined) {
+      if (!isSseContentType(upstream.headers.get('content-type')) || upstream.body === null) {
+        await upstream.body?.cancel()
+        return failure(502, 'Upstream returned an invalid image edit stream.', target.provider.name)
+      }
+      return onStream(upstream, upstream.body, (event) =>
+        recordImageUsage({
+          sessionId,
+          provider: target.provider.name,
+          model: target.model,
+          requestedModel: body.model,
+          subAccountId: null,
+          caller,
+          durationMs: Date.now() - started,
+          usage: usageOf(event)
+        }).catch((err) => logger.error({ err }, 'image edit stream usage capture failed'))
+      )
+    }
+    return await imageResult(upstream, target, body, null, caller, sessionId, started)
   } catch {
     return failure(502, 'OpenAI image upstream is unavailable.', target.provider.name)
   }
@@ -381,8 +415,9 @@ export async function generateImage(body: ImageInput, caller: ImageCaller): Prom
   const model = body.model.slice(body.model.indexOf(',') + 1)
   if (!allowsTokenModel(caller.policy, model)) return failure(403, 'Image model is not allowed for this token.')
   if (!isImageOnlyModel(model)) return failure(400, 'Image model is unavailable, disabled, or ambiguous.')
-  if (!allowsProviderMode(caller.policy, isOpenAIImageModel(model) ? 'api_key' : 'subscription'))
-    return failure(403, 'Image provider is not allowed for this token.')
+  const apiAllowed = isOpenAIImageModel(model) && allowsProviderMode(caller.policy, 'api_key')
+  const subscriptionAllowed = isCodexImageModel(model) && allowsProviderMode(caller.policy, 'subscription')
+  if (!apiAllowed && !subscriptionAllowed) return failure(403, 'Image provider is not allowed for this token.')
   const { targets, denial } = await resolveImageTargets(body.model, caller, IMAGE_PATH)
   if (denial !== undefined) return failure(403, denial)
   if (targets.length === 0) return failure(400, 'Image model is unavailable, disabled, or ambiguous.')
@@ -421,27 +456,33 @@ function imageResponse(c: Context, outcome: ImageOutcome): Response {
 }
 
 const EditFields = ImageBody.pick({ model: true, prompt: true, n: true }).extend({
-  stream: z.literal(false).optional()
+  stream: z.literal([true, false]).optional(),
+  partial_images: z.number().int().min(0).max(3).optional()
 })
 const ImageReference = z.union([
   z.object({ file_id: z.string().nonempty() }).strict(),
   z.object({ image_url: z.string().nonempty() }).strict()
 ])
 const EditJson = EditFields.extend({ images: z.array(ImageReference).min(1).max(16) }).loose()
-type ImageEdit = { model: string; request: Record<string, unknown> | FormData }
+type ImageEdit = { model: string; stream: boolean; request: Record<string, unknown> | FormData }
 
 function multipartEdit(form: FormData): ImageEdit | null {
-  if (['model', 'prompt', 'n', 'stream'].some((field) => form.getAll(field).length > 1)) return null
+  if (['model', 'prompt', 'n', 'stream', 'partial_images'].some((field) => form.getAll(field).length > 1)) return null
+  const stream = form.get('stream')
+  if (stream !== null && stream !== 'true' && stream !== 'false') return null
+  const partial = form.get('partial_images')
+  if (partial !== null && (typeof partial !== 'string' || !/^[0-3]$/.test(partial))) return null
   const parsed = EditFields.safeParse({
     model: form.get('model'),
     prompt: form.get('prompt'),
     n: form.has('n') ? Number(form.get('n')) : undefined,
-    stream: form.has('stream') ? form.get('stream') !== 'false' : undefined
+    stream: stream === null ? undefined : stream === 'true',
+    partial_images: partial === null ? undefined : Number(partial)
   })
   const images = [...form.getAll('image'), ...form.getAll('image[]')]
   if (!parsed.success || images.length === 0 || images.length > 16) return null
   if (images.some((image) => typeof image === 'string' || image.size === 0)) return null
-  return { model: parsed.data.model, request: form }
+  return { model: parsed.data.model, stream: parsed.data.stream === true, request: form }
 }
 
 async function parseImageEdit(
@@ -454,10 +495,23 @@ async function parseImageEdit(
     return multipartEdit(form)
   }
   const parsed = EditJson.safeParse(JSON.parse(new TextDecoder().decode(bytes)))
-  return parsed.success ? { model: parsed.data.model, request: parsed.data } : null
+  return parsed.success ? { model: parsed.data.model, stream: parsed.data.stream === true, request: parsed.data } : null
 }
 
-async function editImage(body: ImageEdit, caller: ImageCaller): Promise<ImageOutcome> {
+function imageEditStreamResponse(
+  upstream: Response,
+  stream: ReadableStream<Uint8Array>,
+  completed: (event: Record<string, unknown>) => Promise<void>
+): Response {
+  const headers = new Headers({
+    'content-type': 'text/event-stream',
+    'cache-control': 'no-cache',
+    'x-accel-buffering': 'no'
+  })
+  return new Response(relayImageEditStream(stream, completed), { status: upstream.status, headers })
+}
+
+async function editImage(body: ImageEdit, caller: ImageCaller): Promise<ImageOutcome | Response> {
   const decision = decidePlanModel(caller.plan, body.model)
   if (decision.kind === 'denied') return failure(403, decision.message)
   const name = body.model.slice(body.model.indexOf(',') + 1)
@@ -474,7 +528,16 @@ async function editImage(body: ImageEdit, caller: ImageCaller): Promise<ImageOut
   const upstreamBody = request instanceof FormData ? request : { ...request, model: first.model }
   let outcome: ImageOutcome = failure(503, 'No image provider is available.')
   for (const target of targets) {
-    outcome = await dispatchOpenAIImage(body, target, caller, OPENAI_IMAGE_EDIT_ENDPOINT, upstreamBody)
+    const result = await dispatchOpenAIImage(
+      body,
+      target,
+      caller,
+      OPENAI_IMAGE_EDIT_ENDPOINT,
+      upstreamBody,
+      body.stream ? imageEditStreamResponse : undefined
+    )
+    if (result instanceof Response) return result
+    outcome = result
     if (outcome.ok || (outcome.status !== 429 && outcome.status !== 503)) return outcome
     if (!caller.policy?.providerMode.endsWith('_first') || !caller.policy.providerFallback) return outcome
   }
@@ -490,5 +553,6 @@ export async function handleImageEdit(c: Context): Promise<Response> {
   if (bytes === null) return fail(c, 413, 'Image edit request exceeds the 50 MiB limit.')
   const body = await parseImageEdit(type, contentType, bytes).catch(() => null)
   if (body === null) return fail(c, 400, 'Image edits require a model, prompt, and at least one input image.')
-  return imageResponse(c, await editImage(body, imageCaller(c)))
+  const outcome = await editImage(body, imageCaller(c))
+  return outcome instanceof Response ? outcome : imageResponse(c, outcome)
 }

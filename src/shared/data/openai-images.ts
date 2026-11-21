@@ -1,7 +1,12 @@
 import { apiKeyProviderBaseName } from '../api-key-provider-id'
 import { isCodexImageModel } from './subscriptions'
 
-export const OPENAI_IMAGE_MODELS: readonly string[] = ['gpt-image-2.6-flare', 'gpt-image-2.6-sunburst']
+export const OPENAI_IMAGE_MODELS: readonly string[] = [
+  'gpt-image-2.5-flare',
+  'gpt-image-2.5-sunburst',
+  'gpt-image-2.6-flare',
+  'gpt-image-2.6-sunburst'
+]
 
 // Text input and image output, the modalities used by the generation surface.
 export const OPENAI_IMAGE_GENERATION_PRICE = { inputPer1M: 5, outputPer1M: 30, cachedInputPer1M: 1.25 }
@@ -23,7 +28,7 @@ export function supportsImageModel(
   provider: { name: string; authMode: string; apiBaseUrl: string },
   model: string
 ): boolean {
-  return isOpenAIImageModel(model)
-    ? isOfficialOpenAIApiProvider(provider)
+  return provider.authMode === 'api_key'
+    ? isOpenAIImageModel(model) && isOfficialOpenAIApiProvider(provider)
     : isCodexImageModel(model) && provider.authMode === 'subscription' && provider.apiBaseUrl === CODEX_IMAGE_BASE_URL
 }
