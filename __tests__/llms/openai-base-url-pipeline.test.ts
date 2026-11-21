@@ -49,7 +49,7 @@ const RESPONSES_REPLY = {
 
 type Received = { path: string; authorization: string | null; body: Bag }
 
-async function exchange(input: { baseTail: string; endpoint: 'chat' | 'responses'; body: Bag }) {
+async function exchange(input: { baseTail: string; endpoint: 'chat' | 'responses'; body: Bag; custom?: boolean }) {
   const received: Received[] = []
   const server = Bun.serve({
     hostname: '127.0.0.1',
@@ -71,16 +71,17 @@ async function exchange(input: { baseTail: string; endpoint: 'chat' | 'responses
     const providers = new ProviderRegistry(transformers, log)
     providers.registerFromConfig([
       {
-        name: 'openai',
+        name: input.custom ? 'omlx' : 'openai',
         api_style: 'openai_chat',
         auth_mode: 'api_key',
         api_base_url: new URL(input.baseTail, server.url).toString(),
         api_key: 'upstream-test-key',
-        models: [CHAT_MODEL, RESPONSES_MODEL],
+        models: input.custom ? ['local-model'] : [CHAT_MODEL, RESPONSES_MODEL],
+        ...(input.custom ? { modelSupportedEfforts: { 'local-model': ['low', 'high'] } } : {}),
         modelApiStyles: { [RESPONSES_MODEL]: 'openai_responses' }
       }
     ])
-    const provider = providers.get('openai')
+    const provider = providers.get(input.custom ? 'omlx' : 'openai')
     if (provider === undefined) throw new Error('provider was not registered')
     const transformer: Transformer =
       input.endpoint === 'chat' ? new OpenAITransformer() : new OpenAIResponsesTransformer()
@@ -149,6 +150,16 @@ describe('a Chat model (the provider default)', () => {
     expect(result.received[0].body).not.toHaveProperty('include')
     expect(result.reply.object).toBe('response')
   })
+})
+
+test.each(['off', 'high'])('passes %s effort through Responses to a non-GPT Chat model', async (effort) => {
+  const result = await exchange({
+    baseTail: '/v1/chat/completions',
+    endpoint: 'responses',
+    custom: true,
+    body: { model: 'local-model', input: 'ping', reasoning: { effort } }
+  })
+  expect(result.received[0].body).toMatchObject({ model: 'local-model', reasoning_effort: effort })
 })
 
 describe('a model switched to Responses', () => {

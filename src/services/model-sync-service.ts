@@ -303,6 +303,21 @@ async function syncCustomModels(p: CustomProviderRow): Promise<RefreshOutcome> {
       if (contextWindow === undefined || contextWindow === model.contextWindow) continue
       await tx.model.updateMany({ where: { providerId: p.id, name: model.name }, data: { contextWindow } })
     }
+    if (found.reasoningLevels !== undefined) {
+      const rows = await tx.model.findMany({
+        where: { providerId: p.id, name: { in: [...found.reasoningLevels.keys()] } },
+        select: { id: true, name: true }
+      })
+      for (const row of rows) {
+        const efforts = found.reasoningLevels.get(row.name)
+        if (efforts === undefined) continue
+        await tx.modelCapability.upsert({
+          where: { modelId: row.id },
+          create: { modelId: row.id, efforts },
+          update: { efforts }
+        })
+      }
+    }
     return newIds
   })
   if (added === null) return failed('Provider changed during refresh. Run Refresh again.')
