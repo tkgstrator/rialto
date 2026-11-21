@@ -36,7 +36,7 @@ import {
 import type { TokenPlan } from '../../src/services/access-token-service'
 import { __setSurfacesForTests, invalidateSurfaceCache } from '../../src/services/inbound-surface-service'
 
-import { DEFAULT_TOKEN_POLICY, type TokenPolicy } from '../../src/shared/access-token-policy'
+import { allowsTokenModel, DEFAULT_TOKEN_POLICY, type TokenPolicy } from '../../src/shared/access-token-policy'
 
 const log = pino({ level: 'silent' })
 
@@ -454,4 +454,33 @@ test('a token selects the billing method and must opt into cross-method fallback
     })
   )
   expect(allowedFallback.primaryModel).toBe('openai,shared')
+})
+
+test('a token limited to an OpenAI model rejects the same model on Codex', async () => {
+  const scope = {
+    tokenId: 'vendor-model',
+    sharedProviders: true,
+    policy: { ...DEFAULT_TOKEN_POLICY, restrictModels: true, allowedModels: ['openai,shared'] }
+  }
+  const body = { model: 'shared', messages: [] }
+  const result = asPlan(await plan('/v1/chat/completions', body, scope))
+  expect(result.primaryModel).toBe('openai,shared')
+  expect(result.fallbacks).toEqual([])
+  const denied = asResponse(await plan('/v1/chat/completions', { ...body, model: 'codex,shared' }, scope))
+  expect(denied.status).toBe(403)
+})
+
+test('vendor model restrictions permit every API key for the selected vendor', () => {
+  const policy = { ...DEFAULT_TOKEN_POLICY, restrictModels: true, allowedModels: ['anthropic,shared'] }
+  for (const name of ['anthropic', `anthropic-key-${'a'.repeat(32)}`, `anthropic-key-${'b'.repeat(32)}`]) {
+    expect(allowsTokenModel(policy, 'shared', { provider: name, authMode: 'api_key' })).toBe(true)
+  }
+  expect(allowsTokenModel(policy, 'shared', { provider: 'claude-code', authMode: 'subscription' })).toBe(false)
+  expect(allowsTokenModel(policy, 'other', { provider: 'anthropic', authMode: 'api_key' })).toBe(false)
+  expect(
+    allowsTokenModel({ ...policy, allowedModels: ['shared'] }, 'shared', {
+      provider: 'openai',
+      authMode: 'api_key'
+    })
+  ).toBe(true)
 })

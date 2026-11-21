@@ -10,7 +10,7 @@ export function tokenAllowsTarget(
 ): boolean {
   return (
     (plan == null || plan.models.includes(`${target.provider},${target.model}`)) &&
-    allowsTokenModel(policy, target.model) &&
+    allowsTokenModel(policy, target.model, target) &&
     allowsProviderMode(policy, target.authMode)
   )
 }
