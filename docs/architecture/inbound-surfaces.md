@@ -99,8 +99,7 @@ Google のワイヤ規約に代替が無いのでこの面だけ受理する。`
 （`src/api/v1/images.ts` の `handleImageGeneration`）がマウントされる。認証（発行済み
 アクセストークンの Bearer、面スコープ込み）・OpenAI エラー封筒・アクセスログは他の面と共通。
 
-- **接続先**：OpenAI API キーのプロバイダーは `gpt-image-2.6-flare` と
-  `gpt-image-2.6-sunburst` を `https://api.openai.com/v1/images/generations` に送る。
+- **接続先**：OpenAI API キーのプロバイダーは GPT Image 2.5・2.6 の Flare と Sunburst を `https://api.openai.com/v1/images/generations` に送る。
   Codex サブスクリプションは従来の `gpt-image-2.5-flare` と `gpt-image-2.5-sunburst` を
   Codex バックエンドに送る。`/codex` の `generate_image` は Codex サブスクリプションを使う。
 - **有効化**：Providers で接続を設定し、利用する画像モデルを有効にする。画像モデルは
@@ -112,7 +111,8 @@ Google のワイヤ規約に代替が無いのでこの面だけ受理する。`
   任意で `size`（`auto` / `1024x1024` / `1024x1536` / `1536x1024`）、`quality`
   （`auto` / `low` / `medium` / `high`）、`background`（`auto` / `opaque` / `transparent`）、
   `n: 1`、`response_format: "b64_json"`。それ以外のフィールド（`stream` など）は 400。
-  画像編集（`/v1/images/edits`）、ストリーミング、`response_format: "url"`、`n > 1` は非対応。
+  生成ではストリーミング、`response_format: "url"`、`n > 1` は非対応。
+- **参照画像付きの編集**：`POST /v1/images/edits` は、有効な OpenAI API キー接続の GPT Image 2.5・2.6 Flare / Sunburst に転送する。multipart の画像順、JSON のファイル参照、出力品質と寸法指定を保持する。Codex サブスクリプションは生成専用。
 - **認証**：サーバ側で接続先の認証ヘッダを組み立てる。OpenAI には設定済み API キーを送り、
   Codex には OAuth bearer、アカウント ID、originator を送る。Codex は 429 の際にアカウントを切り替える。
 - **レスポンス**：上流の JSON（`created` / `data[0].b64_json` / `usage`）をそのまま返す。

@@ -1,17 +1,18 @@
-import { cn } from 'cn'
-import { useId, useState } from 'react'
+import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
-import { RButton } from '@/components/rialto/primitives'
+import { useConfig } from '@/components/ConfigProvider'
 import { vendorLabel } from '@/components/rialto/providers/vendor-labels'
 import { SelectPicker } from '@/components/rialto/SelectPicker'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import type { PlanWire } from '@/lib/api'
-import { api, type TokenModelChoice } from '@/lib/api'
-import { modelOf } from '@/lib/rialto/settings/plans'
-import { TOKEN_PROVIDER_MODES, type TokenFolder, type TokenPolicy } from '@/shared/access-token-policy'
-import { apiKeyVendorName } from '@/shared/custom-provider'
+import { groupTargets, modelOf, providerOf } from '@/lib/rialto/settings/plans'
+import {
+  TOKEN_PROVIDER_MODES,
+  type TokenFolder,
+  type TokenPolicy,
+  tokenProviderGroup
+} from '@/shared/access-token-policy'
 
 function tokenFolderPath(folder: TokenFolder, folders: ReadonlyMap<string, TokenFolder>): string {
   const path = [folder.name]
@@ -116,39 +117,50 @@ export function TokenPolicyFields({
   onChange,
   available,
   plan,
-  scopes,
   disabled
 }: {
   policy: TokenPolicy
   onChange: (policy: TokenPolicy) => void
   available: readonly string[]
   plan: PlanWire | undefined
-  scopes: readonly string[]
   disabled?: boolean
 }) {
   const { t } = useTranslation()
   const id = useId()
-  const [preview, setPreview] = useState<{ key: string; choices: TokenModelChoice[] } | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [previewOpen, setPreviewOpen] = useState(false)
-  const input = { scopes, planId: plan === undefined ? null : plan.id, policy }
-  const previewKey = JSON.stringify(input)
-  const shownPreview = preview?.key === previewKey ? preview : null
-  const expanded = previewOpen && shownPreview !== null
-  const requestPreview = async () => {
-    setLoading(true)
-    try {
-      const { choices } = await api.previewTokenPolicy(input)
-      setPreview({ key: previewKey, choices })
-      setPreviewOpen(true)
-    } catch (error) {
-      toast.error(t('settings.access.listFailed', { message: error instanceof Error ? error.message : String(error) }))
-    } finally {
-      setLoading(false)
+  const { config } = useConfig()
+  const providers = config?.Providers || []
+  const allowedByPlan = new Set(plan?.models)
+  const targets = available.flatMap((target) => {
+    if (plan !== undefined && !allowedByPlan.has(target)) return []
+    const name = providerOf(target)
+    const provider = providers.find((entry) => entry.name === name)
+    const group = tokenProviderGroup(name, provider?.auth_mode || 'api_key')
+    return [`${group},${modelOf(target)}`]
+  })
+  const groups = groupTargets(
+    targets,
+    policy.allowedModels.filter((model) => model.includes(','))
+  )
+  const legacy = policy.allowedModels.filter((model) => !model.includes(','))
+  const selected = new Set(policy.allowedModels)
+  const setModels = (models: readonly string[], checked: boolean) => {
+    const next = new Set(policy.allowedModels)
+    for (const model of models) {
+      if (checked) next.add(model)
+      else next.delete(model)
     }
+    onChange({ ...policy, allowedModels: [...next] })
   }
-  const targets = plan === undefined ? available : plan.models
-  const models = [...new Set([...targets.map(modelOf), ...policy.allowedModels])].sort()
+  const modelRow = (model: string) => (
+    <Label key={model} className='flex items-start gap-2 py-1 text-xs'>
+      <Checkbox
+        disabled={disabled}
+        checked={selected.has(model)}
+        onCheckedChange={(checked) => setModels([model], checked === true)}
+      />
+      <span className='break-all'>{modelOf(model)}</span>
+    </Label>
+  )
 
   return (
     <fieldset disabled={disabled} className='grid min-w-0 gap-3 text-xs'>
@@ -162,76 +174,34 @@ export function TokenPolicyFields({
         {t('settings.access.restrictModels')}
       </Label>
       {policy.restrictModels ? (
-        <div className='max-h-40 overflow-y-auto rounded-md border border-border p-2'>
-          {models.length === 0
-            ? t('settings.access.noEligibleModels')
-            : models.map((model, index) => (
-                <label key={model} htmlFor={`${id}-model-${index}`} className='flex items-start gap-2 py-1'>
+        <div className='grid max-h-56 gap-3 overflow-y-auto rounded-md border border-border p-3'>
+          {groups.length === 0 && legacy.length === 0 ? t('settings.access.noEligibleModels') : null}
+          {legacy.length > 0 ? (
+            <div>
+              <div className='font-medium'>{t('settings.access.anyProvider')}</div>
+              {legacy.map(modelRow)}
+            </div>
+          ) : null}
+          {groups.map((group) => {
+            const label = vendorLabel(group.provider, group.provider)
+            const count = group.targets.filter((target) => selected.has(target)).length
+            return (
+              <div key={group.provider}>
+                <Label className='gap-2 text-xs font-medium'>
                   <Checkbox
-                    id={`${id}-model-${index}`}
                     disabled={disabled}
-                    checked={policy.allowedModels.includes(model)}
-                    onCheckedChange={(checked) =>
-                      onChange({
-                        ...policy,
-                        allowedModels:
-                          checked === true
-                            ? [...policy.allowedModels, model]
-                            : policy.allowedModels.filter((name) => name !== model)
-                      })
-                    }
+                    checked={count === group.targets.length ? true : count > 0 ? 'indeterminate' : false}
+                    onCheckedChange={(checked) => setModels(group.targets, checked === true)}
                   />
-                  <span className='break-all'>{model}</span>
-                </label>
-              ))}
+                  {label}
+                </Label>
+                <div className='ml-6 mt-1'>{group.targets.map(modelRow)}</div>
+              </div>
+            )
+          })}
         </div>
       ) : null}
       <ProviderModeFields value={policy} disabled={disabled} onChange={(mode) => onChange({ ...policy, ...mode })} />
-      <div>
-        <RButton
-          variant='outline'
-          onClick={() => {
-            if (expanded) setPreviewOpen(false)
-            else if (shownPreview !== null) setPreviewOpen(true)
-            else void requestPreview()
-          }}
-          disabled={loading}
-          aria-expanded={expanded}
-          aria-controls={`${id}-preview`}
-        >
-          {t(expanded ? 'settings.access.hidePolicyPreview' : 'settings.access.previewPolicy')}
-        </RButton>
-        <div
-          id={`${id}-preview`}
-          aria-hidden={!expanded}
-          className={cn(
-            'grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none',
-            expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
-          )}
-        >
-          <div className='min-h-0 overflow-hidden'>
-            {shownPreview !== null ? (
-              <ul className='mt-3 max-h-40 space-y-2 overflow-y-auto rounded-md border border-border p-2'>
-                {shownPreview.choices.length === 0 ? (
-                  <li>{t('settings.access.noEligibleModels')}</li>
-                ) : (
-                  shownPreview.choices.map((choice) => {
-                    const vendor = choice.chosen === null ? null : apiKeyVendorName(choice.chosen)
-                    return (
-                      <li key={choice.model} className='break-all'>
-                        {choice.model}
-                        <span className='ml-2 text-muted-foreground'>
-                          {vendor === null ? t('settings.access.ambiguousProvider') : vendorLabel(vendor, vendor)}
-                        </span>
-                      </li>
-                    )
-                  })
-                )}
-              </ul>
-            ) : null}
-          </div>
-        </div>
-      </div>
     </fieldset>
   )
 }

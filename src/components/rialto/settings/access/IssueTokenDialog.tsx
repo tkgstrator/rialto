@@ -208,7 +208,6 @@ export function IssueTokenDialog({
                 onChange={(policy) => set('policy', policy)}
                 plan={plans.find((plan) => plan.id === draft.planId)}
                 available={available}
-                scopes={draft.surfaces}
               />
             </FieldGroup>
           </div>

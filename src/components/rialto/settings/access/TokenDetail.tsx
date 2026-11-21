@@ -457,7 +457,6 @@ export function TokenDetail() {
             onChange={(policy) => setDraft({ ...draft, policy })}
             plan={plans.find((plan) => plan.id === draft.planId)}
             available={available}
-            scopes={draft.surfaces}
           />
         }
         token={token}

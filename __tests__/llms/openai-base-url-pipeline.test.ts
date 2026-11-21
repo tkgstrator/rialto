@@ -141,11 +141,12 @@ describe('a Chat model (the provider default)', () => {
     const result = await exchange({
       baseTail: '/v1/responses',
       endpoint: 'responses',
-      body: { model: CHAT_MODEL, input: 'ping', stream: false }
+      body: { model: CHAT_MODEL, input: 'ping', stream: false, store: false, include: ['reasoning.encrypted_content'] }
     })
     expect(result.received.map((r) => r.path)).toEqual(['/v1/chat/completions'])
     expect(result.received[0].body.messages).toEqual([{ role: 'user', content: 'ping' }])
     expect('input' in result.received[0].body).toBe(false)
+    expect(result.received[0].body).not.toHaveProperty('include')
     expect(result.reply.object).toBe('response')
   })
 })
@@ -174,10 +175,17 @@ describe('a model switched to Responses', () => {
     const result = await exchange({
       baseTail: '/v1/chat/completions',
       endpoint: 'responses',
-      body: { model: RESPONSES_MODEL, input: 'ping', reasoning: { effort: 'low' }, stream: false }
+      body: {
+        model: RESPONSES_MODEL,
+        input: 'ping',
+        reasoning: { effort: 'low' },
+        stream: false,
+        include: ['reasoning.encrypted_content']
+      }
     })
     expect(result.received.map((r) => r.path)).toEqual(['/v1/responses'])
     expect(result.received[0].body.reasoning).toMatchObject({ effort: 'low' })
+    expect(result.received[0].body.include).toEqual(['reasoning.encrypted_content'])
     // A text-only reply converts back to the envelope the caller asked for.
     expect(result.reply.object).toBe('response')
     expect(JSON.stringify(result.reply.output)).toContain('pong')

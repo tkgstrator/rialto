@@ -1,3 +1,5 @@
+import { apiKeyVendorName } from './custom-provider'
+
 export const TOKEN_PROVIDER_MODES = [
   'system',
   'subscription_only',
@@ -60,6 +62,17 @@ export function allowsProviderMode(policy: TokenPolicy | undefined, mode: Provid
   )
 }
 
-export function allowsTokenModel(policy: TokenPolicy | undefined, model: string): boolean {
-  return policy === undefined || !policy.restrictModels || policy.allowedModels.includes(model)
+/** API-key rows for one vendor share a token selector; subscriptions keep their own identity. */
+export function tokenProviderGroup(provider: string, authMode: ProviderAuthMode): string {
+  return authMode === 'api_key' ? apiKeyVendorName(provider) : provider
+}
+
+export function allowsTokenModel(
+  policy: TokenPolicy | undefined,
+  model: string,
+  target?: { provider: string; authMode: ProviderAuthMode }
+): boolean {
+  if (policy === undefined || !policy.restrictModels || policy.allowedModels.includes(model)) return true
+  if (target === undefined) return policy.allowedModels.some((selector) => selector.endsWith(`,${model}`))
+  return policy.allowedModels.includes(`${tokenProviderGroup(target.provider, target.authMode)},${model}`)
 }

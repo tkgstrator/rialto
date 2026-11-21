@@ -146,6 +146,8 @@ export class OpenAITransformer extends Transformer {
     }
     // Chat rejects the unified Responses reasoning object.
     if ('reasoning' in req) delete req.reasoning
+    // Responses include selectors have no equivalent in Chat Completions.
+    if ('include' in req) delete req.include
     // Chat Completions has no namespace or Responses-style custom tool, so
     // either sent verbatim is a 400 for the whole request — and dropped,
     // a Lite caller's model runs with no tools at all. Lowered, they are

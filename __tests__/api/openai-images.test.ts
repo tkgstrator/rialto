@@ -151,7 +151,7 @@ describe.skipIf(!HAS_DB)('POST /v1/images/generations', () => {
 
   test('lists enabled OpenAI API image models and generates with the configured key', async () => {
     const db = getPrismaClient()
-    const models = ['gpt-image-2.6-flare', 'gpt-image-2.6-sunburst']
+    const models = ['gpt-image-2.5-flare', 'gpt-image-2.5-sunburst', 'gpt-image-2.6-flare', 'gpt-image-2.6-sunburst']
     const catalog = await getCatalog(async () => new Response(null, { status: 503 }))
     const openai = catalog.find((entry) => entry.name === 'openai')
     if (openai === undefined) throw new Error('OpenAI catalog entry missing')
@@ -201,7 +201,7 @@ describe.skipIf(!HAS_DB)('POST /v1/images/generations', () => {
     await db.provider.update({ where: { id: provider.id }, data: { apiKey: null } })
     expect((await (await list()).json()).data).toEqual([])
     expect((await send({ model: models[0], prompt: 'x' }, token)).status).toBe(400)
-    expect(calls).toHaveLength(2)
+    expect(calls).toHaveLength(models.length)
   })
 
   test('edits an uploaded image with the image scope and forwards the resolved model', async () => {
@@ -245,6 +245,71 @@ describe.skipIf(!HAS_DB)('POST /v1/images/generations', () => {
     expect(await file.text()).toBe('image content')
   })
 
+  test.each(['gpt-image-2.5-flare', 'gpt-image-2.5-sunburst'])(
+    'edits %s only on enabled API key targets, including when a subscription offers the same model',
+    async (model) => {
+      const db = getPrismaClient()
+      const subscription = await createProvider()
+      if (model !== MODEL) await db.model.create({ data: { providerId: subscription.id, name: model, enabled: true } })
+      await createAccount(subscription.id, 'legacy')
+      const provider = await db.provider.create({
+        data: { name: 'openai', apiBaseUrl: 'https://api.openai.com/v1', apiKey: 'edit-key', enabled: true }
+      })
+      const row = await db.model.create({ data: { providerId: provider.id, name: model, enabled: false } })
+      const token = (await issueAccessToken({ name: 'editor', surfaces: ['openai-images'] })).plaintext
+      const sendEdit = (bearer: string, target = model) => {
+        const form = new FormData()
+        form.set('model', target)
+        form.set('prompt', 'Open both eyes')
+        form.set('quality', 'max')
+        form.set('size', '1312x1200')
+        for (const label of ['first', 'second']) form.append('image[]', new Blob([label]), label + '.png')
+        return app.request('/v1/images/edits', {
+          method: 'POST',
+          headers: { authorization: 'Bearer ' + bearer },
+          body: form
+        })
+      }
+      const submitted: string[][] = []
+      globalThis.fetch = Object.assign(
+        async (url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+          const form = init?.body
+          if (!(form instanceof FormData)) throw new Error('Expected image edit')
+          const files = await Promise.all(
+            form.getAll('image[]').map((file) => (typeof file === 'string' ? file : file.text()))
+          )
+          submitted.push([
+            String(url),
+            String(new Headers(init?.headers).get('authorization')),
+            String(form.get('model')),
+            String(form.get('quality')),
+            String(form.get('size')),
+            ...files
+          ])
+          return json(payload)
+        },
+        { preconnect: ORIGINAL_FETCH.preconnect }
+      )
+      expect((await sendEdit(token)).status).toBe(400)
+      await db.model.update({ where: { id: row.id }, data: { enabled: true } })
+      expect((await sendEdit(token, 'codex,' + model)).status).toBe(400)
+      const restricted = (
+        await issueAccessToken({
+          name: 'sub only',
+          surfaces: ['openai-images'],
+          policy: { ...DEFAULT_TOKEN_POLICY, providerMode: 'subscription_only' }
+        })
+      ).plaintext
+      expect((await sendEdit(restricted)).status).toBe(403)
+      expect((await sendEdit(token)).status).toBe(200)
+      await updateSurface({ surface: 'openai-images', deniedTargets: ['openai,' + model] })
+      expect((await sendEdit(token)).status).toBe(403)
+      expect(submitted).toEqual([
+        ['https://api.openai.com/v1/images/edits', 'Bearer edit-key', model, 'max', '1312x1200', 'first', 'second']
+      ])
+    }
+  )
+
   test('forwards JSON file references and enforces the image surface denial', async () => {
     const db = getPrismaClient()
     const provider = await db.provider.create({
@@ -274,13 +339,94 @@ describe.skipIf(!HAS_DB)('POST /v1/images/generations', () => {
       { preconnect: ORIGINAL_FETCH.preconnect }
     )
     expect((await sendEdit({ ...body, images: [] })).status).toBe(400)
-    expect((await sendEdit({ ...body, stream: true })).status).toBe(400)
+    expect((await sendEdit({ ...body, stream: 'true' })).status).toBe(400)
     expect((await sendEdit(body)).status).toBe(200)
     expect(sent).toEqual([{ ...body, model }])
     await updateSurface({ surface: 'openai-images', deniedTargets: [body.model] })
     expect((await sendEdit(body)).status).toBe(403)
     expect(sent).toHaveLength(1)
   })
+
+  test.each(['json', 'multipart'])(
+    'relays %s edit events before completion and accounts for usage once',
+    async (format) => {
+      const db = getPrismaClient()
+      const model = 'gpt-image-2.6-flare'
+      await db.provider.create({
+        data: {
+          name: 'openai',
+          apiBaseUrl: 'https://api.openai.com/v1/responses',
+          apiKey: 'upstream-key',
+          enabled: true,
+          models: { create: [{ name: model, enabled: true }] }
+        }
+      })
+      const token = await issueAccessToken({ name: 'stream edit', surfaces: ['openai-images'] })
+      const encoder = new TextEncoder()
+      const partial = 'event: image_edit.partial_image\ndata: {"type":"image_edit.partial_image","b64_json":"YQ=="}\n\n'
+      const complete = `data: ${JSON.stringify({ type: 'image_edit.completed', b64_json: 'Yg==', usage: payload.usage })}\r\n\r\n`
+      const { readable, writable } = new TransformStream<Uint8Array>()
+      const writer = writable.getWriter()
+      globalThis.fetch = Object.assign(
+        async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+          expect(new Headers(init?.headers).get('accept')).toBe('text/event-stream')
+          if (init?.body instanceof FormData) {
+            expect(init.body.get('model')).toBe(model)
+            expect(init.body.get('stream')).toBe('true')
+            expect(init.body.get('partial_images')).toBe('1')
+          } else {
+            expect(JSON.parse(String(init?.body))).toMatchObject({ model, stream: true, partial_images: 1 })
+          }
+          return new Response(readable, { headers: { 'content-type': 'text/event-stream' } })
+        },
+        { preconnect: ORIGINAL_FETCH.preconnect }
+      )
+      const form = new FormData()
+      form.set('model', model)
+      form.set('prompt', 'Make it blue')
+      form.set('stream', 'true')
+      form.set('partial_images', '1')
+      form.set('image', new Blob(['image'], { type: 'image/png' }), 'original.png')
+      const response = await app.request('/v1/images/edits', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token.plaintext}`,
+          ...(format === 'json' ? { 'content-type': 'application/json' } : {})
+        },
+        body:
+          format === 'multipart'
+            ? form
+            : JSON.stringify({
+                model,
+                prompt: 'Make it blue',
+                images: [{ file_id: 'file-original' }],
+                stream: true,
+                partial_images: 1
+              })
+      })
+      expect(response.status).toBe(200)
+      expect(response.headers.get('content-type')).toContain('text/event-stream')
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('Expected an edit stream')
+      const decoder = new TextDecoder()
+      const transfer = async (chunk: string) => {
+        const write = writer.write(encoder.encode(chunk))
+        expect(decoder.decode((await reader.read()).value)).toBe(chunk)
+        await write
+      }
+      await transfer(partial)
+      const finalChunk = 22
+      await transfer(complete.slice(0, finalChunk))
+      await transfer(complete.slice(finalChunk))
+      await transfer(complete)
+      const close = writer.close()
+      expect((await reader.read()).done).toBe(true)
+      await close
+      const rows = await db.requestLog.findMany({ where: { accessTokenId: token.token.id } })
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toMatchObject({ model, inputTokens: 18, outputTokens: 343 })
+    }
+  )
 
   test('rejects disabled targets, ambiguous names, and unsupported models without a network call', async () => {
     const provider = await createProvider()

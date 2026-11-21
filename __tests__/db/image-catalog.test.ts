@@ -68,6 +68,8 @@ describe.skipIf(!HAS_DB)('Codex image catalog', () => {
       expect(row?.outputPer1M).toBeNull()
     }
     const openai = entries.find((entry) => entry.name === 'openai')
-    expect(openai?.models.some((model) => CODEX_IMAGE_MODELS.includes(model.name))).toBe(false)
+    for (const name of CODEX_IMAGE_MODELS) {
+      expect(openai?.models.find((model) => model.name === name)?.outputPer1M).toBe(30)
+    }
   })
 })
