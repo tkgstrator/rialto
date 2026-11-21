@@ -7,6 +7,7 @@
  * needs a complete listing before it can reconcile the stored models.
  */
 
+import { z } from '@hono/zod-openapi'
 import { type CustomApiStyle, customModelsUrls } from '@/shared/custom-provider'
 import { VendorModelsResponseSchema } from '../schemas/api/models'
 import { buildAuthedRequest, extractContextWindows, extractModelIds } from './base'
@@ -15,6 +16,7 @@ type CustomModelsPage = {
   ok: true
   ids: string[]
   contextWindows?: Map<string, number>
+  reasoningLevels?: Map<string, string[]>
   next?: string
 }
 export type CustomModelsResult = Omit<CustomModelsPage, 'next'> | { ok: false; error: string }
@@ -119,6 +121,47 @@ async function fetchModelListing(
   return { ok: false, error: `${url} did not finish listing models` }
 }
 
+const ModelsStatus = z.object({
+  models: z.array(
+    z.object({
+      id: z.string().nonempty(),
+      model_alias: z.string().nullish(),
+      reasoning_levels: z
+        .array(
+          z
+            .string()
+            .regex(/^[a-z0-9][a-z0-9_-]*$/)
+            .max(32)
+        )
+        .max(32)
+        .optional()
+    })
+  )
+})
+
+async function fetchReasoningLevels(
+  url: string,
+  apiKey: string,
+  fetchImpl: typeof fetch
+): Promise<Map<string, string[]>> {
+  const { headers } = buildAuthedRequest('bearer', { kind: 'api_key', key: apiKey }, url)
+  const response = await fetchImpl(`${url}/status`, {
+    headers,
+    redirect: 'manual',
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+  }).catch(() => null)
+  const levels = new Map<string, string[]>()
+  if (!response?.ok) return levels
+  const parsed = ModelsStatus.safeParse(await response.json().catch(() => null))
+  if (!parsed.success) return levels
+  for (const model of parsed.data.models) {
+    if (model.reasoning_levels === undefined) continue
+    const unique = [...new Set(model.reasoning_levels)]
+    levels.set(model.model_alias || model.id, unique)
+  }
+  return levels
+}
+
 /**
  * The model ids the endpoint lists, trying `customModelsUrls` in order.
  * The first candidate that yields ids wins. When none does, the error is the
@@ -136,7 +179,11 @@ export const fetchCustomModels = async (
   const failures: string[] = []
   for (const url of urls) {
     const result = await fetchModelListing(url, input, fetchImpl, complete)
-    if (result.ok) return result
+    if (result.ok) {
+      if (!complete || input.style === 'anthropic' || result.ids.length === 0) return result
+      const reasoningLevels = await fetchReasoningLevels(url, input.apiKey, fetchImpl)
+      return reasoningLevels.size === 0 ? result : { ...result, reasoningLevels }
+    }
     failures.push(result.error)
   }
   return { ok: false, error: failures[0] }

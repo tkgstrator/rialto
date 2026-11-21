@@ -26,6 +26,7 @@ import '../context'
 import { getPrismaClient } from '../../db/client'
 import { buildPriceMap, CACHE_WRITE_1H, CACHE_WRITE_5M, type PriceEntry } from '../../services/cost-service'
 import { tokenModelChoices } from '../../services/token-model-catalog'
+import { isCustomProvider } from '../../shared/custom-provider'
 import { publicModelId } from '../../shared/public-model-id'
 
 export const v1ModelsRoute = new Hono()
@@ -59,25 +60,33 @@ v1ModelsRoute.get('/v1/models', async (c) => {
     buildPriceMap(prisma, pairs),
     prisma.model.findMany({
       where: { OR: models.map((m) => ({ name: m.model, provider: { name: m.provider } })) },
-      select: { name: true, contextWindow: true, provider: { select: { name: true } } }
+      select: {
+        name: true,
+        contextWindow: true,
+        capability: { select: { efforts: true } },
+        provider: { select: { name: true, authMode: true } }
+      }
     })
   ])
-  const windowOf = new Map(windows.map((w) => [`${w.provider.name}||${w.name}`, w.contextWindow]))
-  const contextWindow = (key: string) => {
-    const known = windowOf.get(key)
-    return known === undefined ? null : known
-  }
+  const metadata = new Map(windows.map((row) => [`${row.provider.name}||${row.name}`, row]))
   return c.json({
     object: 'list',
-    data: models.map((m) => ({
-      id: publicModelId(m),
-      object: 'model',
-      created: now,
-      owned_by: m.provider,
-      provider: m.provider,
-      model: m.model,
-      context_window: contextWindow(`${m.provider}||${m.model}`),
-      pricing: pricingOf(prices.get(`${m.provider}||${m.model}`))
-    }))
+    data: models.map((m) => {
+      const key = `${m.provider}||${m.model}`
+      const row = metadata.get(key)
+      return {
+        id: publicModelId(m),
+        object: 'model',
+        created: now,
+        owned_by: m.provider,
+        provider: m.provider,
+        model: m.model,
+        context_window: row === undefined ? null : row.contextWindow,
+        ...(row?.capability && isCustomProvider(row.provider.name, row.provider.authMode)
+          ? { reasoning_levels: row.capability.efforts }
+          : {}),
+        pricing: pricingOf(prices.get(key))
+      }
+    })
   })
 })
