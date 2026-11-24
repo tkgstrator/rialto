@@ -1,3 +1,4 @@
+import type { ModelProviderRule } from '@/schemas/domain/access-token'
 import { apiKeyVendorName } from './custom-provider'
 
 export const TOKEN_PROVIDER_MODES = [
@@ -16,13 +17,20 @@ export interface TokenPolicy {
   allowedModels: string[]
   providerMode: TokenProviderMode
   providerFallback: boolean
+  /**
+   * Models that choose their own billing method. A model not listed follows
+   * providerMode / providerFallback. Token-only: folders do not carry rules,
+   * so moving a token between folders leaves them alone.
+   */
+  modelProviderRules: ModelProviderRule[]
 }
 
 export const DEFAULT_TOKEN_POLICY: TokenPolicy = {
   restrictModels: false,
   allowedModels: [],
   providerMode: 'system',
-  providerFallback: false
+  providerFallback: false,
+  modelProviderRules: []
 }
 
 export interface TokenFolder {
@@ -54,12 +62,42 @@ export function preferredAuthMode(mode: TokenProviderMode): ProviderAuthMode | u
   return mode.startsWith('subscription') ? 'subscription' : 'api_key'
 }
 
-export function allowsProviderMode(policy: TokenPolicy | undefined, mode: ProviderAuthMode): boolean {
-  if (policy === undefined || policy.providerMode === 'system') return true
-  return (
-    preferredAuthMode(policy.providerMode) === mode ||
-    (policy.providerMode.endsWith('_first') && policy.providerFallback)
-  )
+export interface ProviderModeSetting {
+  mode: TokenProviderMode
+  fallback: boolean
+}
+
+const SYSTEM_SETTING: ProviderModeSetting = { mode: 'system', fallback: false }
+
+/**
+ * The billing-method setting one model is served under: its own rule when the
+ * token has one for it, otherwise the token's. `model` is the bare name the
+ * request resolved to (after a stale id was updated to its newest release),
+ * so a rule is matched against the model actually served.
+ *
+ * Every request-path decision about subscription versus API key goes through
+ * here rather than reading providerMode, so a rule reaches all of them: which
+ * providers are eligible, the order they are tried in, and whether a 429/503
+ * may move on to the other billing method.
+ */
+export function providerModeFor(policy: TokenPolicy | undefined, model: string): ProviderModeSetting {
+  if (policy === undefined) return SYSTEM_SETTING
+  const rule = policy.modelProviderRules.find((entry) => entry.model === model)
+  return rule === undefined
+    ? { mode: policy.providerMode, fallback: policy.providerFallback }
+    : { mode: rule.mode, fallback: rule.fallback }
+}
+
+/** A *_first mode with fallback on may retry on the other billing method after a 429/503. */
+export function allowsProviderFallback(policy: TokenPolicy | undefined, model: string): boolean {
+  const setting = providerModeFor(policy, model)
+  return setting.mode.endsWith('_first') && setting.fallback
+}
+
+export function allowsProviderMode(policy: TokenPolicy | undefined, model: string, mode: ProviderAuthMode): boolean {
+  const setting = providerModeFor(policy, model)
+  if (setting.mode === 'system') return true
+  return preferredAuthMode(setting.mode) === mode || allowsProviderFallback(policy, model)
 }
 
 /** API-key rows for one vendor share a token selector; subscriptions keep their own identity. */

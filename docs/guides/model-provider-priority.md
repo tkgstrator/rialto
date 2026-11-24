@@ -7,3 +7,9 @@ When multiple enabled providers offer the same model, go to **Providers → Prio
 The admin API is `GET /api/models/provider-priorities` and `PUT /api/models/provider-priorities` with `{ "model": "gpt-5.6-sol", "providers": ["codex", "openai"] }`. An empty providers array clears the preference. Only providers that have that model can be saved. Deleting a model removes its preference row. The UI and API use the same global order across completion and image entry points; Codex MCP considers only Codex subscription providers.
 
 A client that names `provider,model` goes to exactly that provider; the preference only orders the providers behind a bare name. A preference does not override a surface's denied targets or an access token's plan. Rialto does not claim that shortening catalog IDs alone fixes Codex Desktop's reported editing-tool behavior; test a new Desktop thread with the native ID after deployment.
+
+## Per token: subscription or API key
+
+The priority above is global. An access token can override which billing method serves it under **Provider** on the token's page: follow the system priority, use only a subscription or only an API key, or prefer one of them. A preferred method is tried first, and the priority still orders the providers within each method; **Allow fallback** lets a 429 or 503 move on to the other method.
+
+**Per model** sets the same choice for single models, so one token can prefer the API key for `claude-opus-5-5` while everything else stays on the subscription. A rule names the bare model, so it covers every subscription and API-key provider serving it. Only a model that both a subscription and an API key serve can be added; a rule that insists on a method nothing serves for this token refuses that model, and the page says so. A model without a rule follows the token-wide setting. Rules belong to the token: a folder's defaults do not carry them, and moving a token between folders leaves them alone.

@@ -9,6 +9,7 @@
  */
 
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
+import { ModelProviderRulesSchema } from '@/schemas/domain/access-token'
 import { getPrismaClient } from '../../db/client'
 import {
   deleteAccessToken,
@@ -54,7 +55,9 @@ const TokenPolicySchema = z.object({
     )
     .max(1000),
   providerMode: z.enum(TOKEN_PROVIDER_MODES),
-  providerFallback: z.boolean()
+  providerFallback: z.boolean(),
+  // Replaced whole with the rest of the policy, like allowedModels.
+  modelProviderRules: ModelProviderRulesSchema
 })
 
 const tokenSettings = {

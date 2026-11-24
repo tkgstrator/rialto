@@ -8,6 +8,7 @@
  * must not resolve as unscoped.
  */
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
+import { z } from '@hono/zod-openapi'
 import { tokenFoldersRoute } from '../../src/api/access-tokens/folders'
 import { accessTokensRoute } from '../../src/api/access-tokens/route'
 import { getPrismaClient } from '../../src/db/client'
@@ -508,6 +509,62 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
     })
     expect(updated.status).toBe(200)
     expect((await updated.json()).surfaces).toEqual(['openai-chat', 'openai-images'])
+  })
+
+  test('per-model provider rules are stored with the token and survive a folder move', async () => {
+    const send = (method: string, path: string, body: unknown) =>
+      accessTokensRoute.fetch(
+        new Request(`http://local${path}`, {
+          method,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body)
+        })
+      )
+    const rules = [{ model: 'gpt-6-sol', mode: 'api_key_first' as const, fallback: true }]
+    const policy = {
+      restrictModels: false,
+      allowedModels: [],
+      providerMode: 'subscription_first',
+      providerFallback: false,
+      modelProviderRules: rules
+    }
+    const issued = await send('POST', '/api/access-tokens', { name: 'ruled', policy })
+    expect(issued.status).toBe(200)
+    const IssuedShape = z.object({
+      token: z.object({ id: z.string().nonempty(), policy: z.object({ modelProviderRules: z.unknown() }) }),
+      plaintext: z.string().nonempty()
+    })
+    const { token, plaintext } = IssuedShape.parse(await issued.json())
+    expect(token.policy.modelProviderRules).toEqual(rules)
+    expect((await resolveAccessToken(plaintext))?.policy?.modelProviderRules).toEqual(rules)
+
+    const twice = await send('PATCH', `/api/access-tokens/${token.id}`, {
+      policy: { ...policy, modelProviderRules: [...rules, { ...rules[0], mode: 'subscription_only' }] }
+    })
+    expect(twice.status).toBe(400)
+
+    const folder = z.object({ id: z.string().nonempty() }).parse(
+      await (
+        await tokenFoldersRoute.request('/api/access-token-folders', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: 'Keys',
+            parentId: null,
+            defaultPlanId: null,
+            defaultProviderMode: 'api_key_only',
+            defaultProviderFallback: false
+          })
+        })
+      ).json()
+    )
+    const moved = await updateAccessToken(token.id, { folderId: folder.id })
+    expect(moved?.policy.modelProviderRules).toEqual(rules)
+
+    const cleared = await send('PATCH', `/api/access-tokens/${token.id}`, {
+      policy: { ...policy, modelProviderRules: [] }
+    })
+    expect(cleared.status).toBe(200)
+    expect((await resolveAccessToken(plaintext))?.policy?.modelProviderRules).toEqual([])
   })
 
   test('scope can be changed without touching the secret', async () => {

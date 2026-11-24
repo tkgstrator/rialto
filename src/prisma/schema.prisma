@@ -504,6 +504,14 @@ model AccessToken {
   allowedModels    String[]           @default([])
   providerMode     TokenProviderMode  @default(system)
   providerFallback Boolean            @default(false)
+  // Models that pick their own billing method: [{ model, mode, fallback }],
+  // validated by ModelProviderRulesSchema (src/schemas/domain/access-token.ts).
+  // `model` is the bare name, so one rule covers the subscription and the API
+  // key that both serve it; a model not listed follows providerMode and
+  // providerFallback. JSON rather than a table because the rules are only
+  // ever read and written whole, with the token, and are never queried by
+  // model. Folders have no counterpart: rules belong to the token.
+  modelProviderRules Json             @default("[]")
 
   @@index([planId])
   @@index([folderId])

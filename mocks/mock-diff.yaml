@@ -582,6 +582,51 @@ screens:
           mock:
             type: url
             url: http://localhost:16175/mock-diff/api/workspace/mocks/access-token-form.html?phone&create-plan&filled
+  - id: access-token-form-model-rules
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-token-form.html?edit&no-plan&model-rules
+  - id: access-token-form-add-rule
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-token-form.html?edit&no-plan&model-rules&add-rule
+  - id: access-token-form-phone-model-rules
+    category: Access tokens
+    devices:
+      - id: desktop
+        viewport:
+          width: 1440
+          height: 900
+          deviceScaleFactor: 2
+        colorSchemes:
+          - light
+          - dark
+        versions:
+          mock:
+            type: url
+            url: http://localhost:16175/mock-diff/api/workspace/mocks/access-token-form.html?phone&no-plan&model-rules
   - id: access-plans
     category: Access tokens
     devices:

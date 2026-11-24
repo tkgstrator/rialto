@@ -456,6 +456,57 @@ test('a token selects the billing method and must opt into cross-method fallback
   expect(allowedFallback.primaryModel).toBe('openai,shared')
 })
 
+test('a per-model rule overrides the token-wide billing method for that model only', async () => {
+  const body = { model: 'shared', messages: [] }
+  const scoped = { tokenId: 'test', sharedProviders: true }
+  const tokenWide = { ...DEFAULT_TOKEN_POLICY, providerMode: 'subscription_first' as const, providerFallback: true }
+
+  const apiOnly = {
+    ...tokenWide,
+    modelProviderRules: [{ model: 'shared', mode: 'api_key_only' as const, fallback: false }]
+  }
+  const served = asPlan(await plan('/v1/chat/completions', body, { ...scoped, policy: apiOnly }))
+  expect(served.primaryModel).toBe('openai,shared')
+  // The token falls back across methods; this model's rule does not.
+  expect(served.fallbacks).toEqual([])
+  expect(
+    asResponse(await plan('/v1/chat/completions', { ...body, model: 'codex,shared' }, { ...scoped, policy: apiOnly }))
+      .status
+  ).toBe(403)
+
+  const preferApi = {
+    ...tokenWide,
+    modelProviderRules: [{ model: 'shared', mode: 'api_key_first' as const, fallback: true }]
+  }
+  const ordered = asPlan(await plan('/v1/chat/completions', body, { ...scoped, policy: preferApi }))
+  expect(ordered.primaryModel).toBe('openai,shared')
+  expect(ordered.fallbacks).toEqual(['codex,shared'])
+
+  // A rule for some other model leaves this one on the token's setting.
+  const elsewhere = {
+    ...tokenWide,
+    modelProviderRules: [{ model: 'other', mode: 'api_key_only' as const, fallback: false }]
+  }
+  const untouched = asPlan(await plan('/v1/chat/completions', body, { ...scoped, policy: elsewhere }))
+  expect(untouched.primaryModel).toBe('codex,shared')
+  expect(untouched.fallbacks).toEqual(['openai,shared'])
+})
+
+test("a rule reorders a plan's default model even when the token follows system priorities", async () => {
+  const scoped = { tokenId: 'test', sharedProviders: true }
+  const tokenPlan = { models: ['codex,shared', 'openai,shared'], defaultModel: 'codex,shared', limits: LIMITS }
+  const system = asPlan(await plan('/v1/chat/completions', { messages: [] }, { ...scoped, plan: tokenPlan }))
+  expect(system.primaryModel).toBe('codex,shared')
+  const ruled = {
+    ...DEFAULT_TOKEN_POLICY,
+    modelProviderRules: [{ model: 'shared', mode: 'api_key_first' as const, fallback: false }]
+  }
+  const result = asPlan(
+    await plan('/v1/chat/completions', { messages: [] }, { ...scoped, plan: tokenPlan, policy: ruled })
+  )
+  expect(result.primaryModel).toBe('openai,shared')
+})
+
 test('a token limited to an OpenAI model rejects the same model on Codex', async () => {
   const scope = {
     tokenId: 'vendor-model',
