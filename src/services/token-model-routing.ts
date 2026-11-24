@@ -22,7 +22,7 @@ export async function orderTokenProviders(
   policy: TokenPolicy | undefined
 ): Promise<ProviderPreferenceOrder> {
   const allowed = candidates.filter((target) => tokenAllowsTarget(plan, policy, { ...target, model }))
-  const preferred = preferredAuthMode(providerModeFor(policy, model).mode)
+  const preferred = preferredAuthMode(providerModeFor(policy, model))
   if (preferred === undefined)
     return preferredProviderOrder(
       model,

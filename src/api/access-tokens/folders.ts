@@ -8,8 +8,7 @@ const FolderSchema = z.object({
   name: z.string().trim().min(1).max(100),
   parentId: z.string().nonempty().nullable(),
   defaultPlanId: z.string().nonempty().nullable(),
-  defaultProviderMode: z.enum(TOKEN_PROVIDER_MODES),
-  defaultProviderFallback: z.boolean()
+  defaultProviderMode: z.enum(TOKEN_PROVIDER_MODES)
 })
 
 export const tokenFoldersRoute = new Hono()

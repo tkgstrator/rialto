@@ -264,7 +264,7 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
   // the name bare, so provider ordering below can apply that choice instead
   // of the single provider the plan entry happens to name.
   const explicitProviderMode = (model: string) =>
-    providerModeFor(policy, model.slice(model.indexOf(',') + 1)).mode !== 'system'
+    providerModeFor(policy, model.slice(model.indexOf(',') + 1)) !== 'system'
   if (decision.kind === 'default') {
     body.model = explicitProviderMode(decision.model)
       ? decision.model.slice(decision.model.indexOf(',') + 1)

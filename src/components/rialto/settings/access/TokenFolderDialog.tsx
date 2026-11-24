@@ -30,8 +30,7 @@ export function TokenFolderDialog({
           name: '',
           parentId,
           defaultPlanId: null,
-          defaultProviderMode: 'system',
-          defaultProviderFallback: false
+          defaultProviderMode: 'system'
         }
       : folder
   )
@@ -95,14 +94,8 @@ export function TokenFolderDialog({
           </div>
           <ProviderModeFields
             disabled={busy}
-            value={{ providerMode: draft.defaultProviderMode, providerFallback: draft.defaultProviderFallback }}
-            onChange={(next) =>
-              setDraft({
-                ...draft,
-                defaultProviderMode: next.providerMode,
-                defaultProviderFallback: next.providerFallback
-              })
-            }
+            value={draft.defaultProviderMode}
+            onChange={(defaultProviderMode) => setDraft({ ...draft, defaultProviderMode })}
           />
         </fieldset>
         <div className='flex justify-end gap-2'>

@@ -9,6 +9,12 @@ export const TOKEN_PROVIDER_MODES = [
   'api_key_first'
 ] as const
 
+/**
+ * Which billing method serves a token's requests. A `_first` mode moves on to
+ * the other method after a 429/503; an `_only` mode never does. There is no
+ * separate fallback switch: a preferred method that may not fall back is
+ * exactly `_only`, so the mode alone says it.
+ */
 export type TokenProviderMode = (typeof TOKEN_PROVIDER_MODES)[number]
 export type ProviderAuthMode = 'api_key' | 'subscription'
 
@@ -16,10 +22,9 @@ export interface TokenPolicy {
   restrictModels: boolean
   allowedModels: string[]
   providerMode: TokenProviderMode
-  providerFallback: boolean
   /**
    * Models that choose their own billing method. A model not listed follows
-   * providerMode / providerFallback. Token-only: folders do not carry rules,
+   * providerMode. Token-only: folders do not carry rules,
    * so moving a token between folders leaves them alone.
    */
   modelProviderRules: ModelProviderRule[]
@@ -29,7 +34,6 @@ export const DEFAULT_TOKEN_POLICY: TokenPolicy = {
   restrictModels: false,
   allowedModels: [],
   providerMode: 'system',
-  providerFallback: false,
   modelProviderRules: []
 }
 
@@ -39,7 +43,6 @@ export interface TokenFolder {
   parentId: string | null
   defaultPlanId: string | null
   defaultProviderMode: TokenProviderMode
-  defaultProviderFallback: boolean
 }
 
 export function folderTokenDefaults(folder: TokenFolder | null | undefined): {
@@ -51,8 +54,7 @@ export function folderTokenDefaults(folder: TokenFolder | null | undefined): {
     planId: folder.defaultPlanId,
     policy: {
       ...DEFAULT_TOKEN_POLICY,
-      providerMode: folder.defaultProviderMode,
-      providerFallback: folder.defaultProviderFallback
+      providerMode: folder.defaultProviderMode
     }
   }
 }
@@ -61,13 +63,6 @@ export function preferredAuthMode(mode: TokenProviderMode): ProviderAuthMode | u
   if (mode === 'system') return undefined
   return mode.startsWith('subscription') ? 'subscription' : 'api_key'
 }
-
-export interface ProviderModeSetting {
-  mode: TokenProviderMode
-  fallback: boolean
-}
-
-const SYSTEM_SETTING: ProviderModeSetting = { mode: 'system', fallback: false }
 
 /**
  * The billing-method setting one model is served under: its own rule when the
@@ -80,24 +75,21 @@ const SYSTEM_SETTING: ProviderModeSetting = { mode: 'system', fallback: false }
  * providers are eligible, the order they are tried in, and whether a 429/503
  * may move on to the other billing method.
  */
-export function providerModeFor(policy: TokenPolicy | undefined, model: string): ProviderModeSetting {
-  if (policy === undefined) return SYSTEM_SETTING
+export function providerModeFor(policy: TokenPolicy | undefined, model: string): TokenProviderMode {
+  if (policy === undefined) return 'system'
   const rule = policy.modelProviderRules.find((entry) => entry.model === model)
-  return rule === undefined
-    ? { mode: policy.providerMode, fallback: policy.providerFallback }
-    : { mode: rule.mode, fallback: rule.fallback }
+  return rule === undefined ? policy.providerMode : rule.mode
 }
 
-/** A *_first mode with fallback on may retry on the other billing method after a 429/503. */
+/** A `_first` mode may retry on the other billing method after a 429/503. */
 export function allowsProviderFallback(policy: TokenPolicy | undefined, model: string): boolean {
-  const setting = providerModeFor(policy, model)
-  return setting.mode.endsWith('_first') && setting.fallback
+  return providerModeFor(policy, model).endsWith('_first')
 }
 
 export function allowsProviderMode(policy: TokenPolicy | undefined, model: string, mode: ProviderAuthMode): boolean {
   const setting = providerModeFor(policy, model)
-  if (setting.mode === 'system') return true
-  return preferredAuthMode(setting.mode) === mode || allowsProviderFallback(policy, model)
+  if (setting === 'system') return true
+  return preferredAuthMode(setting) === mode || allowsProviderFallback(policy, model)
 }
 
 /** API-key rows for one vendor share a token selector; subscriptions keep their own identity. */
