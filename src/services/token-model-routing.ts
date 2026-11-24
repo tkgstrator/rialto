@@ -1,5 +1,5 @@
 import type { ProviderAuthMode, TokenPolicy } from '../shared/access-token-policy'
-import { allowsProviderMode, allowsTokenModel, preferredAuthMode } from '../shared/access-token-policy'
+import { allowsProviderMode, allowsTokenModel, preferredAuthMode, providerModeFor } from '../shared/access-token-policy'
 import type { TokenPlan } from './access-token-auth'
 import { type ProviderPreferenceOrder, preferredProviderOrder } from './model-provider-preference'
 
@@ -11,7 +11,7 @@ export function tokenAllowsTarget(
   return (
     (plan == null || plan.models.includes(`${target.provider},${target.model}`)) &&
     allowsTokenModel(policy, target.model, target) &&
-    allowsProviderMode(policy, target.authMode)
+    allowsProviderMode(policy, target.model, target.authMode)
   )
 }
 
@@ -22,7 +22,7 @@ export async function orderTokenProviders(
   policy: TokenPolicy | undefined
 ): Promise<ProviderPreferenceOrder> {
   const allowed = candidates.filter((target) => tokenAllowsTarget(plan, policy, { ...target, model }))
-  const preferred = policy === undefined ? undefined : preferredAuthMode(policy.providerMode)
+  const preferred = preferredAuthMode(providerModeFor(policy, model).mode)
   if (preferred === undefined)
     return preferredProviderOrder(
       model,

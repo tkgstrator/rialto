@@ -42,6 +42,13 @@ candidate).
    against the id it sent, so a plan that lists only the newer id still answers 403 to the older one,
    and a plan that still lists the older id pins it as `provider,model`, which skips this step and
    gets 400 `No usable model` once that model is switched off — update the plan instead.
+
+   An access token can also choose the billing method: subscription only, API key only, or prefer one
+   with optional fallback to the other after a 429/503 (`providerMode` / `providerFallback`). Its
+   `modelProviderRules` override that for single models, keyed by the bare name the request resolved
+   to, so one rule covers every subscription and API-key provider serving that model. Every
+   request-path check reads the setting through `providerModeFor` in
+   `src/shared/access-token-policy.ts`; a model without a rule follows the token-wide setting.
 5. **Surface deny list.** `InboundSurfaceConfig.deniedTargets` can refuse a `provider,model` on one
    surface (400). The list is stored per surface and read through a short cache
    (`src/services/inbound-surface-service.ts`); `/api/inbound-surfaces` reads and writes it.

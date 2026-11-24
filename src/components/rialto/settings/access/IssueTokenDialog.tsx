@@ -166,7 +166,9 @@ export function IssueTokenDialog({
                       policy: {
                         ...defaults.policy,
                         allowedModels: draft.policy.allowedModels,
-                        restrictModels: draft.policy.restrictModels
+                        restrictModels: draft.policy.restrictModels,
+                        // Folders carry no per-model rules, so a folder change keeps the ones set here.
+                        modelProviderRules: draft.policy.modelProviderRules
                       }
                     })
                   }}
