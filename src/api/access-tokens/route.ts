@@ -55,7 +55,6 @@ const TokenPolicySchema = z.object({
     )
     .max(1000),
   providerMode: z.enum(TOKEN_PROVIDER_MODES),
-  providerFallback: z.boolean(),
   // Replaced whole with the rest of the policy, like allowedModels.
   modelProviderRules: ModelProviderRulesSchema
 })

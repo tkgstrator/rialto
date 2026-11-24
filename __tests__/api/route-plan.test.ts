@@ -407,19 +407,16 @@ describe('a token on a plan', () => {
   })
 })
 
-test('a token selects the billing method and must opt into cross-method fallback', async () => {
+test('a token selects the billing method, and only a Prefer mode falls back across methods', async () => {
   const body = { model: 'shared', messages: [] }
   const scoped = { tokenId: 'test', sharedProviders: true }
-  const strict = { ...DEFAULT_TOKEN_POLICY, providerMode: 'subscription_first' as const }
+  const strict = { ...DEFAULT_TOKEN_POLICY, providerMode: 'subscription_only' as const }
   const subscription = asPlan(await plan('/v1/chat/completions', body, { ...scoped, policy: strict }))
   expect(subscription.primaryModel).toBe('codex,shared')
   expect(subscription.fallbacks).toEqual([])
-  const fallback = asPlan(
-    await plan('/v1/chat/completions', body, {
-      ...scoped,
-      policy: { ...strict, providerFallback: true }
-    })
-  )
+  const prefer = { ...DEFAULT_TOKEN_POLICY, providerMode: 'subscription_first' as const }
+  const fallback = asPlan(await plan('/v1/chat/completions', body, { ...scoped, policy: prefer }))
+  expect(fallback.primaryModel).toBe('codex,shared')
   expect(fallback.fallbacks).toEqual(['openai,shared'])
   const api = { ...DEFAULT_TOKEN_POLICY, providerMode: 'api_key_only' as const }
   expect(asPlan(await plan('/v1/chat/completions', body, { ...scoped, policy: api })).primaryModel).toBe(
@@ -447,23 +444,18 @@ test('a token selects the billing method and must opt into cross-method fallback
     ).status
   ).toBe(400)
   __setSurfacesForTests({ 'openai-chat': ['codex,shared'] })
-  const allowedFallback = asPlan(
-    await plan('/v1/chat/completions', body, {
-      ...scoped,
-      policy: { ...strict, providerFallback: true }
-    })
-  )
+  const allowedFallback = asPlan(await plan('/v1/chat/completions', body, { ...scoped, policy: prefer }))
   expect(allowedFallback.primaryModel).toBe('openai,shared')
 })
 
 test('a per-model rule overrides the token-wide billing method for that model only', async () => {
   const body = { model: 'shared', messages: [] }
   const scoped = { tokenId: 'test', sharedProviders: true }
-  const tokenWide = { ...DEFAULT_TOKEN_POLICY, providerMode: 'subscription_first' as const, providerFallback: true }
+  const tokenWide = { ...DEFAULT_TOKEN_POLICY, providerMode: 'subscription_first' as const }
 
   const apiOnly = {
     ...tokenWide,
-    modelProviderRules: [{ model: 'shared', mode: 'api_key_only' as const, fallback: false }]
+    modelProviderRules: [{ model: 'shared', mode: 'api_key_only' as const }]
   }
   const served = asPlan(await plan('/v1/chat/completions', body, { ...scoped, policy: apiOnly }))
   expect(served.primaryModel).toBe('openai,shared')
@@ -476,7 +468,7 @@ test('a per-model rule overrides the token-wide billing method for that model on
 
   const preferApi = {
     ...tokenWide,
-    modelProviderRules: [{ model: 'shared', mode: 'api_key_first' as const, fallback: true }]
+    modelProviderRules: [{ model: 'shared', mode: 'api_key_first' as const }]
   }
   const ordered = asPlan(await plan('/v1/chat/completions', body, { ...scoped, policy: preferApi }))
   expect(ordered.primaryModel).toBe('openai,shared')
@@ -485,7 +477,7 @@ test('a per-model rule overrides the token-wide billing method for that model on
   // A rule for some other model leaves this one on the token's setting.
   const elsewhere = {
     ...tokenWide,
-    modelProviderRules: [{ model: 'other', mode: 'api_key_only' as const, fallback: false }]
+    modelProviderRules: [{ model: 'other', mode: 'api_key_only' as const }]
   }
   const untouched = asPlan(await plan('/v1/chat/completions', body, { ...scoped, policy: elsewhere }))
   expect(untouched.primaryModel).toBe('codex,shared')
@@ -499,7 +491,7 @@ test("a rule reorders a plan's default model even when the token follows system 
   expect(system.primaryModel).toBe('codex,shared')
   const ruled = {
     ...DEFAULT_TOKEN_POLICY,
-    modelProviderRules: [{ model: 'shared', mode: 'api_key_first' as const, fallback: false }]
+    modelProviderRules: [{ model: 'shared', mode: 'api_key_first' as const }]
   }
   const result = asPlan(
     await plan('/v1/chat/completions', { messages: [] }, { ...scoped, plan: tokenPlan, policy: ruled })

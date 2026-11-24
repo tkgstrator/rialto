@@ -14,8 +14,7 @@ export const ModelProviderRuleSchema = z.object({
     .nonempty()
     .max(200)
     .regex(/^[^,]+$/),
-  mode: z.enum(TOKEN_PROVIDER_MODES),
-  fallback: z.boolean()
+  mode: z.enum(TOKEN_PROVIDER_MODES)
 })
 
 export type ModelProviderRule = z.infer<typeof ModelProviderRuleSchema>

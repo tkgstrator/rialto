@@ -110,7 +110,6 @@ export async function resolveAccessToken(presented: string): Promise<ResolvedTok
           restrictModels: row.restrictModels,
           allowedModels: row.allowedModels,
           providerMode: row.providerMode,
-          providerFallback: row.providerFallback,
           modelProviderRules: parseModelProviderRules(row.modelProviderRules)
         },
         plan:

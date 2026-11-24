@@ -276,21 +276,21 @@
       "mock": "access-token-form.html?edit&no-plan&model-rules",
       "route": null,
       "group": "Access tokens",
-      "note": "Provider set per model on the token page (No plan). The token-wide select is Prefer subscription with fallback; under it, Per model lists two rules: claude-opus-5 on API key only, gpt-6-sol on Prefer API key with fallback. Each row names the model, which billing methods serve it, its own mode select and, for a Prefer mode, its own fallback box. A model not listed follows the token-wide setting. A rule names the bare model, so it covers every subscription and API key serving it. Mock-only until approved."
+      "note": "Provider set per model on the token page (No plan). The token-wide select is Prefer subscription; Override, a field of its own under Provider, lists two rules (no count beside its label: the rules are right there): claude-opus-5 on API key only, gpt-6-sol on Prefer API key. Each rule is a flat block with a left rule (the house pattern, not a boxed card) naming the model and its own mode select. It does not list the billing methods serving the model: only a model served both ways can be added, so they would always read the same. There is no fallback box: a Prefer mode falls back to the other method after a 429/503 and an Only mode never does, so the mode alone says it. A model not listed follows the token-wide setting. A rule names the bare model, so it covers every subscription and API key serving it. Override has one short hint; Provider has none, because its options say what each choice does."
     },
     {
       "name": "access-token-form-add-rule",
       "mock": "access-token-form.html?edit&no-plan&model-rules&add-rule",
       "route": null,
       "group": "Access tokens",
-      "note": "Add a model open: the models both a subscription and an API key serve come first and can be picked; models only one method serves are listed under One billing method only, disabled, because a rule could only refuse them and refusing a model is the plan's job. A new rule starts on the other preference from the token's, with fallback off."
+      "note": "Add a model open: the models both a subscription and an API key serve come first and can be picked; models only one method serves are listed under One billing method only, disabled, because a rule could only refuse them and refusing a model is the plan's job. A new rule starts on the other preference from the token's."
     },
     {
       "name": "access-token-form-phone-model-rules",
       "mock": "access-token-form.html?phone&no-plan&model-rules",
       "route": null,
       "group": "Access tokens",
-      "note": "The per-model rules in the issue dialog at phone width: each rule is two lines (model, its billing methods and remove; then its mode select and fallback box), so the rows fit the narrow dialog without a table."
+      "note": "The per-model rules in the issue dialog at phone width: each rule is two lines (model and remove; then its mode select), so the rows fit the narrow dialog without a table."
     },
     {
       "name": "access-plans",

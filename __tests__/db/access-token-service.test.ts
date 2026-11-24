@@ -117,8 +117,7 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
       name: 'Parent',
       parentId: null,
       defaultPlanId: null,
-      defaultProviderMode: 'subscription_only',
-      defaultProviderFallback: false
+      defaultProviderMode: 'subscription_only'
     }
     const parentResponse = await tokenFoldersRoute.request('/api/access-token-folders', {
       method: 'POST',
@@ -520,12 +519,11 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
           body: JSON.stringify(body)
         })
       )
-    const rules = [{ model: 'gpt-6-sol', mode: 'api_key_first' as const, fallback: true }]
+    const rules = [{ model: 'gpt-6-sol', mode: 'api_key_first' as const }]
     const policy = {
       restrictModels: false,
       allowedModels: [],
       providerMode: 'subscription_first',
-      providerFallback: false,
       modelProviderRules: rules
     }
     const issued = await send('POST', '/api/access-tokens', { name: 'ruled', policy })
@@ -551,8 +549,7 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
             name: 'Keys',
             parentId: null,
             defaultPlanId: null,
-            defaultProviderMode: 'api_key_only',
-            defaultProviderFallback: false
+            defaultProviderMode: 'api_key_only'
           })
         })
       ).json()

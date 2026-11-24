@@ -152,13 +152,12 @@ const S = {
   provider: P.has('model-rules')
     ? {
         mode: 'subscription_first',
-        fallback: true,
         rules: [
-          { model: 'claude-opus-5', mode: 'api_key_only', fallback: false },
-          { model: 'gpt-6-sol', mode: 'api_key_first', fallback: true }
+          { model: 'claude-opus-5', mode: 'api_key_only' },
+          { model: 'gpt-6-sol', mode: 'api_key_first' }
         ]
       }
-    : { mode: 'system', fallback: false, rules: [] },
+    : { mode: 'system', rules: [] },
   ruleMenu: P.has('add-rule')
 }
 if (P.has('created')) {
@@ -196,13 +195,13 @@ const field = (id, label, hint, body, extra = '') =>
     ? `<div id="field-${id}">
         <div class="mb-1 ${LABEL}">${label}</div>
         ${body}
-        <p class="mt-1 ${HINT}">${hint}</p>
+        ${hint ? `<p class="mt-1 ${HINT}">${hint}</p>` : ''}
         ${extra}
       </div>`
     : `<div id="field-${id}" class="grid grid-cols-[14rem_1fr] items-start gap-6 border-t border-border/60 px-6 py-4 @max-[40rem]:grid-cols-1 @max-[40rem]:gap-2">
         <div>
           <div class="text-xs font-medium">${label}</div>
-          <div class="mt-0.5 ${HINT}">${hint}</div>
+          ${hint ? `<div class="mt-0.5 ${HINT}">${hint}</div>` : ''}
         </div>
         <div class="min-w-0 max-w-2xl">${body}${extra}</div>
       </div>`
@@ -423,11 +422,13 @@ const planField = () =>
 
 // ─── Provider ─────────────────────────────────────────────────────────
 // Which billing method serves a request: a subscription, an API key, or
-// whatever Providers → Priorities says. The token-wide select and its
-// fallback box are ProviderModeFields as the app draws it today; the rules
-// under it are new. A rule names a model, not a provider: the choice it makes
-// is between the subscription and the key that both serve that model, so one
-// rule covers every provider row serving it.
+// whatever Providers → Priorities says. The token-wide select is
+// ProviderModeFields as the app draws it; the rules under it set one model
+// each. A Prefer mode falls back to the other method after a 429/503 and an
+// Only mode never does, so there is no separate fallback box. A rule names a
+// model, not a provider: the choice it makes is between the subscription and
+// the key that both serve that model, so one rule covers every provider row
+// serving it.
 
 // What reaches this token: the plan's provider,model ids, or with no plan every
 // model of every provider. A plan already pins a provider per model, so under a
@@ -441,11 +442,6 @@ const reachable = () => [...new Set(SERVING.flatMap((s) => s.models))].filter((m
 const unruled = () => reachable().filter((m) => !S.provider.rules.some((r) => r.model === m))
 const ruleOf = (model) => S.provider.rules.find((r) => r.model === model)
 
-const checkbox = (act, id, on, label) => `
-  <button type="button" role="checkbox" aria-checked="${on}" ${ctl(act, id)} class="inline-flex shrink-0 items-center gap-2 text-xs ${on ? '' : 'text-muted-foreground'}">
-    <span class="inline-flex size-4 shrink-0 items-center justify-center rounded border ${on ? 'border-primary bg-primary text-primary-foreground' : 'border-border'}">${on ? '<i class="ri-check-line text-[11px] leading-none"></i>' : ''}</span>${label}
-  </button>`
-
 const modeSelect = (act, id, value, label, width = 'w-full') => `
   <div class="relative ${width}">
     <select aria-label="${label}" ${ctl(act, id)} class="${SELECT} appearance-none">
@@ -457,23 +453,19 @@ const modeSelect = (act, id, value, label, width = 'w-full') => `
 // reach the model at all, or the rule excludes the one method that serves it.
 const ruleNote = (r) => {
   const served = servedBy(r.model)
-  if (served.length === 0) return `<p class="${HINT}">This token cannot use <span class="font-mono">${r.model}</span>, so the rule has no effect.</p>`
+  if (served.length === 0) return `<p class="${HINT}">This token cannot use it.</p>`
   const only = r.mode.endsWith('_only') ? r.mode.replace('_only', '') : null
-  if (only !== null && !served.includes(only)) return `<p class="${HINT} text-destructive">No ${METHODS[only]} serves it for this token, so requests for it are refused.</p>`
+  if (only !== null && !served.includes(only)) return `<p class="${HINT} text-destructive">No ${METHODS[only]} serves it, so requests are refused.</p>`
   return ''
 }
 
 const ruleRow = (r) => `
-  <div class="space-y-2 border-t border-border/60 px-3 py-2.5 first:border-t-0">
+  <div class="space-y-2 border-l-2 border-border pl-3">
     <div class="flex items-center gap-2">
       <span class="min-w-0 truncate font-mono text-xs">${r.model}</span>
-      <span class="shrink-0 text-[12px] text-muted-foreground">${servedBy(r.model).map((m) => METHODS[m]).join(' · ')}</span>
       <button type="button" aria-label="Remove the rule for ${r.model}" ${ctl('remove-rule', r.model)} class="ml-auto inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"><i class="ri-close-line text-sm leading-none"></i></button>
     </div>
-    <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-      ${modeSelect('rule-mode', r.model, r.mode, `Provider for ${r.model}`, 'w-56 max-w-full')}
-      ${r.mode.endsWith('_first') ? checkbox('rule-fallback', r.model, r.fallback, 'Allow fallback') : ''}
-    </div>
+    ${modeSelect('rule-mode', r.model, r.mode, `Provider for ${r.model}`, 'w-56 max-w-full')}
     ${ruleNote(r)}
   </div>`
 
@@ -485,15 +477,14 @@ const ruleTrigger = () =>
 const rulesBlock = () => {
   const rules = S.provider.rules
   return `
-  <div id="model-rules" class="mt-3">
-    <div class="mb-1 ${LABEL}">Per model${rules.length ? ` · ${rules.length}` : ''}</div>
-    ${rules.length ? `<div class="mb-2 rounded-md border border-border">${rules.map(ruleRow).join('')}</div>` : ''}
+  <div id="model-rules">
+    ${rules.length ? `<div class="mb-2 space-y-3">${rules.map(ruleRow).join('')}</div>` : ''}
     ${ruleTrigger()}
-    <p class="mt-1 ${HINT}">A model listed here follows its own rule instead of the setting above. Only a model that both a subscription and an API key serve can be added.</p>
   </div>`
 }
 
-// Models with a choice to make come first. A model only one method serves is
+// Models with a choice to make come first, unlabelled: being served both ways
+// is what puts them there. A model only one method serves is
 // listed but cannot be picked: a rule for it could only refuse it, and
 // refusing a model is the plan's job.
 const ruleMenu = () => {
@@ -507,7 +498,7 @@ const ruleMenu = () => {
   return `
   <div id="rule-menu" role="listbox" aria-label="Add a model" class="z-[60] overflow-hidden rounded-md bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10">
     <div class="max-h-72 overflow-y-auto p-1">
-      ${choice.map((m) => menuItem('add-rule', m, `<span class="whitespace-nowrap font-mono text-xs">${m}</span>`, false, `<span class="ml-auto whitespace-nowrap text-[12px] text-muted-foreground">${servedBy(m).map((x) => METHODS[x]).join(' · ')}</span>`)).join('')}
+      ${choice.map((m) => menuItem('add-rule', m, `<span class="whitespace-nowrap font-mono text-xs">${m}</span>`, false)).join('')}
       ${single.length ? `<div class="pointer-events-none -mx-1 my-1 h-px bg-border"></div>
       <div class="px-2 pt-1 pb-0.5 text-[12px] font-medium text-muted-foreground">One billing method only</div>
       ${single.map(inert).join('')}` : ''}
@@ -519,11 +510,14 @@ const providerField = () =>
   field(
     'provider',
     'Provider',
-    'Whether a subscription or an API key serves this token’s requests. Use system priorities follows Providers → Priorities.',
-    `${modeSelect('mode', '', S.provider.mode, 'Provider')}
-    ${S.provider.mode.endsWith('_first') ? `<div class="mt-2">${checkbox('mode-fallback', '', S.provider.fallback, 'Allow fallback to the other billing method')}</div>` : ''}`,
-    rulesBlock()
+    // No hint: the select's options say what each choice does.
+    '',
+    modeSelect('mode', '', S.provider.mode, 'Provider')
   )
+
+// A field of its own under Provider, not nested in it: the models added here
+// are the exceptions to that setting.
+const overrideField = () => field('override', 'Override', 'These models override the Provider setting.', rulesBlock())
 
 const expiryField = () =>
   field(
@@ -569,7 +563,7 @@ const saveBar = () => {
 }
 
 // ─── Views ────────────────────────────────────────────────────────────
-const formBody = () => `${nameField()}${endpointField()}${planField()}${providerField()}${expiryField()}`
+const formBody = () => `${nameField()}${endpointField()}${planField()}${providerField()}${overrideField()}${expiryField()}`
 
 // The dialog that issues a token. A pinned header and footer around a body
 // that scrolls: with the plan summary, and the new-plan form under it, this
@@ -719,12 +713,10 @@ const ACTIONS = {
   // repeats the setting above would change nothing.
   'add-rule': (model) => {
     const mode = S.provider.mode.startsWith('subscription') ? 'api_key_first' : 'subscription_first'
-    S.provider.rules.push({ model, mode, fallback: false })
+    S.provider.rules.push({ model, mode })
     S.ruleMenu = false
   },
   'remove-rule': (model) => { S.provider.rules = S.provider.rules.filter((r) => r.model !== model) },
-  'rule-fallback': (model) => { ruleOf(model).fallback = !ruleOf(model).fallback },
-  'mode-fallback': () => { S.provider.fallback = !S.provider.fallback },
   'pick-plan': (id) => { S.planId = id === 'none' ? null : id; S.creating = false; S.menu = false; S.note = false },
   'start-create': () => { S.creating = true; S.menu = false; S.note = false },
   'cancel-create': () => { S.creating = false; S.draft = blankDraft() },
@@ -782,12 +774,10 @@ document.addEventListener('click', (event) => {
 })
 document.addEventListener('input', (event) => {
   const el = event.target
-  // Changing a mode resets its fallback, as ProviderModeFields does, and
-  // repaints because the fallback box comes and goes with it.
+  // Repaints because a rule's note depends on its mode.
   if (el.dataset.act === 'mode' || el.dataset.act === 'rule-mode') {
     const target = el.dataset.act === 'mode' ? S.provider : ruleOf(el.dataset.id)
     target.mode = el.value
-    target.fallback = false
     paint()
     return
   }
@@ -810,7 +800,7 @@ document.addEventListener('scroll', positionMenu, true)
 
 // The rule states open on the Provider field, which sits below the fold.
 const showRules = () => {
-  if (P.has('model-rules') && !S.creating) document.getElementById('field-provider')?.scrollIntoView({ block: S.ruleMenu ? 'start' : 'center' })
+  if (P.has('model-rules') && !S.creating) document.getElementById('field-override')?.scrollIntoView({ block: S.ruleMenu ? 'start' : 'center' })
   positionMenu()
 }
 paint({ reveal: S.creating && !S.menu && (PHONE ? 'tail' : true) })

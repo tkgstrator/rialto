@@ -71,15 +71,17 @@ const render = (policy: TokenPolicy, tokenPlan?: PlanWire) =>
   )
 
 describe('ModelProviderRules', () => {
-  test('draws each rule with the methods serving its model and its own fallback box', () => {
+  test('draws each rule with its model and its own mode, without repeating the methods', () => {
     const html = render({
       ...DEFAULT_TOKEN_POLICY,
-      modelProviderRules: [{ model: 'gpt-6-sol', mode: 'api_key_first', fallback: true }]
+      modelProviderRules: [{ model: 'gpt-6-sol', mode: 'api_key_first' }]
     })
-    expect(html).toContain('Per model · 1')
+    expect(html).toContain('>Override<')
     expect(html).toContain('gpt-6-sol')
-    expect(html).toContain('subscription · API key')
-    expect(html).toContain('Allow fallback')
+    // Only a model served both ways can be added, so the rule does not repeat its methods.
+    expect(html).not.toContain('subscription · API key')
+    // A Prefer mode already means it may fall back; there is no separate box.
+    expect(html).not.toContain('role="checkbox"')
     expect(html).toContain('Remove the rule for gpt-6-sol')
   })
 
@@ -87,22 +89,22 @@ describe('ModelProviderRules', () => {
     const html = render(
       {
         ...DEFAULT_TOKEN_POLICY,
-        modelProviderRules: [{ model: 'gpt-6-sol', mode: 'api_key_only', fallback: false }]
+        modelProviderRules: [{ model: 'gpt-6-sol', mode: 'api_key_only' }]
       },
       plan(['codex,gpt-6-sol'])
     )
-    expect(html).toContain('No API key serves it for this token, so requests for it are refused.')
+    expect(html).toContain('No API key serves it, so requests are refused.')
   })
 
   test('says so when the token cannot reach the model at all', () => {
     const html = render(
       {
         ...DEFAULT_TOKEN_POLICY,
-        modelProviderRules: [{ model: 'gpt-6-sol', mode: 'api_key_first', fallback: false }]
+        modelProviderRules: [{ model: 'gpt-6-sol', mode: 'api_key_first' }]
       },
       plan(['google,gemini-3-pro'])
     )
-    expect(html).toContain('This token cannot use gpt-6-sol, so the rule has no effect.')
+    expect(html).toContain('This token cannot use it.')
   })
 
   test('Add a model is disabled once no model is left with a choice', () => {
@@ -110,7 +112,7 @@ describe('ModelProviderRules', () => {
     expect(open).toMatch(/<button[^>]*aria-haspopup="listbox"(?![^>]*disabled)[^>]*>/)
     const done = render({
       ...DEFAULT_TOKEN_POLICY,
-      modelProviderRules: [{ model: 'gpt-6-sol', mode: 'api_key_first', fallback: false }]
+      modelProviderRules: [{ model: 'gpt-6-sol', mode: 'api_key_first' }]
     })
     expect(done).toMatch(/<button[^>]*aria-haspopup="listbox"[^>]*disabled[^>]*>/)
   })
