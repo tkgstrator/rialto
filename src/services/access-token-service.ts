@@ -109,7 +109,6 @@ const toWire = (
     restrictModels: row.restrictModels,
     allowedModels: row.allowedModels,
     providerMode: row.providerMode,
-    providerFallback: row.providerFallback,
     modelProviderRules: parseModelProviderRules(row.modelProviderRules)
   },
   name: row.name,

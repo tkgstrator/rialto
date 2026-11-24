@@ -43,8 +43,9 @@ candidate).
    and a plan that still lists the older id pins it as `provider,model`, which skips this step and
    gets 400 `No usable model` once that model is switched off — update the plan instead.
 
-   An access token can also choose the billing method: subscription only, API key only, or prefer one
-   with optional fallback to the other after a 429/503 (`providerMode` / `providerFallback`). Its
+   An access token can also choose the billing method (`providerMode`): subscription only, API key
+   only, or prefer one and fall back to the other after a 429/503. There is no separate fallback
+   switch; a preferred method that must not fall back is the `_only` mode. Its
    `modelProviderRules` override that for single models, keyed by the bare name the request resolved
    to, so one rule covers every subscription and API-key provider serving that model. Every
    request-path check reads the setting through `providerModeFor` in
@@ -124,8 +125,8 @@ lifting on Refresh is `releaseRecoveredMarks` in `src/services/subscription-refr
 
 Plan の `provider,model` 許可リストと、トークンのモデル名の許可リストの両方を適用する。
 トークンでモデル制限を有効にして許可リストを空にすると、モデルへのリクエストをすべて拒否する。
-接続先にサブスクまたは API キーを指定できる。優先モードで別の認証方式へ切り替えるには
-フォールバックを有効にする。同じ認証方式の候補が複数ある場合は Providers の優先順位を使う。
+接続先にサブスクまたは API キーを指定できる。優先モードは 429/503 で別の認証方式へ切り替え、
+「のみ」モードは切り替えない。同じ認証方式の候補が複数ある場合は Providers の優先順位を使う。
 `provider,model` の直接指定でも、Plan とトークンの制限は適用される。
 
 設定画面のプレビューでは、トークンの対象 API 面、Plan、モデル制限、接続先設定を反映した

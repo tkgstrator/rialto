@@ -11,6 +11,7 @@ import {
   TOKEN_PROVIDER_MODES,
   type TokenFolder,
   type TokenPolicy,
+  type TokenProviderMode,
   tokenProviderGroup
 } from '@/shared/access-token-policy'
 import { ModelProviderRules } from './ModelProviderRules'
@@ -67,52 +68,34 @@ export function FolderPicker({
 export function ProviderModeFields({
   value,
   onChange,
-  disabled,
-  hint
+  disabled
 }: {
-  value: Pick<TokenPolicy, 'providerMode' | 'providerFallback'>
-  onChange: (value: Pick<TokenPolicy, 'providerMode' | 'providerFallback'>) => void
+  value: TokenProviderMode
+  onChange: (value: TokenProviderMode) => void
   disabled?: boolean
-  /** Drawn under the select and fallback box. The folder dialog has its own wording, so it passes none. */
-  hint?: string
 }) {
   const { t } = useTranslation()
-  const fallbackId = useId()
   const providerId = useId()
   return (
-    <div className='grid gap-2'>
-      <div className='grid gap-1'>
-        <Label htmlFor={providerId} className='text-xs'>
-          {t('settings.access.providerMode')}
-        </Label>
-        <SelectPicker
-          id={providerId}
-          className='w-full'
-          label={t('settings.access.providerMode')}
-          value={value.providerMode}
-          disabled={disabled}
-          onChange={(next) => {
-            const mode = TOKEN_PROVIDER_MODES.find((item) => item === next)
-            if (mode !== undefined) onChange({ providerMode: mode, providerFallback: false })
-          }}
-          options={TOKEN_PROVIDER_MODES.map((mode) => ({
-            value: mode,
-            label: t(`settings.access.providerModes.${mode}`)
-          }))}
-        />
-      </div>
-      {value.providerMode.endsWith('_first') ? (
-        <Label htmlFor={fallbackId} className='text-xs'>
-          <Checkbox
-            id={fallbackId}
-            disabled={disabled}
-            checked={value.providerFallback}
-            onCheckedChange={(checked) => onChange({ ...value, providerFallback: checked === true })}
-          />
-          {t('settings.access.providerFallback')}
-        </Label>
-      ) : null}
-      {hint === undefined ? null : <p className='text-[12px] leading-snug text-muted-foreground'>{hint}</p>}
+    <div className='grid gap-1'>
+      <Label htmlFor={providerId} className='text-xs'>
+        {t('settings.access.providerMode')}
+      </Label>
+      <SelectPicker
+        id={providerId}
+        className='w-full'
+        label={t('settings.access.providerMode')}
+        value={value}
+        disabled={disabled}
+        onChange={(next) => {
+          const mode = TOKEN_PROVIDER_MODES.find((item) => item === next)
+          if (mode !== undefined) onChange(mode)
+        }}
+        options={TOKEN_PROVIDER_MODES.map((mode) => ({
+          value: mode,
+          label: t(`settings.access.providerModes.${mode}`)
+        }))}
+      />
     </div>
   )
 }
@@ -207,10 +190,9 @@ export function TokenPolicyFields({
         </div>
       ) : null}
       <ProviderModeFields
-        value={policy}
+        value={policy.providerMode}
         disabled={disabled}
-        hint={t('settings.access.providerModeHint')}
-        onChange={(mode) => onChange({ ...policy, ...mode })}
+        onChange={(providerMode) => onChange({ ...policy, providerMode })}
       />
       <ModelProviderRules
         policy={policy}

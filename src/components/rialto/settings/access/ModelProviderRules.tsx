@@ -3,8 +3,6 @@ import { useTranslation } from 'react-i18next'
 import { RButton } from '@/components/rialto/primitives'
 import { SelectPicker } from '@/components/rialto/SelectPicker'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Label } from '@/components/ui/label'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import type { PlanWire } from '@/lib/api'
 import { modelOf, providerOf } from '@/lib/rialto/settings/plans'
@@ -92,13 +90,13 @@ export function ModelProviderRules({
   const choices = unruled.filter((model) => methodsOf(model).length > 1)
   const single = unruled.filter((model) => methodsOf(model).length === 1)
 
-  const update = (model: string, next: Partial<ModelProviderRule>) =>
-    onChange(rules.map((rule) => (rule.model === model ? { ...rule, ...next } : rule)))
+  const update = (model: string, mode: TokenProviderMode) =>
+    onChange(rules.map((rule) => (rule.model === model ? { ...rule, mode } : rule)))
   // A new rule starts on the other preference from the token's: a rule that
   // repeats the setting above would change nothing.
   const add = (model: string) => {
     const mode = policy.providerMode.startsWith('subscription') ? 'api_key_first' : 'subscription_first'
-    onChange([...rules, { model, mode, fallback: false }])
+    onChange([...rules, { model, mode }])
     setOpen(false)
   }
 
@@ -108,7 +106,7 @@ export function ModelProviderRules({
     if (methods.length === 0)
       return (
         <p className='text-[12px] leading-snug text-muted-foreground'>
-          {t('settings.access.modelProviderRuleUnreachable', { model: rule.model })}
+          {t('settings.access.modelProviderRuleUnreachable')}
         </p>
       )
     const only = onlyMethod(rule.mode)
@@ -123,20 +121,17 @@ export function ModelProviderRules({
 
   return (
     <div className='grid gap-1'>
-      <div id={labelId} className='text-[12px] text-muted-foreground'>
-        {rules.length === 0
-          ? t('settings.access.modelProviderRules')
-          : t('settings.access.modelProviderRulesCount', { n: rules.length })}
+      {/* A field of its own, headed like Provider above it. No count: the rules are listed right under it. */}
+      <div id={labelId} className='text-xs leading-none font-medium'>
+        {t('settings.access.modelProviderRules')}
       </div>
       {rules.length > 0 ? (
-        <ul aria-labelledby={labelId} className='mb-1 rounded-md border border-border'>
+        // Flat rows with a left rule, the house pattern (primitives.tsx), not a boxed card.
+        <ul aria-labelledby={labelId} className='mb-1 grid gap-3'>
           {rules.map((rule) => (
-            <li key={rule.model} className='grid gap-2 border-t border-border/60 px-3 py-2.5 first:border-t-0'>
+            <li key={rule.model} className='grid gap-2 border-l-2 border-border pl-3'>
               <div className='flex min-w-0 items-center gap-2'>
                 <span className='min-w-0 truncate font-mono text-xs'>{rule.model}</span>
-                <span className='shrink-0 text-[12px] text-muted-foreground'>
-                  {methodsOf(rule.model).map(methodLabel).join(' · ')}
-                </span>
                 <Button
                   type='button'
                   variant='ghost'
@@ -149,33 +144,20 @@ export function ModelProviderRules({
                   <i aria-hidden className='ri-close-line text-sm leading-none' />
                 </Button>
               </div>
-              <div className='flex flex-wrap items-center gap-x-3 gap-y-2'>
-                <SelectPicker
-                  className='w-56 max-w-full'
-                  label={t('settings.access.modelProviderRuleMode', { model: rule.model })}
-                  value={rule.mode}
-                  disabled={disabled}
-                  onChange={(next) => {
-                    const mode = TOKEN_PROVIDER_MODES.find((item) => item === next)
-                    // Changing the mode resets fallback, as the token-wide select does.
-                    if (mode !== undefined) update(rule.model, { mode, fallback: false })
-                  }}
-                  options={TOKEN_PROVIDER_MODES.map((mode) => ({
-                    value: mode,
-                    label: t(`settings.access.providerModes.${mode}`)
-                  }))}
-                />
-                {rule.mode.endsWith('_first') ? (
-                  <Label className='text-xs'>
-                    <Checkbox
-                      disabled={disabled}
-                      checked={rule.fallback}
-                      onCheckedChange={(checked) => update(rule.model, { fallback: checked === true })}
-                    />
-                    {t('settings.access.modelProviderRuleFallback')}
-                  </Label>
-                ) : null}
-              </div>
+              <SelectPicker
+                className='w-56 max-w-full'
+                label={t('settings.access.modelProviderRuleMode', { model: rule.model })}
+                value={rule.mode}
+                disabled={disabled}
+                onChange={(next) => {
+                  const mode = TOKEN_PROVIDER_MODES.find((item) => item === next)
+                  if (mode !== undefined) update(rule.model, mode)
+                }}
+                options={TOKEN_PROVIDER_MODES.map((mode) => ({
+                  value: mode,
+                  label: t(`settings.access.providerModes.${mode}`)
+                }))}
+              />
               {noteOf(rule)}
             </li>
           ))}
@@ -202,6 +184,7 @@ export function ModelProviderRules({
             aria-label={t('settings.access.modelProviderRuleAdd')}
             className='max-h-72 overflow-y-auto p-1'
           >
+            {/* Every model here is served both ways, which is why it can be picked, so its methods go unsaid. */}
             {choices.map((model) => (
               <div
                 key={model}
@@ -218,9 +201,6 @@ export function ModelProviderRules({
                 className='flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm select-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:outline-none'
               >
                 <span className='whitespace-nowrap font-mono text-xs'>{model}</span>
-                <span className='ml-auto whitespace-nowrap text-[12px] text-muted-foreground'>
-                  {methodsOf(model).map(methodLabel).join(' · ')}
-                </span>
               </div>
             ))}
             {single.length > 0 ? (
