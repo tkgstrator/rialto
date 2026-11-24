@@ -27,9 +27,10 @@ export interface TokenSpendGroup {
  * Total USD per access token, or null for a token whose traffic could
  * not be priced at all.
  *
- * Null and 0 are different answers and both happen: a subscription
- * provider has no per-token price, so its groups price to null and the
- * column shows "unpriced" rather than "free". A token that priced some
+ * Null and 0 are different answers and both happen: a model no API
+ * vendor prices (a subscription model is priced at its API twin's rate,
+ * so it is not one of these) prices to null and the column shows
+ * "unpriced" rather than "free". A token that priced some
  * of its models and not others reports the part that priced — an
  * under-count, but the alternative is discarding a real number.
  */

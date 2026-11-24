@@ -194,8 +194,9 @@ export interface AccessTokenWire {
    * window (30 days), not over its lifetime — `requestCount` is a
    * counter that outlives log retention and this is priced from the
    * logs, so the two are deliberately different spans. Null when
-   * nothing priced: no traffic in the window, capture off, or a
-   * subscription model with no per-token price.
+   * nothing priced: no traffic in the window, capture off, or only
+   * models with no API price. Subscription traffic is priced at the
+   * same model's API price.
    */
   costUsd: number | null
   /**

@@ -97,9 +97,9 @@ describe('sumSpendByToken', () => {
   })
 
   test('an unpriced model leaves the token absent rather than reporting $0', () => {
-    // Subscription providers have no per-request price. Reporting zero
-    // would say the traffic was free; absent renders as a dash, which
-    // says the question was not answered.
+    // A model no API vendor prices. Reporting zero would say the traffic
+    // was free; absent renders as a dash, which says the question was not
+    // answered.
     const totals = sumSpendByToken([group({ model: 'claude-opus-5', inputTokens: 1_000_000 })], priceMap)
     expect(totals.has('tok1')).toBe(false)
   })
@@ -279,9 +279,9 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
       data: {
         sessionId: session.id,
         accessTokenId: token.id,
-        // No scraped price for this pair, which is every subscription
-        // model. The cost is unknowable; the token counts are not, and
-        // reporting them as absent would hide real traffic.
+        // No API vendor prices this model, so there is no twin to borrow
+        // a price from. The cost is unknowable; the token counts are not,
+        // and reporting them as absent would hide real traffic.
         provider: 'claude-code',
         model: 'claude-sonnet-5',
         inputTokens: 900,
@@ -293,6 +293,34 @@ describe.skipIf(!HAS_DB)('access-token-service', () => {
     expect(listed.costUsd).toBeNull()
     expect(listed.inputTokens).toBe(900)
     expect(listed.outputTokens).toBe(100)
+  })
+
+  test('subscription traffic costs what the same call through an API key would', async () => {
+    const { token } = await issueAccessToken({ name: 'subscription' })
+    const prisma = getPrismaClient()
+    const api = await prisma.provider.create({
+      data: { name: 'anthropic', apiBaseUrl: 'https://api.anthropic.com', authMode: 'api_key', apiStyle: 'anthropic' }
+    })
+    await prisma.model.create({
+      data: { providerId: api.id, name: 'claude-sonnet-5', enabled: true, inputPer1M: 3, outputPer1M: 15 }
+    })
+    const session = await prisma.session.create({ data: { id: 'sess-subscription' } })
+    await prisma.requestLog.create({
+      data: {
+        sessionId: session.id,
+        accessTokenId: token.id,
+        // The subscription row itself carries no price here; the cost
+        // comes from the API model of the same name.
+        provider: 'claude-code',
+        model: 'claude-sonnet-5',
+        inputTokens: 1_000_000,
+        outputTokens: 100_000
+      }
+    })
+
+    const [listed] = (await listAccessTokens()).tokens
+    // 1M input at $3 + 0.1M output at $15.
+    expect(listed.costUsd).toBeCloseTo(4.5, 6)
   })
 
   test('a token with no priced traffic reports null, not zero', async () => {

@@ -305,9 +305,11 @@ model Model {
   // a model can be legacy-priced but not formally deprecated.
   legacy            Boolean                 @default(false)
   // Official per-1M-token USD prices scraped from the vendor pricing
-  // page (src/shared/data/providers/<vendor>/prices.json).
-  // Null for subscription-auth models and any api_key model the scrape
-  // didn't cover.
+  // page (src/shared/data/providers/<vendor>/prices.json). A
+  // subscription-auth model gets the API price of the same model name
+  // (price-seed-service syncSubscriptionPrices), so its traffic is priced
+  // as if it had been sent with an API key. Null for a model no API
+  // vendor lists and for any api_key model the scrape didn't cover.
   inputPer1M        Float?
   outputPer1M       Float?
   // USD per 1M cached-input (cache-read) tokens, scraped alongside
@@ -520,9 +522,10 @@ model Plan {
   // Limits per usage window, counted in AccessTokenUsageWindow. Each is
   // independent and null = no limit on that axis. Requests count the
   // completions admitted; spend is the USD Rialto prices those
-  // completions at (the same pricing as the token's Cost column), so an
-  // unpriced model — every subscription model — adds requests but no
-  // spend.
+  // completions at (the same pricing as the token's Cost column). A
+  // subscription model counts at the API price of the same model, as if
+  // the call had gone through an API key; only a model with no API price
+  // anywhere adds requests but no spend.
   fiveHourRequestLimit  Int?
   fiveHourSpendLimitUsd Float?
   sevenDayRequestLimit  Int?

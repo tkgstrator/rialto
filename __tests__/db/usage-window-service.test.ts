@@ -245,9 +245,13 @@ describe.skipIf(!HAS_DB)('usage windows', () => {
     await recordCallSpend(call)
     // 0.1M input at $3 + 0.01M output at $15.
     expect((await rowOf('5h'))?.costUsd).toBeCloseTo(0.45, 9)
-    // An unpriced model (every subscription model) adds nothing.
+    // A subscription call counts at the API price of the same model, the
+    // spend an API key would have run up.
+    await recordCallSpend({ ...call, provider: 'claude-code' })
+    expect((await rowOf('5h'))?.costUsd).toBeCloseTo(0.9, 9)
+    // A model no API vendor prices adds nothing.
     await recordCallSpend({ ...call, provider: 'codex', model: 'gpt-5.5' })
-    expect((await rowOf('5h'))?.costUsd).toBeCloseTo(0.45, 9)
+    expect((await rowOf('5h'))?.costUsd).toBeCloseTo(0.9, 9)
   })
 
   test('concurrent requests on a fresh token admit exactly the limit', async () => {
