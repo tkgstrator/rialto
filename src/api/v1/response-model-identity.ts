@@ -3,8 +3,9 @@
  *
  * A route can select a concrete provider/model after a caller supplied an
  * alias, and a later candidate can replace it if an earlier attempt fails.
- * The client-visible model is the target Rialto selected for the successful
- * invocation, rather than an upstream alias or version string. A stream can
+ * The client-visible model is the model Rialto selected for the successful
+ * invocation, rather than an upstream alias or version string; the provider
+ * that served it is in the `x-rialto-selected-model` header. A stream can
  * only honor that while its initial envelope is still recognizable; see
  * applyResponseModelIdentity.
  */
@@ -18,14 +19,26 @@ export type SelectedModelIdentity = {
   path: string
 }
 
+// The header keeps Rialto's own `provider,model` addressing, so a client can
+// send it back as `body.model` to pin the same provider.
 const selectedModelOf = (identity: SelectedModelIdentity): string | undefined =>
   identity.model !== undefined && identity.model.length > 0 ? `${identity.provider},${identity.model}` : undefined
+
+// The body carries the bare model name, the same id `/v1/models` publishes.
+// Clients copy this value into their transcripts, and tools that price those
+// transcripts (Claude Code's own estimate, T3 Code over LiteLLM's table) look
+// it up by exact name. `provider,model` matched no table, and neither would
+// `provider/model`: LiteLLM keys a prefix only for its own platform names
+// (`vertex_ai/`, `azure/`), never Rialto's provider names. Either form made
+// every Rialto-served call count as $0. The provider stays in the header.
+const responseModelOf = (identity: SelectedModelIdentity): string | undefined =>
+  identity.model !== undefined && identity.model.length > 0 ? identity.model : undefined
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
 function applySelectedModel(payload: unknown, identity: SelectedModelIdentity): unknown {
-  const selected = selectedModelOf(identity)
+  const selected = responseModelOf(identity)
   if (selected === undefined || !isRecord(payload)) return payload
 
   const surface = surfaceForPath(identity.path)?.id
@@ -37,7 +50,7 @@ function applySelectedModel(payload: unknown, identity: SelectedModelIdentity): 
 }
 
 function applySelectedSseModel(payload: unknown, identity: SelectedModelIdentity): unknown {
-  const selected = selectedModelOf(identity)
+  const selected = responseModelOf(identity)
   if (selected === undefined || !isRecord(payload)) return payload
 
   const surface = surfaceForPath(identity.path)?.id
@@ -235,7 +248,8 @@ function patchAnthropicSseResponse(response: Response, identity: SelectedModelId
 }
 
 /**
- * Adds selected-target provenance and sets the wire model to that target.
+ * Adds selected-target provenance (`provider,model`) as a header and sets the
+ * wire model to the selected bare model name.
  *
  * JSON needs one body read. Anthropic SSE rewrites a bounded initial envelope
  * and forwards the tail unchanged; oversized, opaque or incomplete heads pass

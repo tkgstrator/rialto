@@ -31,7 +31,7 @@ const relayChunks = async (chunks: Uint8Array[]): Promise<Uint8Array> => {
   return new Uint8Array(await response.arrayBuffer())
 }
 
-const patchedStart = messageStart.replace('upstream', 'anthropic,claude-sonnet-5')
+const patchedStart = messageStart.replace('upstream', 'claude-sonnet-5')
 
 const bufferedPrefixSource = () => {
   const consumed = Promise.withResolvers<void>()
@@ -87,7 +87,7 @@ test('forwards partial signature bytes before the upstream completes its event',
   try {
     const initialRead = reader.read()
     const [initial] = await beforeRelease(Promise.all([initialRead, writer.write(encoder.encode(messageStart))]))
-    expect(decoder.decode(initial.value)).toContain('"model":"anthropic,claude-sonnet-5"')
+    expect(decoder.decode(initial.value)).toContain('"model":"claude-sonnet-5"')
 
     const partial = encoder.encode(
       'event: content_block_delta\ndata: {"delta":{"type":"signature_delta","signature":"pending'
@@ -134,7 +134,7 @@ test('preserves mixed delimiters and a cap-sized head with a split pending delim
   const suffix = '"}}'
   const record = prefix + 'x'.repeat(64 * 1024 - prefix.length - suffix.length) + suffix
   const result = await relayChunks([encoder.encode(`${record}\r\n\r`), encoder.encode('\n')])
-  expect(decoder.decode(result)).toBe(`${record.replace('upstream', 'anthropic,claude-sonnet-5')}\r\n\r\n`)
+  expect(decoder.decode(result)).toBe(`${record.replace('upstream', 'claude-sonnet-5')}\r\n\r\n`)
 })
 
 test('preserves no-data field records before rewriting the initial envelope', async () => {
@@ -160,7 +160,7 @@ test('aggregates multiline data and preserves non-data fields of the initial env
     .filter((line) => line.startsWith('data:'))
     .map((line) => line.slice(5).trimStart())
     .join('\n')
-  expect(JSON.parse(rawData)).toEqual({ type: 'message_start', message: { model: 'anthropic,claude-sonnet-5' } })
+  expect(JSON.parse(rawData)).toEqual({ type: 'message_start', message: { model: 'claude-sonnet-5' } })
 })
 
 test('rewrites a split initial envelope with a missing or empty model', async () => {
@@ -171,7 +171,7 @@ test('rewrites a split initial envelope with a missing or empty model', async ()
     )
     expect(JSON.parse(result.slice(6))).toEqual({
       type: 'message_start',
-      message: { model: 'anthropic,claude-sonnet-5' }
+      message: { model: 'claude-sonnet-5' }
     })
   }
 })
@@ -209,7 +209,7 @@ test('accepts a 64 KiB initial record and bypasses one byte over the limit', asy
     const record = prefix + 'x'.repeat(64 * 1024 - prefix.length - suffix.length + extra) + suffix
     const raw = `${record}\n\n`
     const result = decoder.decode(await relayChunks([encoder.encode(raw)]))
-    expect(result).toBe(extra === 0 ? raw.replace('upstream', 'anthropic,claude-sonnet-5') : raw)
+    expect(result).toBe(extra === 0 ? raw.replace('upstream', 'claude-sonnet-5') : raw)
   }
 })
 
