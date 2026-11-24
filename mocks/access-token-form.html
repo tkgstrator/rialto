@@ -25,8 +25,8 @@ const { renderShell, btn, pill, navTo, surfaceChip, tokenTable, PLANS } = window
 //               it may spend per 5-hour / 7-day window     plan.models, limits)
 //   expiry      when it stops authenticating
 //
-// plus its name. The plan is shown, not just named: a select with only a
-// name in it asks the operator to remember what "Plus" allows, and the answer
+// plus its name, and which billing method serves it (Provider, below). The
+// plan is shown, not just named: a select with only a name in it asks the operator to remember what "Plus" allows, and the answer
 // decides whether the client's next request is served or refused with 403.
 // So the plan's models and limits are drawn read-only under the select.
 //
@@ -47,6 +47,9 @@ const { renderShell, btn, pill, navTo, surfaceChip, tokenTable, PLANS } = window
 //   ?edit                 the token's page; name and expiry locked
 //   ?edit&create-plan&filled
 //   ?phone                the form alone in a 390px column (add &create-plan&filled)
+//   ?edit&no-plan&model-rules          Provider set per model: two rules
+//   ?edit&no-plan&model-rules&add-rule the Add a model menu open
+//   ?phone&no-plan&model-rules         the rules at phone width
 // Also accepted, unregistered: ?blank (issue, nothing typed, Issue disabled),
 // ?plan=Plus|Pro|Max (a plan other than Free).
 //
@@ -96,6 +99,28 @@ const PROVIDERS = [
 ]
 const ALL_MODELS = PROVIDERS.flatMap((p) => p.models.map((m) => `${p.id},${m}`))
 
+// Who serves each model, and how it is billed. A subscription and an API key
+// can serve the same model — gpt-6-sol is both the Codex subscription's and
+// the OpenAI key's — and that overlap is the only place a provider rule
+// changes anything. Kept local, like ENDPOINTS: the Claude subscription is
+// drawn here and not in PROVIDERS, which the approved create-plan states render.
+const SERVING = [
+  { id: 'codex', method: 'subscription', models: ['gpt-6-luna', 'gpt-5.6-terra', 'gpt-6-sol', 'gpt-6-astra'] },
+  { id: 'claude', method: 'subscription', models: ['claude-sonnet-5', 'claude-opus-5'] },
+  { id: 'google', method: 'subscription', models: ['gemini-3-flash', 'gemini-3-pro'] },
+  { id: 'anthropic', method: 'api_key', models: ['claude-haiku-4-5', 'claude-sonnet-5', 'claude-opus-5'] },
+  { id: 'openai', method: 'api_key', models: ['gpt-6-luna', 'gpt-6-sol'] }
+]
+const METHODS = { subscription: 'subscription', api_key: 'API key' }
+// TokenProviderMode, in the order and with the labels the app's select uses.
+const MODES = [
+  ['system', 'Use system priorities'],
+  ['subscription_only', 'Subscription only'],
+  ['api_key_only', 'API key only'],
+  ['subscription_first', 'Prefer subscription'],
+  ['api_key_first', 'Prefer API key']
+]
+
 const blankDraft = () => ({
   name: '',
   provider: 'Codex',
@@ -122,16 +147,32 @@ const S = {
   creating: P.has('create-plan'),
   draft: P.has('filled') ? filledDraft() : blankDraft(),
   note: false,
-  saved: false
+  saved: false,
+  // The token-wide setting, and the models that set their own.
+  provider: P.has('model-rules')
+    ? {
+        mode: 'subscription_first',
+        fallback: true,
+        rules: [
+          { model: 'claude-opus-5', mode: 'api_key_only', fallback: false },
+          { model: 'gpt-6-sol', mode: 'api_key_first', fallback: true }
+        ]
+      }
+    : { mode: 'system', fallback: false, rules: [] },
+  ruleMenu: P.has('add-rule')
 }
 if (P.has('created')) {
   plans.push(TEAM)
   S.planId = TEAM.id
   S.note = true
 }
-const initial = { surfaces: new Set(S.surfaces), planId: S.planId }
+const copyProvider = (p) => ({ ...p, rules: p.rules.map((r) => ({ ...r })) })
+const initial = { surfaces: new Set(S.surfaces), planId: S.planId, provider: copyProvider(S.provider) }
 const sameSet = (a, b) => a.size === b.size && [...a].every((x) => b.has(x))
-const dirty = () => !sameSet(S.surfaces, initial.surfaces) || S.planId !== initial.planId
+const dirty = () =>
+  !sameSet(S.surfaces, initial.surfaces) ||
+  S.planId !== initial.planId ||
+  JSON.stringify(S.provider) !== JSON.stringify(initial.provider)
 const planOf = (id) => plans.find((p) => p.id === id)
 
 // Focus survives a repaint through this key; every interactive control has one.
@@ -380,6 +421,110 @@ const planField = () =>
     S.creating ? newPlanForm() : S.planId === null ? noPlanNote() : planSummary(planOf(S.planId))
   )
 
+// ─── Provider ─────────────────────────────────────────────────────────
+// Which billing method serves a request: a subscription, an API key, or
+// whatever Providers → Priorities says. The token-wide select and its
+// fallback box are ProviderModeFields as the app draws it today; the rules
+// under it are new. A rule names a model, not a provider: the choice it makes
+// is between the subscription and the key that both serve that model, so one
+// rule covers every provider row serving it.
+
+// What reaches this token: the plan's provider,model ids, or with no plan every
+// model of every provider. A plan already pins a provider per model, so under a
+// plan fewer models have a choice left to make.
+const servedBy = (model) => {
+  const plan = S.planId === null ? null : planOf(S.planId)
+  const methods = SERVING.filter((s) => s.models.includes(model) && (plan === null || plan.models.includes(`${s.id},${model}`))).map((s) => s.method)
+  return Object.keys(METHODS).filter((m) => methods.includes(m))
+}
+const reachable = () => [...new Set(SERVING.flatMap((s) => s.models))].filter((m) => servedBy(m).length > 0)
+const unruled = () => reachable().filter((m) => !S.provider.rules.some((r) => r.model === m))
+const ruleOf = (model) => S.provider.rules.find((r) => r.model === model)
+
+const checkbox = (act, id, on, label) => `
+  <button type="button" role="checkbox" aria-checked="${on}" ${ctl(act, id)} class="inline-flex shrink-0 items-center gap-2 text-xs ${on ? '' : 'text-muted-foreground'}">
+    <span class="inline-flex size-4 shrink-0 items-center justify-center rounded border ${on ? 'border-primary bg-primary text-primary-foreground' : 'border-border'}">${on ? '<i class="ri-check-line text-[11px] leading-none"></i>' : ''}</span>${label}
+  </button>`
+
+const modeSelect = (act, id, value, label, width = 'w-full') => `
+  <div class="relative ${width}">
+    <select aria-label="${label}" ${ctl(act, id)} class="${SELECT} appearance-none">
+      ${MODES.map(([mode, text]) => `<option value="${mode}" ${value === mode ? 'selected' : ''}>${text}</option>`).join('')}
+    </select>${CHEVRON}
+  </div>`
+
+// Said under a rule only when it does not do what it reads as: the token cannot
+// reach the model at all, or the rule excludes the one method that serves it.
+const ruleNote = (r) => {
+  const served = servedBy(r.model)
+  if (served.length === 0) return `<p class="${HINT}">This token cannot use <span class="font-mono">${r.model}</span>, so the rule has no effect.</p>`
+  const only = r.mode.endsWith('_only') ? r.mode.replace('_only', '') : null
+  if (only !== null && !served.includes(only)) return `<p class="${HINT} text-destructive">No ${METHODS[only]} serves it for this token, so requests for it are refused.</p>`
+  return ''
+}
+
+const ruleRow = (r) => `
+  <div class="space-y-2 border-t border-border/60 px-3 py-2.5 first:border-t-0">
+    <div class="flex items-center gap-2">
+      <span class="min-w-0 truncate font-mono text-xs">${r.model}</span>
+      <span class="shrink-0 text-[12px] text-muted-foreground">${servedBy(r.model).map((m) => METHODS[m]).join(' · ')}</span>
+      <button type="button" aria-label="Remove the rule for ${r.model}" ${ctl('remove-rule', r.model)} class="ml-auto inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"><i class="ri-close-line text-sm leading-none"></i></button>
+    </div>
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+      ${modeSelect('rule-mode', r.model, r.mode, `Provider for ${r.model}`, 'w-56 max-w-full')}
+      ${r.mode.endsWith('_first') ? checkbox('rule-fallback', r.model, r.fallback, 'Allow fallback') : ''}
+    </div>
+    ${ruleNote(r)}
+  </div>`
+
+const ruleTrigger = () =>
+  unruled().some((m) => servedBy(m).length > 1)
+    ? btn('Add a model', 'outline', 'ri-add-line').replace('<button ', `<button type="button" ${ctl('rule-menu')} aria-haspopup="listbox" aria-expanded="${S.ruleMenu}" `)
+    : disabledBtn(btn('Add a model', 'outline', 'ri-add-line'))
+
+const rulesBlock = () => {
+  const rules = S.provider.rules
+  return `
+  <div id="model-rules" class="mt-3">
+    <div class="mb-1 ${LABEL}">Per model${rules.length ? ` · ${rules.length}` : ''}</div>
+    ${rules.length ? `<div class="mb-2 rounded-md border border-border">${rules.map(ruleRow).join('')}</div>` : ''}
+    ${ruleTrigger()}
+    <p class="mt-1 ${HINT}">A model listed here follows its own rule instead of the setting above. Only a model that both a subscription and an API key serve can be added.</p>
+  </div>`
+}
+
+// Models with a choice to make come first. A model only one method serves is
+// listed but cannot be picked: a rule for it could only refuse it, and
+// refusing a model is the plan's job.
+const ruleMenu = () => {
+  const open = unruled()
+  const choice = open.filter((m) => servedBy(m).length > 1)
+  const single = open.filter((m) => servedBy(m).length === 1)
+  const inert = (m) => `
+    <div role="option" aria-disabled="true" aria-selected="false" class="flex w-full items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm opacity-50 select-none">
+      <span class="whitespace-nowrap font-mono text-xs">${m}</span><span class="ml-auto whitespace-nowrap text-[12px] text-muted-foreground">${METHODS[servedBy(m)[0]]} only</span>
+    </div>`
+  return `
+  <div id="rule-menu" role="listbox" aria-label="Add a model" class="z-[60] overflow-hidden rounded-md bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10">
+    <div class="max-h-72 overflow-y-auto p-1">
+      ${choice.map((m) => menuItem('add-rule', m, `<span class="whitespace-nowrap font-mono text-xs">${m}</span>`, false, `<span class="ml-auto whitespace-nowrap text-[12px] text-muted-foreground">${servedBy(m).map((x) => METHODS[x]).join(' · ')}</span>`)).join('')}
+      ${single.length ? `<div class="pointer-events-none -mx-1 my-1 h-px bg-border"></div>
+      <div class="px-2 pt-1 pb-0.5 text-[12px] font-medium text-muted-foreground">One billing method only</div>
+      ${single.map(inert).join('')}` : ''}
+    </div>
+  </div>`
+}
+
+const providerField = () =>
+  field(
+    'provider',
+    'Provider',
+    'Whether a subscription or an API key serves this token’s requests. Use system priorities follows Providers → Priorities.',
+    `${modeSelect('mode', '', S.provider.mode, 'Provider')}
+    ${S.provider.mode.endsWith('_first') ? `<div class="mt-2">${checkbox('mode-fallback', '', S.provider.fallback, 'Allow fallback to the other billing method')}</div>` : ''}`,
+    rulesBlock()
+  )
+
 const expiryField = () =>
   field(
     'expiry',
@@ -414,7 +559,7 @@ const saveBar = () => {
   const save = can ? btn('Save', 'primary', 'ri-check-line').replace('<button ', `<button type="button" ${ctl('save')} `) : disabledBtn(btn('Save', 'primary', 'ri-check-line'))
   return `<div id="actions" class="flex items-center gap-2 border-t border-border/60 px-6 py-4">
       <span class="${HINT}">
-        ${S.creating ? 'Create or cancel the new plan first.' : S.saved && !dirty() ? 'Saved. Takes effect from the next request; the token value did not change.' : `Saves the endpoints and plan of <span class="font-medium text-foreground">${S.name}</span>, from its next request. The token value itself does not change.`}
+        ${S.creating ? 'Create or cancel the new plan first.' : S.saved && !dirty() ? 'Saved. Takes effect from the next request; the token value did not change.' : `Saves the endpoints, plan and provider of <span class="font-medium text-foreground">${S.name}</span>, from its next request. The token value itself does not change.`}
       </span>
       <div class="ml-auto flex gap-2">
         ${dirty() || S.creating ? btn('Discard', 'ghost').replace('<button ', `<button type="button" ${ctl('discard')} `) : disabledBtn(btn('Discard', 'ghost'))}
@@ -424,7 +569,7 @@ const saveBar = () => {
 }
 
 // ─── Views ────────────────────────────────────────────────────────────
-const formBody = () => `${nameField()}${endpointField()}${planField()}${expiryField()}`
+const formBody = () => `${nameField()}${endpointField()}${planField()}${providerField()}${expiryField()}`
 
 // The dialog that issues a token. A pinned header and footer around a body
 // that scrolls: with the plan summary, and the new-plan form under it, this
@@ -514,12 +659,19 @@ if (!PHONE) {
   })
 }
 
-const positionMenu = () => {
-  const menu = document.getElementById('plan-menu')
-  const trigger = document.querySelector('[data-act="plan-menu"]')
+// A menu sits under its trigger, at least `minWidth` wide (Add a model is a
+// short button over a long list), and above it when there is no room below.
+const placeMenu = (act, minWidth = 0) => {
+  const menu = document.getElementById(act)
+  const trigger = document.querySelector(`[data-act="${act}"]`)
   if (!menu || !trigger) return
   const r = trigger.getBoundingClientRect()
-  Object.assign(menu.style, { position: 'fixed', left: `${r.left}px`, top: `${r.bottom + 4}px`, width: `${r.width}px` })
+  Object.assign(menu.style, { position: 'fixed', left: `${r.left}px`, top: `${r.bottom + 4}px`, width: `${Math.max(r.width, minWidth)}px` })
+  if (r.bottom + 4 + menu.offsetHeight > innerHeight) menu.style.top = `${Math.max(8, r.top - 4 - menu.offsetHeight)}px`
+}
+const positionMenu = () => {
+  placeMenu('plan-menu')
+  placeMenu('rule-menu', 320)
 }
 
 // Where the plan opens: at its top, so a click on "Create a plan..." lands on the form's
@@ -533,7 +685,7 @@ function paint({ reveal = false } = {}) {
   const scroller = document.getElementById('form-scroll')
   const top = scroller ? scroller.scrollTop : 0
   const focusKey = document.activeElement?.dataset?.k
-  app.innerHTML = `${view()}${S.menu ? planMenu() : ''}`
+  app.innerHTML = `${view()}${S.menu ? planMenu() : ''}${S.ruleMenu ? ruleMenu() : ''}`
   const next = document.getElementById('form-scroll')
   if (next) next.scrollTop = top
   if (focusKey) document.querySelector(`[data-k="${CSS.escape(focusKey)}"]`)?.focus()
@@ -561,7 +713,18 @@ const provider = () => PROVIDERS.find((p) => p.name === S.draft.provider)
 const ACTIONS = {
   surface: (id) => toggle(S.surfaces, id),
   'surface-all': () => S.surfaces.clear(),
-  'plan-menu': () => { S.menu = !S.menu },
+  'plan-menu': () => { S.menu = !S.menu; S.ruleMenu = false },
+  'rule-menu': () => { S.ruleMenu = !S.ruleMenu; S.menu = false },
+  // A new rule starts on the other preference from the token's: a rule that
+  // repeats the setting above would change nothing.
+  'add-rule': (model) => {
+    const mode = S.provider.mode.startsWith('subscription') ? 'api_key_first' : 'subscription_first'
+    S.provider.rules.push({ model, mode, fallback: false })
+    S.ruleMenu = false
+  },
+  'remove-rule': (model) => { S.provider.rules = S.provider.rules.filter((r) => r.model !== model) },
+  'rule-fallback': (model) => { ruleOf(model).fallback = !ruleOf(model).fallback },
+  'mode-fallback': () => { S.provider.fallback = !S.provider.fallback },
   'pick-plan': (id) => { S.planId = id === 'none' ? null : id; S.creating = false; S.menu = false; S.note = false },
   'start-create': () => { S.creating = true; S.menu = false; S.note = false },
   'cancel-create': () => { S.creating = false; S.draft = blankDraft() },
@@ -596,10 +759,11 @@ const ACTIONS = {
     }
     drop()
   },
-  discard: () => { S.surfaces = new Set(initial.surfaces); S.planId = initial.planId; S.creating = false; S.saved = false },
+  discard: () => { S.surfaces = new Set(initial.surfaces); S.planId = initial.planId; S.provider = copyProvider(initial.provider); S.creating = false; S.saved = false },
   save: () => {
     initial.surfaces = new Set(S.surfaces)
     initial.planId = S.planId
+    initial.provider = copyProvider(S.provider)
     S.saved = true
   }
 }
@@ -607,7 +771,7 @@ const ACTIONS = {
 document.addEventListener('click', (event) => {
   const el = event.target.closest('[data-act]')
   if (!el) {
-    if (S.menu) { S.menu = false; paint() }
+    if (S.menu || S.ruleMenu) { S.menu = false; S.ruleMenu = false; paint() }
     return
   }
   if (el.disabled) return
@@ -618,6 +782,15 @@ document.addEventListener('click', (event) => {
 })
 document.addEventListener('input', (event) => {
   const el = event.target
+  // Changing a mode resets its fallback, as ProviderModeFields does, and
+  // repaints because the fallback box comes and goes with it.
+  if (el.dataset.act === 'mode' || el.dataset.act === 'rule-mode') {
+    const target = el.dataset.act === 'mode' ? S.provider : ruleOf(el.dataset.id)
+    target.mode = el.value
+    target.fallback = false
+    paint()
+    return
+  }
   if (el.dataset.act === 'name') S.name = el.value
   if (el.dataset.act === 'plan-name') S.draft.name = el.value
   if (el.dataset.act === 'limit') S.draft.limits[el.dataset.id] = el.value
@@ -626,16 +799,25 @@ document.addEventListener('input', (event) => {
   refreshNewPlan()
 })
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && S.menu) { S.menu = false; paint() }
+  if (event.key === 'Escape' && (S.menu || S.ruleMenu)) { S.menu = false; S.ruleMenu = false; paint() }
   const el = event.target
   if ((event.key === 'Enter' || event.key === ' ') && el.getAttribute?.('role') === 'option') { event.preventDefault(); el.click() }
 })
 window.addEventListener('resize', positionMenu)
+// The menus are fixed to the viewport; a scroll inside the dialog or the page
+// would otherwise leave them behind.
+document.addEventListener('scroll', positionMenu, true)
 
+// The rule states open on the Provider field, which sits below the fold.
+const showRules = () => {
+  if (P.has('model-rules') && !S.creating) document.getElementById('field-provider')?.scrollIntoView({ block: S.ruleMenu ? 'start' : 'center' })
+  positionMenu()
+}
 paint({ reveal: S.creating && !S.menu && (PHONE ? 'tail' : true) })
+showRules()
 // Webfonts change line heights, and with them where the menu and the plan
 // field sit; settle again once they land.
-document.fonts.ready.then(() => { positionMenu(); if (S.creating) showPlan(PHONE) })
+document.fonts.ready.then(() => { positionMenu(); if (S.creating) showPlan(PHONE); showRules() })
 </script>
 </body>
 </html>

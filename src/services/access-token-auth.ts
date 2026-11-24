@@ -1,6 +1,7 @@
 /** Credential generation and the shared hot-path resolver cache. */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { LRUCache } from 'lru-cache'
+import { parseModelProviderRules } from '@/schemas/domain/access-token'
 import { getPrismaClient } from '../db/client'
 import type { TokenPolicy } from '../shared/access-token-policy'
 import { type PlanLimits, planLimitsOf } from './usage-window-service'
@@ -109,7 +110,8 @@ export async function resolveAccessToken(presented: string): Promise<ResolvedTok
           restrictModels: row.restrictModels,
           allowedModels: row.allowedModels,
           providerMode: row.providerMode,
-          providerFallback: row.providerFallback
+          providerFallback: row.providerFallback,
+          modelProviderRules: parseModelProviderRules(row.modelProviderRules)
         },
         plan:
           row.plan === null

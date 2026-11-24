@@ -1,3 +1,5 @@
+import { parseModelProviderRules } from '@/schemas/domain/access-token'
+import type { Prisma } from '../generated/prisma/client'
 import { folderTokenDefaults, type TokenPolicy } from '../shared/access-token-policy'
 /**
  * Access tokens for /v1/*.
@@ -85,7 +87,8 @@ const WIRE_INCLUDE = {
 } as const
 
 const toWire = (
-  row: TokenPolicy & {
+  row: Omit<TokenPolicy, 'modelProviderRules'> & {
+    modelProviderRules: Prisma.JsonValue
     folderId: string | null
     id: string
     name: string
@@ -106,7 +109,8 @@ const toWire = (
     restrictModels: row.restrictModels,
     allowedModels: row.allowedModels,
     providerMode: row.providerMode,
-    providerFallback: row.providerFallback
+    providerFallback: row.providerFallback,
+    modelProviderRules: parseModelProviderRules(row.modelProviderRules)
   },
   name: row.name,
   prefix: row.prefix,

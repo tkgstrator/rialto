@@ -28,7 +28,7 @@ import type { TokenPlan } from '../../services/access-token-service'
 import { passthroughDenial, resolveSurfaceForPath } from '../../services/inbound-surface-service'
 import { decidePlanModel } from '../../services/plan-model'
 import { orderTokenProviders, tokenAllowsTarget } from '../../services/token-model-routing'
-import { allowsTokenModel, type TokenPolicy } from '../../shared/access-token-policy'
+import { allowsTokenModel, providerModeFor, type TokenPolicy } from '../../shared/access-token-policy'
 import { isVersionUpdate, newestFirst } from '../../shared/model-version'
 import { qualifiedModelId } from '../../shared/public-model-id'
 import { buildErrorEnvelope, errorShapeForPath } from './error-shape'
@@ -260,12 +260,18 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
     return c.json(buildErrorEnvelope({ shape, status: 403, from: decision.message }), 403)
   }
   const policy = token?.policy
-  const explicitProviderMode = policy !== undefined && policy.providerMode !== 'system'
+  // A token (or a rule for this model) that picks the billing method keeps
+  // the name bare, so provider ordering below can apply that choice instead
+  // of the single provider the plan entry happens to name.
+  const explicitProviderMode = (model: string) =>
+    providerModeFor(policy, model.slice(model.indexOf(',') + 1)).mode !== 'system'
   if (decision.kind === 'default') {
-    body.model = explicitProviderMode ? decision.model.slice(decision.model.indexOf(',') + 1) : decision.model
+    body.model = explicitProviderMode(decision.model)
+      ? decision.model.slice(decision.model.indexOf(',') + 1)
+      : decision.model
   }
   if (decision.kind === 'allowed')
-    body.model = explicitProviderMode && requestedModel !== undefined ? requestedModel : decision.model
+    body.model = explicitProviderMode(decision.model) && requestedModel !== undefined ? requestedModel : decision.model
 
   const named = typeof body.model === 'string' ? body.model : ''
   const comma = named.indexOf(',')
@@ -331,7 +337,7 @@ export async function buildRoutePlan(c: Context, ctx: LlmsContext): Promise<Resp
         400
       )
     }
-    if (order.status === 'unavailable' && (policy?.restrictModels || explicitProviderMode)) {
+    if (order.status === 'unavailable' && (policy?.restrictModels || explicitProviderMode(resolvedModel))) {
       return c.json(buildErrorEnvelope({ shape, status: 400, from: 'No eligible provider for this model.' }), 400)
     }
     if (order.status === 'preferred') {

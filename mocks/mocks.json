@@ -206,7 +206,7 @@
       "mock": "access-token-form.html",
       "route": null,
       "group": "Access tokens",
-      "note": "v3 issue form, in the dialog over the list: name, endpoints (the five inbound surfaces plus /codex; none picked means all), the plan it spends under, and expiry. No routing profile, because routing is gone in v3. The plan select shows a read-only summary of that plan under it: its models with the default marked, its 5-hour and 7-day request and spend limits per token, and that a model outside the plan is rejected with 403. The dialog has a pinned header and footer around a scrolling body so Issue token stays reachable. Route is null: it is a state of /access-tokens."
+      "note": "v3 issue form, in the dialog over the list: name, endpoints (the five inbound surfaces plus /codex; none picked means all), the plan it spends under, the provider (whether a subscription or an API key serves it, token-wide and per model; see access-token-form-model-rules), and expiry. No routing profile, because routing is gone in v3. The plan select shows a read-only summary of that plan under it: its models with the default marked, its 5-hour and 7-day request and spend limits per token, and that a model outside the plan is rejected with 403. The dialog has a pinned header and footer around a scrolling body so Issue token stays reachable. Route is null: it is a state of /access-tokens."
     },
     {
       "name": "access-token-form-plan-menu",
@@ -248,7 +248,7 @@
       "mock": "access-token-form.html?edit",
       "route": null,
       "group": "Access tokens",
-      "note": "v3 edit form on the token page (MacBook - Codex on Free): endpoints and plan are editable; name and expiry are drawn locked because PATCH /api/access-tokens/{id} takes endpoints, profile and plan only. The Profile row of access-token.html is gone. Save is disabled until something changes. Usage windows, Usage and Lifetime below the form are unchanged and not repeated. Route is null: the live page still has the Profile row."
+      "note": "v3 edit form on the token page (MacBook - Codex on Free): endpoints, plan and provider are editable; name and expiry are drawn locked because PATCH /api/access-tokens/{id} takes endpoints, profile and plan only. The Profile row of access-token.html is gone. Save is disabled until something changes. Usage windows, Usage and Lifetime below the form are unchanged and not repeated. Route is null: the live page still has the Profile row."
     },
     {
       "name": "access-token-form-edit-create-plan",
@@ -270,6 +270,27 @@
       "route": null,
       "group": "Access tokens",
       "note": "The inline new-plan form at phone width, scrolled to its end: the provider chips wrap, the model list scrolls inside its box, the limits grid keeps its three columns, and the footer stays pinned with Issue token disabled until the plan is created. Mock-only."
+    },
+    {
+      "name": "access-token-form-model-rules",
+      "mock": "access-token-form.html?edit&no-plan&model-rules",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Provider set per model on the token page (No plan). The token-wide select is Prefer subscription with fallback; under it, Per model lists two rules: claude-opus-5 on API key only, gpt-6-sol on Prefer API key with fallback. Each row names the model, which billing methods serve it, its own mode select and, for a Prefer mode, its own fallback box. A model not listed follows the token-wide setting. A rule names the bare model, so it covers every subscription and API key serving it. Mock-only until approved."
+    },
+    {
+      "name": "access-token-form-add-rule",
+      "mock": "access-token-form.html?edit&no-plan&model-rules&add-rule",
+      "route": null,
+      "group": "Access tokens",
+      "note": "Add a model open: the models both a subscription and an API key serve come first and can be picked; models only one method serves are listed under One billing method only, disabled, because a rule could only refuse them and refusing a model is the plan's job. A new rule starts on the other preference from the token's, with fallback off."
+    },
+    {
+      "name": "access-token-form-phone-model-rules",
+      "mock": "access-token-form.html?phone&no-plan&model-rules",
+      "route": null,
+      "group": "Access tokens",
+      "note": "The per-model rules in the issue dialog at phone width: each rule is two lines (model, its billing methods and remove; then its mode select and fallback box), so the rows fit the narrow dialog without a table."
     },
     {
       "name": "access-plans",

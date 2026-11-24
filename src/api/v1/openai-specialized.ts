@@ -8,7 +8,7 @@ import { resolveSurfaceForPath } from '../../services/inbound-surface-service'
 import { decidePlanModel } from '../../services/plan-model'
 import { orderTokenProviders, tokenAllowsTarget } from '../../services/token-model-routing'
 import { hasAnyLimit, recordCallSpend } from '../../services/usage-window-service'
-import { allowsProviderMode, allowsTokenModel } from '../../shared/access-token-policy'
+import { allowsProviderFallback, allowsProviderMode, allowsTokenModel } from '../../shared/access-token-policy'
 import { isOfficialOpenAIApiProvider } from '../../shared/data/openai-images'
 import { windowLimitRefusal } from '../api-key-auth'
 import { readBoundedBody } from './bounded-body'
@@ -47,7 +47,7 @@ async function openAITargets(c: Context, path: string, body: SpecializedBody) {
   const model = modelName(body.model)
   const decision = decidePlanModel(token.plan, body.model)
   if (decision.kind === 'denied') return fail(403, decision.message)
-  if (!allowsTokenModel(token.policy, model) || !allowsProviderMode(token.policy, 'api_key'))
+  if (!allowsTokenModel(token.policy, model) || !allowsProviderMode(token.policy, model, 'api_key'))
     return fail(403, 'Model or provider is not allowed for this token.')
 
   const comma = body.model.indexOf(',')
@@ -136,7 +136,7 @@ async function relayOpenAI(c: Context, path: string, body: SpecializedBody): Pro
     if (upstream === null) return last
     if (upstream.ok && path === DECISIONS_PATH) await recordDecisionSpend(c, upstream, target.provider, model)
     last = relayResponse(upstream)
-    const fallback = token.policy?.providerMode.endsWith('_first') && token.policy.providerFallback
+    const fallback = allowsProviderFallback(token.policy, model)
     if (!fallback || (upstream.status !== 429 && upstream.status !== 503) || index === targets.length - 1) return last
     await last.body?.cancel()
   }

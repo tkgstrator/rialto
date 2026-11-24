@@ -18,7 +18,12 @@ import { releaseAccountForSession, resolveAccountForSession } from '../../servic
 import { getSubAccountTokensForProvider } from '../../services/subscription-account-sync-service'
 import { orderTokenProviders, tokenAllowsTarget } from '../../services/token-model-routing'
 import { recordCallSpend } from '../../services/usage-window-service'
-import { allowsProviderMode, allowsTokenModel, type TokenPolicy } from '../../shared/access-token-policy'
+import {
+  allowsProviderFallback,
+  allowsProviderMode,
+  allowsTokenModel,
+  type TokenPolicy
+} from '../../shared/access-token-policy'
 import type { CODEX_MCP_SCOPE } from '../../shared/codex-mcp'
 import {
   isImageOnlyModel,
@@ -415,14 +420,14 @@ export async function generateImage(body: ImageInput, caller: ImageCaller): Prom
   const model = body.model.slice(body.model.indexOf(',') + 1)
   if (!allowsTokenModel(caller.policy, model)) return failure(403, 'Image model is not allowed for this token.')
   if (!isImageOnlyModel(model)) return failure(400, 'Image model is unavailable, disabled, or ambiguous.')
-  const apiAllowed = isOpenAIImageModel(model) && allowsProviderMode(caller.policy, 'api_key')
-  const subscriptionAllowed = isCodexImageModel(model) && allowsProviderMode(caller.policy, 'subscription')
+  const apiAllowed = isOpenAIImageModel(model) && allowsProviderMode(caller.policy, model, 'api_key')
+  const subscriptionAllowed = isCodexImageModel(model) && allowsProviderMode(caller.policy, model, 'subscription')
   if (!apiAllowed && !subscriptionAllowed) return failure(403, 'Image provider is not allowed for this token.')
   const { targets, denial } = await resolveImageTargets(body.model, caller, IMAGE_PATH)
   if (denial !== undefined) return failure(403, denial)
   if (targets.length === 0) return failure(400, 'Image model is unavailable, disabled, or ambiguous.')
 
-  const fallback = caller.policy?.providerMode.endsWith('_first') && caller.policy.providerFallback
+  const fallback = allowsProviderFallback(caller.policy, model)
   const result: { last: ImageOutcome } = { last: failure(503, 'No image provider is available.') }
   for (const target of targets) {
     const outcome =
@@ -517,7 +522,7 @@ async function editImage(body: ImageEdit, caller: ImageCaller): Promise<ImageOut
   const name = body.model.slice(body.model.indexOf(',') + 1)
   if (!allowsTokenModel(caller.policy, name)) return failure(403, 'Image model is not allowed for this token.')
   if (!isOpenAIImageModel(name)) return failure(400, 'Image editing requires a supported OpenAI API model.')
-  if (!allowsProviderMode(caller.policy, 'api_key'))
+  if (!allowsProviderMode(caller.policy, name, 'api_key'))
     return failure(403, 'Image provider is not allowed for this token.')
   const { targets, denial } = await resolveImageTargets(body.model, caller, IMAGE_EDIT_PATH)
   if (denial !== undefined) return failure(403, denial)
@@ -539,7 +544,7 @@ async function editImage(body: ImageEdit, caller: ImageCaller): Promise<ImageOut
     if (result instanceof Response) return result
     outcome = result
     if (outcome.ok || (outcome.status !== 429 && outcome.status !== 503)) return outcome
-    if (!caller.policy?.providerMode.endsWith('_first') || !caller.policy.providerFallback) return outcome
+    if (!allowsProviderFallback(caller.policy, name)) return outcome
   }
   return outcome
 }

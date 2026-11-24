@@ -13,6 +13,7 @@ import {
   type TokenPolicy,
   tokenProviderGroup
 } from '@/shared/access-token-policy'
+import { ModelProviderRules } from './ModelProviderRules'
 
 function tokenFolderPath(folder: TokenFolder, folders: ReadonlyMap<string, TokenFolder>): string {
   const path = [folder.name]
@@ -66,11 +67,14 @@ export function FolderPicker({
 export function ProviderModeFields({
   value,
   onChange,
-  disabled
+  disabled,
+  hint
 }: {
   value: Pick<TokenPolicy, 'providerMode' | 'providerFallback'>
   onChange: (value: Pick<TokenPolicy, 'providerMode' | 'providerFallback'>) => void
   disabled?: boolean
+  /** Drawn under the select and fallback box. The folder dialog has its own wording, so it passes none. */
+  hint?: string
 }) {
   const { t } = useTranslation()
   const fallbackId = useId()
@@ -108,6 +112,7 @@ export function ProviderModeFields({
           {t('settings.access.providerFallback')}
         </Label>
       ) : null}
+      {hint === undefined ? null : <p className='text-[12px] leading-snug text-muted-foreground'>{hint}</p>}
     </div>
   )
 }
@@ -201,7 +206,20 @@ export function TokenPolicyFields({
           })}
         </div>
       ) : null}
-      <ProviderModeFields value={policy} disabled={disabled} onChange={(mode) => onChange({ ...policy, ...mode })} />
+      <ProviderModeFields
+        value={policy}
+        disabled={disabled}
+        hint={t('settings.access.providerModeHint')}
+        onChange={(mode) => onChange({ ...policy, ...mode })}
+      />
+      <ModelProviderRules
+        policy={policy}
+        available={available}
+        providers={providers}
+        plan={plan}
+        disabled={disabled}
+        onChange={(modelProviderRules) => onChange({ ...policy, modelProviderRules })}
+      />
     </fieldset>
   )
 }
