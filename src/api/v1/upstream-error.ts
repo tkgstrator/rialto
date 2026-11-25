@@ -70,16 +70,16 @@ export function isRateLimited(err: unknown): boolean {
   return FAILOVER_STATUSES.has(status)
 }
 
-// OpenAI (and any vendor that follows its error taxonomy) uses
-// `error.type = "insufficient_quota"` to signal a permanent project
-// spend-cap breach — the account will keep 429ing until the operator
-// raises the limit or the billing period rolls. Distinct from an
+// OpenAI uses `error.type = "insufficient_quota"` for a project spend cap.
+// Anthropic reports depleted API credit as a 400 `invalid_request_error`
+// with a specific billing message. Distinct from an
 // ephemeral rate-limit tick: retrying the same model or a sibling
 // model on the same provider will not recover, so the chain walker
 // should mark the whole PROVIDER exhausted rather than attempting the
 // next fallback pointing at it. Parses through the same
 // PROVIDER_ERR_RE shape as isRateLimited so we don't re-invent
-// upstream-message parsing.
+// upstream-message parsing. The caller gates Anthropic's 400 to direct
+// API-key requests before treating it as a failover condition.
 export function isInsufficientQuota(err: unknown): boolean {
   if (!(err instanceof HTTPException)) return false
   const m = err.message.match(PROVIDER_ERR_RE)
@@ -89,7 +89,14 @@ export function isInsufficientQuota(err: unknown): boolean {
   const errorObj: unknown = Reflect.get(body, 'error')
   if (errorObj === null || typeof errorObj !== 'object') return false
   const type: unknown = Reflect.get(errorObj, 'type')
-  return type === 'insufficient_quota'
+  if (type === 'insufficient_quota') return true
+  const message: unknown = Reflect.get(errorObj, 'message')
+  return (
+    Number(m[1]) === 400 &&
+    type === 'invalid_request_error' &&
+    typeof message === 'string' &&
+    message.startsWith('Your credit balance is too low to access the Anthropic API.')
+  )
 }
 
 // Anthropic's long-context billing gate. Claude Code opts into the 1M

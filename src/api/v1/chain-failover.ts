@@ -141,9 +141,15 @@ export async function attemptChainEntry(chain: ChainCtx, model: string): Promise
       continue
     }
 
-    // Non-rate-limit upstream errors (auth, bad request, ...) surface
-    // verbatim — re-routing those would hide real problems.
-    if (!isRateLimited(err)) return { kind: 'done', response: forwarded }
+    // Anthropic reports depleted API-key credit as a 400 rather than a 429.
+    // Only its direct API-key endpoint gets the quota failover treatment.
+    const creditBalanceExhausted =
+      inv.provider.authMode === 'api_key' &&
+      new URL(inv.provider.api_base_url).hostname === 'api.anthropic.com' &&
+      isInsufficientQuota(err)
+
+    // Other upstream 4xx errors (auth, bad request, ...) surface verbatim.
+    if (!isRateLimited(err) && !creditBalanceExhausted) return { kind: 'done', response: forwarded }
 
     lastForwarded = forwarded
 

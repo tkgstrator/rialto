@@ -144,6 +144,11 @@ export async function processRequestTransformers(
   let config: TransformerConfig = {}
 
   if (bypass) {
+    // Native Anthropic requests with an API key get a fresh upstream header
+    // set. Client headers describe the caller, not Rialto's API-key request.
+    if (input.provider.authMode === 'api_key' && input.transformer.name === 'anthropic') {
+      return { requestBody, config: { headers: { 'anthropic-version': '2023-06-01' } } }
+    }
     const headers: Record<string, string | undefined> = { ...input.headers }
     for (const key of Object.keys(headers)) {
       if (shouldStripInboundHeader(key)) delete headers[key]
