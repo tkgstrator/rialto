@@ -139,6 +139,35 @@ describe('isInsufficientQuota', () => {
   })
 })
 
+describe('Anthropic credit balance classification', () => {
+  const body = JSON.stringify({
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message:
+        'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+    }
+  })
+
+  test('recognizes Anthropic API credit exhaustion reported as 400', () => {
+    expect(isInsufficientQuota(makeUpstreamException(400, 'anthropic-key', 'claude-fable-5-2', body))).toBe(true)
+  })
+
+  test('does not classify other 400 errors or statuses as credit exhaustion', () => {
+    expect(
+      isInsufficientQuota(
+        makeUpstreamException(
+          400,
+          'anthropic-key',
+          'm',
+          '{"error":{"type":"invalid_request_error","message":"Invalid model"}}'
+        )
+      )
+    ).toBe(false)
+    expect(isInsufficientQuota(makeUpstreamException(401, 'anthropic-key', 'm', body))).toBe(false)
+  })
+})
+
 // The correction applied once to an effort level the upstream refuses. It
 // picks the highest level the message lists, but never `max`: a correction
 // Rialto makes on its own must not raise the caller's level to the costliest

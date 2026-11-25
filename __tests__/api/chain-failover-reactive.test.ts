@@ -52,16 +52,17 @@ const publishAccounts = (accounts: AccountQuotaView[]): void => {
   })
 }
 
-async function run(model = 'claude-sonnet-5'): Promise<void> {
+async function run(model = 'claude-sonnet-5', creditBalanceError = false, apiKey = creditBalanceError): Promise<void> {
+  const providerConfig = apiKey ? { ...PROVIDER, auth_mode: 'api_key' as const } : PROVIDER
   const transformer = new AnthropicTransformer()
   const transformers = new TransformerRegistry(log)
   transformers.registerMany([transformer])
   const providers = new ProviderRegistry(transformers, log)
-  providers.registerFromConfig([PROVIDER])
+  providers.registerFromConfig([providerConfig])
   const tokenizers = new TokenizerRegistry(log)
   await tokenizers.initialize()
   const ctx: LlmsContext = {
-    config: new ConfigStore({ Providers: [PROVIDER], providers: [PROVIDER] }),
+    config: new ConfigStore({ Providers: [providerConfig], providers: [providerConfig] }),
     transformers,
     providers,
     tokenizers,
@@ -86,13 +87,21 @@ async function run(model = 'claude-sonnet-5'): Promise<void> {
       c,
       ctx,
       plan,
-      providers: [PROVIDER],
+      providers: [providerConfig],
       sessionId: plan.accountSessionKey,
       attempt: async (_inv: ResolvedInvocation) => {
         // With no account stamp or session sticky there is no rotatable peer;
         // only the fresh quota reading can justify a provider-wide mark.
-        throw new HTTPException(429, {
-          message: `Error from provider(anthropic,${model}: 429): {"type":"error","error":{"type":"rate_limit_error","message":"quota"}}`
+        const status = creditBalanceError ? 400 : 429
+        const error = creditBalanceError
+          ? {
+              type: 'invalid_request_error',
+              message:
+                'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+            }
+          : { type: 'rate_limit_error', message: 'quota' }
+        throw new HTTPException(creditBalanceError ? 400 : 429, {
+          message: `Error from provider(anthropic,${model}: ${status}): ${JSON.stringify({ type: 'error', error })}`
         })
       },
       errorResponse: () => new Response('unexpected', { status: 500 })
@@ -101,7 +110,7 @@ async function run(model = 'claude-sonnet-5'): Promise<void> {
     return new Response(outcome.kind, { status: outcome.kind === 'next' ? 200 : 500 })
   })
   const response = await app.fetch(new Request('http://local/v1/messages', { method: 'POST' }))
-  expect(response.status).toBe(200)
+  expect(response.status).toBe(creditBalanceError && !apiKey ? 500 : 200)
 }
 
 afterEach(() => {
@@ -128,4 +137,14 @@ describe('reactive account-wide 429', () => {
     expect(isModelExhausted('anthropic', 'claude-fable-5')).toBe(true)
     expect(isModelExhausted('anthropic', 'claude-sonnet-5')).toBe(false)
   })
+})
+
+test('Anthropic API-key credit exhaustion advances the chain and parks the provider', async () => {
+  await run('claude-fable-5', true)
+  expect(isProviderExhausted('anthropic')).toBe(true)
+})
+
+test('a subscription 400 with the same text does not trigger API-key failover', async () => {
+  await run('claude-fable-5', true, false)
+  expect(isProviderExhausted('anthropic')).toBe(false)
 })

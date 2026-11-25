@@ -86,6 +86,7 @@ export class AnthropicTransformer extends Transformer {
     } else {
       headers['x-api-key'] = provider.api_key
       headers.authorization = undefined
+      headers.Authorization = undefined
     }
 
     return {
