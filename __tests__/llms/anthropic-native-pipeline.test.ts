@@ -34,7 +34,7 @@ const classifierResponse = {
   usage: { input_tokens: 128, output_tokens: 8 }
 }
 
-async function exchange(body: Record<string, unknown>, upstream: Response) {
+async function exchange(body: Record<string, unknown>, upstream: Response, extraHeaders: Record<string, string> = {}) {
   const received: Array<{ method: string; path: string; headers: Headers; body: unknown }> = []
   const server = Bun.serve({
     hostname: '127.0.0.1',
@@ -73,7 +73,8 @@ async function exchange(body: Record<string, unknown>, upstream: Response) {
       'x-api-key': 'client-rialto-token',
       authorization: 'Bearer client-rialto-token',
       host: 'inbound.example.test',
-      'cf-ray': 'inbound-proxy-trace'
+      'cf-ray': 'inbound-proxy-trace',
+      ...extraHeaders
     }
     const response = await runPipeline(
       {
@@ -122,9 +123,27 @@ describe('Anthropic API-key native pipeline', () => {
     const headers = result.received[0].headers
     expect(headers.get('x-api-key')).toBe('upstream-test-key')
     expect(headers.get('anthropic-version')).toBe('2023-06-01')
-    expect(headers.get('authorization')).not.toContain('client-rialto-token')
+    expect(headers.get('authorization')).toBeNull()
     expect(headers.get('host')).not.toBe('inbound.example.test')
     expect(headers.get('cf-ray')).toBeNull()
+  })
+
+  test('does not forward client headers on the Anthropic API-key path', async () => {
+    const result = await exchange(classifierRequest, Response.json(classifierResponse), {
+      'user-agent': 'claude-cli/2.1.330 (cli)',
+      'anthropic-beta': 'claude-code-20250219',
+      'x-stainless-runtime': 'bun',
+      'x-client-trace': 'client-only'
+    })
+    const headers = result.received[0].headers
+    expect(headers.get('x-api-key')).toBe('upstream-test-key')
+    expect(headers.get('anthropic-version')).toBe('2023-06-01')
+    expect(headers.get('authorization')).toBeNull()
+    expect(headers.get('content-type')).toContain('application/json')
+    expect(headers.get('user-agent')).not.toBe('claude-cli/2.1.330 (cli)')
+    expect(headers.get('anthropic-beta')).toBeNull()
+    expect(headers.get('x-stainless-runtime')).toBeNull()
+    expect(headers.get('x-client-trace')).toBeNull()
   })
 
   test('preserves native tool definitions and streams instead of converting them to Chat format', async () => {
