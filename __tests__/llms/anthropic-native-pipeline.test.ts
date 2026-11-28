@@ -159,6 +159,39 @@ describe('Anthropic API-key native pipeline', () => {
     expect(body.system).toHaveLength(2)
   })
 
+  test('removes Claude Code identity blocks from API-key requests while preserving the actual instructions', async () => {
+    const body = {
+      ...classifierRequest,
+      system: [
+        { type: 'text', text: 'x-anthropic-billing-header: cc_version=2.1.330; cc_entrypoint=t3-code;' },
+        {
+          type: 'text',
+          text: "You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK.",
+          cache_control: { type: 'ephemeral' }
+        },
+        ...classifierRequest.system
+      ]
+    }
+    const result = await exchange(body, Response.json(classifierResponse))
+    expect(result.received[0].body).toEqual(classifierRequest)
+    expect(body.system).toHaveLength(3)
+  })
+
+  test('removes the Claude Code identity block even without a billing marker', async () => {
+    const body = {
+      ...classifierRequest,
+      system: [
+        {
+          type: 'text',
+          text: "You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK."
+        },
+        ...classifierRequest.system
+      ]
+    }
+    const result = await exchange(body, Response.json(classifierResponse))
+    expect(result.received[0].body).toEqual(classifierRequest)
+  })
+
   test('preserves native tool definitions and streams instead of converting them to Chat format', async () => {
     const body = {
       ...classifierRequest,
