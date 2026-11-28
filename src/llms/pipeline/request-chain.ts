@@ -77,6 +77,19 @@ export function shouldStripInboundHeader(name: string): boolean {
   return false
 }
 
+function withoutClientBillingMarker(body: Record<string, unknown>): Record<string, unknown> {
+  const system = body.system
+  if (!Array.isArray(system) || system.length === 0) return body
+  const first: unknown = system[0]
+  if (first === null || typeof first !== 'object' || !('text' in first)) return body
+  if (typeof first.text !== 'string' || !first.text.startsWith('x-anthropic-billing-header:')) return body
+  const outbound = { ...body }
+  const rest = system.slice(1)
+  if (rest.length === 0) delete outbound.system
+  else outbound.system = rest
+  return outbound
+}
+
 export function shouldBypass(
   providerTx: ResolvedProviderTransformer | undefined,
   transformer: Transformer,
@@ -147,6 +160,7 @@ export async function processRequestTransformers(
     // Native Anthropic requests with an API key get a fresh upstream header
     // set. Client headers describe the caller, not Rialto's API-key request.
     if (input.provider.authMode === 'api_key' && input.transformer.name === 'anthropic') {
+      requestBody = withoutClientBillingMarker(input.body)
       return { requestBody, config: { headers: { 'anthropic-version': '2023-06-01' } } }
     }
     const headers: Record<string, string | undefined> = { ...input.headers }

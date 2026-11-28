@@ -263,7 +263,10 @@ describe('/v1/messages on the same subscription — the bypass path', () => {
     const native = {
       model,
       max_tokens: 1024,
-      system: [{ type: 'text', text: 'native system', cache_control: { type: 'ephemeral' } }],
+      system: [
+        { type: 'text', text: 'x-anthropic-billing-header: cc_version=2.1.330.232; cc_entrypoint=t3-code;' },
+        { type: 'text', text: 'native system', cache_control: { type: 'ephemeral' } }
+      ],
       messages: [{ role: 'user', content: [{ type: 'text', text: 'ping' }] }],
       thinking: { type: 'adaptive' },
       stream: true
