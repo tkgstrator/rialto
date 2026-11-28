@@ -146,6 +146,19 @@ describe('Anthropic API-key native pipeline', () => {
     expect(headers.get('x-client-trace')).toBeNull()
   })
 
+  test('removes the client billing marker from API-key requests without changing other system instructions', async () => {
+    const body = {
+      ...classifierRequest,
+      system: [
+        { type: 'text', text: 'x-anthropic-billing-header: cc_version=2.1.330.232; cc_entrypoint=t3-code;' },
+        ...classifierRequest.system
+      ]
+    }
+    const result = await exchange(body, Response.json(classifierResponse))
+    expect(result.received[0].body).toEqual(classifierRequest)
+    expect(body.system).toHaveLength(2)
+  })
+
   test('preserves native tool definitions and streams instead of converting them to Chat format', async () => {
     const body = {
       ...classifierRequest,
