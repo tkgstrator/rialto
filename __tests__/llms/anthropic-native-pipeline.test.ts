@@ -146,7 +146,7 @@ describe('Anthropic API-key native pipeline', () => {
     expect(headers.get('x-client-trace')).toBeNull()
   })
 
-  test('removes the client billing marker from API-key requests without changing other system instructions', async () => {
+  test('replaces a client billing marker with the SDK system prefix and preserves instructions', async () => {
     const body = {
       ...classifierRequest,
       system: [
@@ -155,11 +155,22 @@ describe('Anthropic API-key native pipeline', () => {
       ]
     }
     const result = await exchange(body, Response.json(classifierResponse))
-    expect(result.received[0].body).toEqual(classifierRequest)
+    expect(result.received[0].body).toEqual({
+      ...classifierRequest,
+      system: [
+        { type: 'text', text: 'x-anthropic-billing-header: cc_version=2.1.332.47c; cc_entrypoint=sdk-ts;' },
+        {
+          type: 'text',
+          text: "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+          cache_control: { type: 'ephemeral' }
+        },
+        ...classifierRequest.system
+      ]
+    })
     expect(body.system).toHaveLength(2)
   })
 
-  test('removes Claude Code identity blocks from API-key requests while preserving the actual instructions', async () => {
+  test('replaces both client identity blocks with the SDK prefix', async () => {
     const body = {
       ...classifierRequest,
       system: [
@@ -173,11 +184,22 @@ describe('Anthropic API-key native pipeline', () => {
       ]
     }
     const result = await exchange(body, Response.json(classifierResponse))
-    expect(result.received[0].body).toEqual(classifierRequest)
+    expect(result.received[0].body).toEqual({
+      ...classifierRequest,
+      system: [
+        { type: 'text', text: 'x-anthropic-billing-header: cc_version=2.1.332.47c; cc_entrypoint=sdk-ts;' },
+        {
+          type: 'text',
+          text: "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+          cache_control: { type: 'ephemeral' }
+        },
+        ...classifierRequest.system
+      ]
+    })
     expect(body.system).toHaveLength(3)
   })
 
-  test('removes the Claude Code identity block even without a billing marker', async () => {
+  test('replaces a lone Claude Code identity block with the SDK prefix', async () => {
     const body = {
       ...classifierRequest,
       system: [
@@ -189,7 +211,35 @@ describe('Anthropic API-key native pipeline', () => {
       ]
     }
     const result = await exchange(body, Response.json(classifierResponse))
-    expect(result.received[0].body).toEqual(classifierRequest)
+    expect(result.received[0].body).toEqual({
+      ...classifierRequest,
+      system: [
+        { type: 'text', text: 'x-anthropic-billing-header: cc_version=2.1.332.47c; cc_entrypoint=sdk-ts;' },
+        {
+          type: 'text',
+          text: "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+          cache_control: { type: 'ephemeral' }
+        },
+        ...classifierRequest.system
+      ]
+    })
+  })
+
+  test('keeps an existing SDK prefix unchanged', async () => {
+    const body = {
+      ...classifierRequest,
+      system: [
+        { type: 'text', text: 'x-anthropic-billing-header: cc_version=2.1.332.47c; cc_entrypoint=sdk-ts;' },
+        {
+          type: 'text',
+          text: "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+          cache_control: { type: 'ephemeral' }
+        },
+        ...classifierRequest.system
+      ]
+    }
+    const result = await exchange(body, Response.json(classifierResponse))
+    expect(result.received[0].body).toEqual(body)
   })
 
   test('preserves native tool definitions and streams instead of converting them to Chat format', async () => {
