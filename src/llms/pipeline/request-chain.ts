@@ -79,10 +79,14 @@ export function shouldStripInboundHeader(name: string): boolean {
 
 const CLAUDE_CODE_IDENTITY =
   "You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK."
+const AGENT_SDK_BILLING_MARKER = 'x-anthropic-billing-header: cc_version=2.1.332.47c; cc_entrypoint=sdk-ts;'
+const AGENT_SDK_IDENTITY = "You are a Claude agent, built on Anthropic's Claude Agent SDK."
 
-function withoutClientMarkers(body: Record<string, unknown>): Record<string, unknown> {
+function withAgentSdkMarkers(body: Record<string, unknown>): Record<string, unknown> {
   const system = body.system
   if (!Array.isArray(system) || system.length === 0) return body
+  const firstText = system[0]?.text
+  if (typeof firstText === 'string' && firstText.includes('cc_entrypoint=sdk-ts;')) return body
   let removed = 0
   for (const block of system) {
     if (block === null || typeof block !== 'object' || !('text' in block)) break
@@ -92,11 +96,14 @@ function withoutClientMarkers(body: Record<string, unknown>): Record<string, unk
     removed++
   }
   if (removed === 0) return body
-  const outbound = { ...body }
-  const rest = system.slice(removed)
-  if (rest.length === 0) delete outbound.system
-  else outbound.system = rest
-  return outbound
+  return {
+    ...body,
+    system: [
+      { type: 'text', text: AGENT_SDK_BILLING_MARKER },
+      { type: 'text', text: AGENT_SDK_IDENTITY, cache_control: { type: 'ephemeral' } },
+      ...system.slice(removed)
+    ]
+  }
 }
 
 export function shouldBypass(
@@ -169,7 +176,7 @@ export async function processRequestTransformers(
     // Native Anthropic requests with an API key get a fresh upstream header
     // set. Client headers describe the caller, not Rialto's API-key request.
     if (input.provider.authMode === 'api_key' && input.transformer.name === 'anthropic') {
-      requestBody = withoutClientMarkers(input.body)
+      requestBody = withAgentSdkMarkers(input.body)
       return { requestBody, config: { headers: { 'anthropic-version': '2023-06-01' } } }
     }
     const headers: Record<string, string | undefined> = { ...input.headers }
